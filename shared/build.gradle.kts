@@ -9,6 +9,7 @@ plugins {
     alias(libs.plugins.metro)
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidxRoom)
+    alias(libs.plugins.kotlinxSerialization)
 }
 
 kotlin {
@@ -75,21 +76,32 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.navigation3.ui)
             implementation(libs.room.runtime)
+            implementation(libs.ktor.client.core)
+            implementation(libs.ktor.client.contentNegotiation)
+            implementation(libs.ktor.serialization.kotlinxJson)
+            implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
         }
         androidMain.dependencies {
             implementation(libs.sqlite.bundled)
+            implementation(libs.ktor.client.okhttp)
         }
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)
+            implementation(libs.ktor.client.cio)
         }
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
+            implementation(libs.ktor.client.darwin)
         }
         jsMain.dependencies {
             implementation(libs.wrappers.browser)
+            implementation(libs.ktor.client.js)
+        }
+        wasmJsMain.dependencies {
+            implementation(libs.ktor.client.js)
         }
     }
 }

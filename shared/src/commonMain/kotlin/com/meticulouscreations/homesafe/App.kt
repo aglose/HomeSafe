@@ -25,7 +25,9 @@ fun App(appGraph: AppGraph) {
                 entry<SecureConnectionRoute> {
                     SecureConnectionScreen(
                         connectionHistoryDao = appGraph.connectionHistoryDao,
-                        onConnect = {
+                        apiClient = appGraph.frigateApiClient,
+                        sessionRepository = appGraph.frigateSessionRepository,
+                        onConnected = {
                             // Connecting replaces the back stack: the system back button
                             // should exit the app from the shell, not return to this screen.
                             backStack.clear()
@@ -33,7 +35,7 @@ fun App(appGraph: AppGraph) {
                         },
                     )
                 }
-                entry<AppShellRoute> { FrigateAppShell() }
+                entry<AppShellRoute> { FrigateAppShell(sessionRepository = appGraph.frigateSessionRepository) }
             },
         )
     }
