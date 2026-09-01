@@ -1,32 +1,40 @@
 package com.meticulouscreations.homesafe
 
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.tooling.preview.Preview
-import com.meticulouscreations.homesafe.ui.screens.HomeLiveViewScreen
+import androidx.navigation3.runtime.entryProvider
+import androidx.navigation3.ui.NavDisplay
+import com.meticulouscreations.homesafe.di.AppGraph
+import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 
-private enum class FrigateDestination { SecureConnection, Home }
+private data object SecureConnectionRoute
+private data object AppShellRoute
 
 @Composable
-@Preview
-fun App() {
+fun App(appGraph: AppGraph) {
     FrigateTheme {
-        var destination by remember { mutableStateOf(FrigateDestination.SecureConnection) }
-        when (destination) {
-            FrigateDestination.SecureConnection -> {
-                SecureConnectionScreen(
-                    onConnect = { destination = FrigateDestination.Home },
-                )
-            }
+        val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
 
-            FrigateDestination.Home -> {
-                HomeLiveViewScreen()
-            }
-        }
+        NavDisplay(
+            backStack = backStack,
+            onBack = { backStack.removeLastOrNull() },
+            entryProvider = entryProvider {
+                entry<SecureConnectionRoute> {
+                    SecureConnectionScreen(
+                        connectionHistoryDao = appGraph.connectionHistoryDao,
+                        onConnect = {
+                            // Connecting replaces the back stack: the system back button
+                            // should exit the app from the shell, not return to this screen.
+                            backStack.clear()
+                            backStack.add(AppShellRoute)
+                        },
+                    )
+                }
+                entry<AppShellRoute> { FrigateAppShell() }
+            },
+        )
     }
 }
