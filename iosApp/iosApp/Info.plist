@@ -4,5 +4,7 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>NSFaceIDUsageDescription</key>
+	<string>HomeSafe uses Face ID to securely sign you in without retyping your password.</string>
 </dict>
 </plist>

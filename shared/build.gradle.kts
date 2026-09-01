@@ -90,6 +90,8 @@ kotlin {
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.exoplayer.hls)
             implementation(libs.media3.ui)
+            implementation(libs.androidx.biometric)
+            implementation(libs.androidx.fragment)
         }
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)

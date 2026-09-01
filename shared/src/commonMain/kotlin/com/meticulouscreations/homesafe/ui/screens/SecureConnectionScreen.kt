@@ -17,20 +17,27 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -42,7 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
+import com.meticulouscreations.homesafe.data.SavedCredentials
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateSessionRepository
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -50,26 +59,61 @@ import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ConnectUiState
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SecureConnectionScreen(
     connectionHistoryDao: ConnectionHistoryDao,
     apiClient: FrigateApiClient,
     sessionRepository: FrigateSessionRepository,
+    biometricCredentialStore: BiometricCredentialStore,
     onConnected: () -> Unit,
 ) {
     val viewModel = viewModel {
-        SecureConnectionViewModel(connectionHistoryDao, apiClient, sessionRepository)
+        SecureConnectionViewModel(connectionHistoryDao, apiClient, sessionRepository, biometricCredentialStore)
     }
     val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()
     var serverUrl by remember(mostRecentConnection) {
         mutableStateOf(mostRecentConnection?.serverUrl ?: "http://frigate.local:8971")
     }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var biometricSaveOffer by remember { mutableStateOf<SavedCredentials?>(null) }
     val extraColors = LocalFrigateExtraColors.current
+    val coroutineScope = rememberCoroutineScope()
     val isConnecting = uiState is ConnectUiState.Connecting
+
+    // A successful login (manual or biometric) either offers to save credentials for next
+    // time, or — if there's nothing new to offer — proceeds straight into the app.
+    LaunchedEffect(uiState) {
+        val state = uiState
+        if (state is ConnectUiState.Success) {
+            if (viewModel.biometricLoginAvailable && !hasSavedBiometricCredentials) {
+                biometricSaveOffer = state.credentials
+            } else {
+                onConnected()
+            }
+        }
+    }
+
+    biometricSaveOffer?.let { credentials ->
+        BiometricSaveOfferDialog(
+            biometricDisplayName = viewModel.biometricDisplayName,
+            onSave = {
+                biometricSaveOffer = null
+                coroutineScope.launch {
+                    viewModel.saveBiometricCredentials(credentials)
+                    onConnected()
+                }
+            },
+            onDismiss = {
+                biometricSaveOffer = null
+                onConnected()
+            },
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -170,37 +214,122 @@ fun SecureConnectionScreen(
                 }
             }
 
-            // Connect button
-            Button(
-                onClick = { viewModel.connect(serverUrl, username, password, onConnected) },
-                enabled = !isConnecting,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                ),
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (isConnecting) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        strokeWidth = 2.dp,
-                    )
-                } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                // Connect button
+                Button(
+                    onClick = { viewModel.connect(serverUrl, username, password) },
+                    enabled = !isConnecting,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                ) {
+                    if (isConnecting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text("Connect", style = MaterialTheme.typography.labelLarge)
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                        }
+                    }
+                }
+
+                if (viewModel.biometricLoginAvailable && hasSavedBiometricCredentials) {
+                    OutlinedButton(
+                        onClick = { viewModel.signInWithBiometrics() },
+                        enabled = !isConnecting,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(56.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = extraColors.textPrimary,
+                        ),
                     ) {
-                        Text("Connect", style = MaterialTheme.typography.labelLarge)
-                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(Icons.Filled.Fingerprint, contentDescription = null)
+                            Text(
+                                "Sign in with ${viewModel.biometricDisplayName}",
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                    }
+
+                    TextButton(
+                        onClick = { viewModel.forgetBiometricCredentials() },
+                        enabled = !isConnecting,
+                    ) {
+                        Text(
+                            text = "Forget saved login",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
                     }
                 }
             }
         }
     }
+}
+
+@Composable
+private fun BiometricSaveOfferDialog(
+    biometricDisplayName: String,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val extraColors = LocalFrigateExtraColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        titleContentColor = extraColors.textPrimary,
+        textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+        title = { Text("Enable $biometricDisplayName sign-in?", style = MaterialTheme.typography.headlineSmall) },
+        text = {
+            Text(
+                "Skip retyping your password next time — sign in with $biometricDisplayName instead. " +
+                    "Your credentials are encrypted and can only be unlocked with your biometrics.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onSave,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                ),
+            ) {
+                Text("Enable", style = MaterialTheme.typography.labelLarge)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "Not now",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+    )
 }
 
 @Composable
