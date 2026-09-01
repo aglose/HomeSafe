@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Frigate's go2rtc live-stream endpoint (port 1984) is plain HTTP by design — it relies
+  on the Tailscale network boundary for trust rather than TLS. The authenticated Frigate
+  API itself (port 8971) is HTTPS and unaffected by this.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

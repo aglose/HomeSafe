@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.network.FrigateCamera
 import com.meticulouscreations.homesafe.network.FrigateSessionRepository
+import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
+import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 
@@ -75,15 +77,16 @@ fun HomeTabContent(sessionRepository: FrigateSessionRepository) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
+            val serverUrl = session?.serverUrl
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                cameras.forEach { camera -> CameraCard(camera) }
+                cameras.forEach { camera -> CameraCard(camera, serverUrl.orEmpty()) }
             }
         }
     }
 }
 
 @Composable
-private fun CameraCard(camera: FrigateCamera, modifier: Modifier = Modifier) {
+private fun CameraCard(camera: FrigateCamera, serverUrl: String, modifier: Modifier = Modifier) {
     val extraColors = LocalFrigateExtraColors.current
     Box(
         modifier = modifier
@@ -97,16 +100,24 @@ private fun CameraCard(camera: FrigateCamera, modifier: Modifier = Modifier) {
                 ),
             ),
     ) {
-        Icon(
-            imageVector = Icons.Filled.Videocam,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-            modifier = Modifier.align(Alignment.Center).size(56.dp),
-        )
+        if (camera.enabled) {
+            CameraStreamPlayer(
+                streamUrl = frigateLiveStreamUrl(serverUrl, camera.name),
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.Videocam,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                modifier = Modifier.align(Alignment.Center).size(56.dp),
+            )
+        }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Top,
