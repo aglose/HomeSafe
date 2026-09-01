@@ -3,7 +3,9 @@ package com.meticulouscreations.homesafe.di
 import com.meticulouscreations.homesafe.Greeting
 import com.meticulouscreations.homesafe.Platform
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
+import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -26,6 +28,7 @@ interface AppGraph {
     val connectionHistoryDao: ConnectionHistoryDao
     val frigateApiClient: FrigateApiClient
     val frigateSessionRepository: FrigateSessionRepository
+    val biometricCredentialStore: BiometricCredentialStore
 
     @Provides
     fun providePlatform(): Platform = getPlatform()
@@ -34,6 +37,11 @@ interface AppGraph {
     @Provides
     fun provideConnectionHistoryDao(platformContext: PlatformContext): ConnectionHistoryDao =
         createConnectionHistoryDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideBiometricCredentialStore(platformContext: PlatformContext): BiometricCredentialStore =
+        createBiometricCredentialStore(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

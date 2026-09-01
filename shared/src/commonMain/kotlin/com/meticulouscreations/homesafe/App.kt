@@ -27,6 +27,7 @@ fun App(appGraph: AppGraph) {
                         connectionHistoryDao = appGraph.connectionHistoryDao,
                         apiClient = appGraph.frigateApiClient,
                         sessionRepository = appGraph.frigateSessionRepository,
+                        biometricCredentialStore = appGraph.biometricCredentialStore,
                         onConnected = {
                             // Connecting replaces the back stack: the system back button
                             // should exit the app from the shell, not return to this screen.
