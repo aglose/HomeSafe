@@ -24,10 +24,12 @@ fun App(appGraph: AppGraph) {
             entryProvider = entryProvider {
                 entry<SecureConnectionRoute> {
                     SecureConnectionScreen(
-                        connectionHistoryDao = appGraph.connectionHistoryDao,
-                        apiClient = appGraph.frigateApiClient,
-                        sessionRepository = appGraph.frigateSessionRepository,
-                        biometricCredentialStore = appGraph.biometricCredentialStore,
+                        connectToServerUseCase = appGraph.connectToServerUseCase,
+                        signInWithBiometricsUseCase = appGraph.signInWithBiometricsUseCase,
+                        saveBiometricCredentialsUseCase = appGraph.saveBiometricCredentialsUseCase,
+                        forgetBiometricCredentialsUseCase = appGraph.forgetBiometricCredentialsUseCase,
+                        observeMostRecentConnectionUseCase = appGraph.observeMostRecentConnectionUseCase,
+                        connectionRepository = appGraph.connectionRepository,
                         onConnected = {
                             // Connecting replaces the back stack: the system back button
                             // should exit the app from the shell, not return to this screen.
@@ -36,7 +38,7 @@ fun App(appGraph: AppGraph) {
                         },
                     )
                 }
-                entry<AppShellRoute> { FrigateAppShell(sessionRepository = appGraph.frigateSessionRepository) }
+                entry<AppShellRoute> { FrigateAppShell(appGraph = appGraph) }
             },
         )
     }

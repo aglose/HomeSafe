@@ -1,10 +1,5 @@
 package com.meticulouscreations.homesafe.network
 
-data class FrigateSession(
-    val serverUrl: String,
-    val cameras: List<FrigateCamera>,
-)
-
 /**
  * Frigate's go2rtc live-stream endpoint runs on its own port (1984), separate from the
  * authenticated API — it relies on the Tailscale network boundary for trust rather than

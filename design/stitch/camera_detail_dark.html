@@ -1,0 +1,217 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>FRIGATE - Front Door Camera Detail</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&amp;family=Fraunces:opsz,wght@9..144,400;9..144,600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#93908b",
+                        "outline-variant": "#55433d",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#7a2f14",
+                        "on-secondary-container": "#abbe9f",
+                        "inverse-surface": "#e5e2e0",
+                        "tertiary-fixed-dim": "#c9c6c0",
+                        "surface-variant": "#353533",
+                        "secondary": "#b9ccac",
+                        "surface-container-low": "#1c1c1a",
+                        "primary-fixed-dim": "#ffb59d",
+                        "secondary-container": "#3d4e35",
+                        "on-error": "#690005",
+                        "secondary-fixed": "#d5e9c7",
+                        "on-primary": "#5c1901",
+                        "on-tertiary-fixed-variant": "#484742",
+                        "inverse-primary": "#994629",
+                        "surface-container": "#20201e",
+                        "primary-container": "#d77655",
+                        "surface-container-highest": "#353533",
+                        "outline": "#a38c85",
+                        "surface-bright": "#3a3938",
+                        "on-surface": "#e5e2e0",
+                        "on-tertiary-fixed": "#1c1c18",
+                        "surface-tint": "#ffb59d",
+                        "on-primary-fixed": "#390c00",
+                        "surface-dim": "#131312",
+                        "on-tertiary": "#31302c",
+                        "on-secondary-fixed": "#111f0b",
+                        "primary-fixed": "#ffdbd0",
+                        "background": "#131312",
+                        "text-primary": "#F4F3EF",
+                        "on-background": "#e5e2e0",
+                        "primary": "#ffb59d",
+                        "tertiary-fixed": "#e6e2dc",
+                        "on-primary-container": "#511400",
+                        "on-secondary": "#25351e",
+                        "glass-fill": "rgba(28, 28, 26, 0.6)",
+                        "error": "#D9534F",
+                        "surface-container-high": "#2a2a29",
+                        "secondary-fixed-dim": "#b9ccac",
+                        "tertiary": "#c9c6c0",
+                        "inverse-on-surface": "#31302f",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#3b4b33",
+                        "surface": "#1C1C1A",
+                        "surface-container-lowest": "#0e0e0d",
+                        "on-tertiary-container": "#2b2a26",
+                        "on-surface-variant": "#dbc1b9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-page": "1.5rem",
+                        "button-height": "56px",
+                        "stack-lg": "1.5rem",
+                        "icon-button": "48px",
+                        "stack-sm": "0.5rem",
+                        "stack-md": "1rem",
+                        "margin-mobile": "1rem",
+                        "gutter": "1rem"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Albert Sans"],
+                        "button-md": ["Albert Sans"],
+                        "headline-md": ["Fraunces"],
+                        "label-sm": ["Albert Sans"],
+                        "display-lg": ["Fraunces"],
+                        "headline-sm": ["Fraunces"],
+                        "label-md": ["Albert Sans"],
+                        "body-lg": ["Albert Sans"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "button-md": ["15px", { "lineHeight": "1.2", "letterSpacing": "0.01em", "fontWeight": "600" }],
+                        "headline-md": ["28px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["22px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-md": ["13px", { "lineHeight": "1.4", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "1.5", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background min-h-screen font-body-md antialiased overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="w-full top-0 sticky bg-background dark:bg-background z-50">
+<div class="flex items-center justify-between px-margin-page py-4 w-full">
+<button class="hover:opacity-80 transition-opacity flex items-center justify-center p-2 rounded-full hover:bg-surface-variant/30 active:scale-95 duration-150">
+<span class="material-symbols-outlined text-primary dark:text-primary" data-icon="arrow_back">arrow_back</span>
+</button>
+<h1 class="font-headline-md text-headline-md tracking-wider text-on-surface dark:text-on-surface">Front Door</h1>
+<button class="hover:opacity-80 transition-opacity flex items-center justify-center p-2 rounded-full hover:bg-surface-variant/30 active:scale-95 duration-150">
+<span class="material-symbols-outlined text-primary dark:text-primary" data-icon="sensors">sensors</span>
+</button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="w-full flex flex-col pb-24">
+<!-- Edge-to-edge Live Video Player -->
+<div class="relative w-full aspect-video bg-surface-container-lowest group overflow-hidden">
+<img class="absolute inset-0 w-full h-full object-cover opacity-80 mix-blend-luminosity" data-alt="A wide angle view from a smart doorbell camera looking out onto a quiet suburban street at dusk. The lighting is low and moody, emphasizing the dark architectural theme. The scene is calm and secure, with deep shadows and subtle highlights on the porch steps." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCtLHRY2vnsBcGHotiK3vCNkho8ZrMgs6Eubr1PcfEDMuKtYOYv4hh8mbCdQm2YeXW5V2ZiaDWFPUy0OrvfmpSsnrGiJtJnOKlpdIgThUu-rSDVqnLLhWRb5_jDl7e5zqawqLHs0jtu5mfiJask_z2EH2CbIIWEoJewJ5yMV3thbiqF2oPSjv524z3QKGVpTX9EROplAkL6l3vqmJ9OL2yhic7u8X2lWaEELlDDgbzu7SqG-K31ReU_cA">
+<!-- Live Badge -->
+<div class="absolute top-4 left-4 bg-glass-fill backdrop-blur-xl border border-outline-variant/20 rounded-full px-3 py-1 flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-error animate-pulse"></span>
+<span class="font-label-sm text-label-sm text-on-surface uppercase tracking-widest">Live</span>
+</div>
+<!-- Video Overlays / Controls -->
+<div class="absolute inset-0 bg-gradient-to-t from-background/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-4">
+<div class="flex justify-between items-center w-full">
+<span class="font-label-md text-label-md text-on-surface">1920x1080 • 30 FPS • 2.5 Mbps</span>
+<button class="w-icon-button h-icon-button rounded-full bg-glass-fill backdrop-blur-md flex items-center justify-center border border-outline-variant/30 hover:bg-surface-variant/50 transition-colors">
+<span class="material-symbols-outlined" data-icon="fullscreen">fullscreen</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Quick Action Buttons -->
+<div class="flex justify-center gap-6 -mt-8 relative z-10 px-margin-page">
+<button class="w-16 h-16 rounded-full bg-surface/80 backdrop-blur-xl border border-outline-variant/20 shadow-2xl flex flex-col items-center justify-center gap-1 hover:bg-surface transition-colors active:scale-95">
+<span class="material-symbols-outlined text-primary" data-icon="volume_off">volume_off</span>
+</button>
+<button class="w-20 h-20 rounded-full bg-primary-container text-on-primary-container shadow-[0_8px_24px_rgba(215,118,85,0.2)] flex flex-col items-center justify-center gap-1 hover:brightness-110 transition-all active:scale-95 border-2 border-background transform -translate-y-2">
+<span class="material-symbols-outlined text-[32px]" data-icon="mic" data-weight="fill" style="font-variation-settings: 'FILL' 1;">mic</span>
+</button>
+<button class="w-16 h-16 rounded-full bg-surface/80 backdrop-blur-xl border border-outline-variant/20 shadow-2xl flex flex-col items-center justify-center gap-1 hover:bg-surface transition-colors active:scale-95">
+<span class="material-symbols-outlined text-primary" data-icon="notifications_active">notifications_active</span>
+</button>
+</div>
+<div class="px-margin-page mt-8 flex flex-col gap-stack-lg">
+<!-- Timeline Scrubber -->
+<section class="flex flex-col gap-stack-sm">
+<div class="flex justify-between items-center mb-2">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Timeline</h2>
+<span class="font-label-md text-label-md text-on-surface-variant">Today</span>
+</div>
+<div class="relative w-full h-24 bg-surface rounded-xl border border-outline-variant/10 overflow-hidden group cursor-pointer">
+<!-- Base Timeline -->
+<div class="absolute top-1/2 left-0 right-0 h-[2px] bg-surface-container-high -translate-y-1/2"></div>
+<!-- Time Markers -->
+<div class="absolute top-2 left-0 right-0 flex justify-between px-4 font-label-sm text-label-sm text-on-surface-variant">
+<span>12 PM</span>
+<span>3 PM</span>
+<span>6 PM</span>
+<span>9 PM</span>
+</div>
+<!-- Motion Event Markers (Terracotta) -->
+<div class="absolute top-1/2 left-[20%] w-2 h-6 bg-primary-container rounded-full -translate-y-1/2 hover:scale-125 transition-transform" title="Motion Detected"></div>
+<div class="absolute top-1/2 left-[45%] w-3 h-8 bg-primary-container rounded-full -translate-y-1/2 hover:scale-125 transition-transform" title="Person Detected"></div>
+<div class="absolute top-1/2 left-[70%] w-2 h-6 bg-primary-container rounded-full -translate-y-1/2 hover:scale-125 transition-transform" title="Motion Detected"></div>
+<div class="absolute top-1/2 left-[85%] w-4 h-10 bg-primary-container rounded-full -translate-y-1/2 hover:scale-125 transition-transform shadow-[0_0_10px_rgba(215,118,85,0.5)]" title="Package Delivered"></div>
+<!-- Current Time Indicator -->
+<div class="absolute top-0 bottom-0 left-[85%] w-[2px] bg-primary group-hover:bg-primary-fixed transition-colors">
+<div class="absolute -top-1 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[8px] border-t-primary"></div>
+</div>
+</div>
+</section>
+<!-- Recent Events Bento -->
+<section class="flex flex-col gap-stack-md">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Recent Activity</h2>
+<div class="grid grid-cols-2 gap-4">
+<div class="col-span-2 bg-surface p-4 rounded-xl border border-outline-variant/20 flex gap-4 items-center hover:bg-surface-variant/30 transition-colors cursor-pointer">
+<div class="w-16 h-16 rounded-lg overflow-hidden shrink-0">
+<img class="w-full h-full object-cover grayscale" data-alt="A close up shot of a delivery person dropping off a package at a front door, captured from a smart doorbell camera perspective. The image is slightly grainy, reflecting a high-quality security feed, with muted, dark architectural tones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBAlqxjre3aIQtUxkikqJEl4Qv2gaE1VwaI4yy-iJWIbSFEc8YGZMKARZo15SiRfK97jsNumCak9Lnu6yfD0b5PcMxfqE4kcVYcHQH0N4ZGkfxKvO1WyqF9O0UBhpPvwY49ydX-pEByiqq5-RbnV0EmvnAZJbj5trwVFffHnEiiwFIZ0vXs28Tu4Tf3rUAYOHuaAP5bH2XYl7qqWdfgv-hFqmzwtZi_sh6xZkvfsb0QtUimcyzffbmj8w">
+</div>
+<div class="flex-1 flex flex-col gap-1">
+<div class="flex justify-between items-center">
+<span class="font-label-md text-label-md text-primary-container flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="local_shipping">local_shipping</span>
+                                    Package
+                                </span>
+<span class="font-label-sm text-label-sm text-on-surface-variant">8:42 PM</span>
+</div>
+<span class="font-body-md text-body-md text-on-surface">Package delivered to porch.</span>
+</div>
+</div>
+<div class="bg-surface p-4 rounded-xl border border-outline-variant/20 flex flex-col gap-2 hover:bg-surface-variant/30 transition-colors cursor-pointer">
+<span class="font-label-md text-label-md text-secondary-container flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="directions_walk">directions_walk</span>
+                            Person
+                        </span>
+<span class="font-body-md text-body-md text-on-surface">6:15 PM</span>
+</div>
+<div class="bg-surface p-4 rounded-xl border border-outline-variant/20 flex flex-col gap-2 hover:bg-surface-variant/30 transition-colors cursor-pointer">
+<span class="font-label-md text-label-md text-outline-variant flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]" data-icon="pets">pets</span>
+                            Animal
+                        </span>
+<span class="font-body-md text-body-md text-on-surface">3:20 PM</span>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar omitted as this is a focused detail/task screen with a back button -->
+</body></html>

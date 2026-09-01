@@ -12,8 +12,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -42,7 +42,7 @@ fun PulsingDot(
     Box(
         modifier
             .size(size)
-            .alpha(alpha)
+            .graphicsLayer { this.alpha = alpha }
             .background(color, CircleShape),
     )
 }

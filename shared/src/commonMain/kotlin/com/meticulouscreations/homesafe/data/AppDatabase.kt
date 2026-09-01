@@ -6,10 +6,12 @@ import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
 import com.meticulouscreations.homesafe.PlatformContext
 
-@Database(entities = [ConnectionHistoryEntity::class], version = 1)
+@Database(entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class], version = 2)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao
+    abstract fun cameraDao(): CameraDao
+    abstract fun settingsDao(): SettingsDao
 }
 
 // The Room compiler generates the `actual` implementations for each target.
@@ -19,8 +21,13 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
 }
 
 /**
- * Builds the platform's [ConnectionHistoryDao]. On Android, JVM (desktop), and iOS this is
- * backed by a real Room/SQLite database (via [androidx.sqlite:sqlite-bundled]). That artifact
- * doesn't yet publish a JS/Wasm driver, so the web target falls back to [InMemoryConnectionHistoryDao].
+ * Builds the platform's DAOs. On Android, JVM (desktop), and iOS these are backed by a single
+ * shared real Room/SQLite database instance (via [androidx.sqlite:sqlite-bundled]) — each
+ * `createXDao` call returns a DAO from that same instance, never opening a second connection.
+ * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
+ * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
+ * [InMemorySettingsDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
+expect fun createCameraDao(context: PlatformContext): CameraDao
+expect fun createSettingsDao(context: PlatformContext): SettingsDao

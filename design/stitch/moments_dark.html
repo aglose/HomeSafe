@@ -1,0 +1,252 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>FRIGATE - Moments</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com" rel="preconnect">
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:ital,wght@0,100..900;1,100..900&amp;family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-container": "#93908b",
+                        "outline-variant": "#55433d",
+                        "on-error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#7a2f14",
+                        "on-secondary-container": "#abbe9f",
+                        "inverse-surface": "#e5e2e0",
+                        "tertiary-fixed-dim": "#c9c6c0",
+                        "surface-variant": "#353533",
+                        "secondary": "#b9ccac",
+                        "surface-container-low": "#1c1c1a",
+                        "primary-fixed-dim": "#ffb59d",
+                        "secondary-container": "#3d4e35",
+                        "on-error": "#690005",
+                        "secondary-fixed": "#d5e9c7",
+                        "on-primary": "#5c1901",
+                        "on-tertiary-fixed-variant": "#484742",
+                        "inverse-primary": "#994629",
+                        "surface-container": "#20201e",
+                        "primary-container": "#d77655",
+                        "surface-container-highest": "#353533",
+                        "outline": "#a38c85",
+                        "surface-bright": "#3a3938",
+                        "on-surface": "#e5e2e0",
+                        "on-tertiary-fixed": "#1c1c18",
+                        "surface-tint": "#ffb59d",
+                        "on-primary-fixed": "#390c00",
+                        "surface-dim": "#131312",
+                        "on-tertiary": "#31302c",
+                        "on-secondary-fixed": "#111f0b",
+                        "primary-fixed": "#ffdbd0",
+                        "background": "#131312",
+                        "text-primary": "#F4F3EF",
+                        "on-background": "#e5e2e0",
+                        "primary": "#ffb59d",
+                        "tertiary-fixed": "#e6e2dc",
+                        "on-primary-container": "#511400",
+                        "on-secondary": "#25351e",
+                        "glass-fill": "rgba(28, 28, 26, 0.6)",
+                        "error": "#D9534F",
+                        "surface-container-high": "#2a2a29",
+                        "secondary-fixed-dim": "#b9ccac",
+                        "tertiary": "#c9c6c0",
+                        "inverse-on-surface": "#31302f",
+                        "error-container": "#93000a",
+                        "on-secondary-fixed-variant": "#3b4b33",
+                        "surface": "#1C1C1A",
+                        "surface-container-lowest": "#0e0e0d",
+                        "on-tertiary-container": "#2b2a26",
+                        "on-surface-variant": "#dbc1b9"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "margin-page": "1.5rem",
+                        "button-height": "56px",
+                        "stack-lg": "1.5rem",
+                        "icon-button": "48px",
+                        "stack-sm": "0.5rem",
+                        "stack-md": "1rem",
+                        "margin-mobile": "1rem",
+                        "gutter": "1rem"
+                    },
+                    "fontFamily": {
+                        "body-md": ["Albert Sans"],
+                        "button-md": ["Albert Sans"],
+                        "headline-md": ["Fraunces"],
+                        "label-sm": ["Albert Sans"],
+                        "display-lg": ["Fraunces"],
+                        "headline-sm": ["Fraunces"],
+                        "label-md": ["Albert Sans"],
+                        "body-lg": ["Albert Sans"]
+                    },
+                    "fontSize": {
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "button-md": ["15px", { "lineHeight": "1.2", "letterSpacing": "0.01em", "fontWeight": "600" }],
+                        "headline-md": ["28px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-sm": ["11px", { "lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "display-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600" }],
+                        "headline-sm": ["22px", { "lineHeight": "1.3", "fontWeight": "600" }],
+                        "label-md": ["13px", { "lineHeight": "1.4", "letterSpacing": "0.02em", "fontWeight": "500" }],
+                        "body-lg": ["18px", { "lineHeight": "1.5", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-background antialiased min-h-screen pb-32 font-body-md">
+<!-- TopAppBar -->
+<header class="bg-background w-full top-0 sticky z-40">
+<div class="flex items-center justify-between px-margin-page py-4 w-full">
+<button class="text-primary hover:opacity-80 transition-opacity active:scale-95 duration-150 p-2 -ml-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary/50">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md tracking-wider text-on-surface">FRIGATE</h1>
+<button class="text-primary hover:opacity-80 transition-opacity active:scale-95 duration-150 p-2 -mr-2 rounded-full focus:outline-none focus:ring-2 focus:ring-primary/50">
+<span class="material-symbols-outlined" data-icon="sensors">sensors</span>
+</button>
+</div>
+</header>
+<main class="w-full max-w-3xl mx-auto px-margin-mobile md:px-margin-page py-stack-md">
+<!-- Filter Chips -->
+<div class="flex gap-3 overflow-x-auto pb-4 scrollbar-hide -mx-margin-mobile px-margin-mobile md:mx-0 md:px-0 sticky top-[72px] z-30 bg-background/90 backdrop-blur-md pt-2">
+<button class="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-on-primary font-label-md text-label-md whitespace-nowrap transition-transform active:scale-95">
+                All Events
+            </button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface text-on-surface border border-outline-variant/30 font-label-md text-label-md whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-variant/50">
+<span class="material-symbols-outlined text-[18px]">person</span>
+                People
+            </button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface text-on-surface border border-outline-variant/30 font-label-md text-label-md whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-variant/50">
+<span class="material-symbols-outlined text-[18px]">directions_car</span>
+                Vehicles
+            </button>
+<button class="flex items-center gap-2 px-4 py-2 rounded-full bg-surface text-on-surface border border-outline-variant/30 font-label-md text-label-md whitespace-nowrap transition-transform active:scale-95 hover:bg-surface-variant/50">
+<span class="material-symbols-outlined text-[18px]">pets</span>
+                Animals
+            </button>
+</div>
+<div class="flex flex-col gap-stack-lg mt-stack-md">
+<!-- Date Section -->
+<section>
+<div class="sticky top-[128px] z-20 bg-background/95 backdrop-blur-sm py-2 mb-2 flex items-center justify-between">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Today</h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Oct 24</span>
+</div>
+<div class="flex flex-col gap-4">
+<!-- Moment Card 1 -->
+<div class="flex bg-surface rounded-xl border border-outline-variant/20 overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="w-1/3 min-w-[120px] aspect-[16/9] relative overflow-hidden shrink-0">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="A night vision security camera view of a person walking up to a modern front porch. The scene is illuminated by a subtle porch light casting long shadows across architectural concrete steps. Deep obsidian blacks and warm amber lighting create a secure, elevated architectural night aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCp-v4ePAR7F0GbVhz_cCIN2A02HuYKG_vZ0uep8ObCEJ0vNzO549I-FTVOGLYg7lSuMojjfI9_efGYn-4biSpRbeJ1U5HMb4IXnsLs90QxOxT1AWSyhuw8cmUmcHYgb5aEYUsn7Q99lxVRih16IaVItwcssWVy1ZrPuJ0ZvO1uM-lF1GLRuBe0y7F7BRzUeJaXP1A0brturvUF1kF4oHm1FDv1ulvFvuL4u_-0Va5Nt2GoXukG8TcomQ">
+<div class="absolute bottom-2 right-2 bg-glass-fill backdrop-blur-md px-2 py-0.5 rounded font-label-sm text-label-sm text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">videocam</span> 0:15
+                            </div>
+</div>
+<div class="p-4 flex flex-col justify-between flex-1">
+<div>
+<div class="flex justify-between items-start gap-2 mb-1">
+<h3 class="font-button-md text-button-md text-on-surface line-clamp-1">Person at Front Door</h3>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">08:42 AM</span>
+</div>
+<p class="font-body-md text-[14px] text-on-surface-variant line-clamp-1">Front Porch Camera</p>
+</div>
+<div class="flex gap-2 mt-2">
+<span class="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant rounded-full px-2 py-1 font-label-sm text-[10px] uppercase">
+                                    Person
+                                </span>
+</div>
+</div>
+</div>
+<!-- Moment Card 2 -->
+<div class="flex bg-surface rounded-xl border border-outline-variant/20 overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="w-1/3 min-w-[120px] aspect-[16/9] relative overflow-hidden shrink-0">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="A security camera view of a sleek dark vehicle pulling into a minimalist driveway at dawn. The early morning light reflects softly off the car's surface. The environment features modern landscaping with architectural lighting, maintaining the serene, deep dark theme aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAzNmx5Um50juNbD2NBaOmQcTGfQDNK_CcovC2-OzvPyEnCehaoNNljCo0JsRT0s8Kt8Jq_I9sCnp-NsdcKKoPuy8Q4Gy9Q8mhoWco8W9UbN5B1sNGcUOkeKAvLvT2S367L18LJQIb1Eg-ucmWsgGTSLb9ob9moS3CHVAJk2Y9aKr24ipkZ_xVUNpD4Ds5GSCnHQ8iMp_s_vgQeHNzjs0UurG7_Ul9WE2hv4PFyf1Bsi2UvCNJzoNVa7Q">
+<div class="absolute bottom-2 right-2 bg-glass-fill backdrop-blur-md px-2 py-0.5 rounded font-label-sm text-label-sm text-on-surface flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">videocam</span> 0:42
+                            </div>
+</div>
+<div class="p-4 flex flex-col justify-between flex-1">
+<div>
+<div class="flex justify-between items-start gap-2 mb-1">
+<h3 class="font-button-md text-button-md text-on-surface line-clamp-1">Vehicle in Driveway</h3>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">06:15 AM</span>
+</div>
+<p class="font-body-md text-[14px] text-on-surface-variant line-clamp-1">Driveway Camera</p>
+</div>
+<div class="flex gap-2 mt-2">
+<span class="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant rounded-full px-2 py-1 font-label-sm text-[10px] uppercase">
+                                    Vehicle
+                                </span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Date Section -->
+<section>
+<div class="sticky top-[128px] z-20 bg-background/95 backdrop-blur-sm py-2 mb-2 flex items-center justify-between">
+<h2 class="font-headline-sm text-headline-sm text-on-surface">Yesterday</h2>
+<span class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Oct 23</span>
+</div>
+<div class="flex flex-col gap-4">
+<!-- Moment Card 3 -->
+<div class="flex bg-surface rounded-xl border border-outline-variant/20 overflow-hidden group cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="w-1/3 min-w-[120px] aspect-[16/9] relative overflow-hidden shrink-0">
+<img class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" data-alt="A low-light security camera view capturing a stray cat moving across a minimalist patio area at night. The scene uses deep blacks and subtle highlights to emphasize the architectural lines of the outdoor space, aligning with the premium serene oversight aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuARnSHTH89iBfaxE-MPhHO6dCQhC7QqNYN9MM7NtrVukRCjoiPMDp11-8vL8iSsDIlVEv17AaO5_q5GSQLQrsmm94hlQpNDYhoSfeqXJ04P5-3Pi2CfaMdkaHBoQEZE0CZ-0ZeA_ktIzCoSKD5HJpLXx72oshPYAzVTcV_OVem9Ll2zwg1oRhWZUbViH2R3k5rY2KCPEnurPXYxKt_V3QAP5CZGhcMbwD-uJqi_3KdZT0OA-I45ELNoBg">
+</div>
+<div class="p-4 flex flex-col justify-between flex-1">
+<div>
+<div class="flex justify-between items-start gap-2 mb-1">
+<h3 class="font-button-md text-button-md text-on-surface line-clamp-1">Animal Detected</h3>
+<span class="font-label-sm text-label-sm text-on-surface-variant shrink-0">11:45 PM</span>
+</div>
+<p class="font-body-md text-[14px] text-on-surface-variant line-clamp-1">Backyard Camera</p>
+</div>
+<div class="flex gap-2 mt-2">
+<span class="inline-flex items-center justify-center bg-surface-variant text-on-surface-variant rounded-full px-2 py-1 font-label-sm text-[10px] uppercase">
+                                    Animal
+                                </span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md rounded-full backdrop-blur-xl bg-glass-fill border border-outline-variant/20 shadow-2xl z-50 flex justify-around items-center p-2">
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-6 py-2 hover:bg-surface-variant/30 rounded-full transition-colors active:scale-90 duration-200">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-md text-label-md mt-1">Home</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-6 py-2 active:scale-90 transition-transform duration-200 shadow-[0_8px_24px_rgba(0,0,0,0.4)]">
+<span class="material-symbols-outlined" data-icon="video_library">video_library</span>
+<span class="font-label-md text-label-md mt-1">Moments</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant px-6 py-2 hover:bg-surface-variant/30 rounded-full transition-colors active:scale-90 duration-200">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="font-label-md text-label-md mt-1">Settings</span>
+</button>
+</nav>
+<style>
+        /* Utility to hide scrollbar but keep functionality */
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>

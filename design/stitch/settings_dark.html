@@ -1,0 +1,281 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Settings</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&amp;family=Fraunces:wght@600&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "tertiary-container": "#93908b",
+                      "outline-variant": "#55433d",
+                      "on-error-container": "#ffdad6",
+                      "on-primary-fixed-variant": "#7a2f14",
+                      "on-secondary-container": "#abbe9f",
+                      "inverse-surface": "#e5e2e0",
+                      "tertiary-fixed-dim": "#c9c6c0",
+                      "surface-variant": "#353533",
+                      "secondary": "#b9ccac",
+                      "surface-container-low": "#1c1c1a",
+                      "primary-fixed-dim": "#ffb59d",
+                      "secondary-container": "#3d4e35",
+                      "on-error": "#690005",
+                      "secondary-fixed": "#d5e9c7",
+                      "on-primary": "#5c1901",
+                      "on-tertiary-fixed-variant": "#484742",
+                      "inverse-primary": "#994629",
+                      "surface-container": "#20201e",
+                      "primary-container": "#d77655",
+                      "surface-container-highest": "#353533",
+                      "outline": "#a38c85",
+                      "surface-bright": "#3a3938",
+                      "on-surface": "#e5e2e0",
+                      "on-tertiary-fixed": "#1c1c18",
+                      "surface-tint": "#ffb59d",
+                      "on-primary-fixed": "#390c00",
+                      "surface-dim": "#131312",
+                      "on-tertiary": "#31302c",
+                      "on-secondary-fixed": "#111f0b",
+                      "primary-fixed": "#ffdbd0",
+                      "background": "#131312",
+                      "text-primary": "#F4F3EF",
+                      "on-background": "#e5e2e0",
+                      "primary": "#ffb59d",
+                      "tertiary-fixed": "#e6e2dc",
+                      "on-primary-container": "#511400",
+                      "on-secondary": "#25351e",
+                      "glass-fill": "rgba(28, 28, 26, 0.6)",
+                      "error": "#D9534F",
+                      "surface-container-high": "#2a2a29",
+                      "secondary-fixed-dim": "#b9ccac",
+                      "tertiary": "#c9c6c0",
+                      "inverse-on-surface": "#31302f",
+                      "error-container": "#93000a",
+                      "on-secondary-fixed-variant": "#3b4b33",
+                      "surface": "#1C1C1A",
+                      "surface-container-lowest": "#0e0e0d",
+                      "on-tertiary-container": "#2b2a26",
+                      "on-surface-variant": "#dbc1b9"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.25rem",
+                      "lg": "0.5rem",
+                      "xl": "0.75rem",
+                      "full": "9999px"
+              },
+              "spacing": {
+                      "margin-page": "1.5rem",
+                      "button-height": "56px",
+                      "stack-lg": "1.5rem",
+                      "icon-button": "48px",
+                      "stack-sm": "0.5rem",
+                      "stack-md": "1rem",
+                      "margin-mobile": "1rem",
+                      "gutter": "1rem"
+              },
+              "fontFamily": {
+                      "body-md": ["Albert Sans"],
+                      "button-md": ["Albert Sans"],
+                      "headline-md": ["Fraunces"],
+                      "label-sm": ["Albert Sans"],
+                      "display-lg": ["Fraunces"],
+                      "headline-sm": ["Fraunces"],
+                      "label-md": ["Albert Sans"],
+                      "body-lg": ["Albert Sans"]
+              },
+              "fontSize": {
+                      "body-md": ["16px", {"lineHeight": "1.5", "fontWeight": "400"}],
+                      "button-md": ["15px", {"lineHeight": "1.2", "letterSpacing": "0.01em", "fontWeight": "600"}],
+                      "headline-md": ["28px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "label-sm": ["11px", {"lineHeight": "1.2", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "display-lg": ["32px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                      "headline-sm": ["22px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                      "label-md": ["13px", {"lineHeight": "1.4", "letterSpacing": "0.02em", "fontWeight": "500"}],
+                      "body-lg": ["18px", {"lineHeight": "1.5", "fontWeight": "400"}]
+              }
+            },
+          },
+        }
+      </script>
+<style>
+        .custom-toggle:checked {
+            background-color: theme('colors.primary-container');
+            border-color: theme('colors.primary-container');
+        }
+        .custom-toggle {
+            background-color: theme('colors.surface-variant');
+            border-color: theme('colors.surface-variant');
+        }
+        .custom-toggle:checked:after {
+            transform: translateX(100%);
+            border-color: white;
+        }
+        .custom-toggle:after {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            background-color: theme('colors.text-primary');
+            border: 1px solid theme('colors.text-primary');
+            border-radius: 50%;
+            height: 20px;
+            width: 20px;
+            transition: all 0.2s ease;
+        }
+      </style>
+</head>
+<body class="bg-background text-text-primary min-h-screen pb-24 md:pb-0">
+<!-- TopAppBar (Desktop / Web only based on constraints) -->
+<header class="hidden md:flex items-center justify-between px-margin-page py-4 w-full bg-background sticky top-0 z-40">
+<div class="flex items-center gap-4">
+<button aria-label="Menu" class="hover:opacity-80 transition-opacity p-2 text-on-surface-variant flex items-center justify-center rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="menu">menu</span>
+</button>
+<h1 class="font-headline-md text-headline-md tracking-wider text-on-surface">FRIGATE</h1>
+</div>
+<nav class="flex gap-6">
+<a class="text-on-surface-variant hover:opacity-80 transition-opacity font-label-md text-label-md" href="#">Home</a>
+<a class="text-on-surface-variant hover:opacity-80 transition-opacity font-label-md text-label-md" href="#">Moments</a>
+<a class="text-secondary font-label-md text-label-md" href="#">Settings</a>
+</nav>
+<button aria-label="Sensors" class="hover:opacity-80 transition-opacity p-2 text-on-surface-variant flex items-center justify-center rounded-full">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="sensors">sensors</span>
+</button>
+</header>
+<!-- Mobile Top Header Context -->
+<div class="md:hidden flex items-center justify-between px-margin-mobile py-4 w-full bg-background sticky top-0 z-40">
+<h1 class="font-headline-md text-headline-md tracking-wider text-on-surface">Settings</h1>
+</div>
+<main class="max-w-4xl mx-auto px-margin-mobile md:px-margin-page pt-6 pb-32 md:pb-12 space-y-stack-lg">
+<h2 class="hidden md:block font-display-lg text-display-lg mb-8">Settings</h2>
+<!-- Group: Server Info -->
+<section class="bg-surface rounded-xl p-6 border border-outline-variant/20 space-y-4">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined" data-icon="dns">dns</span> Server Information
+            </h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+<div class="space-y-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Version</p>
+<p class="font-body-md text-body-md">v0.12.1-7b003a3</p>
+</div>
+<div class="space-y-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Uptime</p>
+<p class="font-body-md text-body-md">14 days, 3 hours</p>
+</div>
+<div class="space-y-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">CPU Usage</p>
+<p class="font-body-md text-body-md">12%</p>
+</div>
+<div class="space-y-1">
+<p class="font-label-sm text-label-sm text-on-surface-variant uppercase tracking-wider">Memory</p>
+<p class="font-body-md text-body-md">2.4 GB / 8.0 GB</p>
+</div>
+</div>
+</section>
+<!-- Group: Storage -->
+<section class="bg-surface rounded-xl p-6 border border-outline-variant/20 space-y-6">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined" data-icon="hard_drive">hard_drive</span> Storage &amp; Disk
+            </h3>
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<p class="font-body-md text-body-md">Main Recordings (/media/frigate)</p>
+<p class="font-label-md text-label-md text-on-surface-variant">64% Used</p>
+</div>
+<div class="w-full h-2 bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary-container rounded-full" style="width: 64%"></div>
+</div>
+<div class="flex justify-between font-label-sm text-label-sm text-on-surface-variant">
+<span>1.2 TB Used</span>
+<span>1.8 TB Total</span>
+</div>
+</div>
+<div class="pt-4 border-t border-outline-variant/20 flex items-center justify-between">
+<div>
+<p class="font-body-md text-body-md">Auto-Purge Old Media</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Delete events older than 30 days to free space.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox" value="">
+<div class="w-11 h-6 rounded-full peer custom-toggle relative"></div>
+</label>
+</div>
+</section>
+<!-- Group: Detection & AI -->
+<section class="bg-surface rounded-xl p-6 border border-outline-variant/20 space-y-6">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined" data-icon="person_search">person_search</span> Detection Pipeline
+            </h3>
+<div class="space-y-6">
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-md text-body-md">Global Motion Detection</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Enable pixel-level motion analysis across all feeds.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox" value="">
+<div class="w-11 h-6 rounded-full peer custom-toggle relative"></div>
+</label>
+</div>
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-md text-body-md">Coral Edge TPU Inference</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Hardware acceleration for object detection.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input checked="" class="sr-only peer" type="checkbox" value="">
+<div class="w-11 h-6 rounded-full peer custom-toggle relative"></div>
+</label>
+</div>
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-md text-body-md">Face Recognition</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Attempt to identify known profiles in events.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox" value="">
+<div class="w-11 h-6 rounded-full peer custom-toggle relative"></div>
+</label>
+</div>
+</div>
+</section>
+<!-- Group: Notifications -->
+<section class="bg-surface rounded-xl p-6 border border-outline-variant/20 space-y-6">
+<h3 class="font-headline-sm text-headline-sm text-primary mb-2 flex items-center gap-2">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span> Alerts
+            </h3>
+<div class="space-y-6">
+<div class="flex items-center justify-between">
+<div>
+<p class="font-body-md text-body-md">Push Notifications</p>
+<p class="font-label-sm text-label-sm text-on-surface-variant mt-1">Receive alerts for critical detection events.</p>
+</div>
+<label class="relative inline-flex items-center cursor-pointer">
+<input class="sr-only peer" type="checkbox" value="">
+<div class="w-11 h-6 rounded-full peer custom-toggle relative"></div>
+</label>
+</div>
+</div>
+</section>
+</main>
+<!-- BottomNavBar (Mobile only) -->
+<nav class="md:hidden fixed bottom-6 left-0 right-0 z-50 flex justify-around items-center p-2 mx-auto w-[90%] max-w-md rounded-full backdrop-blur-xl bg-glass-fill border border-outline-variant/20 shadow-2xl">
+<a aria-label="Home" class="flex flex-col items-center justify-center text-on-surface-variant px-6 py-2 hover:bg-surface-variant/30 rounded-full transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-md text-label-md mt-1">Home</span>
+</a>
+<a aria-label="Moments" class="flex flex-col items-center justify-center text-on-surface-variant px-6 py-2 hover:bg-surface-variant/30 rounded-full transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="video_library">video_library</span>
+<span class="font-label-md text-label-md mt-1">Moments</span>
+</a>
+<a aria-label="Settings" class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-6 py-2 scale-90 transition-transform duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="settings" style="font-variation-settings: 'FILL' 1;">settings</span>
+<span class="font-label-md text-label-md mt-1">Settings</span>
+</a>
+</nav>
+</body></html>
