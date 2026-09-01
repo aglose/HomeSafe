@@ -49,11 +49,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.meticulouscreations.homesafe.data.BiometricCredentialStore
-import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.SavedCredentials
-import com.meticulouscreations.homesafe.network.FrigateApiClient
-import com.meticulouscreations.homesafe.network.FrigateSessionRepository
+import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
@@ -63,14 +65,23 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun SecureConnectionScreen(
-    connectionHistoryDao: ConnectionHistoryDao,
-    apiClient: FrigateApiClient,
-    sessionRepository: FrigateSessionRepository,
-    biometricCredentialStore: BiometricCredentialStore,
+    connectToServerUseCase: ConnectToServerUseCase,
+    signInWithBiometricsUseCase: SignInWithBiometricsUseCase,
+    saveBiometricCredentialsUseCase: SaveBiometricCredentialsUseCase,
+    forgetBiometricCredentialsUseCase: ForgetBiometricCredentialsUseCase,
+    observeMostRecentConnectionUseCase: ObserveMostRecentConnectionUseCase,
+    connectionRepository: ConnectionRepository,
     onConnected: () -> Unit,
 ) {
     val viewModel = viewModel {
-        SecureConnectionViewModel(connectionHistoryDao, apiClient, sessionRepository, biometricCredentialStore)
+        SecureConnectionViewModel(
+            connectToServerUseCase = connectToServerUseCase,
+            signInWithBiometricsUseCase = signInWithBiometricsUseCase,
+            saveBiometricCredentialsUseCase = saveBiometricCredentialsUseCase,
+            forgetBiometricCredentialsUseCase = forgetBiometricCredentialsUseCase,
+            observeMostRecentConnectionUseCase = observeMostRecentConnectionUseCase,
+            connectionRepository = connectionRepository,
+        )
     }
     val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()

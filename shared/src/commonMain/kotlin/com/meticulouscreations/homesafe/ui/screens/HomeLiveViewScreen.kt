@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,19 +30,27 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.meticulouscreations.homesafe.network.FrigateCamera
-import com.meticulouscreations.homesafe.network.FrigateSessionRepository
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 
 /** The "Home" tab's content: greeting, status, and the cameras reported by the connected Frigate server. */
 @Composable
-fun HomeTabContent(sessionRepository: FrigateSessionRepository) {
+fun HomeTabContent(
+    observeCamerasUseCase: ObserveCamerasUseCase,
+    connectionRepository: ConnectionRepository,
+    onCameraClick: (String) -> Unit = {},
+) {
     val extraColors = LocalFrigateExtraColors.current
-    val session by sessionRepository.session.collectAsStateWithLifecycle()
-    val cameras = session?.cameras.orEmpty()
+    val viewModel = viewModel { HomeViewModel(observeCamerasUseCase, connectionRepository) }
+    val cameras by viewModel.cameras.collectAsStateWithLifecycle()
+    val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -77,16 +86,21 @@ fun HomeTabContent(sessionRepository: FrigateSessionRepository) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {
-            val serverUrl = session?.serverUrl
             Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                cameras.forEach { camera -> CameraCard(camera, serverUrl.orEmpty()) }
+                cameras.forEach { camera ->
+                    CameraCard(
+                        camera = camera,
+                        serverUrl = serverUrl.orEmpty(),
+                        modifier = Modifier.clickable { onCameraClick(camera.name) },
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun CameraCard(camera: FrigateCamera, serverUrl: String, modifier: Modifier = Modifier) {
+private fun CameraCard(camera: Camera, serverUrl: String, modifier: Modifier = Modifier) {
     val extraColors = LocalFrigateExtraColors.current
     Box(
         modifier = modifier

@@ -9,14 +9,25 @@ import platform.Foundation.NSDocumentDirectory
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDomainMask
 
-actual fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao {
+private fun buildAppDatabase(): AppDatabase {
     val dbFilePath = documentDirectory() + "/homesafe.db"
-    val database = Room.databaseBuilder<AppDatabase>(name = dbFilePath)
+    return Room.databaseBuilder<AppDatabase>(name = dbFilePath)
         .setDriver(BundledSQLiteDriver())
         .setQueryCoroutineContext(Dispatchers.Default)
+        .fallbackToDestructiveMigration(dropAllTables = true)
         .build()
-    return database.connectionHistoryDao()
 }
+
+private val appDatabase: AppDatabase by lazy { buildAppDatabase() }
+
+actual fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao =
+    appDatabase.connectionHistoryDao()
+
+actual fun createCameraDao(context: PlatformContext): CameraDao =
+    appDatabase.cameraDao()
+
+actual fun createSettingsDao(context: PlatformContext): SettingsDao =
+    appDatabase.settingsDao()
 
 @OptIn(ExperimentalForeignApi::class)
 private fun documentDirectory(): String {

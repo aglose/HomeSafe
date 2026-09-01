@@ -22,6 +22,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,15 +31,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
+import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
-import com.meticulouscreations.homesafe.network.FrigateSessionRepository
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
-fun FrigateAppShell(sessionRepository: FrigateSessionRepository) {
+fun FrigateAppShell(appGraph: AppGraph) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -49,9 +50,17 @@ fun FrigateAppShell(sessionRepository: FrigateSessionRepository) {
                 backStack = topLevelBackStack.backStack,
                 onBack = { topLevelBackStack.removeLast() },
                 entryProvider = entryProvider {
-                    entry<TopLevelRoute.Home> { HomeTabContent(sessionRepository) }
-                    entry<TopLevelRoute.Moments> { ComingSoonTab(title = "Moments") }
-                    entry<TopLevelRoute.Settings> { ComingSoonTab(title = "Settings") }
+                    entry<TopLevelRoute.Home> { HomeTabNav(appGraph) }
+                    entry<TopLevelRoute.Moments> {
+                        MomentsTabContent(observeMomentsUseCase = appGraph.observeMomentsUseCase)
+                    }
+                    entry<TopLevelRoute.Settings> {
+                        SettingsTabContent(
+                            observeSettingsUseCase = appGraph.observeSettingsUseCase,
+                            updateSettingsUseCase = appGraph.updateSettingsUseCase,
+                            connectionRepository = appGraph.connectionRepository,
+                        )
+                    }
                 },
             )
         }
@@ -87,15 +96,34 @@ private fun FrigateTopBar() {
     }
 }
 
+private data object CameraListRoute
+private data class CameraDetailRoute(val cameraName: String)
+
+/** The Home tab's own nested navigation: the camera list, and drilling into a camera's detail screen. */
 @Composable
-private fun ComingSoonTab(title: String) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = "$title — Coming soon",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
+private fun HomeTabNav(appGraph: AppGraph) {
+    val backStack = remember { mutableStateListOf<Any>(CameraListRoute) }
+    NavDisplay(
+        backStack = backStack,
+        onBack = { backStack.removeLastOrNull() },
+        entryProvider = entryProvider {
+            entry<CameraListRoute> {
+                HomeTabContent(
+                    observeCamerasUseCase = appGraph.observeCamerasUseCase,
+                    connectionRepository = appGraph.connectionRepository,
+                    onCameraClick = { cameraName -> backStack.add(CameraDetailRoute(cameraName)) },
+                )
+            }
+            entry<CameraDetailRoute> { route ->
+                CameraDetailScreen(
+                    cameraName = route.cameraName,
+                    observeCamerasUseCase = appGraph.observeCamerasUseCase,
+                    connectionRepository = appGraph.connectionRepository,
+                    onBack = { backStack.removeLastOrNull() },
+                )
+            }
+        },
+    )
 }
 
 @Composable
