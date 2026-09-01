@@ -33,11 +33,12 @@ import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.network.FrigateSessionRepository
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
-fun FrigateAppShell() {
+fun FrigateAppShell(sessionRepository: FrigateSessionRepository) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -48,7 +49,7 @@ fun FrigateAppShell() {
                 backStack = topLevelBackStack.backStack,
                 onBack = { topLevelBackStack.removeLast() },
                 entryProvider = entryProvider {
-                    entry<TopLevelRoute.Home> { HomeTabContent() }
+                    entry<TopLevelRoute.Home> { HomeTabContent(sessionRepository) }
                     entry<TopLevelRoute.Moments> { ComingSoonTab(title = "Moments") }
                     entry<TopLevelRoute.Settings> { ComingSoonTab(title = "Settings") }
                 },
