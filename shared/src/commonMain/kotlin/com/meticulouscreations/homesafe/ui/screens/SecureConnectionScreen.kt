@@ -33,12 +33,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 
 @Composable
-fun SecureConnectionScreen(onConnect: (serverUrl: String) -> Unit) {
-    var serverUrl by remember { mutableStateOf("http://frigate.local:8971") }
+fun SecureConnectionScreen(
+    connectionHistoryDao: ConnectionHistoryDao,
+    onConnect: (serverUrl: String) -> Unit,
+) {
+    val viewModel = viewModel { SecureConnectionViewModel(connectionHistoryDao) }
+    val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
+    var serverUrl by remember(mostRecentConnection) {
+        mutableStateOf(mostRecentConnection?.serverUrl ?: "http://frigate.local:8971")
+    }
     val extraColors = LocalFrigateExtraColors.current
 
     Box(
@@ -128,7 +139,10 @@ fun SecureConnectionScreen(onConnect: (serverUrl: String) -> Unit) {
 
             // Connect button
             Button(
-                onClick = { onConnect(serverUrl) },
+                onClick = {
+                    viewModel.recordConnection(serverUrl)
+                    onConnect(serverUrl)
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
