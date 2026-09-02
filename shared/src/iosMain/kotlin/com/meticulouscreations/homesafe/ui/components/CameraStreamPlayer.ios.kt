@@ -145,7 +145,17 @@ actual fun CameraStreamPlayer(
             return AVPlayerItem(asset = asset).apply { preferredForwardBufferDuration = PREFERRED_FORWARD_BUFFER_SECONDS }
         }
 
-        fun registerObservers(item: AVPlayerItem) {
+        // registerObservers, loadLive, scheduleRetryOnLiveEnd and onStallOrFailure call each other
+        // (a live source's failure/stall path retries by reloading, which re-registers observers,
+        // whose end/failure/stall callbacks feed back into the same retry path) — local `fun`
+        // declarations can't forward-reference each other like that, so these are declared as
+        // `lateinit var` and assigned in a block below before anything can invoke them.
+        lateinit var registerObservers: (AVPlayerItem) -> Unit
+        lateinit var loadLive: (VideoSource.Live) -> Unit
+        lateinit var scheduleRetryOnLiveEnd: () -> Unit
+        lateinit var onStallOrFailure: () -> Unit
+
+        registerObservers = { item ->
             endObserver = notificationCenter.addObserverForName(
                 name = AVPlayerItemDidPlayToEndTimeNotification,
                 `object` = item,
@@ -168,32 +178,33 @@ actual fun CameraStreamPlayer(
             ) { onStallOrFailure() }
         }
 
-        fun loadLive(toLoad: VideoSource.Live) {
+        loadLive = { toLoad ->
             val item = newItem(toLoad)
             player.replaceCurrentItemWithPlayerItem(item)
             registerObservers(item)
         }
 
-        fun scheduleRetryOnLiveEnd() {
-            val failed = currentSource as? VideoSource.Live ?: return
-            if (retryScheduled || consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) return
-            retryScheduled = true
-            consecutiveFailures++
-            val backoffMs = min(
-                BASE_RETRY_DELAY_MS * 2.0.pow(consecutiveFailures - 1).toLong(),
-                MAX_RETRY_DELAY_MS,
-            )
-            coroutineScope.launch {
-                delay(backoffMs)
-                retryScheduled = false
-                if (currentSource == failed) {
-                    loadLive(failed)
-                    player.play()
+        scheduleRetryOnLiveEnd = {
+            val failed = currentSource as? VideoSource.Live
+            if (failed != null && !retryScheduled && consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
+                retryScheduled = true
+                consecutiveFailures++
+                val backoffMs = min(
+                    BASE_RETRY_DELAY_MS * 2.0.pow(consecutiveFailures - 1).toLong(),
+                    MAX_RETRY_DELAY_MS,
+                )
+                coroutineScope.launch {
+                    delay(backoffMs)
+                    retryScheduled = false
+                    if (currentSource == failed) {
+                        loadLive(failed)
+                        player.play()
+                    }
                 }
             }
         }
 
-        fun onStallOrFailure() {
+        onStallOrFailure = {
             when (val failed = currentSource) {
                 is VideoSource.Live -> scheduleRetryOnLiveEnd()
                 is VideoSource.Recording -> if (reportedErrorForItem !== player.currentItem) {
