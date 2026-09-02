@@ -42,3 +42,7 @@ fun formatEpochSeconds(seconds: Double): String {
     val millis = totalMillis % 1000
     return "$whole.${millis.toString().padStart(3, '0')}"
 }
+
+/** Frigate's cached latest-snapshot endpoint — always available once a camera has processed a frame. */
+fun frigateSnapshotUrl(serverUrl: String, cameraName: String): String =
+    "${serverUrl.trimEnd('/')}/api/$cameraName/latest.jpg"

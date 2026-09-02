@@ -17,9 +17,13 @@ sealed interface VideoSource {
     /** HTTP headers to send with every request for this source (playlists and segments alike). */
     val headers: Map<String, String>
 
-    /** go2rtc's live HLS stream. */
+    /**
+     * go2rtc's live HLS stream. While no video frame has been decoded yet (cold start, or a
+     * reconnect after an error), platforms that support it show [posterUrl] — Frigate's cached
+     * latest-snapshot image — instead of a black or white box.
+     */
     @Immutable
-    data class Live(override val url: String) : VideoSource {
+    data class Live(override val url: String, val posterUrl: String? = null) : VideoSource {
         override val headers: Map<String, String> get() = emptyMap()
     }
 
@@ -68,8 +72,8 @@ expect fun CameraStreamPlayer(
 
 /** Plays a camera's live HLS stream, nothing more. */
 @Composable
-fun CameraStreamPlayer(streamUrl: String, modifier: Modifier = Modifier) {
-    val request = remember(streamUrl) { PlayerRequest(VideoSource.Live(streamUrl)) }
+fun CameraStreamPlayer(streamUrl: String, modifier: Modifier = Modifier, posterUrl: String? = null) {
+    val request = remember(streamUrl, posterUrl) { PlayerRequest(VideoSource.Live(streamUrl, posterUrl)) }
     CameraStreamPlayer(request = request, modifier = modifier)
 }
 

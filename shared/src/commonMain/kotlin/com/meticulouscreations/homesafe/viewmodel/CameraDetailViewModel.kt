@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
+import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
@@ -34,7 +35,7 @@ import kotlin.time.ExperimentalTime
 
 sealed interface CameraDetailUiState {
     data object Loading : CameraDetailUiState
-    data class Found(val camera: Camera, val streamUrl: String?) : CameraDetailUiState
+    data class Found(val camera: Camera, val streamUrl: String?, val posterUrl: String?) : CameraDetailUiState
     data object NotFound : CameraDetailUiState
 }
 
@@ -85,11 +86,18 @@ class CameraDetailViewModel(
         connectionRepository.currentServerUrl,
     ) { cameras, serverUrl ->
         val camera = cameras.firstOrNull { it.name == cameraName }
+        val posterUrl = serverUrl?.let { frigateSnapshotUrl(it, cameraName) }
         when {
             camera == null -> CameraDetailUiState.NotFound
             camera.enabled && serverUrl != null ->
-                CameraDetailUiState.Found(camera, frigateLiveStreamUrl(serverUrl, cameraName))
-            else -> CameraDetailUiState.Found(camera, streamUrl = null)
+                CameraDetailUiState.Found(
+                    camera = camera,
+                    // Full quality, always — the grid's (possibly lower-quality) stream is only
+                    // used in the multi-camera list, never here.
+                    streamUrl = frigateLiveStreamUrl(serverUrl, camera.liveStreamName),
+                    posterUrl = posterUrl,
+                )
+            else -> CameraDetailUiState.Found(camera, streamUrl = null, posterUrl = posterUrl)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraDetailUiState.Loading)
 
@@ -112,13 +120,18 @@ class CameraDetailViewModel(
         // While live, follow the camera's live URL (it appears once connected, disappears if the camera is disabled).
         viewModelScope.launch {
             uiState.collect { state ->
-                val liveUrl = (state as? CameraDetailUiState.Found)?.streamUrl
+                val found = state as? CameraDetailUiState.Found
+                val liveUrl = found?.streamUrl
+                val posterUrl = found?.posterUrl
                 _playback.update { current ->
                     when {
                         !current.isLive -> current
                         liveUrl == null -> current.copy(playerRequest = null)
-                        current.playerRequest?.source == VideoSource.Live(liveUrl) -> current
-                        else -> current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl)), isPlaying = true)
+                        current.playerRequest?.source == VideoSource.Live(liveUrl, posterUrl) -> current
+                        else -> current.copy(
+                            playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl)),
+                            isPlaying = true,
+                        )
                     }
                 }
             }
@@ -184,7 +197,8 @@ class CameraDetailViewModel(
 
     fun goLive() {
         playlistLoadJob?.cancel()
-        val liveUrl = (uiState.value as? CameraDetailUiState.Found)?.streamUrl
+        val found = uiState.value as? CameraDetailUiState.Found
+        val liveUrl = found?.streamUrl
         _playback.update {
             it.copy(
                 playlist = null,
@@ -192,7 +206,7 @@ class CameraDetailViewModel(
                 scrubEpochSeconds = null,
                 isLoadingPlaylist = false,
                 isPlaying = true,
-                playerRequest = liveUrl?.let { url -> PlayerRequest(VideoSource.Live(url)) },
+                playerRequest = liveUrl?.let { url -> PlayerRequest(VideoSource.Live(url, found.posterUrl)) },
             )
         }
     }

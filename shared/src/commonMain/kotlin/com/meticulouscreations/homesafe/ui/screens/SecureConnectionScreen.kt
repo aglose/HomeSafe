@@ -96,6 +96,16 @@ fun SecureConnectionScreen(
     val coroutineScope = rememberCoroutineScope()
     val isConnecting = uiState is ConnectUiState.Connecting
 
+    // If biometric login is set up, prompt for it immediately on launch instead of making the
+    // user tap the button first. Keyed on Unit so it only fires once per screen entry — if the
+    // user cancels or it fails, they land on the manual form and can retry via the button
+    // without being re-prompted in a loop.
+    LaunchedEffect(Unit) {
+        if (viewModel.biometricLoginAvailable && hasSavedBiometricCredentials) {
+            viewModel.signInWithBiometrics()
+        }
+    }
+
     // A successful login (manual or biometric) either offers to save credentials for next
     // time, or — if there's nothing new to offer — proceeds straight into the app.
     LaunchedEffect(uiState) {
