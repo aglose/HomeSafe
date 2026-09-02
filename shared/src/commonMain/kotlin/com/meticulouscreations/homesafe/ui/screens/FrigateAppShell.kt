@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -99,31 +101,40 @@ private fun FrigateTopBar() {
 private data object CameraListRoute
 private data class CameraDetailRoute(val cameraName: String)
 
-/** The Home tab's own nested navigation: the camera list, and drilling into a camera's detail screen. */
+/**
+ * The Home tab's own nested navigation: the camera list, and drilling into a camera's detail
+ * screen. The [SharedTransitionLayout] lets the tapped camera's video area animate from its grid
+ * card into the detail screen's player (and back), keyed by camera name on both sides.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun HomeTabNav(appGraph: AppGraph) {
     val backStack = remember { mutableStateListOf<Any>(CameraListRoute) }
-    NavDisplay(
-        backStack = backStack,
-        onBack = { backStack.removeLastOrNull() },
-        entryProvider = entryProvider {
-            entry<CameraListRoute> {
-                HomeTabContent(
-                    observeCamerasUseCase = appGraph.observeCamerasUseCase,
-                    connectionRepository = appGraph.connectionRepository,
-                    onCameraClick = { cameraName -> backStack.add(CameraDetailRoute(cameraName)) },
-                )
-            }
-            entry<CameraDetailRoute> { route ->
-                CameraDetailScreen(
-                    cameraName = route.cameraName,
-                    observeCamerasUseCase = appGraph.observeCamerasUseCase,
-                    connectionRepository = appGraph.connectionRepository,
-                    onBack = { backStack.removeLastOrNull() },
-                )
-            }
-        },
-    )
+    SharedTransitionLayout {
+        NavDisplay(
+            backStack = backStack,
+            onBack = { backStack.removeLastOrNull() },
+            entryProvider = entryProvider {
+                entry<CameraListRoute> {
+                    HomeTabContent(
+                        observeCamerasUseCase = appGraph.observeCamerasUseCase,
+                        connectionRepository = appGraph.connectionRepository,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        onCameraClick = { cameraName -> backStack.add(CameraDetailRoute(cameraName)) },
+                    )
+                }
+                entry<CameraDetailRoute> { route ->
+                    CameraDetailScreen(
+                        cameraName = route.cameraName,
+                        observeCamerasUseCase = appGraph.observeCamerasUseCase,
+                        connectionRepository = appGraph.connectionRepository,
+                        sharedTransitionScope = this@SharedTransitionLayout,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+            },
+        )
+    }
 }
 
 @Composable

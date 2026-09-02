@@ -6,7 +6,7 @@ import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
 import com.meticulouscreations.homesafe.PlatformContext
 
-@Database(entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class], version = 2)
+@Database(entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class], version = 3)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao
