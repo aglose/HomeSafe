@@ -4,6 +4,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun CameraStreamPlayer(streamUrl: String, modifier: Modifier) {
+actual fun CameraStreamPlayer(
+    request: PlayerRequest,
+    modifier: Modifier,
+    onPositionChanged: (positionMs: Long) -> Unit,
+    onBufferingChanged: (isBuffering: Boolean) -> Unit,
+    onPlaybackEnded: () -> Unit,
+    onPlaybackError: () -> Unit,
+) {
     LiveViewUnavailablePlaceholder(modifier)
 }

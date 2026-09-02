@@ -3,12 +3,15 @@ package com.meticulouscreations.homesafe.network
 import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.cookies.cookies
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import io.ktor.http.renderCookieHeader
 
 /**
  * Talks to a Frigate NVR's REST API. Login establishes a session cookie on [httpClient]
@@ -33,4 +36,30 @@ class FrigateApiClient(private val httpClient: HttpClient) {
             .cameras
             .map { (name, config) -> FrigateCamera(name = name, enabled = config.enabled) }
     }
+
+    /** Recorded clips of [cameraName] overlapping [afterEpochSeconds]..[beforeEpochSeconds], oldest first. */
+    suspend fun getRecordings(
+        serverUrl: String,
+        cameraName: String,
+        afterEpochSeconds: Double,
+        beforeEpochSeconds: Double,
+    ): Result<List<FrigateRecording>> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/$cameraName/recordings") {
+            parameter("after", formatEpochSeconds(afterEpochSeconds))
+            parameter("before", formatEpochSeconds(beforeEpochSeconds))
+        }
+        check(response.status.isSuccess()) { "Couldn't load recordings: ${response.status}" }
+        response.body<List<FrigateRecording>>()
+    }
+
+    /**
+     * The session cookies [httpClient] holds for [serverUrl], rendered as a `Cookie` request
+     * header value — so a native video player (which has its own HTTP stack and no access to
+     * Ktor's cookie jar) can hit Frigate's authenticated `/vod/` endpoints. Null when the server
+     * issued no cookies, e.g. when auth is disabled.
+     */
+    suspend fun sessionCookieHeader(serverUrl: String): String? =
+        httpClient.cookies(serverUrl)
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("; ", transform = ::renderCookieHeader)
 }

@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.data.CameraRepositoryImpl
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.ConnectionRepositoryImpl
 import com.meticulouscreations.homesafe.data.MomentsRepositoryImpl
+import com.meticulouscreations.homesafe.data.RecordingsRepositoryImpl
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.SettingsRepositoryImpl
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
@@ -18,9 +19,12 @@ import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
@@ -52,6 +56,7 @@ interface AppGraph {
     val connectionRepository: ConnectionRepository
     val cameraRepository: CameraRepository
     val momentsRepository: MomentsRepository
+    val recordingsRepository: RecordingsRepository
     val settingsRepository: SettingsRepository
 
     val connectToServerUseCase: ConnectToServerUseCase
@@ -63,6 +68,8 @@ interface AppGraph {
     val observeMomentsUseCase: ObserveMomentsUseCase
     val observeSettingsUseCase: ObserveSettingsUseCase
     val updateSettingsUseCase: UpdateSettingsUseCase
+    val getRecordingHistoryUseCase: GetRecordingHistoryUseCase
+    val getRecordingStreamUseCase: GetRecordingStreamUseCase
 
     @Provides
     fun providePlatform(): Platform = getPlatform()
@@ -110,6 +117,9 @@ interface AppGraph {
 
     @Provides
     fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository = impl
+
+    @Provides
+    fun bindRecordingsRepository(impl: RecordingsRepositoryImpl): RecordingsRepository = impl
 
     @DependencyGraph.Factory
     fun interface Factory {
