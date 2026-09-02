@@ -4,6 +4,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 
 @Composable
-actual fun CameraStreamPlayer(streamUrl: String, modifier: Modifier) {
+actual fun CameraStreamPlayer(streamUrl: String, modifier: Modifier, posterUrl: String?) {
     LiveViewUnavailablePlaceholder(modifier)
 }

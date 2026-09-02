@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -45,6 +47,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
@@ -54,17 +57,22 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import kotlin.math.roundToInt
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun CameraDetailScreen(
     cameraName: String,
     observeCamerasUseCase: ObserveCamerasUseCase,
     connectionRepository: ConnectionRepository,
+    sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
 ) {
-    val viewModel = viewModel { CameraDetailViewModel(cameraName, observeCamerasUseCase, connectionRepository) }
+    val viewModel = viewModel(key = cameraName) {
+        CameraDetailViewModel(cameraName, observeCamerasUseCase, connectionRepository)
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val state = uiState as? CameraDetailUiState.Found
     val isLive = state?.streamUrl != null
+    val animatedVisibilityScope = LocalNavAnimatedContentScope.current
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -101,7 +109,12 @@ fun CameraDetailScreen(
                 .verticalScroll(rememberScrollState()),
         ) {
             Box(
-                modifier = Modifier
+                modifier = with(sharedTransitionScope) {
+                    Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                }
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
                     .background(MaterialTheme.colorScheme.surfaceContainerLowest),
@@ -111,6 +124,7 @@ fun CameraDetailScreen(
                     CameraStreamPlayer(
                         streamUrl = liveStreamUrl,
                         modifier = Modifier.fillMaxSize(),
+                        posterUrl = state.posterUrl,
                     )
                 } else {
                     Icon(

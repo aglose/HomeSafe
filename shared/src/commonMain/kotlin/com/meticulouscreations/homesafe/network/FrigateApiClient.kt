@@ -31,6 +31,32 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         check(response.status.isSuccess()) { "Couldn't load cameras: ${response.status}" }
         response.body<FrigateConfigResponse>()
             .cameras
-            .map { (name, config) -> FrigateCamera(name = name, enabled = config.enabled) }
+            .map { (name, config) -> toFrigateCamera(name, config) }
+    }
+
+    /**
+     * Resolves a camera's full-quality and grid stream names from its (entirely user-defined,
+     * optional) `live.streams` config. When exactly two distinct go2rtc stream names are
+     * configured, the one matching the camera's own name is treated as the full-quality stream
+     * (Frigate's docs note this match is required for its own mse/webrtc live views) and the
+     * other as the lower-quality grid candidate. Any other shape (none configured, only one
+     * stream, or three or more) falls back to using the camera name for both — today's behavior,
+     * unchanged.
+     */
+    private fun toFrigateCamera(name: String, config: FrigateCameraConfig): FrigateCamera {
+        val distinctStreamNames = config.live?.streams?.values?.distinct().orEmpty()
+        val (liveStreamName, gridStreamName) = if (distinctStreamNames.size == 2) {
+            val main = distinctStreamNames.firstOrNull { it == name }
+            val sub = distinctStreamNames.firstOrNull { it != name }
+            if (main != null && sub != null) main to sub else name to name
+        } else {
+            name to name
+        }
+        return FrigateCamera(
+            name = name,
+            enabled = config.enabled,
+            liveStreamName = liveStreamName,
+            gridStreamName = gridStreamName,
+        )
     }
 }
