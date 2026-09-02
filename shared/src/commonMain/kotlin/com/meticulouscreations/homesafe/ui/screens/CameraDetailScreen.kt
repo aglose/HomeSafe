@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +46,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
@@ -59,6 +62,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun CameraDetailScreen(
     cameraName: String,
@@ -66,9 +70,10 @@ fun CameraDetailScreen(
     connectionRepository: ConnectionRepository,
     getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     getRecordingStreamUseCase: GetRecordingStreamUseCase,
+    sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
 ) {
-    val viewModel = viewModel {
+    val viewModel = viewModel(key = cameraName) {
         CameraDetailViewModel(
             cameraName = cameraName,
             observeCamerasUseCase = observeCamerasUseCase,
@@ -80,6 +85,7 @@ fun CameraDetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
+    val animatedVisibilityScope = LocalNavAnimatedContentScope.current
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -119,6 +125,12 @@ fun CameraDetailScreen(
                 playback = playback,
                 cameraAvailable = cameraAvailable,
                 viewModel = viewModel,
+                modifier = with(sharedTransitionScope) {
+                    Modifier.sharedBounds(
+                        sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                    )
+                },
             )
 
             Row(
@@ -193,12 +205,13 @@ private fun PlayerSurface(
     playback: PlaybackUiState,
     cameraAvailable: Boolean,
     viewModel: CameraDetailViewModel,
+    modifier: Modifier = Modifier,
 ) {
     val request = playback.playerRequest
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .background(MaterialTheme.colorScheme.surfaceContainerLowest),

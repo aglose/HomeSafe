@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -12,10 +14,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
@@ -31,20 +33,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
+import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 
 /** The "Home" tab's content: greeting, status, and the cameras reported by the connected Frigate server. */
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeTabContent(
     observeCamerasUseCase: ObserveCamerasUseCase,
     connectionRepository: ConnectionRepository,
+    sharedTransitionScope: SharedTransitionScope,
     onCameraClick: (String) -> Unit = {},
 ) {
     val extraColors = LocalFrigateExtraColors.current
@@ -52,58 +58,75 @@ fun HomeTabContent(
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
     val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
 
-    Column(
+    // A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed —
+    // and so their video decoders aren't running — at all; with several cameras each running a
+    // live decode, that concurrency was a real contributor to stutter.
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp)
             .padding(top = 8.dp, bottom = 120.dp),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(
-                text = "Good Evening",
-                style = MaterialTheme.typography.displayLarge,
-                color = extraColors.textPrimary,
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                PulsingDot(color = MaterialTheme.colorScheme.secondary)
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "System Secure",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.secondary,
+                    text = "Good Evening",
+                    style = MaterialTheme.typography.displayLarge,
+                    color = extraColors.textPrimary,
                 )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    PulsingDot(color = MaterialTheme.colorScheme.secondary)
+                    Text(
+                        text = "System Secure",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.secondary,
+                    )
+                }
             }
         }
 
         if (cameras.isEmpty()) {
-            Text(
-                text = "No cameras found on this server.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            item {
+                Text(
+                    text = "No cameras found on this server.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(24.dp)) {
-                cameras.forEach { camera ->
-                    CameraCard(
-                        camera = camera,
-                        serverUrl = serverUrl.orEmpty(),
-                        modifier = Modifier.clickable { onCameraClick(camera.name) },
-                    )
-                }
+            items(cameras, key = { it.name }) { camera ->
+                CameraCard(
+                    camera = camera,
+                    serverUrl = serverUrl.orEmpty(),
+                    sharedTransitionScope = sharedTransitionScope,
+                    modifier = Modifier.clickable { onCameraClick(camera.name) },
+                )
             }
         }
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun CameraCard(camera: Camera, serverUrl: String, modifier: Modifier = Modifier) {
+private fun CameraCard(
+    camera: Camera,
+    serverUrl: String,
+    sharedTransitionScope: SharedTransitionScope,
+    modifier: Modifier = Modifier,
+) {
     val extraColors = LocalFrigateExtraColors.current
+    val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     Box(
-        modifier = modifier
+        modifier = with(sharedTransitionScope) {
+            modifier.sharedBounds(
+                sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(camera.name)),
+                animatedVisibilityScope = animatedVisibilityScope,
+            )
+        }
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             .clip(RoundedCornerShape(20.dp))
@@ -115,9 +138,12 @@ private fun CameraCard(camera: Camera, serverUrl: String, modifier: Modifier = M
             ),
     ) {
         if (camera.enabled) {
+            // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
+            // reserved for the single-camera detail view.
             CameraStreamPlayer(
-                streamUrl = frigateLiveStreamUrl(serverUrl, camera.name),
+                streamUrl = frigateLiveStreamUrl(serverUrl, camera.gridStreamName),
                 modifier = Modifier.fillMaxSize(),
+                posterUrl = frigateSnapshotUrl(serverUrl, camera.name),
             )
         } else {
             Icon(
@@ -145,6 +171,9 @@ private fun CameraCard(camera: Camera, serverUrl: String, modifier: Modifier = M
         }
     }
 }
+
+/** The shared-element key for a camera's video area, matched between the grid card and the detail screen. */
+internal fun cameraVideoSharedKey(cameraName: String): String = "camera-video-$cameraName"
 
 @Composable
 private fun StatusBadge(enabled: Boolean, textColor: Color, pillColor: Color) {

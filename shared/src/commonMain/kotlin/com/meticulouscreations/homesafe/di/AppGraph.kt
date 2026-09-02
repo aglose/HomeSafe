@@ -53,6 +53,13 @@ interface AppGraph {
     val frigateApiClient: FrigateApiClient
     val biometricCredentialStore: BiometricCredentialStore
 
+    /**
+     * The one shared Ktor client. Login stores Frigate's session cookie on it, so anything else
+     * that must hit the authenticated API — including Coil loading camera snapshots — has to
+     * go through this same instance rather than its own cookie-less client.
+     */
+    val httpClient: HttpClient
+
     val connectionRepository: ConnectionRepository
     val cameraRepository: CameraRepository
     val momentsRepository: MomentsRepository

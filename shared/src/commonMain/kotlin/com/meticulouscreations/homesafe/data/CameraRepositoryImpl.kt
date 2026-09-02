@@ -30,7 +30,14 @@ class CameraRepositoryImpl(
                 flowOf(emptyList())
             } else {
                 cameraDao.observeByServer(serverUrl).map { entities ->
-                    entities.map { Camera(name = it.name, enabled = it.enabled) }
+                    entities.map {
+                        Camera(
+                            name = it.name,
+                            enabled = it.enabled,
+                            liveStreamName = it.liveStreamName,
+                            gridStreamName = it.gridStreamName,
+                        )
+                    }
                 }
             }
         }

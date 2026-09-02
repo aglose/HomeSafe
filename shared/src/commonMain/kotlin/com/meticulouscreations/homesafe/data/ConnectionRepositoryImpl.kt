@@ -41,7 +41,17 @@ class ConnectionRepositoryImpl(
             .mapCatching { apiClient.getCameras(serverUrl).getOrThrow() }
             .onSuccess { cameras ->
                 cameraDao.deleteByServer(serverUrl)
-                cameraDao.insertAll(cameras.map { CameraEntity(serverUrl = serverUrl, name = it.name, enabled = it.enabled) })
+                cameraDao.insertAll(
+                    cameras.map {
+                        CameraEntity(
+                            serverUrl = serverUrl,
+                            name = it.name,
+                            enabled = it.enabled,
+                            liveStreamName = it.liveStreamName,
+                            gridStreamName = it.gridStreamName,
+                        )
+                    },
+                )
                 connectionHistoryDao.insert(
                     ConnectionHistoryEntity(serverUrl = serverUrl, connectedAtEpochMillis = Clock.System.now().toEpochMilliseconds()),
                 )
