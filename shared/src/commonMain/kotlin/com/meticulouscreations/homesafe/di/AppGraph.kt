@@ -34,6 +34,8 @@ import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCa
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.NetworkMonitor
+import com.meticulouscreations.homesafe.network.createNetworkMonitor
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provides
@@ -44,6 +46,9 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.serialization.json.Json
 
 @DependencyGraph(AppScope::class)
@@ -100,6 +105,16 @@ interface AppGraph {
     @Provides
     fun provideBiometricCredentialStore(platformContext: PlatformContext): BiometricCredentialStore =
         createBiometricCredentialStore(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideNetworkMonitor(platformContext: PlatformContext): NetworkMonitor =
+        createNetworkMonitor(platformContext)
+
+    /** An app-lifetime scope for background work that outlives any one screen, e.g. following network changes. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideAppCoroutineScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     @SingleIn(AppScope::class)
     @Provides

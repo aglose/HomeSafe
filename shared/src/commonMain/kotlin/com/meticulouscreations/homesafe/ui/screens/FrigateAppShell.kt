@@ -19,11 +19,13 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -31,22 +33,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.di.AppGraph
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
 fun FrigateAppShell(appGraph: AppGraph) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
+    val activeConnection by appGraph.connectionRepository.activeConnection.collectAsStateWithLifecycle()
 
     Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Column(modifier = Modifier.fillMaxSize()) {
-            FrigateTopBar()
+            FrigateTopBar(activeConnection = activeConnection)
             NavDisplay(
                 modifier = Modifier.weight(1f),
                 backStack = topLevelBackStack.backStack,
@@ -76,7 +83,7 @@ fun FrigateAppShell(appGraph: AppGraph) {
 }
 
 @Composable
-private fun FrigateTopBar() {
+private fun FrigateTopBar(activeConnection: ActiveConnection?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -92,9 +99,38 @@ private fun FrigateTopBar() {
             style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
             color = MaterialTheme.colorScheme.onSurface,
         )
-        IconButton(onClick = {}, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.Filled.Sensors, contentDescription = "Status", tint = MaterialTheme.colorScheme.primary)
+        val route = activeConnection?.route
+        if (route == null) {
+            IconButton(onClick = {}, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Filled.Sensors, contentDescription = "Status", tint = MaterialTheme.colorScheme.primary)
+            }
+        } else {
+            ConnectionRouteBadge(route)
         }
+    }
+}
+
+/** "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. */
+@Composable
+private fun ConnectionRouteBadge(route: ConnectionRoute) {
+    val tint = when (route) {
+        ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
+        ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
+    }
+    Row(
+        modifier = Modifier
+            .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (route == ConnectionRoute.LOCAL_NETWORK) {
+            Icon(Icons.Filled.Wifi, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+        } else {
+            PulsingDot(color = tint, size = 6.dp, pulsing = false)
+        }
+        Text(text = route.label, style = MaterialTheme.typography.labelSmall, color = tint)
     }
 }
 

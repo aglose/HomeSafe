@@ -1,12 +1,17 @@
 package com.meticulouscreations.homesafe.data
 
+import androidx.room3.AutoMigration
 import androidx.room3.ConstructedBy
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
 import com.meticulouscreations.homesafe.PlatformContext
 
-@Database(entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class], version = 3)
+@Database(
+    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class],
+    version = 4,
+    autoMigrations = [AutoMigration(from = 3, to = 4)],
+)
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao

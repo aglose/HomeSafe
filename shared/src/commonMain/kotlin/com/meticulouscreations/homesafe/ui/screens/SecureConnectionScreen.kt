@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -89,6 +90,7 @@ fun SecureConnectionScreen(
     var serverUrl by remember(mostRecentConnection) {
         mutableStateOf(mostRecentConnection?.serverUrl ?: "http://frigate.local:8971")
     }
+    var localUrl by remember(mostRecentConnection) { mutableStateOf(mostRecentConnection?.localUrl.orEmpty()) }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var biometricSaveOffer by remember { mutableStateOf<SavedCredentials?>(null) }
@@ -197,7 +199,32 @@ fun SecureConnectionScreen(
                         enabled = !isConnecting,
                     )
                     Text(
-                        text = "Connect to your local or remote NVR instance.",
+                        text = "Your NVR's Tailscale address — works from anywhere.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        modifier = Modifier.padding(start = 16.dp),
+                    )
+                }
+
+                // Optional LAN address: used automatically whenever it answers, i.e. when this
+                // device is on the same Wi-Fi as the server, for direct (no-VPN) video.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Local network URL (optional)",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 16.dp),
+                    )
+                    ConnectionTextField(
+                        value = localUrl,
+                        onValueChange = { localUrl = it },
+                        placeholder = "http://192.168.x.x:8971",
+                        leadingIcon = Icons.Filled.Wifi,
+                        extraColors = extraColors,
+                        enabled = !isConnecting,
+                    )
+                    Text(
+                        text = "Used automatically when you're on the same Wi-Fi as the server, for the fastest video. Falls back to the address above anywhere else.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.tertiaryContainer,
                         modifier = Modifier.padding(start = 16.dp),
@@ -241,7 +268,7 @@ fun SecureConnectionScreen(
             ) {
                 // Connect button
                 Button(
-                    onClick = { viewModel.connect(serverUrl, username, password) },
+                    onClick = { viewModel.connect(serverUrl, localUrl, username, password) },
                     enabled = !isConnecting,
                     modifier = Modifier
                         .fillMaxWidth()
