@@ -25,6 +25,19 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
   - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
 - iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
 
+### Local network vs Tailscale
+
+The connect screen takes two addresses: the server's Tailscale URL (required) and its private
+LAN URL (optional). On sign-in, and again whenever the OS reports a network change, the app
+probes the LAN address with a short timeout and uses it for everything — API, snapshots, and
+live/recorded video — when it answers; otherwise it uses the Tailscale address. The choice is
+made by probing rather than by reading the SSID, so a router that splits one LAN into several
+SSIDs needs no special handling, and the app never needs location permission. The active route
+shows as a badge in the top bar and under Settings → Server Information.
+
+For the LAN route to work the server has to accept Frigate's ports (8971 and 1984) from the
+LAN, not only from its Tailscale interface.
+
 ### Running tests
 
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:

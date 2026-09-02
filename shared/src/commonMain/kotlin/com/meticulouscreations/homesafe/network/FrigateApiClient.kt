@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.cookies.cookies
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
@@ -12,6 +13,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
+import kotlinx.coroutines.CancellationException
 
 /**
  * Talks to a Frigate NVR's REST API. Login establishes a session cookie on [httpClient]
@@ -28,6 +30,28 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         }
         check(response.status.isSuccess()) { "Login failed: ${response.status}" }
     }
+
+    /**
+     * Whether [serverUrl] answers HTTP at all within [timeoutMillis]. Any response counts — a
+     * 401 from the authenticated port proves the host is there just as well as a 200 — so only
+     * a connection failure or a timeout means "not reachable". Used to decide between a
+     * server's private LAN address and its Tailscale address.
+     */
+    suspend fun isReachable(serverUrl: String, timeoutMillis: Long): Boolean =
+        try {
+            httpClient.get("${serverUrl.trimEnd('/')}/api/version") {
+                timeout {
+                    requestTimeoutMillis = timeoutMillis
+                    connectTimeoutMillis = timeoutMillis
+                    socketTimeoutMillis = timeoutMillis
+                }
+            }
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            false
+        }
 
     suspend fun getCameras(serverUrl: String): Result<List<FrigateCamera>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")

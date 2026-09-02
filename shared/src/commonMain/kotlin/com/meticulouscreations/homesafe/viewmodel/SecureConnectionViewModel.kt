@@ -49,10 +49,11 @@ class SecureConnectionViewModel(
     private val _uiState = MutableStateFlow<ConnectUiState>(ConnectUiState.Idle)
     val uiState: StateFlow<ConnectUiState> = _uiState.asStateFlow()
 
-    fun connect(serverUrl: String, username: String, password: String) {
+    /** [localUrl] is the server's optional private LAN address; blank means "Tailscale only". */
+    fun connect(serverUrl: String, localUrl: String, username: String, password: String) {
         _uiState.value = ConnectUiState.Connecting
         viewModelScope.launch {
-            connectToServerUseCase(serverUrl, username, password)
+            connectToServerUseCase(serverUrl, localUrl.takeIf { it.isNotBlank() }, username, password)
                 .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials) }
                 .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Couldn't connect to server") }
         }

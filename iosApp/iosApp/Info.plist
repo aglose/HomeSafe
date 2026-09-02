@@ -8,8 +8,9 @@
 	<string>HomeSafe uses Face ID to securely sign you in without retyping your password.</string>
 	<!--
 	  Frigate's go2rtc live-stream endpoint (port 1984) is plain HTTP by design — it relies
-	  on the Tailscale network boundary for trust rather than TLS. The authenticated Frigate
-	  API itself (port 8971) is HTTPS and unaffected by this. Mirrors the Android
+	  on the network boundary (Tailscale, or the home LAN when connected over the server's
+	  private address) for trust rather than TLS. The authenticated Frigate API itself
+	  (port 8971) is HTTPS and unaffected by this. Mirrors the Android
 	  network_security_config.xml cleartext allowance for the same reason.
 	-->
 	<key>NSAppTransportSecurity</key>

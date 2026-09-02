@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.DetectionSettings
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
@@ -52,7 +53,7 @@ fun SettingsTabContent(
 ) {
     val viewModel = viewModel { SettingsViewModel(observeSettingsUseCase, updateSettingsUseCase, connectionRepository) }
     val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
+    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
     Column(
         modifier = Modifier
@@ -63,9 +64,18 @@ fun SettingsTabContent(
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         SettingsSection(title = "Server Information", icon = Icons.Filled.Dns) {
-            serverUrl?.let { url ->
+            activeConnection?.let { connection ->
                 Text(
-                    text = "Connected to $url",
+                    text = "Connected to ${connection.activeUrl}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    text = when (connection.route) {
+                        ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
+                        ConnectionRoute.TAILSCALE ->
+                            if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
+                    },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

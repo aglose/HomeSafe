@@ -9,6 +9,8 @@ data class SavedCredentials(
     val serverUrl: String,
     val username: String,
     val password: String,
+    /** The server's private LAN URL, if the user entered one. Defaults so credentials saved before it existed still decode. */
+    val localUrl: String? = null,
 )
 
 /**

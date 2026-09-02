@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.DetectionSettings
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
@@ -28,7 +29,7 @@ class SettingsViewModel(
     val settings: StateFlow<DetectionSettings> =
         observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), defaultSettings)
 
-    val serverUrl: StateFlow<String?> = connectionRepository.currentServerUrl
+    val activeConnection: StateFlow<ActiveConnection?> = connectionRepository.activeConnection
 
     fun updateSettings(settings: DetectionSettings) {
         viewModelScope.launch { updateSettingsUseCase(settings) }
