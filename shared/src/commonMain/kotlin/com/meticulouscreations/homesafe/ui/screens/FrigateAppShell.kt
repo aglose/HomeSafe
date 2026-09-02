@@ -119,6 +119,8 @@ private fun HomeTabNav(appGraph: AppGraph) {
                     cameraName = route.cameraName,
                     observeCamerasUseCase = appGraph.observeCamerasUseCase,
                     connectionRepository = appGraph.connectionRepository,
+                    getRecordingHistoryUseCase = appGraph.getRecordingHistoryUseCase,
+                    getRecordingStreamUseCase = appGraph.getRecordingStreamUseCase,
                     onBack = { backStack.removeLastOrNull() },
                 )
             }

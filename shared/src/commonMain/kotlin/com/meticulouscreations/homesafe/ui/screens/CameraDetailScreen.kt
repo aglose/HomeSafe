@@ -3,19 +3,17 @@ package com.meticulouscreations.homesafe.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -28,43 +26,60 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Pets
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.VideocamOff
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
+import com.meticulouscreations.homesafe.ui.formatClockTime
+import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
-import kotlin.math.roundToInt
+import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
+import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 
 @Composable
 fun CameraDetailScreen(
     cameraName: String,
     observeCamerasUseCase: ObserveCamerasUseCase,
     connectionRepository: ConnectionRepository,
+    getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
+    getRecordingStreamUseCase: GetRecordingStreamUseCase,
     onBack: () -> Unit,
 ) {
-    val viewModel = viewModel { CameraDetailViewModel(cameraName, observeCamerasUseCase, connectionRepository) }
+    val viewModel = viewModel {
+        CameraDetailViewModel(
+            cameraName = cameraName,
+            observeCamerasUseCase = observeCamerasUseCase,
+            connectionRepository = connectionRepository,
+            getRecordingHistoryUseCase = getRecordingHistoryUseCase,
+            getRecordingStreamUseCase = getRecordingStreamUseCase,
+        )
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val state = uiState as? CameraDetailUiState.Found
-    val isLive = state?.streamUrl != null
+    val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
@@ -100,47 +115,11 @@ fun CameraDetailScreen(
                 .weight(1f)
                 .verticalScroll(rememberScrollState()),
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
-                    .background(MaterialTheme.colorScheme.surfaceContainerLowest),
-            ) {
-                val liveStreamUrl = state?.streamUrl
-                if (liveStreamUrl != null) {
-                    CameraStreamPlayer(
-                        streamUrl = liveStreamUrl,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Icon(
-                        imageVector = Icons.Filled.VideocamOff,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                        modifier = Modifier.align(Alignment.Center).size(56.dp),
-                    )
-                }
-
-                if (isLive) {
-                    Row(
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .padding(16.dp)
-                            .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        PulsingDot(color = MaterialTheme.colorScheme.error, size = 8.dp)
-                        Text(
-                            text = "LIVE",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                    }
-                }
-            }
+            PlayerSurface(
+                playback = playback,
+                cameraAvailable = cameraAvailable,
+                viewModel = viewModel,
+            )
 
             Row(
                 modifier = Modifier
@@ -175,24 +154,7 @@ fun CameraDetailScreen(
                     .padding(top = 16.dp, bottom = 120.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                    ) {
-                        Text(
-                            text = "Timeline",
-                            style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
-                        Text(
-                            text = "Today",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    TimelineView()
-                }
+                TimelineSection(playback = playback, viewModel = viewModel)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -225,6 +187,208 @@ fun CameraDetailScreen(
     }
 }
 
+/** The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout. */
+@Composable
+private fun PlayerSurface(
+    playback: PlaybackUiState,
+    cameraAvailable: Boolean,
+    viewModel: CameraDetailViewModel,
+) {
+    val request = playback.playerRequest
+    val interactionSource = remember { MutableInteractionSource() }
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(16f / 9f)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+    ) {
+        if (request != null) {
+            CameraStreamPlayer(
+                request = request,
+                modifier = Modifier.fillMaxSize(),
+                onPositionChanged = viewModel::onPlayerPositionChanged,
+                onBufferingChanged = viewModel::onBufferingChanged,
+                onPlaybackEnded = viewModel::onPlaybackEnded,
+                onPlaybackError = viewModel::onPlaybackError,
+            )
+        } else {
+            Icon(
+                imageVector = Icons.Filled.VideocamOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                modifier = Modifier.align(Alignment.Center).size(56.dp),
+            )
+        }
+
+        if (request != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clickable(interactionSource = interactionSource, indication = null, onClick = viewModel::togglePlayPause),
+            )
+        }
+
+        when {
+            playback.isLoadingPlaylist || playback.isBuffering -> CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center).size(40.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp,
+            )
+            request != null && !playback.isPlaying -> Box(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .size(64.dp)
+                    .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.PlayArrow,
+                    contentDescription = "Play",
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(36.dp),
+                )
+            }
+        }
+
+        if (cameraAvailable) {
+            LivePill(
+                isLive = playback.isLive,
+                onClick = viewModel::goLive,
+                modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+            )
+        }
+
+        val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
+        if (playhead != null) {
+            BehindLiveReadout(
+                playheadEpochSeconds = playhead,
+                viewModel = viewModel,
+                modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
+            )
+        }
+    }
+}
+
+/** Red and pulsing at the live edge; grey (and a button back to live) while watching history. */
+@Composable
+private fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val dotColor = if (isLive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
+            .clickable(enabled = !isLive, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (isLive) {
+            PulsingDot(color = dotColor, size = 8.dp)
+        } else {
+            Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
+        }
+        Text(
+            text = if (isLive) "LIVE" else "GO LIVE",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (isLive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun BehindLiveReadout(playheadEpochSeconds: Double, viewModel: CameraDetailViewModel, modifier: Modifier = Modifier) {
+    val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(LocalFrigateExtraColors.current.glassFill)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = formatClockTime(playheadEpochSeconds, withSeconds = true),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = "-${formatDuration(now - playheadEpochSeconds)}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun TimelineSection(playback: PlaybackUiState, viewModel: CameraDetailViewModel) {
+    val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = "Timeline",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                TimelineSpan.entries.forEach { span ->
+                    SpanChip(span = span, selected = span == playback.span, onClick = { viewModel.setSpan(span) })
+                }
+            }
+        }
+
+        RecordingTimeline(
+            segments = playback.segments,
+            span = playback.span,
+            nowEpochSeconds = now,
+            playheadEpochSeconds = playback.playheadEpochSeconds,
+            scrubEpochSeconds = playback.scrubEpochSeconds,
+            isLive = playback.isLive,
+            onScrubStart = viewModel::onScrubStart,
+            onScrub = viewModel::onScrub,
+            onScrubEnd = viewModel::onScrubEnd,
+            onSeek = viewModel::seekTo,
+        )
+
+        val hint = when {
+            playback.historyError != null && playback.segments.isEmpty() -> "Couldn't load recordings: ${playback.historyError}"
+            playback.segments.isEmpty() -> "No recordings in this window yet"
+            else -> null
+        }
+        if (hint != null) {
+            Text(
+                text = hint,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit) {
+    val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+    val foreground = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+    Text(
+        text = span.label,
+        style = MaterialTheme.typography.labelMedium,
+        color = foreground,
+        modifier = Modifier
+            .clip(CircleShape)
+            .background(background, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (selected) 0f else 0.2f), CircleShape)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
 @Composable
 private fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
     Box(
@@ -242,97 +406,6 @@ private fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVec
             tint = MaterialTheme.colorScheme.primary,
         )
     }
-}
-
-@Composable
-private fun TimelineView() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(96.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-            .background(MaterialTheme.colorScheme.surface),
-    ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.Center)
-                .fillMaxWidth()
-                .height(2.dp)
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
-        )
-
-        Row(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(top = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            listOf("12 PM", "3 PM", "6 PM", "9 PM").forEach { label ->
-                Text(
-                    text = label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-
-        Box(
-            modifier = Modifier
-                .width(8.dp)
-                .height(24.dp)
-                .timelineMarkerPosition(0.20f)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-        )
-        Box(
-            modifier = Modifier
-                .width(8.dp)
-                .height(32.dp)
-                .timelineMarkerPosition(0.45f)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-        )
-        Box(
-            modifier = Modifier
-                .width(8.dp)
-                .height(24.dp)
-                .timelineMarkerPosition(0.70f)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-        )
-        Box(
-            modifier = Modifier
-                .width(12.dp)
-                .height(40.dp)
-                .shadow(
-                    elevation = 4.dp,
-                    shape = CircleShape,
-                    ambientColor = MaterialTheme.colorScheme.primaryContainer,
-                    spotColor = MaterialTheme.colorScheme.primaryContainer,
-                )
-                .timelineMarkerPosition(0.85f)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer),
-        )
-
-        Box(
-            modifier = Modifier
-                .width(2.dp)
-                .fillMaxHeight()
-                .timelineMarkerPosition(0.85f)
-                .background(MaterialTheme.colorScheme.primary),
-        )
-    }
-}
-
-private fun Modifier.timelineMarkerPosition(xFraction: Float): Modifier = layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val x = (constraints.maxWidth * xFraction - placeable.width / 2f).roundToInt()
-    val y = ((constraints.maxHeight - placeable.height) / 2f).roundToInt()
-    layout(placeable.width, placeable.height) { placeable.placeRelative(x, y) }
 }
 
 @Composable
