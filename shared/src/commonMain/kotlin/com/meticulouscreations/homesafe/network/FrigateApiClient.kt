@@ -8,6 +8,7 @@ import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
@@ -90,6 +91,72 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         )
     }
 
+    /** [cameraName]'s detect resolution and current masks, from `/api/config`. */
+    suspend fun getDetectionConfig(serverUrl: String, cameraName: String): Result<FrigateDetectionConfig> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
+        check(response.status.isSuccess()) { "Couldn't load camera config: ${response.status}" }
+        val config = response.body<FrigateConfigResponse>().cameras[cameraName]
+            ?: throw FrigateResponseException("Camera $cameraName isn't on this server")
+        FrigateDetectionConfig(
+            cameraName = cameraName,
+            detectWidth = config.detect?.width ?: DEFAULT_DETECT_WIDTH,
+            detectHeight = config.detect?.height ?: DEFAULT_DETECT_HEIGHT,
+            objectMasks = config.objects?.mask.orEmpty(),
+            motionMasks = config.motion?.mask.orEmpty(),
+            zones = config.zones.mapNotNull { (name, zone) ->
+                zone.coordinates.firstOrNull()?.let { FrigateZone(name, it, zone.objects, zone.friendlyName) }
+            },
+            trackedObjects = config.objects?.track.orEmpty(),
+        )
+    }
+
+    /**
+     * Replaces [cameraName]'s `motion.mask` or `objects.mask` with [polygons] (Frigate-format
+     * coordinate strings) and applies it live — one query parameter per polygon, or a blank one
+     * to delete the key. See [setCameraConfig].
+     */
+    suspend fun setCameraMasks(
+        serverUrl: String,
+        cameraName: String,
+        section: CameraSection,
+        polygons: List<String>,
+    ): Result<Unit> {
+        val key = "cameras.$cameraName.${section.configKey}.mask"
+        val params = if (polygons.isEmpty()) listOf(key to "") else polygons.map { key to it }
+        return setCameraConfig(serverUrl, cameraName, section, params)
+    }
+
+    /**
+     * Writes camera config keys and applies them live, exactly the way Frigate's own editor
+     * does: `PUT /api/config/set?cameras.<cam>.<key>=<value>&...` with a body that says "no
+     * restart needed" and names the camera [section] to hot-reload. Every entry in [params] is
+     * one query parameter: a key repeated with several values becomes a YAML list, and a key
+     * with a blank value deletes it (so only send a blank for a key that exists — deleting a
+     * missing key is a server error). Frigate rewrites config.yml, re-validates it (rolling back
+     * and answering 400 if the result is invalid), then pushes the section to the camera
+     * process. Needs the `admin` role.
+     */
+    suspend fun setCameraConfig(
+        serverUrl: String,
+        cameraName: String,
+        section: CameraSection,
+        params: List<Pair<String, String>>,
+    ): Result<Unit> = runCatching {
+        require(params.isNotEmpty()) { "Nothing to save" }
+        val response = httpClient.put("${serverUrl.trimEnd('/')}/api/config/set") {
+            params.forEach { (key, value) -> parameter(key, value) }
+            contentType(ContentType.Application.Json)
+            setBody(ConfigSetRequest(requiresRestart = 0, updateTopic = "config/cameras/$cameraName/${section.configKey}"))
+        }
+        val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
+        if (!response.status.isSuccess() || result?.success == false) {
+            throw FrigateResponseException(result?.message ?: "Couldn't save: ${response.status}")
+        }
+    }
+
+    /** A hot-reloadable camera config section; the name doubles as the update topic. */
+    enum class CameraSection(val configKey: String) { MOTION("motion"), OBJECTS("objects"), ZONES("zones") }
+
     /** The most recent [limit] detections across all cameras, newest first. */
     suspend fun getEvents(serverUrl: String, limit: Int = 100): Result<List<FrigateEvent>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
@@ -124,4 +191,10 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         httpClient.cookies(serverUrl)
             .takeIf { it.isNotEmpty() }
             ?.joinToString("; ", transform = ::renderCookieHeader)
+
+    private companion object {
+        /** Frigate's own defaults when a camera config omits `detect.width`/`height`. */
+        const val DEFAULT_DETECT_WIDTH = 1280
+        const val DEFAULT_DETECT_HEIGHT = 720
+    }
 }

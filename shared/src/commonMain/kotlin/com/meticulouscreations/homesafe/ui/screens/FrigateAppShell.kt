@@ -1,7 +1,12 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +64,12 @@ fun FrigateAppShell(appGraph: AppGraph) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
     val activeConnection by appGraph.connectionRepository.activeConnection.collectAsStateWithLifecycle()
 
+    // The Home tab's nested back stack lives here, not in HomeTabNav, so the shell can tell when
+    // Home has drilled into a camera. Those nested screens draw their own header row, and
+    // stacking the shell bar above it would cost ~70dp of vertical space for no information.
+    val homeBackStack = remember { mutableStateListOf<Any>(CameraListRoute) }
+    val showTopBar = topLevelBackStack.topLevelKey != TopLevelRoute.Home || homeBackStack.size <= 1
+
     // Edge-to-edge: the background paints under the system bars, and each piece that must stay
     // tappable steps in from its own bar — the top bar from the status bar, the floating nav from
     // the navigation bar, and everything from a display cutout at the sides (landscape notch).
@@ -68,13 +80,21 @@ fun FrigateAppShell(appGraph: AppGraph) {
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            FrigateTopBar(activeConnection = activeConnection)
+            // A short shrink + fade rather than a hard cut, so the content below slides up into
+            // the freed space instead of jumping when a nested screen opens or closes.
+            AnimatedVisibility(
+                visible = showTopBar,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut(),
+            ) {
+                FrigateTopBar(activeConnection = activeConnection)
+            }
             NavDisplay(
                 modifier = Modifier.weight(1f),
                 backStack = topLevelBackStack.backStack,
                 onBack = { topLevelBackStack.removeLast() },
                 entryProvider = entryProvider {
-                    entry<TopLevelRoute.Home> { HomeTabNav(appGraph) }
+                    entry<TopLevelRoute.Home> { HomeTabNav(appGraph, homeBackStack) }
                     entry<TopLevelRoute.Moments> {
                         MomentsTabContent(
                             observeMomentsUseCase = appGraph.observeMomentsUseCase,
@@ -135,9 +155,12 @@ private fun FrigateTopBar(activeConnection: ActiveConnection?) {
     }
 }
 
-/** "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. */
+/**
+ * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path.
+ * Internal so nested screens that replace the shell bar with their own header can keep it.
+ */
 @Composable
-private fun ConnectionRouteBadge(route: ConnectionRoute) {
+internal fun ConnectionRouteBadge(route: ConnectionRoute) {
     val tint = when (route) {
         ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
         ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
@@ -161,16 +184,18 @@ private fun ConnectionRouteBadge(route: ConnectionRoute) {
 
 private data object CameraListRoute
 private data class CameraDetailRoute(val cameraName: String)
+private data class DetectionZonesRoute(val cameraName: String)
 
 /**
  * The Home tab's own nested navigation: the camera list, and drilling into a camera's detail
  * screen. The [SharedTransitionLayout] lets the tapped camera's video area animate from its grid
  * card into the detail screen's player (and back), keyed by camera name on both sides.
+ *
+ * [backStack] is owned by [FrigateAppShell] (see there for why) and starts at [CameraListRoute].
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(appGraph: AppGraph) {
-    val backStack = remember { mutableStateListOf<Any>(CameraListRoute) }
+private fun HomeTabNav(appGraph: AppGraph, backStack: SnapshotStateList<Any>) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -193,6 +218,17 @@ private fun HomeTabNav(appGraph: AppGraph) {
                         getRecordingStreamUseCase = appGraph.getRecordingStreamUseCase,
                         observeMomentsUseCase = appGraph.observeMomentsUseCase,
                         sharedTransitionScope = this@SharedTransitionLayout,
+                        onBack = { backStack.removeLastOrNull() },
+                        onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
+                    )
+                }
+                entry<DetectionZonesRoute> { route ->
+                    DetectionZonesScreen(
+                        cameraName = route.cameraName,
+                        connectionRepository = appGraph.connectionRepository,
+                        getDetectionConfigUseCase = appGraph.getDetectionConfigUseCase,
+                        saveDetectionMasksUseCase = appGraph.saveDetectionMasksUseCase,
+                        saveDetectionZonesUseCase = appGraph.saveDetectionZonesUseCase,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

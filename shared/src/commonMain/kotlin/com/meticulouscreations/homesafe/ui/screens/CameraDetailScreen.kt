@@ -10,23 +10,26 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -81,6 +84,7 @@ fun CameraDetailScreen(
     observeMomentsUseCase: ObserveMomentsUseCase,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
+    onEditDetectionZones: () -> Unit,
 ) {
     val viewModel = viewModel(key = cameraName) {
         CameraDetailViewModel(
@@ -95,13 +99,17 @@ fun CameraDetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
+    val activeConnection by connectionRepository.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        // This header replaces the shell's top bar (the shell hides it while a nested screen is
+        // up), so it steps in from the status bar itself.
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .statusBarsPadding()
                 .padding(horizontal = 24.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
@@ -121,12 +129,13 @@ fun CameraDetailScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
-            IconButton(onClick = {}) {
-                Icon(
-                    imageVector = Icons.Filled.Sensors,
-                    contentDescription = "Status",
-                    tint = MaterialTheme.colorScheme.primary,
-                )
+            // The shell bar's route badge carries over so the user still knows whether video is
+            // on the direct local path or Tailscale; a spacer keeps the title centred until known.
+            val route = activeConnection?.route
+            if (route == null) {
+                Spacer(modifier = Modifier.size(48.dp))
+            } else {
+                ConnectionRouteBadge(route)
             }
         }
 
@@ -182,6 +191,8 @@ fun CameraDetailScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 TimelineSection(playback = playback, viewModel = viewModel)
+
+                DetectionZonesCard(onClick = onEditDetectionZones)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -469,6 +480,41 @@ private fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVec
             imageVector = icon,
             contentDescription = null,
             tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/** Entry point to the polygon editor: what Google Home calls activity zones, Frigate calls masks. */
+@Composable
+private fun DetectionZonesCard(onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.CropFree,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                text = "Mask out areas you don't want detected",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

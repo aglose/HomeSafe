@@ -1,0 +1,138 @@
+package com.meticulouscreations.homesafe.viewmodel
+
+import androidx.compose.runtime.Immutable
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.model.CameraDetectionConfig
+import com.meticulouscreations.homesafe.domain.model.MaskLayer
+import com.meticulouscreations.homesafe.domain.model.MaskPoint
+import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.usecase.GetDetectionConfigUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
+import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+@Immutable
+data class DetectionZonesUiState(
+    val isLoading: Boolean = true,
+    val loadError: String? = null,
+    val config: CameraDetectionConfig? = null,
+    val editor: MaskEditorState = MaskEditorState(),
+    /** A fresh frame from the camera to draw over; re-issued on every (re)load so it isn't a stale cache hit. */
+    val snapshotUrl: String? = null,
+    val isSaving: Boolean = false,
+    val saveError: String? = null,
+    /** True right after a successful save until the next edit, for a "Saved" confirmation. */
+    val justSaved: Boolean = false,
+)
+
+/**
+ * Drives the detection-zones editor for one camera. Frigate is the source of truth: the editor
+ * loads the camera's masks and zones from the server, edits happen locally in
+ * [MaskEditorState], and a save pushes each changed layer back and then re-reads the server's
+ * copy.
+ */
+class DetectionZonesViewModel(
+    private val cameraName: String,
+    private val connectionRepository: ConnectionRepository,
+    private val getDetectionConfigUseCase: GetDetectionConfigUseCase,
+    private val saveDetectionMasksUseCase: SaveDetectionMasksUseCase,
+    private val saveDetectionZonesUseCase: SaveDetectionZonesUseCase,
+    private val clock: () -> Double = ::epochSecondsNow,
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(DetectionZonesUiState())
+    val uiState: StateFlow<DetectionZonesUiState> = _uiState.asStateFlow()
+
+    init {
+        load()
+    }
+
+    fun load() {
+        _uiState.update { it.copy(isLoading = true, loadError = null) }
+        viewModelScope.launch {
+            getDetectionConfigUseCase(cameraName)
+                .onSuccess { config ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            config = config,
+                            editor = it.editor.loadedFrom(config),
+                            snapshotUrl = freshSnapshotUrl(),
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(isLoading = false, loadError = error.message ?: "Couldn't load detection zones") }
+                }
+        }
+    }
+
+    fun refreshSnapshot() = _uiState.update { it.copy(snapshotUrl = freshSnapshotUrl()) }
+
+    fun switchLayer(layer: MaskLayer) = edit { it.switchLayer(layer) }
+    fun tapAt(point: MaskPoint) = edit { it.tapAt(point) }
+    fun startDraft() = edit { it.startDraft() }
+    fun undoDraftPoint() = edit { it.undoDraftPoint() }
+    fun cancelDraft() = edit { it.cancelDraft() }
+    fun finishDraft() = edit { it.finishDraft() }
+    fun select(index: Int?) = edit { it.select(index) }
+    fun moveVertex(shapeIndex: Int, vertexIndex: Int, to: MaskPoint) = edit { it.moveVertex(shapeIndex, vertexIndex, to) }
+    fun moveDraftVertex(vertexIndex: Int, to: MaskPoint) = edit { it.moveDraftVertex(vertexIndex, to) }
+    fun deleteSelected() = edit { it.deleteSelected() }
+    fun renameSelectedZone(friendlyName: String) = edit { it.renameSelectedZone(friendlyName) }
+    fun setSelectedZoneObjects(objects: List<String>) = edit { it.setSelectedZoneObjects(objects) }
+
+    /** Toggles one label on the selected zone's object filter. */
+    fun toggleSelectedZoneObject(label: String) {
+        val current = _uiState.value.editor.selectedShape?.zone?.objects ?: return
+        setSelectedZoneObjects(if (label in current) current - label else current + label)
+    }
+
+    /** Throws away local edits and shows the server's masks and zones again. */
+    fun discardChanges() {
+        val config = _uiState.value.config ?: return
+        _uiState.update { it.copy(editor = it.editor.loadedFrom(config), saveError = null) }
+    }
+
+    /** Pushes every dirty layer to Frigate (an unfinished draft is dropped), then re-reads the server's copy. */
+    fun save() {
+        val state = _uiState.value
+        val config = state.config ?: return
+        if (state.isSaving || !state.editor.isDirty) return
+        val editor = state.editor.cancelDraft()
+        _uiState.update { it.copy(editor = editor, isSaving = true, saveError = null, justSaved = false) }
+        viewModelScope.launch {
+            for (layer in editor.dirtyLayers) {
+                val result = when (layer) {
+                    MaskLayer.ZONES -> saveDetectionZonesUseCase(cameraName, editor.zones(), config.zones)
+                    else -> saveDetectionMasksUseCase(cameraName, layer, editor.masks(layer))
+                }
+                result.onFailure { error ->
+                    _uiState.update { it.copy(isSaving = false, saveError = error.message ?: "Couldn't save ${layer.label.lowercase()}") }
+                    return@launch
+                }
+            }
+            val reloaded = getDetectionConfigUseCase(cameraName).getOrNull()
+            _uiState.update {
+                it.copy(
+                    isSaving = false,
+                    justSaved = true,
+                    config = reloaded ?: it.config,
+                    editor = if (reloaded != null) it.editor.loadedFrom(reloaded) else it.editor.copy(dirtyLayers = emptySet()),
+                )
+            }
+        }
+    }
+
+    private inline fun edit(crossinline transform: (MaskEditorState) -> MaskEditorState) =
+        _uiState.update { it.copy(editor = transform(it.editor), justSaved = false, saveError = null) }
+
+    private fun freshSnapshotUrl(): String? =
+        connectionRepository.currentServerUrl.value?.let { "${frigateSnapshotUrl(it, cameraName)}?t=${clock().toLong()}" }
+}

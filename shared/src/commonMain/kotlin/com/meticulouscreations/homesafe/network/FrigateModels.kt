@@ -2,6 +2,12 @@ package com.meticulouscreations.homesafe.network
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 
 @Serializable
 internal data class LoginRequest(
@@ -18,6 +24,86 @@ internal data class FrigateConfigResponse(
 internal data class FrigateCameraConfig(
     val enabled: Boolean = true,
     val live: FrigateLiveConfig? = null,
+    val detect: FrigateDetectConfig? = null,
+    val motion: FrigateMotionConfig? = null,
+    val objects: FrigateObjectsConfig? = null,
+    val zones: Map<String, FrigateZoneConfig> = emptyMap(),
+)
+
+/** One entry of a camera's `zones` map. `coordinates` is a polygon string; `objects` a label list. */
+@Serializable
+internal data class FrigateZoneConfig(
+    @Serializable(with = FrigateMaskListSerializer::class) val coordinates: List<String> = emptyList(),
+    @Serializable(with = FrigateMaskListSerializer::class) val objects: List<String> = emptyList(),
+    @SerialName("friendly_name") val friendlyName: String? = null,
+)
+
+@Serializable
+internal data class FrigateDetectConfig(
+    val width: Int? = null,
+    val height: Int? = null,
+)
+
+/** `motion.mask`: Frigate serves it as `""`, one polygon string, or a list of them — see [FrigateMaskListSerializer]. */
+@Serializable
+internal data class FrigateMotionConfig(
+    @Serializable(with = FrigateMaskListSerializer::class) val mask: List<String> = emptyList(),
+)
+
+/** `objects.mask` (the all-labels object filter mask), same shape as [FrigateMotionConfig.mask]; `track` is the label list. */
+@Serializable
+internal data class FrigateObjectsConfig(
+    @Serializable(with = FrigateMaskListSerializer::class) val mask: List<String> = emptyList(),
+    @Serializable(with = FrigateMaskListSerializer::class) val track: List<String> = emptyList(),
+)
+
+/** One zone as read from `/api/config`. */
+data class FrigateZone(
+    val name: String,
+    /** Raw polygon string. */
+    val coordinates: String,
+    val objects: List<String>,
+    val friendlyName: String?,
+)
+
+/**
+ * Normalises Frigate's `mask` field, which is `""` (none), a single `"x,y,..."` string, a list of
+ * such strings, or occasionally `null`, into a plain list of polygon strings.
+ */
+internal object FrigateMaskListSerializer : JsonTransformingSerializer<List<String>>(ListSerializer(String.serializer())) {
+    override fun transformDeserialize(element: JsonElement): JsonElement = when {
+        element is JsonArray -> element
+        element is JsonPrimitive && element.isString && element.content.isNotBlank() -> JsonArray(listOf(element))
+        else -> JsonArray(emptyList())
+    }
+}
+
+/** The subset of a camera's `/api/config` entry that the detection-zones editor works with. */
+data class FrigateDetectionConfig(
+    val cameraName: String,
+    val detectWidth: Int,
+    val detectHeight: Int,
+    /** Raw polygon strings, straight from `objects.mask`. */
+    val objectMasks: List<String>,
+    /** Raw polygon strings, straight from `motion.mask`. */
+    val motionMasks: List<String>,
+    val zones: List<FrigateZone> = emptyList(),
+    /** `objects.track` for this camera. */
+    val trackedObjects: List<String> = emptyList(),
+)
+
+/** JSON body of `PUT /api/config/set`; the values themselves ride in the query string. */
+@Serializable
+internal data class ConfigSetRequest(
+    /** 0 applies the change live (the topic below tells the camera process what changed). */
+    @SerialName("requires_restart") val requiresRestart: Int,
+    @SerialName("update_topic") val updateTopic: String,
+)
+
+@Serializable
+internal data class ConfigSetResponse(
+    val success: Boolean = false,
+    val message: String? = null,
 )
 
 /**
