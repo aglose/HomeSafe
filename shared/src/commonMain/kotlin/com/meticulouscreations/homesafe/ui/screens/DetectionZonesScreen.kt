@@ -58,18 +58,14 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MaskLayer
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.usecase.GetDetectionConfigUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
 import com.meticulouscreations.homesafe.ui.components.EditorPolygon
 import com.meticulouscreations.homesafe.ui.components.MaskPolygonEditor
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
+import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import com.meticulouscreations.homesafe.viewmodel.EditorShape
 import com.meticulouscreations.homesafe.viewmodel.MaskEditorState
 
@@ -84,20 +80,10 @@ import com.meticulouscreations.homesafe.viewmodel.MaskEditorState
 @Composable
 fun DetectionZonesScreen(
     cameraName: String,
-    connectionRepository: ConnectionRepository,
-    getDetectionConfigUseCase: GetDetectionConfigUseCase,
-    saveDetectionMasksUseCase: SaveDetectionMasksUseCase,
-    saveDetectionZonesUseCase: SaveDetectionZonesUseCase,
     onBack: () -> Unit,
 ) {
-    val viewModel = viewModel(key = "zones:$cameraName") {
-        DetectionZonesViewModel(
-            cameraName = cameraName,
-            connectionRepository = connectionRepository,
-            getDetectionConfigUseCase = getDetectionConfigUseCase,
-            saveDetectionMasksUseCase = saveDetectionMasksUseCase,
-            saveDetectionZonesUseCase = saveDetectionZonesUseCase,
-        )
+    val viewModel = assistedMetroViewModel<DetectionZonesViewModel, DetectionZonesViewModel.Factory>(key = "zones:$cameraName") {
+        create(cameraName)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val dirty = uiState.editor.isDirty

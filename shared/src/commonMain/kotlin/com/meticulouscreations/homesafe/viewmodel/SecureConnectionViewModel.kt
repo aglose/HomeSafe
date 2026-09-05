@@ -2,14 +2,18 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.meticulouscreations.homesafe.data.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetBiometricLoginStatusUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -24,26 +28,31 @@ sealed interface ConnectUiState {
     data class Error(val message: String) : ConnectUiState
 }
 
+@Inject
+@ViewModelKey
+@ContributesIntoMap(AppScope::class)
 class SecureConnectionViewModel(
     private val connectToServerUseCase: ConnectToServerUseCase,
     private val signInWithBiometricsUseCase: SignInWithBiometricsUseCase,
     private val saveBiometricCredentialsUseCase: SaveBiometricCredentialsUseCase,
     private val forgetBiometricCredentialsUseCase: ForgetBiometricCredentialsUseCase,
     observeMostRecentConnectionUseCase: ObserveMostRecentConnectionUseCase,
-    private val connectionRepository: ConnectionRepository,
+    private val getBiometricLoginStatusUseCase: GetBiometricLoginStatusUseCase,
 ) : ViewModel() {
 
     val mostRecentConnection: StateFlow<ConnectionRecord?> =
         observeMostRecentConnectionUseCase()
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+    private val biometricLogin = getBiometricLoginStatusUseCase()
+
     /** True if biometric hardware is present, enrolled, and usable on this platform/device. */
-    val biometricLoginAvailable: Boolean = connectionRepository.biometricLoginAvailable
+    val biometricLoginAvailable: Boolean = biometricLogin.isAvailable
 
     /** Short user-facing name for the biometric method, e.g. "Face ID" or "fingerprint". */
-    val biometricDisplayName: String = connectionRepository.biometricDisplayName
+    val biometricDisplayName: String = biometricLogin.displayName
 
-    private val _hasSavedBiometricCredentials = MutableStateFlow(connectionRepository.hasSavedBiometricCredentials())
+    private val _hasSavedBiometricCredentials = MutableStateFlow(biometricLogin.hasSavedCredentials)
     val hasSavedBiometricCredentials: StateFlow<Boolean> = _hasSavedBiometricCredentials.asStateFlow()
 
     private val _uiState = MutableStateFlow<ConnectUiState>(ConnectUiState.Idle)
@@ -76,21 +85,23 @@ class SecureConnectionViewModel(
      */
     suspend fun saveBiometricCredentials(credentials: SavedCredentials): Result<Unit> {
         val result = saveBiometricCredentialsUseCase(credentials)
-        if (result.isSuccess) {
-            _hasSavedBiometricCredentials.value = true
-        }
+        if (result.isSuccess) refreshSavedCredentials()
         return result
     }
 
     /** Forgets any saved biometric credentials. Does not require a biometric prompt. */
     fun forgetBiometricCredentials() {
         forgetBiometricCredentialsUseCase()
-        _hasSavedBiometricCredentials.value = false
+        refreshSavedCredentials()
     }
 
     fun dismissError() {
         if (_uiState.value is ConnectUiState.Error) {
             _uiState.value = ConnectUiState.Idle
         }
+    }
+
+    private fun refreshSavedCredentials() {
+        _hasSavedBiometricCredentials.value = getBiometricLoginStatusUseCase().hasSavedCredentials
     }
 }

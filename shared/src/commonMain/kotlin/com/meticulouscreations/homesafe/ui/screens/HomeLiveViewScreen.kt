@@ -33,17 +33,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
-import com.meticulouscreations.homesafe.domain.model.Camera
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
-import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
-import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -53,15 +49,12 @@ import kotlin.time.ExperimentalTime
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeTabContent(
-    observeCamerasUseCase: ObserveCamerasUseCase,
-    connectionRepository: ConnectionRepository,
     sharedTransitionScope: SharedTransitionScope,
     onCameraClick: (String) -> Unit = {},
 ) {
     val extraColors = LocalFrigateExtraColors.current
-    val viewModel = viewModel { HomeViewModel(observeCamerasUseCase, connectionRepository) }
+    val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
-    val serverUrl by viewModel.serverUrl.collectAsStateWithLifecycle()
 
     // A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
     // Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
@@ -108,12 +101,11 @@ fun HomeTabContent(
                 )
             }
         } else {
-            items(loadedCameras, key = { it.name }) { camera ->
+            items(loadedCameras, key = { it.camera.name }) { tile ->
                 CameraCard(
-                    camera = camera,
-                    serverUrl = serverUrl.orEmpty(),
+                    tile = tile,
                     sharedTransitionScope = sharedTransitionScope,
-                    modifier = Modifier.clickable { onCameraClick(camera.name) },
+                    modifier = Modifier.clickable { onCameraClick(tile.camera.name) },
                 )
             }
         }
@@ -123,11 +115,11 @@ fun HomeTabContent(
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 private fun CameraCard(
-    camera: Camera,
-    serverUrl: String,
+    tile: CameraTile,
     sharedTransitionScope: SharedTransitionScope,
     modifier: Modifier = Modifier,
 ) {
+    val camera = tile.camera
     val extraColors = LocalFrigateExtraColors.current
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     Box(
@@ -147,15 +139,15 @@ private fun CameraCard(
                 ),
             ),
     ) {
-        if (camera.enabled) {
-            // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
-            // reserved for the single-camera detail view. The player is keyed by camera name so
-            // the detail screen picks up this very player (already decoding) when the card is
-            // tapped, and this card gets it back — still warm — on the way out.
+        val streamUrl = tile.streamUrl
+        if (streamUrl != null) {
+            // The player is keyed by camera name so the detail screen picks up this very player
+            // (already decoding) when the card is tapped, and this card gets it back — still
+            // warm — on the way out.
             CameraStreamPlayer(
-                streamUrl = frigateLiveStreamUrl(serverUrl, camera.gridStreamName),
+                streamUrl = streamUrl,
                 modifier = Modifier.fillMaxSize(),
-                posterUrl = frigateSnapshotUrl(serverUrl, camera.name, height = GRID_POSTER_HEIGHT),
+                posterUrl = tile.posterUrl,
                 playerKey = camera.name,
             )
         } else {
@@ -195,9 +187,6 @@ internal fun greetingForHour(hour: Int): String = when (hour) {
 
 @OptIn(ExperimentalTime::class)
 private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
-
-/** Server-side downscale for grid posters: plenty for a card, ~30 KB per refresh instead of a full detect frame. */
-private const val GRID_POSTER_HEIGHT = 480
 
 /** The shared-element key for a camera's video area, matched between the grid card and the detail screen. */
 internal fun cameraVideoSharedKey(cameraName: String): String = "camera-video-$cameraName"

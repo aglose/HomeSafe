@@ -8,15 +8,19 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
 import com.meticulouscreations.homesafe.domain.model.present
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
-import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
-import com.meticulouscreations.homesafe.network.frigateRecordingSnapshotUrl
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.VideoSource
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -66,14 +70,22 @@ data class DownloadUiState(
     val resultError: String? = null,
 )
 
+@OptIn(ExperimentalTime::class)
+@Inject
+@ViewModelKey
+@ContributesIntoMap(AppScope::class)
 class MomentsViewModel(
     observeMomentsUseCase: ObserveMomentsUseCase,
+    observeMomentsErrorUseCase: ObserveMomentsErrorUseCase,
+    observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getMomentClipStreamUseCase: GetMomentClipStreamUseCase,
     private val downloadMomentClipUseCase: DownloadMomentClipUseCase,
-    momentsRepository: MomentsRepository,
-    private val connectionRepository: ConnectionRepository,
-    private val today: () -> LocalDate = ::localToday,
+    private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
+    private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
+    private val clock: Clock,
 ) : ViewModel() {
+
+    private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
 
     private val _selectedCategory = MutableStateFlow(MomentCategory.ALL)
     private val _clip = MutableStateFlow(ClipState())
@@ -86,9 +98,9 @@ class MomentsViewModel(
     val uiState: StateFlow<MomentsUiState> = combine(
         observeMomentsUseCase(),
         _selectedCategory,
-        momentsRepository.observeError(),
+        observeMomentsErrorUseCase(),
         _clip,
-        connectionRepository.currentServerUrl,
+        serverUrl,
     ) { events, category, error, clip, serverUrl ->
         val day = today()
         val items = events
@@ -99,7 +111,7 @@ class MomentsViewModel(
                 // needs `snapshots: enabled` in Frigate's config. The object thumbnail is served for every
                 // tracked object regardless (verified: has_snapshot=false yet thumbnail.jpg -> 200), so
                 // gating on it would hide thumbnails for every real detection on a server without snapshots.
-                val thumb = serverUrl?.let { frigateEventThumbnailUrl(it, event.id) }
+                val thumb = serverUrl?.let { getEventThumbnailUrlUseCase(it, event.id) }
                 MomentItem(event, event.present(day), thumb)
             }
         // groupBy preserves encounter order, and the feed arrives newest-first, so "Today" leads.
@@ -131,8 +143,8 @@ class MomentsViewModel(
         clipJob?.cancel()
         // The poster is known from the event alone, so it goes up before the clip URL is resolved
         // and stays as the player's own poster until the clip's first frame paints over it.
-        val posterUrl = connectionRepository.currentServerUrl.value?.let {
-            frigateRecordingSnapshotUrl(it, event.cameraName, event.startEpochSeconds, height = CLIP_POSTER_HEIGHT)
+        val posterUrl = serverUrl.value?.let {
+            getRecordingSnapshotUrlUseCase(it, event.cameraName, event.startEpochSeconds, height = CLIP_POSTER_HEIGHT)
         }
         _clip.value = ClipState(eventId = event.id, posterUrl = posterUrl)
         clipJob = viewModelScope.launch {
@@ -182,6 +194,8 @@ class MomentsViewModel(
         }
     }
 
+    private fun today(): LocalDate = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+
     private data class ClipState(
         val eventId: String? = null,
         val request: PlayerRequest? = null,
@@ -197,6 +211,3 @@ class MomentsViewModel(
         const val CLIP_POSTER_HEIGHT = 480
     }
 }
-
-@OptIn(ExperimentalTime::class)
-private fun localToday(): LocalDate = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date

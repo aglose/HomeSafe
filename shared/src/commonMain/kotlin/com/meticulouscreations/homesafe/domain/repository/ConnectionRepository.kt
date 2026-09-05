@@ -1,6 +1,6 @@
 package com.meticulouscreations.homesafe.domain.repository
 
-import com.meticulouscreations.homesafe.data.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import kotlinx.coroutines.flow.Flow

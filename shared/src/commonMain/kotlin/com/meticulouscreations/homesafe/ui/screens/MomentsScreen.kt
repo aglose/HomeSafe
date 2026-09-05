@@ -44,20 +44,15 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
-import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
-import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 private val MomentCategory.label: String
     get() = when (this) {
@@ -77,22 +72,8 @@ private val MomentCategory.icon: ImageVector?
 
 /** The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip. */
 @Composable
-fun MomentsTabContent(
-    observeMomentsUseCase: ObserveMomentsUseCase,
-    getMomentClipStreamUseCase: GetMomentClipStreamUseCase,
-    downloadMomentClipUseCase: DownloadMomentClipUseCase,
-    momentsRepository: MomentsRepository,
-    connectionRepository: ConnectionRepository,
-) {
-    val viewModel = viewModel {
-        MomentsViewModel(
-            observeMomentsUseCase,
-            getMomentClipStreamUseCase,
-            downloadMomentClipUseCase,
-            momentsRepository,
-            connectionRepository,
-        )
-    }
+fun MomentsTabContent() {
+    val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
 

@@ -1,5 +1,9 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+
 import com.meticulouscreations.homesafe.PlatformContext
 
 /** Desktop has no notification surface wired up; matches the precedent set by [createClipDownloader]'s desktop fallback. */

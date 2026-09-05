@@ -3,21 +3,30 @@ package com.meticulouscreations.homesafe.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.meticulouscreations.homesafe.data.AlertNotifier
-import com.meticulouscreations.homesafe.data.DetectionAlertService
-import com.meticulouscreations.homesafe.data.NotificationPermission
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.ServerStatusRepository
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetNotificationPermissionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.OpenNotificationSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshServerOverviewUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RequestNotificationPermissionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SendTestNotificationUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metro.Inject
+import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +52,8 @@ data class SettingsUiState(
     val cameraError: String? = null,
     /** True briefly after the test button, for an inline "Sent" confirmation. */
     val testNotificationSent: Boolean = false,
+    /** The server's custom classifiers that can be taught in-app; empty while loading or when there are none. */
+    val classifiers: List<ClassifierModel> = emptyList(),
 ) {
     /** The push switch is effectively on only when the OS also allows it. */
     val pushNotificationsActive: Boolean
@@ -55,19 +66,29 @@ private data class LocalState(
     val busyCameras: Set<String> = emptySet(),
     val cameraError: String? = null,
     val testNotificationSent: Boolean = false,
+    val classifiers: List<ClassifierModel> = emptyList(),
 )
 
+@Inject
+@ViewModelKey
+@ContributesIntoMap(AppScope::class)
 class SettingsViewModel(
     observeSettingsUseCase: ObserveSettingsUseCase,
     private val updateSettingsUseCase: UpdateSettingsUseCase,
     observeServerOverviewUseCase: ObserveServerOverviewUseCase,
+    observeServerOverviewErrorUseCase: ObserveServerOverviewErrorUseCase,
+    private val refreshServerOverviewUseCase: RefreshServerOverviewUseCase,
     private val setCameraDetectionUseCase: SetCameraDetectionUseCase,
     private val setCameraMotionUseCase: SetCameraMotionUseCase,
-    private val serverStatusRepository: ServerStatusRepository,
-    connectionRepository: ConnectionRepository,
-    private val alertNotifier: AlertNotifier,
-    private val detectionAlertService: DetectionAlertService,
+    observeActiveConnectionUseCase: ObserveActiveConnectionUseCase,
+    private val getNotificationPermissionUseCase: GetNotificationPermissionUseCase,
+    private val requestNotificationPermissionUseCase: RequestNotificationPermissionUseCase,
+    private val openNotificationSettingsUseCase: OpenNotificationSettingsUseCase,
+    private val sendTestNotificationUseCase: SendTestNotificationUseCase,
+    private val getClassifierModelsUseCase: GetClassifierModelsUseCase,
 ) : ViewModel() {
+
+    private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
 
     private val settings: StateFlow<AlertSettings> =
         observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertSettings.DEFAULT)
@@ -75,9 +96,9 @@ class SettingsViewModel(
     private val local = MutableStateFlow(LocalState())
 
     val uiState: StateFlow<SettingsUiState> = combine(
-        connectionRepository.activeConnection,
+        observeActiveConnectionUseCase(),
         observeServerOverviewUseCase(),
-        serverStatusRepository.observeError(),
+        observeServerOverviewErrorUseCase(),
         settings,
         local,
     ) { connection, overview, overviewError, alerts, local ->
@@ -86,29 +107,31 @@ class SettingsViewModel(
             overview = overview,
             overviewError = overviewError,
             alerts = alerts,
-            notificationsSupported = alertNotifier.isSupported,
+            notificationsSupported = notificationsSupported,
             notificationPermission = local.permission,
             busyCameras = local.busyCameras,
             cameraError = local.cameraError,
             testNotificationSent = local.testNotificationSent,
+            classifiers = local.classifiers,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(notificationsSupported = alertNotifier.isSupported))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SettingsUiState(notificationsSupported = notificationsSupported))
 
     init {
         refreshNotificationPermission()
+        refreshClassifiers()
     }
 
     /** Re-reads the OS permission — called on every resume, since the user may have changed it in system settings. */
     fun refreshNotificationPermission() {
-        if (!alertNotifier.isSupported) return
+        if (!notificationsSupported) return
         viewModelScope.launch {
-            val permission = alertNotifier.permissionStatus()
+            val permission = getNotificationPermissionUseCase()
             local.update { it.copy(permission = permission) }
         }
     }
 
     fun retryOverview() {
-        viewModelScope.launch { serverStatusRepository.refresh() }
+        viewModelScope.launch { refreshServerOverviewUseCase() }
     }
 
     /**
@@ -121,8 +144,8 @@ class SettingsViewModel(
                 updateSettingsUseCase(settings.value.copy(pushNotificationsEnabled = false))
                 return@launch
             }
-            val granted = alertNotifier.permissionStatus() == NotificationPermission.GRANTED || alertNotifier.requestPermission()
-            local.update { it.copy(permission = alertNotifier.permissionStatus()) }
+            val granted = getNotificationPermissionUseCase() == NotificationPermission.GRANTED || requestNotificationPermissionUseCase()
+            local.update { it.copy(permission = getNotificationPermissionUseCase()) }
             updateSettingsUseCase(settings.value.copy(pushNotificationsEnabled = granted))
         }
     }
@@ -133,10 +156,10 @@ class SettingsViewModel(
         viewModelScope.launch { updateSettingsUseCase(updated) }
     }
 
-    fun openNotificationSettings() = alertNotifier.openSystemSettings()
+    fun openNotificationSettings() = openNotificationSettingsUseCase()
 
     fun sendTestNotification() {
-        detectionAlertService.sendTestNotification()
+        sendTestNotificationUseCase()
         local.update { it.copy(testNotificationSent = true) }
     }
 
@@ -147,6 +170,18 @@ class SettingsViewModel(
         flipCameraSwitch(cameraName) { setCameraMotionUseCase(cameraName, enabled) }
 
     fun dismissCameraError() = local.update { it.copy(cameraError = null) }
+
+    /**
+     * Re-reads the server's classifiers — on every visit to the tab, since the view model outlives
+     * it and a classifier added in Frigate's own UI should show up without a relaunch. Only
+     * classifiers that actually classify something get a row; a model with no objects has nothing to label.
+     */
+    fun refreshClassifiers() {
+        viewModelScope.launch {
+            val models = getClassifierModelsUseCase().getOrDefault(emptyList()).filter { it.objects.isNotEmpty() }
+            local.update { it.copy(classifiers = models) }
+        }
+    }
 
     private fun flipCameraSwitch(cameraName: String, action: suspend () -> Result<Unit>) {
         if (cameraName in local.value.busyCameras) return

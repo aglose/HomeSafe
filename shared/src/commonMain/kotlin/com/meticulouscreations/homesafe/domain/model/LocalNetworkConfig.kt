@@ -1,4 +1,4 @@
-package com.meticulouscreations.homesafe.network
+package com.meticulouscreations.homesafe.domain.model
 
 /**
  * The Frigate server's private LAN address. Hardcoded rather than user-entered: this app talks

@@ -1,15 +1,18 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateResponseException
-import com.meticulouscreations.homesafe.network.LOCAL_SERVER_URL
+import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.swapUrlScheme
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +42,7 @@ import kotlin.time.ExperimentalTime
  */
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class ConnectionRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionHistoryDao: ConnectionHistoryDao,

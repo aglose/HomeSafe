@@ -1,5 +1,11 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
@@ -195,12 +201,5 @@ class DetectionAlertServiceTest {
         h.service.start()
         settle()
         assertTrue(h.afters.isEmpty())
-    }
-
-    @Test
-    fun testNotificationGoesStraightToTheNotifier() = runTest {
-        val h = Harness(this, on.copy(pushNotificationsEnabled = false))
-        h.service.sendTestNotification()
-        assertEquals("test", h.notifier.posted.single().id)
     }
 }

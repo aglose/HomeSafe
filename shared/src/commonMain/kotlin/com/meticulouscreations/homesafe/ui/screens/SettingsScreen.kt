@@ -44,11 +44,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.meticulouscreations.homesafe.data.AlertNotifier
-import com.meticulouscreations.homesafe.data.DetectionAlertService
-import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
-import com.meticulouscreations.homesafe.data.NotificationPermission
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
@@ -59,15 +55,9 @@ import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.ServerStatusRepository
-import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
-import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlin.math.roundToInt
 
 /**
@@ -75,37 +65,15 @@ import kotlin.math.roundToInt
  * and config), the per-camera detection switches, and this device's alert preferences.
  */
 @Composable
-fun SettingsTabContent(
-    observeSettingsUseCase: ObserveSettingsUseCase,
-    updateSettingsUseCase: UpdateSettingsUseCase,
-    observeServerOverviewUseCase: ObserveServerOverviewUseCase,
-    setCameraDetectionUseCase: SetCameraDetectionUseCase,
-    setCameraMotionUseCase: SetCameraMotionUseCase,
-    serverStatusRepository: ServerStatusRepository,
-    connectionRepository: ConnectionRepository,
-    alertNotifier: AlertNotifier,
-    detectionAlertService: DetectionAlertService,
-    classifierRepository: ClassifierRepository? = null,
-    onOpenClassifier: (String) -> Unit = {},
-) {
-    val viewModel = viewModel {
-        SettingsViewModel(
-            observeSettingsUseCase = observeSettingsUseCase,
-            updateSettingsUseCase = updateSettingsUseCase,
-            observeServerOverviewUseCase = observeServerOverviewUseCase,
-            setCameraDetectionUseCase = setCameraDetectionUseCase,
-            setCameraMotionUseCase = setCameraMotionUseCase,
-            serverStatusRepository = serverStatusRepository,
-            connectionRepository = connectionRepository,
-            alertNotifier = alertNotifier,
-            detectionAlertService = detectionAlertService,
-        )
-    }
+fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}) {
+    val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Coming back from the OS notification settings screen must be reflected without a relaunch.
+    // Coming back from the OS notification settings screen must be reflected without a relaunch,
+    // and a classifier added on the server since the last visit should appear too.
     LifecycleResumeEffect(Unit) {
         viewModel.refreshNotificationPermission()
+        viewModel.refreshClassifiers()
         onPauseOrDispose { }
     }
 
@@ -132,7 +100,7 @@ fun SettingsTabContent(
             onOpenSettings = viewModel::openNotificationSettings,
             onSendTest = viewModel::sendTestNotification,
         )
-        classifierRepository?.let { RecognitionSection(classifierRepository = it, onOpen = onOpenClassifier) }
+        RecognitionSection(models = state.classifiers, onOpen = onOpenClassifier)
     }
 }
 

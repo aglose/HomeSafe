@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context

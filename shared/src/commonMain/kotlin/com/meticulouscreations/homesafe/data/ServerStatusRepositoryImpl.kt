@@ -13,6 +13,7 @@ import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateServerConfig
 import com.meticulouscreations.homesafe.network.FrigateServerStats
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
@@ -37,6 +38,7 @@ import kotlinx.coroutines.sync.withLock
  */
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class ServerStatusRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionRepository: ConnectionRepository,

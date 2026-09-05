@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+
 import com.meticulouscreations.homesafe.PlatformContext
 import io.ktor.client.HttpClient
 
