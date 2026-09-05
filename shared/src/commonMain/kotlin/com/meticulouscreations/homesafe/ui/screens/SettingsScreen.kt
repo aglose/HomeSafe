@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -21,122 +22,360 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.meticulouscreations.homesafe.data.AlertNotifier
+import com.meticulouscreations.homesafe.data.DetectionAlertService
+import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
+import com.meticulouscreations.homesafe.data.NotificationPermission
+import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
-import com.meticulouscreations.homesafe.domain.model.DetectionSettings
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.domain.model.formatMegabytes
+import com.meticulouscreations.homesafe.domain.model.formatPercent
+import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
+import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.repository.ServerStatusRepository
+import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
+import kotlin.math.roundToInt
 
-/** The "Settings" tab's content: server info, storage, detection pipeline, and alert toggles. */
+/**
+ * The "Settings" tab: what the connected Frigate server is and is doing (live, from its stats
+ * and config), the per-camera detection switches, and this device's alert preferences.
+ */
 @Composable
 fun SettingsTabContent(
     observeSettingsUseCase: ObserveSettingsUseCase,
     updateSettingsUseCase: UpdateSettingsUseCase,
+    observeServerOverviewUseCase: ObserveServerOverviewUseCase,
+    setCameraDetectionUseCase: SetCameraDetectionUseCase,
+    setCameraMotionUseCase: SetCameraMotionUseCase,
+    serverStatusRepository: ServerStatusRepository,
     connectionRepository: ConnectionRepository,
+    alertNotifier: AlertNotifier,
+    detectionAlertService: DetectionAlertService,
+    classifierRepository: ClassifierRepository? = null,
+    onOpenClassifier: (String) -> Unit = {},
 ) {
-    val viewModel = viewModel { SettingsViewModel(observeSettingsUseCase, updateSettingsUseCase, connectionRepository) }
-    val settings by viewModel.settings.collectAsStateWithLifecycle()
-    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+    val viewModel = viewModel {
+        SettingsViewModel(
+            observeSettingsUseCase = observeSettingsUseCase,
+            updateSettingsUseCase = updateSettingsUseCase,
+            observeServerOverviewUseCase = observeServerOverviewUseCase,
+            setCameraDetectionUseCase = setCameraDetectionUseCase,
+            setCameraMotionUseCase = setCameraMotionUseCase,
+            serverStatusRepository = serverStatusRepository,
+            connectionRepository = connectionRepository,
+            alertNotifier = alertNotifier,
+            detectionAlertService = detectionAlertService,
+        )
+    }
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // Coming back from the OS notification settings screen must be reflected without a relaunch.
+    LifecycleResumeEffect(Unit) {
+        viewModel.refreshNotificationPermission()
+        onPauseOrDispose { }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp)
+            .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
             .padding(top = 8.dp, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        SettingsSection(title = "Server Information", icon = Icons.Filled.Dns) {
-            activeConnection?.let { connection ->
-                Text(
-                    text = "Connected to ${connection.activeUrl}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+        ServerSection(state, onRetry = viewModel::retryOverview)
+        StorageSection(state.overview)
+        DetectionSection(
+            state = state,
+            onDetection = viewModel::setCameraDetection,
+            onMotion = viewModel::setCameraMotion,
+            onDismissError = viewModel::dismissCameraError,
+        )
+        AlertsSection(
+            state = state,
+            onPushNotifications = viewModel::setPushNotifications,
+            onCategory = viewModel::setNotifyCategory,
+            onOpenSettings = viewModel::openNotificationSettings,
+            onSendTest = viewModel::sendTestNotification,
+        )
+        classifierRepository?.let { RecognitionSection(classifierRepository = it, onOpen = onOpenClassifier) }
+    }
+}
+
+@Composable
+private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
+    SettingsSection(title = "Server", icon = Icons.Filled.Dns) {
+        state.connection?.let { connection ->
+            SettingsCaption("Connected to ${connection.activeUrl}")
+            SettingsCaption(
+                when (connection.route) {
+                    ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
+                    ConnectionRoute.TAILSCALE ->
+                        if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
+                },
+            )
+        }
+        val overview = state.overview
+        when {
+            overview == null && state.overviewError != null -> LoadFailedRow(state.overviewError, onRetry)
+            overview == null -> LoadingRow("Reading server stats…")
+            else -> {
+                SettingsInfoGrid(
+                    listOf(
+                        InfoItem("Version", overview.version.ifBlank { "—" }, note = overview.latestVersion?.takeIf { overview.updateAvailable }?.let { "Update available: $it" }),
+                        InfoItem("Uptime", formatUptime(overview.uptimeSeconds)),
+                        InfoItem("CPU", formatPercent(overview.cpuPercent)),
+                        InfoItem("Memory", formatPercent(overview.memoryPercent)),
+                    ),
                 )
+                overview.detector?.let { detector ->
+                    val model = listOfNotNull(
+                        detector.modelType,
+                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "${w}×$h" } },
+                    ).joinToString(" ")
+                    InfoRow(
+                        label = "Detector",
+                        value = listOfNotNull(detector.type, model.takeIf { it.isNotBlank() }).joinToString(" · "),
+                        note = detector.inferenceMs?.let { "Inference ${formatMillis(it)} per frame" } ?: "No inference yet",
+                    )
+                }
+                overview.gpus.forEach { gpu ->
+                    InfoRow(
+                        label = "GPU",
+                        value = gpu.name,
+                        note = listOfNotNull(
+                            gpu.gpuPercent?.let { "${formatPercent(it)} busy" },
+                            gpu.memoryPercent?.let { "${formatPercent(it)} memory" },
+                            gpu.decoderPercent?.let { "${formatPercent(it)} decoder" },
+                        ).joinToString(" · ").ifBlank { null },
+                    )
+                }
+                if (state.overviewError != null) {
+                    SettingsCaption("Last refresh failed: ${state.overviewError}", error = true)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StorageSection(overview: ServerOverview?) {
+    SettingsSection(title = "Storage & Retention", icon = Icons.Filled.Storage) {
+        if (overview == null) {
+            LoadingRow("Reading disk usage…")
+            return@SettingsSection
+        }
+        val storage = overview.recordingsStorage
+        if (storage == null) {
+            SettingsCaption("The server didn't report its recordings disk.")
+        } else {
+            StorageUsageBar(
+                label = "Recordings (${storage.path})",
+                usedFraction = storage.usedFraction,
+                usedText = "${formatMegabytes(storage.usedMb)} used",
+                totalText = "${formatMegabytes(storage.totalMb)} total",
+            )
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+        val retention = overview.retention
+        SettingsInfoGrid(
+            listOf(
+                InfoItem("Continuous", formatRetentionDays(retention.continuousDays)),
+                InfoItem("Motion", formatRetentionDays(retention.motionDays)),
+                InfoItem("Alerts", retention.alertDays?.let(::formatRetentionDays) ?: "Default"),
+                InfoItem("Detections", retention.detectionDays?.let(::formatRetentionDays) ?: "Default"),
+            ),
+        )
+        SettingsCaption("Frigate deletes recordings older than these on its own. Retention is set in its config.yml.")
+    }
+}
+
+@Composable
+private fun DetectionSection(
+    state: SettingsUiState,
+    onDetection: (String, Boolean) -> Unit,
+    onMotion: (String, Boolean) -> Unit,
+    onDismissError: () -> Unit,
+) {
+    SettingsSection(title = "Detection Pipeline", icon = Icons.Filled.PersonSearch) {
+        val overview = state.overview
+        if (overview == null) {
+            LoadingRow("Reading camera pipelines…")
+            return@SettingsSection
+        }
+        if (!overview.canEditConfig) {
+            SettingsCaption("Signed in as a viewer: the switches below are read-only. An admin account can change them.")
+        }
+        overview.cameras.forEachIndexed { index, camera ->
+            if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            CameraPipelineRows(
+                camera = camera,
+                editable = overview.canEditConfig,
+                busy = camera.name in state.busyCameras,
+                onDetection = { onDetection(camera.name, it) },
+                onMotion = { onMotion(camera.name, it) },
+            )
+        }
+        state.cameraError?.let { error ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SettingsCaption(error, error = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismissError) { Text("Dismiss") }
+            }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+        InfoRow(label = "Face recognition", value = onOff(overview.faceRecognitionEnabled))
+        InfoRow(label = "License plate recognition", value = onOff(overview.licensePlateRecognitionEnabled))
+        InfoRow(label = "Semantic search", value = onOff(overview.semanticSearchEnabled))
+        SettingsCaption("These AI features are set in Frigate's config.yml and need a Frigate restart to change.")
+    }
+}
+
+/** A camera's name and live throughput, then its two switches. Motion can't go off while detection needs it — Frigate's own rule. */
+@Composable
+private fun CameraPipelineRows(
+    camera: CameraPipeline,
+    editable: Boolean,
+    busy: Boolean,
+    onDetection: (Boolean) -> Unit,
+    onMotion: (Boolean) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = camera.displayName,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f),
+            )
+            if (busy) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+            } else {
                 Text(
-                    text = when (connection.route) {
-                        ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
-                        ConnectionRoute.TAILSCALE ->
-                            if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
-                    },
+                    text = cameraThroughput(camera),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            SettingsInfoGrid(
-                listOf(
-                    "Version" to "v0.12.1-7b003a3",
-                    "Uptime" to "14 days, 3 hours",
-                    "CPU Usage" to "12%",
-                    "Memory" to "2.4 GB / 8.0 GB",
-                ),
-            )
         }
+        SettingsToggleRow(
+            title = "Object detection",
+            description = if (camera.detectionEnabled) "Looking for people, vehicles, and animals." else "Off — no detections or alerts from this camera.",
+            checked = camera.detectionEnabled,
+            enabled = editable && !busy && camera.enabled,
+            onCheckedChange = onDetection,
+        )
+        SettingsToggleRow(
+            title = "Motion detection",
+            description = when {
+                camera.detectionEnabled -> "Needed while object detection is on."
+                camera.motionEnabled -> "Records motion segments and feeds the detector."
+                else -> "Off — only continuous recording."
+            },
+            checked = camera.motionEnabled,
+            enabled = editable && !busy && camera.enabled && !camera.detectionEnabled,
+            onCheckedChange = onMotion,
+        )
+    }
+}
 
-        SettingsSection(title = "Storage & Disk", icon = Icons.Filled.Storage) {
-            StorageUsageBar(
-                label = "Main Recordings (/media/frigate)",
-                usedFraction = 0.64f,
-                usedText = "1.2 TB Used",
-                totalText = "1.8 TB Total",
+@Composable
+private fun AlertsSection(
+    state: SettingsUiState,
+    onPushNotifications: (Boolean) -> Unit,
+    onCategory: (MomentCategory, Boolean) -> Unit,
+    onOpenSettings: () -> Unit,
+    onSendTest: () -> Unit,
+) {
+    SettingsSection(title = "Alerts", icon = Icons.Filled.Notifications) {
+        if (!state.notificationsSupported) {
+            SettingsToggleRow(
+                title = "Notifications",
+                description = "Not available on this platform. Use the Android or iOS app for alerts.",
+                checked = false,
+                enabled = false,
+                onCheckedChange = {},
             )
+            return@SettingsSection
+        }
+        val blocked = state.notificationPermission == NotificationPermission.DENIED
+        SettingsToggleRow(
+            title = "Notifications",
+            description = when {
+                blocked -> "Blocked in system settings. Allow notifications for HomeSafe to turn this on."
+                state.pushNotificationsActive -> "On — a notification for each new detection while HomeSafe is running."
+                else -> "Get a notification when a camera sees something."
+            },
+            checked = state.pushNotificationsActive,
+            enabled = !blocked,
+            onCheckedChange = onPushNotifications,
+        )
+        if (blocked) {
+            OutlinedButton(onClick = onOpenSettings) { Text("Open notification settings") }
+        }
+        if (state.pushNotificationsActive) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             SettingsToggleRow(
-                title = "Auto-Purge Old Media",
-                description = "Delete events older than 30 days to free space.",
-                checked = settings.autoPurgeOldMedia,
-                onCheckedChange = { viewModel.updateSettings(settings.copy(autoPurgeOldMedia = it)) },
-            )
-        }
-
-        SettingsSection(title = "Detection Pipeline", icon = Icons.Filled.PersonSearch) {
-            SettingsToggleRow(
-                title = "Global Motion Detection",
-                description = "Enable pixel-level motion analysis across all feeds.",
-                checked = settings.globalMotionDetection,
-                onCheckedChange = { viewModel.updateSettings(settings.copy(globalMotionDetection = it)) },
+                title = "People",
+                description = "Someone at a door, in the yard, on the driveway.",
+                checked = state.alerts.notifyPeople,
+                onCheckedChange = { onCategory(MomentCategory.PEOPLE, it) },
             )
             SettingsToggleRow(
-                title = "Coral Edge TPU Inference",
-                description = "Hardware acceleration for object detection.",
-                checked = settings.coralEdgeInference,
-                onCheckedChange = { viewModel.updateSettings(settings.copy(coralEdgeInference = it)) },
+                title = "Vehicles",
+                description = "Cars, trucks, motorcycles, and bicycles.",
+                checked = state.alerts.notifyVehicles,
+                onCheckedChange = { onCategory(MomentCategory.VEHICLES, it) },
             )
             SettingsToggleRow(
-                title = "Face Recognition",
-                description = "Attempt to identify known profiles in events.",
-                checked = settings.faceRecognition,
-                onCheckedChange = { viewModel.updateSettings(settings.copy(faceRecognition = it)) },
+                title = "Animals",
+                description = "Dogs, cats, birds, and other wildlife.",
+                checked = state.alerts.notifyAnimals,
+                onCheckedChange = { onCategory(MomentCategory.ANIMALS, it) },
             )
-        }
-
-        SettingsSection(title = "Alerts", icon = Icons.Filled.Notifications) {
-            SettingsToggleRow(
-                title = "Push Notifications",
-                description = "Receive alerts for critical detection events.",
-                checked = settings.pushNotificationsEnabled,
-                onCheckedChange = { viewModel.updateSettings(settings.copy(pushNotificationsEnabled = it)) },
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onSendTest) { Text("Send test notification") }
+                if (state.testNotificationSent) SettingsCaption("Sent")
+            }
+            SettingsCaption(
+                "HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. " +
+                    "Frigate has no push service for phones, so nothing arrives once the system stops the app.",
             )
         }
     }
 }
+
+// ---- Building blocks ---------------------------------------------------------------------------
+
+private data class InfoItem(val label: String, val value: String, val note: String? = null)
 
 @Composable
 private fun SettingsSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
@@ -163,27 +402,64 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
 }
 
 @Composable
-private fun SettingsInfoGrid(items: List<Pair<String, String>>) {
+private fun SettingsCaption(text: String, error: Boolean = false, modifier: Modifier = Modifier) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall,
+        color = if (error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = modifier,
+    )
+}
+
+@Composable
+private fun LoadingRow(text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+        SettingsCaption(text)
+    }
+}
+
+@Composable
+private fun LoadFailedRow(message: String, onRetry: () -> Unit) {
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        SettingsCaption("Couldn't reach the server: $message", error = true, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRetry) { Text("Retry") }
+    }
+}
+
+@Composable
+private fun SettingsInfoGrid(items: List<InfoItem>) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         items.chunked(2).forEach { rowItems ->
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                rowItems.forEach { (label, value) ->
+                rowItems.forEach { item ->
                     Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(
-                            text = label.uppercase(),
+                            text = item.label.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Text(
-                            text = value,
+                            text = item.value,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurface,
                         )
+                        item.note?.let { Text(text = it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary) }
                     }
                 }
                 if (rowItems.size == 1) Spacer(Modifier.weight(1f))
             }
         }
+    }
+}
+
+/** A full-width label/value pair, for values too long for the two-column grid. */
+@Composable
+private fun InfoRow(label: String, value: String, note: String? = null) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = label.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text = value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        note?.let { Text(text = it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
@@ -195,11 +471,16 @@ private fun StorageUsageBar(label: String, usedFraction: Float, usedText: String
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.Bottom,
         ) {
-            Text(text = label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                text = "${(usedFraction * 100).toInt()}% Used",
+                text = label,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f).padding(end = 12.dp),
+            )
+            Text(
+                text = "${(usedFraction * 100).roundToInt()}% used",
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (usedFraction >= 0.9f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Box(
@@ -214,34 +495,72 @@ private fun StorageUsageBar(label: String, usedFraction: Float, usedText: String
                     .fillMaxWidth(usedFraction)
                     .fillMaxHeight()
                     .clip(RoundedCornerShape(50))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .background(if (usedFraction >= 0.9f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primaryContainer),
             )
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(text = usedText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(text = totalText, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            SettingsCaption(usedText)
+            SettingsCaption(totalText)
         }
     }
 }
 
 @Composable
-private fun SettingsToggleRow(title: String, description: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+private fun SettingsToggleRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val textAlpha = if (enabled) 1f else 0.6f
         Column(modifier = Modifier.weight(1f).padding(end = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-            Text(text = description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(text = title, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface.copy(alpha = textAlpha))
+            Text(text = description, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = textAlpha))
         }
+        // Material's disabled-checked thumb is the surface colour, which on this dark theme makes a
+        // locked "on" switch read as "off". A locked switch still has to show its state, so the
+        // disabled colours are the enabled ones, dimmed.
+        val colors = MaterialTheme.colorScheme
         Switch(
             checked = checked,
             onCheckedChange = onCheckedChange,
+            enabled = enabled,
             colors = SwitchDefaults.colors(
-                checkedThumbColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                checkedTrackColor = MaterialTheme.colorScheme.primaryContainer,
+                checkedThumbColor = colors.onPrimaryContainer,
+                checkedTrackColor = colors.primaryContainer,
+                disabledCheckedThumbColor = colors.onPrimaryContainer.copy(alpha = 0.5f),
+                disabledCheckedTrackColor = colors.primaryContainer.copy(alpha = 0.4f),
+                disabledUncheckedThumbColor = colors.onSurfaceVariant.copy(alpha = 0.4f),
+                disabledUncheckedTrackColor = colors.surfaceContainerHighest.copy(alpha = 0.4f),
+                disabledUncheckedBorderColor = colors.outline.copy(alpha = 0.2f),
             ),
         )
     }
+}
+
+private fun onOff(enabled: Boolean) = if (enabled) "On" else "Off"
+
+/** "5.7 detections/s · 5 fps" — what the pipeline is doing right now; "Disabled" for a camera turned off in config. */
+private fun cameraThroughput(camera: CameraPipeline): String {
+    if (!camera.enabled) return "Disabled"
+    val parts = listOfNotNull(
+        camera.detectionFps?.takeIf { camera.detectionEnabled }?.let { "${it.format1()} detections/s" },
+        camera.cameraFps?.let { "${it.roundToInt()} fps" },
+        camera.skippedFps?.takeIf { it > 0 }?.let { "${it.format1()} skipped" },
+    )
+    return parts.joinToString(" · ").ifBlank { "No stats yet" }
+}
+
+/** "6.8 ms" */
+private fun formatMillis(ms: Double): String = "${ms.format1()} ms"
+
+private fun Double.format1(): String {
+    val scaled = (this * 10).roundToInt()
+    return if (scaled % 10 == 0) "${scaled / 10}" else "${scaled / 10}.${scaled % 10}"
 }

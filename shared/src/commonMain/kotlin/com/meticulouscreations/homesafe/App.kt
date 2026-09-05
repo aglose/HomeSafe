@@ -30,6 +30,8 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
                 .components { add(KtorNetworkFetcherFactory(appGraph.httpClient)) }
                 .build()
         }
+        // Idle until the user turns notifications on in Settings; started here so it outlives any tab.
+        appGraph.detectionAlertService.start()
     }
 
     FrigateTheme {

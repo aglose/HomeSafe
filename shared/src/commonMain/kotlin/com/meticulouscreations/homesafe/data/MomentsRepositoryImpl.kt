@@ -113,4 +113,5 @@ internal fun FrigateEvent.toDomain(): MomentEvent = MomentEvent(
     topScore = data?.topScore,
     hasClip = hasClip,
     hasSnapshot = hasSnapshot,
+    zones = zones,
 )

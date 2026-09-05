@@ -4,6 +4,8 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
+    // Reads androidApp/google-services.json (gitignored) for Firebase Cloud Messaging.
+    alias(libs.plugins.googleServices)
 }
 
 kotlin {
@@ -19,6 +21,10 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+
+    // Push notifications from the HomeSafe relay on the Frigate box, via Firebase Cloud Messaging.
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.messaging)
 }
 
 // Local, gitignored test credentials for the debug-only "Autofill test credentials" button

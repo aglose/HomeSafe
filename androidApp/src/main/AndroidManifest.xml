@@ -3,6 +3,8 @@
 
     <!-- Lets the app notice Wi-Fi ↔ cellular changes and re-pick the server's local vs Tailscale address. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Detection alerts are posted as local notifications (see AlertNotifier.android.kt); Android 13+ asks the user first. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:allowBackup="true"
@@ -12,8 +14,11 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        <!-- singleTask: a notification tap (or any relaunch) resumes the running instance instead of
+             stacking a second MainActivity — and a second app graph, poller, and sign-in screen — on top. -->
         <activity
             android:exported="true"
+            android:launchMode="singleTask"
             android:name=".MainActivity"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -22,6 +27,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Receives pushes from the HomeSafe relay (see androidApp/.../push/) and fresh FCM tokens. -->
+        <service
+            android:name=".push.HomeSafeMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
     </application>
 
 </manifest>

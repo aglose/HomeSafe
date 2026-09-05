@@ -68,7 +68,13 @@ fun FrigateAppShell(appGraph: AppGraph) {
     // Home has drilled into a camera. Those nested screens draw their own header row, and
     // stacking the shell bar above it would cost ~70dp of vertical space for no information.
     val homeBackStack = remember { mutableStateListOf<Any>(CameraListRoute) }
-    val showTopBar = topLevelBackStack.topLevelKey != TopLevelRoute.Home || homeBackStack.size <= 1
+    // Same arrangement for Settings, which drills into a classifier's labelling screen.
+    val settingsBackStack = remember { mutableStateListOf<Any>(SettingsHomeRoute) }
+    val showTopBar = when (topLevelBackStack.topLevelKey) {
+        TopLevelRoute.Home -> homeBackStack.size <= 1
+        TopLevelRoute.Settings -> settingsBackStack.size <= 1
+        else -> true
+    }
 
     // Edge-to-edge: the background paints under the system bars, and each piece that must stay
     // tappable steps in from its own bar — the top bar from the status bar, the floating nav from
@@ -105,11 +111,21 @@ fun FrigateAppShell(appGraph: AppGraph) {
                         )
                     }
                     entry<TopLevelRoute.Settings> {
+                        SettingsTabNav(appGraph, settingsBackStack) { openClassifier ->
                         SettingsTabContent(
                             observeSettingsUseCase = appGraph.observeSettingsUseCase,
                             updateSettingsUseCase = appGraph.updateSettingsUseCase,
+                            observeServerOverviewUseCase = appGraph.observeServerOverviewUseCase,
+                            setCameraDetectionUseCase = appGraph.setCameraDetectionUseCase,
+                            setCameraMotionUseCase = appGraph.setCameraMotionUseCase,
+                            serverStatusRepository = appGraph.serverStatusRepository,
                             connectionRepository = appGraph.connectionRepository,
+                            alertNotifier = appGraph.alertNotifier,
+                            detectionAlertService = appGraph.detectionAlertService,
+                            classifierRepository = appGraph.classifierRepository,
+                            onOpenClassifier = openClassifier,
                         )
+                        }
                     }
                 },
             )

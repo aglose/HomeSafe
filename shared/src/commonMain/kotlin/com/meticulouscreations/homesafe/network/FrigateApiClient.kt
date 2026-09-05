@@ -15,6 +15,9 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 /** The server answered, but not with success — bad credentials, say. The transport itself was fine. */
 class FrigateResponseException(message: String) : Exception(message)
@@ -155,15 +158,111 @@ class FrigateApiClient(private val httpClient: HttpClient) {
     }
 
     /** A hot-reloadable camera config section; the name doubles as the update topic. */
-    enum class CameraSection(val configKey: String) { MOTION("motion"), OBJECTS("objects"), ZONES("zones") }
+    enum class CameraSection(val configKey: String) { DETECT("detect"), MOTION("motion"), OBJECTS("objects"), ZONES("zones") }
 
-    /** The most recent [limit] detections across all cameras, newest first. */
-    suspend fun getEvents(serverUrl: String, limit: Int = 100): Result<List<FrigateEvent>> = runCatching {
+    /**
+     * Turns [cameraName]'s object detection on or off, live. Same `PUT /api/config/set` path as
+     * the masks editor, so the change also lands in config.yml and survives a restart — unlike
+     * Frigate's own UI toggle, which is MQTT/websocket-only and forgotten on restart. Detection
+     * needs motion to feed it, so enabling it also enables motion first, the way Frigate's own
+     * toggle does.
+     */
+    suspend fun setCameraDetection(serverUrl: String, cameraName: String, enabled: Boolean, motionEnabled: Boolean): Result<Unit> {
+        if (enabled && !motionEnabled) {
+            setCameraMotion(serverUrl, cameraName, enabled = true).onFailure { return Result.failure(it) }
+        }
+        return setCameraSwitch(serverUrl, cameraName, CameraSection.DETECT, enabled)
+    }
+
+    /** Turns [cameraName]'s motion detection on or off, live. See [setCameraDetection] for the mechanism. */
+    suspend fun setCameraMotion(serverUrl: String, cameraName: String, enabled: Boolean): Result<Unit> =
+        setCameraSwitch(serverUrl, cameraName, CameraSection.MOTION, enabled)
+
+    /**
+     * Writes `cameras.<cam>.<section>.enabled` as a real boolean and hot-reloads the section.
+     * Goes through the body's `config_data` rather than the query string on purpose: query
+     * values are written to config.yml as strings (`enabled: 'false'`), which Frigate tolerates
+     * on the next restart but is wrong in the file. See [setCameraConfig] for the rest.
+     */
+    private suspend fun setCameraSwitch(serverUrl: String, cameraName: String, section: CameraSection, enabled: Boolean): Result<Unit> = runCatching {
+        val configData = buildJsonObject {
+            putJsonObject("cameras") {
+                putJsonObject(cameraName) {
+                    putJsonObject(section.configKey) { put("enabled", enabled) }
+                }
+            }
+        }
+        val response = httpClient.put("${serverUrl.trimEnd('/')}/api/config/set") {
+            contentType(ContentType.Application.Json)
+            setBody(ConfigSetRequest(requiresRestart = 0, updateTopic = "config/cameras/$cameraName/${section.configKey}", configData = configData))
+        }
+        val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
+        if (!response.status.isSuccess() || result?.success == false) {
+            throw FrigateResponseException(result?.message ?: "Couldn't save: ${response.status}")
+        }
+    }
+
+    /**
+     * The most recent [limit] detections across all cameras, newest first. [afterEpochSeconds]
+     * restricts it to detections that started after that moment (Frigate's `after` filter), which
+     * is what a poller that only wants what's new since its last look asks for.
+     */
+    suspend fun getEvents(serverUrl: String, limit: Int = 100, afterEpochSeconds: Double? = null): Result<List<FrigateEvent>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
             parameter("limit", limit)
+            if (afterEpochSeconds != null) parameter("after", formatEpochSeconds(afterEpochSeconds))
         }
         check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
         response.body<List<FrigateEvent>>()
+    }
+
+    /** What the server is doing right now — version, uptime, load, disk, detector and per-camera pipeline stats. */
+    suspend fun getStats(serverUrl: String): Result<FrigateServerStats> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/stats")
+        check(response.status.isSuccess()) { "Couldn't load server stats: ${response.status}" }
+        response.body<FrigateStatsResponse>().toServerStats()
+    }
+
+    /** The server-wide config the Settings tab reports: retention, detector, AI features, and each camera's pipeline switches. */
+    suspend fun getServerConfig(serverUrl: String): Result<FrigateServerConfig> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
+        check(response.status.isSuccess()) { "Couldn't load server config: ${response.status}" }
+        val config = response.body<FrigateConfigResponse>()
+        FrigateServerConfig(
+            retention = FrigateRetention(
+                continuousDays = config.record?.continuous?.days ?: 0.0,
+                motionDays = config.record?.motion?.days ?: 0.0,
+                alertDays = config.record?.alerts?.retain?.days,
+                detectionDays = config.record?.detections?.retain?.days,
+            ),
+            detectors = config.detectors.mapValues { (_, detector) -> detector.type },
+            model = config.model?.let { FrigateModelInfo(it.modelType, it.path, it.width, it.height) },
+            faceRecognitionEnabled = config.faceRecognition?.enabled == true,
+            licensePlateRecognitionEnabled = config.lpr?.enabled == true,
+            semanticSearchEnabled = config.semanticSearch?.enabled == true,
+            cameras = config.cameras.map { (name, camera) ->
+                FrigateCameraPipelineConfig(
+                    name = name,
+                    enabled = camera.enabled,
+                    detectEnabled = camera.detect?.enabled ?: true,
+                    motionEnabled = camera.motion?.enabled ?: true,
+                )
+            },
+        )
+    }
+
+    /** Whether the signed-in account may change config (`role == admin`). Viewers get 401s from `/api/config/set`. */
+    suspend fun isAdmin(serverUrl: String): Result<Boolean> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/profile")
+        check(response.status.isSuccess()) { "Couldn't load profile: ${response.status}" }
+        response.body<FrigateProfileResponse>().role == "admin"
+    }
+
+    /** Raw bytes of a detection's thumbnail, for a notification's picture. */
+    suspend fun getEventThumbnail(serverUrl: String, eventId: String): Result<ByteArray> = runCatching {
+        val response = httpClient.get(frigateEventThumbnailUrl(serverUrl, eventId))
+        check(response.status.isSuccess()) { "No thumbnail: ${response.status}" }
+        response.body<ByteArray>()
     }
 
     /** Recorded clips of [cameraName] overlapping [afterEpochSeconds]..[beforeEpochSeconds], oldest first. */
@@ -197,4 +296,28 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         const val DEFAULT_DETECT_WIDTH = 1280
         const val DEFAULT_DETECT_HEIGHT = 720
     }
+}
+
+/** "9.4" -> 9.4, "8.0%" -> 8.0; null for anything else. Frigate reports percentages as strings, some with a sign. */
+internal fun parseFrigatePercent(raw: String?): Double? = raw?.trim()?.trimEnd('%')?.toDoubleOrNull()
+
+internal fun FrigateStatsResponse.toServerStats(): FrigateServerStats {
+    // The one `cpu_usages` row that isn't a process: the whole machine.
+    val system = cpuUsages["frigate.full_system"]
+    return FrigateServerStats(
+        version = service?.version.orEmpty(),
+        latestVersion = service?.latestVersion?.takeIf { it.isNotBlank() },
+        uptimeSeconds = service?.uptime ?: 0,
+        cpuPercent = parseFrigatePercent(system?.cpu),
+        memoryPercent = parseFrigatePercent(system?.mem),
+        storage = service?.storage.orEmpty().mapValues { (_, mount) -> FrigateStorage(mount.total, mount.used, mount.free) },
+        detectors = detectors.map { (name, detector) -> FrigateDetector(name, detector.inferenceSpeed) },
+        gpus = gpuUsages.map { (name, gpu) ->
+            FrigateGpu(name, parseFrigatePercent(gpu.gpu), parseFrigatePercent(gpu.mem), parseFrigatePercent(gpu.dec))
+        },
+        cameras = cameras.mapValues { (_, camera) ->
+            FrigateCameraPipeline(camera.cameraFps, camera.processFps, camera.skippedFps, camera.detectionFps)
+        },
+        totalDetectionFps = detectionFps,
+    )
 }

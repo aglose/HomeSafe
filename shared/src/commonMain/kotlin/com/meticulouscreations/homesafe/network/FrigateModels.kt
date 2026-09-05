@@ -6,6 +6,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonTransformingSerializer
 
@@ -18,6 +19,45 @@ internal data class LoginRequest(
 @Serializable
 internal data class FrigateConfigResponse(
     val cameras: Map<String, FrigateCameraConfig> = emptyMap(),
+    val record: FrigateRecordConfig? = null,
+    val detectors: Map<String, FrigateDetectorConfig> = emptyMap(),
+    val model: FrigateModelConfig? = null,
+    @SerialName("face_recognition") val faceRecognition: FrigateEnabledConfig? = null,
+    val lpr: FrigateEnabledConfig? = null,
+    @SerialName("semantic_search") val semanticSearch: FrigateEnabledConfig? = null,
+)
+
+/** Any config block whose only interesting field is `enabled` (face recognition, LPR, semantic search, ...). */
+@Serializable
+internal data class FrigateEnabledConfig(val enabled: Boolean = false)
+
+/** The global `record` block; retention is what the Settings tab reports. Days can be fractional in Frigate. */
+@Serializable
+internal data class FrigateRecordConfig(
+    val enabled: Boolean = true,
+    val continuous: FrigateRetentionDays? = null,
+    val motion: FrigateRetentionDays? = null,
+    val alerts: FrigateEventRecordConfig? = null,
+    val detections: FrigateEventRecordConfig? = null,
+)
+
+@Serializable
+internal data class FrigateRetentionDays(val days: Double = 0.0)
+
+@Serializable
+internal data class FrigateEventRecordConfig(val retain: FrigateRetentionDays? = null)
+
+/** One entry of `detectors`: its `type` is the backend ("onnx", "edgetpu", "cpu", ...). */
+@Serializable
+internal data class FrigateDetectorConfig(val type: String = "")
+
+/** The global `model` block, as much of it as the Settings tab shows. */
+@Serializable
+internal data class FrigateModelConfig(
+    val path: String? = null,
+    val width: Int? = null,
+    val height: Int? = null,
+    @SerialName("model_type") val modelType: String? = null,
 )
 
 @Serializable
@@ -40,6 +80,7 @@ internal data class FrigateZoneConfig(
 
 @Serializable
 internal data class FrigateDetectConfig(
+    val enabled: Boolean = true,
     val width: Int? = null,
     val height: Int? = null,
 )
@@ -47,6 +88,7 @@ internal data class FrigateDetectConfig(
 /** `motion.mask`: Frigate serves it as `""`, one polygon string, or a list of them — see [FrigateMaskListSerializer]. */
 @Serializable
 internal data class FrigateMotionConfig(
+    val enabled: Boolean = true,
     @Serializable(with = FrigateMaskListSerializer::class) val mask: List<String> = emptyList(),
 )
 
@@ -92,12 +134,18 @@ data class FrigateDetectionConfig(
     val trackedObjects: List<String> = emptyList(),
 )
 
-/** JSON body of `PUT /api/config/set`; the values themselves ride in the query string. */
+/**
+ * JSON body of `PUT /api/config/set`. Values ride either in the query string (strings and
+ * lists — masks, zones) or in [configData], a nested object merged into the config. Query
+ * values are written to config.yml verbatim as strings, so a boolean must go through
+ * [configData] to land as a real `true`/`false` rather than `'true'`.
+ */
 @Serializable
 internal data class ConfigSetRequest(
     /** 0 applies the change live (the topic below tells the camera process what changed). */
     @SerialName("requires_restart") val requiresRestart: Int,
     @SerialName("update_topic") val updateTopic: String,
+    @SerialName("config_data") val configData: JsonObject? = null,
 )
 
 @Serializable
@@ -160,4 +208,134 @@ data class FrigateRecording(
     val duration: Double? = null,
     val motion: Int? = null,
     val objects: Int? = null,
+)
+
+/**
+ * `GET /api/stats`, the parts the Settings tab reports. Field set observed against Frigate
+ * 0.17.2. `cpu_usages` is keyed by pid except for the `frigate.full_system` roll-up; the
+ * per-process rows are dropped on the floor here. Percentages arrive as strings ("9.4", "8.0%").
+ */
+@Serializable
+internal data class FrigateStatsResponse(
+    val service: FrigateServiceStats? = null,
+    val cameras: Map<String, FrigateCameraStats> = emptyMap(),
+    val detectors: Map<String, FrigateDetectorStats> = emptyMap(),
+    @SerialName("cpu_usages") val cpuUsages: Map<String, FrigateProcessStats> = emptyMap(),
+    @SerialName("gpu_usages") val gpuUsages: Map<String, FrigateGpuStats> = emptyMap(),
+    @SerialName("detection_fps") val detectionFps: Double? = null,
+)
+
+@Serializable
+internal data class FrigateServiceStats(
+    val version: String = "",
+    @SerialName("latest_version") val latestVersion: String? = null,
+    /** Seconds since the Frigate process started. */
+    val uptime: Long = 0,
+    /** Keyed by mount path (`/media/frigate/recordings`, `/dev/shm`, ...); sizes in megabytes. */
+    val storage: Map<String, FrigateStorageStats> = emptyMap(),
+)
+
+@Serializable
+internal data class FrigateStorageStats(
+    val total: Double = 0.0,
+    val used: Double = 0.0,
+    val free: Double = 0.0,
+    @SerialName("mount_type") val mountType: String? = null,
+)
+
+@Serializable
+internal data class FrigateCameraStats(
+    @SerialName("camera_fps") val cameraFps: Double = 0.0,
+    @SerialName("process_fps") val processFps: Double = 0.0,
+    @SerialName("skipped_fps") val skippedFps: Double = 0.0,
+    @SerialName("detection_fps") val detectionFps: Double = 0.0,
+)
+
+@Serializable
+internal data class FrigateDetectorStats(
+    /** Milliseconds per inference, averaged. */
+    @SerialName("inference_speed") val inferenceSpeed: Double = 0.0,
+)
+
+@Serializable
+internal data class FrigateProcessStats(
+    val cpu: String? = null,
+    val mem: String? = null,
+)
+
+@Serializable
+internal data class FrigateGpuStats(
+    val gpu: String? = null,
+    val mem: String? = null,
+    val enc: String? = null,
+    val dec: String? = null,
+)
+
+/** `GET /api/profile`: who the session cookie belongs to. `role` is "admin" or "viewer". */
+@Serializable
+internal data class FrigateProfileResponse(
+    val username: String = "",
+    val role: String? = null,
+)
+
+/** `/api/stats` distilled: what the server is, how hard it's working, and what each camera's pipeline is doing. */
+data class FrigateServerStats(
+    val version: String,
+    val latestVersion: String?,
+    val uptimeSeconds: Long,
+    /** Whole-system CPU %, from Frigate's `frigate.full_system` roll-up; null if it wasn't reported. */
+    val cpuPercent: Double?,
+    /** Whole-system memory %, same source. */
+    val memoryPercent: Double?,
+    /** Keyed by mount path, sizes in megabytes. */
+    val storage: Map<String, FrigateStorage>,
+    val detectors: List<FrigateDetector>,
+    val gpus: List<FrigateGpu>,
+    val cameras: Map<String, FrigateCameraPipeline>,
+    val totalDetectionFps: Double?,
+)
+
+data class FrigateStorage(val totalMb: Double, val usedMb: Double, val freeMb: Double)
+
+data class FrigateDetector(val name: String, val inferenceMs: Double)
+
+data class FrigateGpu(val name: String, val gpuPercent: Double?, val memoryPercent: Double?, val decoderPercent: Double?)
+
+/**
+ * A camera's throughput from `/api/stats`. Deliberately not its `detection_enabled` flag: that
+ * only follows Frigate's own MQTT/websocket toggle and stays stale after a `config/set`, whereas
+ * `/api/config`'s `detect.enabled` reflects both paths — so the switch reads the config.
+ */
+data class FrigateCameraPipeline(
+    val cameraFps: Double,
+    val processFps: Double,
+    val skippedFps: Double,
+    val detectionFps: Double,
+)
+
+/** The server-wide bits of `/api/config` the Settings tab shows and edits. */
+data class FrigateServerConfig(
+    val retention: FrigateRetention,
+    val detectors: Map<String, String>,
+    val model: FrigateModelInfo?,
+    val faceRecognitionEnabled: Boolean,
+    val licensePlateRecognitionEnabled: Boolean,
+    val semanticSearchEnabled: Boolean,
+    val cameras: List<FrigateCameraPipelineConfig>,
+)
+
+data class FrigateRetention(
+    val continuousDays: Double,
+    val motionDays: Double,
+    val alertDays: Double?,
+    val detectionDays: Double?,
+)
+
+data class FrigateModelInfo(val modelType: String?, val path: String?, val width: Int?, val height: Int?)
+
+data class FrigateCameraPipelineConfig(
+    val name: String,
+    val enabled: Boolean,
+    val detectEnabled: Boolean,
+    val motionEnabled: Boolean,
 )
