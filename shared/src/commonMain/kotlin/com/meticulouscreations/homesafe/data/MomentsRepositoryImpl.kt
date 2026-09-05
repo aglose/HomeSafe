@@ -1,58 +1,116 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.RecordingStream
+import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.FrigateEvent
+import com.meticulouscreations.homesafe.network.frigateEventClipDownloadUrl
+import com.meticulouscreations.homesafe.network.frigateEventClipUrl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.shareIn
 
 /**
- * Intentionally has no Room-backed cache: there is no real remote Frigate events API integrated
- * yet, so this repository's in-memory sample data IS the source of truth. Adding a Room table
- * here would cache static mock data for no benefit — do this only once a real events API backs it.
+ * No Room cache on purpose (same reasoning as recordings): Frigate mints and ends events
+ * continuously, a stale cache would show detections that have since been purged, and the feed
+ * re-polls on a short interval anyway. The in-memory list is the truth for the session.
+ *
+ * The polling loop lives in [observeMoments] (not in `init`) so it only runs while something is
+ * actually looking at the feed — a background tab shouldn't keep hitting the server.
  */
 @Inject
 @SingleIn(AppScope::class)
-class MomentsRepositoryImpl : MomentsRepository {
+class MomentsRepositoryImpl(
+    private val apiClient: FrigateApiClient,
+    private val connectionRepository: ConnectionRepository,
+    appScope: CoroutineScope,
+) : MomentsRepository {
 
-    private val sampleMoments = listOf(
-        MomentEvent(
-            id = "moment-1",
-            title = "Person at Front Door",
-            cameraName = "Front Porch Camera",
-            timestamp = "08:42 AM",
-            durationLabel = "0:15",
-            dateGroup = "Today",
-            dateSubLabel = "Oct 24",
-            category = MomentCategory.PEOPLE,
-            badgeLabel = "Person",
-        ),
-        MomentEvent(
-            id = "moment-2",
-            title = "Vehicle in Driveway",
-            cameraName = "Driveway Camera",
-            timestamp = "06:15 AM",
-            durationLabel = "0:42",
-            dateGroup = "Today",
-            dateSubLabel = "Oct 24",
-            category = MomentCategory.VEHICLES,
-            badgeLabel = "Vehicle",
-        ),
-        MomentEvent(
-            id = "moment-3",
-            title = "Animal Detected",
-            cameraName = "Backyard Camera",
-            timestamp = "11:45 PM",
-            durationLabel = null,
-            dateGroup = "Yesterday",
-            dateSubLabel = "Oct 23",
-            category = MomentCategory.ANIMALS,
-            badgeLabel = "Animal",
-        ),
-    )
+    private val _moments = MutableStateFlow<List<MomentEvent>>(emptyList())
+    private val _error = MutableStateFlow<String?>(null)
 
-    override fun observeMoments(): Flow<List<MomentEvent>> = flowOf(sampleMoments)
+    /** A StateFlow only emits on change, so a LAN/Tailscale route flip re-fetches on the new host and nothing else re-fetches. */
+    private val activeUrl = connectionRepository.currentServerUrl
+
+    // channelFlow, not flow: collectLatest runs its body in a child coroutine, and emitting from
+    // there would violate the flow invariant at runtime. send() from a child is what channelFlow is for.
+    private val poller: Flow<Unit> = channelFlow {
+        activeUrl.collectLatest { url ->
+            if (url == null) { _moments.value = emptyList(); return@collectLatest }
+            while (true) {
+                fetch(url)
+                send(Unit)
+                delay(POLL_INTERVAL_MS)
+            }
+        }
+    }.shareIn(appScope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000))
+
+    /**
+     * Combining with [poller] is what subscribes it: the loop runs exactly while someone collects
+     * this flow. `onStart { emit(Unit) }` guarantees a first emission even before (or without) a
+     * fetch — e.g. while disconnected, so the UI sees an empty list rather than nothing.
+     */
+    override fun observeMoments(): Flow<List<MomentEvent>> =
+        combine(_moments, poller.onStart { emit(Unit) }) { list, _ -> list }
+
+    override fun observeError(): Flow<String?> = _error.asStateFlow()
+
+    override suspend fun refresh() {
+        connectionRepository.currentServerUrl.value?.let { fetch(it) }
+    }
+
+    override suspend fun getClipStream(eventId: String): RecordingStream {
+        val url = checkNotNull(connectionRepository.currentServerUrl.value) { "Not connected" }
+        return RecordingStream(
+            url = frigateEventClipUrl(url, eventId),
+            headers = apiClient.sessionCookieHeader(url)?.let { mapOf("Cookie" to it) }.orEmpty(),
+        )
+    }
+
+    override suspend fun getClipDownloadUrl(eventId: String): RecordingStream {
+        val url = checkNotNull(connectionRepository.currentServerUrl.value) { "Not connected" }
+        return RecordingStream(
+            url = frigateEventClipDownloadUrl(url, eventId),
+            headers = apiClient.sessionCookieHeader(url)?.let { mapOf("Cookie" to it) }.orEmpty(),
+        )
+    }
+
+    private suspend fun fetch(url: String) {
+        apiClient.getEvents(url, limit = PAGE_SIZE)
+            .onSuccess { events ->
+                _moments.value = events.map { it.toDomain() }
+                _error.value = null
+            }
+            .onFailure { _error.value = it.message ?: "Couldn't load detections" }
+    }
+
+    private companion object {
+        const val POLL_INTERVAL_MS = 30_000L
+        const val PAGE_SIZE = 100
+    }
 }
+
+internal fun FrigateEvent.toDomain(): MomentEvent = MomentEvent(
+    id = id,
+    cameraName = camera,
+    label = label,
+    subLabel = subLabel,
+    startEpochSeconds = startTime,
+    endEpochSeconds = endTime,
+    topScore = data?.topScore,
+    hasClip = hasClip,
+    hasSnapshot = hasSnapshot,
+)

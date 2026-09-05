@@ -11,8 +11,15 @@ import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
+import com.meticulouscreations.homesafe.network.frigateRecordingSnapshotUrl
 import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
+import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
@@ -30,14 +37,50 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 sealed interface CameraDetailUiState {
     data object Loading : CameraDetailUiState
-    data class Found(val camera: Camera, val streamUrl: String?, val posterUrl: String?) : CameraDetailUiState
+    data class Found(
+        val camera: Camera,
+        val streamUrl: String?,
+        /** The camera's grid-quality stream, used to fast-join live before upgrading to [streamUrl]; see [planLiveJoin]. */
+        val gridStreamUrl: String?,
+        val posterUrl: String?,
+    ) : CameraDetailUiState
     data object NotFound : CameraDetailUiState
 }
+
+/**
+ * How to (re)join live playback for a camera: fast-join on the grid stream first when it's a
+ * genuinely different (and, on the real server today, already-primed-by-the-grid) stream from
+ * the full-quality one, upgrading afterward — or join on the full-quality stream directly and
+ * skip the upgrade entirely when the two names are the same, which is every camera on the real
+ * server today (no `live.streams` split configured yet). That equality check is what keeps this
+ * inert rather than a redundant reconnect once dual-quality streams are actually configured.
+ */
+internal data class LiveJoinPlan(val joinUrl: String, val upgradeToUrl: String?)
+
+internal fun planLiveJoin(gridStreamUrl: String, liveStreamUrl: String): LiveJoinPlan =
+    if (gridStreamUrl != liveStreamUrl) {
+        LiveJoinPlan(joinUrl = gridStreamUrl, upgradeToUrl = liveStreamUrl)
+    } else {
+        LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
+    }
+
+/**
+ * The moment a scrub/seek preview snapshot is taken for, quantised to [SNAPSHOT_STEP_SECONDS]:
+ * scrubbing across a minute then asks Frigate for a handful of frames rather than one per pixel,
+ * and the frame previewed while dragging is byte-for-byte the one that stays up as the poster
+ * after release (same URL, same cache entry), so there is no flicker between the two.
+ */
+internal fun snapshotEpochSeconds(epochSeconds: Double): Double =
+    floor(epochSeconds / SNAPSHOT_STEP_SECONDS) * SNAPSHOT_STEP_SECONDS
+
+internal const val SNAPSHOT_STEP_SECONDS = 2.0
 
 /** How much history the timeline shows, ending at "now". */
 enum class TimelineSpan(val label: String, val seconds: Long, val tickSeconds: Long) {
@@ -63,6 +106,12 @@ data class PlaybackUiState(
     val playheadEpochSeconds: Double? = null,
     /** Where the user's finger is while dragging the timeline; null otherwise. */
     val scrubEpochSeconds: Double? = null,
+    /**
+     * A moment the player has been sent to but hasn't reached yet: its recording snapshot covers
+     * the surface (which would otherwise keep showing the frame from *before* the seek) until
+     * playback reports a position close to it. Null once caught up, or while live.
+     */
+    val seekPreviewEpochSeconds: Double? = null,
     val isPlaying: Boolean = true,
     val isBuffering: Boolean = false,
     val isLoadingPlaylist: Boolean = false,
@@ -78,8 +127,26 @@ class CameraDetailViewModel(
     private val connectionRepository: ConnectionRepository,
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
+    observeMomentsUseCase: ObserveMomentsUseCase,
     private val clock: () -> Double = ::epochSecondsNow,
 ) : ViewModel() {
+
+    /**
+     * This camera's newest detections for the "Recent Activity" strip. Same feed and mapper as the
+     * Moments tab, so a detection reads identically in both places; capped small because this is a
+     * glance, not the list — the Moments tab is where the full history lives.
+     */
+    @OptIn(ExperimentalTime::class)
+    val recentMoments: StateFlow<List<MomentItem>> = combine(
+        observeMomentsUseCase(),
+        connectionRepository.currentServerUrl,
+    ) { events, serverUrl ->
+        val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+        events
+            .filter { it.cameraName == cameraName }
+            .take(RECENT_MOMENTS)
+            .map { MomentItem(it, it.present(today), serverUrl?.let { url -> frigateEventThumbnailUrl(url, it.id) }) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<CameraDetailUiState> = combine(
         observeCamerasUseCase(),
@@ -92,12 +159,11 @@ class CameraDetailViewModel(
             camera.enabled && serverUrl != null ->
                 CameraDetailUiState.Found(
                     camera = camera,
-                    // Full quality, always — the grid's (possibly lower-quality) stream is only
-                    // used in the multi-camera list, never here.
                     streamUrl = frigateLiveStreamUrl(serverUrl, camera.liveStreamName),
+                    gridStreamUrl = frigateLiveStreamUrl(serverUrl, camera.gridStreamName),
                     posterUrl = posterUrl,
                 )
-            else -> CameraDetailUiState.Found(camera, streamUrl = null, posterUrl = posterUrl)
+            else -> CameraDetailUiState.Found(camera, streamUrl = null, gridStreamUrl = null, posterUrl = posterUrl)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraDetailUiState.Loading)
 
@@ -115,6 +181,7 @@ class CameraDetailViewModel(
     private var history: RecordingHistory = RecordingHistory.EMPTY
     private var seekSequence = 0L
     private var playlistLoadJob: Job? = null
+    private var qualityUpgradeJob: Job? = null
 
     init {
         // While live, follow the camera's live URL (it appears once connected, disappears if the camera is disabled).
@@ -122,16 +189,17 @@ class CameraDetailViewModel(
             uiState.collect { state ->
                 val found = state as? CameraDetailUiState.Found
                 val liveUrl = found?.streamUrl
+                val gridUrl = found?.gridStreamUrl
                 val posterUrl = found?.posterUrl
+                val alreadyJoined = { src: VideoSource? ->
+                    src is VideoSource.Live && src.posterUrl == posterUrl && src.url in listOfNotNull(gridUrl, liveUrl)
+                }
                 _playback.update { current ->
                     when {
                         !current.isLive -> current
                         liveUrl == null -> current.copy(playerRequest = null)
-                        current.playerRequest?.source == VideoSource.Live(liveUrl, posterUrl) -> current
-                        else -> current.copy(
-                            playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl)),
-                            isPlaying = true,
-                        )
+                        alreadyJoined(current.playerRequest?.source) -> current
+                        else -> current.copy(playerRequest = joinLive(found), isPlaying = true)
                     }
                 }
             }
@@ -184,9 +252,18 @@ class CameraDetailViewModel(
         val playlist = current.playlist
         val request = current.playerRequest
         if (playlist != null && target in playlist && request?.source is VideoSource.Recording && !current.isLoadingPlaylist) {
-            val seek = SeekCommand(id = ++seekSequence, positionMs = playlist.positionSecondsFor(target).toMillis())
+            val positionSeconds = playlist.positionSecondsFor(target)
+            val seek = SeekCommand(id = ++seekSequence, positionMs = positionSeconds.toMillis())
+            // Preview the moment playback will actually land on (a target inside a gap resolves to
+            // the next clip's start), so "caught up" is measurable against it.
+            val resolved = playlist.epochSecondsAt(positionSeconds)
             _playback.update {
-                it.copy(playheadEpochSeconds = target, scrubEpochSeconds = null, playerRequest = request.copy(seek = seek))
+                it.copy(
+                    playheadEpochSeconds = target,
+                    scrubEpochSeconds = null,
+                    seekPreviewEpochSeconds = resolved,
+                    playerRequest = request.copy(seek = seek),
+                )
             }
             return
         }
@@ -198,16 +275,52 @@ class CameraDetailViewModel(
     fun goLive() {
         playlistLoadJob?.cancel()
         val found = uiState.value as? CameraDetailUiState.Found
-        val liveUrl = found?.streamUrl
         _playback.update {
             it.copy(
                 playlist = null,
                 playheadEpochSeconds = null,
                 scrubEpochSeconds = null,
+                seekPreviewEpochSeconds = null,
                 isLoadingPlaylist = false,
                 isPlaying = true,
-                playerRequest = liveUrl?.let { url -> PlayerRequest(VideoSource.Live(url, found.posterUrl)) },
+                playerRequest = joinLive(found),
             )
+        }
+    }
+
+    /**
+     * Builds the [PlayerRequest] for (re)joining live, applying [planLiveJoin] and — when it
+     * calls for an upgrade — scheduling it. Returns null when the camera has no live URL yet
+     * (disabled, or still loading).
+     */
+    private fun joinLive(found: CameraDetailUiState.Found?): PlayerRequest? {
+        val liveUrl = found?.streamUrl ?: return null
+        val gridUrl = found.gridStreamUrl ?: liveUrl
+        val plan = planLiveJoin(gridUrl, liveUrl)
+        if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found.posterUrl) else qualityUpgradeJob?.cancel()
+        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl))
+    }
+
+    /**
+     * Waits for the grid-quality join to settle before stepping up to full quality, rather than
+     * reacting to the player's own first-frame event: that event isn't part of [CameraStreamPlayer]'s
+     * cross-platform callback surface today, and a short fixed delay is enough to avoid upgrading
+     * mid-stall without adding a fourth platform-specific signal just for this one swap.
+     */
+    private fun scheduleQualityUpgrade(liveUrl: String, posterUrl: String?) {
+        qualityUpgradeJob?.cancel()
+        qualityUpgradeJob = viewModelScope.launch {
+            delay(QUALITY_UPGRADE_DELAY_MS)
+            _playback.update { current ->
+                // Carry forward current.isPlaying, not PlayerRequest's own default(true): the user
+                // may have paused during the few seconds the grid-quality join was standing in, and
+                // this swap must not silently resume playback out from under a paused viewer.
+                if (current.isLive) {
+                    current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl), playWhenReady = current.isPlaying))
+                } else {
+                    current
+                }
+            }
         }
     }
 
@@ -224,10 +337,25 @@ class CameraDetailViewModel(
             if (playlist == null || current.scrubEpochSeconds != null || current.isLoadingPlaylist) {
                 current
             } else {
-                current.copy(playheadEpochSeconds = playlist.epochSecondsAt(positionMs / 1000.0))
+                val playhead = playlist.epochSecondsAt(positionMs / 1000.0)
+                val preview = current.seekPreviewEpochSeconds
+                val caughtUp = preview != null && !current.isBuffering && abs(playhead - preview) <= SEEK_PREVIEW_TOLERANCE_SECONDS
+                current.copy(
+                    playheadEpochSeconds = playhead,
+                    seekPreviewEpochSeconds = if (caughtUp) null else preview,
+                )
             }
         }
     }
+
+    /**
+     * Frigate's recording snapshot for [epochSeconds] on this camera, sized for the player
+     * surface; null while disconnected. What the scrub preview and seek poster show.
+     */
+    fun recordingSnapshotUrl(epochSeconds: Double): String? =
+        connectionRepository.currentServerUrl.value?.let {
+            frigateRecordingSnapshotUrl(it, cameraName, snapshotEpochSeconds(epochSeconds), height = SNAPSHOT_HEIGHT)
+        }
 
     fun onBufferingChanged(isBuffering: Boolean) {
         _playback.update { it.copy(isBuffering = isBuffering) }
@@ -255,9 +383,17 @@ class CameraDetailViewModel(
             return
         }
         playlistLoadJob?.cancel()
+        qualityUpgradeJob?.cancel()
         val startEpoch = epochSeconds.coerceIn(playlist.startEpochSeconds, playlist.endEpochSeconds)
+        val resolvedStart = playlist.epochSecondsAt(playlist.positionSecondsFor(startEpoch))
         _playback.update {
-            it.copy(playlist = playlist, playheadEpochSeconds = startEpoch, scrubEpochSeconds = null, isLoadingPlaylist = true)
+            it.copy(
+                playlist = playlist,
+                playheadEpochSeconds = startEpoch,
+                scrubEpochSeconds = null,
+                seekPreviewEpochSeconds = resolvedStart,
+                isLoadingPlaylist = true,
+            )
         }
         playlistLoadJob = viewModelScope.launch {
             val stream = runCatching { getRecordingStreamUseCase(serverUrl, cameraName, playlist) }
@@ -273,6 +409,7 @@ class CameraDetailViewModel(
                             url = stream.url,
                             headers = stream.headers,
                             startPositionMs = playlist.positionSecondsFor(startEpoch).toMillis(),
+                            posterUrl = recordingSnapshotUrl(resolvedStart),
                         ),
                         playWhenReady = current.isPlaying,
                     ),
@@ -308,6 +445,17 @@ class CameraDetailViewModel(
 
         /** Fetch slightly more than the window so a segment straddling its left edge still renders. */
         const val HISTORY_LOOKBEHIND_PADDING_SECONDS = 60.0
+
+        const val RECENT_MOMENTS = 3
+
+        /** How long a fast live join plays the grid-quality stream before stepping up to full quality. */
+        const val QUALITY_UPGRADE_DELAY_MS = 3_000L
+
+        /** Playback within this of a seek's target counts as having arrived, and the preview snapshot comes down. */
+        const val SEEK_PREVIEW_TOLERANCE_SECONDS = 3.0
+
+        /** The detail player is full-width 16:9; 720 tall is sharp there and ~60 KB per frame. */
+        const val SNAPSHOT_HEIGHT = 720
     }
 }
 

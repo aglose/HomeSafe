@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 actual fun CameraStreamPlayer(
     request: PlayerRequest,
     modifier: Modifier,
+    playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,

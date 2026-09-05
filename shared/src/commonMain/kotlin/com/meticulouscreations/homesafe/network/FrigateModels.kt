@@ -40,6 +40,32 @@ data class FrigateCamera(
     val gridStreamName: String,
 )
 
+/**
+ * One detection as reported by Frigate's `/api/events`. Field set observed against Frigate
+ * 0.17.2: thumbnails are NOT inline here anymore (`thumbnail` is null) — they come from
+ * `/api/events/{id}/thumbnail.jpg`. [endTime] is null while an event is still in progress.
+ */
+@Serializable
+data class FrigateEvent(
+    val id: String,
+    val label: String,
+    @SerialName("sub_label") val subLabel: String? = null,
+    val camera: String,
+    @SerialName("start_time") val startTime: Double,
+    @SerialName("end_time") val endTime: Double? = null,
+    @SerialName("has_clip") val hasClip: Boolean = false,
+    @SerialName("has_snapshot") val hasSnapshot: Boolean = false,
+    val zones: List<String> = emptyList(),
+    val data: FrigateEventData? = null,
+)
+
+@Serializable
+data class FrigateEventData(
+    @SerialName("top_score") val topScore: Double? = null,
+    val score: Double? = null,
+    val type: String? = null,
+)
+
 /** One recorded clip as reported by Frigate's `/api/{camera}/recordings`. */
 @Serializable
 data class FrigateRecording(

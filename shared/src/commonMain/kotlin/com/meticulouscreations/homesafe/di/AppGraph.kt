@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.CameraRepositoryImpl
+import com.meticulouscreations.homesafe.data.ClipDownloader
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.ConnectionRepositoryImpl
 import com.meticulouscreations.homesafe.data.MomentsRepositoryImpl
@@ -14,6 +15,7 @@ import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.SettingsRepositoryImpl
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
+import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
@@ -22,7 +24,9 @@ import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
@@ -82,6 +86,8 @@ interface AppGraph {
     val updateSettingsUseCase: UpdateSettingsUseCase
     val getRecordingHistoryUseCase: GetRecordingHistoryUseCase
     val getRecordingStreamUseCase: GetRecordingStreamUseCase
+    val getMomentClipStreamUseCase: GetMomentClipStreamUseCase
+    val downloadMomentClipUseCase: DownloadMomentClipUseCase
 
     @Provides
     fun providePlatform(): Platform = getPlatform()
@@ -110,6 +116,11 @@ interface AppGraph {
     @Provides
     fun provideNetworkMonitor(platformContext: PlatformContext): NetworkMonitor =
         createNetworkMonitor(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideClipDownloader(platformContext: PlatformContext, httpClient: HttpClient): ClipDownloader =
+        createClipDownloader(platformContext, httpClient)
 
     /** An app-lifetime scope for background work that outlives any one screen, e.g. following network changes. */
     @SingleIn(AppScope::class)

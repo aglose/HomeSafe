@@ -43,6 +43,52 @@ fun formatEpochSeconds(seconds: Double): String {
     return "$whole.${millis.toString().padStart(3, '0')}"
 }
 
-/** Frigate's cached latest-snapshot endpoint — always available once a camera has processed a frame. */
-fun frigateSnapshotUrl(serverUrl: String, cameraName: String): String =
-    "${serverUrl.trimEnd('/')}/api/$cameraName/latest.jpg"
+/**
+ * The same URL over the opposite scheme, or null if it carries no scheme to swap. Used to
+ * recover when a saved URL's scheme no longer matches what the server speaks.
+ */
+fun swapUrlScheme(url: String): String? = when {
+    url.startsWith("https://") -> "http://" + url.removePrefix("https://")
+    url.startsWith("http://") -> "https://" + url.removePrefix("http://")
+    else -> null
+}
+
+/** A detection's thumbnail — small, cropped to the object. Authenticated, like snapshots. */
+fun frigateEventThumbnailUrl(serverUrl: String, eventId: String): String =
+    "${serverUrl.trimEnd('/')}/api/events/$eventId/thumbnail.jpg"
+
+/**
+ * A detection's clip as a seekable HLS playlist, served by the same `/vod` machinery as camera
+ * recordings — so it plays through [com.meticulouscreations.homesafe.ui.components.VideoSource.Recording]
+ * with the session cookie, no new player path needed.
+ */
+fun frigateEventClipUrl(serverUrl: String, eventId: String): String =
+    "${serverUrl.trimEnd('/')}/vod/event/$eventId/index.m3u8"
+
+/**
+ * A detection's clip as a single downloadable MP4 file — Frigate's export endpoint, distinct
+ * from the HLS playlist [frigateEventClipUrl] serves for in-app playback. This is what a
+ * "download to the device" feature has to hit, since an HLS playlist isn't a file a platform
+ * download API can save as one piece.
+ */
+fun frigateEventClipDownloadUrl(serverUrl: String, eventId: String): String =
+    "${serverUrl.trimEnd('/')}/api/events/$eventId/clip.mp4"
+
+/**
+ * Frigate's latest-frame endpoint — the most recent frame the detect process handled, JPEG-encoded
+ * on request (a few milliseconds, served with `no-store`). Always available once a camera has
+ * processed a frame. [height] asks Frigate to scale it down server-side, which is worth doing
+ * for thumbnails refreshed every second: a 480-tall frame is ~30 KB.
+ */
+fun frigateSnapshotUrl(serverUrl: String, cameraName: String, height: Int? = null): String =
+    "${serverUrl.trimEnd('/')}/api/$cameraName/latest.jpg" + (height?.let { "?h=$it" } ?: "")
+
+/**
+ * A frame from [cameraName]'s recordings at [epochSeconds], extracted by Frigate on request
+ * (~150 ms on the real server; ~30 KB at [height] 480). The "first picture" for any playback
+ * that starts at a known moment — a history seek, an event clip — and for scrub previews.
+ * 404 when nothing was recorded at that time.
+ */
+fun frigateRecordingSnapshotUrl(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int? = null): String =
+    "${serverUrl.trimEnd('/')}/api/$cameraName/recordings/${formatEpochSeconds(epochSeconds)}/snapshot.jpg" +
+        (height?.let { "?height=$it" } ?: "")
