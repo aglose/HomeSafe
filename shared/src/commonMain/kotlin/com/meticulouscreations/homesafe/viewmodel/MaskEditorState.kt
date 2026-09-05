@@ -38,6 +38,8 @@ data class MaskEditorState(
     val draft: List<MaskPoint>? = null,
     /** Index into the current layer's shapes, or null. */
     val selectedIndex: Int? = null,
+    /** A corner of the selected shape singled out for removal, or null. */
+    val selectedVertexIndex: Int? = null,
     /** Layers whose shapes differ from what the server last reported. */
     val dirtyLayers: Set<MaskLayer> = emptySet(),
     /** Zone keys the server already knows; renaming one of these changes only its friendly name. */
@@ -46,6 +48,9 @@ data class MaskEditorState(
     val layerShapes: List<EditorShape> get() = shapes.getValue(layer)
     val polygons: List<MaskPolygon> get() = layerShapes.map { it.polygon }
     val selectedShape: EditorShape? get() = selectedIndex?.let { layerShapes.getOrNull(it) }
+    /** Whether the selected corner can go: a polygon keeps at least three. */
+    val canRemoveSelectedVertex: Boolean
+        get() = selectedVertexIndex != null && (selectedShape?.polygon?.points?.size ?: 0) > MaskPolygon.MIN_POINTS
     val isDrawing: Boolean get() = draft != null
     val canFinishDraft: Boolean get() = (draft?.size ?: 0) >= MaskPolygon.MIN_POINTS
     val isDirty: Boolean get() = dirtyLayers.isNotEmpty()
@@ -57,7 +62,7 @@ data class MaskEditorState(
     }
 
     fun switchLayer(newLayer: MaskLayer): MaskEditorState =
-        if (newLayer == layer) this else copy(layer = newLayer, draft = null, selectedIndex = null)
+        if (newLayer == layer) this else copy(layer = newLayer, draft = null, selectedIndex = null, selectedVertexIndex = null)
 
     /**
      * A tap on empty canvas: deselects if something was selected, otherwise places a corner
@@ -69,13 +74,13 @@ data class MaskEditorState(
         if (draft != null) return copy(draft = draft + p)
         val hit = polygons.indexOfLast { it.contains(p) }
         return when {
-            hit >= 0 -> copy(selectedIndex = hit)
-            selectedIndex != null -> copy(selectedIndex = null)
+            hit >= 0 -> copy(selectedIndex = hit, selectedVertexIndex = if (hit == selectedIndex) selectedVertexIndex else null)
+            selectedIndex != null -> copy(selectedIndex = null, selectedVertexIndex = null)
             else -> copy(draft = listOf(p))
         }
     }
 
-    fun startDraft(): MaskEditorState = copy(draft = emptyList(), selectedIndex = null)
+    fun startDraft(): MaskEditorState = copy(draft = emptyList(), selectedIndex = null, selectedVertexIndex = null)
 
     fun undoDraftPoint(): MaskEditorState = when {
         draft == null -> this
@@ -99,18 +104,51 @@ data class MaskEditorState(
             shapes = shapes + (layer to updated),
             draft = null,
             selectedIndex = updated.lastIndex,
+            selectedVertexIndex = null,
             dirtyLayers = dirtyLayers + layer,
         )
     }
 
     fun select(index: Int?): MaskEditorState =
-        copy(selectedIndex = index?.takeIf { it in layerShapes.indices })
+        copy(selectedIndex = index?.takeIf { it in layerShapes.indices }, selectedVertexIndex = null)
+
+    /** Singles out one corner of the selected shape (for removal); null clears it. */
+    fun selectVertex(vertexIndex: Int?): MaskEditorState {
+        val points = selectedShape?.polygon?.points ?: return copy(selectedVertexIndex = null)
+        return copy(selectedVertexIndex = vertexIndex?.takeIf { it in points.indices })
+    }
+
+    /**
+     * Adds a corner to [shapeIndex] on the edge that starts at corner [edgeIndex] (the edge from
+     * the last corner back to the first is edge `lastIndex`), and selects the new corner so a
+     * drag can carry straight on with it. This is how a saved shape grows past its first
+     * outline: tap or drag the dot in the middle of an edge.
+     */
+    fun insertVertex(shapeIndex: Int, edgeIndex: Int, at: MaskPoint): MaskEditorState {
+        val shape = layerShapes.getOrNull(shapeIndex) ?: return this
+        val points = shape.polygon.points
+        if (edgeIndex !in points.indices) return this
+        val inserted = points.toMutableList().also { it.add(edgeIndex + 1, at.clamped()) }
+        return replaceShape(shapeIndex, shape.copy(polygon = shape.polygon.copy(points = inserted)))
+            .copy(selectedIndex = shapeIndex, selectedVertexIndex = edgeIndex + 1)
+    }
+
+    /** Removes the selected corner, as long as the shape keeps three. */
+    fun removeSelectedVertex(): MaskEditorState {
+        val shapeIndex = selectedIndex ?: return this
+        val vertexIndex = selectedVertexIndex ?: return this
+        val shape = layerShapes.getOrNull(shapeIndex) ?: return this
+        val points = shape.polygon.points
+        if (vertexIndex !in points.indices || points.size <= MaskPolygon.MIN_POINTS) return this
+        val trimmed = points.toMutableList().also { it.removeAt(vertexIndex) }
+        return replaceShape(shapeIndex, shape.copy(polygon = shape.polygon.copy(points = trimmed))).copy(selectedVertexIndex = null)
+    }
 
     fun moveVertex(shapeIndex: Int, vertexIndex: Int, to: MaskPoint): MaskEditorState {
         val shape = layerShapes.getOrNull(shapeIndex) ?: return this
         if (vertexIndex !in shape.polygon.points.indices) return this
         val moved = shape.polygon.copy(points = shape.polygon.points.toMutableList().also { it[vertexIndex] = to.clamped() })
-        return replaceShape(shapeIndex, shape.copy(polygon = moved)).copy(selectedIndex = shapeIndex)
+        return replaceShape(shapeIndex, shape.copy(polygon = moved)).copy(selectedIndex = shapeIndex, selectedVertexIndex = vertexIndex)
     }
 
     fun moveDraftVertex(vertexIndex: Int, to: MaskPoint): MaskEditorState {
@@ -123,7 +161,7 @@ data class MaskEditorState(
         val index = selectedIndex ?: return this
         if (index !in layerShapes.indices) return copy(selectedIndex = null)
         val updated = layerShapes.toMutableList().also { it.removeAt(index) }
-        return copy(shapes = shapes + (layer to updated), selectedIndex = null, dirtyLayers = dirtyLayers + layer)
+        return copy(shapes = shapes + (layer to updated), selectedIndex = null, selectedVertexIndex = null, dirtyLayers = dirtyLayers + layer)
     }
 
     /**
@@ -159,6 +197,7 @@ data class MaskEditorState(
         ),
         draft = null,
         selectedIndex = null,
+        selectedVertexIndex = null,
         dirtyLayers = emptySet(),
         savedZoneNames = config.zones.map { it.name }.toSet(),
     )

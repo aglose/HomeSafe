@@ -22,7 +22,8 @@ data class DetectionZonesUiState(
     val isLoading: Boolean = true,
     val loadError: String? = null,
     val config: CameraDetectionConfig? = null,
-    val editor: MaskEditorState = MaskEditorState(),
+    /** Opens on the zones layer: naming areas is the common job; ignore areas are the exception. */
+    val editor: MaskEditorState = MaskEditorState(layer = MaskLayer.ZONES),
     /** A fresh frame from the camera to draw over; re-issued on every (re)load so it isn't a stale cache hit. */
     val snapshotUrl: String? = null,
     val isSaving: Boolean = false,
@@ -54,7 +55,7 @@ class DetectionZonesViewModel(
     }
 
     fun load() {
-        _uiState.update { it.copy(isLoading = true, loadError = null) }
+        _uiState.update { it.copy(isLoading = true, loadError = null, justSaved = false, saveError = null) }
         viewModelScope.launch {
             getDetectionConfigUseCase(cameraName)
                 .onSuccess { config ->
@@ -75,6 +76,16 @@ class DetectionZonesViewModel(
 
     fun refreshSnapshot() = _uiState.update { it.copy(snapshotUrl = freshSnapshotUrl()) }
 
+    /**
+     * Called each time the screen is entered. The view model outlives the screen, so without
+     * this a second visit would show the first visit's frame and "Saved" line — and miss any
+     * zones changed meanwhile in Frigate's own UI. Edits in progress are never thrown away.
+     */
+    fun reloadIfClean() {
+        val state = _uiState.value
+        if (!state.editor.isDirty && !state.isSaving && !state.isLoading) load()
+    }
+
     fun switchLayer(layer: MaskLayer) = edit { it.switchLayer(layer) }
     fun tapAt(point: MaskPoint) = edit { it.tapAt(point) }
     fun startDraft() = edit { it.startDraft() }
@@ -84,6 +95,9 @@ class DetectionZonesViewModel(
     fun select(index: Int?) = edit { it.select(index) }
     fun moveVertex(shapeIndex: Int, vertexIndex: Int, to: MaskPoint) = edit { it.moveVertex(shapeIndex, vertexIndex, to) }
     fun moveDraftVertex(vertexIndex: Int, to: MaskPoint) = edit { it.moveDraftVertex(vertexIndex, to) }
+    fun selectVertex(vertexIndex: Int?) = edit { it.selectVertex(vertexIndex) }
+    fun insertVertex(shapeIndex: Int, edgeIndex: Int, at: MaskPoint) = edit { it.insertVertex(shapeIndex, edgeIndex, at) }
+    fun removeSelectedVertex() = edit { it.removeSelectedVertex() }
     fun deleteSelected() = edit { it.deleteSelected() }
     fun renameSelectedZone(friendlyName: String) = edit { it.renameSelectedZone(friendlyName) }
     fun setSelectedZoneObjects(objects: List<String>) = edit { it.setSelectedZoneObjects(objects) }

@@ -151,6 +151,40 @@ class MaskEditorStateTest {
     }
 
     @Test
+    fun aCornerCanBeAddedOnAnyEdgeIncludingTheClosingOne() {
+        val state = withObjectMask(square).select(0)
+        val onFirstEdge = state.insertVertex(0, 0, MaskPoint(0.25, 0.1))
+        assertEquals(listOf(MaskPoint(0.1, 0.1), MaskPoint(0.25, 0.1), MaskPoint(0.4, 0.1), MaskPoint(0.4, 0.4), MaskPoint(0.1, 0.4)), onFirstEdge.polygons[0].points)
+        assertEquals(1, onFirstEdge.selectedVertexIndex, "the new corner is selected so a drag can carry on with it")
+        assertTrue(onFirstEdge.isDirty)
+
+        val onClosingEdge = state.insertVertex(0, 3, MaskPoint(0.1, 0.25))
+        assertEquals(MaskPoint(0.1, 0.25), onClosingEdge.polygons[0].points.last())
+        assertEquals(4, onClosingEdge.selectedVertexIndex)
+    }
+
+    @Test
+    fun aCornerCanBeRemovedButNeverBelowThree() {
+        val state = withObjectMask(square).select(0).selectVertex(1).removeSelectedVertex()
+        assertEquals(3, state.polygons[0].points.size)
+        assertNull(state.selectedVertexIndex)
+        assertTrue(state.isDirty)
+
+        val floor = state.selectVertex(0)
+        assertFalse(floor.canRemoveSelectedVertex)
+        assertEquals(floor, floor.removeSelectedVertex())
+    }
+
+    @Test
+    fun selectingACornerRequiresASelectedShapeAndClearsOnReselect() {
+        assertNull(MaskEditorState().selectVertex(0).selectedVertexIndex)
+        val state = withObjectMask(square).select(0).selectVertex(2)
+        assertEquals(2, state.selectedVertexIndex)
+        assertNull(state.select(0).selectedVertexIndex)
+        assertNull(state.tapAt(MaskPoint(0.9, 0.9)).selectedVertexIndex, "tapping empty space clears both selections")
+    }
+
+    @Test
     fun slugsAreFrigateSafeZoneKeys() {
         assertEquals("front_lawn", DetectionZone.slug("Front lawn"))
         assertEquals("ron_judys_spot", DetectionZone.slug("  Ron & Judy's spot  "))
