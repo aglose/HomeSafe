@@ -14,8 +14,13 @@ class HomeViewModel(
     connectionRepository: ConnectionRepository,
 ) : ViewModel() {
 
-    val cameras: StateFlow<List<Camera>> =
-        observeCamerasUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /**
+     * Null until the first read of the local camera cache lands (a few milliseconds), so the
+     * screen can tell "not loaded yet" from "this server has no cameras" and never flashes the
+     * empty-state message on the way in.
+     */
+    val cameras: StateFlow<List<Camera>?> =
+        observeCamerasUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     val serverUrl: StateFlow<String?> = connectionRepository.currentServerUrl
 }

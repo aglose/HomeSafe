@@ -22,14 +22,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -37,20 +35,29 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.viewmodel.MomentItem
+import coil3.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
@@ -61,6 +68,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -70,6 +78,7 @@ fun CameraDetailScreen(
     connectionRepository: ConnectionRepository,
     getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     getRecordingStreamUseCase: GetRecordingStreamUseCase,
+    observeMomentsUseCase: ObserveMomentsUseCase,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
 ) {
@@ -80,10 +89,12 @@ fun CameraDetailScreen(
             connectionRepository = connectionRepository,
             getRecordingHistoryUseCase = getRecordingHistoryUseCase,
             getRecordingStreamUseCase = getRecordingStreamUseCase,
+            observeMomentsUseCase = observeMomentsUseCase,
         )
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
 
@@ -103,9 +114,12 @@ fun CameraDetailScreen(
                 )
             }
             Text(
-                text = cameraName,
+                text = cameraDisplayName(cameraName),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                textAlign = TextAlign.Center,
             )
             IconButton(onClick = {}) {
                 Icon(
@@ -125,6 +139,7 @@ fun CameraDetailScreen(
                 playback = playback,
                 cameraAvailable = cameraAvailable,
                 viewModel = viewModel,
+                playerKey = cameraName,
                 modifier = with(sharedTransitionScope) {
                     Modifier.sharedBounds(
                         sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
@@ -163,7 +178,7 @@ fun CameraDetailScreen(
             Column(
                 modifier = Modifier
                     .padding(horizontal = 24.dp)
-                    .padding(top = 16.dp, bottom = 120.dp),
+                    .padding(top = 16.dp, bottom = bottomNavClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 TimelineSection(playback = playback, viewModel = viewModel)
@@ -174,23 +189,15 @@ fun CameraDetailScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        PackageEventCard()
-                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            ActivityCard(
-                                icon = Icons.AutoMirrored.Filled.DirectionsWalk,
-                                label = "Person",
-                                labelColor = MaterialTheme.colorScheme.secondaryContainer,
-                                value = "6:15 PM",
-                                modifier = Modifier.weight(1f),
-                            )
-                            ActivityCard(
-                                icon = Icons.Filled.Pets,
-                                label = "Animal",
-                                labelColor = MaterialTheme.colorScheme.outline,
-                                value = "3:20 PM",
-                                modifier = Modifier.weight(1f),
-                            )
+                    if (recentMoments.isEmpty()) {
+                        Text(
+                            text = "No detections on this camera yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            recentMoments.forEach { RecentMomentCard(it) }
                         }
                     }
                 }
@@ -205,6 +212,7 @@ private fun PlayerSurface(
     playback: PlaybackUiState,
     cameraAvailable: Boolean,
     viewModel: CameraDetailViewModel,
+    playerKey: String,
     modifier: Modifier = Modifier,
 ) {
     val request = playback.playerRequest
@@ -217,9 +225,12 @@ private fun PlayerSurface(
             .background(MaterialTheme.colorScheme.surfaceContainerLowest),
     ) {
         if (request != null) {
+            // Same playerKey as the grid card: this binds to the player the card was already
+            // running, so live video is on screen before the shared-element transition ends.
             CameraStreamPlayer(
                 request = request,
                 modifier = Modifier.fillMaxSize(),
+                playerKey = playerKey,
                 onPositionChanged = viewModel::onPlayerPositionChanged,
                 onBufferingChanged = viewModel::onBufferingChanged,
                 onPlaybackEnded = viewModel::onPlaybackEnded,
@@ -232,6 +243,14 @@ private fun PlayerSurface(
                 tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
                 modifier = Modifier.align(Alignment.Center).size(56.dp),
             )
+        }
+
+        // While the finger is on the timeline, or the player is on its way to a seek target, a
+        // real frame of that moment sits over the video — YouTube-style scrub previews, and no
+        // pre-seek frame lingering while the new position buffers.
+        val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
+        if (previewEpoch != null) {
+            SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
         }
 
         if (request != null) {
@@ -283,6 +302,39 @@ private fun PlayerSurface(
         }
     }
 }
+
+/**
+ * The recording frame for [epochSeconds], debounced so a drag asks Frigate for a frame only once
+ * the finger has paused for a beat (each frame is an ffmpeg extraction server-side), and layered
+ * over the previous frame so a still-loading one never flashes the video through.
+ */
+@Composable
+private fun SeekPreview(epochSeconds: Double, snapshotUrlFor: (Double) -> String?, modifier: Modifier = Modifier) {
+    var settledUrl by remember { mutableStateOf<String?>(null) }
+    var shownUrl by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(epochSeconds) {
+        // The first moment shows immediately (a tap, or the seek target); only successive drag
+        // positions wait for the finger to pause.
+        if (settledUrl != null) delay(SCRUB_PREVIEW_DEBOUNCE_MS)
+        settledUrl = snapshotUrlFor(epochSeconds)
+    }
+    Box(modifier) {
+        shownUrl?.let {
+            AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        }
+        settledUrl?.let { url ->
+            AsyncImage(
+                model = url,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                onSuccess = { shownUrl = url },
+            )
+        }
+    }
+}
+
+private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
 
 /** Red and pulsing at the live edge; grey (and a button back to live) while watching history. */
 @Composable
@@ -422,15 +474,16 @@ private fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVec
 }
 
 @Composable
-private fun PackageEventCard() {
+private fun RecentMomentCard(item: MomentItem) {
+    val p = item.presentation
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -440,89 +493,24 @@ private fun PackageEventCard() {
                 .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                imageVector = Icons.Filled.LocalShipping,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            // Coil rides the app's authenticated Ktor client, which is what lets this hit Frigate's thumbnail endpoint.
+            if (item.thumbnailUrl != null) {
+                AsyncImage(model = item.thumbnailUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            } else {
+                Icon(imageVector = Icons.Filled.Videocam, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
-
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.LocalShipping,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primaryContainer,
-                        modifier = Modifier.size(16.dp),
-                    )
-                    Text(
-                        text = "Package",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                    )
-                }
-                Text(
-                    text = "8:42 PM",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(text = p.title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Text(text = p.timeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                text = "Package delivered to porch.",
+                text = listOfNotNull(p.dateGroup, p.durationLabel?.let { "$it clip" }).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
             )
         }
-    }
-}
-
-@Composable
-private fun ActivityCard(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    label: String,
-    labelColor: Color,
-    value: String,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = labelColor,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = labelColor,
-            )
-        }
-        Text(
-            text = value,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
-        )
     }
 }

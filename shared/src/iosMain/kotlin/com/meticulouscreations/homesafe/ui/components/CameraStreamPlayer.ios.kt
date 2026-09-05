@@ -5,115 +5,82 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
-import coil3.compose.AsyncImage
+import androidx.lifecycle.compose.LifecycleStartEffect
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
-import platform.AVFoundation.AVPlayer
-import platform.AVFoundation.AVPlayerItem
-import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerItemFailedToPlayToEndTimeNotification
-import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
-import platform.AVFoundation.AVPlayerItemStatusFailed
+import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
 import platform.AVFoundation.AVPlayerLayer
 import platform.AVFoundation.AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
-import platform.AVFoundation.AVURLAsset
-import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
-import platform.AVFoundation.error
-import platform.AVFoundation.pause
-import platform.AVFoundation.play
-import platform.AVFoundation.preferredForwardBufferDuration
-import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.timeControlStatus
 import platform.CoreGraphics.CGRectMake
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreMedia.kCMTimeZero
-import platform.Foundation.NSNotificationCenter
-import platform.Foundation.NSOperationQueue
-import platform.Foundation.NSURL
 import platform.QuartzCore.CATransaction
 import platform.UIKit.UIColor
 import platform.UIKit.UIView
-import kotlin.math.min
-import kotlin.math.pow
+
+private const val POLL_INTERVAL_MS = 250L
 
 /**
- * One [AVPlayer] lives for as long as [VideoSource.url] stays the same; changing it (switching
- * between live and a recording, or between two recording playlists) rebuilds the player, while an
- * in-place seek within the current recording ([PlayerRequest.seek]) reuses it.
+ * Binds a [LivePlayerHolder] (pooled per [playerKey], see [LivePlayerPool]) to this call site's
+ * own [AVPlayerLayer], and draws a live poster over it until that layer has a real frame.
  *
- * go2rtc mints a new, short-lived HLS session per top-level playlist request; once it expires,
- * live playback fails. `AVPlayerItem.status` and `AVPlayerLayer.readyForDisplay` are KVO-only with
- * no notification equivalent, and this codebase's existing iOS interop
- * (`BiometricCredentialStore.ios.kt`) favors block-based APIs over raw KVO/NSObject subclassing —
- * so recovery here polls plain, directly-readable properties (`error`, `timeControlStatus`,
- * `currentTime`) on a short interval instead, combined with NotificationCenter observation for
- * end/stall/failure events. Live recovery replaces just the failed [AVPlayerItem] (not the whole
- * [AVPlayer]/[AVPlayerLayer]), with exponential backoff and a retry cap so a genuinely offline
- * server doesn't get polled/retried forever. Recordings are plain VOD playlists and get no such
- * retry: an error there is reported to the caller instead.
+ * The holder owns the [platform.AVFoundation.AVPlayer], its item, its retry loop and its
+ * idle/lifecycle policy; this composable owns only the layer, the poster and the caller's
+ * callbacks. Several may bind to one holder at once (the grid card and the detail screen
+ * overlap during the shared-element transition) — AVFoundation happily drives many layers from
+ * one player.
  *
- * A live source's poster (Frigate's cached snapshot) is drawn ON TOP of the player, not
- * underneath it. Compose Multiplatform renders a `UIKitView` *below* its own Metal layer and
- * punches a transparent hole through everything Compose drew in that region to reveal the native
- * view — so anything Compose draws beneath the interop view is erased, and while the
- * `AVPlayerLayer` has no frame yet the hole shows the `UIWindow`'s default (white) background.
- * That is exactly the white/black box seen on every fresh start of this composable (cold start,
- * and each time the grid is recreated after coming back from the detail screen). The poster
- * therefore sits above the player and hides itself only once `AVPlayerLayer.readyForDisplay`
- * reports a real frame is being shown; replacing the item on recovery flips that back to false,
- * so the poster returns until frames resume.
+ * The poster sits ON TOP of the player: Compose Multiplatform renders a `UIKitView` *below* its
+ * own Metal layer and punches a transparent hole through everything Compose drew in that region,
+ * so anything drawn beneath the interop view is erased, and an empty `AVPlayerLayer` shows the
+ * window's default (white) background through that hole. It hides once this layer reports
+ * `readyForDisplay` for an item that is itself ready — both checks, because right after a cold
+ * restart the layer can still claim readiness for the item that was just replaced — and reappears
+ * only when the holder's [LivePlayerHolder.coldStartGeneration] moves on (a cold reconnect, a
+ * return from a long background), never across a warm live-to-live swap.
  */
-private const val POLL_INTERVAL_MS = 250L
-private const val MAX_CONSECUTIVE_FAILURES = 6
-private const val BASE_RETRY_DELAY_MS = 1_000L
-private const val MAX_RETRY_DELAY_MS = 30_000L
-private const val PREFERRED_FORWARD_BUFFER_SECONDS = 3.0
-private const val PREFERRED_TIMESCALE = 600
-
-/** AVURLAsset option key for per-request HTTP headers; a string literal because the SDK constant is not exposed to Kotlin/Native. */
-private const val HTTP_HEADER_FIELDS_KEY = "AVURLAssetHTTPHeaderFieldsKey"
-
 @OptIn(ExperimentalForeignApi::class)
 @Composable
 actual fun CameraStreamPlayer(
     request: PlayerRequest,
     modifier: Modifier,
+    playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
 ) {
-    val coroutineScope = rememberCoroutineScope()
-    val source = request.source
-    var posterVisible by remember(source.url) { mutableStateOf(true) }
+    val holder = remember(playerKey) { HolderLease(playerKey) }.holder
+    val player = holder.player
 
+    val source = request.source
     val currentSource by rememberUpdatedState(source)
     val currentOnPositionChanged by rememberUpdatedState(onPositionChanged)
     val currentOnBufferingChanged by rememberUpdatedState(onBufferingChanged)
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
 
-    val player = remember(source.url) {
-        AVPlayer().apply { automaticallyWaitsToMinimizeStalling = false }
-    }
-    val playerLayer = remember(player) {
+    var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
+    val posterVisible = renderedGeneration != holder.coldStartGeneration
+
+    val playerLayer = remember(holder) {
         AVPlayerLayer().apply {
             this.player = player
             videoGravity = AVLayerVideoGravityResizeAspectFill
@@ -121,143 +88,33 @@ actual fun CameraStreamPlayer(
         }
     }
 
-    DisposableEffect(player) {
-        var consecutiveFailures = 0
-        var retryScheduled = false
-        var reportedErrorForItem: AVPlayerItem? = null
-        val notificationCenter = NSNotificationCenter.defaultCenter
-        var endObserver: Any? = null
-        var failedObserver: Any? = null
-        var stalledObserver: Any? = null
-
-        fun clearObservers() {
-            endObserver?.let { notificationCenter.removeObserver(it) }
-            failedObserver?.let { notificationCenter.removeObserver(it) }
-            stalledObserver?.let { notificationCenter.removeObserver(it) }
-            endObserver = null
-            failedObserver = null
-            stalledObserver = null
-        }
-
-        fun newItem(toLoad: VideoSource): AVPlayerItem {
-            val options: Map<Any?, *>? = toLoad.headers.takeIf { it.isNotEmpty() }?.let { mapOf(HTTP_HEADER_FIELDS_KEY to it) }
-            val asset = AVURLAsset(uRL = NSURL(string = toLoad.url), options = options)
-            return AVPlayerItem(asset = asset).apply { preferredForwardBufferDuration = PREFERRED_FORWARD_BUFFER_SECONDS }
-        }
-
-        // registerObservers, loadLive, scheduleRetryOnLiveEnd and onStallOrFailure call each other
-        // (a live source's failure/stall path retries by reloading, which re-registers observers,
-        // whose end/failure/stall callbacks feed back into the same retry path) — local `fun`
-        // declarations can't forward-reference each other like that, so these are declared as
-        // `lateinit var` and assigned in a block below before anything can invoke them.
-        lateinit var registerObservers: (AVPlayerItem) -> Unit
-        lateinit var loadLive: (VideoSource.Live) -> Unit
-        lateinit var scheduleRetryOnLiveEnd: () -> Unit
-        lateinit var onStallOrFailure: () -> Unit
-
-        registerObservers = { item ->
-            endObserver = notificationCenter.addObserverForName(
-                name = AVPlayerItemDidPlayToEndTimeNotification,
-                `object` = item,
-                queue = NSOperationQueue.mainQueue,
-            ) { _ ->
-                when (currentSource) {
-                    is VideoSource.Live -> scheduleRetryOnLiveEnd()
-                    is VideoSource.Recording -> currentOnPlaybackEnded()
-                }
+    DisposableEffect(holder) {
+        val listener = object : LivePlayerHolder.Listener {
+            override fun onRecordingEnded() {
+                if (currentSource is VideoSource.Recording) currentOnPlaybackEnded()
             }
-            failedObserver = notificationCenter.addObserverForName(
-                AVPlayerItemFailedToPlayToEndTimeNotification,
-                item,
-                NSOperationQueue.mainQueue,
-            ) { onStallOrFailure() }
-            stalledObserver = notificationCenter.addObserverForName(
-                AVPlayerItemPlaybackStalledNotification,
-                item,
-                NSOperationQueue.mainQueue,
-            ) { onStallOrFailure() }
-        }
 
-        loadLive = { toLoad ->
-            val item = newItem(toLoad)
-            player.replaceCurrentItemWithPlayerItem(item)
-            registerObservers(item)
-        }
-
-        scheduleRetryOnLiveEnd = {
-            val failed = currentSource as? VideoSource.Live
-            if (failed != null && !retryScheduled && consecutiveFailures < MAX_CONSECUTIVE_FAILURES) {
-                retryScheduled = true
-                consecutiveFailures++
-                val backoffMs = min(
-                    BASE_RETRY_DELAY_MS * 2.0.pow(consecutiveFailures - 1).toLong(),
-                    MAX_RETRY_DELAY_MS,
-                )
-                coroutineScope.launch {
-                    delay(backoffMs)
-                    retryScheduled = false
-                    if (currentSource == failed) {
-                        loadLive(failed)
-                        player.play()
-                    }
-                }
+            override fun onRecordingFailed() {
+                if (currentSource is VideoSource.Recording) currentOnPlaybackError()
             }
         }
-
-        onStallOrFailure = {
-            when (val failed = currentSource) {
-                is VideoSource.Live -> scheduleRetryOnLiveEnd()
-                is VideoSource.Recording -> if (reportedErrorForItem !== player.currentItem) {
-                    reportedErrorForItem = player.currentItem
-                    currentOnPlaybackError()
-                }
-            }
-        }
-
-        val initialItem = newItem(source)
-        player.replaceCurrentItemWithPlayerItem(initialItem)
-        if (source is VideoSource.Recording) {
-            player.seekToTime(
-                time = CMTimeMakeWithSeconds(source.startPositionMs / 1000.0, PREFERRED_TIMESCALE),
-                toleranceBefore = kCMTimeZero.readValue(),
-                toleranceAfter = kCMTimeZero.readValue(),
-            )
-        }
-        registerObservers(initialItem)
-        if (request.playWhenReady) player.play()
-
-        val pollJob = coroutineScope.launch {
-            while (isActive) {
-                delay(POLL_INTERVAL_MS)
-                posterVisible = !playerLayer.readyForDisplay
-                currentOnBufferingChanged(player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
-
-                val item = player.currentItem
-                when (currentSource) {
-                    is VideoSource.Live -> {
-                        if (item?.error != null) scheduleRetryOnLiveEnd() else if (playerLayer.readyForDisplay) consecutiveFailures = 0
-                    }
-                    is VideoSource.Recording -> {
-                        if (item != null && item.status == AVPlayerItemStatusFailed && reportedErrorForItem !== item) {
-                            reportedErrorForItem = item
-                            currentOnPlaybackError()
-                        } else if (item != null) {
-                            val seconds = CMTimeGetSeconds(player.currentTime())
-                            if (!seconds.isNaN()) currentOnPositionChanged((seconds * 1000).toLong())
-                        }
-                    }
-                }
-            }
-        }
-
+        holder.addListener(listener)
         onDispose {
-            pollJob.cancel()
-            clearObservers()
-            player.pause()
+            holder.removeListener(listener)
+            playerLayer.player = null
         }
     }
 
-    LaunchedEffect(request.seek) {
+    LifecycleStartEffect(holder) {
+        holder.onBinderStarted()
+        onStopOrDispose { holder.onBinderStopped() }
+    }
+
+    LaunchedEffect(holder, source.url) { holder.load(source) }
+
+    LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
+
+    LaunchedEffect(holder, request.seek) {
         val seek = request.seek ?: return@LaunchedEffect
         if (currentSource is VideoSource.Recording) {
             player.seekToTime(
@@ -268,8 +125,19 @@ actual fun CameraStreamPlayer(
         }
     }
 
-    LaunchedEffect(request.playWhenReady) {
-        if (request.playWhenReady) player.play() else player.pause()
+    LaunchedEffect(holder) {
+        while (isActive) {
+            delay(POLL_INTERVAL_MS)
+            val item = player.currentItem
+            if (playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
+                renderedGeneration = holder.coldStartGeneration
+            }
+            currentOnBufferingChanged(player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
+            if (currentSource is VideoSource.Recording && item != null) {
+                val seconds = CMTimeGetSeconds(player.currentTime())
+                if (!seconds.isNaN()) currentOnPositionChanged((seconds * 1000).toLong())
+            }
+        }
     }
 
     Box(modifier = modifier) {
@@ -294,14 +162,18 @@ actual fun CameraStreamPlayer(
             properties = UIKitInteropProperties(interactionMode = null),
         )
 
-        // On top of the player, not underneath — see the class-level note. Recordings have no poster.
-        val posterUrl = (source as? VideoSource.Live)?.posterUrl
+        val posterUrl = source.posterUrl
         if (posterVisible && posterUrl != null) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-            )
+            VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
         }
     }
+}
+
+/** Ties a pool lease to a `remember` slot so it's released on forget *and* on abandon. */
+private class HolderLease(key: String?) : RememberObserver {
+    val holder: LivePlayerHolder = LivePlayerPool.acquire(key)
+
+    override fun onRemembered() = Unit
+    override fun onForgotten() = LivePlayerPool.release(holder)
+    override fun onAbandoned() = LivePlayerPool.release(holder)
 }

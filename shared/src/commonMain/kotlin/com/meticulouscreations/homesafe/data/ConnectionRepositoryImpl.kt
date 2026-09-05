@@ -5,7 +5,10 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.network.LOCAL_SERVER_URL
 import com.meticulouscreations.homesafe.network.NetworkMonitor
+import com.meticulouscreations.homesafe.network.swapUrlScheme
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
@@ -103,7 +106,9 @@ class ConnectionRepositoryImpl(
     override suspend fun signInWithBiometrics(): Result<SavedCredentials> =
         biometricCredentialStore.authenticateAndRetrieve().fold(
             onSuccess = { credentials ->
-                connect(credentials.serverUrl, credentials.localUrl, credentials.username, credentials.password)
+                // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
+                // credential saved before this route existed carries none at all.
+                connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
             },
             onFailure = { Result.failure(it) },
         )
@@ -123,6 +128,23 @@ class ConnectionRepositoryImpl(
             ConnectionRoute.TAILSCALE
         }
 
+    /**
+     * Logs in to [url], retrying once over the opposite scheme when the first attempt never got
+     * an HTTP response at all. Turning TLS on or off at the server strands every saved `https://`
+     * URL against a now-plaintext port (and the reverse), which surfaces as an opaque handshake
+     * error rather than anything the user can act on. Adopting whichever scheme actually answers
+     * lets a saved login heal itself. Returns the URL that worked.
+     */
+    private suspend fun loginResolvingScheme(url: String, username: String, password: String): Result<String> {
+        val attempt = apiClient.login(url, username, password)
+        if (attempt.isSuccess) return Result.success(url)
+        val error = attempt.exceptionOrNull() ?: return Result.success(url)
+        // The server answered and turned us away (wrong password): the scheme is fine as it is.
+        if (error is FrigateResponseException) return Result.failure(error)
+        val swapped = swapUrlScheme(url) ?: return Result.failure(error)
+        return apiClient.login(swapped, username, password).map { swapped }
+    }
+
     @OptIn(ExperimentalTime::class)
     private suspend fun signIn(
         connection: ActiveConnection,
@@ -130,21 +152,28 @@ class ConnectionRepositoryImpl(
         password: String,
         recordInHistory: Boolean,
     ): Result<SavedCredentials> {
-        val activeUrl = connection.activeUrl
+        val workingUrl = loginResolvingScheme(connection.activeUrl, username, password)
+            .getOrElse { return Result.failure(it) }
+        // Keep a corrected scheme, so the repair lands in history and saved credentials too.
+        val resolved = when {
+            workingUrl == connection.activeUrl -> connection
+            connection.route == ConnectionRoute.LOCAL_NETWORK -> connection.copy(localUrl = workingUrl)
+            else -> connection.copy(serverUrl = workingUrl)
+        }
+        val activeUrl = resolved.activeUrl
         val credentials = SavedCredentials(
-            serverUrl = connection.serverUrl,
+            serverUrl = resolved.serverUrl,
             username = username,
             password = password,
-            localUrl = connection.localUrl,
+            localUrl = resolved.localUrl,
         )
-        return apiClient.login(activeUrl, username, password)
-            .mapCatching { apiClient.getCameras(activeUrl).getOrThrow() }
+        return runCatching { apiClient.getCameras(activeUrl).getOrThrow() }
             .onSuccess { cameras ->
-                cameraDao.deleteByServer(connection.serverUrl)
+                cameraDao.deleteByServer(resolved.serverUrl)
                 cameraDao.insertAll(
                     cameras.map {
                         CameraEntity(
-                            serverUrl = connection.serverUrl,
+                            serverUrl = resolved.serverUrl,
                             name = it.name,
                             enabled = it.enabled,
                             liveStreamName = it.liveStreamName,
@@ -155,14 +184,14 @@ class ConnectionRepositoryImpl(
                 if (recordInHistory) {
                     connectionHistoryDao.insert(
                         ConnectionHistoryEntity(
-                            serverUrl = connection.serverUrl,
-                            localUrl = connection.localUrl,
+                            serverUrl = resolved.serverUrl,
+                            localUrl = resolved.localUrl,
                             connectedAtEpochMillis = Clock.System.now().toEpochMilliseconds(),
                         ),
                     )
                 }
                 sessionCredentials = credentials
-                _activeConnection.value = connection
+                _activeConnection.value = resolved
             }
             .map { credentials }
     }

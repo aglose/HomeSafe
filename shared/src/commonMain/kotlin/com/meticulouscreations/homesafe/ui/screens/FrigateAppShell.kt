@@ -10,11 +10,18 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
@@ -51,7 +58,15 @@ fun FrigateAppShell(appGraph: AppGraph) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
     val activeConnection by appGraph.connectionRepository.activeConnection.collectAsStateWithLifecycle()
 
-    Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    // Edge-to-edge: the background paints under the system bars, and each piece that must stay
+    // tappable steps in from its own bar — the top bar from the status bar, the floating nav from
+    // the navigation bar, and everything from a display cutout at the sides (landscape notch).
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+    ) {
         Column(modifier = Modifier.fillMaxSize()) {
             FrigateTopBar(activeConnection = activeConnection)
             NavDisplay(
@@ -61,7 +76,13 @@ fun FrigateAppShell(appGraph: AppGraph) {
                 entryProvider = entryProvider {
                     entry<TopLevelRoute.Home> { HomeTabNav(appGraph) }
                     entry<TopLevelRoute.Moments> {
-                        MomentsTabContent(observeMomentsUseCase = appGraph.observeMomentsUseCase)
+                        MomentsTabContent(
+                            observeMomentsUseCase = appGraph.observeMomentsUseCase,
+                            getMomentClipStreamUseCase = appGraph.getMomentClipStreamUseCase,
+                            downloadMomentClipUseCase = appGraph.downloadMomentClipUseCase,
+                            momentsRepository = appGraph.momentsRepository,
+                            connectionRepository = appGraph.connectionRepository,
+                        )
                     }
                     entry<TopLevelRoute.Settings> {
                         SettingsTabContent(
@@ -77,7 +98,10 @@ fun FrigateAppShell(appGraph: AppGraph) {
         BottomNavBar(
             selected = topLevelBackStack.topLevelKey,
             onSelect = { topLevelBackStack.addTopLevel(it) },
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 24.dp),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
+                .padding(bottom = 16.dp),
         )
     }
 }
@@ -87,7 +111,8 @@ private fun FrigateTopBar(activeConnection: ActiveConnection?) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -95,7 +120,7 @@ private fun FrigateTopBar(activeConnection: ActiveConnection?) {
             Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
         }
         Text(
-            text = "FRIGATE",
+            text = "PERCYSAFE",
             style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
             color = MaterialTheme.colorScheme.onSurface,
         )
@@ -166,6 +191,7 @@ private fun HomeTabNav(appGraph: AppGraph) {
                         connectionRepository = appGraph.connectionRepository,
                         getRecordingHistoryUseCase = appGraph.getRecordingHistoryUseCase,
                         getRecordingStreamUseCase = appGraph.getRecordingStreamUseCase,
+                        observeMomentsUseCase = appGraph.observeMomentsUseCase,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onBack = { backStack.removeLastOrNull() },
                     )

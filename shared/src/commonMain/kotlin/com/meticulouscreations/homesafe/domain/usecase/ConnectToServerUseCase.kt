@@ -2,15 +2,15 @@ package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.data.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.network.LOCAL_SERVER_URL
 import dev.zacsweers.metro.Inject
 
 @Inject
 class ConnectToServerUseCase(private val connectionRepository: ConnectionRepository) {
-    /** See [ConnectionRepository.connect]; [localUrl] is the optional private LAN address. */
+    /** See [ConnectionRepository.connect]. The LAN address is [LOCAL_SERVER_URL], not user input. */
     suspend operator fun invoke(
         serverUrl: String,
-        localUrl: String?,
         username: String,
         password: String,
-    ): Result<SavedCredentials> = connectionRepository.connect(serverUrl, localUrl, username, password)
+    ): Result<SavedCredentials> = connectionRepository.connect(serverUrl, LOCAL_SERVER_URL, username, password)
 }

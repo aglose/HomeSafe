@@ -41,17 +41,27 @@ class ConnectionRepositoryImplTest {
     /** A fake Frigate reachable on two hosts; the LAN one can be switched off to simulate leaving home. */
     private class FakeFrigate {
         var localReachable = true
+        /** When true, the server answers the login endpoint but refuses the credentials. */
+        var rejectLogin = false
         val requests = mutableListOf<Pair<String, String>>()
+
+        /** When true, only plain http is answered; https fails at the transport, as a plaintext port does. */
+        var httpsRejected = false
 
         val engine = MockEngine { request ->
             val host = request.url.host
             val path = request.url.encodedPath
             requests += host to path
             if (host == "192.168.68.55" && !localReachable) error("No route to host")
+            if (httpsRejected && request.url.protocol.name == "https") error("Unable to parse TLS packet header")
             when {
                 path.endsWith("/api/version") -> respond("0.15.0", HttpStatusCode.OK)
                 path.endsWith("/api/login") ->
-                    respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=token-for-$host; Path=/"))
+                    if (rejectLogin) {
+                        respond("", HttpStatusCode.Unauthorized)
+                    } else {
+                        respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=token-for-$host; Path=/"))
+                    }
                 path.endsWith("/api/config") ->
                     respond(
                         """{"cameras":{"front_door":{"enabled":true},"backyard":{"enabled":false}}}""",
@@ -61,6 +71,8 @@ class ConnectionRepositoryImplTest {
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
+
+        val schemes = mutableListOf<String>()
 
         fun logins(host: String): Int = requests.count { it.first == host && it.second.endsWith("/api/login") }
         fun probes(host: String): Int = requests.count { it.first == host && it.second.endsWith("/api/version") }
@@ -218,5 +230,35 @@ class ConnectionRepositoryImplTest {
 
         assertNull(h.repository.activeConnection.value)
         assertTrue(h.frigate.requests.isEmpty())
+    }
+
+    @Test
+    fun healsASavedHttpsUrlWhenTheServerNoLongerSpeaksTls() = runTest {
+        val h = Harness(this)
+        h.frigate.localReachable = false   // away from home, so the Tailscale URL is the one used
+        h.frigate.httpsRejected = true     // ...and the server has since turned TLS off
+
+        val result = h.repository.connect("https://$tailscaleHost:8971", localUrl, "andrew", "pw")
+        eventually("the https URL to heal to http") { h.repository.currentServerUrl.value == serverUrl }
+
+        assertTrue(result.isSuccess)
+        // The corrected URL is what gets remembered, so the repair sticks for next launch.
+        assertEquals(serverUrl, result.getOrThrow().serverUrl)
+        assertEquals(serverUrl, h.repository.mostRecentConnection.first()?.serverUrl)
+        assertEquals(listOf("backyard", "front_door"), h.cameraDao.observeByServer(serverUrl).first().map { it.name }.sorted())
+    }
+
+    @Test
+    fun wrongCredentialsAreNotMistakenForASchemeProblem() = runTest {
+        val h = Harness(this)
+        h.frigate.rejectLogin = true
+
+        val result = h.repository.connect(serverUrl, localUrl, "andrew", "wrong")
+        advanceUntilIdle()
+
+        assertTrue(result.isFailure)
+        // One attempt only: the server answered, so there is no point trying the other scheme.
+        assertEquals(1, h.frigate.logins(localHost))
+        assertNull(h.repository.activeConnection.value)
     }
 }

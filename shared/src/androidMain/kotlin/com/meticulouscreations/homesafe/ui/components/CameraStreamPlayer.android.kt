@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.components
 
+import android.content.Context
 import android.view.TextureView
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Box
@@ -7,72 +8,62 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.MediaItem
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlin.math.min
-import kotlin.math.pow
 
 /**
- * One [ExoPlayer] lives for as long as [VideoSource.url] stays the same; changing it (switching
- * between live and a recording, or between two recording playlists) rebuilds the player, while an
- * in-place seek within the current recording ([PlayerRequest.seek]) reuses it.
+ * Binds a [LivePlayerHolder] (pooled per [playerKey], see [LivePlayerPool]) to this call site's
+ * own `TextureView`, and draws a live poster over it until that surface has a real frame.
  *
- * go2rtc mints a new, short-lived HLS session (and session id embedded in the playlist/segment
- * URLs) on every request to the top-level `stream.m3u8` playlist. Once that session ages out,
- * in-flight requests for its playlist or segments start returning HTTP 404, which ExoPlayer
- * surfaces as a fatal [PlaybackException] with [PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS].
- * Restarting playback against the same live [VideoSource] makes ExoPlayer re-fetch the top-level
- * playlist, and go2rtc mints a fresh session in response — so recovering from that specific
- * error just means re-preparing with the same [MediaItem]. Other IO errors (network blips) get
- * the same treatment; non-IO errors (e.g. decoder failures) are not assumed to be recoverable by
- * simply restarting. Retries back off exponentially and stop after [MAX_CONSECUTIVE_FAILURES] so
- * a genuinely offline server doesn't get hammered forever. Recordings are plain VOD playlists and
- * get no such retry: an error there is reported to the caller instead.
+ * The holder owns the [androidx.media3.exoplayer.ExoPlayer], its source, its retry loop and its
+ * idle/lifecycle policy; this composable owns only what's specific to one place on screen: the
+ * surface, the aspect-ratio fit, the poster, and the caller's callbacks. Several of these can be
+ * bound to one holder at the same time (the grid card and the detail screen overlap during the
+ * shared-element transition); frames go to whichever surface was bound most recently, and each
+ * `TextureView` keeps showing its last frame after it stops receiving them.
  *
- * This deliberately does NOT use [androidx.media3.ui.PlayerView]: PlayerView defaults to a
- * `SurfaceView` with an opaque black "shutter" drawn on top until the first frame renders, and
- * that shutter/SurfaceView pairing doesn't reliably composite with a Compose-drawn poster
- * underneath it (SurfaceView punches its own hole in the window rather than participating in
- * normal View alpha/z-order compositing) — which is exactly what caused black boxes to persist
- * even with a poster in place (e.g. every time this composable is torn down and recreated, such
- * as navigating from the camera detail screen back to the grid). A bare [TextureView] inside an
- * [AspectRatioFrameLayout] fully participates in normal View compositing, so the poster
- * underneath shows through reliably until a real frame is actually rendered to the texture.
+ * The poster is a [VideoPosterLayer] drawn *on top* of the video and hidden once this surface
+ * renders its first frame for the holder's current [LivePlayerHolder.coldStartGeneration]. That
+ * covers the cases where the surface has nothing or something stale to show — a brand-new
+ * surface, a cold connect, a reconnect after an error, a return from a long background — with a
+ * snapshot that is at most a second old, and leaves a good frame alone across warm swaps.
+ *
+ * A bare `TextureView` is used rather than [androidx.media3.ui.PlayerView]: PlayerView's default
+ * `SurfaceView` punches its own hole in the window and doesn't composite with Compose content
+ * above or below it, which is how black boxes used to persist over posters.
  */
-private const val MAX_CONSECUTIVE_FAILURES = 6
-private const val BASE_RETRY_DELAY_MS = 1_000L
-private const val MAX_RETRY_DELAY_MS = 30_000L
 private const val POSITION_POLL_INTERVAL_MS = 250L
+
+/** Fallback for hiding the poster if a surface swap ever fails to re-fire `onRenderedFirstFrame`: this many polls of steady playback. */
+private const val STEADY_PLAYBACK_POLLS_TO_TRUST = 3
 
 @Composable
 actual fun CameraStreamPlayer(
     request: PlayerRequest,
     modifier: Modifier,
+    playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
 ) {
     val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
+    val holder = remember(playerKey) { HolderLease(context, playerKey) }.holder
+    val player = holder.player
 
     val source = request.source
     val currentSource by rememberUpdatedState(source)
@@ -81,81 +72,47 @@ actual fun CameraStreamPlayer(
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
 
-    val exoPlayer = remember(source.url) {
-        val loadControl = DefaultLoadControl.Builder()
-            // Tuned for live low-latency HLS rather than DefaultLoadControl's VOD-oriented
-            // defaults (15s/50s/2.5s/5s) — a smaller max buffer means a reconnect doesn't have
-            // to refill a large buffer before resuming playback. Starting points only; not
-            // empirically tuned against a real network/server.
-            .setBufferDurationsMs(1_500, 8_000, 500, 1_000)
-            .build()
-        ExoPlayer.Builder(context)
-            .setLoadControl(loadControl)
-            .build()
-            .apply { repeatMode = ExoPlayer.REPEAT_MODE_OFF }
+    // The cold-start generation this surface last rendered a frame for; the poster stays up
+    // until it catches up with the holder's current one.
+    var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
+    val posterVisible = renderedGeneration != holder.coldStartGeneration
+
+    val textureView = remember(holder) {
+        TextureView(context).apply {
+            // Never composite as an opaque (black) layer while there's no frame yet.
+            isOpaque = false
+        }
     }
-    // Hoisted alongside the player (not created in AndroidView's factory) so the same instance
-    // is available to the video-size listener below, which keeps the crop/zoom aspect ratio
-    // correct — PlayerView used to wire this internally, and we lose that for free by bypassing it.
-    val aspectRatioFrameLayout = remember(exoPlayer) {
+    val aspectRatioFrameLayout = remember(holder) {
         AspectRatioFrameLayout(context).apply {
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            val textureView = TextureView(context).apply {
-                // Never composite as an opaque (black) layer while there's no frame yet, so the
-                // poster underneath stays visible until real video arrives.
-                isOpaque = false
-            }
             addView(textureView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-            exoPlayer.setVideoTextureView(textureView)
         }
     }
 
     Box(modifier = modifier) {
-        // Always mounted underneath — the video surface above is transparent until it actually
-        // has a frame to draw, so this is the only thing visible during any load/reconnect, and
-        // real frames simply paint over it once they arrive. No visibility state to track.
-        val posterUrl = (source as? VideoSource.Live)?.posterUrl
-        if (posterUrl != null) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { aspectRatioFrameLayout },
         )
+        val posterUrl = source.posterUrl
+        if (posterVisible && posterUrl != null) {
+            VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
+        }
     }
 
-    DisposableEffect(exoPlayer) {
-        var consecutiveFailures = 0
-
-        fun startPlayback(toLoad: VideoSource) {
-            val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
-            val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))
-            when (toLoad) {
-                is VideoSource.Live -> exoPlayer.setMediaSource(mediaSource)
-                is VideoSource.Recording -> exoPlayer.setMediaSource(mediaSource, toLoad.startPositionMs)
-            }
-            exoPlayer.prepare()
-            exoPlayer.playWhenReady = true
-        }
+    DisposableEffect(holder) {
+        player.setVideoTextureView(textureView)
+        // A warm holder won't re-announce its video size; fit the surface to what it's already playing.
+        aspectRatioFrameLayout.applyVideoSize(player.videoSize)
 
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
-                consecutiveFailures = 0
+                renderedGeneration = holder.coldStartGeneration
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
-                aspectRatioFrameLayout.setAspectRatio(
-                    if (videoSize.height == 0 || videoSize.width == 0) {
-                        0f
-                    } else {
-                        videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
-                    },
-                )
+                aspectRatioFrameLayout.applyVideoSize(videoSize)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -166,57 +123,64 @@ actual fun CameraStreamPlayer(
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                val failed = currentSource
-                if (failed is VideoSource.Recording) {
-                    currentOnPlaybackError()
-                    return
-                }
-                val isRecoverableIoError = when (error.errorCode) {
-                    PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-                    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-                    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
-                    PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
-                    PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
-                    -> true
-                    else -> false
-                }
-                if (!isRecoverableIoError || consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-                    return
-                }
-                consecutiveFailures++
-                val backoffMs = min(
-                    BASE_RETRY_DELAY_MS * 2.0.pow(consecutiveFailures - 1).toLong(),
-                    MAX_RETRY_DELAY_MS,
-                )
-                coroutineScope.launch {
-                    delay(backoffMs)
-                    if (currentSource == failed) startPlayback(failed)
-                }
+                if (currentSource is VideoSource.Recording) currentOnPlaybackError()
             }
         }
-        exoPlayer.addListener(listener)
-        startPlayback(source)
-
+        player.addListener(listener)
         onDispose {
-            exoPlayer.removeListener(listener)
-            exoPlayer.release()
+            player.removeListener(listener)
+            // No-op if another binder has since taken the surface; ExoPlayer checks identity.
+            player.clearVideoTextureView(textureView)
         }
     }
 
-    LaunchedEffect(request.seek) {
-        val seek = request.seek ?: return@LaunchedEffect
-        if (currentSource is VideoSource.Recording) exoPlayer.seekTo(seek.positionMs)
+    LifecycleStartEffect(holder) {
+        holder.onBinderStarted()
+        onStopOrDispose { holder.onBinderStopped() }
     }
 
-    LaunchedEffect(request.playWhenReady) { exoPlayer.playWhenReady = request.playWhenReady }
+    LaunchedEffect(holder, source.url) { holder.load(source) }
 
-    LaunchedEffect(exoPlayer) {
+    LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
+
+    LaunchedEffect(holder, request.seek) {
+        val seek = request.seek ?: return@LaunchedEffect
+        if (currentSource is VideoSource.Recording) player.seekTo(seek.positionMs)
+    }
+
+    LaunchedEffect(holder) {
+        var steadyPolls = 0
         while (isActive) {
-            if (currentSource is VideoSource.Recording && exoPlayer.playbackState == Player.STATE_READY) {
-                currentOnPositionChanged(exoPlayer.currentPosition)
+            val steady = player.playbackState == Player.STATE_READY && player.isPlaying
+            steadyPolls = if (steady) steadyPolls + 1 else 0
+            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST) renderedGeneration = holder.coldStartGeneration
+            if (currentSource is VideoSource.Recording && player.playbackState == Player.STATE_READY) {
+                currentOnPositionChanged(player.currentPosition)
             }
             delay(POSITION_POLL_INTERVAL_MS)
         }
     }
+}
+
+private fun AspectRatioFrameLayout.applyVideoSize(videoSize: VideoSize) {
+    setAspectRatio(
+        if (videoSize.height == 0 || videoSize.width == 0) {
+            0f
+        } else {
+            videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+        },
+    )
+}
+
+/**
+ * Ties a pool lease to a `remember` slot, releasing it whether the composition forgets it or
+ * abandons it before it ever applied — a plain DisposableEffect would leak the reference count
+ * in the latter case.
+ */
+private class HolderLease(context: Context, key: String?) : RememberObserver {
+    val holder: LivePlayerHolder = LivePlayerPool.acquire(context, key)
+
+    override fun onRemembered() = Unit
+    override fun onForgotten() = LivePlayerPool.release(holder)
+    override fun onAbandoned() = LivePlayerPool.release(holder)
 }

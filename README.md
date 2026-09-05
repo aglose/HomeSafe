@@ -27,16 +27,53 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 
 ### Local network vs Tailscale
 
-The connect screen takes two addresses: the server's Tailscale URL (required) and its private
-LAN URL (optional). On sign-in, and again whenever the OS reports a network change, the app
-probes the LAN address with a short timeout and uses it for everything — API, snapshots, and
-live/recorded video — when it answers; otherwise it uses the Tailscale address. The choice is
-made by probing rather than by reading the SSID, so a router that splits one LAN into several
-SSIDs needs no special handling, and the app never needs location permission. The active route
-shows as a badge in the top bar and under Settings → Server Information.
+The server's private LAN address is hardcoded as `LOCAL_SERVER_URL` in
+[`NetworkMonitor`'s package](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/network/LocalNetworkConfig.kt)
+— there's only ever one household server, so it isn't a connect-screen field. On sign-in, and
+again whenever the OS reports a network change, the app probes that address with a short
+timeout and uses it for everything — API, snapshots, and live/recorded video — when it
+answers; otherwise it uses the Tailscale URL entered on the connect screen. The choice is made
+by probing rather than by reading the SSID, so a router that splits one LAN into several SSIDs
+needs no special handling, and the app never needs location permission. The active route shows
+as a badge in the top bar and under Settings → Server Information.
 
 For the LAN route to work the server has to accept Frigate's ports (8971 and 1984) from the
-LAN, not only from its Tailscale interface.
+LAN, not only from its Tailscale interface, and `LOCAL_SERVER_URL` has to match its actual LAN
+address (a DHCP reservation on the router keeps that from drifting).
+
+### Live video pipeline
+
+The home grid is built to put a picture on screen the instant a card appears and real video as
+soon as the network allows, never an old photo in between:
+
+- **One player per camera, shared and long-lived.** `CameraStreamPlayer` takes a `playerKey`;
+  the grid card and the camera detail screen both pass the camera's name, so tapping a card hands
+  the already-decoding player to the detail screen (live video is up before the shared-element
+  transition ends) and coming back hands it back. Players live in a per-platform `LivePlayerPool`
+  and pause the moment nothing is watching them (a card scrolled out, a tab switch, the app going
+  to the background), resume at the live edge on return, and only drop their session after 30 s
+  idle — so anything shorter than that is instant.
+- **A poster that is never stale.** While a surface has no frame of its own — first open, a
+  reconnect, a return from a long background — `LivePosterLayer` shows the last snapshot this
+  device saw (from disk, same frame the card appears), replaces it with a freshly fetched
+  `latest.jpg` within about 100 ms on the LAN, and keeps refreshing it once a second until video
+  renders. Coil 3 ignores Frigate's `no-store` header by default, which is why the old grid could
+  show the same picture for days; the fresh fetch bypasses cache reads and overwrites the cached
+  copy instead.
+- **Recordings and clips get the same treatment.** Any `VideoSource` can carry a poster. History
+  playback on the camera detail screen and event clips on Moments use Frigate's recording snapshot
+  for the moment about to play (`/api/<camera>/recordings/<time>/snapshot.jpg`, ~150 ms server-side),
+  so a real frame is on screen before the playlist even resolves. Dragging the timeline shows the
+  frame under the finger, YouTube-style, and that same frame stays up after release until playback
+  reports it has arrived. Clip players are keyed by event, so reopening a card resumes where it was.
+- **Fast recovery.** go2rtc's HLS sessions expire while a player is paused; the first retry now
+  fires after 250 ms rather than a second, and retries never give up while someone is watching (one
+  request every 30 s at most), so video comes back on its own after a server restart.
+
+The grid plays each camera's *grid* stream and the detail screen its *live* stream; today both
+resolve to the same 4K main stream because no `live.streams` sub stream is configured in Frigate.
+Adding one (see `FrigateApiClient.toFrigateCamera`) is the single biggest remaining win for
+connect time and battery: the grid would decode a 720p stream per camera instead of 4K.
 
 ### Running tests
 

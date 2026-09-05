@@ -15,6 +15,9 @@ import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
 import kotlinx.coroutines.CancellationException
 
+/** The server answered, but not with success — bad credentials, say. The transport itself was fine. */
+class FrigateResponseException(message: String) : Exception(message)
+
 /**
  * Talks to a Frigate NVR's REST API. Login establishes a session cookie on [httpClient]
  * (via the `HttpCookies` plugin), which subsequent requests on the same client reuse
@@ -28,7 +31,7 @@ class FrigateApiClient(private val httpClient: HttpClient) {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(user = username, password = password))
         }
-        check(response.status.isSuccess()) { "Login failed: ${response.status}" }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Login failed: ${response.status}")
     }
 
     /**
@@ -85,6 +88,15 @@ class FrigateApiClient(private val httpClient: HttpClient) {
             liveStreamName = liveStreamName,
             gridStreamName = gridStreamName,
         )
+    }
+
+    /** The most recent [limit] detections across all cameras, newest first. */
+    suspend fun getEvents(serverUrl: String, limit: Int = 100): Result<List<FrigateEvent>> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
+            parameter("limit", limit)
+        }
+        check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
+        response.body<List<FrigateEvent>>()
     }
 
     /** Recorded clips of [cameraName] overlapping [afterEpochSeconds]..[beforeEpochSeconds], oldest first. */

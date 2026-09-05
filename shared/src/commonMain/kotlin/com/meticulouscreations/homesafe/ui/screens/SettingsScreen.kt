@@ -60,7 +60,7 @@ fun SettingsTabContent(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp)
-            .padding(top = 8.dp, bottom = 120.dp),
+            .padding(top = 8.dp, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         SettingsSection(title = "Server Information", icon = Icons.Filled.Dns) {

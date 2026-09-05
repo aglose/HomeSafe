@@ -8,4 +8,7 @@ data class Camera(
     val liveStreamName: String = name,
     /** The (possibly lower-quality) stream name to use for the multi-camera grid. */
     val gridStreamName: String = name,
-)
+) {
+    /** What the UI calls this camera — see [cameraDisplayName]. */
+    val displayName: String get() = cameraDisplayName(name)
+}
