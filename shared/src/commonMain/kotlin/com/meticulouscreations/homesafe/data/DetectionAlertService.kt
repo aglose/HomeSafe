@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.categoryForLabel
 import com.meticulouscreations.homesafe.domain.model.present
@@ -70,17 +73,6 @@ class DetectionAlertService(
     fun stop() {
         job?.cancel()
         job = null
-    }
-
-    /** Posts a sample notification so the user can see what one looks like and that the OS lets them through. */
-    fun sendTestNotification() {
-        notifier.notify(
-            AlertNotification(
-                id = "test",
-                title = "Test alert",
-                body = "Notifications from HomeSafe are working. Detections will look like this.",
-            ),
-        )
     }
 
     private suspend fun poll(url: String) {

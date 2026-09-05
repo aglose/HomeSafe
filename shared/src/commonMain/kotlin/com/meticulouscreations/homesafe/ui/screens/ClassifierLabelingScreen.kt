@@ -46,15 +46,14 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
-import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
+import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 
 /**
  * Teach a Frigate classifier by labelling what it saw. Each queued crop shows the model's own
@@ -64,10 +63,11 @@ import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 @Composable
 fun ClassifierLabelingScreen(
     modelName: String,
-    classifierRepository: ClassifierRepository,
     onBack: () -> Unit,
 ) {
-    val viewModel = viewModel(key = "classifier:$modelName") { ClassifierLabelingViewModel(modelName, classifierRepository) }
+    val viewModel = assistedMetroViewModel<ClassifierLabelingViewModel, ClassifierLabelingViewModel.Factory>(key = "classifier:$modelName") {
+        create(modelName)
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.navigation3.runtime.entryProvider
@@ -14,10 +15,16 @@ import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
+import dev.zacsweers.metrox.viewmodel.LocalMetroViewModelFactory
 
 private data object SecureConnectionRoute
 private data object AppShellRoute
 
+/**
+ * The root composable. The only place the [AppGraph] is touched from UI code: it installs the
+ * graph's view-model factory as [LocalMetroViewModelFactory], after which every screen obtains
+ * its view model with `metroViewModel()` / `assistedMetroViewModel()` and never sees the graph.
+ */
 @OptIn(ExperimentalCoilApi::class)
 @Composable
 fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? = null) {
@@ -34,32 +41,28 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
         appGraph.detectionAlertService.start()
     }
 
-    FrigateTheme {
-        val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
+    CompositionLocalProvider(LocalMetroViewModelFactory provides appGraph.metroViewModelFactory) {
+        FrigateTheme {
+            val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
 
-        NavDisplay(
-            backStack = backStack,
-            onBack = { backStack.removeLastOrNull() },
-            entryProvider = entryProvider {
-                entry<SecureConnectionRoute> {
-                    SecureConnectionScreen(
-                        connectToServerUseCase = appGraph.connectToServerUseCase,
-                        signInWithBiometricsUseCase = appGraph.signInWithBiometricsUseCase,
-                        saveBiometricCredentialsUseCase = appGraph.saveBiometricCredentialsUseCase,
-                        forgetBiometricCredentialsUseCase = appGraph.forgetBiometricCredentialsUseCase,
-                        observeMostRecentConnectionUseCase = appGraph.observeMostRecentConnectionUseCase,
-                        connectionRepository = appGraph.connectionRepository,
-                        debugAutofillCredentials = debugAutofillCredentials,
-                        onConnected = {
-                            // Connecting replaces the back stack: the system back button
-                            // should exit the app from the shell, not return to this screen.
-                            backStack.clear()
-                            backStack.add(AppShellRoute)
-                        },
-                    )
-                }
-                entry<AppShellRoute> { FrigateAppShell(appGraph = appGraph) }
-            },
-        )
+            NavDisplay(
+                backStack = backStack,
+                onBack = { backStack.removeLastOrNull() },
+                entryProvider = entryProvider {
+                    entry<SecureConnectionRoute> {
+                        SecureConnectionScreen(
+                            debugAutofillCredentials = debugAutofillCredentials,
+                            onConnected = {
+                                // Connecting replaces the back stack: the system back button
+                                // should exit the app from the shell, not return to this screen.
+                                backStack.clear()
+                                backStack.add(AppShellRoute)
+                            },
+                        )
+                    }
+                    entry<AppShellRoute> { FrigateAppShell() }
+                },
+            )
+        }
     }
 }

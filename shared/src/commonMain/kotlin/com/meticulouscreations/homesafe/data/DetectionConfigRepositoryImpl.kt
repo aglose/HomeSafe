@@ -12,11 +12,13 @@ import com.meticulouscreations.homesafe.network.parseFrigatePolygon
 import com.meticulouscreations.homesafe.network.parseFrigatePolygons
 import com.meticulouscreations.homesafe.network.toFrigateCoordinates
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class DetectionConfigRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionRepository: ConnectionRepository,

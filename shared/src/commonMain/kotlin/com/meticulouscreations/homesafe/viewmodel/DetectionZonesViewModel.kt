@@ -6,16 +6,25 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.CameraDetectionConfig
 import com.meticulouscreations.homesafe.domain.model.MaskLayer
 import com.meticulouscreations.homesafe.domain.model.MaskPoint
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetDetectionConfigUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
-import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.Assisted
+import dev.zacsweers.metro.AssistedFactory
+import dev.zacsweers.metro.AssistedInject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 @Immutable
 data class DetectionZonesUiState(
@@ -38,14 +47,27 @@ data class DetectionZonesUiState(
  * [MaskEditorState], and a save pushes each changed layer back and then re-reads the server's
  * copy.
  */
+@OptIn(ExperimentalTime::class)
+@AssistedInject
 class DetectionZonesViewModel(
-    private val cameraName: String,
-    private val connectionRepository: ConnectionRepository,
+    @Assisted private val cameraName: String,
+    observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getDetectionConfigUseCase: GetDetectionConfigUseCase,
     private val saveDetectionMasksUseCase: SaveDetectionMasksUseCase,
     private val saveDetectionZonesUseCase: SaveDetectionZonesUseCase,
-    private val clock: () -> Double = ::epochSecondsNow,
+    private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
+    private val clock: Clock,
 ) : ViewModel() {
+
+    /** One view model per camera; the screen keys it by [cameraName]. */
+    @AssistedFactory
+    @ManualViewModelAssistedFactoryKey
+    @ContributesIntoMap(AppScope::class)
+    interface Factory : ManualViewModelAssistedFactory {
+        fun create(cameraName: String): DetectionZonesViewModel
+    }
+
+    private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
 
     private val _uiState = MutableStateFlow(DetectionZonesUiState())
     val uiState: StateFlow<DetectionZonesUiState> = _uiState.asStateFlow()
@@ -148,5 +170,5 @@ class DetectionZonesViewModel(
         _uiState.update { it.copy(editor = transform(it.editor), justSaved = false, saveError = null) }
 
     private fun freshSnapshotUrl(): String? =
-        connectionRepository.currentServerUrl.value?.let { "${frigateSnapshotUrl(it, cameraName)}?t=${clock().toLong()}" }
+        serverUrl.value?.let { getCameraSnapshotUrlUseCase(it, cameraName, cacheBuster = clock.now().epochSeconds) }
 }

@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.combine
 
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRepository {
 
     override fun observeSettings(): Flow<AlertSettings> =

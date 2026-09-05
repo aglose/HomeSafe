@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
-import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -57,12 +56,15 @@ import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
-fun FrigateAppShell(appGraph: AppGraph) {
+fun FrigateAppShell() {
+    val viewModel: AppShellViewModel = metroViewModel()
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
-    val activeConnection by appGraph.connectionRepository.activeConnection.collectAsStateWithLifecycle()
+    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
     // The Home tab's nested back stack lives here, not in HomeTabNav, so the shell can tell when
     // Home has drilled into a camera. Those nested screens draw their own header row, and
@@ -100,31 +102,11 @@ fun FrigateAppShell(appGraph: AppGraph) {
                 backStack = topLevelBackStack.backStack,
                 onBack = { topLevelBackStack.removeLast() },
                 entryProvider = entryProvider {
-                    entry<TopLevelRoute.Home> { HomeTabNav(appGraph, homeBackStack) }
-                    entry<TopLevelRoute.Moments> {
-                        MomentsTabContent(
-                            observeMomentsUseCase = appGraph.observeMomentsUseCase,
-                            getMomentClipStreamUseCase = appGraph.getMomentClipStreamUseCase,
-                            downloadMomentClipUseCase = appGraph.downloadMomentClipUseCase,
-                            momentsRepository = appGraph.momentsRepository,
-                            connectionRepository = appGraph.connectionRepository,
-                        )
-                    }
+                    entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack) }
+                    entry<TopLevelRoute.Moments> { MomentsTabContent() }
                     entry<TopLevelRoute.Settings> {
-                        SettingsTabNav(appGraph, settingsBackStack) { openClassifier ->
-                        SettingsTabContent(
-                            observeSettingsUseCase = appGraph.observeSettingsUseCase,
-                            updateSettingsUseCase = appGraph.updateSettingsUseCase,
-                            observeServerOverviewUseCase = appGraph.observeServerOverviewUseCase,
-                            setCameraDetectionUseCase = appGraph.setCameraDetectionUseCase,
-                            setCameraMotionUseCase = appGraph.setCameraMotionUseCase,
-                            serverStatusRepository = appGraph.serverStatusRepository,
-                            connectionRepository = appGraph.connectionRepository,
-                            alertNotifier = appGraph.alertNotifier,
-                            detectionAlertService = appGraph.detectionAlertService,
-                            classifierRepository = appGraph.classifierRepository,
-                            onOpenClassifier = openClassifier,
-                        )
+                        SettingsTabNav(settingsBackStack) { openClassifier ->
+                            SettingsTabContent(onOpenClassifier = openClassifier)
                         }
                     }
                 },
@@ -211,7 +193,7 @@ private data class DetectionZonesRoute(val cameraName: String)
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(appGraph: AppGraph, backStack: SnapshotStateList<Any>) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -219,8 +201,6 @@ private fun HomeTabNav(appGraph: AppGraph, backStack: SnapshotStateList<Any>) {
             entryProvider = entryProvider {
                 entry<CameraListRoute> {
                     HomeTabContent(
-                        observeCamerasUseCase = appGraph.observeCamerasUseCase,
-                        connectionRepository = appGraph.connectionRepository,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onCameraClick = { cameraName -> backStack.add(CameraDetailRoute(cameraName)) },
                     )
@@ -228,14 +208,6 @@ private fun HomeTabNav(appGraph: AppGraph, backStack: SnapshotStateList<Any>) {
                 entry<CameraDetailRoute> { route ->
                     CameraDetailScreen(
                         cameraName = route.cameraName,
-                        observeCamerasUseCase = appGraph.observeCamerasUseCase,
-                        connectionRepository = appGraph.connectionRepository,
-                        getRecordingHistoryUseCase = appGraph.getRecordingHistoryUseCase,
-                        getRecordingStreamUseCase = appGraph.getRecordingStreamUseCase,
-                        observeMomentsUseCase = appGraph.observeMomentsUseCase,
-                        observeSettingsUseCase = appGraph.observeSettingsUseCase,
-                        updateSettingsUseCase = appGraph.updateSettingsUseCase,
-                        observeServerOverviewUseCase = appGraph.observeServerOverviewUseCase,
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onBack = { backStack.removeLastOrNull() },
                         onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
@@ -244,10 +216,6 @@ private fun HomeTabNav(appGraph: AppGraph, backStack: SnapshotStateList<Any>) {
                 entry<DetectionZonesRoute> { route ->
                     DetectionZonesScreen(
                         cameraName = route.cameraName,
-                        connectionRepository = appGraph.connectionRepository,
-                        getDetectionConfigUseCase = appGraph.getDetectionConfigUseCase,
-                        saveDetectionMasksUseCase = appGraph.saveDetectionMasksUseCase,
-                        saveDetectionZonesUseCase = appGraph.saveDetectionZonesUseCase,
                         onBack = { backStack.removeLastOrNull() },
                     )
                 }

@@ -53,19 +53,13 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.meticulouscreations.homesafe.data.SavedCredentials
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
-import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ConnectUiState
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.coroutines.launch
 
 /**
@@ -82,25 +76,10 @@ data class DebugAutofillCredentials(
 
 @Composable
 fun SecureConnectionScreen(
-    connectToServerUseCase: ConnectToServerUseCase,
-    signInWithBiometricsUseCase: SignInWithBiometricsUseCase,
-    saveBiometricCredentialsUseCase: SaveBiometricCredentialsUseCase,
-    forgetBiometricCredentialsUseCase: ForgetBiometricCredentialsUseCase,
-    observeMostRecentConnectionUseCase: ObserveMostRecentConnectionUseCase,
-    connectionRepository: ConnectionRepository,
     onConnected: () -> Unit,
     debugAutofillCredentials: DebugAutofillCredentials? = null,
 ) {
-    val viewModel = viewModel {
-        SecureConnectionViewModel(
-            connectToServerUseCase = connectToServerUseCase,
-            signInWithBiometricsUseCase = signInWithBiometricsUseCase,
-            saveBiometricCredentialsUseCase = saveBiometricCredentialsUseCase,
-            forgetBiometricCredentialsUseCase = forgetBiometricCredentialsUseCase,
-            observeMostRecentConnectionUseCase = observeMostRecentConnectionUseCase,
-            connectionRepository = connectionRepository,
-        )
-    }
+    val viewModel: SecureConnectionViewModel = metroViewModel()
     val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()

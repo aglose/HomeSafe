@@ -5,7 +5,19 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.DetectionZone
-import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
+import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.DiscardClassifierCropsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
+import com.meticulouscreations.homesafe.domain.usecase.TrainClassifierUseCase
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.Assisted
+import dev.zacsweers.metro.AssistedFactory
+import dev.zacsweers.metro.AssistedInject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,10 +46,24 @@ data class ClassifierLabelingUiState(
  * for each, and retrain when there's something new. Every decision goes straight to the server
  * (Frigate moves the file), then the queue is re-read so the screen never drifts from the box.
  */
+@AssistedInject
 class ClassifierLabelingViewModel(
-    private val modelName: String,
-    private val repository: ClassifierRepository,
+    @Assisted private val modelName: String,
+    private val getClassifierDatasetUseCase: GetClassifierDatasetUseCase,
+    private val getClassifierQueueImageUrlUseCase: GetClassifierQueueImageUrlUseCase,
+    private val labelClassifierCropUseCase: LabelClassifierCropUseCase,
+    private val discardClassifierCropsUseCase: DiscardClassifierCropsUseCase,
+    private val createClassifierCategoryUseCase: CreateClassifierCategoryUseCase,
+    private val trainClassifierUseCase: TrainClassifierUseCase,
 ) : ViewModel() {
+
+    /** One view model per classifier; the screen keys it by [modelName]. */
+    @AssistedFactory
+    @ManualViewModelAssistedFactoryKey
+    @ContributesIntoMap(AppScope::class)
+    interface Factory : ManualViewModelAssistedFactory {
+        fun create(modelName: String): ClassifierLabelingViewModel
+    }
 
     private val _uiState = MutableStateFlow(ClassifierLabelingUiState())
     val uiState: StateFlow<ClassifierLabelingUiState> = _uiState.asStateFlow()
@@ -49,18 +75,18 @@ class ClassifierLabelingViewModel(
     fun load() {
         _uiState.update { it.copy(isLoading = it.dataset == null, loadError = null) }
         viewModelScope.launch {
-            repository.getDataset(modelName)
+            getClassifierDatasetUseCase(modelName)
                 .onSuccess { data -> _uiState.update { it.copy(isLoading = false, dataset = data, decided = emptyMap()) } }
                 .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.message ?: "Couldn't load the classifier") } }
         }
     }
 
-    fun imageUrl(fileName: String): String? = repository.queueImageUrl(modelName, fileName)
+    fun imageUrl(fileName: String): String? = getClassifierQueueImageUrlUseCase(modelName, fileName)
 
     /** Files this crop, then re-reads the queue so Frigate's renamed copy and the new counts show. */
-    fun label(fileName: String, category: String) = decide(fileName, category) { repository.label(modelName, fileName, category) }
+    fun label(fileName: String, category: String) = decide(fileName, category) { labelClassifierCropUseCase(modelName, fileName, category) }
 
-    fun discard(fileName: String) = decide(fileName, null) { repository.discard(modelName, listOf(fileName)) }
+    fun discard(fileName: String) = decide(fileName, null) { discardClassifierCropsUseCase(modelName, listOf(fileName)) }
 
     fun setNewCategoryDraft(text: String) = _uiState.update { it.copy(newCategoryDraft = text) }
 
@@ -70,7 +96,7 @@ class ClassifierLabelingViewModel(
         if (draft.isEmpty()) return
         val key = DetectionZone.slug(draft)
         viewModelScope.launch {
-            repository.createCategory(modelName, key)
+            createClassifierCategoryUseCase(modelName, key)
                 .onSuccess {
                     _uiState.update { it.copy(newCategoryDraft = "", notice = "Added category ${key}", noticeIsError = false) }
                     load()
@@ -85,14 +111,14 @@ class ClassifierLabelingViewModel(
         if (_uiState.value.isTraining || !data.canTrain) return
         _uiState.update { it.copy(isTraining = true, notice = null) }
         viewModelScope.launch {
-            repository.train(modelName).onFailure { e ->
+            trainClassifierUseCase(modelName).onFailure { e ->
                 _uiState.update { it.copy(isTraining = false, notice = "Couldn't train: ${e.message}", noticeIsError = true) }
                 return@launch
             }
             // Training on the real box takes ~30 s; poll until the "new since training" count drops to zero.
             repeat(TRAIN_POLL_ATTEMPTS) {
                 delay(TRAIN_POLL_INTERVAL_MS)
-                val refreshed = repository.getDataset(modelName).getOrNull()
+                val refreshed = getClassifierDatasetUseCase(modelName).getOrNull()
                 if (refreshed != null && refreshed.hasTrained && refreshed.newImagesSinceTraining == 0) {
                     val total = refreshed.categoryCounts.values.sum()
                     _uiState.update { it.copy(isTraining = false, dataset = refreshed, notice = "Trained on $total images. Frigate is using the new model now.", noticeIsError = false) }

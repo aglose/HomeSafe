@@ -7,22 +7,31 @@ import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
-import com.meticulouscreations.homesafe.domain.model.AlertSettings
-import com.meticulouscreations.homesafe.domain.model.present
-import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
+import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.Assisted
+import dev.zacsweers.metro.AssistedFactory
+import dev.zacsweers.metro.AssistedInject
+import dev.zacsweers.metro.ContributesIntoMap
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
+import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
-import com.meticulouscreations.homesafe.network.frigateRecordingSnapshotUrl
-import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
@@ -139,18 +148,41 @@ data class CameraAlertsUiState(
     val pushNotificationsEnabled: Boolean = false,
 )
 
+@OptIn(ExperimentalTime::class)
+@AssistedInject
 class CameraDetailViewModel(
-    private val cameraName: String,
+    @Assisted private val cameraName: String,
     observeCamerasUseCase: ObserveCamerasUseCase,
-    private val connectionRepository: ConnectionRepository,
+    observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
+    observeActiveConnectionUseCase: ObserveActiveConnectionUseCase,
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
     observeMomentsUseCase: ObserveMomentsUseCase,
     observeSettingsUseCase: ObserveSettingsUseCase,
     private val updateSettingsUseCase: UpdateSettingsUseCase,
     observeServerOverviewUseCase: ObserveServerOverviewUseCase,
-    private val clock: () -> Double = ::epochSecondsNow,
+    private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
+    private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
+    private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
+    private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
+    private val clock: Clock,
 ) : ViewModel() {
+
+    /** One view model per camera; the screen keys it by [cameraName]. */
+    @AssistedFactory
+    @ManualViewModelAssistedFactoryKey
+    @ContributesIntoMap(AppScope::class)
+    interface Factory : ManualViewModelAssistedFactory {
+        fun create(cameraName: String): CameraDetailViewModel
+    }
+
+    private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
+
+    /** The signed-in server and its route, for this screen's own header (it replaces the shell's bar). */
+    val activeConnection: StateFlow<ActiveConnection?> = observeActiveConnectionUseCase()
+
+    /** Wall-clock epoch seconds from the injected clock, so tests can pin it. */
+    private fun now(): Double = clock.now().toEpochMilliseconds() / 1000.0
 
     /**
      * This camera's newest detections for the "Recent Activity" strip. Same feed and mapper as the
@@ -160,29 +192,29 @@ class CameraDetailViewModel(
     @OptIn(ExperimentalTime::class)
     val recentMoments: StateFlow<List<MomentItem>> = combine(
         observeMomentsUseCase(),
-        connectionRepository.currentServerUrl,
+        serverUrl,
     ) { events, serverUrl ->
-        val today = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+        val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         events
             .filter { it.cameraName == cameraName }
             .take(RECENT_MOMENTS)
-            .map { MomentItem(it, it.present(today), serverUrl?.let { url -> frigateEventThumbnailUrl(url, it.id) }) }
+            .map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val uiState: StateFlow<CameraDetailUiState> = combine(
         observeCamerasUseCase(),
-        connectionRepository.currentServerUrl,
+        serverUrl,
     ) { cameras, serverUrl ->
         val camera = cameras.firstOrNull { it.name == cameraName }
-        val posterUrl = serverUrl?.let { frigateSnapshotUrl(it, cameraName) }
+        val posterUrl = serverUrl?.let { getCameraSnapshotUrlUseCase(it, cameraName) }
         when {
             camera == null -> CameraDetailUiState.NotFound
             camera.enabled && serverUrl != null ->
                 CameraDetailUiState.Found(
                     camera = camera,
                     // Full quality *and* sound: only the single-camera view asks go2rtc for an audio track.
-                    streamUrl = frigateLiveStreamUrl(serverUrl, camera.liveStreamName, liveAudioCodecs),
-                    gridStreamUrl = frigateLiveStreamUrl(serverUrl, camera.gridStreamName),
+                    streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.liveStreamName, audioCodecs = liveAudioCodecs),
+                    gridStreamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
                     posterUrl = posterUrl,
                 )
             else -> CameraDetailUiState.Found(camera, streamUrl = null, gridStreamUrl = null, posterUrl = posterUrl)
@@ -212,10 +244,10 @@ class CameraDetailViewModel(
     /** Ticks once a second while observed; drives the timeline's live edge and the "behind live" label. */
     val nowEpochSeconds: StateFlow<Double> = flow {
         while (true) {
-            emit(clock())
+            emit(now())
             delay(1_000)
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), clock())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), now())
 
     private var history: RecordingHistory = RecordingHistory.EMPTY
     private var seekSequence = 0L
@@ -247,7 +279,7 @@ class CameraDetailViewModel(
         // Keep the timeline's coverage fresh: new segments land every few seconds while a camera records.
         viewModelScope.launch {
             combine(
-                connectionRepository.currentServerUrl,
+                serverUrl,
                 _playback.map { it.span }.distinctUntilChanged(),
             ) { serverUrl, span -> serverUrl to span }
                 .collectLatest { (serverUrl, span) ->
@@ -265,11 +297,11 @@ class CameraDetailViewModel(
     }
 
     fun onScrubStart() {
-        _playback.update { it.copy(scrubEpochSeconds = it.playheadEpochSeconds ?: clock()) }
+        _playback.update { it.copy(scrubEpochSeconds = it.playheadEpochSeconds ?: now()) }
     }
 
     fun onScrub(epochSeconds: Double) {
-        val now = clock()
+        val now = now()
         _playback.update { it.copy(scrubEpochSeconds = epochSeconds.coerceIn(now - it.span.seconds, now)) }
     }
 
@@ -280,7 +312,7 @@ class CameraDetailViewModel(
 
     /** Jump to [epochSeconds]: an in-place seek if the current playlist covers it, a playlist swap otherwise, live if it's at the edge. */
     fun seekTo(epochSeconds: Double) {
-        val now = clock()
+        val now = now()
         val target = epochSeconds.coerceAtMost(now)
         val latestRecorded = history.latestEndEpochSeconds
         if (latestRecorded == null || target >= latestRecorded || target >= now - LIVE_EDGE_SECONDS) {
@@ -394,8 +426,8 @@ class CameraDetailViewModel(
      * history is (re)loaded so it's sure to cover that moment, and the player seeks there.
      */
     fun playMoment(epochSeconds: Double) {
-        val serverUrl = connectionRepository.currentServerUrl.value ?: return
-        val span = TimelineSpan.entries.firstOrNull { clock() - epochSeconds <= it.seconds } ?: TimelineSpan.entries.last()
+        val serverUrl = serverUrl.value ?: return
+        val span = TimelineSpan.entries.firstOrNull { now() - epochSeconds <= it.seconds } ?: TimelineSpan.entries.last()
         momentJob?.cancel()
         momentJob = viewModelScope.launch {
             _playback.update { it.copy(span = span, scrubEpochSeconds = null) }
@@ -426,8 +458,8 @@ class CameraDetailViewModel(
      * surface; null while disconnected. What the scrub preview and seek poster show.
      */
     fun recordingSnapshotUrl(epochSeconds: Double): String? =
-        connectionRepository.currentServerUrl.value?.let {
-            frigateRecordingSnapshotUrl(it, cameraName, snapshotEpochSeconds(epochSeconds), height = SNAPSHOT_HEIGHT)
+        serverUrl.value?.let {
+            getRecordingSnapshotUrlUseCase(it, cameraName, snapshotEpochSeconds(epochSeconds), height = SNAPSHOT_HEIGHT)
         }
 
     fun onBufferingChanged(isBuffering: Boolean) {
@@ -450,7 +482,7 @@ class CameraDetailViewModel(
     }
 
     private fun loadPlaylist(playlist: RecordingPlaylist, epochSeconds: Double) {
-        val serverUrl = connectionRepository.currentServerUrl.value
+        val serverUrl = serverUrl.value
         if (serverUrl == null) {
             goLive()
             return
@@ -503,7 +535,7 @@ class CameraDetailViewModel(
         span: TimelineSpan,
         mustCover: Double? = _playback.value.playheadEpochSeconds,
     ) {
-        val now = clock()
+        val now = now()
         val windowStart = now - span.seconds - HISTORY_LOOKBEHIND_PADDING_SECONDS
         val window = getRecordingHistoryUseCase(serverUrl, cameraName, afterEpochSeconds = windowStart, beforeEpochSeconds = now)
         val bucketStart = mustCover?.takeIf { it < windowStart }?.let { floor(it / RecordingHistory.DEFAULT_BUCKET_SECONDS) * RecordingHistory.DEFAULT_BUCKET_SECONDS }
@@ -549,6 +581,3 @@ class CameraDetailViewModel(
         const val SNAPSHOT_HEIGHT = 720
     }
 }
-
-@OptIn(ExperimentalTime::class)
-internal fun epochSecondsNow(): Double = Clock.System.now().toEpochMilliseconds() / 1000.0

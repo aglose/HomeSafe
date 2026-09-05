@@ -16,8 +16,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,9 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
-import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
-import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 
 /** The Settings tab's root; the shell watches the back stack's depth to hide its own bar on nested screens. */
 data object SettingsHomeRoute
@@ -38,11 +34,10 @@ data class ClassifierRoute(val modelName: String)
 /**
  * The Settings tab's own nested navigation: the settings page, and drilling into a classifier's
  * labelling screen. [content] renders the settings page and receives the callback that opens a
- * classifier, so the page's (long, evolving) parameter list stays with its caller.
+ * classifier.
  */
 @Composable
 fun SettingsTabNav(
-    appGraph: AppGraph,
     backStack: SnapshotStateList<Any>,
     content: @Composable (openClassifier: (String) -> Unit) -> Unit,
 ) {
@@ -54,7 +49,6 @@ fun SettingsTabNav(
             entry<ClassifierRoute> { route ->
                 ClassifierLabelingScreen(
                     modelName = route.modelName,
-                    classifierRepository = appGraph.classifierRepository,
                     onBack = { backStack.removeLastOrNull() },
                 )
             }
@@ -64,14 +58,10 @@ fun SettingsTabNav(
 
 /**
  * A Settings row per custom classifier on the server ("Known Cars"), opening its labelling
- * screen. Loads its own list so it can sit inside the settings page without touching that
- * page's view model. Renders nothing while loading or when the server has no classifiers.
+ * screen. Renders nothing when the server has no classifiers (or while they're still loading).
  */
 @Composable
-fun RecognitionSection(classifierRepository: ClassifierRepository, onOpen: (String) -> Unit) {
-    val models by produceState<List<ClassifierModel>>(initialValue = emptyList(), classifierRepository) {
-        value = classifierRepository.getModels().getOrDefault(emptyList()).filter { it.objects.isNotEmpty() }
-    }
+fun RecognitionSection(models: List<ClassifierModel>, onOpen: (String) -> Unit) {
     if (models.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(text = "Recognition", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)

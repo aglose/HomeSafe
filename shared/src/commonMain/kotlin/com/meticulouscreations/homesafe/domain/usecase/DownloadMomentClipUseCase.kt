@@ -1,6 +1,6 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
-import com.meticulouscreations.homesafe.data.ClipDownloader
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import dev.zacsweers.metro.Inject
 

@@ -1,17 +1,8 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.PlatformContext
-import kotlinx.serialization.Serializable
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 
-/** Login credentials for a Frigate server, saved locally behind a biometric check. */
-@Serializable
-data class SavedCredentials(
-    val serverUrl: String,
-    val username: String,
-    val password: String,
-    /** The server's private LAN URL, if the user entered one. Defaults so credentials saved before it existed still decode. */
-    val localUrl: String? = null,
-)
+import com.meticulouscreations.homesafe.PlatformContext
 
 /**
  * Stores login credentials behind a platform biometric check (Face ID / Touch ID on iOS,

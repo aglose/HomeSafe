@@ -75,6 +75,9 @@ kotlin {
             implementation(libs.compose.uiBackhandler)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
+            // `api`, not `implementation`: AppGraph extends MetroX's ViewModelGraph, and the app
+            // modules hold an AppGraph, so they must be able to see that supertype.
+            api(libs.metrox.viewmodel.compose)
             implementation(libs.navigation3.ui)
             implementation(libs.room.runtime)
             implementation(libs.ktor.client.core)

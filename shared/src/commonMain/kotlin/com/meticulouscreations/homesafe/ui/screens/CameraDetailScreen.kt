@@ -57,17 +57,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
-import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
-import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
-import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -83,6 +74,7 @@ import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
+import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlinx.coroutines.delay
@@ -92,36 +84,18 @@ import kotlinx.coroutines.launch
 @Composable
 fun CameraDetailScreen(
     cameraName: String,
-    observeCamerasUseCase: ObserveCamerasUseCase,
-    connectionRepository: ConnectionRepository,
-    getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
-    getRecordingStreamUseCase: GetRecordingStreamUseCase,
-    observeMomentsUseCase: ObserveMomentsUseCase,
-    observeSettingsUseCase: ObserveSettingsUseCase,
-    updateSettingsUseCase: UpdateSettingsUseCase,
-    observeServerOverviewUseCase: ObserveServerOverviewUseCase,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
 ) {
-    val viewModel = viewModel(key = cameraName) {
-        CameraDetailViewModel(
-            cameraName = cameraName,
-            observeCamerasUseCase = observeCamerasUseCase,
-            connectionRepository = connectionRepository,
-            getRecordingHistoryUseCase = getRecordingHistoryUseCase,
-            getRecordingStreamUseCase = getRecordingStreamUseCase,
-            observeMomentsUseCase = observeMomentsUseCase,
-            observeSettingsUseCase = observeSettingsUseCase,
-            updateSettingsUseCase = updateSettingsUseCase,
-            observeServerOverviewUseCase = observeServerOverviewUseCase,
-        )
+    val viewModel = assistedMetroViewModel<CameraDetailViewModel, CameraDetailViewModel.Factory>(key = cameraName) {
+        create(cameraName)
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
-    val activeConnection by connectionRepository.activeConnection.collectAsStateWithLifecycle()
+    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val scrollState = rememberScrollState()
