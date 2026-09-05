@@ -119,6 +119,15 @@ internal class LivePlayerHolder(context: Context, val key: String?) {
         applyPlayWhenReady()
     }
 
+    /**
+     * Volume, not track selection: flipping the audio renderer on and off would re-select
+     * tracks and stall for a beat, whereas volume is instant — and the player's volume survives
+     * every source swap and cold restart, so the choice sticks for the life of the holder.
+     */
+    fun setMuted(muted: Boolean) {
+        player.volume = if (muted) 0f else 1f
+    }
+
     /** A binder is attached and its lifecycle is started: someone can see this player. */
     fun onBinderStarted() {
         activeBinders++

@@ -62,7 +62,22 @@ data class PlayerRequest(
     val source: VideoSource,
     val seek: SeekCommand? = null,
     val playWhenReady: Boolean = true,
+    /**
+     * Silence the source's audio track, if it has one. Muted by default: the grid runs several
+     * cameras at once, and a clip that starts talking unasked is a jump scare — the detail
+     * screen's speaker button is where the user opts in.
+     */
+    val muted: Boolean = true,
 )
+
+/**
+ * The audio codecs this platform's live player can decode out of go2rtc's fMP4 HLS, most
+ * preferred first — what [com.meticulouscreations.homesafe.network.frigateLiveStreamUrl] asks
+ * go2rtc to include. Empty means video only. Android's MediaCodec has shipped an Opus decoder
+ * since 5.0; AVFoundation plays only AAC (and friends) inside HLS, so an Opus-only camera is
+ * silent on iOS until go2rtc is told to publish an AAC track as well (`#audio=aac`).
+ */
+expect val liveAudioCodecs: List<String>
 
 /**
  * Plays a camera's live stream or a recording, reporting playback progress back to its caller.
@@ -77,6 +92,9 @@ data class PlayerRequest(
  * @param onPlaybackEnded the current [VideoSource.Recording] reached its end.
  * @param onPlaybackError the current [VideoSource.Recording] failed and will not recover on its own.
  *   Live sources recover from errors internally (see the platform implementations) and never report here.
+ * @param onAudioAvailabilityChanged whether what's playing carries an audio track this platform
+ *   can decode — false for go2rtc's video-only sub-streams, for recordings Frigate saved without
+ *   audio, and for codecs the platform can't play. What a mute button should key its enabled state on.
  */
 @Composable
 expect fun CameraStreamPlayer(
@@ -87,6 +105,7 @@ expect fun CameraStreamPlayer(
     onBufferingChanged: (isBuffering: Boolean) -> Unit = {},
     onPlaybackEnded: () -> Unit = {},
     onPlaybackError: () -> Unit = {},
+    onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
 )
 
 /** Plays a camera's live HLS stream, nothing more. */

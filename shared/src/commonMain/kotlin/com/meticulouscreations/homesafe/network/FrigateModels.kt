@@ -338,4 +338,8 @@ data class FrigateCameraPipelineConfig(
     val enabled: Boolean,
     val detectEnabled: Boolean,
     val motionEnabled: Boolean,
+    /** The camera's zones in config order: Frigate's key and, if set, its `friendly_name`. */
+    val zones: List<FrigateZoneName> = emptyList(),
 )
+
+data class FrigateZoneName(val name: String, val friendlyName: String?)

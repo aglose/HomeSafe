@@ -56,7 +56,7 @@ class DetectionAlertService(
         if (job?.isActive == true || !notifier.isSupported) return
         job = scope.launch {
             combine(settings, connectionRepository.currentServerUrl) { prefs, url -> url.takeIf { prefs.pushNotificationsEnabled } }
-                // Category toggles must not restart the loop (and reset its baseline); only on/off and the server do.
+                // Zone rules must not restart the loop (and reset its baseline); only on/off and the server do.
                 .distinctUntilChanged()
                 .collectLatest { url -> if (url != null) poll(url) }
         }
@@ -90,7 +90,7 @@ class DetectionAlertService(
             apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = after).onSuccess { events ->
                 events.filter { it.id !in seen }.sortedBy { it.startTime }.forEach { event ->
                     seen += event.id
-                    if (settings.value.notifies(categoryForLabel(event.label))) notify(url, event)
+                    if (settings.value.notifies(event.camera, event.zones, categoryForLabel(event.label))) notify(url, event)
                 }
                 while (seen.size > MAX_REMEMBERED) seen.remove(seen.first())
                 // Overlap by a second so an event whose start rounds onto the boundary isn't lost;

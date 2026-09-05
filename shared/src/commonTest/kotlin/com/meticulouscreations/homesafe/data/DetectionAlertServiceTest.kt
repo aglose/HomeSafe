@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
@@ -64,13 +66,16 @@ class DetectionAlertServiceTest {
     /** A fake Frigate whose `/api/events` honours `after` the way the real one does (start_time strictly after). */
     private class Harness(scope: TestScope, settings: AlertSettings, now: Double = 1_000_000.0, supported: Boolean = true) {
         val events = mutableListOf<Triple<String, String, Double>>() // id, label, start
+        /** Zones an event passed through, by id; absent means none. */
+        val zonesById = mutableMapOf<String, List<String>>()
         val afters = mutableListOf<String>()
         private val engine = MockEngine { req ->
             when {
                 req.url.encodedPath.endsWith("/api/events") -> {
                     val after = req.url.parameters["after"]!!.also { afters += it }.toDouble()
                     val body = events.filter { it.third > after }.sortedByDescending { it.third }.joinToString(",", "[", "]") { (id, label, start) ->
-                        """{"id":"$id","label":"$label","camera":"amcrest_1","start_time":$start,"end_time":null,"has_clip":false,"has_snapshot":false}"""
+                        val zones = zonesById[id].orEmpty().joinToString(",", "[", "]") { "\"$it\"" }
+                        """{"id":"$id","label":"$label","camera":"amcrest_1","start_time":$start,"end_time":null,"has_clip":false,"has_snapshot":false,"zones":$zones}"""
                     }
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
@@ -103,7 +108,8 @@ class DetectionAlertServiceTest {
         repeat(8) { advanceUntilIdle(); withContext(Dispatchers.Default) { delay(25) } }
     }
 
-    private val on = AlertSettings(pushNotificationsEnabled = true, notifyPeople = true, notifyVehicles = true, notifyAnimals = false)
+    private val on = AlertSettings(pushNotificationsEnabled = true)
+    private val anywhere = AlertZone("amcrest_1", null)
 
     @Test
     fun onlyDetectionsAfterSwitchingOnNotifyAndEachOnlyOnce() = runTest {
@@ -127,19 +133,39 @@ class DetectionAlertServiceTest {
     }
 
     @Test
-    fun categoryTogglesFilterWithoutRestartingTheBaseline() = runTest {
+    fun zoneRulesFilterWithoutRestartingTheBaseline() = runTest {
         val h = Harness(this, on)
         h.service.start()
         eventually("first poll") { h.afters.isNotEmpty() }
 
-        h.events += Triple("dog", "dog", 1_000_001.0)   // animals are off in `on`
+        h.events += Triple("dog", "dog", 1_000_001.0)   // animals are off by default
         settle()
         assertTrue(h.notifier.posted.isEmpty(), "an unwanted category is silent")
 
-        h.settingsRepo.state.value = on.copy(notifyAnimals = true)
+        h.settingsRepo.state.value = on.withCategory(anywhere, MomentCategory.ANIMALS, true)
         h.events += Triple("dog2", "dog", 1_000_002.0)
         eventually("the second dog") { h.notifier.posted.map { it.id } == listOf("dog2") }
-        assertTrue(h.notifier.posted.none { it.id == "dog" }, "flipping a category doesn't replay what was skipped")
+        assertTrue(h.notifier.posted.none { it.id == "dog" }, "flipping a rule doesn't replay what was skipped")
+    }
+
+    @Test
+    fun aDetectionIsJudgedByTheZonesItPassedThrough() = runTest {
+        val driveway = AlertZone("amcrest_1", "driveway")
+        val h = Harness(this, on.withCategory(driveway, MomentCategory.PEOPLE, false))
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.zonesById["walker"] = listOf("driveway")
+        h.events += Triple("walker", "person", 1_000_001.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "people are muted in the driveway")
+
+        h.events += Triple("passerby", "person", 1_000_002.0)   // no zone: the camera's "anywhere else", still on
+        eventually("the passer-by") { h.notifier.posted.map { it.id } == listOf("passerby") }
+
+        h.zonesById["car"] = listOf("driveway")
+        h.events += Triple("car", "car", 1_000_003.0)   // vehicles in the driveway were never turned off
+        eventually("the car") { h.notifier.posted.map { it.id } == listOf("passerby", "car") }
     }
 
     @Test

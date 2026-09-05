@@ -25,6 +25,7 @@ import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.error
+import platform.AVFoundation.muted
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
 import platform.AVFoundation.preferredForwardBufferDuration
@@ -134,6 +135,11 @@ internal class LivePlayerHolder(val key: String?) {
     fun setPlayWhenReady(value: Boolean) {
         requestedPlayWhenReady = value
         applyPlayWhenReady()
+    }
+
+    /** Sticks across item replacements and cold restarts: `muted` lives on the player, not the item. */
+    fun setMuted(muted: Boolean) {
+        player.muted = muted
     }
 
     fun onBinderStarted() {

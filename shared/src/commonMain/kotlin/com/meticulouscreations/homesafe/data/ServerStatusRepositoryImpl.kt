@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
+import com.meticulouscreations.homesafe.domain.model.CameraZone
 import com.meticulouscreations.homesafe.domain.model.DetectorInfo
 import com.meticulouscreations.homesafe.domain.model.GpuLoad
 import com.meticulouscreations.homesafe.domain.model.RetentionPolicy
@@ -157,6 +158,7 @@ internal fun buildOverview(stats: FrigateServerStats, config: FrigateServerConfi
                 cameraFps = live?.cameraFps,
                 detectionFps = live?.detectionFps,
                 skippedFps = live?.skippedFps,
+                zones = camera.zones.map { CameraZone(it.name, it.friendlyName) },
             )
         },
         canEditConfig = isAdmin,

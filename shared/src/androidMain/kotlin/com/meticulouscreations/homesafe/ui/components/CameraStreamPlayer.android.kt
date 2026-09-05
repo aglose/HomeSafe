@@ -18,8 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleStartEffect
+import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.delay
@@ -60,6 +62,7 @@ actual fun CameraStreamPlayer(
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
+    onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
 ) {
     val context = LocalContext.current
     val holder = remember(playerKey) { HolderLease(context, playerKey) }.holder
@@ -71,6 +74,7 @@ actual fun CameraStreamPlayer(
     val currentOnBufferingChanged by rememberUpdatedState(onBufferingChanged)
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
+    val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
 
     // The cold-start generation this surface last rendered a frame for; the poster stays up
     // until it catches up with the holder's current one.
@@ -125,8 +129,14 @@ actual fun CameraStreamPlayer(
             override fun onPlayerError(error: PlaybackException) {
                 if (currentSource is VideoSource.Recording) currentOnPlaybackError()
             }
+
+            override fun onTracksChanged(tracks: Tracks) {
+                currentOnAudioAvailabilityChanged(tracks.hasAudio())
+            }
         }
         player.addListener(listener)
+        // A warm holder won't re-announce its tracks either.
+        currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
         onDispose {
             player.removeListener(listener)
             // No-op if another binder has since taken the surface; ExoPlayer checks identity.
@@ -142,6 +152,8 @@ actual fun CameraStreamPlayer(
     LaunchedEffect(holder, source.url) { holder.load(source) }
 
     LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
+
+    LaunchedEffect(holder, request.muted) { holder.setMuted(request.muted) }
 
     LaunchedEffect(holder, request.seek) {
         val seek = request.seek ?: return@LaunchedEffect
@@ -161,6 +173,12 @@ actual fun CameraStreamPlayer(
         }
     }
 }
+
+/** An audio track the player both found and can decode — a track it merely knows about but can't play is no use to a mute button. */
+private fun Tracks.hasAudio(): Boolean = isTypeSupported(C.TRACK_TYPE_AUDIO)
+
+/** MediaCodec has shipped a software Opus decoder since Android 5.0, so both of go2rtc's usual HLS audio codecs play. */
+actual val liveAudioCodecs: List<String> = listOf("aac", "opus")
 
 private fun AspectRatioFrameLayout.applyVideoSize(videoSize: VideoSize) {
     setAspectRatio(
