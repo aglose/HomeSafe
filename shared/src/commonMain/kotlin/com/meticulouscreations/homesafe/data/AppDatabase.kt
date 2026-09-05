@@ -3,14 +3,30 @@ package com.meticulouscreations.homesafe.data
 import androidx.room3.AutoMigration
 import androidx.room3.ConstructedBy
 import androidx.room3.Database
+import androidx.room3.DeleteColumn
 import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
+import androidx.room3.migration.AutoMigrationSpec
 import com.meticulouscreations.homesafe.PlatformContext
+
+/**
+ * 4 -> 5: the Settings tab stopped storing toggles that never did anything (they were placeholders
+ * for server features) and gained per-category notification switches. The dropped columns must be
+ * named here; the added ones carry defaults on the entity.
+ */
+@DeleteColumn(tableName = "SettingsEntity", columnName = "autoPurgeOldMedia")
+@DeleteColumn(tableName = "SettingsEntity", columnName = "globalMotionDetection")
+@DeleteColumn(tableName = "SettingsEntity", columnName = "coralEdgeInference")
+@DeleteColumn(tableName = "SettingsEntity", columnName = "faceRecognition")
+class SettingsPlaceholdersDropped : AutoMigrationSpec
 
 @Database(
     entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class],
-    version = 4,
-    autoMigrations = [AutoMigration(from = 3, to = 4)],
+    version = 5,
+    autoMigrations = [
+        AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
+    ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {

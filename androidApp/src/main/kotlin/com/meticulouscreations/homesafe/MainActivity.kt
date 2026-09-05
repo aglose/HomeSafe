@@ -7,13 +7,18 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.push.PushRegistrar
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
 // BiometricPrompt, which the shared module's BiometricCredentialStore.android.kt uses for
 // biometric login. FragmentActivity extends ComponentActivity, so setContent {} still works.
 class MainActivity : FragmentActivity() {
+    private lateinit var appGraph: AppGraph
+
     override fun onCreate(savedInstanceState: Bundle?) {
         // The app is dark-only (see FrigateTheme), so the system bar icons must be light whatever
         // the OS theme is — the default enableEdgeToEdge() follows the OS and would draw dark icons
@@ -28,7 +33,9 @@ class MainActivity : FragmentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        val appGraph = createAppGraph(platformContext = PlatformContext(this))
+        appGraph = createAppGraph(platformContext = PlatformContext(this))
+        // Register this phone with the push relay on the Frigate box once a server is active.
+        PushRegistrar.start(lifecycleScope, appGraph, applicationContext)
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
         // androidApp/build.gradle.kts), so this is null there regardless of the DEBUG check.
         val debugAutofillCredentials = if (BuildConfig.DEBUG && BuildConfig.TEST_USERNAME.isNotBlank()) {
@@ -43,5 +50,12 @@ class MainActivity : FragmentActivity() {
         setContent {
             App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
         }
+    }
+
+    override fun onDestroy() {
+        // The graph is per Activity but its coroutine scope isn't cancelled; a recreated Activity
+        // builds a new graph, so this one's detection poller must not keep running beside it.
+        if (::appGraph.isInitialized) appGraph.detectionAlertService.stop()
+        super.onDestroy()
     }
 }

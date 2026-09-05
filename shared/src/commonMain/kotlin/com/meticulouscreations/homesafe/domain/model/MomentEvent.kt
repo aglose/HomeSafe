@@ -28,6 +28,8 @@ data class MomentEvent(
     val topScore: Double?,
     val hasClip: Boolean,
     val hasSnapshot: Boolean,
+    /** Frigate zone keys the object passed through, in the order it entered them; empty when none. */
+    val zones: List<String> = emptyList(),
 ) {
     val category: MomentCategory get() = categoryForLabel(label)
     /** What the UI calls the camera this was seen on — see [cameraDisplayName]. */
@@ -84,14 +86,14 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     }
     val dateSubLabel = "${date.month.shortName()} ${date.day}"
 
+    // "Sarah's Tesla in the driveway", "Person on the front lawn", "Car detected": the subject is
+    // the classifier's name for the object when it has one, and the place is the last zone the
+    // object entered — where it ended up matters more than where it came from.
     val noun = label.lowercase().replaceFirstChar { it.uppercase() }
-    val title = when (category) {
-        MomentCategory.PEOPLE -> "Person detected"
-        MomentCategory.VEHICLES -> "$noun detected"
-        MomentCategory.ANIMALS -> "$noun detected"
-        MomentCategory.ALL -> "$noun detected"
-    }
-    val badge = subLabel?.takeIf { it.isNotBlank() }?.let { "$label · $it" } ?: label
+    val subject = subLabel?.takeIf { it.isNotBlank() }?.let { subLabelDisplayName(it) } ?: noun
+    val place = zones.lastOrNull { it.isNotBlank() }
+    val title = if (place != null) "$subject ${zonePhrase(place)}" else "$subject detected"
+    val badge = subLabel?.takeIf { it.isNotBlank() }?.let { "$label · ${subLabelDisplayName(it)}" } ?: label
 
     return MomentPresentation(
         title = title,

@@ -3,17 +3,22 @@ package com.meticulouscreations.homesafe.di
 import com.meticulouscreations.homesafe.Greeting
 import com.meticulouscreations.homesafe.Platform
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.data.AlertNotifier
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.CameraRepositoryImpl
 import com.meticulouscreations.homesafe.data.ClipDownloader
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.ConnectionRepositoryImpl
+import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DetectionConfigRepositoryImpl
 import com.meticulouscreations.homesafe.data.MomentsRepositoryImpl
 import com.meticulouscreations.homesafe.data.RecordingsRepositoryImpl
+import com.meticulouscreations.homesafe.data.ServerStatusRepositoryImpl
+import com.meticulouscreations.homesafe.data.ClassifierRepositoryImpl
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.SettingsRepositoryImpl
+import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
@@ -24,6 +29,8 @@ import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.DetectionConfigRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
+import com.meticulouscreations.homesafe.domain.repository.ServerStatusRepository
+import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
@@ -35,16 +42,21 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
+import com.meticulouscreations.homesafe.viewmodel.epochSecondsNow
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provides
@@ -65,6 +77,7 @@ interface AppGraph {
     val greeting: Greeting
     val connectionHistoryDao: ConnectionHistoryDao
     val frigateApiClient: FrigateApiClient
+    val pushRelayApi: PushRelayApi
     val biometricCredentialStore: BiometricCredentialStore
 
     /**
@@ -80,6 +93,13 @@ interface AppGraph {
     val recordingsRepository: RecordingsRepository
     val settingsRepository: SettingsRepository
     val detectionConfigRepository: DetectionConfigRepository
+    val serverStatusRepository: ServerStatusRepository
+    val classifierRepository: ClassifierRepository
+
+    val alertNotifier: AlertNotifier
+
+    /** Started once by [com.meticulouscreations.homesafe.App]; posts notifications for new detections while the app runs. */
+    val detectionAlertService: DetectionAlertService
 
     val connectToServerUseCase: ConnectToServerUseCase
     val signInWithBiometricsUseCase: SignInWithBiometricsUseCase
@@ -97,6 +117,9 @@ interface AppGraph {
     val getDetectionConfigUseCase: GetDetectionConfigUseCase
     val saveDetectionMasksUseCase: SaveDetectionMasksUseCase
     val saveDetectionZonesUseCase: SaveDetectionZonesUseCase
+    val observeServerOverviewUseCase: ObserveServerOverviewUseCase
+    val setCameraDetectionUseCase: SetCameraDetectionUseCase
+    val setCameraMotionUseCase: SetCameraMotionUseCase
 
     @Provides
     fun providePlatform(): Platform = getPlatform()
@@ -131,6 +154,29 @@ interface AppGraph {
     fun provideClipDownloader(platformContext: PlatformContext, httpClient: HttpClient): ClipDownloader =
         createClipDownloader(platformContext, httpClient)
 
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideAlertNotifier(platformContext: PlatformContext): AlertNotifier =
+        createAlertNotifier(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideDetectionAlertService(
+        apiClient: FrigateApiClient,
+        connectionRepository: ConnectionRepository,
+        settingsRepository: SettingsRepository,
+        alertNotifier: AlertNotifier,
+        appScope: CoroutineScope,
+    ): DetectionAlertService = DetectionAlertService(
+        apiClient = apiClient,
+        connectionRepository = connectionRepository,
+        settingsRepository = settingsRepository,
+        notifier = alertNotifier,
+        scope = appScope,
+        clock = ::epochSecondsNow,
+        pollIntervalMs = DETECTION_POLL_INTERVAL_MS,
+    )
+
     /** An app-lifetime scope for background work that outlives any one screen, e.g. following network changes. */
     @SingleIn(AppScope::class)
     @Provides
@@ -164,13 +210,22 @@ interface AppGraph {
     fun bindRecordingsRepository(impl: RecordingsRepositoryImpl): RecordingsRepository = impl
 
     @Provides
+    fun bindClassifierRepository(impl: ClassifierRepositoryImpl): ClassifierRepository = impl
+
+    @Provides
     fun bindDetectionConfigRepository(impl: DetectionConfigRepositoryImpl): DetectionConfigRepository = impl
+
+    @Provides
+    fun bindServerStatusRepository(impl: ServerStatusRepositoryImpl): ServerStatusRepository = impl
 
     @DependencyGraph.Factory
     fun interface Factory {
         fun create(@Provides platformContext: PlatformContext): AppGraph
     }
 }
+
+/** How often the alert poller asks Frigate for new detections; one small request per tick. */
+private const val DETECTION_POLL_INTERVAL_MS = 15_000L
 
 fun createAppGraph(platformContext: PlatformContext): AppGraph =
     createGraphFactory<AppGraph.Factory>().create(platformContext)

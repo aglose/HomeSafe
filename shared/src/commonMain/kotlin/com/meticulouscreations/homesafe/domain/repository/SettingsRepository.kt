@@ -1,10 +1,10 @@
 package com.meticulouscreations.homesafe.domain.repository
 
-import com.meticulouscreations.homesafe.domain.model.DetectionSettings
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import kotlinx.coroutines.flow.Flow
 
-/** Persists user-configurable detection/alert toggles. */
+/** Persists the user's alert preferences. */
 interface SettingsRepository {
-    fun observeSettings(): Flow<DetectionSettings>
-    suspend fun updateSettings(settings: DetectionSettings)
+    fun observeSettings(): Flow<AlertSettings>
+    suspend fun updateSettings(settings: AlertSettings)
 }
