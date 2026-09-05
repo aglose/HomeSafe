@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
@@ -26,9 +27,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
@@ -46,6 +49,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -61,6 +65,9 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
@@ -90,6 +97,9 @@ fun CameraDetailScreen(
     getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     getRecordingStreamUseCase: GetRecordingStreamUseCase,
     observeMomentsUseCase: ObserveMomentsUseCase,
+    observeSettingsUseCase: ObserveSettingsUseCase,
+    updateSettingsUseCase: UpdateSettingsUseCase,
+    observeServerOverviewUseCase: ObserveServerOverviewUseCase,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
@@ -102,14 +112,35 @@ fun CameraDetailScreen(
             getRecordingHistoryUseCase = getRecordingHistoryUseCase,
             getRecordingStreamUseCase = getRecordingStreamUseCase,
             observeMomentsUseCase = observeMomentsUseCase,
+            observeSettingsUseCase = observeSettingsUseCase,
+            updateSettingsUseCase = updateSettingsUseCase,
+            observeServerOverviewUseCase = observeServerOverviewUseCase,
         )
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
     val activeConnection by connectionRepository.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+
+    // One line of feedback under the quick actions — what a tap did, or why it couldn't — that
+    // clears itself. The words are kept separately so the fade-out still has something to fade.
+    var hint by remember { mutableStateOf<QuickActionHint?>(null) }
+    var hintText by remember { mutableStateOf("") }
+    val showHint: (String) -> Unit = { text ->
+        hintText = text
+        hint = QuickActionHint(text)
+    }
+    LaunchedEffect(hint) {
+        if (hint != null) {
+            delay(QUICK_ACTION_HINT_MS)
+            hint = null
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // This header replaces the shell's top bar (the shell hides it while a nested screen is
@@ -150,7 +181,7 @@ fun CameraDetailScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
         ) {
             PlayerSurface(
                 playback = playback,
@@ -173,23 +204,53 @@ fun CameraDetailScreen(
                 horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                QuickActionButton(icon = Icons.AutoMirrored.Filled.VolumeOff, onClick = {})
+                val displayName = cameraDisplayName(cameraName)
+                // Speaker: the player's own audio, once it has some — go2rtc's grid sub-streams
+                // and Frigate's recordings are video-only, so a tap explains rather than silently failing.
+                QuickActionButton(
+                    icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = if (playback.isMuted) "Unmute" else "Mute",
+                    active = !playback.isMuted,
+                    available = playback.hasAudio,
+                    onClick = {
+                        if (playback.hasAudio) viewModel.toggleMuted() else showHint("This stream has no audio to play")
+                    },
+                )
+                // Two-way talk needs a WebRTC backchannel go2rtc doesn't have for these cameras
+                // yet; the button stays where the design puts it, dimmed, and says so when tapped.
                 Box(
                     modifier = Modifier
                         .size(80.dp)
+                        .alpha(UNAVAILABLE_ALPHA)
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-                        .clickable {},
+                        .clickable { showHint("Two-way talk isn't available for this camera yet") },
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Mic,
-                        contentDescription = "Talk",
+                        contentDescription = "Talk (not available)",
                         tint = MaterialTheme.colorScheme.onPrimaryContainer,
                         modifier = Modifier.size(32.dp),
                     )
                 }
-                QuickActionButton(icon = Icons.Filled.NotificationsActive, onClick = {})
+                // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
+                QuickActionButton(
+                    icon = if (alerts.enabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
+                    contentDescription = if (alerts.enabled) "Turn off alerts for $displayName" else "Turn on alerts for $displayName",
+                    active = alerts.enabled,
+                    onClick = {
+                        val enabled = !alerts.enabled
+                        viewModel.setAlertsEnabled(enabled)
+                        showHint(
+                            when {
+                                !enabled -> "Alerts off for $displayName"
+                                !alerts.pushNotificationsEnabled -> "Alerts on for $displayName. Notifications are off in Settings."
+                                else -> "Alerts on for $displayName"
+                            },
+                        )
+                    },
+                )
             }
 
             Column(
@@ -198,6 +259,16 @@ fun CameraDetailScreen(
                     .padding(top = 16.dp, bottom = bottomNavClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
+                AnimatedVisibility(visible = hint != null) {
+                    Text(
+                        text = hintText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
                 TimelineSection(playback = playback, viewModel = viewModel)
 
                 DetectionZonesCard(onClick = onEditDetectionZones)
@@ -216,7 +287,16 @@ fun CameraDetailScreen(
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            recentMoments.forEach { RecentMomentCard(it) }
+                            recentMoments.forEach { item ->
+                                // Tapping a detection plays it in the player above, from its start.
+                                RecentMomentCard(
+                                    item = item,
+                                    onClick = {
+                                        viewModel.playMoment(item.event.startEpochSeconds)
+                                        scope.launch { scrollState.animateScrollTo(0) }
+                                    },
+                                )
+                            }
                         }
                     }
                 }
@@ -259,6 +339,7 @@ private fun PlayerSurface(
                     onBufferingChanged = viewModel::onBufferingChanged,
                     onPlaybackEnded = viewModel::onPlaybackEnded,
                     onPlaybackError = viewModel::onPlaybackError,
+                    onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
                 )
             } else {
                 Icon(
@@ -369,6 +450,14 @@ private fun SeekPreview(epochSeconds: Double, snapshotUrlFor: (Double) -> String
 }
 
 private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
+
+private const val QUICK_ACTION_HINT_MS = 3_000L
+
+/** Material's disabled-content alpha, for a control that's present but can't act yet. */
+private const val UNAVAILABLE_ALPHA = 0.38f
+
+/** A fresh instance per tap (identity equality), so repeating the same words restarts the auto-clear. */
+private class QuickActionHint(val text: String)
 
 /** Red and pulsing at the live edge; grey (and a button back to live) while watching history. */
 @Composable
@@ -488,21 +577,34 @@ private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit)
     )
 }
 
+/**
+ * A round secondary action under the player. [active] fills it (a toggle that's on);
+ * [available] false dims it but keeps it tappable, so the tap can say why it did nothing.
+ */
 @Composable
-private fun QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+private fun QuickActionButton(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit,
+    active: Boolean = false,
+    available: Boolean = true,
+) {
+    val background = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
+    val tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
             .size(64.dp)
+            .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
             .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.8f), CircleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
+            .background(background, CircleShape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (active) 0f else 0.2f), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             imageVector = icon,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            contentDescription = contentDescription,
+            tint = tint,
         )
     }
 }
@@ -543,7 +645,7 @@ private fun DetectionZonesCard(onClick: () -> Unit) {
 }
 
 @Composable
-private fun RecentMomentCard(item: MomentItem) {
+private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit) {
     val p = item.presentation
     Row(
         modifier = Modifier
@@ -551,6 +653,7 @@ private fun RecentMomentCard(item: MomentItem) {
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,

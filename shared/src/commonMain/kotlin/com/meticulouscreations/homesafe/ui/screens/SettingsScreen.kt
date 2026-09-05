@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -23,6 +25,8 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -47,6 +51,8 @@ import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.data.NotificationPermission
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
@@ -122,7 +128,7 @@ fun SettingsTabContent(
         AlertsSection(
             state = state,
             onPushNotifications = viewModel::setPushNotifications,
-            onCategory = viewModel::setNotifyCategory,
+            onZoneCategory = viewModel::setZoneCategory,
             onOpenSettings = viewModel::openNotificationSettings,
             onSendTest = viewModel::sendTestNotification,
         )
@@ -310,7 +316,7 @@ private fun CameraPipelineRows(
 private fun AlertsSection(
     state: SettingsUiState,
     onPushNotifications: (Boolean) -> Unit,
-    onCategory: (MomentCategory, Boolean) -> Unit,
+    onZoneCategory: (AlertZone, MomentCategory, Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onSendTest: () -> Unit,
 ) {
@@ -342,24 +348,15 @@ private fun AlertsSection(
         }
         if (state.pushNotificationsActive) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            SettingsToggleRow(
-                title = "People",
-                description = "Someone at a door, in the yard, on the driveway.",
-                checked = state.alerts.notifyPeople,
-                onCheckedChange = { onCategory(MomentCategory.PEOPLE, it) },
-            )
-            SettingsToggleRow(
-                title = "Vehicles",
-                description = "Cars, trucks, motorcycles, and bicycles.",
-                checked = state.alerts.notifyVehicles,
-                onCheckedChange = { onCategory(MomentCategory.VEHICLES, it) },
-            )
-            SettingsToggleRow(
-                title = "Animals",
-                description = "Dogs, cats, birds, and other wildlife.",
-                checked = state.alerts.notifyAnimals,
-                onCheckedChange = { onCategory(MomentCategory.ANIMALS, it) },
-            )
+            SettingsCaption("Choose what to hear about, place by place. Zones come from each camera's detection zones.")
+            val cameras = state.overview?.cameras?.filter { it.enabled }
+            when {
+                cameras == null -> SettingsCaption("Loading cameras…")
+                cameras.isEmpty() -> SettingsCaption("No cameras on this server.")
+                else -> cameras.forEach { camera ->
+                    CameraAlertZones(camera = camera, alerts = state.alerts, onZoneCategory = onZoneCategory)
+                }
+            }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onSendTest) { Text("Send test notification") }
@@ -564,3 +561,48 @@ private fun Double.format1(): String {
     val scaled = (this * 10).roundToInt()
     return if (scaled % 10 == 0) "${scaled / 10}" else "${scaled / 10}.${scaled % 10}"
 }
+
+/**
+ * One camera's places — each drawn zone, then "anywhere else" — with a chip per category that
+ * alerts there. A chip reflects the effective choice, so a zone the user never touched shows
+ * the defaults rather than nothing.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CameraAlertZones(
+    camera: CameraPipeline,
+    alerts: AlertSettings,
+    onZoneCategory: (AlertZone, MomentCategory, Boolean) -> Unit,
+) {
+    val places = camera.zones.map { AlertZone(camera.name, it.name) to it.displayName } +
+        (AlertZone(camera.name, null) to if (camera.zones.isEmpty()) "Anywhere" else "Anywhere else")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(text = camera.displayName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        places.forEach { (place, label) ->
+            val chosen = alerts.categoriesFor(place)
+            Column(modifier = Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ALERT_CATEGORIES.forEach { (category, name) ->
+                        val selected = category in chosen
+                        FilterChip(
+                            selected = selected,
+                            onClick = { onZoneCategory(place, category, !selected) },
+                            label = { Text(name) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            ),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val ALERT_CATEGORIES = listOf(
+    MomentCategory.PEOPLE to "People",
+    MomentCategory.VEHICLES to "Vehicles",
+    MomentCategory.ANIMALS to "Animals",
+)

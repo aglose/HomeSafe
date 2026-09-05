@@ -61,8 +61,15 @@ data class CameraPipeline(
     val cameraFps: Double?,
     val detectionFps: Double?,
     val skippedFps: Double?,
+    val zones: List<CameraZone> = emptyList(),
 ) {
     val displayName: String get() = cameraDisplayName(name)
+}
+
+/** A zone drawn on a camera: Frigate's key, shown by its friendly name when one is set. */
+data class CameraZone(val name: String, val friendlyName: String? = null) {
+    val displayName: String
+        get() = friendlyName ?: zoneDisplayName(name).replaceFirstChar(Char::uppercase)
 }
 
 /** "3 days, 2 hours" / "2 hours, 5 minutes" / "40 seconds" — the largest two units that apply. */

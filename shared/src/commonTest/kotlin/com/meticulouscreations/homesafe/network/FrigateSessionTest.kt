@@ -24,4 +24,13 @@ class FrigateSessionTest {
     fun liveStreamUrlUsesGo2rtcPort() {
         assertEquals("http://frigate:1984/api/stream.m3u8?src=cam", frigateLiveStreamUrl("https://frigate:8971", "cam"))
     }
+
+    @Test
+    fun liveStreamUrlAsksForAudioOnlyWhenGivenCodecs() {
+        assertEquals(
+            "http://frigate:1984/api/stream.m3u8?src=cam&video&audio=aac,opus",
+            frigateLiveStreamUrl("https://frigate:8971", "cam", audioCodecs = listOf("aac", "opus")),
+        )
+        assertEquals("http://frigate:1984/api/stream.m3u8?src=cam", frigateLiveStreamUrl("https://frigate:8971", "cam", audioCodecs = emptyList()))
+    }
 }

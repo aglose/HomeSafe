@@ -6,10 +6,18 @@ import kotlin.math.floor
  * Frigate's go2rtc live-stream endpoint runs on its own port (1984), separate from the
  * authenticated API — it relies on the Tailscale network boundary for trust rather than
  * app-level auth.
+ *
+ * With no query beyond `src`, go2rtc's HLS is video-only (measured against the real server:
+ * `CODECS="avc1..."` even though the camera publishes Opus). Naming [audioCodecs] asks for
+ * `video&audio=<codecs>`, and go2rtc adds whichever of those the camera actually has — or
+ * nothing, leaving the stream exactly as it was, so asking never breaks playback. Pass the
+ * player's own decodable list (`liveAudioCodecs`); the grid passes none, keeping its several
+ * simultaneous players silent and cheap.
  */
-fun frigateLiveStreamUrl(serverUrl: String, cameraName: String): String {
+fun frigateLiveStreamUrl(serverUrl: String, cameraName: String, audioCodecs: List<String> = emptyList()): String {
     val host = serverUrl.substringAfter("://").substringBefore(":").substringBefore("/")
-    return "http://$host:1984/api/stream.m3u8?src=$cameraName"
+    val audio = if (audioCodecs.isEmpty()) "" else "&video&audio=${audioCodecs.joinToString(",")}"
+    return "http://$host:1984/api/stream.m3u8?src=$cameraName$audio"
 }
 
 /**

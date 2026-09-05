@@ -20,13 +20,18 @@ import kotlinx.cinterop.readValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
+import platform.AVFoundation.AVMediaTypeAudio
+import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerItemTrack
 import platform.AVFoundation.AVPlayerLayer
 import platform.AVFoundation.AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
+import platform.AVFoundation.mediaType
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.timeControlStatus
+import platform.AVFoundation.tracks
 import platform.CoreGraphics.CGRectMake
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
@@ -66,6 +71,7 @@ actual fun CameraStreamPlayer(
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
+    onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
 ) {
     val holder = remember(playerKey) { HolderLease(playerKey) }.holder
     val player = holder.player
@@ -76,6 +82,7 @@ actual fun CameraStreamPlayer(
     val currentOnBufferingChanged by rememberUpdatedState(onBufferingChanged)
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
+    val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
 
     var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
     val posterVisible = renderedGeneration != holder.coldStartGeneration
@@ -114,6 +121,8 @@ actual fun CameraStreamPlayer(
 
     LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
 
+    LaunchedEffect(holder, request.muted) { holder.setMuted(request.muted) }
+
     LaunchedEffect(holder, request.seek) {
         val seek = request.seek ?: return@LaunchedEffect
         if (currentSource is VideoSource.Recording) {
@@ -126,11 +135,19 @@ actual fun CameraStreamPlayer(
     }
 
     LaunchedEffect(holder) {
+        // Tracks are KVO-only like the rest of the item's state (see LivePlayerHolder), so they
+        // ride the same poll; reported only on change so the caller isn't recomposed four times a second.
+        var reportedHasAudio: Boolean? = null
         while (isActive) {
             delay(POLL_INTERVAL_MS)
             val item = player.currentItem
             if (playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
                 renderedGeneration = holder.coldStartGeneration
+            }
+            val hasAudio = item?.hasAudioTrack() ?: false
+            if (hasAudio != reportedHasAudio) {
+                reportedHasAudio = hasAudio
+                currentOnAudioAvailabilityChanged(hasAudio)
             }
             currentOnBufferingChanged(player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
             if (currentSource is VideoSource.Recording && item != null) {
@@ -168,6 +185,13 @@ actual fun CameraStreamPlayer(
         }
     }
 }
+
+/** An audio track AVFoundation actually loaded for this item — absent for video-only streams and for codecs it can't decode. */
+private fun AVPlayerItem.hasAudioTrack(): Boolean =
+    tracks.any { (it as? AVPlayerItemTrack)?.assetTrack?.mediaType == AVMediaTypeAudio }
+
+/** HLS on AVFoundation decodes AAC but not Opus, so that's all it's worth asking go2rtc for. */
+actual val liveAudioCodecs: List<String> = listOf("aac")
 
 /** Ties a pool lease to a `remember` slot so it's released on forget *and* on abandon. */
 private class HolderLease(key: String?) : RememberObserver {

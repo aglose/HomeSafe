@@ -12,6 +12,10 @@ actual fun CameraStreamPlayer(
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
+    onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
 ) {
     LiveViewUnavailablePlaceholder(modifier)
 }
+
+/** No live player here yet, so no audio either. */
+actual val liveAudioCodecs: List<String> = emptyList()

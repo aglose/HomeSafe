@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.NotificationPermission
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -126,14 +127,9 @@ class SettingsViewModel(
         }
     }
 
-    fun setNotifyCategory(category: MomentCategory, enabled: Boolean) {
-        val current = settings.value
-        val updated = when (category) {
-            MomentCategory.PEOPLE -> current.copy(notifyPeople = enabled)
-            MomentCategory.VEHICLES -> current.copy(notifyVehicles = enabled)
-            MomentCategory.ANIMALS -> current.copy(notifyAnimals = enabled)
-            MomentCategory.ALL -> return
-        }
+    fun setZoneCategory(place: AlertZone, category: MomentCategory, enabled: Boolean) {
+        if (category == MomentCategory.ALL) return
+        val updated = settings.value.withCategory(place, category, enabled)
         viewModelScope.launch { updateSettingsUseCase(updated) }
     }
 

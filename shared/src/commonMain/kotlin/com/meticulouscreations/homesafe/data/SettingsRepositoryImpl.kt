@@ -1,35 +1,44 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.combine
 
 @Inject
 @SingleIn(AppScope::class)
 class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRepository {
 
     override fun observeSettings(): Flow<AlertSettings> =
-        settingsDao.observe().map { entity -> entity?.toDomain() ?: AlertSettings.DEFAULT }
+        combine(settingsDao.observe(), settingsDao.observeZoneRules()) { entity, rules ->
+            AlertSettings(
+                pushNotificationsEnabled = entity?.pushNotificationsEnabled ?: AlertSettings.DEFAULT.pushNotificationsEnabled,
+                zoneRules = rules.associate { it.toDomain() },
+            )
+        }
 
     override suspend fun updateSettings(settings: AlertSettings) {
-        settingsDao.upsert(settings.toEntity())
+        settingsDao.upsert(SettingsEntity(pushNotificationsEnabled = settings.pushNotificationsEnabled))
+        settingsDao.upsertZoneRules(settings.zoneRules.map { (place, categories) -> place.toEntity(categories) })
     }
 }
 
-private fun SettingsEntity.toDomain() = AlertSettings(
-    pushNotificationsEnabled = pushNotificationsEnabled,
-    notifyPeople = notifyPeople,
-    notifyVehicles = notifyVehicles,
-    notifyAnimals = notifyAnimals,
-)
+private fun AlertZoneRuleEntity.toDomain(): Pair<AlertZone, Set<MomentCategory>> =
+    AlertZone(camera, zone.takeIf { it != AlertZoneRuleEntity.NO_ZONE }) to buildSet {
+        if (notifyPeople) add(MomentCategory.PEOPLE)
+        if (notifyVehicles) add(MomentCategory.VEHICLES)
+        if (notifyAnimals) add(MomentCategory.ANIMALS)
+    }
 
-private fun AlertSettings.toEntity() = SettingsEntity(
-    pushNotificationsEnabled = pushNotificationsEnabled,
-    notifyPeople = notifyPeople,
-    notifyVehicles = notifyVehicles,
-    notifyAnimals = notifyAnimals,
+private fun AlertZone.toEntity(categories: Set<MomentCategory>) = AlertZoneRuleEntity(
+    camera = camera,
+    zone = zone ?: AlertZoneRuleEntity.NO_ZONE,
+    notifyPeople = MomentCategory.PEOPLE in categories,
+    notifyVehicles = MomentCategory.VEHICLES in categories,
+    notifyAnimals = MomentCategory.ANIMALS in categories,
 )

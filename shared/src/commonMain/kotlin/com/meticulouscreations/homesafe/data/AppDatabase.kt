@@ -20,12 +20,23 @@ import com.meticulouscreations.homesafe.PlatformContext
 @DeleteColumn(tableName = "SettingsEntity", columnName = "faceRecognition")
 class SettingsPlaceholdersDropped : AutoMigrationSpec
 
+/**
+ * 5 -> 6: the three app-wide category switches became per-zone rules in their own table
+ * ([AlertZoneRuleEntity]). Existing choices aren't carried over — the table starts empty, so
+ * every place alerts with the defaults until the user picks otherwise.
+ */
+@DeleteColumn(tableName = "SettingsEntity", columnName = "notifyPeople")
+@DeleteColumn(tableName = "SettingsEntity", columnName = "notifyVehicles")
+@DeleteColumn(tableName = "SettingsEntity", columnName = "notifyAnimals")
+class CategorySwitchesMovedToZones : AutoMigrationSpec
+
 @Database(
-    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class],
-    version = 5,
+    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class, AlertZoneRuleEntity::class],
+    version = 6,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
+        AutoMigration(from = 5, to = 6, spec = CategorySwitchesMovedToZones::class),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

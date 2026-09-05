@@ -12,6 +12,10 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
 import kotlinx.datetime.TimeZone
@@ -23,6 +27,7 @@ import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
+import com.meticulouscreations.homesafe.ui.components.liveAudioCodecs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -115,11 +120,24 @@ data class PlaybackUiState(
     val isPlaying: Boolean = true,
     val isBuffering: Boolean = false,
     val isLoadingPlaylist: Boolean = false,
+    /** The user's speaker choice for this screen; silent until they opt in. Carried into every [playerRequest]. */
+    val isMuted: Boolean = true,
+    /** Whether what's playing has an audio track this platform can decode — the speaker button is inert otherwise. */
+    val hasAudio: Boolean = false,
     val historyError: String? = null,
     val playerRequest: PlayerRequest? = null,
 ) {
     val isLive: Boolean get() = playlist == null
 }
+
+/** The bell under the player: this camera's alert switch, and whether the app is delivering alerts at all. */
+@Immutable
+data class CameraAlertsUiState(
+    /** Some place on this camera still notifies (see [AlertSettings.alertsEnabledOn]). */
+    val enabled: Boolean = true,
+    /** The master switch on the Settings tab. Off means the bell's choice is kept but nothing arrives. */
+    val pushNotificationsEnabled: Boolean = false,
+)
 
 class CameraDetailViewModel(
     private val cameraName: String,
@@ -128,6 +146,9 @@ class CameraDetailViewModel(
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
     observeMomentsUseCase: ObserveMomentsUseCase,
+    observeSettingsUseCase: ObserveSettingsUseCase,
+    private val updateSettingsUseCase: UpdateSettingsUseCase,
+    observeServerOverviewUseCase: ObserveServerOverviewUseCase,
     private val clock: () -> Double = ::epochSecondsNow,
 ) : ViewModel() {
 
@@ -159,7 +180,8 @@ class CameraDetailViewModel(
             camera.enabled && serverUrl != null ->
                 CameraDetailUiState.Found(
                     camera = camera,
-                    streamUrl = frigateLiveStreamUrl(serverUrl, camera.liveStreamName),
+                    // Full quality *and* sound: only the single-camera view asks go2rtc for an audio track.
+                    streamUrl = frigateLiveStreamUrl(serverUrl, camera.liveStreamName, liveAudioCodecs),
                     gridStreamUrl = frigateLiveStreamUrl(serverUrl, camera.gridStreamName),
                     posterUrl = posterUrl,
                 )
@@ -169,6 +191,23 @@ class CameraDetailViewModel(
 
     private val _playback = MutableStateFlow(PlaybackUiState())
     val playback: StateFlow<PlaybackUiState> = _playback.asStateFlow()
+
+    private val settings: StateFlow<AlertSettings> =
+        observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertSettings.DEFAULT)
+
+    /**
+     * This camera's zone keys, from the same server overview the Settings tab lists them from
+     * (observing it here is what starts that poll while this screen is up). Empty until the
+     * first config read lands, or for a camera with none drawn — the bell still works on the
+     * camera's "anywhere" place meanwhile.
+     */
+    private val zoneNames: StateFlow<List<String>> = observeServerOverviewUseCase()
+        .map { overview -> overview?.cameras?.firstOrNull { it.name == cameraName }?.zones?.map { it.name } ?: emptyList() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val alerts: StateFlow<CameraAlertsUiState> = combine(settings, zoneNames) { alerts, zones ->
+        CameraAlertsUiState(enabled = alerts.alertsEnabledOn(cameraName, zones), pushNotificationsEnabled = alerts.pushNotificationsEnabled)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraAlertsUiState())
 
     /** Ticks once a second while observed; drives the timeline's live edge and the "behind live" label. */
     val nowEpochSeconds: StateFlow<Double> = flow {
@@ -182,6 +221,7 @@ class CameraDetailViewModel(
     private var seekSequence = 0L
     private var playlistLoadJob: Job? = null
     private var qualityUpgradeJob: Job? = null
+    private var momentJob: Job? = null
 
     init {
         // While live, follow the camera's live URL (it appears once connected, disappears if the camera is disabled).
@@ -199,7 +239,7 @@ class CameraDetailViewModel(
                         !current.isLive -> current
                         liveUrl == null -> current.copy(playerRequest = null)
                         alreadyJoined(current.playerRequest?.source) -> current
-                        else -> current.copy(playerRequest = joinLive(found), isPlaying = true)
+                        else -> current.copy(playerRequest = joinLive(found, current.isMuted), isPlaying = true)
                     }
                 }
             }
@@ -283,7 +323,7 @@ class CameraDetailViewModel(
                 seekPreviewEpochSeconds = null,
                 isLoadingPlaylist = false,
                 isPlaying = true,
-                playerRequest = joinLive(found),
+                playerRequest = joinLive(found, it.isMuted),
             )
         }
     }
@@ -293,12 +333,12 @@ class CameraDetailViewModel(
      * calls for an upgrade — scheduling it. Returns null when the camera has no live URL yet
      * (disabled, or still loading).
      */
-    private fun joinLive(found: CameraDetailUiState.Found?): PlayerRequest? {
+    private fun joinLive(found: CameraDetailUiState.Found?, muted: Boolean): PlayerRequest? {
         val liveUrl = found?.streamUrl ?: return null
         val gridUrl = found.gridStreamUrl ?: liveUrl
         val plan = planLiveJoin(gridUrl, liveUrl)
         if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found.posterUrl) else qualityUpgradeJob?.cancel()
-        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl))
+        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl), muted = muted)
     }
 
     /**
@@ -316,7 +356,7 @@ class CameraDetailViewModel(
                 // may have paused during the few seconds the grid-quality join was standing in, and
                 // this swap must not silently resume playback out from under a paused viewer.
                 if (current.isLive) {
-                    current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl), playWhenReady = current.isPlaying))
+                    current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl), playWhenReady = current.isPlaying, muted = current.isMuted))
                 } else {
                     current
                 }
@@ -328,6 +368,39 @@ class CameraDetailViewModel(
         _playback.update { current ->
             val playing = !current.isPlaying
             current.copy(isPlaying = playing, playerRequest = current.playerRequest?.copy(playWhenReady = playing))
+        }
+    }
+
+    fun toggleMuted() {
+        _playback.update { current ->
+            val muted = !current.isMuted
+            current.copy(isMuted = muted, playerRequest = current.playerRequest?.copy(muted = muted))
+        }
+    }
+
+    fun onAudioAvailabilityChanged(hasAudio: Boolean) {
+        _playback.update { if (it.hasAudio == hasAudio) it else it.copy(hasAudio = hasAudio) }
+    }
+
+    /** The bell: silence this camera everywhere, or bring it back (see [AlertSettings.withAlertsOn]). */
+    fun setAlertsEnabled(enabled: Boolean) {
+        val updated = settings.value.withAlertsOn(cameraName, zoneNames.value, enabled)
+        viewModelScope.launch { updateSettingsUseCase(updated) }
+    }
+
+    /**
+     * Play the recording of a detection from where it began: the timeline widens to the
+     * narrowest span that shows the moment (or the widest, for something older than any),
+     * history is (re)loaded so it's sure to cover that moment, and the player seeks there.
+     */
+    fun playMoment(epochSeconds: Double) {
+        val serverUrl = connectionRepository.currentServerUrl.value ?: return
+        val span = TimelineSpan.entries.firstOrNull { clock() - epochSeconds <= it.seconds } ?: TimelineSpan.entries.last()
+        momentJob?.cancel()
+        momentJob = viewModelScope.launch {
+            _playback.update { it.copy(span = span, scrubEpochSeconds = null) }
+            refreshHistory(serverUrl, span, mustCover = epochSeconds)
+            seekTo(epochSeconds)
         }
     }
 
@@ -412,20 +485,38 @@ class CameraDetailViewModel(
                             posterUrl = recordingSnapshotUrl(resolvedStart),
                         ),
                         playWhenReady = current.isPlaying,
+                        muted = current.isMuted,
                     ),
                 )
             }
         }
     }
 
-    private suspend fun refreshHistory(serverUrl: String, span: TimelineSpan) {
+    /**
+     * Reloads [history] for the timeline's window. [mustCover] — by default whatever is playing —
+     * lying before that window (a Recent Activity moment older than the widest span) pulls in
+     * that moment's own hour bucket as well, so playback there has a playlist to continue into
+     * rather than being dropped back to live at the next refresh.
+     */
+    private suspend fun refreshHistory(
+        serverUrl: String,
+        span: TimelineSpan,
+        mustCover: Double? = _playback.value.playheadEpochSeconds,
+    ) {
         val now = clock()
-        getRecordingHistoryUseCase(
-            serverUrl = serverUrl,
-            cameraName = cameraName,
-            afterEpochSeconds = now - span.seconds - HISTORY_LOOKBEHIND_PADDING_SECONDS,
-            beforeEpochSeconds = now,
-        )
+        val windowStart = now - span.seconds - HISTORY_LOOKBEHIND_PADDING_SECONDS
+        val window = getRecordingHistoryUseCase(serverUrl, cameraName, afterEpochSeconds = windowStart, beforeEpochSeconds = now)
+        val bucketStart = mustCover?.takeIf { it < windowStart }?.let { floor(it / RecordingHistory.DEFAULT_BUCKET_SECONDS) * RecordingHistory.DEFAULT_BUCKET_SECONDS }
+        val extra = bucketStart?.let {
+            getRecordingHistoryUseCase(
+                serverUrl,
+                cameraName,
+                afterEpochSeconds = it - HISTORY_LOOKBEHIND_PADDING_SECONDS,
+                beforeEpochSeconds = it + RecordingHistory.DEFAULT_BUCKET_SECONDS + HISTORY_LOOKBEHIND_PADDING_SECONDS,
+            )
+        }
+        window
+            .map { loaded -> extra?.getOrNull()?.let { RecordingHistory((loaded.segments + it.segments).distinct()) } ?: loaded }
             .onSuccess { loaded ->
                 history = loaded
                 _playback.update { it.copy(segments = loaded.segments, historyError = null) }
