@@ -5,7 +5,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,11 +42,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -62,6 +65,10 @@ import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import coil3.compose.AsyncImage
 import androidx.compose.ui.layout.ContentScale
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
+import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
+import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
 import com.meticulouscreations.homesafe.ui.formatClockTime
@@ -72,6 +79,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -227,48 +235,63 @@ private fun PlayerSurface(
     modifier: Modifier = Modifier,
 ) {
     val request = playback.playerRequest
-    val interactionSource = remember { MutableInteractionSource() }
+    val zoom = rememberPinchZoomState()
+    val scope = rememberCoroutineScope()
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .clipToBounds()
+            .pinchZoomGestures(zoom),
     ) {
-        if (request != null) {
-            // Same playerKey as the grid card: this binds to the player the card was already
-            // running, so live video is on screen before the shared-element transition ends.
-            CameraStreamPlayer(
-                request = request,
-                modifier = Modifier.fillMaxSize(),
-                playerKey = playerKey,
-                onPositionChanged = viewModel::onPlayerPositionChanged,
-                onBufferingChanged = viewModel::onBufferingChanged,
-                onPlaybackEnded = viewModel::onPlaybackEnded,
-                onPlaybackError = viewModel::onPlaybackError,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Filled.VideocamOff,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                modifier = Modifier.align(Alignment.Center).size(56.dp),
-            )
-        }
+        // The video and its scrub preview zoom together; the pills and buttons over them don't.
+        Box(modifier = Modifier.fillMaxSize().pinchZoomContent(zoom)) {
+            if (request != null) {
+                // Same playerKey as the grid card: this binds to the player the card was already
+                // running, so live video is on screen before the shared-element transition ends.
+                CameraStreamPlayer(
+                    request = request,
+                    modifier = Modifier.fillMaxSize(),
+                    playerKey = playerKey,
+                    onPositionChanged = viewModel::onPlayerPositionChanged,
+                    onBufferingChanged = viewModel::onBufferingChanged,
+                    onPlaybackEnded = viewModel::onPlaybackEnded,
+                    onPlaybackError = viewModel::onPlaybackError,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.VideocamOff,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.align(Alignment.Center).size(56.dp),
+                )
+            }
 
-        // While the finger is on the timeline, or the player is on its way to a seek target, a
-        // real frame of that moment sits over the video — YouTube-style scrub previews, and no
-        // pre-seek frame lingering while the new position buffers.
-        val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
-        if (previewEpoch != null) {
-            SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
+            // While the finger is on the timeline, or the player is on its way to a seek target, a
+            // real frame of that moment sits over the video — YouTube-style scrub previews, and no
+            // pre-seek frame lingering while the new position buffers.
+            val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
+            if (previewEpoch != null) {
+                SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
+            }
         }
 
         if (request != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clickable(interactionSource = interactionSource, indication = null, onClick = viewModel::togglePlayPause),
+                    .pointerInput(zoom) {
+                        detectTapGestures(
+                            onTap = { viewModel.togglePlayPause() },
+                            onDoubleTap = { tapAt ->
+                                scope.launch {
+                                    if (zoom.isZoomed) zoom.animateReset() else zoom.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt, size)
+                                }
+                            },
+                        )
+                    },
             )
         }
 
