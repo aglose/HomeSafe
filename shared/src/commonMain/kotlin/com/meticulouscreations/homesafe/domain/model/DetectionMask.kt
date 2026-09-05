@@ -41,17 +41,29 @@ data class MaskPolygon(val points: List<MaskPoint>) {
 }
 
 /**
- * The three kinds of polygon Frigate supports on a camera. Two exclude, one labels — and the
- * object mask is the only one that actually stops detections. See each entry's [description].
+ * The three kinds of polygon Frigate supports on a camera: one that names an area, two that
+ * make Frigate ignore an area. Listed in the order the editor shows them — zones first, because
+ * that's what most people come here to draw. See each entry's [description].
  */
-enum class MaskLayer(val label: String, val description: String) {
+enum class MaskLayer(val label: String, val noun: String, val description: String) {
+    /**
+     * Named areas. Frigate tags every tracked object with the zones it's in, which is what lets
+     * an alert or a description say "in the driveway". Zones hide nothing.
+     */
+    ZONES(
+        label = "Zones",
+        noun = "zone",
+        description = "Named areas like the driveway or the lawn. Every detection is tagged with the zones it's in, so alerts can say where something happened. Zones never hide anything.",
+    ),
+
     /**
      * Applied *after* the detector runs: any detection whose bottom-centre point lands inside
      * the polygon is discarded. This is the "never report objects here" tool.
      */
     OBJECT_MASK(
-        label = "Objects",
-        description = "Detections whose feet land in a masked area are ignored. Use this to hide a road, a neighbour's yard, or a TV.",
+        label = "Ignore objects",
+        noun = "ignore area",
+        description = "Anything detected with its feet inside this area is dropped as if it weren't there. Use it for a road or a neighbour's yard you never want alerts about.",
     ),
 
     /**
@@ -60,17 +72,9 @@ enum class MaskLayer(val label: String, val description: String) {
      * elsewhere triggers a region covering the area — it's a false-positive and CPU saver.
      */
     MOTION_MASK(
-        label = "Motion",
-        description = "Motion in a masked area is ignored, so trees, flags and timestamps don't wake the detector. Doesn't hide objects on its own.",
-    ),
-
-    /**
-     * Named areas. Frigate tags every tracked object with the zones it's in, which is what lets
-     * an alert or a description say "in the driveway". Zones hide nothing.
-     */
-    ZONES(
-        label = "Zones",
-        description = "Name an area — driveway, lawn, sidewalk. Every detection is tagged with the zones it's in, so alerts can say where things happened. Zones hide nothing.",
+        label = "Ignore motion",
+        noun = "ignore area",
+        description = "Movement inside this area doesn't wake the detector. Use it for trees, flags and on-screen timestamps. It doesn't hide objects by itself.",
     ),
 }
 

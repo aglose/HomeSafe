@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     alias(libs.plugins.androidApplication)
@@ -20,6 +21,16 @@ dependencies {
     debugImplementation(libs.compose.uiTooling)
 }
 
+// Local, gitignored test credentials for the debug-only "Autofill test credentials" button
+// on SecureConnectionScreen. File may be absent (fresh checkout); missing values just leave
+// autofill blank. Never populated for release builds — see buildTypes below.
+val localCredentials = Properties().apply {
+    val file = rootProject.file("local.credentials.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
 android {
     namespace = "com.meticulouscreations.homesafe"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
@@ -37,12 +48,20 @@ android {
         }
     }
     buildTypes {
+        debug {
+            buildConfigField("String", "TEST_SERVER_URL", "\"${localCredentials.getProperty("test.serverUrl", "")}\"")
+            buildConfigField("String", "TEST_USERNAME", "\"${localCredentials.getProperty("test.username", "")}\"")
+            buildConfigField("String", "TEST_PASSWORD", "\"${localCredentials.getProperty("test.password", "")}\"")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            buildConfigField("String", "TEST_SERVER_URL", "\"\"")
+            buildConfigField("String", "TEST_USERNAME", "\"\"")
+            buildConfigField("String", "TEST_PASSWORD", "\"\"")
         }
     }
     compileOptions {
@@ -51,5 +70,6 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }

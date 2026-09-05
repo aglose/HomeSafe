@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
 // BiometricPrompt, which the shared module's BiometricCredentialStore.android.kt uses for
@@ -28,8 +29,19 @@ class MainActivity : FragmentActivity() {
         }
 
         val appGraph = createAppGraph(platformContext = PlatformContext(this))
+        // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
+        // androidApp/build.gradle.kts), so this is null there regardless of the DEBUG check.
+        val debugAutofillCredentials = if (BuildConfig.DEBUG && BuildConfig.TEST_USERNAME.isNotBlank()) {
+            DebugAutofillCredentials(
+                serverUrl = BuildConfig.TEST_SERVER_URL,
+                username = BuildConfig.TEST_USERNAME,
+                password = BuildConfig.TEST_PASSWORD,
+            )
+        } else {
+            null
+        }
         setContent {
-            App(appGraph)
+            App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
         }
     }
 }

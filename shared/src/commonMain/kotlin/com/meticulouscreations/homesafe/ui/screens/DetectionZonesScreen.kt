@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +26,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -33,14 +37,24 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -61,10 +75,12 @@ import com.meticulouscreations.homesafe.viewmodel.MaskEditorState
 
 /**
  * Google Home-style "zones" editor for one camera: a still frame with polygon layers drawn over
- * it — two exclusion layers (object and motion masks) and one labelling layer (named zones).
- * Tap to place corners, tap the first corner (or Done) to close the shape, drag corners to
- * adjust, and Save pushes the changed layers to Frigate, which applies them immediately.
+ * it — named zones, plus two kinds of ignore area (objects, motion). Tap to place corners, tap
+ * the first corner (or Done) to close the shape, drag corners to adjust. Nothing reaches the
+ * server until Save: a save bar appears the moment there's something to save, and leaving with
+ * unsaved work asks first.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun DetectionZonesScreen(
     cameraName: String,
@@ -84,9 +100,21 @@ fun DetectionZonesScreen(
         )
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val dirty = uiState.editor.isDirty
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var leaveAfterSave by remember { mutableStateOf(false) }
+
+    // Both the header arrow and the system back go through the same guard.
+    val requestBack = { if (dirty && !uiState.isSaving) showLeaveDialog = true else onBack() }
+    BackHandler(enabled = dirty) { requestBack() }
+    LaunchedEffect(Unit) { viewModel.reloadIfClean() }
+    LaunchedEffect(uiState.justSaved, uiState.saveError) {
+        if (leaveAfterSave && uiState.justSaved) onBack()
+        if (uiState.saveError != null) leaveAfterSave = false
+    }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Header(cameraName = cameraName, uiState = uiState, onBack = onBack, onSave = viewModel::save)
+        Header(cameraName = cameraName, uiState = uiState, onBack = requestBack, onSave = viewModel::save)
 
         Column(
             modifier = Modifier
@@ -109,11 +137,31 @@ fun DetectionZonesScreen(
             if (!uiState.isLoading && uiState.loadError == null) {
                 Toolbar(uiState = uiState, viewModel = viewModel)
                 StatusLine(uiState = uiState)
+                if (dirty || uiState.isSaving || uiState.saveError != null) {
+                    SaveBar(uiState = uiState, onSave = viewModel::save, onDiscard = viewModel::discardChanges)
+                }
                 if (uiState.editor.layer == MaskLayer.ZONES) {
                     ZoneList(uiState = uiState, viewModel = viewModel)
                 }
             }
         }
+    }
+
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showLeaveDialog = false },
+            title = { Text("Save your changes?") },
+            text = { Text("You've edited this camera's ${uiState.editor.layer.noun}s but haven't saved. Frigate only uses what's saved.") },
+            confirmButton = {
+                Button(onClick = { showLeaveDialog = false; leaveAfterSave = true; viewModel.save() }) { Text("Save and leave") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { showLeaveDialog = false }) { Text("Keep editing") }
+                    TextButton(onClick = { showLeaveDialog = false; viewModel.discardChanges(); onBack() }) { Text("Discard") }
+                }
+            },
+        )
     }
 }
 
@@ -157,10 +205,12 @@ private fun Header(cameraName: String, uiState: DetectionZonesUiState, onBack: (
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LayerPicker(editor: MaskEditorState, onSelect: (MaskLayer) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // FlowRow, so on a narrow phone the third chip drops to a second line whole instead of wrapping its text.
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             MaskLayer.entries.forEach { layer ->
                 val count = editor.shapes.getValue(layer).size
                 val label = if (count > 0) "${layer.label} · $count" else layer.label
@@ -190,7 +240,7 @@ private fun Chip(label: String, accent: Color?, selected: Boolean, onClick: () -
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (accent != null) Box(modifier = Modifier.size(8.dp).background(accent, CircleShape))
-        Text(text = label, style = MaterialTheme.typography.labelMedium, color = foreground)
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = foreground, maxLines = 1)
     }
 }
 
@@ -225,10 +275,13 @@ private fun EditorCanvas(uiState: DetectionZonesUiState, viewModel: DetectionZon
         MaskPolygonEditor(
             polygons = polygons,
             selectedIndex = editor.selectedIndex,
+            selectedVertexIndex = editor.selectedVertexIndex,
             draft = editor.draft,
             draftColor = if (editor.layer == MaskLayer.ZONES) zoneColor(editor.layerShapes.size) else layerAccent,
             onTap = viewModel::tapAt,
             onFinishDraft = viewModel::finishDraft,
+            onSelectVertex = viewModel::selectVertex,
+            onInsertVertex = viewModel::insertVertex,
             onMoveVertex = viewModel::moveVertex,
             onMoveDraftVertex = viewModel::moveDraftVertex,
             labelStyle = MaterialTheme.typography.labelSmall,
@@ -243,17 +296,53 @@ private fun EditorCanvas(uiState: DetectionZonesUiState, viewModel: DetectionZon
 @Composable
 private fun Toolbar(uiState: DetectionZonesUiState, viewModel: DetectionZonesViewModel) {
     val editor = uiState.editor
-    val noun = if (editor.layer == MaskLayer.ZONES) "zone" else "mask"
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         if (editor.isDrawing) {
             OutlinedButton(onClick = viewModel::undoDraftPoint, enabled = !editor.draft.isNullOrEmpty()) { Text("Undo") }
             OutlinedButton(onClick = viewModel::cancelDraft) { Text("Cancel") }
             Button(onClick = viewModel::finishDraft, enabled = editor.canFinishDraft) { Text("Done") }
         } else {
-            Button(onClick = viewModel::startDraft, enabled = !uiState.isSaving) { Text("Add $noun") }
-            OutlinedButton(onClick = viewModel::deleteSelected, enabled = editor.selectedIndex != null && !uiState.isSaving) { Text("Delete") }
-            if (editor.isDirty) {
-                TextButton(onClick = viewModel::discardChanges, enabled = !uiState.isSaving) { Text("Discard") }
+            Button(onClick = viewModel::startDraft, enabled = !uiState.isSaving) { Text("Add ${editor.layer.noun}") }
+            if (editor.selectedVertexIndex != null) {
+                OutlinedButton(onClick = viewModel::removeSelectedVertex, enabled = editor.canRemoveSelectedVertex && !uiState.isSaving) { Text("Remove corner") }
+            } else {
+                OutlinedButton(onClick = viewModel::deleteSelected, enabled = editor.selectedIndex != null && !uiState.isSaving) { Text("Delete") }
+            }
+        }
+    }
+}
+
+/** Appears the moment there's something to save, so saving is never a hunt for a header button. */
+@Composable
+private fun SaveBar(uiState: DetectionZonesUiState, onSave: () -> Unit, onDiscard: () -> Unit) {
+    val layers = uiState.editor.dirtyLayers.map { it.label.lowercase() }
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), shape)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = when {
+                uiState.isSaving -> "Saving to Frigate…"
+                uiState.saveError != null -> "Couldn't save: ${uiState.saveError}"
+                else -> "Unsaved changes to ${layers.joinToString(" and ")}"
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (uiState.saveError != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onDiscard, enabled = !uiState.isSaving) { Text("Discard") }
+        Button(onClick = onSave, enabled = uiState.editor.isDirty && !uiState.isSaving) {
+            if (uiState.isSaving) {
+                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+            } else {
+                Text("Save")
             }
         }
     }
@@ -262,28 +351,34 @@ private fun Toolbar(uiState: DetectionZonesUiState, viewModel: DetectionZonesVie
 @Composable
 private fun StatusLine(uiState: DetectionZonesUiState) {
     val editor = uiState.editor
-    val noun = if (editor.layer == MaskLayer.ZONES) "zone" else "mask"
+    val noun = editor.layer.noun
     val (text, color) = when {
-        uiState.saveError != null -> "Couldn't save: ${uiState.saveError}" to MaterialTheme.colorScheme.error
-        uiState.isSaving -> "Saving to Frigate…" to MaterialTheme.colorScheme.onSurfaceVariant
         uiState.justSaved -> "Saved. Frigate is using the new ${noun}s now." to MaterialTheme.colorScheme.secondary
         editor.isDrawing && !editor.canFinishDraft -> "Tap the frame to place corners (at least three)." to MaterialTheme.colorScheme.onSurfaceVariant
         editor.isDrawing -> "Keep adding corners, or tap the first one (or Done) to close the shape." to MaterialTheme.colorScheme.onSurfaceVariant
-        editor.selectedIndex != null && editor.layer == MaskLayer.ZONES -> "Name the zone below, pick which objects count in it, or drag a corner." to MaterialTheme.colorScheme.onSurfaceVariant
-        editor.selectedIndex != null -> "Drag a corner to adjust, or Delete to remove this mask." to MaterialTheme.colorScheme.onSurfaceVariant
-        editor.isDirty -> "Unsaved changes — Save to apply them on the server." to MaterialTheme.colorScheme.onSurfaceVariant
-        editor.polygons.isEmpty() && editor.layer == MaskLayer.ZONES -> "No zones yet. Tap the frame or Add zone to outline an area like the driveway." to MaterialTheme.colorScheme.onSurfaceVariant
-        editor.polygons.isEmpty() -> "No ${editor.layer.label.lowercase()} masks yet. Tap the frame or Add mask to draw one." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.selectedVertexIndex != null && !editor.canRemoveSelectedVertex -> "A shape needs at least three corners. Drag this one, or tap a dot on an edge to add another." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.selectedVertexIndex != null -> "Drag this corner, or Remove corner. Tap a small dot on an edge to add one there." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.selectedIndex != null && editor.layer == MaskLayer.ZONES -> "Drag corners to fit the area; tap a small dot on an edge to add a corner. Name it below." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.selectedIndex != null -> "Drag corners to fit the area; tap a small dot on an edge to add a corner. Delete removes the area." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.polygons.isEmpty() && editor.layer == MaskLayer.ZONES -> "No zones yet. Tap the frame to outline an area like the driveway." to MaterialTheme.colorScheme.onSurfaceVariant
+        editor.polygons.isEmpty() -> "Nothing ignored yet. Tap the frame to outline an area." to MaterialTheme.colorScheme.onSurfaceVariant
         else -> "Tap a $noun to select it, or tap empty space to start a new one." to MaterialTheme.colorScheme.onSurfaceVariant
     }
     Text(text = text, style = MaterialTheme.typography.bodySmall, color = color)
 }
 
 /** The zones on this camera as rows, with the selected one expanded into its name and object filter. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ZoneList(uiState: DetectionZonesUiState, viewModel: DetectionZonesViewModel) {
     val editor = uiState.editor
     if (editor.layerShapes.isEmpty()) return
+    val intoView = remember { BringIntoViewRequester() }
+    // The details of a just-selected (or just-drawn) zone sit below the canvas and toolbar,
+    // often under the fold — scroll them into view so naming it doesn't need a hunt.
+    LaunchedEffect(editor.selectedIndex, editor.layerShapes.size) {
+        if (editor.selectedIndex != null) intoView.bringIntoView()
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         editor.layerShapes.forEachIndexed { index, item ->
             val zone = item.zone ?: return@forEachIndexed
@@ -292,6 +387,7 @@ private fun ZoneList(uiState: DetectionZonesUiState, viewModel: DetectionZonesVi
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .let { if (selected) it.bringIntoViewRequester(intoView) else it }
                     .clip(rowShape)
                     .background(if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surface)
                     .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), rowShape)
@@ -310,9 +406,19 @@ private fun ZoneList(uiState: DetectionZonesUiState, viewModel: DetectionZonesVi
                             maxLines = 1,
                         )
                     }
+                    if (zone.name !in editor.savedZoneNames) {
+                        Text(text = "NEW", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
                 if (selected) {
-                    ZoneDetailsEditor(zoneName = zone.name, friendlyName = zone.friendlyName ?: "", objects = zone.objects, trackedObjects = uiState.config?.trackedObjects.orEmpty(), viewModel = viewModel)
+                    ZoneDetailsEditor(
+                        zoneName = zone.name,
+                        friendlyName = zone.friendlyName ?: "",
+                        isPlaceholderName = zone.name !in editor.savedZoneNames && zone.friendlyName?.startsWith("Zone ") == true,
+                        objects = zone.objects,
+                        trackedObjects = uiState.config?.trackedObjects.orEmpty(),
+                        viewModel = viewModel,
+                    )
                 }
             }
         }
@@ -324,19 +430,32 @@ private fun ZoneList(uiState: DetectionZonesUiState, viewModel: DetectionZonesVi
 private fun ZoneDetailsEditor(
     zoneName: String,
     friendlyName: String,
+    isPlaceholderName: Boolean,
     objects: List<String>,
     trackedObjects: List<String>,
     viewModel: DetectionZonesViewModel,
 ) {
+    // A placeholder like "Zone 2" opens fully selected, so the first thing typed replaces it.
+    var field by remember(zoneName) {
+        mutableStateOf(TextFieldValue(friendlyName, selection = if (isPlaceholderName) TextRange(0, friendlyName.length) else TextRange(friendlyName.length)))
+    }
+    if (field.text != friendlyName) field = field.copy(text = friendlyName, selection = TextRange(friendlyName.length))
+    val focus = remember { FocusRequester() }
+    // A brand-new zone wants a name first: focus the field with the placeholder selected, so
+    // the first keystroke replaces "Zone 2" (a tap into the field would only move the cursor).
+    LaunchedEffect(zoneName) { if (isPlaceholderName) focus.requestFocus() }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         OutlinedTextField(
-            value = friendlyName,
-            onValueChange = viewModel::renameSelectedZone,
+            value = field,
+            onValueChange = { value ->
+                field = value
+                viewModel.renameSelectedZone(value.text)
+            },
             label = { Text("Name") },
             supportingText = { Text("Frigate key: $zoneName") },
             singleLine = true,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().focusRequester(focus),
         )
         Text(text = "Counts these objects", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -366,12 +485,12 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit) {
 
 @Composable
 private fun layerColor(layer: MaskLayer): Color = when (layer) {
+    MaskLayer.ZONES -> MaterialTheme.colorScheme.primary
     MaskLayer.OBJECT_MASK -> MaterialTheme.colorScheme.error
     MaskLayer.MOTION_MASK -> MaterialTheme.colorScheme.tertiary
-    MaskLayer.ZONES -> MaterialTheme.colorScheme.primary
 }
 
-/** Masks share their layer's colour; each zone gets its own from a fixed palette, by position. */
+/** Ignore areas share their layer's colour; each zone gets its own from a fixed palette, by position. */
 private fun shapeColor(shape: EditorShape, index: Int, layerAccent: Color): Color =
     if (shape.zone != null) zoneColor(index) else layerAccent
 

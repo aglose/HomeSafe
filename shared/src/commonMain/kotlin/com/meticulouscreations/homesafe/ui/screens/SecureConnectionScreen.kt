@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -67,6 +68,18 @@ import com.meticulouscreations.homesafe.viewmodel.ConnectUiState
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import kotlinx.coroutines.launch
 
+/**
+ * Test-only login values for the "Autofill test credentials" button, supplied by the debug
+ * build from a gitignored local properties file (never present in a release build — see
+ * androidApp/build.gradle.kts). Lets a developer fill the login form on an emulator without
+ * ever typing or displaying the real values anywhere else.
+ */
+data class DebugAutofillCredentials(
+    val serverUrl: String,
+    val username: String,
+    val password: String,
+)
+
 @Composable
 fun SecureConnectionScreen(
     connectToServerUseCase: ConnectToServerUseCase,
@@ -76,6 +89,7 @@ fun SecureConnectionScreen(
     observeMostRecentConnectionUseCase: ObserveMostRecentConnectionUseCase,
     connectionRepository: ConnectionRepository,
     onConnected: () -> Unit,
+    debugAutofillCredentials: DebugAutofillCredentials? = null,
 ) {
     val viewModel = viewModel {
         SecureConnectionViewModel(
@@ -243,6 +257,37 @@ fun SecureConnectionScreen(
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(start = 16.dp),
                     )
+                }
+
+                // Debug-only affordance: fills the form from a gitignored local properties
+                // file so a developer never has to type or paste real credentials for
+                // emulator testing. Absent entirely in release builds (see App()'s caller).
+                if (debugAutofillCredentials != null) {
+                    TextButton(
+                        onClick = {
+                            if (debugAutofillCredentials.serverUrl.isNotBlank()) {
+                                serverUrl = debugAutofillCredentials.serverUrl
+                            }
+                            username = debugAutofillCredentials.username
+                            password = debugAutofillCredentials.password
+                        },
+                        enabled = !isConnecting,
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Icon(
+                                Icons.Filled.Science,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                "Autofill test credentials",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
+                    }
                 }
             }
 

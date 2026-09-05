@@ -506,7 +506,7 @@ private fun DetectionZonesCard(onClick: () -> Unit) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
             Text(
-                text = "Mask out areas you don't want detected",
+                text = "Name areas like the driveway, and choose what to ignore",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
