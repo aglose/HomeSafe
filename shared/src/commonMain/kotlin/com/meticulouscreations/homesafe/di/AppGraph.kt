@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.data.CameraRepositoryImpl
 import com.meticulouscreations.homesafe.data.ClipDownloader
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.ConnectionRepositoryImpl
+import com.meticulouscreations.homesafe.data.DetectionConfigRepositoryImpl
 import com.meticulouscreations.homesafe.data.MomentsRepositoryImpl
 import com.meticulouscreations.homesafe.data.RecordingsRepositoryImpl
 import com.meticulouscreations.homesafe.data.SettingsDao
@@ -20,12 +21,14 @@ import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.repository.DetectionConfigRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetDetectionConfigUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
@@ -34,6 +37,8 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.getPlatform
@@ -74,6 +79,7 @@ interface AppGraph {
     val momentsRepository: MomentsRepository
     val recordingsRepository: RecordingsRepository
     val settingsRepository: SettingsRepository
+    val detectionConfigRepository: DetectionConfigRepository
 
     val connectToServerUseCase: ConnectToServerUseCase
     val signInWithBiometricsUseCase: SignInWithBiometricsUseCase
@@ -88,6 +94,9 @@ interface AppGraph {
     val getRecordingStreamUseCase: GetRecordingStreamUseCase
     val getMomentClipStreamUseCase: GetMomentClipStreamUseCase
     val downloadMomentClipUseCase: DownloadMomentClipUseCase
+    val getDetectionConfigUseCase: GetDetectionConfigUseCase
+    val saveDetectionMasksUseCase: SaveDetectionMasksUseCase
+    val saveDetectionZonesUseCase: SaveDetectionZonesUseCase
 
     @Provides
     fun providePlatform(): Platform = getPlatform()
@@ -153,6 +162,9 @@ interface AppGraph {
 
     @Provides
     fun bindRecordingsRepository(impl: RecordingsRepositoryImpl): RecordingsRepository = impl
+
+    @Provides
+    fun bindDetectionConfigRepository(impl: DetectionConfigRepositoryImpl): DetectionConfigRepository = impl
 
     @DependencyGraph.Factory
     fun interface Factory {

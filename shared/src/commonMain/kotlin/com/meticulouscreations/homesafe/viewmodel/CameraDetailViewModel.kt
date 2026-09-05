@@ -460,4 +460,4 @@ class CameraDetailViewModel(
 }
 
 @OptIn(ExperimentalTime::class)
-private fun epochSecondsNow(): Double = Clock.System.now().toEpochMilliseconds() / 1000.0
+internal fun epochSecondsNow(): Double = Clock.System.now().toEpochMilliseconds() / 1000.0
