@@ -99,7 +99,9 @@ class ConnectionRepositoryImplTest {
      * scheduler with short real-time waits until [condition] holds.
      */
     private suspend fun TestScope.eventually(what: String, condition: () -> Boolean) {
-        repeat(200) {
+        // 15s of real time. A loaded CI runner is far slower than a dev machine at getting the
+        // mock engine's thread scheduled, and 5s timed out there while always passing locally.
+        repeat(600) {
             advanceUntilIdle()
             if (condition()) return
             withContext(Dispatchers.Default) { delay(25) }
