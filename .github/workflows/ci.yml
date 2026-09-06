@@ -1,0 +1,180 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  unit:
+    name: Build and unit tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # Same-repo runs get the real Firebase config; fork PRs get no secrets and build
+      # without it (androidApp/build.gradle.kts applies the plugin only when it exists).
+      - name: Write google-services.json
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 --decode > androidApp/google-services.json
+            echo "Firebase config written."
+          else
+            echo "GOOGLE_SERVICES_JSON secret not set; building without Firebase."
+          fi
+
+      - name: Install skiko native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
+
+      - name: Unit tests
+        run: ./gradlew :shared:jvmTest :shared:testAndroidHostTest --stacktrace
+
+      - name: Compose stability gate
+        run: ./gradlew :shared:stabilityCheck --stacktrace
+
+      - name: Assemble and lint
+        run: ./gradlew :androidApp:assembleDebug :androidApp:lintDebug :desktopApp:build :webApp:build --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-reports
+          path: |
+            shared/build/reports/tests/**
+            androidApp/build/reports/**
+          retention-days: 7
+
+  android-ui:
+    name: Android UI tests (emulator)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # KVM is what makes the x86_64 emulator usable on a hosted Linux runner.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Runs the whole commonTest suite on-device: commonTest feeds the androidDeviceTest
+      # compilation (verified: 29 test classes), which is what puts the Compose UI tests
+      # on a real Android runtime.
+      - name: Instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew :shared:connectedAndroidDeviceTest --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: android-ui-reports
+          path: shared/build/reports/**
+          retention-days: 7
+
+  ios:
+    name: iOS tests and build
+    # Self-hosted runs only for branches in this repo. A fork's pull request must never
+    # execute on the Mac, so it falls through to ios-hosted instead.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: [self-hosted, macOS]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: iOS simulator unit tests
+        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
+
+      - name: Build iOS app
+        run: |
+          xcodebuild build \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+  ios-hosted:
+    name: iOS tests and build (fork PRs)
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+      - name: Cache Kotlin/Native
+        uses: actions/cache@v4
+        with:
+          path: ~/.konan
+          key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+
+      - name: iOS simulator unit tests
+        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
+
+      - name: Build iOS app
+        run: |
+          xcodebuild build \
+            -project iosApp/iosApp.xcodeproj \
+            -scheme iosApp \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+  ci-green:
+    name: ci-green
+    # The single required status check. Jobs can be added or renamed without touching
+    # branch protection, as long as they are listed here.
+    if: always()
+    needs: [unit, android-ui, ios, ios-hosted]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Verify no job failed
+        run: |
+          results='${{ toJSON(needs) }}'
+          echo "$results"
+          echo "$results" | grep -q '"result": *"failure"' && exit 1
+          echo "$results" | grep -q '"result": *"cancelled"' && exit 1
+          exit 0
