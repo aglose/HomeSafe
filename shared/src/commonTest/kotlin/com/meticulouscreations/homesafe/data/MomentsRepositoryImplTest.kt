@@ -72,6 +72,7 @@ class MomentsRepositoryImplTest {
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
                 req.url.encodedPath.endsWith("/api/events") -> respond(EVENTS, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                req.url.encodedPath.endsWith("/api/config") && CONFIG != null -> respond(CONFIG!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -81,8 +82,32 @@ class MomentsRepositoryImplTest {
         }
         val connection = FakeConnection(url)
         val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, scope.backgroundScope)
-        companion object { lateinit var EVENTS: String }
+        companion object {
+            lateinit var EVENTS: String
+            /** `/api/config`, or null to 404 it the way a test that isn't about zones expects. */
+            var CONFIG: String? = null
+        }
     }
+
+    /** Front Yard's real zones (2026-09-06): the street wants only birds, the sidewalk wants everything. */
+    private val configJson = """{"cameras":{"hikvision_1":{"zones":{
+      "street":{"coordinates":"0.311,0.113,0.994,0.33,1.0,0.607,0.301,0.287","objects":["bird"],"friendly_name":"Street"},
+      "sidewalk":{"coordinates":"1.0,0.6,0.998,0.75,0.331,0.41,0.44,0.353,0.704,0.46","objects":[]}
+    }},"amcrest_1":{}}}"""
+
+    /** Real path_data shapes: a car that stayed on the street, a person Frigate never tagged whose path crosses the sidewalk, and the amcrest car. */
+    private val zonedEventsJson = """[
+      {"id":"street-car","label":"car","sub_label":null,"camera":"hikvision_1","start_time":1788726566.38,"end_time":null,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.71,"top_score":0.78,"box":[0.6546875,0.2666,0.1421875,0.1],
+               "path_data":[[[0.6219,0.2861],1788726569.34],[[0.7734,0.3222],1788726586.76],[[0.725,0.3667],1788726611.56]]}},
+      {"id":"walker","label":"person","sub_label":null,"camera":"hikvision_1","start_time":1788726500.0,"end_time":1788726520.0,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.9,"top_score":0.92,"path_data":[[[0.55,0.44],1788726501.0],[[0.6,0.45],1788726510.0]]}},
+      {"id":"1788401800.1-abc","label":"car","sub_label":null,"camera":"amcrest_1",
+       "start_time":1788401800.1,"end_time":null,"has_clip":false,"has_snapshot":false,"zones":["driveway"],
+       "data":{"type":"object","score":0.71,"top_score":0.88}}
+    ]"""
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
         repeat(200) { advanceUntilIdle(); if (cond()) return; withContext(Dispatchers.Default) { delay(25) } }
@@ -110,6 +135,28 @@ class MomentsRepositoryImplTest {
         assertNull(car.durationSeconds)
         assertEquals(0.88, car.topScore!!, 0.001)
         assertNull(h.repo.observeError().first())
+    }
+
+    @Test
+    fun zonesDecideWhichDetectionsBelongInTheFeedAndWhereTheyWere() = runTest {
+        Harness.EVENTS = zonedEventsJson
+        Harness.CONFIG = configJson
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("events to load") { list = h.repo.observeMoments().first(); list.isNotEmpty() }
+
+            // The street-only car is gone: the only zone it crossed wants birds. The untagged
+            // walker is placed on the sidewalk from their path; the amcrest car (no zones drawn
+            // on that camera) is untouched, Frigate's driveway tag and all.
+            assertEquals(listOf("walker", "1788401800.1-abc"), list.map { it.id })
+            assertEquals(listOf("sidewalk"), list[0].zones)
+            assertEquals(listOf("driveway"), list[1].zones)
+            assertEquals(2, list[0].pathPoints.size)
+        } finally {
+            Harness.CONFIG = null
+        }
     }
 
     @Test

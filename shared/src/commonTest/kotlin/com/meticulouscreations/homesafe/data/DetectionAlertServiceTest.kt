@@ -95,6 +95,10 @@ class DetectionAlertServiceTest {
         val subLabelById = mutableMapOf<String, String>()
         /** When an event ended, by id; absent means still in progress. */
         val endedById = mutableMapOf<String, Double>()
+        /** Where the object went (Frigate's `path_data` points), by id; absent means no path. */
+        val pathById = mutableMapOf<String, List<Pair<Double, Double>>>()
+        /** `/api/config`, or null to 404 it (no zones drawn anywhere). */
+        var config: String? = null
         val afters = mutableListOf<String>()
         private val engine = MockEngine { req ->
             when {
@@ -104,11 +108,13 @@ class DetectionAlertServiceTest {
                         val zones = zonesById[id].orEmpty().joinToString(",", "[", "]") { "\"$it\"" }
                         val subLabel = subLabelById[id]?.let { "\"$it\"" } ?: "null"
                         val end = endedById[id]?.toString() ?: "null"
-                        """{"id":"$id","label":"$label","sub_label":$subLabel,"camera":"amcrest_1","start_time":$start,"end_time":$end,"has_clip":false,"has_snapshot":false,"zones":$zones}"""
+                        val path = pathById[id].orEmpty().joinToString(",", "[", "]") { (x, y) -> "[[$x,$y],$start]" }
+                        """{"id":"$id","label":"$label","sub_label":$subLabel,"camera":"amcrest_1","start_time":$start,"end_time":$end,"has_clip":false,"has_snapshot":false,"zones":$zones,"data":{"type":"object","path_data":$path}}"""
                     }
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
                 req.url.encodedPath.contains("/thumbnail.jpg") -> respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/jpeg"))
+                req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -177,6 +183,38 @@ class DetectionAlertServiceTest {
         h.events += Triple("dog2", "dog", 1_000_002.0)
         eventually("the second dog") { h.notifier.posted.map { it.id } == listOf("dog2") }
         assertTrue(h.notifier.posted.none { it.id == "dog" }, "flipping a rule doesn't replay what was skipped")
+    }
+
+    @Test
+    fun aZoneThatDoesNotWantTheLabelSilencesItInsteadOfCountingAsAnywhereElse() = runTest {
+        // Every category on, everywhere: only the zone's own object filter can keep a car quiet.
+        val h = Harness(this, on.withCategory(anywhere, MomentCategory.ANIMALS, true))
+        h.config = """{"cameras":{"amcrest_1":{"zones":{
+          "street":{"coordinates":"0.0,0.0,1.0,0.0,1.0,0.5,0.0,0.5","objects":["bird"]},
+          "lawn":{"coordinates":"0.0,0.5,1.0,0.5,1.0,1.0,0.0,1.0","objects":[]}
+        }}}}"""
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.pathById["street-car"] = listOf(0.5 to 0.2, 0.7 to 0.3)   // Frigate leaves its zones empty: not a bird
+        h.events += Triple("street-car", "car", 1_000_001.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "a car on the birds-only street is not 'anywhere else'")
+
+        h.pathById["lawn-car"] = listOf(0.5 to 0.2, 0.5 to 0.8, 0.5 to 0.9)
+        h.events += Triple("lawn-car", "car", 1_000_002.0)
+        eventually("the lawn car") { h.notifier.posted.map { it.id } == listOf("lawn-car") }
+        assertEquals("Car on the lawn", h.notifier.posted.single().title, "placed from its path, not from Frigate's empty tag list")
+
+        h.events += Triple("stray", "cat", 1_000_003.0)   // no path, no zones: on a camera with zones, that's noise
+        settle()
+        assertEquals(listOf("lawn-car"), h.notifier.posted.map { it.id }, "an unrecognised object outside every zone is silent")
+
+        h.subLabelById["tesla"] = "sarahs_tesla"   // recognised: shows wherever it is, street included
+        h.pathById["tesla"] = listOf(0.5 to 0.2)
+        h.events += Triple("tesla", "car", 1_000_004.0)
+        eventually("the recognised car") { h.notifier.posted.map { it.id } == listOf("lawn-car", "tesla") }
+        assertEquals("Sarah's Tesla on the street", h.notifier.posted.last().title)
     }
 
     @Test

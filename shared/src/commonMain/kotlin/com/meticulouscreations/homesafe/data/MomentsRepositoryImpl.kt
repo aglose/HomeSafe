@@ -1,7 +1,9 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
+import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -44,6 +46,14 @@ class MomentsRepositoryImpl(
     private val _moments = MutableStateFlow<List<MomentEvent>>(emptyList())
     private val _error = MutableStateFlow<String?>(null)
 
+    /**
+     * The zones drawn on each camera, for [inZones]: read from `/api/config` on the first poll
+     * and then every [ZONES_EVERY_N_POLLS], since the config is big and only changes when someone
+     * edits it in the zone editor (which is a couple of minutes' staleness at worst).
+     */
+    private var zonesByCamera: Map<String, List<DetectionZone>> = emptyMap()
+    private var zonesUrl: String? = null
+
     /** A StateFlow only emits on change, so a LAN/Tailscale route flip re-fetches on the new host and nothing else re-fetches. */
     private val activeUrl = connectionRepository.currentServerUrl
 
@@ -52,8 +62,10 @@ class MomentsRepositoryImpl(
     private val poller: Flow<Unit> = channelFlow {
         activeUrl.collectLatest { url ->
             if (url == null) { _moments.value = emptyList(); return@collectLatest }
+            var polls = 0
             while (true) {
-                fetch(url)
+                fetch(url, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
+                polls++
                 send(Unit)
                 delay(POLL_INTERVAL_MS)
             }
@@ -71,7 +83,7 @@ class MomentsRepositoryImpl(
     override fun observeError(): Flow<String?> = _error.asStateFlow()
 
     override suspend fun refresh() {
-        connectionRepository.currentServerUrl.value?.let { fetch(it) }
+        connectionRepository.currentServerUrl.value?.let { fetch(it, includeZones = true) }
     }
 
     override suspend fun getClipStream(eventId: String): RecordingStream {
@@ -90,10 +102,17 @@ class MomentsRepositoryImpl(
         )
     }
 
-    private suspend fun fetch(url: String) {
+    private suspend fun fetch(url: String, includeZones: Boolean) {
+        // A failed config read keeps the last zones (or none): the feed still shows, just unplaced.
+        if (includeZones || url != zonesUrl) {
+            apiClient.getServerConfig(url).onSuccess { config ->
+                zonesByCamera = config.zonesByCamera()
+                zonesUrl = url
+            }
+        }
         apiClient.getEvents(url, limit = PAGE_SIZE)
             .onSuccess { events ->
-                _moments.value = events.map { it.toDomain() }
+                _moments.value = events.map { it.toDomain() }.inZones(zonesByCamera)
                 _error.value = null
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }
@@ -101,6 +120,7 @@ class MomentsRepositoryImpl(
 
     private companion object {
         const val POLL_INTERVAL_MS = 30_000L
+        const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
     }
 }
@@ -116,4 +136,5 @@ internal fun FrigateEvent.toDomain(): MomentEvent = MomentEvent(
     hasClip = hasClip,
     hasSnapshot = hasSnapshot,
     zones = zones,
+    pathPoints = data?.bottomCentrePath().orEmpty(),
 )
