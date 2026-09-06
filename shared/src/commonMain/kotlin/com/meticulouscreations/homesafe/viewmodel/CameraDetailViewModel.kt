@@ -7,7 +7,6 @@ import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
-import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
@@ -18,7 +17,6 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
@@ -165,7 +163,6 @@ class CameraDetailViewModel(
     @Assisted private val cameraName: String,
     observeCamerasUseCase: ObserveCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
-    observeActiveConnectionUseCase: ObserveActiveConnectionUseCase,
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
     observeMomentsUseCase: ObserveMomentsUseCase,
@@ -190,9 +187,6 @@ class CameraDetailViewModel(
     }
 
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
-
-    /** The signed-in server and its route, for this screen's own header (it replaces the shell's bar). */
-    val activeConnection: StateFlow<ActiveConnection?> = observeActiveConnectionUseCase()
 
     /** Wall-clock epoch seconds from the injected clock, so tests can pin it. */
     private fun now(): Double = clock.now().toEpochMilliseconds() / 1000.0

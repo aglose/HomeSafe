@@ -218,12 +218,9 @@ private fun FrigateTopBar(activeConnection: ActiveConnection?) {
     }
 }
 
-/**
- * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path.
- * Internal so nested screens that replace the shell bar with their own header can keep it.
- */
+/** "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. */
 @Composable
-internal fun ConnectionRouteBadge(route: ConnectionRoute) {
+private fun ConnectionRouteBadge(route: ConnectionRoute) {
     val tint = when (route) {
         ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
         ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
