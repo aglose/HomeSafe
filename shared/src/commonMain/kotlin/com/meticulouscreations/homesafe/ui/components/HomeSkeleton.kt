@@ -126,6 +126,13 @@ fun Modifier.sheenBar(phase: () -> Float): Modifier {
 /** How much of the perimeter the runner covers, head to the end of its tail. */
 private const val RUNNER_FRACTION = 0.28f
 
+/**
+ * The runner's peak opacity. Well under full: it is a progress cue at the edge of attention,
+ * not the thing on screen, and at full strength it pulled the eye off the greeting.
+ */
+private const val RUNNER_PEAK_ALPHA = 0.5f
+private const val RUNNER_GLOW_PEAK_ALPHA = 0.12f
+
 /** The tail is drawn as this many pieces of falling opacity. */
 private const val RUNNER_PIECES = 12
 
@@ -139,8 +146,8 @@ fun Modifier.outlineRunner(
     phaseOffset: Float,
     cornerRadius: Dp,
     color: Color,
-    strokeWidth: Dp = 2.dp,
-    glowWidth: Dp = 8.dp,
+    strokeWidth: Dp = 1.5.dp,
+    glowWidth: Dp = 6.dp,
 ): Modifier = drawWithCache {
     val outline = Path().apply {
         addRoundRect(RoundRect(Rect(Offset.Zero, size), CornerRadius(cornerRadius.toPx())))
@@ -165,13 +172,13 @@ fun Modifier.outlineRunner(
             val strength = 1f - index / RUNNER_PIECES.toFloat()
             piece.rewind()
             measure.appendSegment(start, stop, piece)
-            drawPath(piece, color = color.copy(alpha = 0.3f * strength), style = glow)
-            drawPath(piece, color = color.copy(alpha = strength), style = core)
+            drawPath(piece, color = color.copy(alpha = RUNNER_GLOW_PEAK_ALPHA * strength), style = glow)
+            drawPath(piece, color = color.copy(alpha = RUNNER_PEAK_ALPHA * strength), style = core)
         }
         // A short, round-ended piece at the very front so the head reads as a point of light.
         piece.rewind()
         measure.appendSegment(head - strokeWidth.toPx(), head, piece)
-        drawPath(piece, color = color, style = headCap)
+        drawPath(piece, color = color.copy(alpha = RUNNER_PEAK_ALPHA), style = headCap)
     }
 }
 

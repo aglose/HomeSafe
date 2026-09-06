@@ -1,9 +1,14 @@
 package com.meticulouscreations.homesafe
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import coil3.ImageLoader
@@ -46,29 +51,33 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
         FrigateTheme {
             val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
 
-            NavDisplay(
-                backStack = backStack,
-                onBack = { backStack.removeLastOrNull() },
-                // The sign-in screen already shows the shell's chrome while it authenticates
-                // (see ShellSkeleton), so this dissolve only ever changes the content inside it.
-                transitionSpec = { RootCrossfade },
-                popTransitionSpec = { RootCrossfade },
-                predictivePopTransitionSpec = { RootCrossfade },
-                entryProvider = entryProvider {
-                    entry<SecureConnectionRoute> {
-                        SecureConnectionScreen(
-                            debugAutofillCredentials = debugAutofillCredentials,
-                            onConnected = {
-                                // Connecting replaces the back stack: the system back button
-                                // should exit the app from the shell, not return to this screen.
-                                backStack.clear()
-                                backStack.add(AppShellRoute)
-                            },
-                        )
-                    }
-                    entry<AppShellRoute> { FrigateAppShell() }
-                },
-            )
+            // An opaque ground of the app's own colour under every screen, so no transition can
+            // ever expose the platform window behind Compose (a light theme on Android).
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                NavDisplay(
+                    backStack = backStack,
+                    onBack = { backStack.removeLastOrNull() },
+                    // The sign-in screen already shows the shell's chrome while it authenticates
+                    // (see ShellSkeleton), so this dissolve only ever changes the content inside it.
+                    transitionSpec = { RootCrossfade },
+                    popTransitionSpec = { RootCrossfade },
+                    predictivePopTransitionSpec = { RootCrossfade },
+                    entryProvider = entryProvider {
+                        entry<SecureConnectionRoute> {
+                            SecureConnectionScreen(
+                                debugAutofillCredentials = debugAutofillCredentials,
+                                onConnected = {
+                                    // Connecting replaces the back stack: the system back button
+                                    // should exit the app from the shell, not return to this screen.
+                                    backStack.clear()
+                                    backStack.add(AppShellRoute)
+                                },
+                            )
+                        }
+                        entry<AppShellRoute> { FrigateAppShell() }
+                    },
+                )
+            }
         }
     }
 }

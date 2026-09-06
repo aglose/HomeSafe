@@ -157,8 +157,11 @@ fun SecureConnectionScreen(
     AnimatedContent(
         targetState = showSkeleton,
         transitionSpec = {
+            // A plain dissolve. Mid-beat both sides are half-transparent, which is fine only
+            // because the root paints the app's own background underneath (see App.kt);
+            // over the platform window it flashed white.
             fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) togetherWith
-                fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing))
+                fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing))
         },
         label = "sign-in",
     ) { skeleton ->
