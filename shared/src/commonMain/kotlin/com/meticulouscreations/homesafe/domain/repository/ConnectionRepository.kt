@@ -40,8 +40,12 @@ interface ConnectionRepository {
      */
     suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String): Result<SavedCredentials>
 
-    /** Runs the biometric prompt, then reuses [connect] with the retrieved credentials on success. */
-    suspend fun signInWithBiometrics(): Result<SavedCredentials>
+    /**
+     * Runs the biometric prompt, then reuses [connect] with the retrieved credentials on success.
+     * [onCredentialsUnlocked] fires between the two — the prompt has been passed and the server
+     * round-trip is about to start — so a caller can tell "waiting on the user" from "connecting".
+     */
+    suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit = {}): Result<SavedCredentials>
 
     /** Prompts for biometric auth, then encrypts and persists [credentials] for future biometric login. */
     suspend fun saveBiometricCredentials(credentials: SavedCredentials): Result<Unit>

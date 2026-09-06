@@ -1,6 +1,8 @@
 package com.meticulouscreations.homesafe.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.view.TextureView
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
@@ -70,6 +72,45 @@ internal class LivePlayerHolder(context: Context, val key: String?) {
 
     private var requestedPlayWhenReady = true
     private var activeBinders = 0
+
+    /**
+     * The `TextureView` frames currently go to, and whether it has drawn one. ExoPlayer renders to
+     * a single surface, so when a second binder takes over (the detail screen opening over the
+     * grid card, or the card taking back over when it closes) the new surface is blank until the
+     * next video frame — on a low-rate sub-stream, long enough to read as a black flash mid
+     * shared-element transition. [bridgeFrame] copies the last frame off the outgoing surface
+     * for the incoming binder to show until its own first frame lands.
+     */
+    private var boundSurface: TextureView? = null
+    private var boundSurfaceHasFrame = false
+
+    /** Route video to [surface]; returns the last frame of the surface it replaces, if that had one. */
+    fun bindSurface(surface: TextureView): Bitmap? {
+        val previous = boundSurface
+        val bridge = if (previous != null && previous !== surface && boundSurfaceHasFrame && previous.isAvailable) {
+            runCatching { previous.bitmap }.getOrNull()
+        } else {
+            null
+        }
+        boundSurface = surface
+        boundSurfaceHasFrame = false
+        player.setVideoTextureView(surface)
+        return bridge
+    }
+
+    /** Called by the binder whose surface just rendered a frame. */
+    fun onSurfaceRenderedFrame(surface: TextureView) {
+        if (surface === boundSurface) boundSurfaceHasFrame = true
+    }
+
+    /** Detach [surface]; a no-op if another binder has since taken over (ExoPlayer checks identity). */
+    fun unbindSurface(surface: TextureView) {
+        player.clearVideoTextureView(surface)
+        if (boundSurface === surface) {
+            boundSurface = null
+            boundSurfaceHasFrame = false
+        }
+    }
 
     /** True while the player holds no usable session for [source]: never loaded, stopped when idle, or failed. */
     private var needsColdStart = true

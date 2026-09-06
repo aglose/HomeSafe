@@ -49,6 +49,9 @@ fun SettingsTabNav(
     NavDisplay(
         backStack = backStack,
         onBack = { backStack.removeLastOrNull() },
+        transitionSpec = { sharedAxis(forward = true) },
+        popTransitionSpec = { sharedAxis(forward = false) },
+        predictivePopTransitionSpec = { sharedAxis(forward = false) },
         entryProvider = entryProvider {
             entry<SettingsHomeRoute> {
                 content(

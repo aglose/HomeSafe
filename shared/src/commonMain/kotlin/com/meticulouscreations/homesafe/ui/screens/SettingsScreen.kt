@@ -88,7 +88,9 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
-            .padding(top = 8.dp, bottom = bottomNavClearance()),
+            // Applied after verticalScroll, so this is content padding: the page scrolls under
+            // the shell's floating top bar and the bottom nav rather than stopping short of them.
+            .padding(top = shellTopBarClearance() + 8.dp, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         ServerSection(state, onRetry = viewModel::retryOverview)

@@ -13,6 +13,7 @@ import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
+import com.meticulouscreations.homesafe.ui.screens.RootCrossfade
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import dev.zacsweers.metrox.viewmodel.LocalMetroViewModelFactory
@@ -48,6 +49,11 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
             NavDisplay(
                 backStack = backStack,
                 onBack = { backStack.removeLastOrNull() },
+                // The sign-in screen already shows the shell's chrome while it authenticates
+                // (see ShellSkeleton), so this dissolve only ever changes the content inside it.
+                transitionSpec = { RootCrossfade },
+                popTransitionSpec = { RootCrossfade },
+                predictivePopTransitionSpec = { RootCrossfade },
                 entryProvider = entryProvider {
                     entry<SecureConnectionRoute> {
                         SecureConnectionScreen(

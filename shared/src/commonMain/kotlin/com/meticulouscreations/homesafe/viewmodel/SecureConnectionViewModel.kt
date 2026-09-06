@@ -23,6 +23,11 @@ import kotlinx.coroutines.launch
 
 sealed interface ConnectUiState {
     data object Idle : ConnectUiState
+
+    /** The biometric prompt is up; nothing has been sent to the server yet. */
+    data object AwaitingBiometrics : ConnectUiState
+
+    /** Credentials are in hand and the server is being asked to accept them. */
     data object Connecting : ConnectUiState
     data class Success(val credentials: SavedCredentials) : ConnectUiState
     data class Error(val message: String) : ConnectUiState
@@ -69,9 +74,9 @@ class SecureConnectionViewModel(
 
     /** Runs the biometric prompt, then signs in with the retrieved credentials. */
     fun signInWithBiometrics() {
-        _uiState.value = ConnectUiState.Connecting
+        _uiState.value = ConnectUiState.AwaitingBiometrics
         viewModelScope.launch {
-            signInWithBiometricsUseCase()
+            signInWithBiometricsUseCase(onCredentialsUnlocked = { _uiState.value = ConnectUiState.Connecting })
                 .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials) }
                 .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Biometric sign-in failed") }
         }

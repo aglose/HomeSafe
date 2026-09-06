@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.ui.components
 import android.content.Context
 import android.view.TextureView
 import android.view.ViewGroup
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -11,10 +12,14 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -94,25 +99,39 @@ actual fun CameraStreamPlayer(
         }
     }
 
+    // The last frame of whichever surface this one took over from (see LivePlayerHolder.bindSurface),
+    // shown until this surface has a frame of its own. Cleared on that first frame.
+    var bridgeFrame by remember(holder) { mutableStateOf<ImageBitmap?>(null) }
+
     Box(modifier = modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { aspectRatioFrameLayout },
         )
+        val bridge = bridgeFrame
         val posterUrl = source.posterUrl
-        if (posterVisible && posterUrl != null) {
+        if (bridge != null) {
+            Image(
+                bitmap = bridge,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        } else if (posterVisible && posterUrl != null) {
             VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
         }
     }
 
     DisposableEffect(holder) {
-        player.setVideoTextureView(textureView)
+        bridgeFrame = holder.bindSurface(textureView)?.asImageBitmap()
         // A warm holder won't re-announce its video size; fit the surface to what it's already playing.
         aspectRatioFrameLayout.applyVideoSize(player.videoSize)
 
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 renderedGeneration = holder.coldStartGeneration
+                holder.onSurfaceRenderedFrame(textureView)
+                bridgeFrame = null
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
@@ -139,8 +158,7 @@ actual fun CameraStreamPlayer(
         currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
         onDispose {
             player.removeListener(listener)
-            // No-op if another binder has since taken the surface; ExoPlayer checks identity.
-            player.clearVideoTextureView(textureView)
+            holder.unbindSurface(textureView)
         }
     }
 
@@ -165,7 +183,11 @@ actual fun CameraStreamPlayer(
         while (isActive) {
             val steady = player.playbackState == Player.STATE_READY && player.isPlaying
             steadyPolls = if (steady) steadyPolls + 1 else 0
-            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST) renderedGeneration = holder.coldStartGeneration
+            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST) {
+                renderedGeneration = holder.coldStartGeneration
+                holder.onSurfaceRenderedFrame(textureView)
+                bridgeFrame = null
+            }
             if (currentSource is VideoSource.Recording && player.playbackState == Player.STATE_READY) {
                 currentOnPositionChanged(player.currentPosition)
             }
