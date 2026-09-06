@@ -4,9 +4,12 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.FaceLibrary
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.categoryForLabel
+import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -93,7 +96,15 @@ class DetectionAlertService(
         // People Frigate hasn't put a name to yet, held back while face recognition may still
         // catch up (see RECOGNITION_GRACE_SECONDS). Only used while "only strangers" is on.
         val pending = LinkedHashMap<String, FrigateEvent>()
+        // Each camera's zones, for MomentEvent.inZones; re-read now and then so an edit in the
+        // zone editor takes effect without a restart. A failed read keeps the last zones.
+        var zones: Map<String, List<DetectionZone>> = emptyMap()
+        var zonesReadAt = Double.NEGATIVE_INFINITY
         while (true) {
+            if (clock() - zonesReadAt >= ZONES_REFRESH_SECONDS) {
+                apiClient.getServerConfig(url).onSuccess { zones = it.zonesByCamera() }
+                zonesReadAt = clock()
+            }
             // Reach back far enough to re-read anything still pending, so its sub-label can arrive.
             val from = minOf(after, pending.values.minOfOrNull { it.startTime - OVERLAP_SECONDS } ?: after)
             apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = from).onSuccess { events ->
@@ -104,7 +115,7 @@ class DetectionAlertService(
                     } else {
                         pending.remove(event.id)
                         seen += event.id
-                        decide(url, event)
+                        decide(url, event, zones)
                     }
                 }
                 // A held detection that fell out of the page (or ended without a name) is judged as it last stood.
@@ -112,7 +123,7 @@ class DetectionAlertService(
                 pending.values.filter { it.id !in returned && !shouldHold(it, now) }.forEach { event ->
                     pending.remove(event.id)
                     seen += event.id
-                    decide(url, event)
+                    decide(url, event, zones)
                 }
                 while (seen.size > MAX_REMEMBERED) seen.remove(seen.first())
                 // Overlap by a second so an event whose start rounds onto the boundary isn't lost;
@@ -139,13 +150,19 @@ class DetectionAlertService(
 
     /**
      * Whether and how loudly to post: with nobody home every person notifies on the loud channel,
-     * zone rules and the stranger rule notwithstanding; otherwise the user's rules decide.
+     * zone rules and the stranger rule notwithstanding; otherwise the user's rules decide, once
+     * [inZones] has worked out where the object went and whether those zones wanted it at all —
+     * a car crossing a birds-only street zone is dropped here, not judged as "anywhere else".
      */
-    private suspend fun decide(url: String, event: FrigateEvent) {
+    private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>) {
         val category = categoryForLabel(event.label)
         val escalated = everyoneAway && category == MomentCategory.PEOPLE
-        if (escalated || settings.value.notifies(event.camera, event.zones, category, recognized = event.isRecognized)) {
-            notify(url, event, urgent = escalated)
+        val moment = event.toDomain()
+        val placed = moment.inZones(zones[event.camera].orEmpty())
+        when {
+            escalated -> notify(url, placed ?: moment, urgent = true)
+            placed == null -> Unit
+            settings.value.notifies(event.camera, placed.zones, category, recognized = event.isRecognized) -> notify(url, placed, urgent = false)
         }
     }
 
@@ -156,8 +173,7 @@ class DetectionAlertService(
         get() = !subLabel.isNullOrBlank() && !subLabel.equals(FaceLibrary.UNKNOWN_GUESS, ignoreCase = true)
 
     @OptIn(ExperimentalTime::class)
-    private suspend fun notify(url: String, event: FrigateEvent, urgent: Boolean) {
-        val moment = event.toDomain()
+    private suspend fun notify(url: String, moment: MomentEvent, urgent: Boolean) {
         val timeZone = TimeZone.currentSystemDefault()
         val today = Instant.fromEpochSeconds(clock().toLong()).toLocalDateTime(timeZone).date
         val presentation = moment.present(today, timeZone)
@@ -169,10 +185,10 @@ class DetectionAlertService(
         }
         notifier.notify(
             AlertNotification(
-                id = event.id,
+                id = moment.id,
                 title = if (urgent) "Away: ${presentation.title}" else presentation.title,
                 body = where,
-                thumbnail = apiClient.getEventThumbnail(url, event.id).getOrNull(),
+                thumbnail = apiClient.getEventThumbnail(url, moment.id).getOrNull(),
                 urgent = urgent,
             ),
         )
@@ -180,6 +196,7 @@ class DetectionAlertService(
 
     private companion object {
         const val PAGE_SIZE = 50
+        const val ZONES_REFRESH_SECONDS = 120.0
         const val MAX_REMEMBERED = 200
         const val OVERLAP_SECONDS = 1.0
         const val RECOGNITION_GRACE_SECONDS = 20.0

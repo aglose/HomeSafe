@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.domain.model.MaskPoint
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
@@ -198,7 +199,33 @@ data class FrigateEventData(
     @SerialName("top_score") val topScore: Double? = null,
     val score: Double? = null,
     val type: String? = null,
-)
+    /** The best frame's box as `[x, y, w, h]`, each a fraction of the detect frame. */
+    val box: List<Double>? = null,
+    /**
+     * Where the object went: `[[[x, y], epochSeconds], ...]`, each point the bottom-centre of
+     * its box as fractions of the detect frame, sampled whenever it moved. Left raw because the
+     * mixed array shape has no data-class equivalent; see [bottomCentrePath].
+     */
+    @SerialName("path_data") val pathData: JsonArray? = null,
+) {
+    /**
+     * The path Frigate recorded, in time order, or failing that the best frame's bottom-centre.
+     * These are the points Frigate itself tests against zone polygons, so a client can redo that
+     * test with different rules — see `MomentEvent.inZones`.
+     */
+    fun bottomCentrePath(): List<MaskPoint> {
+        val path = pathData.orEmpty().mapNotNull { sample ->
+            val point = (sample as? JsonArray)?.firstOrNull() as? JsonArray ?: return@mapNotNull null
+            val x = (point.getOrNull(0) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val y = (point.getOrNull(1) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            MaskPoint(x, y)
+        }
+        if (path.isNotEmpty()) return path
+        val b = box ?: return emptyList()
+        if (b.size < 4) return emptyList()
+        return listOf(MaskPoint(b[0] + b[2] / 2, b[1] + b[3]))
+    }
+}
 
 /** One recorded clip as reported by Frigate's `/api/{camera}/recordings`. */
 @Serializable
@@ -338,8 +365,6 @@ data class FrigateCameraPipelineConfig(
     val enabled: Boolean,
     val detectEnabled: Boolean,
     val motionEnabled: Boolean,
-    /** The camera's zones in config order: Frigate's key and, if set, its `friendly_name`. */
-    val zones: List<FrigateZoneName> = emptyList(),
+    /** The camera's zones in config order, polygons and object filters included. */
+    val zones: List<FrigateZone> = emptyList(),
 )
-
-data class FrigateZoneName(val name: String, val friendlyName: String?)

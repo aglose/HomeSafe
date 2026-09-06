@@ -246,7 +246,9 @@ class FrigateApiClient(private val httpClient: HttpClient) {
                     enabled = camera.enabled,
                     detectEnabled = camera.detect?.enabled ?: true,
                     motionEnabled = camera.motion?.enabled ?: true,
-                    zones = camera.zones.map { (zoneName, zone) -> FrigateZoneName(zoneName, zone.friendlyName?.takeIf { it.isNotBlank() }) },
+                    zones = camera.zones.map { (zoneName, zone) ->
+                        FrigateZone(zoneName, zone.coordinates.firstOrNull().orEmpty(), zone.objects, zone.friendlyName?.takeIf { it.isNotBlank() })
+                    },
                 )
             },
         )

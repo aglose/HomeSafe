@@ -28,13 +28,25 @@ data class MomentEvent(
     val topScore: Double?,
     val hasClip: Boolean,
     val hasSnapshot: Boolean,
-    /** Frigate zone keys the object passed through, in the order it entered them; empty when none. */
+    /**
+     * Frigate zone keys the object passed through, in the order it entered them; empty when none.
+     * Frigate only tags a zone whose object filter accepts the label, so once the feed has run
+     * [inZones] this holds the zones that *wanted* the object, not merely the ones it crossed.
+     */
     val zones: List<String> = emptyList(),
+    /**
+     * Where the object went, as bottom-centre points in detect-frame fractions, oldest first.
+     * Empty when Frigate reported no path (an API-created event, say).
+     */
+    val pathPoints: List<MaskPoint> = emptyList(),
 ) {
     val category: MomentCategory get() = categoryForLabel(label)
     /** What the UI calls the camera this was seen on — see [cameraDisplayName]. */
     val cameraDisplayName: String get() = cameraDisplayName(cameraName)
     val isInProgress: Boolean get() = endEpochSeconds == null
+    /** Frigate put a name to it: a known car or a known face. Its "unknown" marker doesn't count. */
+    val isRecognized: Boolean
+        get() = !subLabel.isNullOrBlank() && !subLabel.equals(FaceLibrary.UNKNOWN_GUESS, ignoreCase = true)
     val durationSeconds: Double? get() = endEpochSeconds?.let { it - startEpochSeconds }
 }
 
@@ -63,6 +75,11 @@ data class MomentPresentation(
     val dateSubLabel: String,
     /** The pill on the card: the label, with any sub-label appended ("PERSON · ANDREW"). */
     val badgeLabel: String,
+    /**
+     * "Front Yard · Sidewalk, Front lawn" — the camera, then every zone the object was in, in
+     * the order it reached them; just the camera when it was in none.
+     */
+    val locationLabel: String,
 )
 
 /**
@@ -94,6 +111,8 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     val place = zones.lastOrNull { it.isNotBlank() }
     val title = if (place != null) "$subject ${zonePhrase(place)}" else "$subject detected"
     val badge = subLabel?.takeIf { it.isNotBlank() }?.let { "$label · ${subLabelDisplayName(it)}" } ?: label
+    val places = zones.filter { it.isNotBlank() }.joinToString(", ") { zoneDisplayName(it).replaceFirstChar(Char::uppercase) }
+    val location = if (places.isEmpty()) cameraDisplayName else "$cameraDisplayName · $places"
 
     return MomentPresentation(
         title = title,
@@ -102,6 +121,7 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
         dateGroup = dateGroup,
         dateSubLabel = dateSubLabel,
         badgeLabel = badge,
+        locationLabel = location,
     )
 }
 

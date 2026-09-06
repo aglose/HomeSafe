@@ -149,14 +149,13 @@ fun MomentsTabContent() {
 
 @Composable
 private fun EmptyMoments(category: MomentCategory, hasError: Boolean) {
-    // Frigate only produces events for the object labels it's configured to track. This server
-    // tracks people only, so the Vehicles and Animals chips are empty by construction until
-    // `objects.track` is widened — say so, rather than looking broken.
+    // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
+    // happened in a zone whose movement list includes it, or when Frigate recognised who or
+    // what it was. Say so, rather than looking broken.
     val message = when {
         hasError -> "Couldn't reach the server for detections."
-        category == MomentCategory.VEHICLES || category == MomentCategory.ANIMALS ->
-            "Frigate is only watching for people right now, so there are no ${category.label.lowercase()} to show."
-        else -> "No detections yet. Frigate is watching for people and will list them here."
+        category != MomentCategory.ALL -> "No ${category.label.lowercase()} to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+        else -> "Nothing to show yet. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
     }
     Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomNavClearance()), contentAlignment = Alignment.Center) {
         Text(
@@ -322,7 +321,7 @@ private fun MomentCard(
                         )
                     }
                     Text(
-                        text = event.cameraDisplayName,
+                        text = p.locationLabel,
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
