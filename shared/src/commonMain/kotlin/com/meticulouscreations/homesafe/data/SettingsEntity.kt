@@ -31,3 +31,15 @@ data class AlertZoneRuleEntity(
         const val NO_ZONE = ""
     }
 }
+
+/**
+ * A singleton row (always [id] = 0) holding the detail player's preferences. Added in schema 8;
+ * a missing row means the defaults (see `PlaybackPreferences.DEFAULT`).
+ */
+@Entity
+data class PlaybackPreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    /** A `StreamQuality` name. Stored as text so an unknown value degrades to the default instead of failing to read. */
+    val quality: String,
+    val soundOn: Boolean,
+)

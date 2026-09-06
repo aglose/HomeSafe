@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,17 +27,21 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Hd
+import androidx.compose.material.icons.filled.HdrAuto
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sd
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -65,10 +69,12 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import coil3.compose.AsyncImage
@@ -113,8 +119,8 @@ fun CameraDetailScreen(
     // screen — header, recent-activity cards and all.
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
-    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
+    val hasQualityChoice = (uiState as? CameraDetailUiState.Found)?.let { it.gridStreamUrl != null && it.gridStreamUrl != it.streamUrl } ?: false
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -165,14 +171,7 @@ fun CameraDetailScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
-            // The shell bar's route badge carries over so the user still knows whether video is
-            // on the direct local path or Tailscale; a spacer keeps the title centred until known.
-            val route = activeConnection?.route
-            if (route == null) {
-                Spacer(modifier = Modifier.size(48.dp))
-            } else {
-                ConnectionRouteBadge(route)
-            }
+            CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones)
         }
 
         Column(
@@ -211,6 +210,7 @@ fun CameraDetailScreen(
             )
 
             QuickActionsRow(
+                hasQualityChoice = hasQualityChoice,
                 viewModel = viewModel,
                 cameraName = cameraName,
                 showHint = showHint,
@@ -236,8 +236,6 @@ fun CameraDetailScreen(
                 }
 
                 TimelineSection(viewModel = viewModel)
-
-                DetectionZonesCard(onClick = onEditDetectionZones)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -436,13 +434,19 @@ private fun PlayerSurface(
 }
 
 /**
- * Speaker, talk and alerts under the player. Collects `playback` and `alerts` itself so the
- * position polls that update `playback` while a recording plays recompose only this row.
+ * Quality, speaker and alerts under the player. The speaker takes the prominent centre slot
+ * (none of the cameras have a microphone, so there is no two-way talk button). Quality and
+ * sound are saved preferences shared by every camera. Collects `playback` and `alerts` itself
+ * so the position polls that update `playback` while a recording plays recompose only this row.
+ *
+ * @param hasQualityChoice whether this camera has a second, lighter stream to switch to; without
+ *   one the quality button still shows the saved choice but explains itself when tapped.
  */
 @Composable
 private fun QuickActionsRow(
     viewModel: CameraDetailViewModel,
     cameraName: String,
+    hasQualityChoice: Boolean,
     showHint: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -457,35 +461,54 @@ private fun QuickActionsRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val displayName = cameraDisplayName(cameraName)
-        // Speaker: the player's own audio, once it has some — go2rtc's grid sub-streams
-        // and Frigate's recordings are video-only, so a tap explains rather than silently failing.
+        // Quality: cycles Auto → High → Low. Only the full stream carries audio, so Low also
+        // dims the speaker (through the player's own audio-availability report).
         QuickActionButton(
-            icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-            contentDescription = if (playback.isMuted) "Unmute" else "Mute",
-            active = !playback.isMuted,
-            available = playback.hasAudio,
+            icon = when (playback.quality) {
+                StreamQuality.AUTO -> Icons.Filled.HdrAuto
+                StreamQuality.HIGH -> Icons.Filled.Hd
+                StreamQuality.LOW -> Icons.Filled.Sd
+            },
+            contentDescription = "Video quality: ${playback.quality.label}",
+            available = hasQualityChoice,
             onClick = {
-                if (playback.hasAudio) viewModel.toggleMuted() else showHint("This stream has no audio to play")
+                if (hasQualityChoice) {
+                    val next = playback.quality.next
+                    viewModel.setQuality(next)
+                    showHint(
+                        when (next) {
+                            StreamQuality.AUTO -> "Auto quality: starts light, sharpens in a moment"
+                            StreamQuality.HIGH -> "High quality"
+                            StreamQuality.LOW -> "Low quality: lighter on data, no sound"
+                        },
+                    )
+                } else {
+                    showHint("This camera has a single stream quality")
+                }
             },
         )
-        // Two-way talk needs a WebRTC backchannel go2rtc doesn't have for these cameras
-        // yet; the button stays where the design puts it, dimmed, and says so when tapped.
-        Box(
-            modifier = Modifier
-                .size(80.dp)
-                .alpha(UNAVAILABLE_ALPHA)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-                .clickable { showHint("Two-way talk isn't available for this camera yet") },
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Mic,
-                contentDescription = "Talk (not available)",
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(32.dp),
-            )
-        }
+        // Speaker: the saved sound preference. It flips even while what's playing is silent
+        // (go2rtc's sub-streams and Frigate's recordings are video-only), so the choice is
+        // ready when audio arrives; the dimming says the stream has nothing to play right now.
+        QuickActionButton(
+            icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = if (playback.isMuted) "Turn sound on" else "Turn sound off",
+            active = !playback.isMuted,
+            available = playback.hasAudio,
+            size = PRIMARY_QUICK_ACTION_SIZE,
+            iconSize = PRIMARY_QUICK_ACTION_ICON_SIZE,
+            onClick = {
+                val soundOn = playback.isMuted
+                viewModel.toggleMuted()
+                showHint(
+                    when {
+                        soundOn && !playback.hasAudio -> "Sound on, but this stream has no audio"
+                        soundOn -> "Sound on"
+                        else -> "Sound off"
+                    },
+                )
+            },
+        )
         // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
         QuickActionButton(
             icon = if (alerts.enabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
@@ -560,6 +583,10 @@ private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: I
 
 /** Material's disabled-content alpha, for a control that's present but can't act yet. */
 private const val UNAVAILABLE_ALPHA = 0.38f
+private val QUICK_ACTION_SIZE = 64.dp
+private val QUICK_ACTION_ICON_SIZE = 24.dp
+private val PRIMARY_QUICK_ACTION_SIZE = 80.dp
+private val PRIMARY_QUICK_ACTION_ICON_SIZE = 32.dp
 
 /** A fresh instance per tap (identity equality), so repeating the same words restarts the auto-clear. */
 private class QuickActionHint(val text: String)
@@ -694,12 +721,14 @@ private fun QuickActionButton(
     onClick: () -> Unit,
     active: Boolean = false,
     available: Boolean = true,
+    size: Dp = QUICK_ACTION_SIZE,
+    iconSize: Dp = QUICK_ACTION_ICON_SIZE,
 ) {
     val background = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
     val tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
     Box(
         modifier = Modifier
-            .size(64.dp)
+            .size(size)
             .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
             .clip(CircleShape)
             .background(background, CircleShape)
@@ -711,42 +740,44 @@ private fun QuickActionButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = tint,
+            modifier = Modifier.size(iconSize),
         )
     }
 }
 
-/** Entry point to the polygon editor: what Google Home calls activity zones, Frigate calls masks. */
+/**
+ * This camera's less-used settings, kept out of the page itself: today the polygon editor —
+ * what Google Home calls activity zones and Frigate calls masks — reached from the header
+ * rather than a card competing with the timeline and recent activity for the eye.
+ */
 @Composable
-private fun DetectionZonesCard(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.CropFree,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                text = "Name areas like the driveway, and choose what to ignore",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "More options",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            // The same hairline every card on this screen carries, so the menu reads as one of them.
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge) },
+                leadingIcon = { Icon(imageVector = Icons.Filled.CropFree, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = {
+                    expanded = false
+                    onEditDetectionZones()
+                },
+            )
+        }
     }
 }
 
