@@ -20,14 +20,19 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
+import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.preview.previewNowEpochSeconds
+import com.meticulouscreations.homesafe.ui.preview.previewRecordingSegments
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlin.math.floor
 
@@ -219,5 +224,45 @@ private fun timelineTicks(windowStart: Double, windowEnd: Double, intervalSecond
             add(tick)
             tick += intervalSeconds
         }
+    }
+}
+
+@Preview
+@Composable
+private fun RecordingTimelineLivePreview() {
+    FrigatePreview {
+        RecordingTimeline(
+            segments = previewRecordingSegments,
+            span = TimelineSpan.THREE_HOURS,
+            nowEpochSeconds = previewNowEpochSeconds,
+            playheadEpochSeconds = null,
+            scrubEpochSeconds = null,
+            isLive = true,
+            onScrubStart = {},
+            onScrub = {},
+            onScrubEnd = {},
+            onSeek = {},
+            modifier = Modifier.padding(16.dp),
+        )
+    }
+}
+
+@Preview
+@Composable
+private fun RecordingTimelineScrubbingPreview() {
+    FrigatePreview {
+        RecordingTimeline(
+            segments = previewRecordingSegments,
+            span = TimelineSpan.THREE_HOURS,
+            nowEpochSeconds = previewNowEpochSeconds,
+            playheadEpochSeconds = previewNowEpochSeconds - 5_400,
+            scrubEpochSeconds = previewNowEpochSeconds - 5_400,
+            isLive = false,
+            onScrubStart = {},
+            onScrub = {},
+            onScrubEnd = {},
+            onSeek = {},
+            modifier = Modifier.padding(16.dp),
+        )
     }
 }
