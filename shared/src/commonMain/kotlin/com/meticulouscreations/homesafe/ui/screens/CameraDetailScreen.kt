@@ -1,6 +1,8 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.foundation.background
@@ -41,21 +43,30 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.IntState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
@@ -77,7 +88,10 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlin.math.max
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -104,6 +118,11 @@ fun CameraDetailScreen(
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    // How tall the scrolling area is — what the player grows into while zoomed. Held as state
+    // rather than read here so that only the player's layout, not this screen, depends on it.
+    val scrollViewportHeight = remember { mutableIntStateOf(0) }
+    // 0 = the player is its 16:9 strip, 1 = it has taken over the viewport (see PlayerSurface).
+    val zoomTakeover = remember { Animatable(0f) }
 
     // One line of feedback under the quick actions — what a tap did, or why it couldn't — that
     // clears itself. The words are kept separately so the fade-out still has something to fade.
@@ -159,6 +178,7 @@ fun CameraDetailScreen(
         Column(
             modifier = Modifier
                 .weight(1f)
+                .onSizeChanged { scrollViewportHeight.intValue = it.height }
                 .verticalScroll(scrollState),
         ) {
             PlayerSurface(
@@ -167,6 +187,12 @@ fun CameraDetailScreen(
                 playerKey = cameraName,
                 warmStreamUrl = warmStreamUrl,
                 warmPosterUrl = warmPosterUrl,
+                viewportHeight = scrollViewportHeight,
+                // The scroll runs under the floating nav bar; the zoomed video is centred above it.
+                bottomInsetPx = with(LocalDensity.current) { bottomNavClearance().roundToPx() },
+                takeover = zoomTakeover,
+                // The zoomed player fills the viewport only from the top of the scroll.
+                onZoomStarted = { scope.launch { scrollState.animateScrollTo(0) } },
                 modifier = with(sharedTransitionScope) {
                     // The video is the one thing that moves between here and the card (this
                     // screen only fades — see SharedElementPush / SharedElementPop); its corners
@@ -184,7 +210,14 @@ fun CameraDetailScreen(
                 },
             )
 
-            QuickActionsRow(viewModel = viewModel, cameraName = cameraName, showHint = showHint)
+            QuickActionsRow(
+                viewModel = viewModel,
+                cameraName = cameraName,
+                showHint = showHint,
+                // The row straddles the player's bottom edge, so while the player has the
+                // viewport its tops would peek out under the nav bar: fade it with the takeover.
+                modifier = Modifier.graphicsLayer { alpha = 1f - zoomTakeover.value },
+            )
 
             Column(
                 modifier = Modifier
@@ -238,7 +271,16 @@ fun CameraDetailScreen(
     }
 }
 
-/** The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout. */
+/**
+ * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
+ *
+ * At rest this is a 16:9 strip at the top of the scroll. Zooming in takes over the whole scroll
+ * viewport ([viewportHeight]): the surface grows downward until it fills the screen, pushing the
+ * rest of the page out of view, and the video sits centred in the part above the floating nav
+ * bar ([bottomInsetPx]), so the enlarged picture has the full height of a portrait screen to
+ * spread into rather than being clipped to its own strip. Zooming back out gives the space back.
+ * On a landscape screen the strip is already taller than the viewport, so nothing moves.
+ */
 @Composable
 private fun PlayerSurface(
     cameraAvailable: Boolean,
@@ -246,6 +288,10 @@ private fun PlayerSurface(
     playerKey: String,
     warmStreamUrl: String?,
     warmPosterUrl: String?,
+    viewportHeight: IntState,
+    bottomInsetPx: Int,
+    takeover: Animatable<Float, *>,
+    onZoomStarted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val playback by viewModel.playback.collectAsStateWithLifecycle()
@@ -253,112 +299,138 @@ private fun PlayerSurface(
     val zoom = rememberPinchZoomState()
     val scope = rememberCoroutineScope()
 
+    // [takeover]: 0 = the 16:9 strip, 1 = the full viewport. Driven from a snapshotFlow so the
+    // pinch's per-frame scale changes never recompose this surface; only the zoomed flip does.
+    LaunchedEffect(zoom) {
+        snapshotFlow { zoom.isZoomed }.collectLatest { zoomed ->
+            if (zoomed) onZoomStarted()
+            takeover.animateTo(if (zoomed) 1f else 0f, tween(ZOOM_TAKEOVER_MS))
+        }
+    }
+
+    // Two boxes grow together: the outer one is the backdrop and runs the full viewport, under
+    // the nav bar, so nothing below shows through; the inner one is the zoom viewport — what
+    // receives the pinch, clips the picture and centres it — and stops above the nav bar.
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .aspectRatio(16f / 9f)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
-            .clipToBounds()
-            .pinchZoomGestures(zoom),
+            .zoomTakeoverHeight(takeover = { takeover.value }, viewportHeight = viewportHeight)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
     ) {
-        // The video and its scrub preview zoom together; the pills and buttons over them don't.
-        Box(modifier = Modifier.fillMaxSize().pinchZoomContent(zoom)) {
-            if (request != null) {
-                // Same playerKey as the grid card: this binds to the player the card was already
-                // running, so live video is on screen before the shared-element transition ends.
-                CameraStreamPlayer(
-                    request = request,
-                    modifier = Modifier.fillMaxSize(),
-                    playerKey = playerKey,
-                    onPositionChanged = viewModel::onPlayerPositionChanged,
-                    onBufferingChanged = viewModel::onBufferingChanged,
-                    onPlaybackEnded = viewModel::onPlaybackEnded,
-                    onPlaybackError = viewModel::onPlaybackError,
-                    onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
-                )
-            } else if (warmStreamUrl != null) {
-                // The view model hasn't chosen a stream yet (its first camera read is still in
-                // flight): keep showing what the card was playing, on the same pooled player.
-                // The view model's first request is that very stream, so nothing reloads.
-                CameraStreamPlayer(
-                    streamUrl = warmStreamUrl,
-                    modifier = Modifier.fillMaxSize(),
-                    posterUrl = warmPosterUrl,
-                    playerKey = playerKey,
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.VideocamOff,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.align(Alignment.Center).size(56.dp),
-                )
-            }
-
-            // While the finger is on the timeline, or the player is on its way to a seek target, a
-            // real frame of that moment sits over the video — YouTube-style scrub previews, and no
-            // pre-seek frame lingering while the new position buffers.
-            val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
-            if (previewEpoch != null) {
-                SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
-            }
-        }
-
-        if (request != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .zoomTakeoverHeight(takeover = { takeover.value }, viewportHeight = viewportHeight, bottomInsetPx = bottomInsetPx)
+                .clipToBounds()
+                .pinchZoomGestures(zoom),
+        ) {
+            // The video and its scrub preview zoom together; the pills and buttons over them don't.
+            // The video keeps its 16:9 shape (both players stretch to fill) and stays centred, so
+            // while the surface is taller than the strip it is letterboxed until zoomed past that.
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(zoom) {
-                        detectTapGestures(
-                            onTap = { viewModel.togglePlayPause() },
-                            onDoubleTap = { tapAt ->
-                                scope.launch {
-                                    if (zoom.isZoomed) zoom.animateReset() else zoom.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt, size)
-                                }
-                            },
-                        )
-                    },
-            )
-        }
-
-        when {
-            playback.isLoadingPlaylist || playback.isBuffering -> CircularProgressIndicator(
-                modifier = Modifier.align(Alignment.Center).size(40.dp),
-                color = MaterialTheme.colorScheme.primary,
-                strokeWidth = 3.dp,
-            )
-            request != null && !playback.isPlaying -> Box(
-                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
                     .align(Alignment.Center)
-                    .size(64.dp)
-                    .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape),
-                contentAlignment = Alignment.Center,
+                    .pinchZoomContent(zoom),
             ) {
-                Icon(
-                    imageVector = Icons.Filled.PlayArrow,
-                    contentDescription = "Play",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(36.dp),
+                if (request != null) {
+                    // Same playerKey as the grid card: this binds to the player the card was already
+                    // running, so live video is on screen before the shared-element transition ends.
+                    CameraStreamPlayer(
+                        request = request,
+                        modifier = Modifier.fillMaxSize(),
+                        playerKey = playerKey,
+                        onPositionChanged = viewModel::onPlayerPositionChanged,
+                        onBufferingChanged = viewModel::onBufferingChanged,
+                        onPlaybackEnded = viewModel::onPlaybackEnded,
+                        onPlaybackError = viewModel::onPlaybackError,
+                        onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
+                    )
+                } else if (warmStreamUrl != null) {
+                    // The view model hasn't chosen a stream yet (its first camera read is still in
+                    // flight): keep showing what the card was playing, on the same pooled player.
+                    // The view model's first request is that very stream, so nothing reloads.
+                    CameraStreamPlayer(
+                        streamUrl = warmStreamUrl,
+                        modifier = Modifier.fillMaxSize(),
+                        posterUrl = warmPosterUrl,
+                        playerKey = playerKey,
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.VideocamOff,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                        modifier = Modifier.align(Alignment.Center).size(56.dp),
+                    )
+                }
+
+                // While the finger is on the timeline, or the player is on its way to a seek target, a
+                // real frame of that moment sits over the video — YouTube-style scrub previews, and no
+                // pre-seek frame lingering while the new position buffers.
+                val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
+                if (previewEpoch != null) {
+                    SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
+                }
+            }
+
+            if (request != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(zoom) {
+                            detectTapGestures(
+                                onTap = { viewModel.togglePlayPause() },
+                                onDoubleTap = { tapAt ->
+                                    scope.launch {
+                                        if (zoom.isZoomed) zoom.animateReset() else zoom.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
+                                    }
+                                },
+                            )
+                        },
                 )
             }
-        }
 
-        if (cameraAvailable) {
-            LivePill(
-                isLive = playback.isLive,
-                onClick = viewModel::goLive,
-                modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-            )
-        }
+            when {
+                playback.isLoadingPlaylist || playback.isBuffering -> CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center).size(40.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 3.dp,
+                )
+                request != null && !playback.isPlaying -> Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(64.dp)
+                        .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.PlayArrow,
+                        contentDescription = "Play",
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(36.dp),
+                    )
+                }
+            }
 
-        val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
-        if (playhead != null) {
-            BehindLiveReadout(
-                playheadEpochSeconds = playhead,
-                viewModel = viewModel,
-                modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
-            )
+            if (cameraAvailable) {
+                LivePill(
+                    isLive = playback.isLive,
+                    onClick = viewModel::goLive,
+                    modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
+                )
+            }
+
+            val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
+            if (playhead != null) {
+                BehindLiveReadout(
+                    playheadEpochSeconds = playhead,
+                    viewModel = viewModel,
+                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
+                )
+            }
         }
     }
 }
@@ -469,6 +541,22 @@ private fun SeekPreview(epochSeconds: Double, snapshotUrlFor: (Double) -> String
 private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
 
 private const val QUICK_ACTION_HINT_MS = 3_000L
+private const val ZOOM_TAKEOVER_MS = 300
+
+/**
+ * Sizes the player surface between its 16:9 strip ([takeover] = 0) and the scroll viewport's
+ * height less [bottomInsetPx] ([takeover] = 1), never shorter than the strip. Both inputs are read
+ * during layout, so the takeover animation and a viewport resize re-measure this node without
+ * recomposing anything.
+ */
+private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: IntState, bottomInsetPx: Int = 0): Modifier = layout { measurable, constraints ->
+    val width = constraints.maxWidth
+    val strip = (width * 9f / 16f).roundToInt()
+    val expanded = max(strip, viewportHeight.intValue - bottomInsetPx)
+    val height = lerp(strip, expanded, takeover())
+    val placeable = measurable.measure(Constraints.fixed(width, height))
+    layout(width, height) { placeable.place(0, 0) }
+}
 
 /** Material's disabled-content alpha, for a control that's present but can't act yet. */
 private const val UNAVAILABLE_ALPHA = 0.38f
