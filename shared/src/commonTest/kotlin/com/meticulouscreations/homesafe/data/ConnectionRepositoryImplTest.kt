@@ -109,6 +109,22 @@ class ConnectionRepositoryImplTest {
         fail("Timed out waiting for $what")
     }
 
+    /**
+     * Emits a network change, but only once the repository is actually collecting.
+     * [FakeNetworkMonitor.changes] has `replay = 0`, so anything emitted before
+     * `ConnectionRepositoryImpl`'s `init` block starts collecting is dropped and the test then
+     * waits forever for a probe that will never happen. A dev machine wins that race; a loaded
+     * CI runner does not. Tests that deliberately emit before anyone subscribes still proceed.
+     */
+    private suspend fun TestScope.emitNetworkChange(h: Harness) {
+        var waited = 0
+        while (h.network.changes.subscriptionCount.value == 0 && waited++ < 200) {
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { delay(5) }
+        }
+        h.network.changes.tryEmit(Unit)
+    }
+
     private class Harness(scope: TestScope) {
         val frigate = FakeFrigate()
         val network = FakeNetworkMonitor()
@@ -191,7 +207,7 @@ class ConnectionRepositoryImplTest {
 
         // Leave home: the LAN address stops answering and the OS reports a network change.
         h.frigate.localReachable = false
-        h.network.changes.tryEmit(Unit)
+        emitNetworkChange(h)
         eventually("switch to Tailscale") { h.repository.currentServerUrl.value == serverUrl }
 
         assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
@@ -200,7 +216,7 @@ class ConnectionRepositoryImplTest {
 
         // Come back: the LAN address answers again.
         h.frigate.localReachable = true
-        h.network.changes.tryEmit(Unit)
+        emitNetworkChange(h)
         eventually("switch back to the local network") { h.repository.currentServerUrl.value == localUrl }
 
         assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
@@ -215,7 +231,7 @@ class ConnectionRepositoryImplTest {
         h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
         advanceUntilIdle()
 
-        h.network.changes.tryEmit(Unit)
+        emitNetworkChange(h)
         eventually("the reachability probe after the network change") { h.frigate.probes(localHost) >= 2 }
         withContext(Dispatchers.Default) { delay(200) }
         advanceUntilIdle()
@@ -229,7 +245,7 @@ class ConnectionRepositoryImplTest {
     fun aNetworkChangeBeforeSigningInDoesNothing() = runTest {
         val h = Harness(this)
 
-        h.network.changes.tryEmit(Unit)
+        emitNetworkChange(h)
         advanceUntilIdle()
 
         assertNull(h.repository.activeConnection.value)
