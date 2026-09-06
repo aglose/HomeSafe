@@ -7,8 +7,9 @@ import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
-import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
+import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -16,12 +17,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
@@ -69,20 +71,25 @@ sealed interface CameraDetailUiState {
 }
 
 /**
- * How to (re)join live playback for a camera: fast-join on the grid stream first when it's a
- * genuinely different (and, on the real server today, already-primed-by-the-grid) stream from
- * the full-quality one, upgrading afterward — or join on the full-quality stream directly and
- * skip the upgrade entirely when the two names are the same, which is every camera on the real
- * server today (no `live.streams` split configured yet). That equality check is what keeps this
- * inert rather than a redundant reconnect once dual-quality streams are actually configured.
+ * How to (re)join live playback for a camera, given the user's [StreamQuality] choice. [AUTO]
+ * fast-joins on the grid stream first when it's a genuinely different (and already-primed-by-
+ * the-grid) stream from the full-quality one, upgrading afterward — or joins the full-quality
+ * stream directly and skips the upgrade when the two names are the same, so a camera with a
+ * single stream never reconnects redundantly. [HIGH] and [LOW] pin one stream and never upgrade;
+ * on a single-stream camera the two are the same stream.
  */
 internal data class LiveJoinPlan(val joinUrl: String, val upgradeToUrl: String?)
 
-internal fun planLiveJoin(gridStreamUrl: String, liveStreamUrl: String): LiveJoinPlan =
-    if (gridStreamUrl != liveStreamUrl) {
-        LiveJoinPlan(joinUrl = gridStreamUrl, upgradeToUrl = liveStreamUrl)
-    } else {
-        LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
+internal fun planLiveJoin(gridStreamUrl: String, liveStreamUrl: String, quality: StreamQuality = StreamQuality.AUTO): LiveJoinPlan =
+    when (quality) {
+        StreamQuality.AUTO ->
+            if (gridStreamUrl != liveStreamUrl) {
+                LiveJoinPlan(joinUrl = gridStreamUrl, upgradeToUrl = liveStreamUrl)
+            } else {
+                LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
+            }
+        StreamQuality.HIGH -> LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
+        StreamQuality.LOW -> LiveJoinPlan(joinUrl = gridStreamUrl, upgradeToUrl = null)
     }
 
 /**
@@ -129,10 +136,12 @@ data class PlaybackUiState(
     val isPlaying: Boolean = true,
     val isBuffering: Boolean = false,
     val isLoadingPlaylist: Boolean = false,
-    /** The user's speaker choice for this screen; silent until they opt in. Carried into every [playerRequest]. */
+    /** The user's saved speaker choice ([PlaybackPreferences.soundOn], inverted); silent until they opt in. Carried into every [playerRequest]. */
     val isMuted: Boolean = true,
-    /** Whether what's playing has an audio track this platform can decode — the speaker button is inert otherwise. */
+    /** Whether what's playing has an audio track this platform can decode — the speaker button is dimmed otherwise. */
     val hasAudio: Boolean = false,
+    /** The user's saved live-stream choice ([PlaybackPreferences.quality]); see [planLiveJoin]. */
+    val quality: StreamQuality = StreamQuality.AUTO,
     val historyError: String? = null,
     val playerRequest: PlayerRequest? = null,
 ) {
@@ -154,12 +163,13 @@ class CameraDetailViewModel(
     @Assisted private val cameraName: String,
     observeCamerasUseCase: ObserveCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
-    observeActiveConnectionUseCase: ObserveActiveConnectionUseCase,
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
     observeMomentsUseCase: ObserveMomentsUseCase,
     observeSettingsUseCase: ObserveSettingsUseCase,
     private val updateSettingsUseCase: UpdateSettingsUseCase,
+    observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
+    private val updatePlaybackPreferencesUseCase: UpdatePlaybackPreferencesUseCase,
     observeServerOverviewUseCase: ObserveServerOverviewUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
@@ -177,9 +187,6 @@ class CameraDetailViewModel(
     }
 
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
-
-    /** The signed-in server and its route, for this screen's own header (it replaces the shell's bar). */
-    val activeConnection: StateFlow<ActiveConnection?> = observeActiveConnectionUseCase()
 
     /** Wall-clock epoch seconds from the injected clock, so tests can pin it. */
     private fun now(): Double = clock.now().toEpochMilliseconds() / 1000.0
@@ -271,9 +278,17 @@ class CameraDetailViewModel(
                         !current.isLive -> current
                         liveUrl == null -> current.copy(playerRequest = null)
                         alreadyJoined(current.playerRequest?.source) -> current
-                        else -> current.copy(playerRequest = joinLive(found, current.isMuted), isPlaying = true)
+                        else -> current.copy(playerRequest = joinLive(found, current), isPlaying = true)
                     }
                 }
+            }
+        }
+        // The saved speaker and quality choices: applied on arrival (the first join above may
+        // already be playing with the defaults) and whenever the Settings tab or a sibling
+        // screen changes them. A quality change while live rejoins on the newly chosen stream.
+        viewModelScope.launch {
+            observePlaybackPreferencesUseCase().collect { preferences ->
+                _playback.update { current -> current.withSound(preferences.soundOn).withQuality(preferences.quality) }
             }
         }
         // Keep the timeline's coverage fresh: new segments land every few seconds while a camera records.
@@ -355,22 +370,42 @@ class CameraDetailViewModel(
                 seekPreviewEpochSeconds = null,
                 isLoadingPlaylist = false,
                 isPlaying = true,
-                playerRequest = joinLive(found, it.isMuted),
+                playerRequest = joinLive(found, it),
             )
         }
     }
 
     /**
-     * Builds the [PlayerRequest] for (re)joining live, applying [planLiveJoin] and — when it
-     * calls for an upgrade — scheduling it. Returns null when the camera has no live URL yet
-     * (disabled, or still loading).
+     * Builds the [PlayerRequest] for (re)joining live with [current]'s sound and quality choices,
+     * applying [planLiveJoin] and — when it calls for an upgrade — scheduling it. Returns null
+     * when the camera has no live URL yet (disabled, or still loading).
      */
-    private fun joinLive(found: CameraDetailUiState.Found?, muted: Boolean): PlayerRequest? {
+    private fun joinLive(found: CameraDetailUiState.Found?, current: PlaybackUiState, playWhenReady: Boolean = true): PlayerRequest? {
         val liveUrl = found?.streamUrl ?: return null
         val gridUrl = found.gridStreamUrl ?: liveUrl
-        val plan = planLiveJoin(gridUrl, liveUrl)
+        val plan = planLiveJoin(gridUrl, liveUrl, current.quality)
         if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found.posterUrl) else qualityUpgradeJob?.cancel()
-        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl), muted = muted)
+        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl), playWhenReady = playWhenReady, muted = current.isMuted)
+    }
+
+    private fun PlaybackUiState.withSound(soundOn: Boolean): PlaybackUiState {
+        val muted = !soundOn
+        return if (isMuted == muted) this else copy(isMuted = muted, playerRequest = playerRequest?.copy(muted = muted))
+    }
+
+    /**
+     * Adopts [quality], rejoining live on the stream it calls for. While a recording plays the
+     * choice is only remembered — it applies on the next return to live. A plan that lands on the
+     * stream already playing (Auto → Low inside the upgrade window, or any change on a
+     * single-stream camera) keeps the current request rather than reconnecting to the same URL.
+     */
+    private fun PlaybackUiState.withQuality(quality: StreamQuality): PlaybackUiState {
+        if (this.quality == quality) return this
+        val updated = copy(quality = quality)
+        if (!isLive) return updated
+        val request = joinLive(uiState.value as? CameraDetailUiState.Found, updated, playWhenReady = isPlaying) ?: return updated
+        val alreadyPlaying = (playerRequest?.source as? VideoSource.Live)?.url == request.source.url
+        return if (alreadyPlaying) updated else updated.copy(playerRequest = request)
     }
 
     /**
@@ -387,7 +422,7 @@ class CameraDetailViewModel(
                 // Carry forward current.isPlaying, not PlayerRequest's own default(true): the user
                 // may have paused during the few seconds the grid-quality join was standing in, and
                 // this swap must not silently resume playback out from under a paused viewer.
-                if (current.isLive) {
+                if (current.isLive && current.quality == StreamQuality.AUTO) {
                     current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl), playWhenReady = current.isPlaying, muted = current.isMuted))
                 } else {
                     current
@@ -403,11 +438,22 @@ class CameraDetailViewModel(
         }
     }
 
+    /** The speaker: flips the saved sound preference, applying it to the player straight away rather than waiting for the store to echo it. */
     fun toggleMuted() {
-        _playback.update { current ->
-            val muted = !current.isMuted
-            current.copy(isMuted = muted, playerRequest = current.playerRequest?.copy(muted = muted))
-        }
+        val soundOn = _playback.value.isMuted
+        _playback.update { it.withSound(soundOn) }
+        savePreferences()
+    }
+
+    /** The quality button: adopts [quality] (see [PlaybackUiState.withQuality]) and saves it for every camera and session. */
+    fun setQuality(quality: StreamQuality) {
+        _playback.update { it.withQuality(quality) }
+        savePreferences()
+    }
+
+    private fun savePreferences() {
+        val current = _playback.value
+        viewModelScope.launch { updatePlaybackPreferencesUseCase(PlaybackPreferences(quality = current.quality, soundOn = !current.isMuted)) }
     }
 
     fun onAudioAvailabilityChanged(hasAudio: Boolean) {

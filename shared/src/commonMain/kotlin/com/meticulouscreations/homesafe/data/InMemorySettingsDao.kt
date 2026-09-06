@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.update
 class InMemorySettingsDao : SettingsDao {
     private val entity = MutableStateFlow<SettingsEntity?>(null)
     private val zoneRules = MutableStateFlow<List<AlertZoneRuleEntity>>(emptyList())
+    private val playback = MutableStateFlow<PlaybackPreferencesEntity?>(null)
 
     override fun observe(): Flow<SettingsEntity?> = entity
 
@@ -21,5 +22,11 @@ class InMemorySettingsDao : SettingsDao {
             val replaced = rules.associateBy { it.camera to it.zone }
             current.filter { (it.camera to it.zone) !in replaced } + rules
         }
+    }
+
+    override fun observePlaybackPreferences(): Flow<PlaybackPreferencesEntity?> = playback
+
+    override suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity) {
+        playback.value = entity
     }
 }

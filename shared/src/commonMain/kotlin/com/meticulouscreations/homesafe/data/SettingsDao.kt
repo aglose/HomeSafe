@@ -20,4 +20,10 @@ interface SettingsDao {
 
     @Upsert
     suspend fun upsertZoneRules(rules: List<AlertZoneRuleEntity>)
+
+    @Query("SELECT * FROM PlaybackPreferencesEntity WHERE id = 0")
+    fun observePlaybackPreferences(): Flow<PlaybackPreferencesEntity?>
+
+    @Upsert
+    suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity)
 }
