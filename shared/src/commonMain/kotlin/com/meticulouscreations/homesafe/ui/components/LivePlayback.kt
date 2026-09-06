@@ -77,6 +77,10 @@ internal object LivePlaybackPolicy {
 /**
  * What's on screen while a player has no frame of its own to show for its current source.
  *
+ * Drawn with [ContentScale.FillBounds], matching how both platforms' players fit the video to
+ * the same box (stretched, never cropped — see `CameraStreamPlayer`), so the hand-over from
+ * poster to first frame doesn't shift the picture.
+ *
  * With [refresh] (live sources): never an old picture. Two images, stacked. The bottom one is the last snapshot this device ever saw for [posterUrl],
  * read from Coil's memory/disk cache — on screen in the same frame the card appears, even on a
  * cold app start, at the cost of possibly being stale. The top one is fetched from the server
@@ -99,7 +103,7 @@ internal fun VideoPosterLayer(posterUrl: String, refresh: Boolean, modifier: Mod
         AsyncImage(
             model = posterUrl,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.FillBounds,
             modifier = modifier,
         )
         return
@@ -130,7 +134,7 @@ internal fun VideoPosterLayer(posterUrl: String, refresh: Boolean, modifier: Mod
         AsyncImage(
             model = lastKnown,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -151,7 +155,7 @@ internal fun VideoPosterLayer(posterUrl: String, refresh: Boolean, modifier: Mod
         AsyncImage(
             model = fresh,
             contentDescription = null,
-            contentScale = ContentScale.Crop,
+            contentScale = ContentScale.FillBounds,
             modifier = Modifier.fillMaxSize(),
             onSuccess = {
                 lastFetchFailed = 0
