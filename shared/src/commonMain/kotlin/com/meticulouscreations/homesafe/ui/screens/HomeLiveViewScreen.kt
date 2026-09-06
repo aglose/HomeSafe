@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -55,6 +56,7 @@ fun HomeTabContent(
     val extraColors = LocalFrigateExtraColors.current
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
+    val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
 
     // A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
     // Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
@@ -66,6 +68,10 @@ fun HomeTabContent(
         contentPadding = tabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
+        if (everyoneAway) {
+            item(key = "away-banner") { AwayBanner(onBack = viewModel::markBack) }
+        }
+
         item {
             // Fixed for the life of this screen: a greeting that flips mid-scroll would be odd.
             val greeting = remember { greetingForHour(currentLocalHour()) }
@@ -79,11 +85,11 @@ fun HomeTabContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    PulsingDot(color = MaterialTheme.colorScheme.secondary)
+                    PulsingDot(color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary)
                     Text(
-                        text = "System Secure",
+                        text = if (everyoneAway) "Away Mode" else "System Secure",
                         style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.secondary,
+                        color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
                     )
                 }
             }
@@ -175,6 +181,34 @@ private fun CameraCard(
             )
             StatusBadge(enabled = camera.enabled, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
         }
+    }
+}
+
+/**
+ * Away mode: nobody is home, so every person on any camera goes out loud to both phones. One
+ * slim pill in the style of the camera cards, with the way back on it.
+ */
+@Composable
+private fun AwayBanner(onBack: () -> Unit) {
+    val extraColors = LocalFrigateExtraColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            .padding(start = 16.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        PulsingDot(color = MaterialTheme.colorScheme.primary, size = 8.dp)
+        Text(
+            text = "Away mode · nobody home · alerts escalated",
+            style = MaterialTheme.typography.labelMedium,
+            color = extraColors.textPrimary,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onBack) { Text("I'm back") }
     }
 }
 

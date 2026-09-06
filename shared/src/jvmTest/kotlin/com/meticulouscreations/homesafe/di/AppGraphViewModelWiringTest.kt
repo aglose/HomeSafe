@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
+import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
@@ -25,7 +26,7 @@ class AppGraphViewModelWiringTest {
         val graph = createAppGraph(PlatformContext())
 
         assertEquals(
-            setOf(HomeViewModel::class, MomentsViewModel::class, SettingsViewModel::class, SecureConnectionViewModel::class, AppShellViewModel::class),
+            setOf(HomeViewModel::class, MomentsViewModel::class, SettingsViewModel::class, SecureConnectionViewModel::class, AppShellViewModel::class, FaceLibraryViewModel::class),
             graph.viewModelProviders.keys,
         )
         assertEquals(

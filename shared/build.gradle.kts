@@ -96,6 +96,9 @@ kotlin {
         androidMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.okhttp)
+            // The push token is this device's identity to the relay (PushTokenProvider.android.kt).
+            implementation(project.dependencies.platform(libs.firebase.bom))
+            implementation(libs.firebase.messaging)
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.exoplayer.hls)
             implementation(libs.media3.ui)

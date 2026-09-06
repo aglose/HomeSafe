@@ -21,11 +21,12 @@ class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRep
             AlertSettings(
                 pushNotificationsEnabled = entity?.pushNotificationsEnabled ?: AlertSettings.DEFAULT.pushNotificationsEnabled,
                 zoneRules = rules.associate { it.toDomain() },
+                quietFamiliarPeople = entity?.quietFamiliarPeople ?: AlertSettings.DEFAULT.quietFamiliarPeople,
             )
         }
 
     override suspend fun updateSettings(settings: AlertSettings) {
-        settingsDao.upsert(SettingsEntity(pushNotificationsEnabled = settings.pushNotificationsEnabled))
+        settingsDao.upsert(SettingsEntity(pushNotificationsEnabled = settings.pushNotificationsEnabled, quietFamiliarPeople = settings.quietFamiliarPeople))
         settingsDao.upsertZoneRules(settings.zoneRules.map { (place, categories) -> place.toEntity(categories) })
     }
 }

@@ -32,11 +32,13 @@ class CategorySwitchesMovedToZones : AutoMigrationSpec
 
 @Database(
     entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class, AlertZoneRuleEntity::class],
-    version = 6,
+    version = 7,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
         AutoMigration(from = 5, to = 6, spec = CategorySwitchesMovedToZones::class),
+        // 6 -> 7: the "only strangers" switch (SettingsEntity.quietFamiliarPeople, default off).
+        AutoMigration(from = 6, to = 7),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

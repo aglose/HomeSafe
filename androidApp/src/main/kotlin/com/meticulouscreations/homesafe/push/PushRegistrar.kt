@@ -8,7 +8,10 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -24,14 +27,23 @@ object PushRegistrar {
 
     @Volatile private var lastServerUrl: String? = null
     @Volatile private var lastToken: String? = null
+    @Volatile private var quietFamiliar: Boolean = false
     private var relayApi: PushRelayApi? = null
 
-    /** Follows the connection: each time a server becomes active, register this device with its relay. */
+    /**
+     * Follows the connection and the "only strangers" preference: each time a server becomes
+     * active, or that switch flips, (re-)register this device with the relay so it knows both
+     * where to push and whether to skip recognised people for this phone.
+     */
     fun start(scope: CoroutineScope, appGraph: AppGraph, context: Context) {
         relayApi = appGraph.pushRelayApi
         scope.launch {
-            appGraph.connectionRepository.currentServerUrl.filterNotNull().collect { serverUrl ->
+            combine(
+                appGraph.connectionRepository.currentServerUrl.filterNotNull(),
+                appGraph.settingsRepository.observeSettings().map { it.quietFamiliarPeople }.distinctUntilChanged(),
+            ) { serverUrl, quiet -> serverUrl to quiet }.collect { (serverUrl, quiet) ->
                 lastServerUrl = serverUrl
+                quietFamiliar = quiet
                 runCatching { register(serverUrl, currentToken()) }
                     .onFailure { Log.w(TAG, "push registration failed: ${it.message}") }
             }
@@ -50,7 +62,7 @@ object PushRegistrar {
 
     private suspend fun register(serverUrl: String, token: String) {
         val api = relayApi ?: return
-        api.registerDevice(serverUrl, token, platform = "android", name = "${Build.MANUFACTURER} ${Build.MODEL}".trim()).getOrThrow()
+        api.registerDevice(serverUrl, token, platform = "android", name = "${Build.MANUFACTURER} ${Build.MODEL}".trim(), quietFamiliar = quietFamiliar).getOrThrow()
         lastToken = token
         Log.i(TAG, "registered for push with ${PushRelayApi.relayUrl(serverUrl, "/devices")}")
     }
