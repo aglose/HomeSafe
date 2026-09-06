@@ -5,6 +5,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -27,10 +27,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.HdrAuto
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -40,6 +40,8 @@ import androidx.compose.material.icons.filled.Sd
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -117,7 +119,6 @@ fun CameraDetailScreen(
     // screen — header, recent-activity cards and all.
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
-    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val hasQualityChoice = (uiState as? CameraDetailUiState.Found)?.let { it.gridStreamUrl != null && it.gridStreamUrl != it.streamUrl } ?: false
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
@@ -170,14 +171,7 @@ fun CameraDetailScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
-            // The shell bar's route badge carries over so the user still knows whether video is
-            // on the direct local path or Tailscale; a spacer keeps the title centred until known.
-            val route = activeConnection?.route
-            if (route == null) {
-                Spacer(modifier = Modifier.size(48.dp))
-            } else {
-                ConnectionRouteBadge(route)
-            }
+            CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones)
         }
 
         Column(
@@ -242,8 +236,6 @@ fun CameraDetailScreen(
                 }
 
                 TimelineSection(viewModel = viewModel)
-
-                DetectionZonesCard(onClick = onEditDetectionZones)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -753,38 +745,39 @@ private fun QuickActionButton(
     }
 }
 
-/** Entry point to the polygon editor: what Google Home calls activity zones, Frigate calls masks. */
+/**
+ * This camera's less-used settings, kept out of the page itself: today the polygon editor —
+ * what Google Home calls activity zones and Frigate calls masks — reached from the header
+ * rather than a card competing with the timeline and recent activity for the eye.
+ */
 @Composable
-private fun DetectionZonesCard(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.CropFree,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-        )
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                text = "Name areas like the driveway, and choose what to ignore",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
+            Icon(
+                imageVector = Icons.Filled.MoreVert,
+                contentDescription = "More options",
+                tint = MaterialTheme.colorScheme.primary,
             )
         }
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            // The same hairline every card on this screen carries, so the menu reads as one of them.
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+        ) {
+            DropdownMenuItem(
+                text = { Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge) },
+                leadingIcon = { Icon(imageVector = Icons.Filled.CropFree, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = {
+                    expanded = false
+                    onEditDetectionZones()
+                },
+            )
+        }
     }
 }
 
