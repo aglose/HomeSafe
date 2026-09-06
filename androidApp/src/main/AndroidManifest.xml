@@ -13,7 +13,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.HomeSafe">
         <!-- Lets Macrobenchmark (the :baselineprofile module) profile release builds from the shell. -->
         <profileable android:shell="true" />
         <!-- singleTask: a notification tap (or any relaunch) resumes the running instance instead of

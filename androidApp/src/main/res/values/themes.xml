@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The app is dark-only (see FrigateTheme). The window behind Compose must be too: it is
+         what shows for the first frame at cold start and through any not-yet-opaque transition,
+         and the platform's Light theme flashed white there. -->
+    <style name="Theme.HomeSafe" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/window_background</item>
+    </style>
+</resources>

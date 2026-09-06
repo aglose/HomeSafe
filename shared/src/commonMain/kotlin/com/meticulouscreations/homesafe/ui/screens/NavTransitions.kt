@@ -64,8 +64,14 @@ internal val SharedElementPop: ContentTransform = ContentTransform(
     initialContentExit = fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
 )
 
-/** A plain, symmetric cross-fade for the root switch between sign-in and the app shell. */
+/**
+ * The root switch between sign-in and the app shell: the new screen fades in over the old
+ * one, which stays fully opaque until the beat is over. A symmetric cross-fade would leave
+ * both half-transparent mid-beat and let the window's background show through as a flash.
+ * The sign-in screen already shows the shell's chrome (see ShellSkeleton), so this dissolve
+ * only ever changes the content inside it.
+ */
 internal val RootCrossfade: ContentTransform = ContentTransform(
     targetContentEnter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
-    initialContentExit = fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
+    initialContentExit = fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing), targetAlpha = 1f),
 )
