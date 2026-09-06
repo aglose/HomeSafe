@@ -8,6 +8,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -15,7 +17,9 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
@@ -32,7 +36,19 @@ class HomeViewModel(
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
+    observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
+    private val setAwayUseCase: SetAwayUseCase,
 ) : ViewModel() {
+
+    /** Away mode banner: true while the relay says nobody is home. Collecting it keeps presence polled. */
+    val everyoneAway: StateFlow<Boolean> = observeHouseholdPresenceUseCase()
+        .map { it.everyoneAway }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /** "I'm back": marks this phone home, which ends away mode for the household. Failures leave the banner up. */
+    fun markBack() {
+        viewModelScope.launch { setAwayUseCase(false) }
+    }
 
     /**
      * Null until the first read of the local camera cache lands (a few milliseconds), so the

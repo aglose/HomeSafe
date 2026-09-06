@@ -12,16 +12,24 @@ data class AlertSettings(
     val pushNotificationsEnabled: Boolean,
     /** Which categories notify in each place. Places with no entry use [DEFAULT_CATEGORIES]. */
     val zoneRules: Map<AlertZone, Set<MomentCategory>> = emptyMap(),
+    /**
+     * Familiar vs. stranger: when on, a person Frigate put a name to (a recognised face arrives
+     * as the event's sub-label) never notifies, so only people it couldn't place do. Off, every
+     * person the zone rules want notifies, named or not.
+     */
+    val quietFamiliarPeople: Boolean = false,
 ) {
     fun categoriesFor(place: AlertZone): Set<MomentCategory> = zoneRules[place] ?: DEFAULT_CATEGORIES
 
     /**
      * Whether a [category] detection on [camera] that passed through [zones] should notify: yes
      * if any of those places wants the category, and a detection that touched no zone counts as
-     * the camera's "anywhere else". Uncategorised labels never notify.
+     * the camera's "anywhere else". Uncategorised labels never notify, and neither does a
+     * [recognized] person while [quietFamiliarPeople] is on.
      */
-    fun notifies(camera: String, zones: List<String>, category: MomentCategory): Boolean {
+    fun notifies(camera: String, zones: List<String>, category: MomentCategory, recognized: Boolean = false): Boolean {
         if (category == MomentCategory.ALL) return false
+        if (quietFamiliarPeople && category == MomentCategory.PEOPLE && recognized) return false
         val places = zones.filter { it.isNotBlank() }.map { AlertZone(camera, it) }.ifEmpty { listOf(AlertZone(camera, null)) }
         return places.any { category in categoriesFor(it) }
     }

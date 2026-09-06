@@ -105,8 +105,8 @@ fun FrigateAppShell() {
                     entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack) }
                     entry<TopLevelRoute.Moments> { MomentsTabContent() }
                     entry<TopLevelRoute.Settings> {
-                        SettingsTabNav(settingsBackStack) { openClassifier ->
-                            SettingsTabContent(onOpenClassifier = openClassifier)
+                        SettingsTabNav(settingsBackStack) { openClassifier, openFaces ->
+                            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
                         }
                     }
                 },

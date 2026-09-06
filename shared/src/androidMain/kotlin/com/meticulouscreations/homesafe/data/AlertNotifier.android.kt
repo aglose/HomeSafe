@@ -12,6 +12,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.BitmapFactory
+import android.media.AudioAttributes
+import android.media.RingtoneManager
 import android.provider.Settings
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
@@ -23,6 +25,8 @@ import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.CompletableDeferred
 
 private const val CHANNEL_ID = "detections"
+/** Shared with HomeSafeMessagingService and the relay: the loud channel for people seen while nobody is home. */
+private const val AWAY_CHANNEL_ID = "away_alerts"
 private const val PREFS_NAME = "homesafe_notifications"
 private const val PREF_ASKED = "asked_for_permission"
 
@@ -53,6 +57,16 @@ private class AndroidAlertNotifier(private val activity: FragmentActivity) : Ale
         notificationManager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, "Detections", NotificationManager.IMPORTANCE_HIGH).apply {
                 description = "A person, vehicle, or animal seen by one of your cameras"
+            },
+        )
+        notificationManager.createNotificationChannel(
+            NotificationChannel(AWAY_CHANNEL_ID, "Away alerts", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "A person on any camera while nobody is home"
+                setSound(
+                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
+                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
+                )
+                enableVibration(true)
             },
         )
     }
@@ -92,7 +106,7 @@ private class AndroidAlertNotifier(private val activity: FragmentActivity) : Ale
             ?.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
             ?.let { PendingIntent.getActivity(context, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) }
         val thumbnail = notification.thumbnail?.let { bytes -> BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }
-        val built = NotificationCompat.Builder(context, CHANNEL_ID)
+        val built = NotificationCompat.Builder(context, if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_detection)
             .setContentTitle(notification.title)
             .setContentText(notification.body)

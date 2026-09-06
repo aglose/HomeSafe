@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.PrimaryKey
 
@@ -8,6 +9,8 @@ import androidx.room3.PrimaryKey
 data class SettingsEntity(
     @PrimaryKey val id: Int = 0,
     val pushNotificationsEnabled: Boolean,
+    /** Added in schema 7; the default keeps existing installs alerting for everyone until they choose otherwise. */
+    @ColumnInfo(defaultValue = "0") val quietFamiliarPeople: Boolean = false,
 )
 
 /**

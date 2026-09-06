@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Storage
@@ -49,12 +50,16 @@ import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
+import com.meticulouscreations.homesafe.ui.formatClockTime
+import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
@@ -65,7 +70,7 @@ import kotlin.math.roundToInt
  * and config), the per-camera detection switches, and this device's alert preferences.
  */
 @Composable
-fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}) {
+fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () -> Unit = {}) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -74,6 +79,7 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}) {
     LifecycleResumeEffect(Unit) {
         viewModel.refreshNotificationPermission()
         viewModel.refreshClassifiers()
+        viewModel.refreshPresence()
         onPauseOrDispose { }
     }
 
@@ -97,10 +103,17 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}) {
             state = state,
             onPushNotifications = viewModel::setPushNotifications,
             onZoneCategory = viewModel::setZoneCategory,
+            onQuietFamiliar = viewModel::setQuietFamiliarPeople,
             onOpenSettings = viewModel::openNotificationSettings,
             onSendTest = viewModel::sendTestNotification,
         )
-        RecognitionSection(models = state.classifiers, onOpen = onOpenClassifier)
+        AwaySection(state = state, onAway = viewModel::setAway)
+        RecognitionSection(
+            models = state.classifiers,
+            faceRecognitionEnabled = state.overview?.faceRecognitionEnabled,
+            onOpen = onOpenClassifier,
+            onOpenFaces = onOpenFaces,
+        )
     }
 }
 
@@ -285,6 +298,7 @@ private fun AlertsSection(
     state: SettingsUiState,
     onPushNotifications: (Boolean) -> Unit,
     onZoneCategory: (AlertZone, MomentCategory, Boolean) -> Unit,
+    onQuietFamiliar: (Boolean) -> Unit,
     onOpenSettings: () -> Unit,
     onSendTest: () -> Unit,
 ) {
@@ -326,6 +340,23 @@ private fun AlertsSection(
                 }
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            val faces = state.overview?.faceRecognitionEnabled
+            SettingsToggleRow(
+                title = "Only strangers",
+                description = when (faces) {
+                    true -> if (state.alerts.quietFamiliarPeople) {
+                        "On — people Frigate recognises come and go quietly. Anyone it can't place still notifies."
+                    } else {
+                        "Skip the notification when Frigate recognises the person. Name faces under Recognition below."
+                    }
+                    false -> "Needs face recognition, which is off in Frigate's config."
+                    null -> "Needs face recognition on the server."
+                },
+                checked = faces == true && state.alerts.quietFamiliarPeople,
+                enabled = faces == true,
+                onCheckedChange = onQuietFamiliar,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onSendTest) { Text("Send test notification") }
                 if (state.testNotificationSent) SettingsCaption("Sent")
@@ -335,6 +366,61 @@ private fun AlertsSection(
                     "Frigate has no push service for phones, so nothing arrives once the system stops the app.",
             )
         }
+    }
+}
+
+/**
+ * Away mode: this phone's "I'm away" switch, the household's phones, and what happens once the
+ * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
+ */
+@Composable
+private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
+    SettingsSection(title = "Away mode", icon = Icons.Filled.Home) {
+        val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
+        val switchEnabled = state.awaySupported && !state.awayBusy && !relayUnreachable
+        SettingsToggleRow(
+            title = "I'm away",
+            description = when {
+                !state.awaySupported -> "Not available on this platform yet. Use the Android app to set presence."
+                relayUnreachable -> "The push relay on the Frigate box can't be reached, so presence can't be changed right now."
+                state.thisDeviceAway -> "This phone counts as out of the house."
+                else -> "This phone counts as home."
+            },
+            checked = state.thisDeviceAway,
+            enabled = switchEnabled,
+            onCheckedChange = onAway,
+        )
+        if (state.presence.devices.isNotEmpty()) {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+            state.presence.devices.forEach { device -> PresenceDeviceRow(device) }
+            if (state.presence.everyoneAway) {
+                SettingsCaption("Nobody home — alerts are escalated on both phones.", error = true)
+            }
+        }
+        state.awayError?.let { SettingsCaption(it, error = true) }
+        SettingsCaption(
+            "When everyone is away, every person seen on any camera notifies loudly on both phones — " +
+                "on its own \"Away alerts\" channel, ignoring the zone rules above. Flip the switch back when you're home.",
+        )
+    }
+}
+
+/** "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" — one line per phone the relay knows. */
+@Composable
+private fun PresenceDeviceRow(device: PresenceDevice) {
+    val name = device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { "Unnamed device" } }
+    val status = when {
+        device.away && device.updatedEpochSeconds != null -> "away since ${formatClockTime(device.updatedEpochSeconds)}"
+        device.away -> "away"
+        else -> "home"
+    }
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        PulsingDot(color = if (device.away) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary, size = 6.dp, pulsing = device.away)
+        Text(
+            text = "$name · $status" + if (device.isThisDevice) " · this phone" else "",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
     }
 }
 

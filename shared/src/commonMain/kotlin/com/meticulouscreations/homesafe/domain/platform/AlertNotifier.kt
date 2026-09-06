@@ -18,6 +18,8 @@ data class AlertNotification(
     val body: String,
     /** JPEG bytes, or null for a text-only notification. */
     val thumbnail: ByteArray? = null,
+    /** Away mode: nobody is home and a person was seen. Posted louder, on its own channel, so it can't be muted with the everyday ones. */
+    val urgent: Boolean = false,
 )
 
 /**

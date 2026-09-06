@@ -87,4 +87,15 @@ class AlertSettingsTest {
         assertEquals(setOf(MomentCategory.PEOPLE, MomentCategory.ANIMALS), quieter.categoriesFor(driveway))
         assertEquals(AlertSettings.DEFAULT_CATEGORIES, quieter.categoriesFor(sidewalk), "other places untouched")
     }
+
+    @Test
+    fun onlyStrangersSilencesRecognisedPeopleAndNothingElse() {
+        val strangersOnly = AlertSettings.DEFAULT.copy(quietFamiliarPeople = true)
+        assertFalse(strangersOnly.notifies("front", listOf("driveway"), MomentCategory.PEOPLE, recognized = true), "a named face is family")
+        assertTrue(strangersOnly.notifies("front", listOf("driveway"), MomentCategory.PEOPLE, recognized = false), "an unnamed person is a stranger")
+        assertTrue(strangersOnly.notifies("front", listOf("driveway"), MomentCategory.VEHICLES, recognized = true), "a recognised plate is not a person")
+        assertTrue(AlertSettings.DEFAULT.notifies("front", listOf("driveway"), MomentCategory.PEOPLE, recognized = true), "off by default: everyone notifies")
+        val mutedDriveway = strangersOnly.withCategory(AlertZone("front", "driveway"), MomentCategory.PEOPLE, false)
+        assertFalse(mutedDriveway.notifies("front", listOf("driveway"), MomentCategory.PEOPLE, recognized = false), "zone rules still apply to strangers")
+    }
 }

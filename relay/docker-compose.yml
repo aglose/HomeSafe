@@ -1,0 +1,18 @@
+# HomeSafe push relay: watches Frigate's alerts and pushes them to the phones via Firebase.
+# Host networking so it can reach Frigate on 127.0.0.1 and listen on 8787 for the app.
+services:
+  homesafe-relay:
+    build: .
+    container_name: homesafe-relay
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      FRIGATE_INTERNAL: http://127.0.0.1:5000
+      FRIGATE_AUTH: http://127.0.0.1:8971
+      FCM_PROJECT: homesafe-percysafe
+      FCM_KEY: /secrets/fcm.json
+      RELAY_DB: /data/relay.db
+      POLL_SECONDS: "5"
+    volumes:
+      - ./fcm-service-account.json:/secrets/fcm.json:ro
+      - ./data:/data

@@ -12,10 +12,13 @@ import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
+import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -66,8 +69,9 @@ interface AppGraph : ViewModelGraph {
      */
     val httpClient: HttpClient
 
-    /** Read by the Android push registrar to follow the active server address. */
+    /** Read by the Android push registrar to follow the active server address and the "only strangers" preference. */
     val connectionRepository: ConnectionRepository
+    val settingsRepository: SettingsRepository
     val pushRelayApi: PushRelayApi
 
     /** Started once by [com.meticulouscreations.homesafe.App]; posts notifications for new detections while the app runs. */
@@ -116,6 +120,11 @@ interface AppGraph : ViewModelGraph {
     fun provideAlertNotifier(platformContext: PlatformContext): AlertNotifier =
         createAlertNotifier(platformContext)
 
+    @SingleIn(AppScope::class)
+    @Provides
+    fun providePushTokenProvider(platformContext: PlatformContext): PushTokenProvider =
+        createPushTokenProvider(platformContext)
+
     @OptIn(ExperimentalTime::class)
     @SingleIn(AppScope::class)
     @Provides
@@ -123,6 +132,7 @@ interface AppGraph : ViewModelGraph {
         apiClient: FrigateApiClient,
         connectionRepository: ConnectionRepository,
         settingsRepository: SettingsRepository,
+        presenceRepository: PresenceRepository,
         alertNotifier: AlertNotifier,
         appScope: CoroutineScope,
         clock: Clock,
@@ -130,6 +140,7 @@ interface AppGraph : ViewModelGraph {
         apiClient = apiClient,
         connectionRepository = connectionRepository,
         settingsRepository = settingsRepository,
+        presenceRepository = presenceRepository,
         notifier = alertNotifier,
         scope = appScope,
         clock = { clock.now().toEpochMilliseconds() / 1000.0 },
