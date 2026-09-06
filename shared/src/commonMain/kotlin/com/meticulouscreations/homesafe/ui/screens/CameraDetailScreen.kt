@@ -109,9 +109,7 @@ fun CameraDetailScreen(
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
 ) {
-    val viewModel = assistedMetroViewModel<CameraDetailViewModel, CameraDetailViewModel.Factory>(key = cameraName) {
-        create(cameraName)
-    }
+    val viewModel = cameraDetailViewModel(cameraName)
     // Deliberately *not* collected here: `viewModel.playback`, which changes four times a
     // second while a recording plays (position polls) and on every pixel of a timeline drag.
     // Each piece of UI that needs it collects it itself (PlayerSurface, QuickActionsRow,
@@ -182,7 +180,7 @@ fun CameraDetailScreen(
         ) {
             PlayerSurface(
                 cameraAvailable = cameraAvailable,
-                viewModel = viewModel,
+                cameraName = cameraName,
                 playerKey = cameraName,
                 warmStreamUrl = warmStreamUrl,
                 warmPosterUrl = warmPosterUrl,
@@ -211,7 +209,6 @@ fun CameraDetailScreen(
 
             QuickActionsRow(
                 hasQualityChoice = hasQualityChoice,
-                viewModel = viewModel,
                 cameraName = cameraName,
                 showHint = showHint,
                 // The row straddles the player's bottom edge, so while the player has the
@@ -235,7 +232,7 @@ fun CameraDetailScreen(
                     )
                 }
 
-                TimelineSection(viewModel = viewModel)
+                TimelineSection(cameraName = cameraName)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -279,10 +276,25 @@ fun CameraDetailScreen(
  * spread into rather than being clipped to its own strip. Zooming back out gives the space back.
  * On a landscape screen the strip is already taller than the viewport, so nothing moves.
  */
+/**
+ * This screen's view model, resolved from the graph rather than passed down as a parameter.
+ *
+ * `viewModel()` returns whatever is already in the nav entry's [ViewModelStore] for [key], and
+ * only calls the factory when nothing is there — so every composable on this screen that asks
+ * for it gets the *same* instance and the camera is polled once, not once per caller. That
+ * holds only while they share a ViewModelStoreOwner (they are all inside one nav destination)
+ * and pass the same key, which is why the key lives here and not at each call site.
+ */
+@Composable
+private fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
+    assistedMetroViewModel<CameraDetailViewModel, CameraDetailViewModel.Factory>(key = cameraName) {
+        create(cameraName)
+    }
+
 @Composable
 private fun PlayerSurface(
     cameraAvailable: Boolean,
-    viewModel: CameraDetailViewModel,
+    cameraName: String,
     playerKey: String,
     warmStreamUrl: String?,
     warmPosterUrl: String?,
@@ -292,6 +304,7 @@ private fun PlayerSurface(
     onZoomStarted: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
@@ -425,7 +438,7 @@ private fun PlayerSurface(
             if (playhead != null) {
                 BehindLiveReadout(
                     playheadEpochSeconds = playhead,
-                    viewModel = viewModel,
+                    cameraName = cameraName,
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
                 )
             }
@@ -444,12 +457,12 @@ private fun PlayerSurface(
  */
 @Composable
 private fun QuickActionsRow(
-    viewModel: CameraDetailViewModel,
     cameraName: String,
     hasQualityChoice: Boolean,
     showHint: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     Row(
@@ -619,7 +632,8 @@ private fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = 
 }
 
 @Composable
-private fun BehindLiveReadout(playheadEpochSeconds: Double, viewModel: CameraDetailViewModel, modifier: Modifier = Modifier) {
+private fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, modifier: Modifier = Modifier) {
+    val viewModel = cameraDetailViewModel(cameraName)
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
     Row(
         modifier = modifier
@@ -643,7 +657,8 @@ private fun BehindLiveReadout(playheadEpochSeconds: Double, viewModel: CameraDet
 }
 
 @Composable
-private fun TimelineSection(viewModel: CameraDetailViewModel) {
+private fun TimelineSection(cameraName: String) {
+    val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
 
