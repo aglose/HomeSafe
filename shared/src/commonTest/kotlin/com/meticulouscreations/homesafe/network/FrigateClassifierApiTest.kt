@@ -117,7 +117,7 @@ class FrigateClassifierApiTest {
 class PushRelayApiTest {
     @Test
     fun relayUrlKeepsTheHostAndSwapsThePort() {
-        assertEquals("http://100.99.163.71:8787/devices", PushRelayApi.relayUrl("http://100.99.163.71:8971", "/devices"))
+        assertEquals("http://100.64.0.1:8787/devices", PushRelayApi.relayUrl("http://100.64.0.1:8971", "/devices"))
         assertEquals("http://debian-surveillance.tail4c441a.ts.net:8787/test", PushRelayApi.relayUrl("http://debian-surveillance.tail4c441a.ts.net:8971/?x=1", "/test"))
         assertEquals("http://192.168.68.55:8787/devices", PushRelayApi.relayUrl("http://192.168.68.55:8971/", "devices"))
     }

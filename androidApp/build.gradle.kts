@@ -5,7 +5,8 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.composeCompiler)
     // Reads androidApp/google-services.json (gitignored) for Firebase Cloud Messaging.
-    alias(libs.plugins.googleServices)
+    // Applied conditionally below, because that file is absent on a fresh clone and in CI.
+    alias(libs.plugins.googleServices) apply false
     // Adds the nonMinifiedRelease / benchmarkRelease build types and `generateBaselineProfile`;
     // the :baselineprofile module drives both.
     alias(libs.plugins.baselineprofile)
@@ -15,6 +16,20 @@ kotlin {
     compilerOptions {
         jvmTarget = JvmTarget.JVM_11
     }
+}
+
+// google-services.json holds this Firebase project's client ids and can only come from the
+// Firebase console, so it is gitignored. The plugin fails the build outright when the file is
+// missing, which would break a fresh clone and any CI run that gets no secrets (a fork's pull
+// request). Apply it only when the file is actually there: without it FirebaseApp never
+// initialises, FirebaseMessaging throws, and PushRegistrar logs "push registration failed".
+if (project.file("google-services.json").exists()) {
+    apply(plugin = libs.plugins.googleServices.get().pluginId)
+} else {
+    logger.warn(
+        "androidApp: google-services.json not found \u2014 building without Firebase. " +
+            "Push notifications will not work in this build."
+    )
 }
 dependencies {
     implementation(project(":shared"))

@@ -35,7 +35,7 @@ import kotlin.test.fail
 @OptIn(ExperimentalCoroutinesApi::class)
 class ConnectionRepositoryImplTest {
 
-    private val tailscaleHost = "100.99.163.71"
+    private val tailscaleHost = "100.64.0.1"
     private val localHost = "192.168.68.55"
     private val serverUrl = "http://$tailscaleHost:8971"
     private val localUrl = "http://$localHost:8971"

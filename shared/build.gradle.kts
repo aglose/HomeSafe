@@ -94,6 +94,7 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutinesTest)
             implementation(libs.ktor.client.mock)
+            implementation(libs.compose.uiTest)
         }
         androidMain.dependencies {
             implementation(libs.sqlite.bundled)
@@ -111,6 +112,21 @@ kotlin {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.cio)
         }
+        // Compose UI tests cannot live in commonTest: commonTest feeds androidHostTest, and
+        // runComposeUiTest needs a real Android instrumentation host, so those tests fail there
+        // with a NullPointerException. src/uiTest/kotlin is compiled into the targets that can
+        // render headlessly instead — JVM (skiko) and the iOS simulator. Shared by srcDir rather
+        // than a dependsOn edge, because adding one by hand switches off KGP's default hierarchy
+        // and iosMain stops seeing its actuals.
+        jvmTest.get().kotlin.srcDir("src/uiTest/kotlin")
+        getByName("iosSimulatorArm64Test").kotlin.srcDir("src/uiTest/kotlin")
+
+        jvmTest.dependencies {
+            // ui-test-desktop declares the skiko API but not its host-specific native runtime,
+            // so Compose UI tests fail with skiko's LibraryLoadException without this. Resolved
+            // per host, which is what CI (linux-x64) and this Mac (macos-arm64) each need.
+            implementation(compose.desktop.currentOs)
+        }
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.darwin)
@@ -123,6 +139,12 @@ kotlin {
             implementation(libs.ktor.client.js)
         }
     }
+}
+
+// Compose UI tests rasterise through skiko, whose runtime jar links AWT. CI runners have no
+// display, so make the intent explicit rather than depending on the default.
+tasks.named<Test>("jvmTest") {
+    systemProperty("java.awt.headless", "true")
 }
 
 room3 {
