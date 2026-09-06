@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.ui.components
 
 import android.content.Context
 import android.view.TextureView
-import android.view.ViewGroup
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,8 +26,6 @@ import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
-import androidx.media3.common.VideoSize
-import androidx.media3.ui.AspectRatioFrameLayout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 
@@ -38,10 +35,20 @@ import kotlinx.coroutines.isActive
  *
  * The holder owns the [androidx.media3.exoplayer.ExoPlayer], its source, its retry loop and its
  * idle/lifecycle policy; this composable owns only what's specific to one place on screen: the
- * surface, the aspect-ratio fit, the poster, and the caller's callbacks. Several of these can be
- * bound to one holder at the same time (the grid card and the detail screen overlap during the
- * shared-element transition); frames go to whichever surface was bound most recently, and each
- * `TextureView` keeps showing its last frame after it stops receiving them.
+ * surface, the poster, and the caller's callbacks. Several of these can be bound to one holder at
+ * the same time (the grid card and the detail screen overlap during the shared-element
+ * transition); frames go to whichever surface was bound most recently, and each `TextureView`
+ * keeps showing its last frame after it stops receiving them.
+ *
+ * The video is stretched to fill whatever box the caller gives it — no letterboxing, no
+ * aspect-ratio crop — and so is the poster (see [VideoPosterLayer]). Every box in this app is a
+ * fixed 16:9 frame, and the decoded frame's own pixel aspect is not a reliable guide to how it
+ * should be shown: a camera's low-bitrate sub-stream is often an anamorphic squeeze of its full
+ * 16:9 view (the Amcrest's 704x480 covers exactly the same field of view as its 2960x1668 main
+ * stream), so fitting *that* by its pixel aspect crops the top and bottom off — and then, because
+ * one pooled player swaps between the grid's sub-stream and the detail screen's full stream, the
+ * picture re-cropped every time it changed quality. Filling the box shows both streams with the
+ * same geometry, so a quality swap or a reconnect never moves the picture.
  *
  * The poster is a [VideoPosterLayer] drawn *on top* of the video and hidden once this surface
  * renders its first frame for the holder's current [LivePlayerHolder.coldStartGeneration]. That
@@ -92,13 +99,6 @@ actual fun CameraStreamPlayer(
             isOpaque = false
         }
     }
-    val aspectRatioFrameLayout = remember(holder) {
-        AspectRatioFrameLayout(context).apply {
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-            addView(textureView, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        }
-    }
-
     // The last frame of whichever surface this one took over from (see LivePlayerHolder.bindSurface),
     // shown until this surface has a frame of its own. Cleared on that first frame.
     var bridgeFrame by remember(holder) { mutableStateOf<ImageBitmap?>(null) }
@@ -106,7 +106,7 @@ actual fun CameraStreamPlayer(
     Box(modifier = modifier) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
-            factory = { aspectRatioFrameLayout },
+            factory = { textureView },
         )
         val bridge = bridgeFrame
         val posterUrl = source.posterUrl
@@ -114,7 +114,7 @@ actual fun CameraStreamPlayer(
             Image(
                 bitmap = bridge,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillBounds,
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (posterVisible && posterUrl != null) {
@@ -124,18 +124,12 @@ actual fun CameraStreamPlayer(
 
     DisposableEffect(holder) {
         bridgeFrame = holder.bindSurface(textureView)?.asImageBitmap()
-        // A warm holder won't re-announce its video size; fit the surface to what it's already playing.
-        aspectRatioFrameLayout.applyVideoSize(player.videoSize)
 
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 renderedGeneration = holder.coldStartGeneration
                 holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
-            }
-
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                aspectRatioFrameLayout.applyVideoSize(videoSize)
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -201,16 +195,6 @@ private fun Tracks.hasAudio(): Boolean = isTypeSupported(C.TRACK_TYPE_AUDIO)
 
 /** MediaCodec has shipped a software Opus decoder since Android 5.0, so both of go2rtc's usual HLS audio codecs play. */
 actual val liveAudioCodecs: List<String> = listOf("aac", "opus")
-
-private fun AspectRatioFrameLayout.applyVideoSize(videoSize: VideoSize) {
-    setAspectRatio(
-        if (videoSize.height == 0 || videoSize.width == 0) {
-            0f
-        } else {
-            videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
-        },
-    )
-}
 
 /**
  * Ties a pool lease to a `remember` slot, releasing it whether the composition forgets it or

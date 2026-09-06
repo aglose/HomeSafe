@@ -449,15 +449,16 @@ private fun SeekPreview(epochSeconds: Double, snapshotUrlFor: (Double) -> String
         if (settledUrl != null) delay(SCRUB_PREVIEW_DEBOUNCE_MS)
         settledUrl = snapshotUrlFor(epochSeconds)
     }
+    // FillBounds, like the video underneath (see CameraStreamPlayer), so the preview lands exactly over it.
     Box(modifier) {
         shownUrl?.let {
-            AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            AsyncImage(model = it, contentDescription = null, contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
         }
         settledUrl?.let { url ->
             AsyncImage(
                 model = url,
                 contentDescription = null,
-                contentScale = ContentScale.Crop,
+                contentScale = ContentScale.FillBounds,
                 modifier = Modifier.fillMaxSize(),
                 onSuccess = { shownUrl = url },
             )

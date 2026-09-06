@@ -372,10 +372,12 @@ private fun MomentCard(
                         // The clip URL is still being resolved, but the frame at the event's start is
                         // already known — show it now so the box never opens empty.
                         if (clipPosterUrl != null) {
+                            // FillBounds to match the player's own poster and video (see CameraStreamPlayer),
+                            // so the hand-over to the player doesn't shift the picture.
                             AsyncImage(
                                 model = clipPosterUrl,
                                 contentDescription = null,
-                                contentScale = ContentScale.Crop,
+                                contentScale = ContentScale.FillBounds,
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }

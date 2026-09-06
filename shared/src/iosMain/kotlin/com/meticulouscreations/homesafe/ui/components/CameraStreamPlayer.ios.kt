@@ -19,7 +19,7 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
-import platform.AVFoundation.AVLayerVideoGravityResizeAspectFill
+import platform.AVFoundation.AVLayerVideoGravityResize
 import platform.AVFoundation.AVMediaTypeAudio
 import platform.AVFoundation.AVPlayerItem
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
@@ -60,6 +60,9 @@ private const val POLL_INTERVAL_MS = 250L
  * restart the layer can still claim readiness for the item that was just replaced — and reappears
  * only when the holder's [LivePlayerHolder.coldStartGeneration] moves on (a cold reconnect, a
  * return from a long background), never across a warm live-to-live swap.
+ *
+ * Like the Android player, the video is stretched to fill the caller's (always 16:9) box rather
+ * than cropped to its own pixel aspect — see the Android implementation for why.
  */
 @OptIn(ExperimentalForeignApi::class)
 @Composable
@@ -90,7 +93,11 @@ actual fun CameraStreamPlayer(
     val playerLayer = remember(holder) {
         AVPlayerLayer().apply {
             this.player = player
-            videoGravity = AVLayerVideoGravityResizeAspectFill
+            // Stretch to the box rather than aspect-fill it, for the same reason as the Android
+            // player: a camera's sub-stream can be an anamorphic squeeze of its 16:9 view, and
+            // the pooled player swaps between that and the full stream, so fitting by pixel
+            // aspect re-cropped the picture on every quality change. The poster matches.
+            videoGravity = AVLayerVideoGravityResize
             backgroundColor = UIColor.clearColor.CGColor
         }
     }
