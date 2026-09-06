@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -67,8 +68,15 @@ fun RecordingTimeline(
     val labelStyle = MaterialTheme.typography.labelSmall
     val shape = RoundedCornerShape(20.dp)
     val indicatorEpoch = scrubEpochSeconds ?: playheadEpochSeconds ?: nowEpochSeconds
-    val ticks = timelineTicks(windowStart, nowEpochSeconds, span.tickSeconds)
-    val maxMotion = segments.maxOfOrNull { it.motion }?.coerceAtLeast(1) ?: 1
+    // This composable recomposes four times a second while a recording plays and on every
+    // pixel of a drag (the playhead is a parameter), so anything that doesn't depend on the
+    // playhead is remembered. The tick labels matter most: laying out text is the expensive
+    // part of this draw, and the set of ticks only changes as "now" crosses a tick boundary.
+    val ticks = remember(windowStart, nowEpochSeconds, span) { timelineTicks(windowStart, nowEpochSeconds, span.tickSeconds) }
+    val tickLabels = remember(ticks, labelStyle, textMeasurer) {
+        ticks.map { tick -> textMeasurer.measure(formatClockTime(tick), labelStyle) }
+    }
+    val maxMotion = remember(segments) { segments.maxOfOrNull { it.motion }?.coerceAtLeast(1) ?: 1 }
 
     Canvas(
         modifier = modifier
@@ -107,7 +115,7 @@ fun RecordingTimeline(
             strokeWidth = 2.dp.toPx(),
         )
 
-        ticks.forEach { tick ->
+        ticks.forEachIndexed { index, tick ->
             val x = xFor(tick)
             drawLine(
                 color = colorScheme.outlineVariant.copy(alpha = 0.25f),
@@ -115,7 +123,7 @@ fun RecordingTimeline(
                 end = Offset(x, trackBottom),
                 strokeWidth = 1.dp.toPx(),
             )
-            val layout = textMeasurer.measure(formatClockTime(tick), labelStyle)
+            val layout = tickLabels[index]
             val labelX = (x - layout.size.width / 2f).coerceIn(4.dp.toPx(), (width - layout.size.width - 4.dp.toPx()).coerceAtLeast(0f))
             drawText(layout, color = colorScheme.onSurfaceVariant, topLeft = Offset(labelX, labelTop))
         }

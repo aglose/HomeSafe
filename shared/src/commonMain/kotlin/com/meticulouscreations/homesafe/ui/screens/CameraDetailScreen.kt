@@ -75,7 +75,6 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
-import com.meticulouscreations.homesafe.viewmodel.PlaybackUiState
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -91,9 +90,12 @@ fun CameraDetailScreen(
     val viewModel = assistedMetroViewModel<CameraDetailViewModel, CameraDetailViewModel.Factory>(key = cameraName) {
         create(cameraName)
     }
+    // Deliberately *not* collected here: `viewModel.playback`, which changes four times a
+    // second while a recording plays (position polls) and on every pixel of a timeline drag.
+    // Each piece of UI that needs it collects it itself (PlayerSurface, QuickActionsRow,
+    // TimelineSection), so those updates recompose three small scopes rather than this whole
+    // screen — header, recent-activity cards and all.
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    val playback by viewModel.playback.collectAsStateWithLifecycle()
-    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
@@ -158,7 +160,6 @@ fun CameraDetailScreen(
                 .verticalScroll(scrollState),
         ) {
             PlayerSurface(
-                playback = playback,
                 cameraAvailable = cameraAvailable,
                 viewModel = viewModel,
                 playerKey = cameraName,
@@ -170,62 +171,7 @@ fun CameraDetailScreen(
                 },
             )
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .offset(y = (-32).dp)
-                    .padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                val displayName = cameraDisplayName(cameraName)
-                // Speaker: the player's own audio, once it has some — go2rtc's grid sub-streams
-                // and Frigate's recordings are video-only, so a tap explains rather than silently failing.
-                QuickActionButton(
-                    icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = if (playback.isMuted) "Unmute" else "Mute",
-                    active = !playback.isMuted,
-                    available = playback.hasAudio,
-                    onClick = {
-                        if (playback.hasAudio) viewModel.toggleMuted() else showHint("This stream has no audio to play")
-                    },
-                )
-                // Two-way talk needs a WebRTC backchannel go2rtc doesn't have for these cameras
-                // yet; the button stays where the design puts it, dimmed, and says so when tapped.
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .alpha(UNAVAILABLE_ALPHA)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-                        .clickable { showHint("Two-way talk isn't available for this camera yet") },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Mic,
-                        contentDescription = "Talk (not available)",
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-                // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
-                QuickActionButton(
-                    icon = if (alerts.enabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
-                    contentDescription = if (alerts.enabled) "Turn off alerts for $displayName" else "Turn on alerts for $displayName",
-                    active = alerts.enabled,
-                    onClick = {
-                        val enabled = !alerts.enabled
-                        viewModel.setAlertsEnabled(enabled)
-                        showHint(
-                            when {
-                                !enabled -> "Alerts off for $displayName"
-                                !alerts.pushNotificationsEnabled -> "Alerts on for $displayName. Notifications are off in Settings."
-                                else -> "Alerts on for $displayName"
-                            },
-                        )
-                    },
-                )
-            }
+            QuickActionsRow(viewModel = viewModel, cameraName = cameraName, showHint = showHint)
 
             Column(
                 modifier = Modifier
@@ -243,7 +189,7 @@ fun CameraDetailScreen(
                     )
                 }
 
-                TimelineSection(playback = playback, viewModel = viewModel)
+                TimelineSection(viewModel = viewModel)
 
                 DetectionZonesCard(onClick = onEditDetectionZones)
 
@@ -282,12 +228,12 @@ fun CameraDetailScreen(
 /** The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout. */
 @Composable
 private fun PlayerSurface(
-    playback: PlaybackUiState,
     cameraAvailable: Boolean,
     viewModel: CameraDetailViewModel,
     playerKey: String,
     modifier: Modifier = Modifier,
 ) {
+    val playback by viewModel.playback.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val scope = rememberCoroutineScope()
@@ -393,6 +339,77 @@ private fun PlayerSurface(
 }
 
 /**
+ * Speaker, talk and alerts under the player. Collects `playback` and `alerts` itself so the
+ * position polls that update `playback` while a recording plays recompose only this row.
+ */
+@Composable
+private fun QuickActionsRow(
+    viewModel: CameraDetailViewModel,
+    cameraName: String,
+    showHint: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .offset(y = (-32).dp)
+            .padding(horizontal = 24.dp),
+        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val displayName = cameraDisplayName(cameraName)
+        // Speaker: the player's own audio, once it has some — go2rtc's grid sub-streams
+        // and Frigate's recordings are video-only, so a tap explains rather than silently failing.
+        QuickActionButton(
+            icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = if (playback.isMuted) "Unmute" else "Mute",
+            active = !playback.isMuted,
+            available = playback.hasAudio,
+            onClick = {
+                if (playback.hasAudio) viewModel.toggleMuted() else showHint("This stream has no audio to play")
+            },
+        )
+        // Two-way talk needs a WebRTC backchannel go2rtc doesn't have for these cameras
+        // yet; the button stays where the design puts it, dimmed, and says so when tapped.
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .alpha(UNAVAILABLE_ALPHA)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                .clickable { showHint("Two-way talk isn't available for this camera yet") },
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Mic,
+                contentDescription = "Talk (not available)",
+                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                modifier = Modifier.size(32.dp),
+            )
+        }
+        // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
+        QuickActionButton(
+            icon = if (alerts.enabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
+            contentDescription = if (alerts.enabled) "Turn off alerts for $displayName" else "Turn on alerts for $displayName",
+            active = alerts.enabled,
+            onClick = {
+                val enabled = !alerts.enabled
+                viewModel.setAlertsEnabled(enabled)
+                showHint(
+                    when {
+                        !enabled -> "Alerts off for $displayName"
+                        !alerts.pushNotificationsEnabled -> "Alerts on for $displayName. Notifications are off in Settings."
+                        else -> "Alerts on for $displayName"
+                    },
+                )
+            },
+        )
+    }
+}
+
+/**
  * The recording frame for [epochSeconds], debounced so a drag asks Frigate for a frame only once
  * the finger has paused for a beat (each frame is an ffmpeg extraction server-side), and layered
  * over the previous frame so a still-loading one never flashes the video through.
@@ -485,7 +502,8 @@ private fun BehindLiveReadout(playheadEpochSeconds: Double, viewModel: CameraDet
 }
 
 @Composable
-private fun TimelineSection(playback: PlaybackUiState, viewModel: CameraDetailViewModel) {
+private fun TimelineSection(viewModel: CameraDetailViewModel) {
+    val playback by viewModel.playback.collectAsStateWithLifecycle()
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {

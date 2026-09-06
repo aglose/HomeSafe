@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.State
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -30,9 +31,13 @@ fun PulsingDot(
     size: Dp = 8.dp,
     pulsing: Boolean = true,
 ) {
-    val alpha = if (pulsing) {
+    // The animated value is kept as a State and read only inside graphicsLayer's draw-phase
+    // lambda. Reading it here (`by animateFloat(...)`) would recompose this composable — and
+    // re-run its whole modifier chain — on every animation frame, for every dot on screen
+    // (one per camera card on Home). Deferring the read costs one draw invalidation per frame instead.
+    val alpha: State<Float> = if (pulsing) {
         val transition = rememberInfiniteTransition(label = "pulsing-dot")
-        val animated by transition.animateFloat(
+        transition.animateFloat(
             initialValue = 1f,
             targetValue = 0.4f,
             animationSpec = infiniteRepeatable(
@@ -41,17 +46,18 @@ fun PulsingDot(
             ),
             label = "pulsing-dot-alpha",
         )
-        animated
     } else {
-        1f
+        OPAQUE
     }
     Box(
         modifier
             .size(size)
-            .graphicsLayer { this.alpha = alpha }
+            .graphicsLayer { this.alpha = alpha.value }
             .background(color, CircleShape),
     )
 }
+
+private val OPAQUE: State<Float> = mutableStateOf(1f)
 
 @Preview
 @Composable

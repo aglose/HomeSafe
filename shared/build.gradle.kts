@@ -10,6 +10,8 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.androidxRoom)
     alias(libs.plugins.kotlinxSerialization)
+    // Compile-time stability baseline + `stabilityCheck` CI gate (see composeStabilityAnalyzer below).
+    alias(libs.plugins.composeStabilityAnalyzer)
 }
 
 kotlin {
@@ -95,6 +97,7 @@ kotlin {
         }
         androidMain.dependencies {
             implementation(libs.sqlite.bundled)
+            implementation(libs.androidx.activity.compose) // ReportDrawnWhen, for time-to-fully-drawn
             implementation(libs.ktor.client.okhttp)
             // The push token is this device's identity to the relay (PushTokenProvider.android.kt).
             implementation(project.dependencies.platform(libs.firebase.bom))
@@ -125,6 +128,40 @@ kotlin {
 
 room3 {
     schemaDirectory("$projectDir/schemas")
+}
+
+composeStabilityAnalyzer {
+    stabilityValidation {
+        enabled.set(true)
+        // The committed baseline lives next to the sources, not under build/, so CI can diff it.
+        outputDir.set(layout.projectDirectory.dir("stability"))
+        // `./gradlew :shared:stabilityCheck` fails when a composable or class becomes less
+        // stable than the committed baseline; refresh the baseline deliberately with
+        // `./gradlew :shared:stabilityDump` (and say why in the PR). Local opt-out:
+        // -PcomposeStabilityStrict=false.
+        failOnStabilityChange.set(providers.gradleProperty("composeStabilityStrict").orNull?.toBoolean() ?: true)
+    }
+}
+
+// The analyzer's dump/check tasks read what the Android compilation wrote to build/stability but
+// (in this KMP + AGP 9 layout) don't wire the dependency themselves; the Android variant is the
+// one that ships, so it is the one the baseline is taken from.
+tasks.matching { it.name == "stabilityDump" || it.name == "stabilityCheck" }.configureEach {
+    dependsOn("compileAndroidMain")
+    mustRunAfter(tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>())
+}
+
+composeCompiler {
+    // Third-party types the Compose compiler can't see into but that are immutable in practice
+    // (kotlinx.datetime values, kotlin.time.Instant) are declared stable here rather than by
+    // wrapping every parameter. Review the file before adding to it.
+    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability_config.conf"))
+    // See androidApp/build.gradle.kts: reports land in shared/build/compose_compiler/ and are
+    // read from the *release* android variant.
+    if (providers.gradleProperty("composeCompilerReports").orNull == "true") {
+        reportsDestination = layout.buildDirectory.dir("compose_compiler")
+        metricsDestination = layout.buildDirectory.dir("compose_compiler")
+    }
 }
 
 dependencies {

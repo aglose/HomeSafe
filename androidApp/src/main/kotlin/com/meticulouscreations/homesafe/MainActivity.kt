@@ -3,6 +3,10 @@ package com.meticulouscreations.homesafe
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -37,8 +41,10 @@ class MainActivity : FragmentActivity() {
         // Register this phone with the push relay on the Frigate box once a server is active.
         PushRegistrar.start(lifecycleScope, appGraph, applicationContext)
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
-        // androidApp/build.gradle.kts), so this is null there regardless of the DEBUG check.
-        val debugAutofillCredentials = if (BuildConfig.DEBUG && BuildConfig.TEST_USERNAME.isNotBlank()) {
+        // androidApp/build.gradle.kts), so this is null there. Gated on the value rather than
+        // BuildConfig.DEBUG so the benchmarkRelease variant — release bytecode, not debuggable —
+        // can still sign itself in for the Macrobenchmark journeys.
+        val debugAutofillCredentials = if (BuildConfig.TEST_USERNAME.isNotBlank()) {
             DebugAutofillCredentials(
                 serverUrl = BuildConfig.TEST_SERVER_URL,
                 username = BuildConfig.TEST_USERNAME,
@@ -48,7 +54,11 @@ class MainActivity : FragmentActivity() {
             null
         }
         setContent {
-            App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
+            // testTagsAsResourceId lets UiAutomator (the :baselineprofile journeys) find nodes by
+            // Modifier.testTag via By.res(...). Zero cost outside accessibility/test traversal.
+            Box(modifier = Modifier.semantics { testTagsAsResourceId = true }) {
+                App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
+            }
         }
     }
 

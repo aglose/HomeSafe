@@ -5,6 +5,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -63,6 +64,11 @@ fun MaskPolygonEditor(
     val currentOnMoveVertex by rememberUpdatedState(onMoveVertex)
     val currentOnMoveDraftVertex by rememberUpdatedState(onMoveDraftVertex)
     val textMeasurer = rememberTextMeasurer()
+    // Every drag sample replaces `polygons` and redraws; the labels themselves change rarely,
+    // and text layout is the costly part of drawing them, so lay them out once per label set.
+    val labelLayouts = remember(polygons, labelStyle, textMeasurer) {
+        polygons.mapNotNull { it.label }.distinct().associateWith { textMeasurer.measure(it, labelStyle) }
+    }
 
     Canvas(
         modifier = modifier
@@ -130,7 +136,7 @@ fun MaskPolygonEditor(
         }
         polygons.forEach { item ->
             val label = item.label ?: return@forEach
-            val layout = textMeasurer.measure(label, labelStyle)
+            val layout = labelLayouts.getValue(label)
             val center = item.polygon.centroid.toOffset(canvasSize)
             val padX = 6.dp.toPx()
             val padY = 3.dp.toPx()

@@ -12,4 +12,7 @@ plugins {
     alias(libs.plugins.androidxRoom) apply false
     alias(libs.plugins.kotlinxSerialization) apply false
     alias(libs.plugins.googleServices) apply false
+    alias(libs.plugins.androidTest) apply false
+    alias(libs.plugins.baselineprofile) apply false
+    alias(libs.plugins.composeStabilityAnalyzer) apply false
 }

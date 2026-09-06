@@ -32,6 +32,7 @@ plugins {
 }
 
 include(":androidApp")
+include(":baselineprofile")
 include(":desktopApp")
 include(":shared")
 include(":webApp")

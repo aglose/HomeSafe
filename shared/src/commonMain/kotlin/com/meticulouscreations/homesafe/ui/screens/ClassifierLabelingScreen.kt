@@ -110,9 +110,9 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
         contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item { CategoriesCard(uiState = uiState, data = data, viewModel = viewModel) }
-        item { TrainCard(uiState = uiState, data = data, onTrain = viewModel::train) }
-        item {
+        item(key = "categories", contentType = "categories") { CategoriesCard(uiState = uiState, data = data, viewModel = viewModel) }
+        item(key = "train", contentType = "train") { TrainCard(uiState = uiState, data = data, onTrain = viewModel::train) }
+        item(key = "queue-title", contentType = "title") {
             Text(
                 text = if (data.queue.isEmpty()) "Nothing waiting to be labelled" else "${data.queue.size} waiting to be labelled",
                 style = MaterialTheme.typography.headlineSmall,
@@ -120,7 +120,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
             )
         }
         if (data.queue.isEmpty()) {
-            item {
+            item(key = "queue-empty", contentType = "title") {
                 Text(
                     text = "Frigate saves a crop every time this model looks at a ${data.model.objects.joinToString(" or ")}. They'll show up here.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -128,7 +128,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
                 )
             }
         }
-        items(data.queue, key = { it.fileName }) { crop ->
+        items(data.queue, key = { it.fileName }, contentType = { "crop" }) { crop ->
             CropCard(
                 crop = crop,
                 imageUrl = viewModel.imageUrl(crop.fileName),
