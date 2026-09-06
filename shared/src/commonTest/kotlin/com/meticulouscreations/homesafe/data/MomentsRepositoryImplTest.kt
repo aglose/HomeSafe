@@ -60,7 +60,7 @@ class MomentsRepositoryImplTest {
         override val biometricDisplayName = "biometrics"
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
-        override suspend fun signInWithBiometrics() = fail("unused")
+        override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
     }

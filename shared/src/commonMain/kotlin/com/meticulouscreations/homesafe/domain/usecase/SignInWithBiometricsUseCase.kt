@@ -6,5 +6,7 @@ import dev.zacsweers.metro.Inject
 
 @Inject
 class SignInWithBiometricsUseCase(private val connectionRepository: ConnectionRepository) {
-    suspend operator fun invoke(): Result<SavedCredentials> = connectionRepository.signInWithBiometrics()
+    /** [onCredentialsUnlocked] fires once the biometric prompt has been passed, before the server is contacted. */
+    suspend operator fun invoke(onCredentialsUnlocked: () -> Unit = {}): Result<SavedCredentials> =
+        connectionRepository.signInWithBiometrics(onCredentialsUnlocked)
 }

@@ -1,7 +1,12 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.BoundsTransform
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.animateDp
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,15 +36,26 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
+import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
+import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
+import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
+import com.meticulouscreations.homesafe.ui.components.sheenBar
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
@@ -53,31 +70,65 @@ import kotlin.time.ExperimentalTime
 @Composable
 fun HomeTabContent(
     sharedTransitionScope: SharedTransitionScope,
-    onCameraClick: (String) -> Unit = {},
+    onCameraClick: (CameraTile) -> Unit = {},
 ) {
-    val extraColors = LocalFrigateExtraColors.current
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
 
-    // A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
-    // Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
-    // card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
-    // actually on screen are decoding; with several 4K streams that concurrency was a real
-    // contributor to stutter.
     // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
     ReportFullyDrawnWhen { cameras != null }
 
+    HomeFeed(
+        everyoneAway = everyoneAway,
+        cameras = cameras,
+        onAwayBack = viewModel::markBack,
+        modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
+    ) { tile ->
+        CameraCard(
+            tile = tile,
+            sharedTransitionScope = sharedTransitionScope,
+            modifier = Modifier.animateItem().clickable { onCameraClick(tile) },
+        )
+    }
+}
+
+/**
+ * The home page's list: greeting, status line, and one card per camera — or, while [cameras]
+ * is still null (the first cache read in flight), the loading skeleton: outlined cards where
+ * the cameras will land, with a runner going round each, and a sheen where the status text
+ * goes. The sign-in screen draws this same list in its loading state, so the skeleton and the
+ * real page are one layout by construction, and the real cards fade in exactly onto their
+ * outlines rather than near them.
+ *
+ * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
+ * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
+ * card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
+ * actually on screen are decoding; with several 4K streams that concurrency was a real
+ * contributor to stutter.
+ */
+@Composable
+internal fun HomeFeed(
+    everyoneAway: Boolean,
+    cameras: List<CameraTile>?,
+    onAwayBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
+) {
+    val extraColors = LocalFrigateExtraColors.current
+    // The skeleton's frame clock runs only while there is a skeleton to drive.
+    val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize().testTag(HOME_FEED_TEST_TAG),
+        modifier = modifier.fillMaxSize(),
         contentPadding = tabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
         if (everyoneAway) {
-            item(key = "away-banner") { AwayBanner(onBack = viewModel::markBack) }
+            item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
         }
 
-        item {
+        item(key = "greeting") {
             // Fixed for the life of this screen: a greeting that flips mid-scroll would be odd.
             val greeting = remember { greetingForHour(currentLocalHour()) }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -90,19 +141,37 @@ fun HomeTabContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    PulsingDot(color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary)
-                    Text(
-                        text = if (everyoneAway) "Away Mode" else "System Secure",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                    )
+                    if (loadingPhase != null) {
+                        // The real row's exact size and shape, with the words not yet known:
+                        // a dim dot, and the status text drawn transparent under a sheen.
+                        PulsingDot(color = MaterialTheme.colorScheme.surfaceContainerHighest, pulsing = false)
+                        Text(
+                            text = "System Secure",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color.Transparent,
+                            modifier = Modifier.sheenBar(phase = { loadingPhase.value }),
+                        )
+                    } else {
+                        PulsingDot(color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary)
+                        Text(
+                            text = if (everyoneAway) "Away Mode" else "System Secure",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                        )
+                    }
                 }
             }
         }
 
         val loadedCameras = cameras
         if (loadedCameras == null) {
-            // First cache read still in flight — a blank beat, not a false "no cameras".
+            items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
+                SkeletonCameraCard(
+                    phase = { loadingPhase?.value ?: 0f },
+                    phaseOffset = index / SKELETON_CARD_COUNT.toFloat(),
+                    modifier = Modifier.animateItem(),
+                )
+            }
         } else if (loadedCameras.isEmpty()) {
             item {
                 Text(
@@ -112,13 +181,7 @@ fun HomeTabContent(
                 )
             }
         } else {
-            items(loadedCameras, key = { it.camera.name }) { tile ->
-                CameraCard(
-                    tile = tile,
-                    sharedTransitionScope = sharedTransitionScope,
-                    modifier = Modifier.clickable { onCameraClick(tile.camera.name) },
-                )
-            }
+            items(loadedCameras, key = { it.camera.name }) { tile -> cameraCard(tile) }
         }
     }
 }
@@ -133,41 +196,56 @@ private fun CameraCard(
     val camera = tile.camera
     val extraColors = LocalFrigateExtraColors.current
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
+    val shape = RoundedCornerShape(CAMERA_CARD_CORNER_RADIUS)
     Box(
-        modifier = with(sharedTransitionScope) {
-            modifier.sharedBounds(
-                sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(camera.name)),
-                animatedVisibilityScope = animatedVisibilityScope,
-            )
-        }
+        modifier = modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(20.dp))
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(20.dp))
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
             .background(
                 Brush.verticalGradient(
                     listOf(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.surfaceContainerHigh),
                 ),
             ),
     ) {
-        val streamUrl = tile.streamUrl
-        if (streamUrl != null) {
-            // The player is keyed by camera name so the detail screen picks up this very player
-            // (already decoding) when the card is tapped, and this card gets it back — still
-            // warm — on the way out.
-            CameraStreamPlayer(
-                streamUrl = streamUrl,
-                modifier = Modifier.fillMaxSize(),
-                posterUrl = tile.posterUrl,
-                playerKey = camera.name,
-            )
-        } else {
-            Icon(
-                imageVector = Icons.Filled.Videocam,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                modifier = Modifier.align(Alignment.Center).size(56.dp),
-            )
+        // Only the video is the shared element. The card's chrome — border, title, status
+        // badge — stays behind on the list while the video lifts out to the detail screen and
+        // settles back into it, which is what makes the move read as one object travelling
+        // rather than the whole screen being dragged along.
+        Box(
+            modifier = with(sharedTransitionScope) {
+                Modifier.sharedBounds(
+                    sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(camera.name)),
+                    animatedVisibilityScope = animatedVisibilityScope,
+                    boundsTransform = CameraVideoBoundsTransform,
+                    clipInOverlayDuringTransition = rememberCameraVideoOverlayClip(
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        visibleRadius = CAMERA_CARD_CORNER_RADIUS,
+                        hiddenRadius = 0.dp,
+                    ),
+                )
+            }.fillMaxSize(),
+        ) {
+            val streamUrl = tile.streamUrl
+            if (streamUrl != null) {
+                // The player is keyed by camera name so the detail screen picks up this very
+                // player (already decoding) when the card is tapped, and this card gets it back
+                // — still warm — on the way out.
+                CameraStreamPlayer(
+                    streamUrl = streamUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    posterUrl = tile.posterUrl,
+                    playerKey = camera.name,
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.Videocam,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.align(Alignment.Center).size(56.dp),
+                )
+            }
         }
 
         Row(
@@ -230,8 +308,59 @@ private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZon
 /** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
 const val HOME_FEED_TEST_TAG = "home_feed"
 
+/** Outlined placeholder cards shown until the camera cache answers — about a phone screen's worth. */
+private const val SKELETON_CARD_COUNT = 3
+
+/** The camera cards' corner radius; the loading skeleton and the in-flight video clip use the same. */
+internal val CAMERA_CARD_CORNER_RADIUS: Dp = SkeletonCardCornerRadius
+
 /** The shared-element key for a camera's video area, matched between the grid card and the detail screen. */
 internal fun cameraVideoSharedKey(cameraName: String): String = "camera-video-$cameraName"
+
+/**
+ * The video's flight between card and detail player: one beat, on the same easing as the
+ * screen fade it travels over, rather than the default spring that settles a good while after
+ * the screens have finished changing.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+internal val CameraVideoBoundsTransform = BoundsTransform { _, _ ->
+    tween(NAV_TRANSITION_MS, easing = NavEnterEasing)
+}
+
+/**
+ * Clips the in-flight video to corners that morph between the card's radius and the detail
+ * player's square edges, so it neither pokes out of the rounded card at take-off nor snaps
+ * from rounded to square on landing. [visibleRadius] is this side's own radius; [hiddenRadius]
+ * the other side's. Whichever side draws the overlay animates the same way, so the result is the
+ * same whether the video is on its way out or its way back.
+ */
+@OptIn(ExperimentalSharedTransitionApi::class)
+@Composable
+internal fun rememberCameraVideoOverlayClip(
+    animatedVisibilityScope: AnimatedVisibilityScope,
+    visibleRadius: Dp,
+    hiddenRadius: Dp,
+): SharedTransitionScope.OverlayClip {
+    val radius by animatedVisibilityScope.transition.animateDp(
+        transitionSpec = { tween(NAV_TRANSITION_MS, easing = NavEnterEasing) },
+        label = "camera-video-corner",
+    ) { state -> if (state == EnterExitState.Visible) visibleRadius else hiddenRadius }
+    return remember {
+        object : SharedTransitionScope.OverlayClip {
+            private val path = Path()
+            override fun getClipPath(
+                sharedContentState: SharedTransitionScope.SharedContentState,
+                bounds: Rect,
+                layoutDirection: LayoutDirection,
+                density: Density,
+            ): Path {
+                path.rewind()
+                path.addRoundRect(RoundRect(bounds, CornerRadius(with(density) { radius.toPx() })))
+                return path
+            }
+        }
+    }
+}
 
 @Composable
 private fun StatusBadge(enabled: Boolean, textColor: Color, pillColor: Color) {

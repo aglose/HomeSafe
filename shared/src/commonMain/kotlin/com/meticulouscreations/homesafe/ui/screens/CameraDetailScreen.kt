@@ -83,6 +83,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun CameraDetailScreen(
     cameraName: String,
+    warmStreamUrl: String?,
+    warmPosterUrl: String?,
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
@@ -163,10 +165,21 @@ fun CameraDetailScreen(
                 cameraAvailable = cameraAvailable,
                 viewModel = viewModel,
                 playerKey = cameraName,
+                warmStreamUrl = warmStreamUrl,
+                warmPosterUrl = warmPosterUrl,
                 modifier = with(sharedTransitionScope) {
+                    // The video is the one thing that moves between here and the card (this
+                    // screen only fades — see SharedElementPush / SharedElementPop); its corners
+                    // round off on the way to the card and square up on the way here.
                     Modifier.sharedBounds(
                         sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
                         animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = CameraVideoBoundsTransform,
+                        clipInOverlayDuringTransition = rememberCameraVideoOverlayClip(
+                            animatedVisibilityScope = animatedVisibilityScope,
+                            visibleRadius = 0.dp,
+                            hiddenRadius = CAMERA_CARD_CORNER_RADIUS,
+                        ),
                     )
                 },
             )
@@ -231,6 +244,8 @@ private fun PlayerSurface(
     cameraAvailable: Boolean,
     viewModel: CameraDetailViewModel,
     playerKey: String,
+    warmStreamUrl: String?,
+    warmPosterUrl: String?,
     modifier: Modifier = Modifier,
 ) {
     val playback by viewModel.playback.collectAsStateWithLifecycle()
@@ -260,6 +275,16 @@ private fun PlayerSurface(
                     onPlaybackEnded = viewModel::onPlaybackEnded,
                     onPlaybackError = viewModel::onPlaybackError,
                     onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
+                )
+            } else if (warmStreamUrl != null) {
+                // The view model hasn't chosen a stream yet (its first camera read is still in
+                // flight): keep showing what the card was playing, on the same pooled player.
+                // The view model's first request is that very stream, so nothing reloads.
+                CameraStreamPlayer(
+                    streamUrl = warmStreamUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    posterUrl = warmPosterUrl,
+                    playerKey = playerKey,
                 )
             } else {
                 Icon(

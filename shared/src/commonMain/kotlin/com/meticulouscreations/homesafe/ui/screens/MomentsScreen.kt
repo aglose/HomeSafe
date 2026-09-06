@@ -81,7 +81,9 @@ fun MomentsTabContent() {
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp)
-            .padding(top = 8.dp),
+            // Under the shell's floating top bar (see shellTopBarClearance); the filter chips
+            // stay put beneath it while the list scrolls under both.
+            .padding(top = shellTopBarClearance() + 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(

@@ -107,9 +107,10 @@ class ConnectionRepositoryImpl(
         )
     }
 
-    override suspend fun signInWithBiometrics(): Result<SavedCredentials> =
+    override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> =
         biometricCredentialStore.authenticateAndRetrieve().fold(
             onSuccess = { credentials ->
+                onCredentialsUnlocked()
                 // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
                 // credential saved before this route existed carries none at all.
                 connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
