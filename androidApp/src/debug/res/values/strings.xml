@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Debug builds install beside release (applicationId ...homesafe.debug), so the launcher label tells them apart. -->
+<resources>
+    <string name="app_name">HomeSafe Debug</string>
+</resources>

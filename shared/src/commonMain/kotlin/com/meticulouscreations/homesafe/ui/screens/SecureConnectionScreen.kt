@@ -53,6 +53,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
@@ -115,6 +116,9 @@ fun SecureConnectionScreen(
             }
         }
     }
+
+    // Cold start lands here, so this form is the first meaningful frame for time-to-fully-drawn.
+    ReportFullyDrawnWhen { true }
 
     biometricSaveOffer?.let { credentials ->
         BiometricSaveOfferDialog(

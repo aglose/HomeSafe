@@ -115,7 +115,7 @@ fun MomentsTabContent() {
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 state.groups.forEach { group ->
-                    item(key = "header-${group.dateGroup}-${group.dateSubLabel}") {
+                    item(key = "header-${group.dateGroup}-${group.dateSubLabel}", contentType = "date-header") {
                         MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel)
                     }
                     items(group.items, key = { it.event.id }, contentType = { "moment-card" }) { item ->

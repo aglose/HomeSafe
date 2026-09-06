@@ -32,11 +32,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
@@ -63,8 +65,11 @@ fun HomeTabContent(
     // card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
     // actually on screen are decoding; with several 4K streams that concurrency was a real
     // contributor to stutter.
+    // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
+    ReportFullyDrawnWhen { cameras != null }
+
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().testTag(HOME_FEED_TEST_TAG),
         contentPadding = tabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp),
     ) {
@@ -221,6 +226,9 @@ internal fun greetingForHour(hour: Int): String = when (hour) {
 
 @OptIn(ExperimentalTime::class)
 private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
+
+/** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
+const val HOME_FEED_TEST_TAG = "home_feed"
 
 /** The shared-element key for a camera's video area, matched between the grid card and the detail screen. */
 internal fun cameraVideoSharedKey(cameraName: String): String = "camera-video-$cameraName"
