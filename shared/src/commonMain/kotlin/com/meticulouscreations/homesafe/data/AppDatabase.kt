@@ -31,14 +31,16 @@ class SettingsPlaceholdersDropped : AutoMigrationSpec
 class CategorySwitchesMovedToZones : AutoMigrationSpec
 
 @Database(
-    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class, AlertZoneRuleEntity::class],
-    version = 7,
+    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class, AlertZoneRuleEntity::class, PlaybackPreferencesEntity::class],
+    version = 8,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
         AutoMigration(from = 5, to = 6, spec = CategorySwitchesMovedToZones::class),
         // 6 -> 7: the "only strangers" switch (SettingsEntity.quietFamiliarPeople, default off).
         AutoMigration(from = 6, to = 7),
+        // 7 -> 8: the detail player's quality and sound choices ([PlaybackPreferencesEntity], a new table).
+        AutoMigration(from = 7, to = 8),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
