@@ -85,9 +85,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # Runs the whole commonTest suite on-device: commonTest feeds the androidDeviceTest
-      # compilation (verified: 29 test classes), which is what puts the Compose UI tests
-      # on a real Android runtime.
+      # Runs the whole commonTest suite on-device, plus src/uiTest/kotlin — so the Compose
+      # UI tests execute on a real Android runtime here, on the iOS simulator in the ios job,
+      # and on the JVM in the unit job. Verified locally: 182 tests, 5 of them HomeFeedUiTest.
       - name: Instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
