@@ -10,6 +10,12 @@ data class PresenceDevice(
     val updatedEpochSeconds: Double? = null,
     /** True for the entry that is this very phone, so the Settings switch knows which row it drives. */
     val isThisDevice: Boolean = false,
+    /**
+     * Whether the relay lets this phone's switch decide [HouseholdPresence.everyoneAway]. False for
+     * debug installs (emulators, a test build beside the real app) — they still get pushes, they
+     * just can't declare the house empty or hold away mode open.
+     */
+    val countsForAway: Boolean = true,
 )
 
 /**
@@ -19,9 +25,12 @@ data class PresenceDevice(
  */
 data class HouseholdPresence(
     val devices: List<PresenceDevice>,
-    /** At least one device registered, and all of them away. */
+    /** At least one *counting* device registered, and all of those away. */
     val everyoneAway: Boolean,
 ) {
+    /** The phones the relay actually counts — release installs (and, for now, any iPhone). */
+    val countingDevices: List<PresenceDevice> get() = devices.filter { it.countsForAway }
+
     val thisDevice: PresenceDevice? get() = devices.firstOrNull { it.isThisDevice }
 
     companion object {

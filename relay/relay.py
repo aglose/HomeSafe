@@ -93,6 +93,11 @@ def db() -> sqlite3.Connection:
     # want to hear about people Frigate recognised (a face arrives as the review item's sub_label).
     if "quiet_familiar" not in columns:
         conn.execute("ALTER TABLE devices ADD COLUMN quiet_familiar INTEGER NOT NULL DEFAULT 0")
+    # Which build registered (see `counts_for_away`). Rows written before this column existed stay
+    # "unknown" and don't count towards away mode; the real phones re-register on their next
+    # connect and become "release" again on their own.
+    if "build" not in columns:
+        conn.execute("ALTER TABLE devices ADD COLUMN build TEXT NOT NULL DEFAULT 'unknown'")
     conn.commit()
     return conn
 
@@ -201,23 +206,52 @@ def recent_alerts() -> list[dict[str, Any]]:
 
 # ---------------------------------------------------------------- away mode
 
+# Only the household's real phones decide whether the house is empty. A debug build — an
+# emulator, a test install next to the release app, a phone left on a dev branch — registers for
+# push like any other device, but it must never hold away mode open (or, worse, be the single
+# "away" device that opens it). Anything that didn't say which build it is stays out too.
+#
+# The exception is iOS: there is no iOS release channel yet (no App Store / TestFlight build), so
+# the household's iPhone is a debug IPA and would otherwise never count. Drop "ios" from this set
+# the day an iOS release ships.
+AWAY_BUILDS = {"release"}
+AWAY_DEBUG_PLATFORMS = {"ios"}
+
+
+def counts_for_away(platform: str, build: str) -> bool:
+    """Whether this device's away switch is part of `everyone_away`."""
+    return (build or "").lower() in AWAY_BUILDS or (platform or "").lower() in AWAY_DEBUG_PLATFORMS
+
+
 def presence_snapshot(this_token: str | None = None) -> dict[str, Any]:
-    """Who says they're home. `everyone_away` needs at least one device, and all of them away."""
-    rows = with_db(lambda c: c.execute("SELECT token, name, platform, away, away_updated FROM devices ORDER BY created").fetchall())
+    """
+    Who says they're home. Every registered device is listed (so a debug install can see itself),
+    but `everyone_away` is decided by the counting ones alone: at least one, and all of them away.
+    """
+    rows = with_db(lambda c: c.execute("SELECT token, name, platform, away, away_updated, build FROM devices ORDER BY created").fetchall())
     devices = [
-        {"name": n, "platform": p, "away": bool(a), "away_updated": u, "this_device": t == this_token}
-        for t, n, p, a, u in rows
+        {
+            "name": n,
+            "platform": p,
+            "away": bool(a),
+            "away_updated": u,
+            "this_device": t == this_token,
+            "build": b,
+            "counts": counts_for_away(p, b),
+        }
+        for t, n, p, a, u, b in rows
     ]
-    return {"devices": devices, "everyone_away": bool(devices) and all(d["away"] for d in devices)}
+    counting = [d for d in devices if d["counts"]]
+    return {"devices": devices, "everyone_away": bool(counting) and all(d["away"] for d in counting)}
 
 
 def away_since() -> float | None:
-    """When the last person left, or None while somebody is home (or nobody has registered)."""
-    row = with_db(lambda c: c.execute("SELECT COUNT(*), SUM(away), MAX(away_updated) FROM devices").fetchone())
-    total, away, updated = row
-    if not total or (away or 0) < total:
+    """When the last person left, or None while somebody is home (or no counting phone has registered)."""
+    rows = with_db(lambda c: c.execute("SELECT platform, away, away_updated, build FROM devices").fetchall())
+    counting = [(a, u) for p, a, u, b in rows if counts_for_away(p, b)]
+    if not counting or not all(a for a, _ in counting):
         return None
-    return float(updated or 0.0)
+    return float(max((u or 0.0) for _, u in counting))
 
 
 def away_items(since: float) -> list[dict[str, Any]]:
@@ -328,6 +362,8 @@ class Device(BaseModel):
     name: str = ""
     # "Only strangers": skip pushes for people Frigate recognised. Sent on every registration.
     quiet_familiar: bool = False
+    # "release" or "debug" — decides whether this phone counts towards away mode (`counts_for_away`).
+    build: str = "unknown"
 
 
 class Presence(BaseModel):
@@ -375,14 +411,18 @@ def register(device: Device, request: Request) -> dict[str, Any]:
         c.execute(
             # Deliberately leaves `away`/`away_updated` alone: re-registering (every connect, every
             # LAN/Tailscale flip) must not quietly mark a phone as back home.
-            "INSERT INTO devices (token, platform, name, created, last_seen, quiet_familiar) VALUES (?,?,?,?,?,?) "
+            "INSERT INTO devices (token, platform, name, created, last_seen, quiet_familiar, build) VALUES (?,?,?,?,?,?,?) "
             "ON CONFLICT(token) DO UPDATE SET platform=excluded.platform, name=excluded.name, last_seen=excluded.last_seen, "
-            "quiet_familiar=excluded.quiet_familiar",
-            (device.token, device.platform, device.name, now, now, int(device.quiet_familiar)),
+            "quiet_familiar=excluded.quiet_familiar, build=excluded.build",
+            (device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build),
         ),
         c.commit(),
     ))
-    log.info("device registered by %s: %s (%s, strangers only=%s)", user, device.name or "unnamed", device.platform, device.quiet_familiar)
+    log.info(
+        "device registered by %s: %s (%s %s, strangers only=%s, counts for away=%s)",
+        user, device.name or "unnamed", device.platform, device.build, device.quiet_familiar,
+        counts_for_away(device.platform, device.build),
+    )
     return {"ok": True}
 
 
@@ -421,8 +461,11 @@ def get_presence(request: Request, token: str | None = None) -> dict[str, Any]:
 @app.get("/devices")
 def list_devices(request: Request) -> list[dict[str, Any]]:
     require_frigate_session(request)
-    rows = with_db(lambda c: c.execute("SELECT platform, name, created, last_seen, away FROM devices").fetchall())
-    return [{"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a)} for p, n, cr, ls, a in rows]
+    rows = with_db(lambda c: c.execute("SELECT platform, name, created, last_seen, away, build FROM devices").fetchall())
+    return [
+        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts_for_away(p, b)}
+        for p, n, cr, ls, a, b in rows
+    ]
 
 
 @app.post("/test")

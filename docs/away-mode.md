@@ -12,19 +12,44 @@ All routes require the Frigate session cookie, like the existing `/devices` rout
 | Route | Body | Answer |
 | --- | --- | --- |
 | `PUT /devices/{token}/presence` | `{"away": bool}` | presence snapshot (below) |
-| `GET /presence?token={token}` | — | `{"devices":[{"name","platform","away","away_updated","this_device"}], "everyone_away": bool}` |
+| `GET /presence?token={token}` | — | `{"devices":[{"name","platform","away","away_updated","this_device","build","counts"}], "everyone_away": bool}` |
 
 - `token` is the phone's FCM token — the identity the relay already knows devices by. The
   `PUT` upserts, so a presence change can't race the device's registration; a row created that
-  way has `platform="unknown"` and no name until the app's normal `POST /devices` fills them in.
+  way has `platform="unknown"`, `build="unknown"` and no name — so it doesn't count towards away
+  mode — until the app's normal `POST /devices` fills them in.
 - `away_updated` is epoch seconds (REAL) of the last change, `null` if never set.
 - `this_device` is true on the entry whose token matches the `?token=` query (or the `PUT` path),
   so the app knows which row its own switch drives.
-- `everyone_away` = at least one device **and** all of them away.
+- `everyone_away` = at least one **counting** device (below) **and** all of those away.
 - `POST /devices` (re-registration on every connect and LAN/Tailscale flip) never touches
   `away`/`away_updated`.
-- Schema: `devices` gained `away INTEGER NOT NULL DEFAULT 0` and `away_updated REAL`, added by
-  guarded `ALTER TABLE`s in `db()` so an existing `relay.db` upgrades on boot.
+- Schema: `devices` gained `away INTEGER NOT NULL DEFAULT 0`, `away_updated REAL` and
+  `build TEXT NOT NULL DEFAULT 'unknown'`, added by guarded `ALTER TABLE`s in `db()` so an
+  existing `relay.db` upgrades on boot.
+
+### Which phones count
+
+Only the household's real phones may decide the house is empty. `POST /devices` carries
+`build` — `"release"` or `"debug"` — and `counts_for_away(platform, build)` is the one place that
+rule lives:
+
+```python
+AWAY_BUILDS = {"release"}
+AWAY_DEBUG_PLATFORMS = {"ios"}      # no iOS release channel yet; drop "ios" the day one ships
+```
+
+- A debug install — an emulator, the `.debug` app sitting beside the real one, a phone on a dev
+  branch — still registers, still receives every push, and still has its own switch. It just
+  isn't part of `everyone_away` and can't hold away mode open by claiming to be home.
+- iOS is exempt while the only iOS build is a debug IPA: the household iPhone counts on any
+  build. (It has no relay row at all until iOS push registration lands — see **Not done**.)
+- Rows written before the `build` column existed stay `"unknown"` and don't count. The real
+  phones re-register on their next connect and become `"release"` again on their own, so this
+  self-heals; a leftover emulator row never does, which is the point.
+- Each entry in the presence snapshot carries its `build` and a `counts` boolean, so the Settings
+  list can show a debug install greyed out as "· debug, not counted". `GET /devices` reports the
+  same as `counts_for_away`.
 
 ### Escalation
 
@@ -54,15 +79,19 @@ somebody is home, behave exactly as before.
   the `PUT` response, so the switch shows what the relay recorded, not what was asked.
 - Use cases: `ObserveHouseholdPresenceUseCase`, `RefreshHouseholdPresenceUseCase`, `SetAwayUseCase`
   (`isSupported` mirrors the token provider).
-- `PushRelayApi.setPresence` / `getPresence` with internal `@Serializable` DTOs.
+- `PushRelayApi.registerDevice(..., build)` / `setPresence` / `getPresence` with internal
+  `@Serializable` DTOs. `PushRegistrar` sends `BuildConfig.DEBUG ? "debug" : "release"`;
+  `PresenceDevice.countsForAway` carries the relay's verdict back (defaulting to true, so an
+  older relay behaves as it did).
 - `DetectionAlertService` (the in-app 15 s poller) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
   `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
   urgent ones on the new `away_alerts` channel (IMPORTANCE_HIGH, alarm sound, `CATEGORY_ALARM`);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
 - Settings tab: an "Away mode" section after Alerts — "I'm away" switch for this phone, one line
-  per device (`Google Pixel 10 Pro XL · away since 4:12 PM` / `· home`), a caption explaining the
-  escalation. Disabled with a caption when push isn't supported on the platform or the relay
+  per device (`Google Pixel 10 Pro XL · away since 4:12 PM` / `· home`, and
+  `· debug, not counted` greyed out for a device the relay doesn't count), a caption explaining
+  the escalation. Disabled with a caption when push isn't supported on the platform or the relay
   couldn't be reached. `SettingsViewModel` carries `presence`, `awaySupported`, `awayBusy`,
   `awayError`; presence is refreshed in the tab's `LifecycleResumeEffect`.
 - Home tab: a slim "Away mode · nobody home · alerts escalated" banner with an "I'm back" button
@@ -80,5 +109,6 @@ somebody is home, behave exactly as before.
   two Android phones, or one phone, until iOS push lands.
 - **Token rotation.** FCM rotating a token creates a new device row (home by default) and leaves
   the old one until a push to it fails with UNREGISTERED. Until then `everyone_away` may be
-  false because of a ghost row; the Settings list shows it.
+  false because of a ghost row; the Settings list shows it. A ghost from a *debug* install is now
+  harmless — it doesn't count — but a ghost release row still blocks away mode.
 - **Relay-side snooze / "I'm back" from the notification** — not built.

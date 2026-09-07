@@ -5,9 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -45,21 +45,21 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-import com.meticulouscreations.homesafe.domain.model.CameraPipeline
-import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.CameraPipeline
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
-import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
-import com.meticulouscreations.homesafe.ui.formatClockTime
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
@@ -127,6 +127,7 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
             SettingsCaption(
                 when (connection.route) {
                     ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
+
                     ConnectionRoute.TAILSCALE ->
                         if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
                 },
@@ -135,7 +136,9 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
         val overview = state.overview
         when {
             overview == null && state.overviewError != null -> LoadFailedRow(state.overviewError, onRetry)
+
             overview == null -> LoadingRow("Reading server stats…")
+
             else -> {
                 SettingsInfoGrid(
                     listOf(
@@ -148,7 +151,7 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
                 overview.detector?.let { detector ->
                     val model = listOfNotNull(
                         detector.modelType,
-                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "${w}×$h" } },
+                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "$w×$h" } },
                     ).joinToString(" ")
                     InfoRow(
                         label = "Detector",
@@ -336,7 +339,9 @@ private fun AlertsSection(
             val cameras = state.overview?.cameras?.filter { it.enabled }
             when {
                 cameras == null -> SettingsCaption("Loading cameras…")
+
                 cameras.isEmpty() -> SettingsCaption("No cameras on this server.")
+
                 else -> cameras.forEach { camera ->
                     CameraAlertZones(camera = camera, alerts = state.alerts, onZoneCategory = onZoneCategory)
                 }
@@ -351,7 +356,9 @@ private fun AlertsSection(
                     } else {
                         "Skip the notification when Frigate recognises the person. Name faces under Recognition below."
                     }
+
                     false -> "Needs face recognition, which is off in Frigate's config."
+
                     null -> "Needs face recognition on the server."
                 },
                 checked = faces == true && state.alerts.quietFamiliarPeople,
@@ -380,11 +387,14 @@ private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
     SettingsSection(title = "Away mode", icon = Icons.Filled.Home) {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
         val switchEnabled = state.awaySupported && !state.awayBusy && !relayUnreachable
+        // A debug install may still flip its own switch — the relay simply doesn't count it.
+        val thisDeviceCounts = state.presence.thisDevice?.countsForAway != false
         SettingsToggleRow(
             title = "I'm away",
             description = when {
                 !state.awaySupported -> "Not available on this platform yet. Use the Android app to set presence."
                 relayUnreachable -> "The push relay on the Frigate box can't be reached, so presence can't be changed right now."
+                !thisDeviceCounts -> "This is a debug build, so its switch doesn't decide whether the house is empty."
                 state.thisDeviceAway -> "This phone counts as out of the house."
                 else -> "This phone counts as home."
             },
@@ -407,7 +417,10 @@ private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
     }
 }
 
-/** "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" — one line per phone the relay knows. */
+/**
+ * "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" — one line per phone the relay knows.
+ * A debug install is greyed out and says so: it hears the alerts but doesn't get a vote.
+ */
 @Composable
 private fun PresenceDeviceRow(device: PresenceDevice) {
     val name = device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { "Unnamed device" } }
@@ -416,12 +429,21 @@ private fun PresenceDeviceRow(device: PresenceDevice) {
         device.away -> "away"
         else -> "home"
     }
+    val suffix = (if (device.isThisDevice) " · this phone" else "") + (if (device.countsForAway) "" else " · debug, not counted")
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        PulsingDot(color = if (device.away) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary, size = 6.dp, pulsing = device.away)
+        PulsingDot(
+            color = when {
+                !device.countsForAway -> MaterialTheme.colorScheme.outline
+                device.away -> MaterialTheme.colorScheme.primary
+                else -> MaterialTheme.colorScheme.secondary
+            },
+            size = 6.dp,
+            pulsing = device.away && device.countsForAway,
+        )
         Text(
-            text = "$name · $status" + if (device.isThisDevice) " · this phone" else "",
+            text = "$name · $status$suffix",
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface,
+            color = if (device.countsForAway) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

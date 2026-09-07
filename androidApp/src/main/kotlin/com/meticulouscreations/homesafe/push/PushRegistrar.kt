@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Build
 import android.util.Log
 import com.google.firebase.messaging.FirebaseMessaging
+import com.meticulouscreations.homesafe.BuildConfig
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import kotlinx.coroutines.CoroutineScope
@@ -62,7 +63,16 @@ object PushRegistrar {
 
     private suspend fun register(serverUrl: String, token: String) {
         val api = relayApi ?: return
-        api.registerDevice(serverUrl, token, platform = "android", name = "${Build.MANUFACTURER} ${Build.MODEL}".trim(), quietFamiliar = quietFamiliar).getOrThrow()
+        api.registerDevice(
+            serverUrl,
+            token,
+            platform = "android",
+            name = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+            quietFamiliar = quietFamiliar,
+            // Debug installs (emulators, the .debug app beside the real one) register for push but
+            // don't count towards away mode — the relay decides that from this field.
+            build = if (BuildConfig.DEBUG) "debug" else "release",
+        ).getOrThrow()
         lastToken = token
         Log.i(TAG, "registered for push with ${PushRelayApi.relayUrl(serverUrl, "/devices")}")
     }

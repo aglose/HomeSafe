@@ -29,12 +29,21 @@ class PushRelayApi(private val httpClient: HttpClient) {
     /**
      * Registers (or refreshes) this device's Firebase token with the relay for [serverUrl]'s box.
      * [quietFamiliar] carries the "only strangers" alert preference so the relay can skip this
-     * phone for people Frigate recognised; re-register whenever it changes.
+     * phone for people Frigate recognised; re-register whenever it changes. [build] is "release"
+     * or "debug": only release installs count towards away mode, so a debug build on an emulator
+     * or beside the real app can't decide the house is empty.
      */
-    suspend fun registerDevice(serverUrl: String, token: String, platform: String, name: String, quietFamiliar: Boolean = false): Result<Unit> = runCatching {
+    suspend fun registerDevice(
+        serverUrl: String,
+        token: String,
+        platform: String,
+        name: String,
+        quietFamiliar: Boolean = false,
+        build: String = "unknown",
+    ): Result<Unit> = runCatching {
         val response = httpClient.post(relayUrl(serverUrl, "/devices")) {
             contentType(ContentType.Application.Json)
-            setBody(DeviceRegistration(token = token, platform = platform, name = name, quietFamiliar = quietFamiliar))
+            setBody(DeviceRegistration(token = token, platform = platform, name = name, quietFamiliar = quietFamiliar, build = build))
         }
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
     }
@@ -69,7 +78,11 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
-            URLBuilder(serverUrl).apply { port = RELAY_PORT; pathSegments = path.trim('/').split('/'); parameters.clear() }.buildString()
+            URLBuilder(serverUrl).apply {
+                port = RELAY_PORT
+                pathSegments = path.trim('/').split('/')
+                parameters.clear()
+            }.buildString()
     }
 }
 
@@ -79,6 +92,7 @@ internal data class DeviceRegistration(
     val platform: String,
     val name: String,
     @SerialName("quiet_familiar") val quietFamiliar: Boolean = false,
+    val build: String = "unknown",
 )
 
 @Serializable
@@ -91,7 +105,7 @@ internal data class RelayPresence(
     @SerialName("everyone_away") val everyoneAway: Boolean = false,
 ) {
     fun toDomain() = HouseholdPresence(
-        devices = devices.map { PresenceDevice(it.name, it.platform, it.away, it.awayUpdated, it.thisDevice) },
+        devices = devices.map { PresenceDevice(it.name, it.platform, it.away, it.awayUpdated, it.thisDevice, it.counts) },
         everyoneAway = everyoneAway,
     )
 }
@@ -103,4 +117,6 @@ internal data class RelayPresenceDevice(
     val away: Boolean = false,
     @SerialName("away_updated") val awayUpdated: Double? = null,
     @SerialName("this_device") val thisDevice: Boolean = false,
+    /** Older relays don't send this; treat their devices as counting, which is what they did. */
+    val counts: Boolean = true,
 )
