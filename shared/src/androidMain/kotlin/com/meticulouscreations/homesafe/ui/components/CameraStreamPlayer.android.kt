@@ -72,6 +72,7 @@ actual fun CameraStreamPlayer(
     playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
+    onStreamStatusChanged: (status: LiveStreamStatus) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
@@ -84,6 +85,7 @@ actual fun CameraStreamPlayer(
     val currentSource by rememberUpdatedState(source)
     val currentOnPositionChanged by rememberUpdatedState(onPositionChanged)
     val currentOnBufferingChanged by rememberUpdatedState(onBufferingChanged)
+    val currentOnStreamStatusChanged by rememberUpdatedState(onStreamStatusChanged)
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
     val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
@@ -92,6 +94,17 @@ actual fun CameraStreamPlayer(
     // until it catches up with the holder's current one.
     var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
     val posterVisible = renderedGeneration != holder.coldStartGeneration
+
+    // The two bits behind LiveStreamStatus: nothing decoded yet for this cold start (the poster is
+    // still up), and the player starved mid-stream. Reported from an effect rather than straight
+    // out of the listener so the caller sees one value per distinct state, not one per event.
+    var starved by remember(holder) { mutableStateOf(false) }
+    val streamStatus = when {
+        posterVisible -> LiveStreamStatus.Connecting
+        starved -> LiveStreamStatus.Buffering
+        else -> LiveStreamStatus.Live
+    }
+    LaunchedEffect(streamStatus) { currentOnStreamStatusChanged(streamStatus) }
 
     val textureView = remember(holder) {
         TextureView(context).apply {
@@ -133,6 +146,7 @@ actual fun CameraStreamPlayer(
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                starved = playbackState == Player.STATE_BUFFERING
                 currentOnBufferingChanged(playbackState == Player.STATE_BUFFERING)
                 if (playbackState == Player.STATE_ENDED && currentSource is VideoSource.Recording) {
                     currentOnPlaybackEnded()

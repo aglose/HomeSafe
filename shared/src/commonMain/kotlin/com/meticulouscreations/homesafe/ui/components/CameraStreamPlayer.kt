@@ -71,6 +71,24 @@ data class PlayerRequest(
 )
 
 /**
+ * How far a live source has got towards showing moving video — what a "Live" indicator keys off.
+ *
+ * The three states are the same on every platform because both real players already track the two
+ * bits they are made of: whether this surface has decoded a frame for the player's current cold
+ * start (the bit that drives the poster overlay), and whether the player is currently starved.
+ */
+enum class LiveStreamStatus {
+    /** Nothing on screen yet for this connection: a cold connect, or recovering from an error. */
+    Connecting,
+
+    /** Video arrived and then the player ran dry — connected, but stalled waiting for data. */
+    Buffering,
+
+    /** Frames are arriving and playing. */
+    Live,
+}
+
+/**
  * The audio codecs this platform's live player can decode out of go2rtc's fMP4 HLS, most
  * preferred first — what [com.meticulouscreations.homesafe.network.frigateLiveStreamUrl] asks
  * go2rtc to include. Empty means video only. Android's MediaCodec has shipped an Opus decoder
@@ -89,6 +107,8 @@ expect val liveAudioCodecs: List<String>
  *   fresh connect. Null gets a private player that lives exactly as long as this composable.
  * @param onPositionChanged playback position (ms into the current source) while playing a recording.
  * @param onBufferingChanged true while the player is stalled waiting for data.
+ * @param onStreamStatusChanged how far this source has got towards playing — see [LiveStreamStatus].
+ *   Reported only when it changes.
  * @param onPlaybackEnded the current [VideoSource.Recording] reached its end.
  * @param onPlaybackError the current [VideoSource.Recording] failed and will not recover on its own.
  *   Live sources recover from errors internally (see the platform implementations) and never report here.
@@ -103,21 +123,28 @@ expect fun CameraStreamPlayer(
     playerKey: String? = null,
     onPositionChanged: (positionMs: Long) -> Unit = {},
     onBufferingChanged: (isBuffering: Boolean) -> Unit = {},
+    onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
     onPlaybackEnded: () -> Unit = {},
     onPlaybackError: () -> Unit = {},
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
 )
 
-/** Plays a camera's live HLS stream, nothing more. */
+/** Plays a camera's live HLS stream, reporting only how far it has got — see [LiveStreamStatus]. */
 @Composable
 fun CameraStreamPlayer(
     streamUrl: String,
     modifier: Modifier = Modifier,
     posterUrl: String? = null,
     playerKey: String? = null,
+    onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
 ) {
     val request = remember(streamUrl, posterUrl) { PlayerRequest(VideoSource.Live(streamUrl, posterUrl)) }
-    CameraStreamPlayer(request = request, modifier = modifier, playerKey = playerKey)
+    CameraStreamPlayer(
+        request = request,
+        modifier = modifier,
+        playerKey = playerKey,
+        onStreamStatusChanged = onStreamStatusChanged,
+    )
 }
 
 @Composable

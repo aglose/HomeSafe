@@ -21,7 +21,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
@@ -35,11 +34,10 @@ import androidx.compose.ui.unit.dp
  * the sign-in, and again for the beat between landing on Home and the camera cache answering.
  * The home feed itself lays them out (see HomeFeed), in the real page's own layout, so the
  * real page fades in *onto* the skeleton rather than replacing a spinner. Progress is shown by
- * a bright head-and-tail running round each card outline, staggered card to card, and a soft
- * sheen sweeping the placeholder text.
+ * a bright head-and-tail running round each card outline, staggered card to card.
  */
 
-/** One lap of the outline runner, and one sweep of the sheen. */
+/** One lap of the outline runner. */
 private const val LOADING_PHASE_PERIOD_MS = 2400
 
 /** Corner radius shared with the real camera cards, so the outline sits on the card it stands for. */
@@ -93,34 +91,6 @@ fun SkeletonCameraCard(
             .background(MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.55f))
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape),
     )
-}
-
-/**
- * A rounded placeholder bar the size of this layout, with a soft highlight sweeping across it
- * once per [phase] lap. Put it on a transparent Text of the words to come and the bar is
- * exactly the size the words will be.
- */
-@Composable
-fun Modifier.sheenBar(phase: () -> Float): Modifier {
-    val base = MaterialTheme.colorScheme.surfaceContainerHighest
-    val highlight = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.35f)
-    return drawWithCache {
-        val radius = CornerRadius(size.height / 2f)
-        onDrawBehind {
-            val width = size.width
-            // The band starts fully off the left edge and leaves fully off the right.
-            val centre = (phase() * 2f - 0.5f) * width
-            drawRoundRect(color = base, cornerRadius = radius)
-            drawRoundRect(
-                brush = Brush.linearGradient(
-                    colors = listOf(Color.Transparent, highlight, Color.Transparent),
-                    start = Offset(centre - width * 0.45f, 0f),
-                    end = Offset(centre + width * 0.45f, 0f),
-                ),
-                cornerRadius = radius,
-            )
-        }
-    }
 }
 
 /** How much of the perimeter the runner covers, head to the end of its tail. */
