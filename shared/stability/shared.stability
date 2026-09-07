@@ -13,7 +13,16 @@ public fun com.meticulouscreations.homesafe.App(appGraph: com.meticulouscreation
     - debugAutofillCredentials: STABLE (class with no mutable properties)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.BufferingDots(color: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, dotSize: androidx.compose.ui.unit.Dp): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - color: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - dotSize: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -22,12 +31,13 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(req
     - playerKey: STABLE (class with no mutable properties)
     - onPositionChanged: STABLE (function type)
     - onBufferingChanged: STABLE (function type)
+    - onStreamStatusChanged: STABLE (function type)
     - onPlaybackEnded: STABLE (function type)
     - onPlaybackError: STABLE (function type)
     - onAudioAvailabilityChanged: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, playerKey: kotlin.String?): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, playerKey: kotlin.String?, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -35,6 +45,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(str
     - modifier: STABLE (marked @Stable or @Immutable)
     - posterUrl: STABLE (class with no mutable properties)
     - playerKey: STABLE (class with no mutable properties)
+    - onStreamStatusChanged: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.components.LiveViewUnavailablePlaceholder(modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -126,13 +137,6 @@ public fun com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
   restartable: false
   params:
     - maxScale: STABLE (primitive type)
-
-@Composable
-public fun com.meticulouscreations.homesafe.ui.components.sheenBar(phase: kotlin.Function0<kotlin.Float>): androidx.compose.ui.Modifier
-  skippable: false
-  restartable: false
-  params:
-    - phase: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.preview.FrigatePreview(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
@@ -823,11 +827,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.SpanChip(span: com.metic
     - onClick: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.StatusBadge(enabled: kotlin.Boolean, textColor: androidx.compose.ui.graphics.Color, pillColor: androidx.compose.ui.graphics.Color): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.StatusBadge(enabled: kotlin.Boolean, status: com.meticulouscreations.homesafe.ui.components.LiveStreamStatus, textColor: androidx.compose.ui.graphics.Color, pillColor: androidx.compose.ui.graphics.Color): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - enabled: STABLE (primitive type)
+    - status: STABLE (class with no mutable properties)
     - textColor: STABLE (marked @Stable or @Immutable)
     - pillColor: STABLE (marked @Stable or @Immutable)
 

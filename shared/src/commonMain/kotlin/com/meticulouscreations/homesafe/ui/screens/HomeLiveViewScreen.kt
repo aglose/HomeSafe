@@ -397,7 +397,9 @@ internal fun StatusBadge(
 /** The badge's word for a camera in this state. Separated out so it can be asserted directly. */
 internal fun statusBadgeLabel(enabled: Boolean, status: LiveStreamStatus): String = when {
     !enabled -> "Disabled"
+
     status == LiveStreamStatus.Connecting -> "Connecting"
+
     // Buffering is a stream that *is* up and has merely run dry; the dots carry that, not the word.
     else -> "Live"
 }
