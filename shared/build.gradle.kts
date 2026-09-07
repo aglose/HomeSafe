@@ -120,6 +120,17 @@ kotlin {
         // and iosMain stops seeing its actuals.
         jvmTest.get().kotlin.srcDir("src/uiTest/kotlin")
         getByName("iosSimulatorArm64Test").kotlin.srcDir("src/uiTest/kotlin")
+        // ...and on a real Android runtime, where runComposeUiTest has the instrumentation it
+        // needs. androidDeviceTest is in the "test" source set tree (see withDeviceTestBuilder
+        // below), so it already inherits commonTest's dependencies including compose ui-test.
+        getByName("androidDeviceTest").kotlin.srcDir("src/uiTest/kotlin")
+
+        getByName("androidDeviceTest").dependencies {
+            // Merges an androidx.activity.ComponentActivity entry into the test APK's manifest.
+            // Without it runComposeUiTest has no activity to host the composition and dies at
+            // launch rather than at compile time.
+            implementation(libs.compose.uiTestManifest)
+        }
 
         jvmTest.dependencies {
             // ui-test-desktop declares the skiko API but not its host-specific native runtime,
