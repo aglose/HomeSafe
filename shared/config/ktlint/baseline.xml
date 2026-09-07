@@ -46,15 +46,13 @@
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FaceLibraryScreen.kt">
         <error line="69" column="5" source="compose:modifier-missing-check" />
-        <error line="82" column="55" source="compose:vm-forwarding-check" />
-        <error line="114" column="56" source="compose:vm-forwarding-check" />
+        <error line="115" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
         <error line="67" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
         <error line="71" column="5" source="compose:modifier-missing-check" />
-        <error line="75" column="9" source="compose:vm-injection-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/MomentsScreen.kt">
         <error line="75" column="5" source="compose:modifier-missing-check" />
@@ -67,7 +65,6 @@
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
         <error line="3" column="1" source="standard:import-ordering" />
         <error line="73" column="5" source="compose:modifier-missing-check" />
-        <error line="74" column="9" source="compose:vm-injection-check" />
         <error line="130" column="1" source="standard:blank-line-between-when-conditions" />
         <error line="138" column="1" source="standard:blank-line-between-when-conditions" />
         <error line="139" column="1" source="standard:blank-line-between-when-conditions" />
