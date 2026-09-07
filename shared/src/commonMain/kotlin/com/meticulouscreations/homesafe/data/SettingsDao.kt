@@ -26,4 +26,10 @@ interface SettingsDao {
 
     @Upsert
     suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity)
+
+    @Query("SELECT * FROM DeviceIdentityEntity WHERE id = 0")
+    suspend fun getDeviceIdentity(): DeviceIdentityEntity?
+
+    @Upsert
+    suspend fun upsertDeviceIdentity(entity: DeviceIdentityEntity)
 }

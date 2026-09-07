@@ -11,10 +11,8 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
-import androidx.lifecycle.lifecycleScope
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
-import com.meticulouscreations.homesafe.push.PushRegistrar
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -38,8 +36,6 @@ class MainActivity : FragmentActivity() {
         }
 
         appGraph = createAppGraph(platformContext = PlatformContext(this))
-        // Register this phone with the push relay on the Frigate box once a server is active.
-        PushRegistrar.start(lifecycleScope, appGraph, applicationContext)
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
         // androidApp/build.gradle.kts), so this is null there. Gated on the value rather than
         // BuildConfig.DEBUG so the benchmarkRelease variant — release bytecode, not debuggable —

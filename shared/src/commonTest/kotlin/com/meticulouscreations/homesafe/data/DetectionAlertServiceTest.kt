@@ -4,9 +4,11 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
+import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -68,7 +70,8 @@ class DetectionAlertServiceTest {
     private class FakePresence : PresenceRepository {
         override val presence = MutableStateFlow(HouseholdPresence.EMPTY)
         override suspend fun refresh() = Result.success(Unit)
-        override suspend fun setThisDeviceAway(away: Boolean) = Result.success(Unit)
+        override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int) = Result.success(Unit)
+        override suspend fun setHome(home: HomeLocation?) = Result.success(Unit)
 
         fun everyoneAway(away: Boolean) {
             presence.value = HouseholdPresence(

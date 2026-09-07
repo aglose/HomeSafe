@@ -12,6 +12,7 @@ Frigate's own authenticated port, so the relay holds no secrets of its own beyon
 import json
 import logging
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -79,25 +80,45 @@ def sentence(item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]
 
 def db() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.execute("CREATE TABLE IF NOT EXISTS devices (token TEXT PRIMARY KEY, platform TEXT, name TEXT, created REAL, last_seen REAL)")
+    # The current shape, for a fresh database. A device is known by `device_id` — a UUID the app
+    # makes once per install — and `token` is merely where to push (NULL for a phone that has no
+    # push, i.e. iOS until APNs lands). `secret` lets that install change its own presence from
+    # a background wake that has no Frigate session (see `authenticate`).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS devices ("
+        " device_id TEXT PRIMARY KEY, token TEXT UNIQUE, platform TEXT, name TEXT, created REAL, last_seen REAL,"
+        " away INTEGER NOT NULL DEFAULT 0, away_updated REAL, quiet_familiar INTEGER NOT NULL DEFAULT 0,"
+        " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL)"
+    )
     conn.execute("CREATE TABLE IF NOT EXISTS sent (review_id TEXT PRIMARY KEY, sent_at REAL, body TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT)")
-    # Away mode (see docs/away-mode.md in the app repo): each phone says whether its owner is home.
-    # Guarded ALTERs so a relay.db from before the feature upgrades itself on boot.
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
-    if "away" not in columns:
-        conn.execute("ALTER TABLE devices ADD COLUMN away INTEGER NOT NULL DEFAULT 0")
-    if "away_updated" not in columns:
-        conn.execute("ALTER TABLE devices ADD COLUMN away_updated REAL")
-    # Familiar vs. stranger (docs/familiar-faces.md): a phone that set "only strangers" doesn't
-    # want to hear about people Frigate recognised (a face arrives as the review item's sub_label).
-    if "quiet_familiar" not in columns:
-        conn.execute("ALTER TABLE devices ADD COLUMN quiet_familiar INTEGER NOT NULL DEFAULT 0")
-    # Which build registered (see `counts_for_away`). Rows written before this column existed stay
-    # "unknown" and don't count towards away mode; the real phones re-register on their next
-    # connect and become "release" again on their own.
-    if "build" not in columns:
-        conn.execute("ALTER TABLE devices ADD COLUMN build TEXT NOT NULL DEFAULT 'unknown'")
+    if "device_id" not in columns:
+        # A relay.db from before devices had an identity of their own: the token *was* the key.
+        # Bring the old table up to the last pre-identity shape (these are the guarded ALTERs
+        # earlier versions ran on boot), then rebuild it keyed by device_id = token, so every
+        # existing row keeps its presence and its history, and the phones re-register into it.
+        if "away" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN away INTEGER NOT NULL DEFAULT 0")
+        if "away_updated" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN away_updated REAL")
+        if "quiet_familiar" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN quiet_familiar INTEGER NOT NULL DEFAULT 0")
+        if "build" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN build TEXT NOT NULL DEFAULT 'unknown'")
+        conn.execute(
+            "CREATE TABLE devices_v2 ("
+            " device_id TEXT PRIMARY KEY, token TEXT UNIQUE, platform TEXT, name TEXT, created REAL, last_seen REAL,"
+            " away INTEGER NOT NULL DEFAULT 0, away_updated REAL, quiet_familiar INTEGER NOT NULL DEFAULT 0,"
+            " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL)"
+        )
+        conn.execute(
+            "INSERT INTO devices_v2 (device_id, token, platform, name, created, last_seen, away, away_updated, quiet_familiar, build)"
+            " SELECT token, token, platform, name, created, last_seen, away, away_updated, quiet_familiar, build FROM devices"
+        )
+        conn.execute("DROP TABLE devices")
+        conn.execute("ALTER TABLE devices_v2 RENAME TO devices")
+        log.info("migrated devices to device_id identity")
     conn.commit()
     return conn
 
@@ -109,6 +130,18 @@ CONN = None
 def with_db(fn):
     with DB_LOCK:
         return fn(CONN)
+
+
+def state_get(key: str) -> Any | None:
+    row = with_db(lambda c: c.execute("SELECT value FROM state WHERE key=?", (key,)).fetchone())
+    return json.loads(row[0]) if row else None
+
+
+def state_set(key: str, value: Any | None) -> None:
+    if value is None:
+        with_db(lambda c: (c.execute("DELETE FROM state WHERE key=?", (key,)), c.commit()))
+    else:
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO state VALUES (?,?)", (key, json.dumps(value))), c.commit()))
 
 
 # ---------------------------------------------------------------- FCM
@@ -157,7 +190,7 @@ def send_push(token: str, title: str, body: str, data: dict[str, str], away: boo
 
 def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, familiar: bool = False) -> dict[str, int]:
     """Pushes to every phone — except, for a [familiar] person, the phones that asked for strangers only."""
-    rows = with_db(lambda c: c.execute("SELECT token, quiet_familiar FROM devices").fetchall())
+    rows = with_db(lambda c: c.execute("SELECT token, quiet_familiar FROM devices WHERE token IS NOT NULL").fetchall())
     tokens = [token for token, quiet in rows if not (familiar and quiet)]
     ok = dropped = failed = 0
     skipped = len(rows) - len(tokens)
@@ -166,6 +199,8 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
         if sent:
             ok += 1
         elif "UNREGISTERED" in err or "404" in err:
+            # The install behind this token is gone (uninstalled, or its token rotated and the new
+            # one has since re-registered its device_id); its presence row goes with it.
             with_db(lambda c: (c.execute("DELETE FROM devices WHERE token=?", (token,)), c.commit()))
             dropped += 1
             log.info("dropped stale device token (%s)", err)
@@ -217,32 +252,45 @@ def recent_alerts() -> list[dict[str, Any]]:
 AWAY_BUILDS = {"release"}
 AWAY_DEBUG_PLATFORMS = {"ios"}
 
+# The household's home, as `{"lat", "lng", "radius_m", "updated", "by"}`, or absent. Set once from
+# whichever phone is standing in it; both phones draw their geofence around it.
+HOME_KEY = "home"
+
 
 def counts_for_away(platform: str, build: str) -> bool:
     """Whether this device's away switch is part of `everyone_away`."""
     return (build or "").lower() in AWAY_BUILDS or (platform or "").lower() in AWAY_DEBUG_PLATFORMS
 
 
-def presence_snapshot(this_token: str | None = None) -> dict[str, Any]:
+def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
     """
     Who says they're home. Every registered device is listed (so a debug install can see itself),
     but `everyone_away` is decided by the counting ones alone: at least one, and all of them away.
+    A device that has *left* but is still inside its dwell (see `promote_pending`) shows as
+    `pending_away` and is not away yet. `this_device` matches a device_id or, for old apps, a token.
     """
-    rows = with_db(lambda c: c.execute("SELECT token, name, platform, away, away_updated, build FROM devices ORDER BY created").fetchall())
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since FROM devices ORDER BY created"
+    ).fetchall())
     devices = [
         {
             "name": n,
             "platform": p,
             "away": bool(a),
             "away_updated": u,
-            "this_device": t == this_token,
+            "this_device": this_device is not None and this_device in (d, t),
             "build": b,
             "counts": counts_for_away(p, b),
+            "pending_away": ps is not None,
         }
-        for t, n, p, a, u, b in rows
+        for d, t, n, p, a, u, b, ps in rows
     ]
     counting = [d for d in devices if d["counts"]]
-    return {"devices": devices, "everyone_away": bool(counting) and all(d["away"] for d in counting)}
+    return {
+        "devices": devices,
+        "everyone_away": bool(counting) and all(d["away"] for d in counting),
+        "home": state_get(HOME_KEY),
+    }
 
 
 def away_since() -> float | None:
@@ -252,6 +300,31 @@ def away_since() -> float | None:
     if not counting or not all(a for a, _ in counting):
         return None
     return float(max((u or 0.0) for _, u in counting))
+
+
+def promote_pending() -> None:
+    """
+    A geofence exit doesn't mean "away" on its own — a walk to the mailbox crosses it too — so a
+    phone that left asks to be marked away *after* a dwell, and anything that sees it back home
+    in the meantime (re-entering the fence, reaching Frigate over the LAN, the manual switch)
+    cancels the request. This is the other half: once the dwell has run out, the phone is away.
+    Runs every poll, so the promotion lands within POLL_SECONDS of the deadline.
+    """
+    now = time.time()
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, name FROM devices WHERE away=0 AND away_pending_since IS NOT NULL"
+        " AND away_pending_since + COALESCE(away_pending_dwell, 0) <= ?",
+        (now,),
+    ).fetchall())
+    for device_id, name in rows:
+        with_db(lambda c: (
+            c.execute(
+                "UPDATE devices SET away=1, away_updated=?, away_pending_since=NULL, away_pending_dwell=NULL WHERE device_id=?",
+                (now, device_id),
+            ),
+            c.commit(),
+        ))
+        log.info("presence: %s left for good (dwell over) -> everyone_away=%s", name or device_id, presence_snapshot()["everyone_away"])
 
 
 def away_items(since: float) -> list[dict[str, Any]]:
@@ -322,6 +395,7 @@ def poll_forever() -> None:
             # ---- Away mode: while nobody is home, any person on any camera is news (alerts and
             # detections alike, zone rules ignored). Runs first so a person alert goes out escalated
             # and the normal pass below then finds it already in `sent`. ----
+            promote_pending()
             since = away_since()
             if since is not None:
                 for item in away_items(since):
@@ -357,7 +431,11 @@ app = FastAPI(title="HomeSafe relay")
 
 
 class Device(BaseModel):
-    token: str
+    # A UUID the app makes once per install and keeps: the identity the relay knows a phone by.
+    # Old apps send only `token`; the relay then uses the token as the id, as it always did.
+    device_id: str | None = None
+    # Where to push. Absent for a phone that can't receive push (iOS, until APNs lands).
+    token: str | None = None
     platform: str = "android"
     name: str = ""
     # "Only strangers": skip pushes for people Frigate recognised. Sent on every registration.
@@ -368,6 +446,17 @@ class Device(BaseModel):
 
 class Presence(BaseModel):
     away: bool
+    # What flipped it — "manual", "geofence", "lan" — for the log only.
+    source: str = "manual"
+    # For away=true: wait this long, and only then mark the phone away unless something has said
+    # "home" in the meantime (see `promote_pending`). 0 means right now, which is what the switch does.
+    dwell_seconds: float = 0
+
+
+class Home(BaseModel):
+    lat: float
+    lng: float
+    radius_m: float = 150
 
 
 def require_frigate_session(request: Request) -> str:
@@ -385,6 +474,34 @@ def require_frigate_session(request: Request) -> str:
         return r.json().get("username", "?")
     except Exception:
         return "?"
+
+
+def find_device(ident: str) -> tuple | None:
+    """A device row by device_id, or — for the old apps and old rows — by push token."""
+    return with_db(lambda c: c.execute(
+        "SELECT device_id, token, name, secret FROM devices WHERE device_id=? OR token=?", (ident, ident)
+    ).fetchone())
+
+
+def authenticate(request: Request, device: str | None = None) -> str:
+    """
+    Two ways in. A signed-in user carries the Frigate session cookie and may do anything. An
+    *install* carries `Authorization: Bearer <secret>` — the secret it was handed when it
+    registered — and may act only on its own row, named by `device`. That second door exists
+    for the background wakes (a geofence crossing at 3 AM, a rotated push token) that have no
+    Frigate session and no user to ask for one.
+    """
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("bearer ") and device is not None:
+        row = find_device(device)
+        if row is not None and row[3] and secrets.compare_digest(row[3], auth[7:].strip()):
+            return f"device:{row[2] or row[0]}"
+        # A secret the relay no longer knows (its database was reset, say) must not lock out a
+        # signed-in user: the cookie, when there is one, still decides — and re-registration
+        # then hands the app a fresh secret.
+        if not request.headers.get("cookie"):
+            raise HTTPException(status_code=401, detail="Unknown device or wrong secret")
+    return require_frigate_session(request)
 
 
 @app.on_event("startup")
@@ -405,66 +522,140 @@ def health() -> dict[str, Any]:
 
 @app.post("/devices")
 def register(device: Device, request: Request) -> dict[str, Any]:
-    user = require_frigate_session(request)
+    """
+    Registers (or refreshes) an install. Answers with its `device_id` and its `secret`; the app
+    keeps both. The secret is minted once and returned on every registration, so an app that
+    lost it (a reinstall keeps neither) simply gets it again by signing in.
+    """
+    if not device.device_id and not device.token:
+        raise HTTPException(status_code=400, detail="device_id or token required")
+    device_id = device.device_id or device.token
+    user = authenticate(request, device_id)
     now = time.time()
-    with_db(lambda c: (
+
+    def upsert(c: sqlite3.Connection) -> str:
+        if device.token:
+            # An app that only just learned it has an identity: its old row is keyed by its token.
+            # Move that row over so its presence and history survive the upgrade...
+            c.execute("UPDATE devices SET device_id=? WHERE device_id=? AND device_id!=?", (device_id, device.token, device_id))
+            # ...and a token belongs to exactly one install, so take it off any other row.
+            c.execute("UPDATE devices SET token=NULL WHERE token=? AND device_id!=?", (device.token, device_id))
+        row = c.execute("SELECT secret FROM devices WHERE device_id=?", (device_id,)).fetchone()
+        secret = (row[0] if row else None) or secrets.token_urlsafe(32)
         c.execute(
-            # Deliberately leaves `away`/`away_updated` alone: re-registering (every connect, every
-            # LAN/Tailscale flip) must not quietly mark a phone as back home.
-            "INSERT INTO devices (token, platform, name, created, last_seen, quiet_familiar, build) VALUES (?,?,?,?,?,?,?) "
-            "ON CONFLICT(token) DO UPDATE SET platform=excluded.platform, name=excluded.name, last_seen=excluded.last_seen, "
-            "quiet_familiar=excluded.quiet_familiar, build=excluded.build",
-            (device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build),
-        ),
-        c.commit(),
-    ))
+            # Deliberately leaves `away`/`away_updated`/pending alone: re-registering (every connect,
+            # every LAN/Tailscale flip) must not quietly mark a phone as back home.
+            "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret)"
+            " VALUES (?,?,?,?,?,?,?,?,?)"
+            " ON CONFLICT(device_id) DO UPDATE SET token=excluded.token, platform=excluded.platform, name=excluded.name,"
+            " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret",
+            (device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret),
+        )
+        c.commit()
+        return secret
+
+    secret = with_db(upsert)
     log.info(
-        "device registered by %s: %s (%s %s, strangers only=%s, counts for away=%s)",
-        user, device.name or "unnamed", device.platform, device.build, device.quiet_familiar,
+        "device registered by %s: %s (%s %s, push=%s, strangers only=%s, counts for away=%s)",
+        user, device.name or "unnamed", device.platform, device.build, device.token is not None, device.quiet_familiar,
         counts_for_away(device.platform, device.build),
     )
+    return {"ok": True, "device_id": device_id, "secret": secret}
+
+
+@app.delete("/devices/{ident}")
+def unregister(ident: str, request: Request) -> dict[str, Any]:
+    authenticate(request, ident)
+    with_db(lambda c: (c.execute("DELETE FROM devices WHERE device_id=? OR token=?", (ident, ident)), c.commit()))
     return {"ok": True}
 
 
-@app.delete("/devices/{token}")
-def unregister(token: str, request: Request) -> dict[str, Any]:
-    require_frigate_session(request)
-    with_db(lambda c: (c.execute("DELETE FROM devices WHERE token=?", (token,)), c.commit()))
-    return {"ok": True}
-
-
-@app.put("/devices/{token}/presence")
-def set_presence(token: str, presence: Presence, request: Request) -> dict[str, Any]:
-    """This phone's owner has left (or come back). Upserts so a presence change can't race registration."""
-    user = require_frigate_session(request)
+@app.put("/devices/{ident}/presence")
+def set_presence(ident: str, presence: Presence, request: Request) -> dict[str, Any]:
+    """
+    This phone's owner has left (or come back). `ident` is the device_id (or, for old apps, the
+    token); the row is created if it doesn't exist yet so a presence change can't race
+    registration. Away with a dwell only *arms* the change — see `promote_pending`. Home is
+    always immediate and cancels any armed departure.
+    """
+    user = authenticate(request, ident)
     now = time.time()
-    with_db(lambda c: (
-        c.execute(
-            "INSERT INTO devices (token, platform, name, created, last_seen, away, away_updated) VALUES (?,?,?,?,?,?,?) "
-            "ON CONFLICT(token) DO UPDATE SET last_seen=excluded.last_seen, away=excluded.away, away_updated=excluded.away_updated",
-            (token, "unknown", "", now, now, int(presence.away), now),
-        ),
-        c.commit(),
-    ))
-    snapshot = presence_snapshot(token)
-    log.info("presence by %s: away=%s -> everyone_away=%s", user, presence.away, snapshot["everyone_away"])
+    row = find_device(ident)
+    device_id = row[0] if row else ident
+
+    def apply(c: sqlite3.Connection) -> str:
+        if row is None:
+            c.execute("INSERT INTO devices (device_id, platform, name, created, last_seen) VALUES (?,?,?,?,?)", (device_id, "unknown", "", now, now))
+        if not presence.away:
+            c.execute(
+                "UPDATE devices SET last_seen=?, away=0, away_updated=?, away_pending_since=NULL, away_pending_dwell=NULL WHERE device_id=?",
+                (now, now, device_id),
+            )
+            outcome = "home"
+        elif presence.dwell_seconds > 0:
+            already = c.execute("SELECT away, away_pending_since FROM devices WHERE device_id=?", (device_id,)).fetchone()
+            if already and (already[0] or already[1] is not None):
+                c.execute("UPDATE devices SET last_seen=? WHERE device_id=?", (now, device_id))
+                outcome = "already away" if already[0] else "already leaving"
+            else:
+                c.execute(
+                    "UPDATE devices SET last_seen=?, away_pending_since=?, away_pending_dwell=? WHERE device_id=?",
+                    (now, now, float(presence.dwell_seconds), device_id),
+                )
+                outcome = f"leaving, away in {int(presence.dwell_seconds)}s"
+        else:
+            c.execute(
+                "UPDATE devices SET last_seen=?, away=1, away_updated=?, away_pending_since=NULL, away_pending_dwell=NULL WHERE device_id=?",
+                (now, now, device_id),
+            )
+            outcome = "away"
+        c.commit()
+        return outcome
+
+    outcome = with_db(apply)
+    snapshot = presence_snapshot(device_id)
+    log.info("presence by %s (%s): %s -> everyone_away=%s", user, presence.source, outcome, snapshot["everyone_away"])
     return snapshot
 
 
 @app.get("/presence")
-def get_presence(request: Request, token: str | None = None) -> dict[str, Any]:
-    """Who's home. Pass this phone's token so its own entry comes back flagged `this_device`."""
-    require_frigate_session(request)
-    return presence_snapshot(token)
+def get_presence(request: Request, device: str | None = None, token: str | None = None) -> dict[str, Any]:
+    """Who's home. Pass this phone's `device` (or, old apps, `token`) so its own entry comes back flagged `this_device`."""
+    ident = device or token
+    authenticate(request, ident)
+    return presence_snapshot(ident)
+
+
+@app.put("/home")
+def set_home(home: Home, request: Request, device: str | None = None) -> dict[str, Any]:
+    """
+    Where home is, for every phone's geofence. Whoever is standing in it sets it; a user action,
+    so the session cookie. `device` only lets the answer flag the caller's own row.
+    """
+    user = require_frigate_session(request)
+    value = {"lat": home.lat, "lng": home.lng, "radius_m": max(50.0, home.radius_m), "updated": time.time(), "by": user}
+    state_set(HOME_KEY, value)
+    log.info("home set by %s: %.5f, %.5f r=%dm", user, home.lat, home.lng, value["radius_m"])
+    return presence_snapshot(device)
+
+
+@app.delete("/home")
+def clear_home(request: Request, device: str | None = None) -> dict[str, Any]:
+    user = require_frigate_session(request)
+    state_set(HOME_KEY, None)
+    log.info("home cleared by %s", user)
+    return presence_snapshot(device)
 
 
 @app.get("/devices")
 def list_devices(request: Request) -> list[dict[str, Any]]:
     require_frigate_session(request)
-    rows = with_db(lambda c: c.execute("SELECT platform, name, created, last_seen, away, build FROM devices").fetchall())
+    rows = with_db(lambda c: c.execute(
+        "SELECT platform, name, created, last_seen, away, build, token IS NOT NULL, away_pending_since IS NOT NULL FROM devices"
+    ).fetchall())
     return [
-        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts_for_away(p, b)}
-        for p, n, cr, ls, a, b in rows
+        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts_for_away(p, b), "push": bool(push), "pending_away": bool(pend)}
+        for p, n, cr, ls, a, b, push, pend in rows
     ]
 
 

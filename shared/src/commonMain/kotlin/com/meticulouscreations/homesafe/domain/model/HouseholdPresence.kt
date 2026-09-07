@@ -16,7 +16,31 @@ data class PresenceDevice(
      * just can't declare the house empty or hold away mode open.
      */
     val countsForAway: Boolean = true,
+    /**
+     * The phone has left the home geofence but its dwell hasn't run out yet: not [away], but will
+     * be unless something says "home" first. See `docs/away-mode.md`.
+     */
+    val pendingAway: Boolean = false,
 )
+
+/** Where home is, for the geofence every phone draws. Household state, kept by the relay. */
+data class HomeLocation(
+    val latitude: Double,
+    val longitude: Double,
+    val radiusMeters: Double,
+)
+
+/** What flipped a phone's presence; the relay logs it and nothing else depends on it. */
+enum class PresenceSource(val wire: String) {
+    /** The "I'm away" switch. Immediate in both directions. */
+    MANUAL("manual"),
+
+    /** Crossed the home geofence. An exit is armed with a dwell; an entry is immediate. */
+    GEOFENCE("geofence"),
+
+    /** Reached Frigate over the LAN — you can't do that from the road. Home, immediately. */
+    LAN("lan"),
+}
 
 /**
  * Who's home, as the relay on the Frigate box sees it. The relay is the source of truth because
@@ -27,6 +51,8 @@ data class HouseholdPresence(
     val devices: List<PresenceDevice>,
     /** At least one *counting* device registered, and all of those away. */
     val everyoneAway: Boolean,
+    /** The household's home, or null until someone has set it from a phone standing in it. */
+    val home: HomeLocation? = null,
 ) {
     /** The phones the relay actually counts — release installs (and, for now, any iPhone). */
     val countingDevices: List<PresenceDevice> get() = devices.filter { it.countsForAway }

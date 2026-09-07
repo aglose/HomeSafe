@@ -105,6 +105,8 @@ kotlin {
             // The push token is this device's identity to the relay (PushTokenProvider.android.kt).
             implementation(project.dependencies.platform(libs.firebase.bom))
             implementation(libs.firebase.messaging)
+            // The home geofence and the one-shot fix that sets it (GeofenceMonitor.android.kt).
+            implementation(libs.play.services.location)
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.exoplayer.hls)
             implementation(libs.androidx.biometric)

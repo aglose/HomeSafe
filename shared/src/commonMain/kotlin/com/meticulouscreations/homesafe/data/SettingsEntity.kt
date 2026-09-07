@@ -11,6 +11,25 @@ data class SettingsEntity(
     val pushNotificationsEnabled: Boolean,
     /** Added in schema 7; the default keeps existing installs alerting for everyone until they choose otherwise. */
     @ColumnInfo(defaultValue = "0") val quietFamiliarPeople: Boolean = false,
+    /** Added in schema 9: automatic presence (geofence + LAN). Off until the user turns it on and grants location. */
+    @ColumnInfo(defaultValue = "0") val automaticPresence: Boolean = false,
+)
+
+/**
+ * A singleton row (always [id] = 0): who this install is to the push relay. Added in schema 9.
+ * [deviceId] is minted once and never changes; [secret] is what the relay handed back at
+ * registration and lets this install report its own presence from a background wake that has no
+ * Frigate session. The home fields cache the household's home so the geofence can be re-armed
+ * after a reboot without asking the relay.
+ */
+@Entity
+data class DeviceIdentityEntity(
+    @PrimaryKey val id: Int = 0,
+    val deviceId: String,
+    val secret: String? = null,
+    val homeLatitude: Double? = null,
+    val homeLongitude: Double? = null,
+    val homeRadiusMeters: Double? = null,
 )
 
 /**

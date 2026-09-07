@@ -7,6 +7,15 @@
 	<key>NSFaceIDUsageDescription</key>
 	<string>HomeSafe uses Face ID to securely sign you in without retyping your password.</string>
 	<!--
+	  Automatic presence (docs/away-mode.md): a geofence around home flips this phone's away
+	  switch. "While Using" is enough to set where home is; "Always" is what lets the fence
+	  notice you leaving with the app closed. Nothing is tracked or stored beyond that one circle.
+	-->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>HomeSafe uses your location to set where home is, so away mode can switch on by itself when everyone has left.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>With "Always", HomeSafe can notice you leaving or arriving home while the app is closed and switch away mode for you. Only the home geofence is watched; your location is never stored or shared.</string>
+	<!--
 	  Frigate's go2rtc live-stream endpoint (port 1984) is plain HTTP by design — it relies
 	  on the network boundary (Tailscale, or the home LAN when connected over the server's
 	  private address) for trust rather than TLS. The authenticated Frigate API itself
