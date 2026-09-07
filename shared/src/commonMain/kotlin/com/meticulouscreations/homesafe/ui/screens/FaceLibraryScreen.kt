@@ -66,7 +66,8 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
  * "only strangers" alert rule tell the two apart.
  */
 @Composable
-fun FaceLibraryScreen(viewModel: FaceLibraryViewModel = metroViewModel(), onBack: () -> Unit) {
+fun FaceLibraryScreen(onBack: () -> Unit) {
+    val viewModel: FaceLibraryViewModel = metroViewModel()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

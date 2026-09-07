@@ -72,7 +72,8 @@ private val MomentCategory.icon: ImageVector?
 
 /** The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip. */
 @Composable
-fun MomentsTabContent(viewModel: MomentsViewModel = metroViewModel()) {
+fun MomentsTabContent() {
+    val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
 

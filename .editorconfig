@@ -38,6 +38,14 @@ ktlint_standard_no-multi-spaces = disabled
 # declaration.
 ktlint_standard_kdoc = disabled
 
+# OFF because its autofix rewrites code, not formatting: it lifts `val vm = metroViewModel()`
+# out of a composable's body and into a defaulted parameter, which changes the function's
+# signature, its skippability, and what callers can pass. It did exactly that to four screens
+# on the first run. It is also the opposite of this project's convention — screens resolve
+# their own view model from the graph (see CameraDetailScreen and AppGraph's KDoc) rather than
+# receiving one — so the rule would be wrong here even if it only reported.
+ktlint_compose_vm-injection-check = disabled
+
 [*.{yml,yaml,json,toml}]
 indent_style = space
 indent_size = 2

@@ -64,7 +64,8 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
-fun FrigateAppShell(viewModel: AppShellViewModel = metroViewModel()) {
+fun FrigateAppShell() {
+    val viewModel: AppShellViewModel = metroViewModel()
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
