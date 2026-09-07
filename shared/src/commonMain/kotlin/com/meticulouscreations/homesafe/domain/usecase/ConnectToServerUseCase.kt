@@ -1,8 +1,8 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
+import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
 import dev.zacsweers.metro.Inject
 
 @Inject

@@ -1,10 +1,9 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-
-import com.meticulouscreations.homesafe.PlatformContext
 
 /** A browser tab has no notification surface wired up; matches the precedent set by [createClipDownloader]'s web fallback. */
 private class UnavailableAlertNotifier : AlertNotifier {

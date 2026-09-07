@@ -15,4 +15,5 @@ plugins {
     alias(libs.plugins.androidTest) apply false
     alias(libs.plugins.baselineprofile) apply false
     alias(libs.plugins.composeStabilityAnalyzer) apply false
+    alias(libs.plugins.ktlint) apply false
 }

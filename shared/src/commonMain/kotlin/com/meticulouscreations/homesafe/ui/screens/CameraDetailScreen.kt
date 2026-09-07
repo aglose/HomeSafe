@@ -1,10 +1,10 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,9 +30,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Hd
 import androidx.compose.material.icons.filled.HdrAuto
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
@@ -64,9 +64,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -74,25 +75,24 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
-import com.meticulouscreations.homesafe.viewmodel.MomentItem
-import coil3.compose.AsyncImage
-import androidx.compose.ui.layout.ContentScale
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
-import com.meticulouscreations.homesafe.ui.components.PulsingDot
-import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
-import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
+import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -276,6 +276,7 @@ fun CameraDetailScreen(
  * spread into rather than being clipped to its own strip. Zooming back out gives the space back.
  * On a landscape screen the strip is already taller than the viewport, so nothing moves.
  */
+
 /**
  * This screen's view model, resolved from the graph rather than passed down as a parameter.
  *
@@ -409,6 +410,7 @@ private fun PlayerSurface(
                     color = MaterialTheme.colorScheme.primary,
                     strokeWidth = 3.dp,
                 )
+
                 request != null && !playback.isPlaying -> Box(
                     modifier = Modifier
                         .align(Alignment.Center)

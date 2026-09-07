@@ -15,7 +15,9 @@ class SendTestNotificationUseCaseTest {
         override suspend fun permissionStatus() = NotificationPermission.GRANTED
         override suspend fun requestPermission() = true
         override fun openSystemSettings() = Unit
-        override fun notify(notification: AlertNotification) { posted += notification }
+        override fun notify(notification: AlertNotification) {
+            posted += notification
+        }
     }
 
     @Test

@@ -1,0 +1,51 @@
+# ktlint's configuration lives here, and this file is the whole of it.
+#
+# Android Studio reads .editorconfig too, so these settings change what Cmd-Alt-L does as well
+# as what CI enforces. That is the point: the formatter and the gate should agree.
+root = true
+
+[*.{kt,kts}]
+# gradle.properties already says kotlin.code.style=official, which is this style, NOT
+# ktlint's own "ktlint_official" default. The difference is not cosmetic: ktlint_official
+# adds function-signature, argument-list-wrapping, multiline-expression-wrapping and
+# class-signature, which together fight the house style for ~2,700 violations.
+ktlint_code_style = intellij_idea
+
+# Deliberately off, with reasons — every one of these was measured against this codebase
+# rather than guessed at.
+
+# 1,294 lines are over 100 characters and 515 over 120. The long ones are explanatory KDoc
+# prose, and enforcing a limit means reflowing paragraphs, which makes the comments worse.
+max_line_length = off
+
+# @Composable functions are PascalCase by convention, which is correct and not a naming error.
+ktlint_function_naming_ignore_when_annotated_with = Composable
+
+# This codebase deliberately puts `=` expression bodies on the following line (see
+# ConnectionRepositoryImpl.kt). The rule wants them inline.
+ktlint_standard_function-signature = disabled
+
+# main.kt in :desktopApp and :webApp are conventional entry-point filenames.
+ktlint_standard_filename = disabled
+
+# Backing properties for StateFlow (`_foo` / `foo`) are the documented Compose/Flow idiom.
+ktlint_standard_backing-property-naming = disabled
+
+# Test fixture tables align values with extra spaces on purpose, for readability.
+ktlint_standard_no-multi-spaces = disabled
+
+# A few files open with a top-level KDoc used as a section header rather than attached to a
+# declaration.
+ktlint_standard_kdoc = disabled
+
+# OFF because its autofix rewrites code, not formatting: it lifts `val vm = metroViewModel()`
+# out of a composable's body and into a defaulted parameter, which changes the function's
+# signature, its skippability, and what callers can pass. It did exactly that to four screens
+# on the first run. It is also the opposite of this project's convention — screens resolve
+# their own view model from the graph (see CameraDetailScreen and AppGraph's KDoc) rather than
+# receiving one — so the rule would be wrong here even if it only reported.
+ktlint_compose_vm-injection-check = disabled
+
+[*.{yml,yaml,json,toml}]
+indent_style = space
+indent_size = 2

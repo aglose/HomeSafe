@@ -1,8 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
-
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import io.ktor.client.HttpClient
 
 /** "Download to the phone" doesn't apply in a browser tab; matches the precedent set by [createBiometricCredentialStore]'s web fallback. */

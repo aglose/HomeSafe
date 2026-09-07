@@ -4,8 +4,10 @@ package com.meticulouscreations.homesafe.domain.platform
 enum class NotificationPermission {
     /** The user has allowed notifications (or the OS grants them without asking). */
     GRANTED,
+
     /** The user has said no in a way the app can't ask again; only the system settings screen can undo it. */
     DENIED,
+
     /** Not asked yet, or asked once and refused once — the OS will still show the prompt. */
     NOT_DETERMINED,
 }

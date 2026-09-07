@@ -3,12 +3,12 @@ package com.meticulouscreations.homesafe.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
-import com.meticulouscreations.homesafe.domain.model.AlertSettings
-import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
@@ -25,6 +25,11 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseC
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.PlayerRequest
+import com.meticulouscreations.homesafe.ui.components.SeekCommand
+import com.meticulouscreations.homesafe.ui.components.VideoSource
+import com.meticulouscreations.homesafe.ui.components.liveAudioCodecs
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -32,13 +37,6 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
-import com.meticulouscreations.homesafe.ui.components.PlayerRequest
-import com.meticulouscreations.homesafe.ui.components.SeekCommand
-import com.meticulouscreations.homesafe.ui.components.VideoSource
-import com.meticulouscreations.homesafe.ui.components.liveAudioCodecs
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -53,6 +51,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.time.Clock
@@ -88,7 +88,9 @@ internal fun planLiveJoin(gridStreamUrl: String, liveStreamUrl: String, quality:
             } else {
                 LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
             }
+
         StreamQuality.HIGH -> LiveJoinPlan(joinUrl = liveStreamUrl, upgradeToUrl = null)
+
         StreamQuality.LOW -> LiveJoinPlan(joinUrl = gridStreamUrl, upgradeToUrl = null)
     }
 
@@ -216,6 +218,7 @@ class CameraDetailViewModel(
         val posterUrl = serverUrl?.let { getCameraSnapshotUrlUseCase(it, cameraName) }
         when {
             camera == null -> CameraDetailUiState.NotFound
+
             camera.enabled && serverUrl != null ->
                 CameraDetailUiState.Found(
                     camera = camera,
@@ -224,6 +227,7 @@ class CameraDetailViewModel(
                     gridStreamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
                     posterUrl = posterUrl,
                 )
+
             else -> CameraDetailUiState.Found(camera, streamUrl = null, gridStreamUrl = null, posterUrl = posterUrl)
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraDetailUiState.Loading)

@@ -58,7 +58,10 @@ class ServerStatusRepositoryImpl(
 
     private val poller: Flow<Unit> = channelFlow {
         connectionRepository.currentServerUrl.collectLatest { url ->
-            if (url == null) { _overview.value = null; return@collectLatest }
+            if (url == null) {
+                _overview.value = null
+                return@collectLatest
+            }
             var polls = 0
             while (true) {
                 fetch(url, includeConfig = polls % CONFIG_EVERY_N_POLLS == 0)
@@ -92,7 +95,11 @@ class ServerStatusRepositoryImpl(
     }
 
     private suspend fun fetch(url: String, includeConfig: Boolean) = fetchMutex.withLock {
-        if (url != lastUrl) { lastConfig = null; lastIsAdmin = null; lastUrl = url }
+        if (url != lastUrl) {
+            lastConfig = null
+            lastIsAdmin = null
+            lastUrl = url
+        }
         val stats = apiClient.getStats(url).getOrElse { failure ->
             _error.value = failure.message ?: "Couldn't reach the server"
             return@withLock

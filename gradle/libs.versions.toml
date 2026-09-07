@@ -33,6 +33,9 @@ benchmark = "1.5.0-rc02"
 uiautomator = "2.4.0"
 profileinstaller = "1.4.1"
 composeStabilityAnalyzer = "0.13.0"
+ktlint = "1.8.0"
+ktlintGradle = "14.2.0"
+composeRules = "0.6.6"
 
 googleServices = "4.5.0"
 firebaseBom = "34.18.0"
@@ -90,6 +93,9 @@ androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstall
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 
+# Compose-specific ktlint rules (mrmans0n/compose-rules), loaded via the ktlintRuleset configuration.
+composeRules-ktlint = { module = "io.nlopez.compose.rules:ktlint", version.ref = "composeRules" }
+
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
 androidMultiplatformLibrary = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }
@@ -105,3 +111,4 @@ googleServices = { id = "com.google.gms.google-services", version.ref = "googleS
 androidTest = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }
 composeStabilityAnalyzer = { id = "com.github.skydoves.compose.stability.analyzer", version.ref = "composeStabilityAnalyzer" }
+ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }

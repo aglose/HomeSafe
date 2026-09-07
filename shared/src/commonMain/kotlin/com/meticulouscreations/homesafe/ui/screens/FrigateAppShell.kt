@@ -243,6 +243,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute) {
 }
 
 private data object CameraListRoute
+
 /**
  * [warmStreamUrl] / [warmPosterUrl] are what the tapped card was already playing: the detail
  * screen binds to that same pooled player straight away, so the video is on screen from the

@@ -20,9 +20,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 
@@ -61,7 +61,10 @@ class MomentsRepositoryImpl(
     // there would violate the flow invariant at runtime. send() from a child is what channelFlow is for.
     private val poller: Flow<Unit> = channelFlow {
         activeUrl.collectLatest { url ->
-            if (url == null) { _moments.value = emptyList(); return@collectLatest }
+            if (url == null) {
+                _moments.value = emptyList()
+                return@collectLatest
+            }
             var polls = 0
             while (true) {
                 fetch(url, includeZones = polls % ZONES_EVERY_N_POLLS == 0)

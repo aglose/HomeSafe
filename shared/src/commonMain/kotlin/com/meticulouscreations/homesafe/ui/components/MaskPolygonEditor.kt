@@ -90,7 +90,10 @@ fun MaskPolygonEditor(
                     // one of its edge dots adds a corner there, anything else is a plain tap.
                     val selected = currentSelected?.let { currentPolygons.getOrNull(it)?.polygon }
                     if (selected != null) {
-                        nearestIndex(selected.points, offset, size, grabRadius)?.let { currentOnSelectVertex(it); return@detectTapGestures }
+                        nearestIndex(selected.points, offset, size, grabRadius)?.let {
+                            currentOnSelectVertex(it)
+                            return@detectTapGestures
+                        }
                         nearestIndex(selected.edgeMidpoints(), offset, size, grabRadius)?.let { edge ->
                             currentOnInsertVertex(currentSelected!!, edge, selected.edgeMidpoints()[edge])
                             return@detectTapGestures
@@ -164,7 +167,10 @@ fun MaskPolygonEditor(
             val path = Path().apply {
                 val start = points.first().toOffset(canvasSize)
                 moveTo(start.x, start.y)
-                points.drop(1).forEach { p -> val o = p.toOffset(canvasSize); lineTo(o.x, o.y) }
+                points.drop(1).forEach { p ->
+                    val o = p.toOffset(canvasSize)
+                    lineTo(o.x, o.y)
+                }
             }
             drawPath(path, color = draftColor, style = Stroke(width = 2.dp.toPx()))
             if (points.size >= 2) {
@@ -236,7 +242,10 @@ private fun DrawScope.drawPolygon(points: List<MaskPoint>, size: IntSize, color:
     val path = Path().apply {
         val start = points.first().toOffset(size)
         moveTo(start.x, start.y)
-        points.drop(1).forEach { p -> val o = p.toOffset(size); lineTo(o.x, o.y) }
+        points.drop(1).forEach { p ->
+            val o = p.toOffset(size)
+            lineTo(o.x, o.y)
+        }
         close()
     }
     drawPath(path, color = color.copy(alpha = fillAlpha))

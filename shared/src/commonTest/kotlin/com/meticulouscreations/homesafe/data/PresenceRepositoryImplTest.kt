@@ -73,8 +73,10 @@ class PresenceRepositoryImplTest {
                     away[token] = "true" in body
                     respond(presenceJson(token), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
+
                 req.url.encodedPath == "/presence" ->
                     respond(presenceJson(req.url.parameters["token"]), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -100,12 +102,19 @@ class PresenceRepositoryImplTest {
     }
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
-        repeat(200) { advanceUntilIdle(); if (cond()) return; withContext(Dispatchers.Default) { delay(25) } }
+        repeat(200) {
+            advanceUntilIdle()
+            if (cond()) return
+            withContext(Dispatchers.Default) { delay(25) }
+        }
         fail("Timed out waiting for $what")
     }
 
     private suspend fun TestScope.settle() {
-        repeat(8) { advanceUntilIdle(); withContext(Dispatchers.Default) { delay(25) } }
+        repeat(8) {
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { delay(25) }
+        }
     }
 
     @Test

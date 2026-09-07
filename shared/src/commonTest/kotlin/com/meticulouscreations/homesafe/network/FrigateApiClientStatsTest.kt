@@ -52,10 +52,12 @@ class FrigateApiClientStatsTest {
     }"""
 
     private fun client(handler: suspend (HttpRequestData) -> Pair<HttpStatusCode, String>): HttpClient =
-        HttpClient(MockEngine { req ->
-            val (status, body) = handler(req)
-            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
-        }) {
+        HttpClient(
+            MockEngine { req ->
+                val (status, body) = handler(req)
+                respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        ) {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
 
@@ -109,10 +111,12 @@ class FrigateApiClientStatsTest {
     @Test
     fun enablingDetectionWithMotionOffTurnsMotionOnFirstAsRealBooleans() = runTest {
         val requests = mutableListOf<Triple<HttpMethod, String, String>>()
-        val api = FrigateApiClient(client { req ->
-            requests += Triple(req.method, req.url.encodedPath + "?" + req.url.encodedQuery, req.body.toByteArray().decodeToString())
-            HttpStatusCode.OK to """{"success":true,"message":"Config successfully updated"}"""
-        })
+        val api = FrigateApiClient(
+            client { req ->
+                requests += Triple(req.method, req.url.encodedPath + "?" + req.url.encodedQuery, req.body.toByteArray().decodeToString())
+                HttpStatusCode.OK to """{"success":true,"message":"Config successfully updated"}"""
+            },
+        )
 
         api.setCameraDetection("http://frigate:8971", "amcrest_1", enabled = true, motionEnabled = false).getOrThrow()
 
@@ -131,10 +135,12 @@ class FrigateApiClientStatsTest {
     @Test
     fun disablingDetectionLeavesMotionAlone() = runTest {
         val bodies = mutableListOf<String>()
-        val api = FrigateApiClient(client { req ->
-            bodies += req.body.toByteArray().decodeToString()
-            HttpStatusCode.OK to """{"success":true}"""
-        })
+        val api = FrigateApiClient(
+            client { req ->
+                bodies += req.body.toByteArray().decodeToString()
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.setCameraDetection("http://frigate:8971", "amcrest_1", enabled = false, motionEnabled = true).getOrThrow()
 
@@ -160,7 +166,12 @@ class FrigateApiClientStatsTest {
     @Test
     fun eventsAfterIsPassedAsFrigateExpects() = runTest {
         var query = ""
-        val api = FrigateApiClient(client { req -> query = req.url.encodedQuery; HttpStatusCode.OK to "[]" })
+        val api = FrigateApiClient(
+            client { req ->
+                query = req.url.encodedQuery
+                HttpStatusCode.OK to "[]"
+            },
+        )
         api.getEvents("http://frigate:8971", limit = 50, afterEpochSeconds = 1788623909.25).getOrThrow()
         assertEquals("limit=50&after=1788623909.250", query)
     }

@@ -1,11 +1,10 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import io.ktor.client.HttpClient
@@ -71,21 +70,23 @@ class MomentsRepositoryImplTest {
             hosts += req.url.host
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
-                req.url.encodedPath.endsWith("/api/events") -> respond(EVENTS, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-                req.url.encodedPath.endsWith("/api/config") && CONFIG != null -> respond(CONFIG!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                req.url.encodedPath.endsWith("/api/events") -> respond(events, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
         val client = HttpClient(engine) {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-            install(HttpCookies); install(HttpTimeout)
+            install(HttpCookies)
+            install(HttpTimeout)
         }
         val connection = FakeConnection(url)
         val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, scope.backgroundScope)
         companion object {
-            lateinit var EVENTS: String
+            lateinit var events: String
+
             /** `/api/config`, or null to 404 it the way a test that isn't about zones expects. */
-            var CONFIG: String? = null
+            var config: String? = null
         }
     }
 
@@ -110,19 +111,27 @@ class MomentsRepositoryImplTest {
     ]"""
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
-        repeat(200) { advanceUntilIdle(); if (cond()) return; withContext(Dispatchers.Default) { delay(25) } }
+        repeat(200) {
+            advanceUntilIdle()
+            if (cond()) return
+            withContext(Dispatchers.Default) { delay(25) }
+        }
         fail("Timed out waiting for $what")
     }
 
     @Test
     fun mapsRealFrigateEventsNewestFirstAndSurfacesInProgress() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var list = h.repo.observeMoments().first()
-        eventually("events to load") { list = h.repo.observeMoments().first(); list.size == 2 }
+        eventually("events to load") {
+            list = h.repo.observeMoments().first()
+            list.size == 2
+        }
 
-        val person = list[0]; val car = list[1]
+        val person = list[0]
+        val car = list[1]
         assertEquals("1788401732.596325-eaak48", person.id)
         assertEquals("hikvision_1", person.cameraName)
         assertEquals(MomentCategory.PEOPLE, person.category)
@@ -139,13 +148,16 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun zonesDecideWhichDetectionsBelongInTheFeedAndWhereTheyWere() = runTest {
-        Harness.EVENTS = zonedEventsJson
-        Harness.CONFIG = configJson
+        Harness.events = zonedEventsJson
+        Harness.config = configJson
         try {
             val h = Harness(this)
             backgroundScope.launch { h.repo.observeMoments().collect {} }
             var list = h.repo.observeMoments().first()
-            eventually("events to load") { list = h.repo.observeMoments().first(); list.isNotEmpty() }
+            eventually("events to load") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
 
             // The street-only car is gone: the only zone it crossed wants birds. The untagged
             // walker is placed on the sidewalk from their path; the amcrest car (no zones drawn
@@ -155,13 +167,13 @@ class MomentsRepositoryImplTest {
             assertEquals(listOf("driveway"), list[1].zones)
             assertEquals(2, list[0].pathPoints.size)
         } finally {
-            Harness.CONFIG = null
+            Harness.config = null
         }
     }
 
     @Test
     fun clipStreamHitsTheEventVodEndpointWithTheSessionCookie() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this)
         val s = h.repo.getClipStream("1788401732.596325-eaak48")
         assertEquals("http://192.168.68.55:8971/vod/event/1788401732.596325-eaak48/index.m3u8", s.url)
@@ -171,19 +183,22 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun serverErrorIsSurfacedNotSwallowed() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this, failEvents = true)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var err: String? = null
         h.repo.observeMoments().first()
-        eventually("error to surface") { err = h.repo.observeError().first(); err != null }
+        eventually("error to surface") {
+            err = h.repo.observeError().first()
+            err != null
+        }
         assertNotNull(err)
         assertEquals(emptyList(), h.repo.observeMoments().first())
     }
 
     @Test
     fun disconnectedYieldsEmptyWithoutAnyRequest() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this, url = null)
         assertEquals(emptyList(), h.repo.observeMoments().first())
         advanceUntilIdle()

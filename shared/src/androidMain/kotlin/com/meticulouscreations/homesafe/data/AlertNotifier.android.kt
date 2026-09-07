@@ -1,9 +1,5 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.AlertNotification
-import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
-import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -21,10 +17,14 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.CompletableDeferred
 
 private const val CHANNEL_ID = "detections"
+
 /** Shared with HomeSafeMessagingService and the relay: the loud channel for people seen while nobody is home. */
 private const val AWAY_CHANNEL_ID = "away_alerts"
 private const val PREFS_NAME = "homesafe_notifications"
@@ -75,11 +75,13 @@ private class AndroidAlertNotifier(private val activity: FragmentActivity) : Ale
 
     override suspend fun permissionStatus(): NotificationPermission = when {
         isGranted() -> NotificationPermission.GRANTED
+
         // After one refusal Android still shows the prompt (with a rationale hint); after the
         // second it auto-denies silently, which is the state only the settings screen can fix.
         prefs.getBoolean(PREF_ASKED, false) &&
             !ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS) ->
             NotificationPermission.DENIED
+
         else -> NotificationPermission.NOT_DETERMINED
     }
 

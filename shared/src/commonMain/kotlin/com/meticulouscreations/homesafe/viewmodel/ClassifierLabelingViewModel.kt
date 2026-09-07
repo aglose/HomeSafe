@@ -98,7 +98,7 @@ class ClassifierLabelingViewModel(
         viewModelScope.launch {
             createClassifierCategoryUseCase(modelName, key)
                 .onSuccess {
-                    _uiState.update { it.copy(newCategoryDraft = "", notice = "Added category ${key}", noticeIsError = false) }
+                    _uiState.update { it.copy(newCategoryDraft = "", notice = "Added category $key", noticeIsError = false) }
                     load()
                 }
                 .onFailure { e -> _uiState.update { it.copy(notice = "Couldn't add category: ${e.message}", noticeIsError = true) } }

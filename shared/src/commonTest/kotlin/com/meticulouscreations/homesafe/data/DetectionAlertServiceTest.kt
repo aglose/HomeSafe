@@ -1,18 +1,16 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.AlertNotification
-import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
-import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
-import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
@@ -62,7 +60,9 @@ class DetectionAlertServiceTest {
     private class FakeSettings(initial: AlertSettings) : SettingsRepository {
         val state = MutableStateFlow(initial)
         override fun observeSettings(): Flow<AlertSettings> = state
-        override suspend fun updateSettings(settings: AlertSettings) { state.value = settings }
+        override suspend fun updateSettings(settings: AlertSettings) {
+            state.value = settings
+        }
     }
 
     private class FakePresence : PresenceRepository {
@@ -83,20 +83,27 @@ class DetectionAlertServiceTest {
         override suspend fun permissionStatus() = NotificationPermission.GRANTED
         override suspend fun requestPermission() = true
         override fun openSystemSettings() = Unit
-        override fun notify(notification: AlertNotification) { posted += notification }
+        override fun notify(notification: AlertNotification) {
+            posted += notification
+        }
     }
 
     /** A fake Frigate whose `/api/events` honours `after` the way the real one does (start_time strictly after). */
     private class Harness(scope: TestScope, settings: AlertSettings, now: Double = 1_000_000.0, supported: Boolean = true) {
         val events = mutableListOf<Triple<String, String, Double>>() // id, label, start
+
         /** Zones an event passed through, by id; absent means none. */
         val zonesById = mutableMapOf<String, List<String>>()
+
         /** A recognised face (or plate) Frigate attached, by id; absent means none yet. */
         val subLabelById = mutableMapOf<String, String>()
+
         /** When an event ended, by id; absent means still in progress. */
         val endedById = mutableMapOf<String, Double>()
+
         /** Where the object went (Frigate's `path_data` points), by id; absent means no path. */
         val pathById = mutableMapOf<String, List<Pair<Double, Double>>>()
+
         /** `/api/config`, or null to 404 it (no zones drawn anywhere). */
         var config: String? = null
         val afters = mutableListOf<String>()
@@ -113,8 +120,11 @@ class DetectionAlertServiceTest {
                     }
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
+
                 req.url.encodedPath.contains("/thumbnail.jpg") -> respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/jpeg"))
+
                 req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -137,12 +147,19 @@ class DetectionAlertServiceTest {
     }
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
-        repeat(200) { advanceUntilIdle(); if (cond()) return; withContext(Dispatchers.Default) { delay(25) } }
+        repeat(200) {
+            advanceUntilIdle()
+            if (cond()) return
+            withContext(Dispatchers.Default) { delay(25) }
+        }
         fail("Timed out waiting for $what")
     }
 
     private suspend fun TestScope.settle() {
-        repeat(8) { advanceUntilIdle(); withContext(Dispatchers.Default) { delay(25) } }
+        repeat(8) {
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { delay(25) }
+        }
     }
 
     private val on = AlertSettings(pushNotificationsEnabled = true)
