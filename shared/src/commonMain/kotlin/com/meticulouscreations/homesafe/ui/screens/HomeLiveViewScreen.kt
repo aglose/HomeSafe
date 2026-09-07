@@ -12,7 +12,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,7 +31,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,13 +50,14 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
 import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
-import com.meticulouscreations.homesafe.ui.components.sheenBar
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
@@ -65,7 +67,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** The "Home" tab's content: greeting, status, and the cameras reported by the connected Frigate server. */
+/** The "Home" tab's content: a greeting and the cameras reported by the connected Frigate server. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeTabContent(
@@ -94,12 +96,11 @@ fun HomeTabContent(
 }
 
 /**
- * The home page's list: greeting, status line, and one card per camera — or, while [cameras]
- * is still null (the first cache read in flight), the loading skeleton: outlined cards where
- * the cameras will land, with a runner going round each, and a sheen where the status text
- * goes. The sign-in screen draws this same list in its loading state, so the skeleton and the
- * real page are one layout by construction, and the real cards fade in exactly onto their
- * outlines rather than near them.
+ * The home page's list: the greeting and one card per camera — or, while [cameras] is still null
+ * (the first cache read in flight), the loading skeleton: outlined cards where the cameras will
+ * land, with a runner going round each. The sign-in screen draws this same list in its loading
+ * state, so the skeleton and the real page are one layout by construction, and the real cards
+ * fade in exactly onto their outlines rather than near them.
  *
  * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
  * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
@@ -131,36 +132,11 @@ internal fun HomeFeed(
         item(key = "greeting") {
             // Fixed for the life of this screen: a greeting that flips mid-scroll would be odd.
             val greeting = remember { greetingForHour(currentLocalHour()) }
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = greeting,
-                    style = MaterialTheme.typography.displayLarge,
-                    color = extraColors.textPrimary,
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    if (loadingPhase != null) {
-                        // The real row's exact size and shape, with the words not yet known:
-                        // a dim dot, and the status text drawn transparent under a sheen.
-                        PulsingDot(color = MaterialTheme.colorScheme.surfaceContainerHighest, pulsing = false)
-                        Text(
-                            text = "System Secure",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = Color.Transparent,
-                            modifier = Modifier.sheenBar(phase = { loadingPhase.value }),
-                        )
-                    } else {
-                        PulsingDot(color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary)
-                        Text(
-                            text = if (everyoneAway) "Away Mode" else "System Secure",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (everyoneAway) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                        )
-                    }
-                }
-            }
+            Text(
+                text = greeting,
+                style = MaterialTheme.typography.displayLarge,
+                color = extraColors.textPrimary,
+            )
         }
 
         val loadedCameras = cameras
@@ -197,6 +173,9 @@ private fun CameraCard(
     val extraColors = LocalFrigateExtraColors.current
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val shape = RoundedCornerShape(CAMERA_CARD_CORNER_RADIUS)
+    // What the badge says. Connecting until the player reports otherwise, so a card that has no
+    // stream to play — or whose player hasn't got a frame up yet — never claims to be live.
+    var streamStatus by remember(camera.name) { mutableStateOf(LiveStreamStatus.Connecting) }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -237,6 +216,7 @@ private fun CameraCard(
                     modifier = Modifier.fillMaxSize(),
                     posterUrl = tile.posterUrl,
                     playerKey = camera.name,
+                    onStreamStatusChanged = { streamStatus = it },
                 )
             } else {
                 Icon(
@@ -262,7 +242,12 @@ private fun CameraCard(
                 color = extraColors.textPrimary,
                 modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp),
             )
-            StatusBadge(enabled = camera.enabled, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
+            StatusBadge(
+                enabled = camera.enabled,
+                status = streamStatus,
+                textColor = extraColors.textPrimary,
+                pillColor = extraColors.glassFill,
+            )
         }
     }
 }
@@ -362,9 +347,30 @@ internal fun rememberCameraVideoOverlayClip(
     }
 }
 
+/**
+ * The pill in the corner of a camera card, reporting what is actually on the card rather than
+ * what the server has configured:
+ *
+ *  - the camera is turned off in Frigate — "Disabled", on a still dot;
+ *  - its stream is up and playing — "Live", on a pulsing dot;
+ *  - its stream is up but starved — still "Live" (the connection is good), with the pulse
+ *    replaced by [BufferingDots] so the stalled picture is explained rather than just frozen;
+ *  - nothing playing yet — "Connecting", also on [BufferingDots]. Never "Live": the word is
+ *    reserved for a stream that has actually put a frame on screen.
+ */
 @Composable
-private fun StatusBadge(enabled: Boolean, textColor: Color, pillColor: Color) {
-    val statusColor = if (enabled) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error
+internal fun StatusBadge(
+    enabled: Boolean,
+    status: LiveStreamStatus,
+    textColor: Color,
+    pillColor: Color,
+) {
+    val label = statusBadgeLabel(enabled = enabled, status = status)
+    val statusColor = when {
+        !enabled -> MaterialTheme.colorScheme.error
+        status == LiveStreamStatus.Live -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Row(
         modifier = Modifier
             .background(pillColor, CircleShape)
@@ -373,11 +379,27 @@ private fun StatusBadge(enabled: Boolean, textColor: Color, pillColor: Color) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        PulsingDot(color = statusColor, size = 6.dp, pulsing = enabled)
+        // A disabled camera is a settled state, so it keeps a still dot; anything the player is
+        // still working towards gets the three dots.
+        if (enabled && status != LiveStreamStatus.Live) {
+            BufferingDots(color = statusColor, dotSize = 5.dp)
+        } else {
+            PulsingDot(color = statusColor, size = 6.dp, pulsing = enabled)
+        }
         Text(
-            text = if (enabled) "Enabled" else "Disabled",
+            text = label,
             style = MaterialTheme.typography.labelSmall,
             color = textColor,
         )
     }
+}
+
+/** The badge's word for a camera in this state. Separated out so it can be asserted directly. */
+internal fun statusBadgeLabel(enabled: Boolean, status: LiveStreamStatus): String = when {
+    !enabled -> "Disabled"
+
+    status == LiveStreamStatus.Connecting -> "Connecting"
+
+    // Buffering is a stream that *is* up and has merely run dry; the dots carry that, not the word.
+    else -> "Live"
 }

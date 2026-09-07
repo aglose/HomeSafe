@@ -72,6 +72,7 @@ actual fun CameraStreamPlayer(
     playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
+    onStreamStatusChanged: (status: LiveStreamStatus) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
@@ -83,6 +84,7 @@ actual fun CameraStreamPlayer(
     val currentSource by rememberUpdatedState(source)
     val currentOnPositionChanged by rememberUpdatedState(onPositionChanged)
     val currentOnBufferingChanged by rememberUpdatedState(onBufferingChanged)
+    val currentOnStreamStatusChanged by rememberUpdatedState(onStreamStatusChanged)
     val currentOnPlaybackEnded by rememberUpdatedState(onPlaybackEnded)
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
     val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
@@ -145,6 +147,7 @@ actual fun CameraStreamPlayer(
         // Tracks are KVO-only like the rest of the item's state (see LivePlayerHolder), so they
         // ride the same poll; reported only on change so the caller isn't recomposed four times a second.
         var reportedHasAudio: Boolean? = null
+        var reportedStatus: LiveStreamStatus? = null
         while (isActive) {
             delay(POLL_INTERVAL_MS)
             val item = player.currentItem
@@ -156,7 +159,20 @@ actual fun CameraStreamPlayer(
                 reportedHasAudio = hasAudio
                 currentOnAudioAvailabilityChanged(hasAudio)
             }
-            currentOnBufferingChanged(player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate)
+            val starved = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+            currentOnBufferingChanged(starved)
+            // Same two bits as the Android side: nothing displayed yet for this cold start, and
+            // the player starved mid-stream. Reported only on change — this loop runs four times
+            // a second, and the caller shouldn't recompose for a value that hasn't moved.
+            val status = when {
+                renderedGeneration != holder.coldStartGeneration -> LiveStreamStatus.Connecting
+                starved -> LiveStreamStatus.Buffering
+                else -> LiveStreamStatus.Live
+            }
+            if (status != reportedStatus) {
+                reportedStatus = status
+                currentOnStreamStatusChanged(status)
+            }
             if (currentSource is VideoSource.Recording && item != null) {
                 val seconds = CMTimeGetSeconds(player.currentTime())
                 if (!seconds.isNaN()) currentOnPositionChanged((seconds * 1000).toLong())

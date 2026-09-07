@@ -10,6 +10,7 @@ actual fun CameraStreamPlayer(
     playerKey: String?,
     onPositionChanged: (positionMs: Long) -> Unit,
     onBufferingChanged: (isBuffering: Boolean) -> Unit,
+    onStreamStatusChanged: (status: LiveStreamStatus) -> Unit,
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
