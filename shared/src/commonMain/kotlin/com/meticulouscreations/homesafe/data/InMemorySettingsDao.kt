@@ -29,4 +29,12 @@ class InMemorySettingsDao : SettingsDao {
     override suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity) {
         playback.value = entity
     }
+
+    private var identity: DeviceIdentityEntity? = null
+
+    override suspend fun getDeviceIdentity(): DeviceIdentityEntity? = identity
+
+    override suspend fun upsertDeviceIdentity(entity: DeviceIdentityEntity) {
+        identity = entity
+    }
 }

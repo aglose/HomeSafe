@@ -60,8 +60,8 @@
         <error line="86" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
-        <error line="73" column="5" source="compose:modifier-missing-check" />
-        <error line="480" column="13" source="compose:param-order-check" />
+        <error line="74" column="5" source="compose:modifier-missing-check" />
+        <error line="561" column="13" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="79" column="5" source="compose:modifier-missing-check" />

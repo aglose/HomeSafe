@@ -178,6 +178,17 @@ private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com
     - onDiscard: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.AutomaticPresenceRows(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onAutomatic: STABLE (function type)
+    - onRequestLocation: STABLE (function type)
+    - onSetHomeHere: STABLE (function type)
+    - onClearHome: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AwayBanner(onBack: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -185,12 +196,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.AwayBanner(onBack: kotli
     - onBack: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onAway: STABLE (function type)
+    - onAutomatic: STABLE (function type)
+    - onRequestLocation: STABLE (function type)
+    - onSetHomeHere: STABLE (function type)
+    - onClearHome: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playheadEpochSeconds: kotlin.Double, cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit

@@ -3,7 +3,9 @@ package com.meticulouscreations.homesafe.viewmodel
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
@@ -76,7 +78,8 @@ class HomeViewModelTest {
         )
         var setAwayCalls = mutableListOf<Boolean>()
         override suspend fun refresh(): Result<Unit> = Result.success(Unit)
-        override suspend fun setThisDeviceAway(away: Boolean): Result<Unit> {
+        override suspend fun setHome(home: HomeLocation?): Result<Unit> = Result.success(Unit)
+        override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int): Result<Unit> {
             setAwayCalls += away
             presence.value = HouseholdPresence(emptyList(), everyoneAway = away)
             return Result.success(Unit)
@@ -115,7 +118,7 @@ class HomeViewModelTest {
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
-            setAwayUseCase = SetAwayUseCase(presenceRepo, FakePushToken),
+            setAwayUseCase = SetAwayUseCase(presenceRepo),
         )
     }
 

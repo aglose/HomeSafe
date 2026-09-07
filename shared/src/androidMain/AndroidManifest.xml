@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Automatic presence (docs/away-mode.md): a geofence around home flips this phone's away
+         switch. Foreground location sets home and is asked first; background location is what
+         lets the fence fire with the app closed and is asked second, per Android's rules. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    <!-- Geofences don't survive a reboot; BootReceiver re-arms the home fence. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application>
+        <receiver
+            android:name="com.meticulouscreations.homesafe.data.GeofenceBroadcastReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name="com.meticulouscreations.homesafe.data.BootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

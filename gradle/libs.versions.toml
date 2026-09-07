@@ -38,6 +38,7 @@ ktlintGradle = "14.2.0"
 composeRules = "0.6.6"
 
 googleServices = "4.5.0"
+playServicesLocation = "21.3.0"
 firebaseBom = "34.18.0"
 
 [libraries]
@@ -92,6 +93,8 @@ androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstall
 
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
+# Geofencing + fused location for automatic presence (GeofenceMonitor.android.kt).
+play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 
 # Compose-specific ktlint rules (mrmans0n/compose-rules), loaded via the ktlintRuleset configuration.
 composeRules-ktlint = { module = "io.nlopez.compose.rules:ktlint", version.ref = "composeRules" }

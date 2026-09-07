@@ -10,22 +10,27 @@ import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.domain.usecase.ClearHomeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetNotificationPermissionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveLocationAccessUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.OpenNotificationSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshServerOverviewUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RequestLocationAccessUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RequestNotificationPermissionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SendTestNotificationUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -60,13 +65,25 @@ data class SettingsUiState(
     val classifiers: List<ClassifierModel> = emptyList(),
     /** Away mode: who's home, per the relay. [HouseholdPresence.EMPTY] until it has answered. */
     val presence: HouseholdPresence = HouseholdPresence.EMPTY,
-    /** False where this device has no push identity for the relay to attribute presence to (desktop, web, iOS for now). */
-    val awaySupported: Boolean = false,
     /** True while the "I'm away" switch is mid-flight. */
     val awayBusy: Boolean = false,
-    /** Why the relay couldn't be read or told, e.g. it's down or the phone hasn't got a push token yet. */
+    /** Why the relay couldn't be read or told, e.g. it's down. */
     val awayError: String? = null,
+    /** Automatic presence: whether a geofence is possible on this platform at all... */
+    val geofenceSupported: Boolean = false,
+    /** ...and how much location the phone lets us see. Only [LocationAccess.ALWAYS] makes the fence useful. */
+    val locationAccess: LocationAccess = LocationAccess.UNAVAILABLE,
+    /** True while "Set home here" is getting a fix and telling the relay. */
+    val homeBusy: Boolean = false,
+    val homeError: String? = null,
 ) {
+    /** The user's wish; see [automaticPresenceActive] for whether it can actually do anything. */
+    val automaticPresence: Boolean get() = alerts.automaticPresence
+
+    /** Everything the fence needs is in place: switched on, location "always", and a home to draw it around. */
+    val automaticPresenceActive: Boolean
+        get() = automaticPresence && locationAccess == LocationAccess.ALWAYS && presence.home != null
+
     /** This phone's switch. Optimistically nothing until the relay has listed this device. */
     val thisDeviceAway: Boolean get() = presence.thisDevice?.away == true
 
@@ -84,6 +101,8 @@ private data class LocalState(
     val classifiers: List<ClassifierModel> = emptyList(),
     val awayBusy: Boolean = false,
     val awayError: String? = null,
+    val homeBusy: Boolean = false,
+    val homeError: String? = null,
 )
 
 @Inject
@@ -106,11 +125,16 @@ class SettingsViewModel(
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val setAwayUseCase: SetAwayUseCase,
+    observeLocationAccessUseCase: ObserveLocationAccessUseCase,
+    private val requestLocationAccessUseCase: RequestLocationAccessUseCase,
+    private val setHomeHereUseCase: SetHomeHereUseCase,
+    private val clearHomeUseCase: ClearHomeUseCase,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
-    private val awaySupported: Boolean = setAwayUseCase.isSupported
+    private val geofenceSupported: Boolean = observeLocationAccessUseCase.geofenceSupported
     private val presence: StateFlow<HouseholdPresence> = observeHouseholdPresenceUseCase()
+    private val locationAccess: StateFlow<LocationAccess> = observeLocationAccessUseCase()
 
     private val settings: StateFlow<AlertSettings> =
         observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertSettings.DEFAULT)
@@ -136,17 +160,20 @@ class SettingsViewModel(
                 cameraError = local.cameraError,
                 testNotificationSent = local.testNotificationSent,
                 classifiers = local.classifiers,
-                awaySupported = awaySupported,
                 awayBusy = local.awayBusy,
                 awayError = local.awayError,
+                geofenceSupported = geofenceSupported,
+                homeBusy = local.homeBusy,
+                homeError = local.homeError,
             )
         },
         presence,
-    ) { state, presence -> state.copy(presence = presence) }
+        locationAccess,
+    ) { state, presence, access -> state.copy(presence = presence, locationAccess = access) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            SettingsUiState(notificationsSupported = notificationsSupported, awaySupported = awaySupported),
+            SettingsUiState(notificationsSupported = notificationsSupported, geofenceSupported = geofenceSupported),
         )
 
     init {
@@ -236,11 +263,47 @@ class SettingsViewModel(
 
     /** Flips this phone's "I'm away" switch on the relay; the switch shows what the relay answered, not what was asked. */
     fun setAway(away: Boolean) {
-        if (local.value.awayBusy || !awaySupported) return
+        if (local.value.awayBusy) return
         local.update { it.copy(awayBusy = true, awayError = null) }
         viewModelScope.launch {
             val result = setAwayUseCase(away)
             local.update { it.copy(awayBusy = false, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
+        }
+    }
+
+    /**
+     * Automatic presence. Turning it on also asks for the location access it needs, since a
+     * switch that's on but can't see the phone leave would do nothing quietly; the section's
+     * captions say what's still missing after the prompt.
+     */
+    fun setAutomaticPresence(enabled: Boolean) {
+        viewModelScope.launch {
+            updateSettingsUseCase(settings.value.copy(automaticPresence = enabled))
+            if (enabled && locationAccess.value != LocationAccess.ALWAYS) requestLocationAccessUseCase()
+        }
+    }
+
+    /** The next step towards "Always" — the OS decides which prompt (or settings screen) that is. */
+    fun requestLocationAccess() {
+        viewModelScope.launch { requestLocationAccessUseCase() }
+    }
+
+    /** Makes where this phone is standing the household's home. */
+    fun setHomeHere() {
+        if (local.value.homeBusy) return
+        local.update { it.copy(homeBusy = true, homeError = null) }
+        viewModelScope.launch {
+            val result = setHomeHereUseCase()
+            local.update { it.copy(homeBusy = false, homeError = result.exceptionOrNull()?.let(::friendlyHomeError)) }
+        }
+    }
+
+    fun clearHome() {
+        if (local.value.homeBusy) return
+        local.update { it.copy(homeBusy = true, homeError = null) }
+        viewModelScope.launch {
+            val result = clearHomeUseCase()
+            local.update { it.copy(homeBusy = false, homeError = result.exceptionOrNull()?.let(::friendlyHomeError)) }
         }
     }
 
@@ -249,9 +312,13 @@ class SettingsViewModel(
         return when {
             "401" in message || "403" in message -> "The relay refused this session. Sign in again."
             "Not connected" in message -> "Not connected to a server."
-            "push token" in message || "Push isn't available" in message -> message
             else -> "Couldn't reach the push relay: $message"
         }
+    }
+
+    private fun friendlyHomeError(error: Throwable): String = when {
+        error.message?.contains("location") == true -> "Couldn't get this phone's location. Is location on?"
+        else -> friendlyAwayError(error)
     }
 
     private fun flipCameraSwitch(cameraName: String, action: suspend () -> Result<Unit>) {

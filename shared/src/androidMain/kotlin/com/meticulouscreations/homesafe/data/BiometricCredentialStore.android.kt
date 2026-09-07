@@ -166,5 +166,17 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
     }
 }
 
+/** For a graph built with no Activity (a background receiver): there is nobody to show a prompt to. */
+private class HeadlessBiometricCredentialStore : BiometricCredentialStore {
+    override fun isAvailable(): Boolean = false
+    override fun displayName(): String = "fingerprint"
+    override fun hasSavedCredentials(): Boolean = false
+    override suspend fun save(credentials: SavedCredentials): Result<Unit> =
+        Result.failure(UnsupportedOperationException("Biometric login needs the app open"))
+    override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> =
+        Result.failure(UnsupportedOperationException("Biometric login needs the app open"))
+    override fun clear() = Unit
+}
+
 actual fun createBiometricCredentialStore(context: PlatformContext): BiometricCredentialStore =
-    AndroidBiometricCredentialStore(context.context as FragmentActivity)
+    (context.context as? FragmentActivity)?.let(::AndroidBiometricCredentialStore) ?: HeadlessBiometricCredentialStore()

@@ -131,5 +131,18 @@ private class AndroidAlertNotifier(private val activity: FragmentActivity) : Ale
             notificationManager.areNotificationsEnabled()
 }
 
+/**
+ * For a graph built with no Activity — a geofence or boot receiver waking the app to report
+ * presence. Nothing there posts in-app alerts (the poller isn't started), and there's no UI to
+ * ask permission from, so this answers like desktop does.
+ */
+private class HeadlessAlertNotifier : AlertNotifier {
+    override val isSupported = false
+    override suspend fun permissionStatus() = NotificationPermission.DENIED
+    override suspend fun requestPermission() = false
+    override fun openSystemSettings() = Unit
+    override fun notify(notification: AlertNotification) = Unit
+}
+
 actual fun createAlertNotifier(platformContext: PlatformContext): AlertNotifier =
-    AndroidAlertNotifier(platformContext.context as FragmentActivity)
+    (platformContext.context as? FragmentActivity)?.let(::AndroidAlertNotifier) ?: HeadlessAlertNotifier()

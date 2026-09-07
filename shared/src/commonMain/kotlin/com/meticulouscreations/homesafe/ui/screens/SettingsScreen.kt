@@ -57,6 +57,7 @@ import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
+import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.formatClockTime
@@ -109,7 +110,14 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             onOpenSettings = viewModel::openNotificationSettings,
             onSendTest = viewModel::sendTestNotification,
         )
-        AwaySection(state = state, onAway = viewModel::setAway)
+        AwaySection(
+            state = state,
+            onAway = viewModel::setAway,
+            onAutomatic = viewModel::setAutomaticPresence,
+            onRequestLocation = viewModel::requestLocationAccess,
+            onSetHomeHere = viewModel::setHomeHere,
+            onClearHome = viewModel::clearHome,
+        )
         RecognitionSection(
             models = state.classifiers,
             faceRecognitionEnabled = state.overview?.faceRecognitionEnabled,
@@ -379,22 +387,31 @@ private fun AlertsSection(
 }
 
 /**
- * Away mode: this phone's "I'm away" switch, the household's phones, and what happens once the
- * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
+ * Away mode: this phone's "I'm away" switch, the household's phones, automatic presence, and
+ * what happens once the last one leaves. The relay on the Frigate box keeps the answer, so both
+ * phones see the same thing.
  */
 @Composable
-private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
+private fun AwaySection(
+    state: SettingsUiState,
+    onAway: (Boolean) -> Unit,
+    onAutomatic: (Boolean) -> Unit,
+    onRequestLocation: () -> Unit,
+    onSetHomeHere: () -> Unit,
+    onClearHome: () -> Unit,
+) {
     SettingsSection(title = "Away mode", icon = Icons.Filled.Home) {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
-        val switchEnabled = state.awaySupported && !state.awayBusy && !relayUnreachable
+        val switchEnabled = !state.awayBusy && !relayUnreachable
+        val me = state.presence.thisDevice
         // A debug install may still flip its own switch — the relay simply doesn't count it.
-        val thisDeviceCounts = state.presence.thisDevice?.countsForAway != false
+        val thisDeviceCounts = me?.countsForAway != false
         SettingsToggleRow(
             title = "I'm away",
             description = when {
-                !state.awaySupported -> "Not available on this platform yet. Use the Android app to set presence."
                 relayUnreachable -> "The push relay on the Frigate box can't be reached, so presence can't be changed right now."
                 !thisDeviceCounts -> "This is a debug build, so its switch doesn't decide whether the house is empty."
+                me?.pendingAway == true -> "This phone has left home; it counts as away in a few minutes unless it comes back."
                 state.thisDeviceAway -> "This phone counts as out of the house."
                 else -> "This phone counts as home."
             },
@@ -410,6 +427,10 @@ private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
             }
         }
         state.awayError?.let { SettingsCaption(it, error = true) }
+
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+        AutomaticPresenceRows(state, onAutomatic, onRequestLocation, onSetHomeHere, onClearHome)
+
         SettingsCaption(
             "When everyone is away, every person seen on any camera notifies loudly on both phones — " +
                 "on its own \"Away alerts\" channel, ignoring the zone rules above. Flip the switch back when you're home.",
@@ -418,8 +439,66 @@ private fun AwaySection(state: SettingsUiState, onAway: (Boolean) -> Unit) {
 }
 
 /**
- * "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" — one line per phone the relay knows.
- * A debug install is greyed out and says so: it hears the alerts but doesn't get a vote.
+ * The switch, then whatever it still needs, in the order the user has to supply it: location
+ * access, then a home to draw the fence around. Each missing piece gets one button. Once all
+ * three are in place the caption says what's watching.
+ */
+@Composable
+private fun AutomaticPresenceRows(
+    state: SettingsUiState,
+    onAutomatic: (Boolean) -> Unit,
+    onRequestLocation: () -> Unit,
+    onSetHomeHere: () -> Unit,
+    onClearHome: () -> Unit,
+) {
+    // One emitter at the top level; the spacing matches the section it sits in.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        val home = state.presence.home
+        val access = state.locationAccess
+        SettingsToggleRow(
+            title = "Automatic",
+            description = when {
+                !state.geofenceSupported -> "Not available on this platform. The switch above is manual here."
+                !state.automaticPresence -> "Let a geofence around home and your home Wi-Fi flip the switch for you."
+                access != LocationAccess.ALWAYS -> "Needs location set to \"Always\" so the fence can notice you leaving with the app closed."
+                home == null -> "Set where home is, from a phone standing in it."
+                else -> "Leaving home marks this phone away after a few minutes; arriving — by the fence, or by reaching your cameras over Wi-Fi — marks it home at once."
+            },
+            checked = state.automaticPresence && state.geofenceSupported,
+            enabled = state.geofenceSupported,
+            onCheckedChange = onAutomatic,
+        )
+        if (state.automaticPresence && state.geofenceSupported) {
+            if (access != LocationAccess.ALWAYS) {
+                OutlinedButton(onClick = onRequestLocation) {
+                    Text(
+                        when (access) {
+                            LocationAccess.WHILE_IN_USE -> "Allow location always"
+                            LocationAccess.DENIED -> "Allow location in system settings"
+                            else -> "Allow location"
+                        },
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = onSetHomeHere, enabled = !state.homeBusy && access != LocationAccess.NOT_ASKED && access != LocationAccess.DENIED) {
+                    Text(if (home == null) "Set home here" else "Move home here")
+                }
+                if (home != null) {
+                    TextButton(onClick = onClearHome, enabled = !state.homeBusy) { Text("Clear") }
+                }
+            }
+            SettingsCaption(
+                if (home == null) "Home isn't set yet." else "Home is set — a ${home.radiusMeters.toInt()} m circle every phone in the household watches.",
+            )
+            state.homeError?.let { SettingsCaption(it, error = true) }
+        }
+    }
+}
+
+/**
+ * "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" / "· leaving…" — one line per phone
+ * the relay knows. A debug install is greyed out and says so: it hears the alerts but doesn't get a vote.
  */
 @Composable
 private fun PresenceDeviceRow(device: PresenceDevice) {
@@ -427,6 +506,7 @@ private fun PresenceDeviceRow(device: PresenceDevice) {
     val status = when {
         device.away && device.updatedEpochSeconds != null -> "away since ${formatClockTime(device.updatedEpochSeconds)}"
         device.away -> "away"
+        device.pendingAway -> "leaving…"
         else -> "home"
     }
     val suffix = (if (device.isThisDevice) " · this phone" else "") + (if (device.countsForAway) "" else " · debug, not counted")
@@ -435,10 +515,11 @@ private fun PresenceDeviceRow(device: PresenceDevice) {
             color = when {
                 !device.countsForAway -> MaterialTheme.colorScheme.outline
                 device.away -> MaterialTheme.colorScheme.primary
+                device.pendingAway -> MaterialTheme.colorScheme.tertiary
                 else -> MaterialTheme.colorScheme.secondary
             },
             size = 6.dp,
-            pulsing = device.away && device.countsForAway,
+            pulsing = (device.away || device.pendingAway) && device.countsForAway,
         )
         Text(
             text = "$name · $status$suffix",

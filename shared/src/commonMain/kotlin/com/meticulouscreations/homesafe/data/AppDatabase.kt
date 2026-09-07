@@ -31,8 +31,15 @@ class SettingsPlaceholdersDropped : AutoMigrationSpec
 class CategorySwitchesMovedToZones : AutoMigrationSpec
 
 @Database(
-    entities = [ConnectionHistoryEntity::class, CameraEntity::class, SettingsEntity::class, AlertZoneRuleEntity::class, PlaybackPreferencesEntity::class],
-    version = 8,
+    entities = [
+        ConnectionHistoryEntity::class,
+        CameraEntity::class,
+        SettingsEntity::class,
+        AlertZoneRuleEntity::class,
+        PlaybackPreferencesEntity::class,
+        DeviceIdentityEntity::class,
+    ],
+    version = 9,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -41,6 +48,9 @@ class CategorySwitchesMovedToZones : AutoMigrationSpec
         AutoMigration(from = 6, to = 7),
         // 7 -> 8: the detail player's quality and sound choices ([PlaybackPreferencesEntity], a new table).
         AutoMigration(from = 7, to = 8),
+        // 8 -> 9: automatic presence — SettingsEntity.automaticPresence (default off) and this
+        // install's relay identity ([DeviceIdentityEntity], a new table).
+        AutoMigration(from = 8, to = 9),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

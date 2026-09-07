@@ -45,6 +45,10 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
         }
         // Idle until the user turns notifications on in Settings; started here so it outlives any tab.
         appGraph.detectionAlertService.start()
+        // Tell the relay who this install is once a server is active, and let the LAN and the
+        // home geofence flip this phone's presence. Both idempotent; both outlive any tab.
+        appGraph.deviceRegistrar.start()
+        appGraph.presenceAutomation.start()
     }
 
     CompositionLocalProvider(LocalMetroViewModelFactory provides appGraph.metroViewModelFactory) {
