@@ -85,7 +85,8 @@ data class DebugAutofillCredentials(
 fun SecureConnectionScreen(
     onConnected: () -> Unit,
     debugAutofillCredentials: DebugAutofillCredentials? = null,
-viewModel: SecureConnectionViewModel = metroViewModel(),) {
+    viewModel: SecureConnectionViewModel = metroViewModel(),
+) {
     val mostRecentConnection by viewModel.mostRecentConnection.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val hasSavedBiometricCredentials by viewModel.hasSavedBiometricCredentials.collectAsStateWithLifecycle()

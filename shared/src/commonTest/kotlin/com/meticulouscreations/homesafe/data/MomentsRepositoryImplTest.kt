@@ -70,8 +70,8 @@ class MomentsRepositoryImplTest {
             hosts += req.url.host
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
-                req.url.encodedPath.endsWith("/api/events") -> respond(EVENTS, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
-                req.url.encodedPath.endsWith("/api/config") && CONFIG != null -> respond(CONFIG!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                req.url.encodedPath.endsWith("/api/events") -> respond(events, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -83,10 +83,10 @@ class MomentsRepositoryImplTest {
         val connection = FakeConnection(url)
         val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, scope.backgroundScope)
         companion object {
-            lateinit var EVENTS: String
+            lateinit var events: String
 
             /** `/api/config`, or null to 404 it the way a test that isn't about zones expects. */
-            var CONFIG: String? = null
+            var config: String? = null
         }
     }
 
@@ -121,7 +121,7 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun mapsRealFrigateEventsNewestFirstAndSurfacesInProgress() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var list = h.repo.observeMoments().first()
@@ -148,8 +148,8 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun zonesDecideWhichDetectionsBelongInTheFeedAndWhereTheyWere() = runTest {
-        Harness.EVENTS = zonedEventsJson
-        Harness.CONFIG = configJson
+        Harness.events = zonedEventsJson
+        Harness.config = configJson
         try {
             val h = Harness(this)
             backgroundScope.launch { h.repo.observeMoments().collect {} }
@@ -167,13 +167,13 @@ class MomentsRepositoryImplTest {
             assertEquals(listOf("driveway"), list[1].zones)
             assertEquals(2, list[0].pathPoints.size)
         } finally {
-            Harness.CONFIG = null
+            Harness.config = null
         }
     }
 
     @Test
     fun clipStreamHitsTheEventVodEndpointWithTheSessionCookie() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this)
         val s = h.repo.getClipStream("1788401732.596325-eaak48")
         assertEquals("http://192.168.68.55:8971/vod/event/1788401732.596325-eaak48/index.m3u8", s.url)
@@ -183,7 +183,7 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun serverErrorIsSurfacedNotSwallowed() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this, failEvents = true)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var err: String? = null
@@ -198,7 +198,7 @@ class MomentsRepositoryImplTest {
 
     @Test
     fun disconnectedYieldsEmptyWithoutAnyRequest() = runTest {
-        Harness.EVENTS = eventsJson
+        Harness.events = eventsJson
         val h = Harness(this, url = null)
         assertEquals(emptyList(), h.repo.observeMoments().first())
         advanceUntilIdle()
