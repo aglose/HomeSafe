@@ -65,9 +65,9 @@ import com.meticulouscreations.homesafe.ui.components.EditorPolygon
 import com.meticulouscreations.homesafe.ui.components.MaskPolygonEditor
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
-import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import com.meticulouscreations.homesafe.viewmodel.EditorShape
 import com.meticulouscreations.homesafe.viewmodel.MaskEditorState
+import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 
 /**
  * Google Home-style "zones" editor for one camera: a still frame with polygon layers drawn over
@@ -116,7 +116,9 @@ fun DetectionZonesScreen(
                 uiState.isLoading -> Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
+
                 uiState.loadError != null -> ErrorPanel(message = uiState.loadError.orEmpty(), onRetry = viewModel::load)
+
                 else -> EditorCanvas(uiState = uiState, viewModel = viewModel)
             }
 
@@ -139,12 +141,20 @@ fun DetectionZonesScreen(
             title = { Text("Save your changes?") },
             text = { Text("You've edited this camera's ${uiState.editor.layer.noun}s but haven't saved. Frigate only uses what's saved.") },
             confirmButton = {
-                Button(onClick = { showLeaveDialog = false; leaveAfterSave = true; viewModel.save() }) { Text("Save and leave") }
+                Button(onClick = {
+                    showLeaveDialog = false
+                    leaveAfterSave = true
+                    viewModel.save()
+                }) { Text("Save and leave") }
             },
             dismissButton = {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     TextButton(onClick = { showLeaveDialog = false }) { Text("Keep editing") }
-                    TextButton(onClick = { showLeaveDialog = false; viewModel.discardChanges(); onBack() }) { Text("Discard") }
+                    TextButton(onClick = {
+                        showLeaveDialog = false
+                        viewModel.discardChanges()
+                        onBack()
+                    }) { Text("Discard") }
                 }
             },
         )

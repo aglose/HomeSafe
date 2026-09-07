@@ -29,10 +29,12 @@ class FrigateClassifierApiTest {
         "training_metadata":{"has_trained":true,"last_training_date":"2026-09-05T09:07:47","last_training_image_count":24,"current_image_count":27,"new_images_count":3,"dataset_changed":true}}"""
 
     private fun client(handler: suspend (HttpRequestData) -> Pair<HttpStatusCode, String>): HttpClient =
-        HttpClient(MockEngine { req ->
-            val (status, body) = handler(req)
-            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
-        }) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
+        HttpClient(
+            MockEngine { req ->
+                val (status, body) = handler(req)
+                respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        ) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
 
     @Test
     fun readsCustomObjectModelsFromConfig() = runTest {
@@ -54,7 +56,13 @@ class FrigateClassifierApiTest {
     fun labellingPostsTheFileAndCategoryTheWayFrigateExpects() = runTest {
         var captured: HttpRequestData? = null
         var body = ""
-        val api = FrigateClassifierApi(client { req -> captured = req; body = req.body.toByteArray().decodeToString(); HttpStatusCode.OK to """{"success":true}""" })
+        val api = FrigateClassifierApi(
+            client { req ->
+                captured = req
+                body = req.body.toByteArray().decodeToString()
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.categorize("http://frigate:8971/", "known_cars", "1788624497.850494-lvvjnr-1788624498.497929-sarahs_tesla-0.96.webp", "sarahs_tesla").getOrThrow()
 
@@ -68,7 +76,12 @@ class FrigateClassifierApiTest {
     @Test
     fun discardingSendsIdsAndTrainingIsABarePost() = runTest {
         val calls = mutableListOf<Pair<String, String>>()
-        val api = FrigateClassifierApi(client { req -> calls += req.url.encodedPath to req.body.toByteArray().decodeToString(); HttpStatusCode.OK to """{"success":true}""" })
+        val api = FrigateClassifierApi(
+            client { req ->
+                calls += req.url.encodedPath to req.body.toByteArray().decodeToString()
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.deleteQueued("http://frigate:8971", "known_cars", listOf("a.webp", "b.webp")).getOrThrow()
         api.train("http://frigate:8971", "known_cars").getOrThrow()

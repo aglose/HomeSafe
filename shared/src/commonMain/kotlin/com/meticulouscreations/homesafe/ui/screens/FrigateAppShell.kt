@@ -64,8 +64,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
 @Composable
-fun FrigateAppShell() {
-    val viewModel: AppShellViewModel = metroViewModel()
+fun FrigateAppShell(viewModel: AppShellViewModel = metroViewModel()) {
     val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
@@ -243,6 +242,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute) {
 }
 
 private data object CameraListRoute
+
 /**
  * [warmStreamUrl] / [warmPosterUrl] are what the tapped card was already playing: the detail
  * screen binds to that same pooled player straight away, so the video is on screen from the

@@ -66,8 +66,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
  * "only strangers" alert rule tell the two apart.
  */
 @Composable
-fun FaceLibraryScreen(onBack: () -> Unit) {
-    val viewModel: FaceLibraryViewModel = metroViewModel()
+fun FaceLibraryScreen(viewModel: FaceLibraryViewModel = metroViewModel(), onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -77,7 +76,9 @@ fun FaceLibraryScreen(onBack: () -> Unit) {
             uiState.isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
+
             uiState.loadError != null -> ErrorPanel(message = uiState.loadError.orEmpty(), onRetry = viewModel::load)
+
             else -> uiState.library?.let { library -> Body(uiState = uiState, library = library, viewModel = viewModel) }
         }
     }

@@ -1,8 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 
 /**
  * Browsers (JS/Wasm) have no equivalent of Android's BiometricPrompt or iOS's

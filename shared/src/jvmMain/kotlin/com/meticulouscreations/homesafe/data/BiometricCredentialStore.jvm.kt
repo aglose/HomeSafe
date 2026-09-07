@@ -1,8 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 
 /**
  * JVM desktop has no OS-level biometric API comparable to Android's BiometricPrompt or iOS's

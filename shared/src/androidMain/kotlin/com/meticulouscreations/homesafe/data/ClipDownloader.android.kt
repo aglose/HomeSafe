@@ -1,7 +1,5 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
-
 import android.app.DownloadManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -10,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Environment
 import androidx.core.net.toUri
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume

@@ -31,10 +31,12 @@ class FrigateApiClientMasksTest {
     }}"""
 
     private fun client(handler: suspend (HttpRequestData) -> Pair<HttpStatusCode, String>): HttpClient =
-        HttpClient(MockEngine { req ->
-            val (status, body) = handler(req)
-            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
-        }) {
+        HttpClient(
+            MockEngine { req ->
+                val (status, body) = handler(req)
+                respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        ) {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         }
 
@@ -71,11 +73,13 @@ class FrigateApiClientMasksTest {
     fun savesMasksTheWayFrigatesOwnEditorDoes() = runTest {
         var captured: HttpRequestData? = null
         var body = ""
-        val api = FrigateApiClient(client { req ->
-            captured = req
-            body = req.body.toByteArray().decodeToString()
-            HttpStatusCode.OK to """{"success":true,"message":"Config successfully updated, restart to apply"}"""
-        })
+        val api = FrigateApiClient(
+            client { req ->
+                captured = req
+                body = req.body.toByteArray().decodeToString()
+                HttpStatusCode.OK to """{"success":true,"message":"Config successfully updated, restart to apply"}"""
+            },
+        )
 
         api.setCameraMasks("http://frigate:8971/", "hikvision_1", FrigateApiClient.CameraSection.OBJECTS, listOf("0,0,1,0,1,1", "0,0,0.5,0,0.5,0.5")).getOrThrow()
 
@@ -90,7 +94,12 @@ class FrigateApiClientMasksTest {
     @Test
     fun clearingALayerSendsABlankValueWhichDeletesTheKey() = runTest {
         var captured: HttpRequestData? = null
-        val api = FrigateApiClient(client { req -> captured = req; HttpStatusCode.OK to """{"success":true}""" })
+        val api = FrigateApiClient(
+            client { req ->
+                captured = req
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.setCameraMasks("http://frigate:8971", "amcrest_1", FrigateApiClient.CameraSection.MOTION, emptyList()).getOrThrow()
 
@@ -101,9 +110,11 @@ class FrigateApiClientMasksTest {
 
     @Test
     fun surfacesFrigatesValidationMessageOnFailure() = runTest {
-        val api = FrigateApiClient(client {
-            HttpStatusCode.BadRequest to """{"success":false,"message":"Error parsing config. Check logs for error message."}"""
-        })
+        val api = FrigateApiClient(
+            client {
+                HttpStatusCode.BadRequest to """{"success":false,"message":"Error parsing config. Check logs for error message."}"""
+            },
+        )
 
         val result = api.setCameraMasks("http://frigate:8971", "hikvision_1", FrigateApiClient.CameraSection.MOTION, listOf("5,5,6,6,7,7"))
 

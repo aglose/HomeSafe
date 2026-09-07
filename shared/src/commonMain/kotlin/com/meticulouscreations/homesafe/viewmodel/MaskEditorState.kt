@@ -48,6 +48,7 @@ data class MaskEditorState(
     val layerShapes: List<EditorShape> get() = shapes.getValue(layer)
     val polygons: List<MaskPolygon> get() = layerShapes.map { it.polygon }
     val selectedShape: EditorShape? get() = selectedIndex?.let { layerShapes.getOrNull(it) }
+
     /** Whether the selected corner can go: a polygon keeps at least three. */
     val canRemoveSelectedVertex: Boolean
         get() = selectedVertexIndex != null && (selectedShape?.polygon?.points?.size ?: 0) > MaskPolygon.MIN_POINTS

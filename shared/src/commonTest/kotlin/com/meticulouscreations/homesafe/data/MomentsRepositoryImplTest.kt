@@ -1,11 +1,10 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import io.ktor.client.HttpClient
@@ -78,12 +77,14 @@ class MomentsRepositoryImplTest {
         }
         val client = HttpClient(engine) {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-            install(HttpCookies); install(HttpTimeout)
+            install(HttpCookies)
+            install(HttpTimeout)
         }
         val connection = FakeConnection(url)
         val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, scope.backgroundScope)
         companion object {
             lateinit var EVENTS: String
+
             /** `/api/config`, or null to 404 it the way a test that isn't about zones expects. */
             var CONFIG: String? = null
         }
@@ -110,7 +111,11 @@ class MomentsRepositoryImplTest {
     ]"""
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
-        repeat(200) { advanceUntilIdle(); if (cond()) return; withContext(Dispatchers.Default) { delay(25) } }
+        repeat(200) {
+            advanceUntilIdle()
+            if (cond()) return
+            withContext(Dispatchers.Default) { delay(25) }
+        }
         fail("Timed out waiting for $what")
     }
 
@@ -120,9 +125,13 @@ class MomentsRepositoryImplTest {
         val h = Harness(this)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var list = h.repo.observeMoments().first()
-        eventually("events to load") { list = h.repo.observeMoments().first(); list.size == 2 }
+        eventually("events to load") {
+            list = h.repo.observeMoments().first()
+            list.size == 2
+        }
 
-        val person = list[0]; val car = list[1]
+        val person = list[0]
+        val car = list[1]
         assertEquals("1788401732.596325-eaak48", person.id)
         assertEquals("hikvision_1", person.cameraName)
         assertEquals(MomentCategory.PEOPLE, person.category)
@@ -145,7 +154,10 @@ class MomentsRepositoryImplTest {
             val h = Harness(this)
             backgroundScope.launch { h.repo.observeMoments().collect {} }
             var list = h.repo.observeMoments().first()
-            eventually("events to load") { list = h.repo.observeMoments().first(); list.isNotEmpty() }
+            eventually("events to load") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
 
             // The street-only car is gone: the only zone it crossed wants birds. The untagged
             // walker is placed on the sidewalk from their path; the amcrest car (no zones drawn
@@ -176,7 +188,10 @@ class MomentsRepositoryImplTest {
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
         var err: String? = null
         h.repo.observeMoments().first()
-        eventually("error to surface") { err = h.repo.observeError().first(); err != null }
+        eventually("error to surface") {
+            err = h.repo.observeError().first()
+            err != null
+        }
         assertNotNull(err)
         assertEquals(emptyList(), h.repo.observeMoments().first())
     }

@@ -12,6 +12,8 @@ plugins {
     alias(libs.plugins.kotlinxSerialization)
     // Compile-time stability baseline + `stabilityCheck` CI gate (see composeStabilityAnalyzer below).
     alias(libs.plugins.composeStabilityAnalyzer)
+    // Kotlin formatting, plus the Compose rule set (see ktlint {} below).
+    alias(libs.plugins.ktlint)
 }
 
 kotlin {
@@ -21,46 +23,46 @@ kotlin {
 
     listOf(
         iosArm64(),
-        iosSimulatorArm64()
+        iosSimulatorArm64(),
     ).forEach { iosTarget ->
         iosTarget.binaries.framework {
             baseName = "Shared"
             isStatic = true
         }
     }
-    
+
     jvm()
-    
+
     js {
         browser()
     }
-    
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
     }
-    
+
     android {
-       namespace = "com.meticulouscreations.homesafe.shared"
-       compileSdk = libs.versions.android.compileSdk.get().toInt()
-       minSdk = libs.versions.android.minSdk.get().toInt()
-    
-       compilerOptions {
-           jvmTarget = JvmTarget.JVM_11
-       }
-       androidResources {
-           enable = true
-       }
-       withHostTest {
-           isIncludeAndroidResources = true
-       }
-       withDeviceTestBuilder {
-           sourceSetTreeName = "test"
-       }.configure {
-           instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-       }
+        namespace = "com.meticulouscreations.homesafe.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+
+        compilerOptions {
+            jvmTarget = JvmTarget.JVM_11
+        }
+        androidResources {
+            enable = true
+        }
+        withHostTest {
+            isIncludeAndroidResources = true
+        }
+        withDeviceTestBuilder {
+            sourceSetTreeName = "test"
+        }.configure {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
     }
-    
+
     sourceSets {
         androidMain.dependencies {
             implementation(libs.compose.uiToolingPreview)
@@ -156,6 +158,28 @@ kotlin {
 // display, so make the intent explicit rather than depending on the default.
 tasks.named<Test>("jvmTest") {
     systemProperty("java.awt.headless", "true")
+}
+
+ktlint {
+    // The plugin defaults to ktlint 1.5.0; pin it so everyone and CI agree on the rules.
+    version.set(libs.versions.ktlint)
+    // KMP source sets include the generated code that KSP (Room) and Compose Resources write
+    // under build/, which is ~3,300 violations of nobody's business — nothing here is
+    // hand-edited and none of it ships through review.
+    filter {
+        exclude { entry -> entry.file.path.contains("/build/") }
+    }
+    // The style itself lives in .editorconfig at the repo root.
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+    }
+}
+
+dependencies {
+    // mrmans0n/compose-rules: Compose-specific lint that plain ktlint has no notion of —
+    // missing Modifier parameters, effects capturing lambda parameters, state autoboxing.
+    // Worth more here than a general-purpose static analyser, since most of this module is UI.
+    ktlintRuleset(libs.composeRules.ktlint)
 }
 
 room3 {

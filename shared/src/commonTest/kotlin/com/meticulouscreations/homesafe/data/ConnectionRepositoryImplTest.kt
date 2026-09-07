@@ -1,8 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.model.SavedCredentials
-
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
+import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import io.ktor.client.HttpClient
@@ -18,12 +17,12 @@ import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,6 +42,7 @@ class ConnectionRepositoryImplTest {
     /** A fake Frigate reachable on two hosts; the LAN one can be switched off to simulate leaving home. */
     private class FakeFrigate {
         var localReachable = true
+
         /** When true, the server answers the login endpoint but refuses the credentials. */
         var rejectLogin = false
         val requests = mutableListOf<Pair<String, String>>()
@@ -58,18 +58,21 @@ class ConnectionRepositoryImplTest {
             if (httpsRejected && request.url.protocol.name == "https") error("Unable to parse TLS packet header")
             when {
                 path.endsWith("/api/version") -> respond("0.15.0", HttpStatusCode.OK)
+
                 path.endsWith("/api/login") ->
                     if (rejectLogin) {
                         respond("", HttpStatusCode.Unauthorized)
                     } else {
                         respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=token-for-$host; Path=/"))
                     }
+
                 path.endsWith("/api/config") ->
                     respond(
                         """{"cameras":{"front_door":{"enabled":true},"backyard":{"enabled":false}}}""",
                         HttpStatusCode.OK,
                         headersOf(HttpHeaders.ContentType, "application/json"),
                     )
+
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }

@@ -41,9 +41,11 @@ data class MomentEvent(
     val pathPoints: List<MaskPoint> = emptyList(),
 ) {
     val category: MomentCategory get() = categoryForLabel(label)
+
     /** What the UI calls the camera this was seen on — see [cameraDisplayName]. */
     val cameraDisplayName: String get() = cameraDisplayName(cameraName)
     val isInProgress: Boolean get() = endEpochSeconds == null
+
     /** Frigate put a name to it: a known car or a known face. Its "unknown" marker doesn't count. */
     val isRecognized: Boolean
         get() = !subLabel.isNullOrBlank() && !subLabel.equals(FaceLibrary.UNKNOWN_GUESS, ignoreCase = true)
@@ -136,7 +138,9 @@ fun MomentEvent.downloadFileName(): String {
 /** "0:15" / "12:04" / "1:02:34" */
 private fun formatMomentDuration(seconds: Double): String {
     val total = seconds.toLong().coerceAtLeast(0)
-    val h = total / 3600; val m = (total % 3600) / 60; val s = total % 60
+    val h = total / 3600
+    val m = (total % 3600) / 60
+    val s = total % 60
     val ss = s.toString().padStart(2, '0')
     return if (h > 0) "$h:${m.toString().padStart(2, '0')}:$ss" else "$m:$ss"
 }

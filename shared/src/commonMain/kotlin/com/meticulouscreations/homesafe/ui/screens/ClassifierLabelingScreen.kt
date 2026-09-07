@@ -77,7 +77,9 @@ fun ClassifierLabelingScreen(
             uiState.isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
+
             uiState.loadError != null -> ErrorPanel(message = uiState.loadError.orEmpty(), onRetry = viewModel::load)
+
             else -> uiState.dataset?.let { data -> Body(uiState = uiState, data = data, viewModel = viewModel) }
         }
     }

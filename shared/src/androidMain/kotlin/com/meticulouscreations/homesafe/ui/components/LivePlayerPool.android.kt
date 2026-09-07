@@ -260,6 +260,7 @@ internal class LivePlayerHolder(context: Context, val key: String?) {
         PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
         PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
         -> true
+
         else -> false
     }
 }

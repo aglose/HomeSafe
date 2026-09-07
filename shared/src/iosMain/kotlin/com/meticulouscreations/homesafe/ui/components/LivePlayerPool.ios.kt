@@ -98,8 +98,14 @@ internal class LivePlayerHolder(val key: String?) {
             delay(HOLDER_POLL_INTERVAL_MS)
             val item = player.currentItem ?: continue
             when (source) {
-                is VideoSource.Live -> if (item.error != null) scheduleLiveRetry() else if (item.status == AVPlayerItemStatusReadyToPlay) consecutiveFailures = 0
+                is VideoSource.Live -> if (item.error != null) {
+                    scheduleLiveRetry()
+                } else if (item.status == AVPlayerItemStatusReadyToPlay) {
+                    consecutiveFailures = 0
+                }
+
                 is VideoSource.Recording -> if (item.status == AVPlayerItemStatusFailed) reportRecordingFailure(item)
+
                 null -> Unit
             }
         }

@@ -1,8 +1,5 @@
 package com.meticulouscreations.homesafe.data
 
-import com.meticulouscreations.homesafe.domain.platform.AlertNotification
-import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
-
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.FaceLibrary
@@ -12,6 +9,8 @@ import com.meticulouscreations.homesafe.domain.model.categoryForLabel
 import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository

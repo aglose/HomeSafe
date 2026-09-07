@@ -104,7 +104,9 @@ class ServerOverviewTest {
         retention = FrigateRetention(2.0, 7.0, 10.0, 10.0),
         detectors = mapOf("onnx" to "onnx"),
         model = FrigateModelInfo("yolo-generic", "/config/model_cache/yolo.onnx", 320, 320),
-        faceRecognitionEnabled = false, licensePlateRecognitionEnabled = false, semanticSearchEnabled = false,
+        faceRecognitionEnabled = false,
+        licensePlateRecognitionEnabled = false,
+        semanticSearchEnabled = false,
         cameras = cameras,
     )
 

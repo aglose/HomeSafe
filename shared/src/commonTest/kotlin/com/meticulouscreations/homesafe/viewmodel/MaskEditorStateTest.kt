@@ -90,7 +90,9 @@ class MaskEditorStateTest {
     fun loadingFromTheServerReplacesEverythingAndClearsDirtiness() {
         val edited = MaskEditorState().drawTriangle()
         val config = CameraDetectionConfig(
-            "cam", 640, 360,
+            "cam",
+            640,
+            360,
             objectMasks = emptyList(),
             motionMasks = listOf(square),
             zones = listOf(DetectionZone("driveway", "Driveway", square, listOf("car"))),

@@ -24,10 +24,12 @@ class FrigateFaceApiTest {
     private val facesJson = """{"andrew":["andrew_1788661000.12.webp","andrew_1788661200.5.webp"],"train":["1788661300.1-abc123-1788661305.2-unknown-0.55.webp"]}"""
 
     private fun client(handler: suspend (HttpRequestData) -> Pair<HttpStatusCode, String>): HttpClient =
-        HttpClient(MockEngine { req ->
-            val (status, body) = handler(req)
-            respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
-        }) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
+        HttpClient(
+            MockEngine { req ->
+                val (status, body) = handler(req)
+                respond(body, status, headersOf(HttpHeaders.ContentType, "application/json"))
+            },
+        ) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
 
     @Test
     fun readsFoldersIncludingTheAttemptsFolder() = runTest {
@@ -47,7 +49,13 @@ class FrigateFaceApiTest {
     fun filingAnAttemptPostsTheTrainingFileTheWayFrigateExpects() = runTest {
         var captured: HttpRequestData? = null
         var body = ""
-        val api = FrigateFaceApi(client { req -> captured = req; body = req.body.toByteArray().decodeToString(); HttpStatusCode.OK to """{"success":true}""" })
+        val api = FrigateFaceApi(
+            client { req ->
+                captured = req
+                body = req.body.toByteArray().decodeToString()
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.classifyAttempt("http://frigate:8971/", "1788661300.1-abc123-1788661305.2-unknown-0.55.webp", "andrew").getOrThrow()
 
@@ -60,10 +68,12 @@ class FrigateFaceApiTest {
     @Test
     fun deletingAndCreatingUseTheirOwnRoutes() = runTest {
         val calls = mutableListOf<Triple<HttpMethod, String, String>>()
-        val api = FrigateFaceApi(client { req ->
-            calls += Triple(req.method, req.url.encodedPath, req.body.toByteArray().decodeToString())
-            HttpStatusCode.OK to """{"success":true}"""
-        })
+        val api = FrigateFaceApi(
+            client { req ->
+                calls += Triple(req.method, req.url.encodedPath, req.body.toByteArray().decodeToString())
+                HttpStatusCode.OK to """{"success":true}"""
+            },
+        )
 
         api.deleteImages("http://frigate:8971", "train", listOf("a.webp", "b.webp")).getOrThrow()
         api.createPerson("http://frigate:8971", "sarah").getOrThrow()

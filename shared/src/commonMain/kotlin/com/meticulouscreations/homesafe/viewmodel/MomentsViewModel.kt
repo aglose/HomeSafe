@@ -151,13 +151,16 @@ class MomentsViewModel(
             runCatching { getMomentClipStreamUseCase(event.id) }
                 .onSuccess { stream ->
                     _clip.update {
-                        if (it.eventId != event.id) it
-                        // buffering=true up front: the player shows only its poster until the first
+                        if (it.eventId != event.id) {
+                            it
+                        } // buffering=true up front: the player shows only its poster until the first
                         // frame, so the UI must assume loading until it hears otherwise.
-                        else it.copy(
-                            request = PlayerRequest(VideoSource.Recording(stream.url, stream.headers, startPositionMs = 0, posterUrl = posterUrl)),
-                            buffering = true,
-                        )
+                        else {
+                            it.copy(
+                                request = PlayerRequest(VideoSource.Recording(stream.url, stream.headers, startPositionMs = 0, posterUrl = posterUrl)),
+                                buffering = true,
+                            )
+                        }
                     }
                 }
                 .onFailure { e ->

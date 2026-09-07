@@ -26,8 +26,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
@@ -72,8 +72,7 @@ private val MomentCategory.icon: ImageVector?
 
 /** The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip. */
 @Composable
-fun MomentsTabContent() {
-    val viewModel: MomentsViewModel = metroViewModel()
+fun MomentsTabContent(viewModel: MomentsViewModel = metroViewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
 
@@ -352,6 +351,7 @@ private fun MomentCard(
                 // must win, or it would be masked behind a player that never paints a frame.
                 when {
                     clipError != null -> Text(clipError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+
                     clipRequest != null -> {
                         // Keyed by event so collapsing and reopening, or scrolling the card away and
                         // back, rebinds to the same player (paused where it was) instead of reloading.
@@ -367,6 +367,7 @@ private fun MomentCard(
                         // Drawn after the player so it sits on top of the poster, which stays until the first frame.
                         if (clipBuffering) CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
                     }
+
                     else -> {
                         // The clip URL is still being resolved, but the frame at the event's start is
                         // already known — show it now so the box never opens empty.
@@ -412,18 +413,21 @@ private fun DownloadButton(
                 strokeWidth = 2.dp,
                 color = MaterialTheme.colorScheme.onSurface,
             )
+
             succeeded -> Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = "Downloaded",
                 tint = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(16.dp),
             )
+
             errorMessage != null -> Icon(
                 imageVector = Icons.Filled.ErrorOutline,
                 contentDescription = "Download failed: $errorMessage",
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(16.dp),
             )
+
             else -> Icon(
                 imageVector = Icons.Filled.Download,
                 contentDescription = "Download clip",

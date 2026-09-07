@@ -4,8 +4,10 @@ package com.meticulouscreations.homesafe.domain.model
 enum class StreamQuality(val label: String) {
     /** Join on the lighter stream for a fast first frame, then step up to the full one. */
     AUTO("Auto"),
+
     /** The camera's full-quality stream, and nothing else. */
     HIGH("High"),
+
     /** The camera's lighter sub-stream only — easier on a slow link, and typically video-only. */
     LOW("Low"),
     ;
