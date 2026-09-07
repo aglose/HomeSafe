@@ -1,5 +1,13 @@
 name: CI
 
+# Shape of the pipeline: every Gradle task set that can run on its own gets its own runner
+# (the `gradle` matrix below), the emulator and iOS jobs run beside them, and ci-green fans
+# everything back into the one required status check.
+#
+# Nothing here builds the production web bundle. Running webpack + terser over the
+# Compose-for-JS output took ~18 of the old ~25 minutes and nothing consumed the result;
+# the web targets are linked instead, which still catches a missing actual or dependency.
+
 on:
   pull_request:
   push:
@@ -12,20 +20,38 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  GRADLE_OPTS: -Dorg.gradle.daemon=false
-
 jobs:
-  unit:
-    name: Build and unit tests
+  gradle:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Unit tests
+            # --continue: still run the Android host tests when the JVM ones fail, so one
+            # run reports everything that is broken.
+            tasks: :shared:jvmTest :shared:testAndroidHostTest --continue
+            artifact: unit-test-reports
+            reports: shared/build/reports/tests/**
+          - name: Android build, lint and stability gate
+            # All three share :shared:compileAndroidMain, so they belong on one runner.
+            tasks: :androidApp:assembleDebug :androidApp:lintDebug :shared:stabilityCheck
+            artifact: android-reports
+            reports: |
+              androidApp/build/reports/**
+              shared/build/reports/**
+          - name: Desktop and web
+            # Links the JS and Wasm executables without bundling them; see the note at the top.
+            tasks: :desktopApp:build :webApp:compileDevelopmentExecutableKotlinJs :webApp:compileDevelopmentExecutableKotlinWasmJs
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
@@ -43,37 +69,34 @@ jobs:
             echo "GOOGLE_SERVICES_JSON secret not set; building without Firebase."
           fi
 
+      # The Compose UI tests in jvmTest rasterise through skiko, which links libGL and fontconfig.
       - name: Install skiko native dependencies
+        if: contains(matrix.tasks, 'jvmTest')
         run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
 
-      - name: Unit tests
-        run: ./gradlew :shared:jvmTest :shared:testAndroidHostTest --stacktrace
+      - name: ./gradlew ${{ matrix.tasks }}
+        run: ./gradlew ${{ matrix.tasks }} --stacktrace
 
-      - name: Compose stability gate
-        run: ./gradlew :shared:stabilityCheck --stacktrace
-
-      - name: Assemble and lint
-        run: ./gradlew :androidApp:assembleDebug :androidApp:lintDebug :desktopApp:build :webApp:build --stacktrace
-
-      - uses: actions/upload-artifact@v4
-        if: always()
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() && matrix.artifact }}
         with:
-          name: unit-test-reports
-          path: |
-            shared/build/reports/tests/**
-            androidApp/build/reports/**
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.reports }}
           retention-days: 7
 
   android-ui:
     name: Android UI tests (emulator)
     runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      API_LEVEL: 34
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
@@ -85,19 +108,44 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # Runs the whole commonTest suite on-device: commonTest feeds the androidDeviceTest
-      # compilation (verified: 29 test classes), which is what puts the Compose UI tests
-      # on a real Android runtime.
+      # A booted AVD is cached as a snapshot, so later runs resume it instead of cold-booting.
+      # Caches made on main are visible to every branch; a miss only happens the first time
+      # the API level changes (or after the cache is evicted), and then costs one extra boot.
+      - name: AVD snapshot cache
+        id: avd-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api${{ env.API_LEVEL }}-google_apis-x86_64
+      - name: Create AVD and snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+      # Runs the whole commonTest suite on-device, plus src/uiTest/kotlin — so the Compose
+      # UI tests execute on a real Android runtime here, on the iOS simulator in the ios job,
+      # and on the JVM in the unit tests job. Verified locally: 182 tests, 5 of them HomeFeedUiTest.
       - name: Instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: ${{ env.API_LEVEL }}
           target: google_apis
           arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
           script: ./gradlew :shared:connectedAndroidDeviceTest --stacktrace
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: android-ui-reports
@@ -106,49 +154,27 @@ jobs:
 
   ios:
     name: iOS tests and build
-    # Self-hosted runs only for branches in this repo. A fork's pull request must never
-    # execute on the Mac, so it falls through to ios-hosted instead.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: [self-hosted, macOS]
+    # Branches in this repo run on the self-hosted Mac. A fork's pull request must never
+    # execute there, so it goes to a GitHub-hosted macOS runner instead (it needs no secrets).
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || fromJSON('["self-hosted", "macOS"]') }}
+    timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: iOS simulator unit tests
-        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
-
-      - name: Build iOS app
-        run: |
-          xcodebuild build \
-            -project iosApp/iosApp.xcodeproj \
-            -scheme iosApp \
-            -destination 'generic/platform=iOS Simulator' \
-            ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
-
-  ios-hosted:
-    name: iOS tests and build (fork PRs)
-    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7
+      # The Mac has its own JDK and a persistent ~/.konan; only the hosted runner needs these.
+      - uses: actions/setup-java@v6
+        if: runner.environment == 'github-hosted'
         with:
           distribution: temurin
           java-version: '21'
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - name: Cache Kotlin/Native
-        uses: actions/cache@v4
+        if: runner.environment == 'github-hosted'
+        uses: actions/cache@v6
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: iOS simulator unit tests
         run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
@@ -170,13 +196,11 @@ jobs:
     # The single required status check. Jobs can be added or renamed without touching
     # branch protection, as long as they are listed here.
     if: always()
-    needs: [unit, android-ui, ios, ios-hosted]
+    needs: [gradle, android-ui, ios]
     runs-on: ubuntu-24.04
     steps:
-      - name: Verify no job failed
-        run: |
-          results='${{ toJSON(needs) }}'
-          echo "$results"
-          echo "$results" | grep -q '"result": *"failure"' && exit 1
-          echo "$results" | grep -q '"result": *"cancelled"' && exit 1
-          exit 0
+      - name: Show job results
+        run: echo '${{ toJSON(needs) }}'
+      - name: Fail unless every job succeeded
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
+        run: exit 1
