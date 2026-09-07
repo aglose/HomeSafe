@@ -10,12 +10,6 @@
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/App.kt">
         <error line="36" column="5" source="compose:modifier-missing-check" />
     </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/network/PushRelayApi.kt">
-        <error line="72" column="43" source="standard:statement-wrapping" />
-        <error line="72" column="61" source="standard:statement-wrapping" />
-        <error line="72" column="103" source="standard:statement-wrapping" />
-        <error line="72" column="123" source="standard:statement-wrapping" />
-    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="104" column="5" source="compose:parameter-naming" />
         <error line="105" column="5" source="compose:parameter-naming" />
@@ -63,17 +57,8 @@
         <error line="86" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
-        <error line="3" column="1" source="standard:import-ordering" />
         <error line="73" column="5" source="compose:modifier-missing-check" />
-        <error line="130" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="138" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="139" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="151" column="92" source="standard:string-template" />
-        <error line="339" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="340" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="354" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="355" column="1" source="standard:blank-line-between-when-conditions" />
-        <error line="458" column="13" source="compose:param-order-check" />
+        <error line="480" column="13" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="79" column="5" source="compose:modifier-missing-check" />

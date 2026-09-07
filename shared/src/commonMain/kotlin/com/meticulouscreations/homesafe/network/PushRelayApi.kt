@@ -78,7 +78,11 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
-            URLBuilder(serverUrl).apply { port = RELAY_PORT; pathSegments = path.trim('/').split('/'); parameters.clear() }.buildString()
+            URLBuilder(serverUrl).apply {
+                port = RELAY_PORT
+                pathSegments = path.trim('/').split('/')
+                parameters.clear()
+            }.buildString()
     }
 }
 

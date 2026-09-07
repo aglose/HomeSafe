@@ -5,9 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -45,21 +45,21 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-import com.meticulouscreations.homesafe.domain.model.CameraPipeline
-import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
+import com.meticulouscreations.homesafe.domain.model.CameraPipeline
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
-import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
-import com.meticulouscreations.homesafe.ui.formatClockTime
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
@@ -127,6 +127,7 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
             SettingsCaption(
                 when (connection.route) {
                     ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
+
                     ConnectionRoute.TAILSCALE ->
                         if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
                 },
@@ -135,7 +136,9 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
         val overview = state.overview
         when {
             overview == null && state.overviewError != null -> LoadFailedRow(state.overviewError, onRetry)
+
             overview == null -> LoadingRow("Reading server stats…")
+
             else -> {
                 SettingsInfoGrid(
                     listOf(
@@ -148,7 +151,7 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
                 overview.detector?.let { detector ->
                     val model = listOfNotNull(
                         detector.modelType,
-                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "${w}×$h" } },
+                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "$w×$h" } },
                     ).joinToString(" ")
                     InfoRow(
                         label = "Detector",
@@ -336,7 +339,9 @@ private fun AlertsSection(
             val cameras = state.overview?.cameras?.filter { it.enabled }
             when {
                 cameras == null -> SettingsCaption("Loading cameras…")
+
                 cameras.isEmpty() -> SettingsCaption("No cameras on this server.")
+
                 else -> cameras.forEach { camera ->
                     CameraAlertZones(camera = camera, alerts = state.alerts, onZoneCategory = onZoneCategory)
                 }
@@ -351,7 +356,9 @@ private fun AlertsSection(
                     } else {
                         "Skip the notification when Frigate recognises the person. Name faces under Recognition below."
                     }
+
                     false -> "Needs face recognition, which is off in Frigate's config."
+
                     null -> "Needs face recognition on the server."
                 },
                 checked = faces == true && state.alerts.quietFamiliarPeople,
