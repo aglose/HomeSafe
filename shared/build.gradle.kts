@@ -16,6 +16,48 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
+/**
+ * Which JavaCPP native bundles the JVM target links against. FFmpeg's natives are ~20 MB per
+ * platform, so a normal build and every `:shared:jvmTest` run take only this host's — the
+ * distributable is the only thing that needs the rest, and it passes them explicitly:
+ *
+ *     ./gradlew :desktopApp:packageDistributionForCurrentOS \
+ *         -PjavacppPlatforms=macosx-arm64,macosx-x86_64,windows-x86_64,linux-x86_64
+ */
+val javacppNativePlatforms: List<String> =
+    providers.gradleProperty("javacppPlatforms").orNull
+        ?.split(",")
+        ?.map(String::trim)
+        ?.filter(String::isNotEmpty)
+        ?: listOf(hostJavacppPlatform())
+
+/**
+ * A catalog entry as "group:name:version" — the string notation, which is the only form of
+ * these source-set dependency methods that takes a classifier or a configuration block.
+ */
+fun coordinatesOf(library: Provider<MinimalExternalModuleDependency>): String {
+    val dependency = library.get()
+    return "${dependency.module.group}:${dependency.module.name}:${dependency.versionConstraint.requiredVersion}"
+}
+
+/** The same module as [library], but the classifier artifact carrying [platform]'s native library. */
+fun nativesFor(library: Provider<MinimalExternalModuleDependency>, platform: String): String =
+    "${coordinatesOf(library)}:$platform"
+
+fun hostJavacppPlatform(): String {
+    val os = System.getProperty("os.name").lowercase()
+    val arch = when (val raw = System.getProperty("os.arch").lowercase()) {
+        "aarch64", "arm64" -> "arm64"
+        "x86_64", "amd64" -> "x86_64"
+        else -> raw
+    }
+    return when {
+        os.startsWith("mac") || os.startsWith("darwin") -> "macosx-$arch"
+        os.startsWith("win") -> "windows-$arch"
+        else -> "linux-$arch"
+    }
+}
+
 kotlin {
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
@@ -115,6 +157,20 @@ kotlin {
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.cio)
+            // Dispatchers.Swing: the desktop player reports decoded frames onto the same event
+            // dispatch thread composition runs on, rather than trusting whatever Main resolves to.
+            implementation(libs.kotlinx.coroutinesSwing)
+            // Desktop video (CameraStreamPlayer.jvm.kt). JavaCV is used purely for its
+            // FFmpegFrameGrabber, so its other bindings (OpenCV, OpenBLAS, Tesseract and the
+            // rest, several hundred MB of natives) are cut off at the source and JavaCPP and the
+            // FFmpeg presets are declared here instead.
+            implementation(coordinatesOf(libs.javacv)) { isTransitive = false }
+            implementation(libs.javacpp)
+            implementation(libs.ffmpeg)
+            javacppNativePlatforms.forEach { platform ->
+                implementation(nativesFor(libs.javacpp, platform))
+                implementation(nativesFor(libs.ffmpeg, platform))
+            }
         }
         // Compose UI tests cannot live in commonTest: commonTest feeds androidHostTest, and
         // runComposeUiTest needs a real Android instrumentation host, so those tests fail there
