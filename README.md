@@ -75,6 +75,38 @@ resolve to the same 4K main stream because no `live.streams` sub stream is confi
 Adding one (see `FrigateApiClient.toFrigateCamera`) is the single biggest remaining win for
 connect time and battery: the grid would decode a 720p stream per camera instead of 4K.
 
+Android plays this with ExoPlayer and iOS with AVFoundation. Desktop has neither, so it decodes
+the same HLS itself, with FFmpeg through JavaCV (`FfmpegPlaybackSession.jvm.kt`): a decode thread
+per open stream, frames converted straight to BGRA and handed to Skia, and a presentation loop
+that plays them out on the stream's own timestamps rather than on the rate they were decoded at.
+The differences worth knowing about:
+
+- **Where Android and iOS pause a live player, desktop closes it and reopens on the way back.**
+  FFmpeg has no pause for a network stream, and go2rtc expires an HLS session behind a paused
+  player anyway. It is still a warm return — the last frame stays up and no poster reappears.
+- **Seeking a recording is verified, and reopens the source when it fails.** FFmpeg's plain seek
+  leaves an HLS playlist at end-of-stream about as often as it moves it; the frame-checked seek is
+  tried first and, if what comes back is not within two seconds of the moment asked for, the
+  source is reopened positioned there — which always lands, at the cost of a reconnect.
+- **Frames are decoded no wider than 1920.** A 4K BGRA frame is 33 MB, and nothing on screen shows
+  a camera at that size; FFmpeg scales during the colour conversion it has to do regardless.
+- **Audio plays through `javax.sound.sampled`,** and both codecs go2rtc will publish (AAC and
+  Opus) decode, unlike iOS. Muting writes silence rather than closing the line, because the line's
+  drain rate is part of what paces a stream that has audio.
+
+FFmpeg's native libraries are ~20 MB per platform and come from JavaCPP's presets, which unpack
+them into `~/.javacpp/cache` the first time anything touches them — several seconds on a cold
+machine, which `warmUpVideoDecoder()` in `main.kt` starts at launch so it happens behind the
+connect screen instead of in front of the first camera. A normal build and `:shared:jvmTest` take
+only the host's natives; a distributable meant for other machines has to ask for theirs:
+
+```
+./gradlew :desktopApp:packageDistributionForCurrentOS \
+    -PjavacppPlatforms=macosx-arm64,macosx-x86_64,windows-x86_64,linux-x86_64
+```
+
+The web target still shows the "Live view not yet available on this platform" placeholder.
+
 ### Running tests
 
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
