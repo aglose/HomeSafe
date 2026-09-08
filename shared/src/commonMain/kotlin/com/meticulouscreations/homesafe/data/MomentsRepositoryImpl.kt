@@ -5,7 +5,7 @@ import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.inZones
-import com.meticulouscreations.homesafe.domain.model.mergeStillVehicles
+import com.meticulouscreations.homesafe.domain.model.mergeVehicleVisits
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -117,8 +117,8 @@ class MomentsRepositoryImpl(
         }
         apiClient.getEvents(url, limit = PAGE_SIZE)
             .onSuccess { events ->
-                // Zones first, so a street car the zones reject never anchors a parked-vehicle moment.
-                _moments.value = events.map { it.toDomain() }.inZones(zonesByCamera).mergeStillVehicles()
+                // Zones first, so a street car the zones reject never anchors a visit.
+                _moments.value = events.map { it.toDomain() }.inZones(zonesByCamera).mergeVehicleVisits()
                 _error.value = null
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }

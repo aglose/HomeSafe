@@ -327,7 +327,7 @@ class DetectionAlertServiceTest {
     private val driveThrough = List(20) { 0.05 + it * 0.0474 to 0.57 }
 
     @Test
-    fun aParkedCarNotifiesOnceAndItsStillRedetectionsStayQuiet() = runTest {
+    fun aCarNotifiesOncePerVisitAndItsRedetectionsStayQuiet() = runTest {
         val h = Harness(this, on)
         h.service.start()
         eventually("first poll") { h.afters.isNotEmpty() }
@@ -350,16 +350,25 @@ class DetectionAlertServiceTest {
         settle()
         assertEquals(listOf("parked"), h.notifier.posted.map { it.id }, "a still car where one was already reported is the same car")
 
+        // Pulling out a minute later is the tail of the same visit, not a second alert.
         h.boxById["leaving"] = spot
         h.pathById["leaving"] = driveThrough
-        h.events += Triple("leaving", "car", 1_005_500.0)
-        eventually("the departure") { h.notifier.posted.map { it.id } == listOf("parked", "leaving") }
+        h.events += Triple("leaving", "car", 1_005_460.0)
+        settle()
+        assertEquals(listOf("parked"), h.notifier.posted.map { it.id }, "a move inside the visit window is the same visit")
 
-        h.clockNow = 1_005_500.0 + 6 * 3600 + 1   // the memory has expired: a car here now is news again
+        // Half an hour on, a car moving into that spot is a new arrival worth hearing about.
+        h.clockNow = 1_007_300.0
+        h.boxById["returning"] = spot
+        h.pathById["returning"] = driveThrough
+        h.events += Triple("returning", "car", 1_007_300.0)
+        eventually("the return") { h.notifier.posted.map { it.id } == listOf("parked", "returning") }
+
+        h.clockNow = 1_007_300.0 + 6 * 3600 + 1   // the memory has expired: a car here now is news again
         h.boxById["next-day"] = spot
         h.pathById["next-day"] = parkedPath
         h.events += Triple("next-day", "car", h.clockNow)
-        eventually("the next day's car") { h.notifier.posted.map { it.id } == listOf("parked", "leaving", "next-day") }
+        eventually("the next day's car") { h.notifier.posted.map { it.id } == listOf("parked", "returning", "next-day") }
     }
 
     @Test
