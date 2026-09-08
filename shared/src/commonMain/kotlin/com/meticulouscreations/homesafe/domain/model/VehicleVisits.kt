@@ -84,9 +84,14 @@ fun MomentEvent.repeats(previous: MomentEvent): Boolean {
 /**
  * [anchor] with this sighting folded in: the end becomes the later one (null if either is still in
  * progress), the sightings add up, the better-scored name wins (a named sighting beats an unnamed
- * one, a tie keeps the anchor's — the classifier flips between two similar cars), the top score is
- * the max, and any zone this sighting adds is appended. Id, start, box, path and clip stay the
- * anchor's, so its thumbnail and clip stay valid and the visit stays anchored to one place.
+ * one, a tie keeps the anchor's — the classifier flips between two similar cars), and the top score
+ * is the max. Id, start, box, path and clip stay the anchor's, so its thumbnail and clip stay valid
+ * and the visit stays anchored to one place.
+ *
+ * Zones are ordered so this sighting's come last, because the card says where the object *ended up*
+ * ("Andrew's Tesla in the driveway") and the newest sighting is the best answer to that. A car
+ * crossing the lawn on its way to the driveway keeps both, in that order; a sighting that landed in
+ * no zone at all changes nothing, so the last place it was actually seen still names the card.
  */
 internal fun MomentEvent.foldedInto(anchor: MomentEvent): MomentEvent {
     val end = if (anchor.endEpochSeconds == null || endEpochSeconds == null) null else maxOf(anchor.endEpochSeconds, endEpochSeconds)
@@ -97,7 +102,7 @@ internal fun MomentEvent.foldedInto(anchor: MomentEvent): MomentEvent {
         subLabel = if (nameWins) subLabel else anchor.subLabel,
         subLabelScore = if (nameWins) subLabelScore else anchor.subLabelScore,
         topScore = listOfNotNull(anchor.topScore, topScore).maxOrNull(),
-        zones = (anchor.zones + zones).distinct(),
+        zones = anchor.zones.filterNot { it in zones } + zones,
     )
 }
 

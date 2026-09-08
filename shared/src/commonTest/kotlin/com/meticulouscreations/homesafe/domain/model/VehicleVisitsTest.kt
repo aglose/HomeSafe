@@ -199,8 +199,28 @@ class VehicleVisitsTest {
         val only = listOf(anchor, later).mergeVehicleVisits().single()
         assertEquals("anchor", only.id)
         assertEquals(anchor.pathPoints, only.pathPoints, "the anchor's own path, not a concatenation")
-        assertEquals(listOf("street", "sidewalk"), only.zones)
+        assertEquals(listOf("sidewalk", "street"), only.zones, "the newest sighting's zones come last")
         assertEquals("sarahs_tesla", only.subLabel, "a named sighting beats an unnamed anchor")
+    }
+
+    @Test
+    fun theCardIsNamedForWhereTheCarEndedUpNotWhereItPassed() {
+        // The real complaint: a car that crossed the street on its way in was titled "on the
+        // street" while it sat in the driveway, because the anchor's zones were kept last.
+        val arriving = event("arriving", at(19, 40), at(19, 41), zones = listOf("driveway", "street"), subLabel = "andrews_tesla", subLabelScore = 0.9)
+        val parked = event("parked", at(19, 42), at(19, 45), zones = listOf("driveway"), subLabel = "andrews_tesla", subLabelScore = 0.9)
+        val only = listOf(arriving, parked).mergeVehicleVisits().single()
+        assertEquals(listOf("street", "driveway"), only.zones)
+        assertEquals("Andrews Tesla in the driveway", only.present(day, utc).title)
+    }
+
+    @Test
+    fun aSightingThatLandedInNoZoneLeavesTheNameAlone() {
+        val parked = event("parked", at(19, 40), at(19, 41), zones = listOf("driveway"))
+        val unplaced = event("unplaced", at(19, 42), at(19, 43))
+        val only = listOf(parked, unplaced).mergeVehicleVisits().single()
+        assertEquals(listOf("driveway"), only.zones, "nothing to add, nothing to reorder")
+        assertEquals("Car in the driveway", only.present(day, utc).title)
     }
 
     @Test

@@ -29,7 +29,8 @@ data class MomentEvent(
     val hasClip: Boolean,
     val hasSnapshot: Boolean,
     /**
-     * Frigate zone keys the object passed through, in the order it entered them; empty when none.
+     * Frigate zone keys the object passed through, in the order it entered them, and for a folded
+     * visit with the most recent sighting's last; empty when none.
      * Frigate only tags a zone whose object filter accepts the label, so once the feed has run
      * [inZones] this holds the zones that *wanted* the object, not merely the ones it crossed.
      */
