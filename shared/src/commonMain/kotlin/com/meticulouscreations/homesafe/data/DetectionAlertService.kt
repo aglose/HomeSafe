@@ -5,12 +5,13 @@ import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.FaceLibrary
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.VehicleVisits
+import com.meticulouscreations.homesafe.domain.model.atSameSpotAs
 import com.meticulouscreations.homesafe.domain.model.categoryForLabel
 import com.meticulouscreations.homesafe.domain.model.foldedInto
 import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.model.isStill
 import com.meticulouscreations.homesafe.domain.model.present
-import com.meticulouscreations.homesafe.domain.model.repeats
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -53,9 +54,10 @@ import kotlin.time.Instant
  * on any camera is posted — [AlertNotification.urgent], on the loud channel — whatever the zone
  * rules say. Presence is collected for the life of the poll so that flag stays fresh.
  *
- * A parked car is reported once. Frigate re-detects a parked vehicle as a new event every time a
- * passer-by steals its tracker (see `StillVehicles`), so a still vehicle at a spot where one was
- * already reported is remembered as another sighting, not posted again, for [VEHICLE_MEMORY_SECONDS].
+ * A car is reported once per visit. Frigate re-detects the same vehicle over and over — a passer-by
+ * steals a parked car's tracker, and a car manoeuvring is lost and re-acquired several times (see
+ * `VehicleVisits`) — so a vehicle seen again at a spot one was already posted from is remembered as
+ * another sighting instead of being posted again.
  */
 class DetectionAlertService(
     private val apiClient: FrigateApiClient,
@@ -195,8 +197,12 @@ class DetectionAlertService(
         if (placed.category != MomentCategory.VEHICLES) return false
         val now = clock()
         recentVehicles.removeAll { now - it.lastSeenEpochSeconds > VEHICLE_MEMORY_SECONDS }
-        if (!placed.isStill()) return false
-        val prior = recentVehicles.lastOrNull { placed.repeats(it.moment) } ?: return false
+        // The window can't come from MomentEvent.repeats here: this runs at an event's start, when
+        // it has no end yet, so the gap is measured from the last sighting this poller actually saw.
+        val window = if (placed.isStill()) VEHICLE_MEMORY_SECONDS else VehicleVisits.VISIT_GAP_SECONDS
+        val prior = recentVehicles.lastOrNull {
+            placed.atSameSpotAs(it.moment) && placed.startEpochSeconds - it.lastSeenEpochSeconds <= window
+        } ?: return false
         prior.moment = placed.foldedInto(prior.moment)
         prior.lastSeenEpochSeconds = placed.startEpochSeconds
         return true
@@ -237,7 +243,7 @@ class DetectionAlertService(
         const val OVERLAP_SECONDS = 1.0
         const val RECOGNITION_GRACE_SECONDS = 20.0
 
-        /** A parked car was re-detected about hourly across a whole day; half an hour would break the chain. */
+        /** How long a posted vehicle is remembered. A parked car is re-detected about hourly all day. */
         const val VEHICLE_MEMORY_SECONDS = 6 * 3600.0
         const val MAX_RECENT_VEHICLES = 20
     }

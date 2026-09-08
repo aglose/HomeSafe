@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
  * around one spot, ended by the burst of far-away points a passing car leaves when it steals the
  * tracker; and the string of re-detections that followed.
  */
-class StillVehiclesTest {
+class VehicleVisitsTest {
 
     private val curb = DetectionBox(0.75, 0.34, 0.18, 0.21)
     private val day = LocalDate(2026, 9, 7)
@@ -82,7 +82,7 @@ class StillVehiclesTest {
         val names = listOf("andrews_tesla" to 0.7, "sarahs_tesla" to 0.85, "andrews_tesla" to 0.6, "sarahs_tesla" to 0.99, null to null, "sarahs_tesla" to 0.9, "andrews_tesla" to 0.8, "sarahs_tesla" to 0.95, "andrews_tesla" to 0.75)
         val events = starts.indices.map { i -> event("e$i", starts[i], ends[i], subLabel = names[i].first, subLabelScore = names[i].second) }
 
-        val merged = events.reversed().mergeStillVehicles()
+        val merged = events.reversed().mergeVehicleVisits()
 
         val only = merged.single()
         assertEquals("e0", only.id, "the first sighting keeps the card, its thumbnail and clip")
@@ -97,27 +97,80 @@ class StillVehiclesTest {
 
     @Test
     fun anInProgressRedetectionLeavesTheMomentInProgress() {
-        val merged = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 30), end = null)).mergeStillVehicles()
+        val merged = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 30), end = null)).mergeVehicleVisits()
         val only = merged.single()
         assertTrue(only.isInProgress)
         assertEquals("Seen 2 times · still there", only.present(day, utc).sightingsLabel)
     }
 
     @Test
-    fun aMovingCarStartsANewMomentEvenWhereTheParkedOneWas() {
+    fun aCarLeavingRightAfterIsPartOfTheSameVisit() {
         val parked = event("parked", at(6, 6), at(9, 42))
         val leaving = event("leaving", at(9, 45), at(9, 46), path = driveThrough)
-        val merged = listOf(parked, leaving).mergeStillVehicles()
-        assertEquals(listOf("leaving", "parked"), merged.map { it.id })
+        val only = listOf(parked, leaving).mergeVehicleVisits().single()
+        assertEquals("parked", only.id)
+        assertEquals(2, only.sightings)
+    }
+
+    @Test
+    fun aMovingCarBackAtTheSameSpotLongAfterStartsANewMoment() {
+        // Ten minutes is past the visit window, and a moving sighting doesn't get the parked one.
+        val morning = event("morning", at(6, 6), at(6, 20), path = driveThrough)
+        val evening = event("evening", at(6, 30), at(6, 31), path = driveThrough)
+        val merged = listOf(morning, evening).mergeVehicleVisits()
+        assertEquals(listOf("evening", "morning"), merged.map { it.id })
         assertTrue(merged.all { it.sightings == 1 })
     }
 
     @Test
-    fun aGapOverThirtyMinutesStartsANewMoment() {
-        val merged = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 51), at(7, 0))).mergeStillVehicles()
-        assertEquals(listOf("b", "a"), merged.map { it.id })
-        val chained = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 50), at(7, 0))).mergeStillVehicles()
+    fun theRealArrivalThatMadeSevenCardsBecomesOne() {
+        // Front Yard, 2026-09-07 19:40 to 19:45: Andrew's Tesla pulling in and parking. Frigate lost
+        // and re-acquired it seven times; the boxes all overlap and no gap exceeds two minutes.
+        val boxes = listOf(
+            DetectionBox(0.290, 0.403, 0.147, 0.169),
+            DetectionBox(0.239, 0.403, 0.198, 0.175),
+            DetectionBox(0.203, 0.406, 0.234, 0.250),
+            DetectionBox(0.250, 0.403, 0.188, 0.175),
+            DetectionBox(0.325, 0.403, 0.113, 0.164),
+            DetectionBox(0.198, 0.406, 0.241, 0.253),
+            DetectionBox(0.194, 0.403, 0.245, 0.253),
+        )
+        val spans = listOf(
+            at(19, 40) + 30 to at(19, 40) + 38,
+            at(19, 41) + 12 to at(19, 41) + 13,
+            at(19, 42) + 5 to at(19, 42) + 7,
+            at(19, 42) + 16 to at(19, 42) + 19,
+            at(19, 44) + 17 to at(19, 44) + 19,
+            at(19, 44) + 44 to at(19, 45) + 0,
+            at(19, 45) + 16 to at(19, 45) + 21,
+        )
+        // Some sightings sit still, others sweep as the car moves; both belong to the one visit.
+        val paths = listOf(parkedPath, parkedPath, parkedPath, driveThrough, driveThrough, parkedPath, parkedPath)
+        val events = spans.indices.map { i ->
+            event("v$i", spans[i].first, spans[i].second, subLabel = "andrews_tesla", subLabelScore = 0.9, box = boxes[i], path = paths[i])
+        }
+
+        val only = events.reversed().mergeVehicleVisits().single()
+        assertEquals("v0", only.id)
+        assertEquals(7, only.sightings)
+        assertEquals("Seen 7 times · last seen 7:45 PM", only.present(day, utc).sightingsLabel)
+    }
+
+    @Test
+    fun aParkedCarHoldsItsMomentForHalfAnHour() {
+        val merged = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 51), at(7, 0))).mergeVehicleVisits()
+        assertEquals(listOf("b", "a"), merged.map { it.id }, "past half an hour it is a new moment")
+        val chained = listOf(event("a", at(6, 6), at(6, 20)), event("b", at(6, 50), at(7, 0))).mergeVehicleVisits()
         assertEquals(1, chained.size, "exactly 30 minutes is still the same parked car")
+    }
+
+    @Test
+    fun aMovingSightingOnlyGetsTheShorterVisitWindow() {
+        val anchor = event("anchor", at(6, 6), at(6, 20))
+        val soon = event("soon", at(6, 24), at(6, 25), path = driveThrough)
+        assertEquals(1, listOf(anchor, soon).mergeVehicleVisits().size, "four minutes later is the same visit")
+        val late = event("late", at(6, 26), at(6, 27), path = driveThrough)
+        assertEquals(2, listOf(anchor, late).mergeVehicleVisits().size, "six minutes later is not")
     }
 
     @Test
@@ -125,7 +178,7 @@ class StillVehiclesTest {
         val here = event("here", at(6, 6), at(6, 20))
         val otherCamera = event("other-camera", at(6, 25), at(6, 30), camera = "amcrest_1")
         val otherSpot = event("other-spot", at(6, 26), at(6, 30), box = DetectionBox(0.25, 0.40, 0.19, 0.16))
-        val merged = listOf(here, otherCamera, otherSpot).mergeStillVehicles()
+        val merged = listOf(here, otherCamera, otherSpot).mergeVehicleVisits()
         assertEquals(setOf("here", "other-camera", "other-spot"), merged.map { it.id }.toSet())
     }
 
@@ -134,7 +187,7 @@ class StillVehiclesTest {
         val car = event("car", at(6, 6), at(6, 20))
         val person = event("person", at(6, 10), at(6, 12), label = "person", path = listOf(0.84 to 0.54, 0.84 to 0.55))
         val secondPerson = event("person2", at(6, 15), at(6, 16), label = "person", path = listOf(0.84 to 0.54, 0.84 to 0.55))
-        val merged = listOf(car, person, secondPerson).mergeStillVehicles()
+        val merged = listOf(car, person, secondPerson).mergeVehicleVisits()
         assertEquals(listOf("person2", "person", "car"), merged.map { it.id })
         assertTrue(merged.all { it.sightings == 1 })
     }
@@ -143,17 +196,37 @@ class StillVehiclesTest {
     fun foldingKeepsTheAnchorsClipAndAddsTheZonesItGained() {
         val anchor = event("anchor", at(6, 6), at(6, 20), zones = listOf("street"))
         val later = event("later", at(6, 30), at(6, 40), zones = listOf("sidewalk", "street"), subLabel = "sarahs_tesla", subLabelScore = 0.9)
-        val only = listOf(anchor, later).mergeStillVehicles().single()
+        val only = listOf(anchor, later).mergeVehicleVisits().single()
         assertEquals("anchor", only.id)
         assertEquals(anchor.pathPoints, only.pathPoints, "the anchor's own path, not a concatenation")
-        assertEquals(listOf("street", "sidewalk"), only.zones)
+        assertEquals(listOf("sidewalk", "street"), only.zones, "the newest sighting's zones come last")
         assertEquals("sarahs_tesla", only.subLabel, "a named sighting beats an unnamed anchor")
+    }
+
+    @Test
+    fun theCardIsNamedForWhereTheCarEndedUpNotWhereItPassed() {
+        // The real complaint: a car that crossed the street on its way in was titled "on the
+        // street" while it sat in the driveway, because the anchor's zones were kept last.
+        val arriving = event("arriving", at(19, 40), at(19, 41), zones = listOf("driveway", "street"), subLabel = "andrews_tesla", subLabelScore = 0.9)
+        val parked = event("parked", at(19, 42), at(19, 45), zones = listOf("driveway"), subLabel = "andrews_tesla", subLabelScore = 0.9)
+        val only = listOf(arriving, parked).mergeVehicleVisits().single()
+        assertEquals(listOf("street", "driveway"), only.zones)
+        assertEquals("Andrews Tesla in the driveway", only.present(day, utc).title)
+    }
+
+    @Test
+    fun aSightingThatLandedInNoZoneLeavesTheNameAlone() {
+        val parked = event("parked", at(19, 40), at(19, 41), zones = listOf("driveway"))
+        val unplaced = event("unplaced", at(19, 42), at(19, 43))
+        val only = listOf(parked, unplaced).mergeVehicleVisits().single()
+        assertEquals(listOf("driveway"), only.zones, "nothing to add, nothing to reorder")
+        assertEquals("Car in the driveway", only.present(day, utc).title)
     }
 
     @Test
     fun outputIsNewestFirstLikeTheApi() {
         val feed = listOf(event("c", at(8, 0), at(8, 1), path = driveThrough), event("b", at(7, 0), at(7, 1), path = driveThrough), event("a", at(6, 0), at(6, 1), path = driveThrough))
-        assertEquals(listOf("c", "b", "a"), feed.mergeStillVehicles().map { it.id })
-        assertEquals(listOf("c", "b", "a"), feed.reversed().mergeStillVehicles().map { it.id })
+        assertEquals(listOf("c", "b", "a"), feed.mergeVehicleVisits().map { it.id })
+        assertEquals(listOf("c", "b", "a"), feed.reversed().mergeVehicleVisits().map { it.id })
     }
 }

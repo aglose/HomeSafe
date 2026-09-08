@@ -29,7 +29,8 @@ data class MomentEvent(
     val hasClip: Boolean,
     val hasSnapshot: Boolean,
     /**
-     * Frigate zone keys the object passed through, in the order it entered them; empty when none.
+     * Frigate zone keys the object passed through, in the order it entered them, and for a folded
+     * visit with the most recent sighting's last; empty when none.
      * Frigate only tags a zone whose object filter accepts the label, so once the feed has run
      * [inZones] this holds the zones that *wanted* the object, not merely the ones it crossed.
      */
@@ -39,13 +40,13 @@ data class MomentEvent(
      * Empty when Frigate reported no path (an API-created event, say).
      */
     val pathPoints: List<MaskPoint> = emptyList(),
-    /** The best frame's box; null for an API-created event. What [mergeStillVehicles] matches sightings on. */
+    /** The best frame's box; null for an API-created event. What [mergeVehicleVisits] matches sightings on. */
     val box: DetectionBox? = null,
     /** How sure the classifier was of [subLabel]; null when Frigate didn't say. */
     val subLabelScore: Double? = null,
     /**
-     * How many Frigate events this stands for: 1 normally, more once [mergeStillVehicles] folded a
-     * parked vehicle's re-detections into it. The id, clip and thumbnail are the first sighting's.
+     * How many Frigate events this stands for: 1 normally, more once [mergeVehicleVisits] folded a
+     * vehicle's re-detections at one spot into it. The id, clip and thumbnail are the first sighting's.
      */
     val sightings: Int = 1,
 ) {
