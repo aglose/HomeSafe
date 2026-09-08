@@ -99,6 +99,11 @@ import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+/**
+ * [openAtEpochSeconds] is set when the screen was opened from a detection rather than from the
+ * camera grid — the Moments tab's full-screen button — and the player starts at that instant in
+ * the recording instead of live.
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun CameraDetailScreen(
@@ -108,6 +113,7 @@ fun CameraDetailScreen(
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
+    openAtEpochSeconds: Double? = null,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
     // Deliberately *not* collected here: `viewModel.playback`, which changes four times a
@@ -141,6 +147,12 @@ fun CameraDetailScreen(
             delay(timeMillis = QUICK_ACTION_HINT_MS)
             hint = null
         }
+    }
+
+    // Arrived from a detection: seek to it once, on the way in. Keyed by the instant so a
+    // recomposition doesn't yank the player back after the viewer has scrubbed away from it.
+    LaunchedEffect(openAtEpochSeconds) {
+        openAtEpochSeconds?.let(viewModel::playMoment)
     }
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {

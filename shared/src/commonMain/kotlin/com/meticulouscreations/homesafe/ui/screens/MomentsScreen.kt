@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
@@ -46,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -70,9 +72,14 @@ private val MomentCategory.icon: ImageVector?
         MomentCategory.ANIMALS -> Icons.Filled.Pets
     }
 
-/** The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip. */
+/**
+ * The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip.
+ *
+ * [onOpenFullScreen] hands a detection off to its camera's detail screen, which plays the
+ * recording from that instant on the full-width player — the way out of the card-sized one.
+ */
 @Composable
-fun MomentsTabContent() {
+fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit) {
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
@@ -139,6 +146,12 @@ fun MomentsTabContent() {
                             onClipBuffering = viewModel::onClipBuffering,
                             onClipError = viewModel::onClipPlaybackError,
                             onDownloadClick = { viewModel.downloadClip(item.event) },
+                            onFullScreenClick = {
+                                // Close the inline player on the way out: playback moves to the
+                                // detail screen, and two players on one clip would both hold audio.
+                                viewModel.collapse()
+                                onOpenFullScreen(item.event)
+                            },
                         )
                     }
                 }
@@ -231,6 +244,7 @@ private fun MomentCard(
     onClipBuffering: (Boolean) -> Unit,
     onClipError: () -> Unit,
     onDownloadClick: () -> Unit,
+    onFullScreenClick: () -> Unit,
 ) {
     val extraColors = LocalFrigateExtraColors.current
     val event = item.event
@@ -253,18 +267,14 @@ private fun MomentCard(
             ) {
                 MomentThumbnail(url = item.thumbnailUrl)
                 if (event.hasClip) {
+                    // The play icon has the frame to itself. The download used to sit in the
+                    // top-right corner here, close enough on a 120dp-wide thumbnail to read as
+                    // one cluster with it; it now lives on the details' bottom row.
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
                         contentDescription = "Play clip",
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(28.dp).background(extraColors.glassFill, CircleShape).padding(4.dp),
-                    )
-                    DownloadButton(
-                        isDownloading = isDownloading,
-                        succeeded = downloadSucceeded,
-                        errorMessage = downloadErrorMessage,
-                        onClick = onDownloadClick,
-                        modifier = Modifier.align(Alignment.TopEnd).padding(6.dp),
                     )
                 }
                 if (p.durationLabel != null) {
@@ -335,17 +345,32 @@ private fun MomentCard(
                         )
                     }
                 }
-                Box(
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                // The badge and the clip's download share the card's bottom line, at opposite
+                // ends, where the download has room of its own instead of crowding the thumbnail.
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = p.badgeLabel.uppercase(),
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    Box(
+                        modifier = Modifier
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            text = p.badgeLabel.uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (event.hasClip) {
+                        DownloadButton(
+                            isDownloading = isDownloading,
+                            succeeded = downloadSucceeded,
+                            errorMessage = downloadErrorMessage,
+                            onClick = onDownloadClick,
+                        )
+                    }
                 }
             }
         }
@@ -393,12 +418,41 @@ private fun MomentCard(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     }
                 }
+
+                // Last in the box so it sits over the player, and offered even while the clip is
+                // still loading or failed: the detail screen plays the camera's recording from
+                // this moment, which is a way through when the event's own clip won't play.
+                FullScreenButton(
+                    onClick = onFullScreenClick,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+                )
             }
         }
     }
 }
 
-/** A small overlay button on the thumbnail: idle download icon, a spinner while in flight, then a brief check or error flash. */
+/** Leaves the card-sized player for the camera's detail screen, at this moment's place in the recording. */
+@Composable
+private fun FullScreenButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val extraColors = LocalFrigateExtraColors.current
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(extraColors.glassFill)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Fullscreen,
+            contentDescription = "Play full screen",
+            tint = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+/** The card's download control: idle download icon, a spinner while in flight, then a brief check or error flash. */
 @Composable
 private fun DownloadButton(
     isDownloading: Boolean,
@@ -407,12 +461,13 @@ private fun DownloadButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val extraColors = LocalFrigateExtraColors.current
     Box(
         modifier = modifier
-            .size(28.dp)
+            .size(32.dp)
             .clip(CircleShape)
-            .background(extraColors.glassFill)
+            // On the card's own surface now rather than over the thumbnail, so it takes the
+            // badge's fill beside it instead of the glass used for overlays on video.
+            .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable(enabled = !isDownloading, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -420,13 +475,13 @@ private fun DownloadButton(
             isDownloading -> CircularProgressIndicator(
                 modifier = Modifier.size(14.dp),
                 strokeWidth = 2.dp,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
             succeeded -> Icon(
                 imageVector = Icons.Filled.Check,
                 contentDescription = "Downloaded",
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )
 
@@ -440,7 +495,7 @@ private fun DownloadButton(
             else -> Icon(
                 imageVector = Icons.Filled.Download,
                 contentDescription = "Download clip",
-                tint = MaterialTheme.colorScheme.onSurface,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )
         }

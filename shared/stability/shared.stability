@@ -280,7 +280,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraCard(tile: com.met
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(cameraName: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, onEditDetectionZones: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(cameraName: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, onEditDetectionZones: kotlin.Function0<kotlin.Unit>, openAtEpochSeconds: kotlin.Double?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -290,6 +290,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(camera
     - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
     - onBack: STABLE (function type)
     - onEditDetectionZones: STABLE (function type)
+    - openAtEpochSeconds: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -511,6 +512,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConn
     - activeConnection: STABLE (class with no mutable properties)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.FullScreenButton(onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Header(title: kotlin.String, subtitle: kotlin.String, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -608,7 +617,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.LoadingRow(text: kotlin.
     - text: STABLE (String is immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, expanded: kotlin.Boolean, clipRequest: com.meticulouscreations.homesafe.ui.components.PlayerRequest?, clipPosterUrl: kotlin.String?, clipError: kotlin.String?, clipBuffering: kotlin.Boolean, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, expanded: kotlin.Boolean, clipRequest: com.meticulouscreations.homesafe.ui.components.PlayerRequest?, clipPosterUrl: kotlin.String?, clipError: kotlin.String?, clipBuffering: kotlin.Boolean, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -625,6 +634,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.met
     - onClipBuffering: STABLE (function type)
     - onClipError: STABLE (function type)
     - onDownloadClick: STABLE (function type)
+    - onFullScreenClick: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentDateHeader(dateGroup: kotlin.String, dateSubLabel: kotlin.String): kotlin.Unit
@@ -642,10 +652,11 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kot
     - url: STABLE (class with no mutable properties)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(onOpenFullScreen: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
+    - onOpenFullScreen: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PeopleCard(uiState: com.meticulouscreations.homesafe.viewmodel.FaceLibraryUiState, library: com.meticulouscreations.homesafe.domain.model.FaceLibrary, viewModel: com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel): kotlin.Unit
