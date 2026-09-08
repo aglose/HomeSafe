@@ -6,8 +6,11 @@ import com.meticulouscreations.homesafe.domain.model.FaceLibrary
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.categoryForLabel
+import com.meticulouscreations.homesafe.domain.model.foldedInto
 import com.meticulouscreations.homesafe.domain.model.inZones
+import com.meticulouscreations.homesafe.domain.model.isStill
 import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.domain.model.repeats
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -49,6 +52,10 @@ import kotlin.time.Instant
  * Away mode (see docs/away-mode.md): while [PresenceRepository] says everyone is away, any person
  * on any camera is posted — [AlertNotification.urgent], on the loud channel — whatever the zone
  * rules say. Presence is collected for the life of the poll so that flag stays fresh.
+ *
+ * A parked car is reported once. Frigate re-detects a parked vehicle as a new event every time a
+ * passer-by steals its tracker (see `StillVehicles`), so a still vehicle at a spot where one was
+ * already reported is remembered as another sighting, not posted again, for [VEHICLE_MEMORY_SECONDS].
  */
 class DetectionAlertService(
     private val apiClient: FrigateApiClient,
@@ -95,6 +102,8 @@ class DetectionAlertService(
         // People Frigate hasn't put a name to yet, held back while face recognition may still
         // catch up (see RECOGNITION_GRACE_SECONDS). Only used while "only strangers" is on.
         val pending = LinkedHashMap<String, FrigateEvent>()
+        // Vehicles already posted, newest last, so a parked car's re-detections stay quiet.
+        val recentVehicles = ArrayDeque<RecentVehicle>()
         // Each camera's zones, for MomentEvent.inZones; re-read now and then so an edit in the
         // zone editor takes effect without a restart. A failed read keeps the last zones.
         var zones: Map<String, List<DetectionZone>> = emptyMap()
@@ -114,7 +123,7 @@ class DetectionAlertService(
                     } else {
                         pending.remove(event.id)
                         seen += event.id
-                        decide(url, event, zones)
+                        decide(url, event, zones, recentVehicles)
                     }
                 }
                 // A held detection that fell out of the page (or ended without a name) is judged as it last stood.
@@ -122,7 +131,7 @@ class DetectionAlertService(
                 pending.values.filter { it.id !in returned && !shouldHold(it, now) }.forEach { event ->
                     pending.remove(event.id)
                     seen += event.id
-                    decide(url, event, zones)
+                    decide(url, event, zones, recentVehicles)
                 }
                 while (seen.size > MAX_REMEMBERED) seen.remove(seen.first())
                 // Overlap by a second so an event whose start rounds onto the boundary isn't lost;
@@ -153,16 +162,44 @@ class DetectionAlertService(
      * [inZones] has worked out where the object went and whether those zones wanted it at all —
      * a car crossing a birds-only street zone is dropped here, not judged as "anywhere else".
      */
-    private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>) {
+    private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>, recentVehicles: ArrayDeque<RecentVehicle>) {
         val category = categoryForLabel(event.label)
         val escalated = everyoneAway && category == MomentCategory.PEOPLE
         val moment = event.toDomain()
         val placed = moment.inZones(zones[event.camera].orEmpty())
+        if (!escalated && placed != null && isRepeatSighting(placed, recentVehicles)) return
         when {
             escalated -> notify(url, placed ?: moment, urgent = true)
+
             placed == null -> Unit
-            settings.value.notifies(event.camera, placed.zones, category, recognized = event.isRecognized) -> notify(url, placed, urgent = false)
+
+            settings.value.notifies(event.camera, placed.zones, category, recognized = event.isRecognized) -> {
+                notify(url, placed, urgent = false)
+                if (category == MomentCategory.VEHICLES) {
+                    recentVehicles.addLast(RecentVehicle(placed, placed.startEpochSeconds))
+                    while (recentVehicles.size > MAX_RECENT_VEHICLES) recentVehicles.removeFirst()
+                }
+            }
         }
+    }
+
+    /** A vehicle already posted, kept so its re-detections at the same spot read as more sightings of it. */
+    private class RecentVehicle(var moment: MomentEvent, var lastSeenEpochSeconds: Double)
+
+    /**
+     * True when [placed] is a still vehicle re-detected where one was already posted; the memory
+     * is updated to it. The poller judges an event at its start (it has no end yet), so the memory
+     * expires by time since the last sighting rather than by the feed's end-to-start gap.
+     */
+    private fun isRepeatSighting(placed: MomentEvent, recentVehicles: ArrayDeque<RecentVehicle>): Boolean {
+        if (placed.category != MomentCategory.VEHICLES) return false
+        val now = clock()
+        recentVehicles.removeAll { now - it.lastSeenEpochSeconds > VEHICLE_MEMORY_SECONDS }
+        if (!placed.isStill()) return false
+        val prior = recentVehicles.lastOrNull { placed.repeats(it.moment) } ?: return false
+        prior.moment = placed.foldedInto(prior.moment)
+        prior.lastSeenEpochSeconds = placed.startEpochSeconds
+        return true
     }
 
     private val everyoneAway: Boolean get() = presenceRepository.presence.value.everyoneAway
@@ -199,5 +236,9 @@ class DetectionAlertService(
         const val MAX_REMEMBERED = 200
         const val OVERLAP_SECONDS = 1.0
         const val RECOGNITION_GRACE_SECONDS = 20.0
+
+        /** A parked car was re-detected about hourly across a whole day; half an hour would break the chain. */
+        const val VEHICLE_MEMORY_SECONDS = 6 * 3600.0
+        const val MAX_RECENT_VEHICLES = 20
     }
 }

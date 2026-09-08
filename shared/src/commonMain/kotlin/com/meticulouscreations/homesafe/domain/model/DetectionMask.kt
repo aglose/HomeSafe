@@ -9,6 +9,30 @@ data class MaskPoint(val x: Double, val y: Double) {
     fun clamped(): MaskPoint = MaskPoint(x.coerceIn(0.0, 1.0), y.coerceIn(0.0, 1.0))
 }
 
+/**
+ * A detection's best-frame box in detect-frame fractions: Frigate's `data.box` `[x, y, w, h]`,
+ * with [x] and [y] the top-left corner. What tells one parked car's re-detection from another's.
+ */
+data class DetectionBox(val x: Double, val y: Double, val w: Double, val h: Double) {
+    /** Intersection over union with [other]: 1.0 for the same box, 0.0 when they don't touch. */
+    fun iou(other: DetectionBox): Double {
+        val iw = (minOf(x + w, other.x + other.w) - maxOf(x, other.x)).coerceAtLeast(0.0)
+        val ih = (minOf(y + h, other.y + other.h) - maxOf(y, other.y)).coerceAtLeast(0.0)
+        val intersection = iw * ih
+        val union = w * h + other.w * other.h - intersection
+        return if (union > 0.0) intersection / union else 0.0
+    }
+
+    companion object {
+        /** From Frigate's `[x, y, w, h]`; null for anything shorter or with no area. */
+        fun fromFractions(values: List<Double>?): DetectionBox? {
+            if (values == null || values.size < 4) return null
+            val (x, y, w, h) = values
+            return if (w > 0.0 && h > 0.0) DetectionBox(x, y, w, h) else null
+        }
+    }
+}
+
 /** A closed polygon of [MaskPoint]s. Frigate needs at least three corners to make a mask of it. */
 data class MaskPolygon(val points: List<MaskPoint>) {
     val isValid: Boolean get() = points.size >= MIN_POINTS

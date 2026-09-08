@@ -138,7 +138,7 @@ fun CameraDetailScreen(
     }
     LaunchedEffect(hint) {
         if (hint != null) {
-            delay(QUICK_ACTION_HINT_MS)
+            delay(timeMillis = QUICK_ACTION_HINT_MS)
             hint = null
         }
     }
@@ -832,7 +832,8 @@ private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit) {
                 Text(text = p.timeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
-                text = listOfNotNull(p.dateGroup, p.durationLabel?.let { "$it clip" }).joinToString(" · "),
+                // A folded parked-car moment spans hours, which isn't a clip length: say how often it was seen instead.
+                text = listOfNotNull(p.dateGroup, p.sightingsLabel ?: p.durationLabel?.let { "$it clip" }).joinToString(" · "),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

@@ -1,9 +1,11 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.inZones
+import com.meticulouscreations.homesafe.domain.model.mergeStillVehicles
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -115,7 +117,8 @@ class MomentsRepositoryImpl(
         }
         apiClient.getEvents(url, limit = PAGE_SIZE)
             .onSuccess { events ->
-                _moments.value = events.map { it.toDomain() }.inZones(zonesByCamera)
+                // Zones first, so a street car the zones reject never anchors a parked-vehicle moment.
+                _moments.value = events.map { it.toDomain() }.inZones(zonesByCamera).mergeStillVehicles()
                 _error.value = null
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }
@@ -140,4 +143,6 @@ internal fun FrigateEvent.toDomain(): MomentEvent = MomentEvent(
     hasSnapshot = hasSnapshot,
     zones = zones,
     pathPoints = data?.bottomCentrePath().orEmpty(),
+    box = DetectionBox.fromFractions(data?.box),
+    subLabelScore = data?.subLabelScore,
 )

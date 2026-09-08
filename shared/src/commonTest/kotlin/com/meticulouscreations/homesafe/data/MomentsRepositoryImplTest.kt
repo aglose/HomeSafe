@@ -110,6 +110,31 @@ class MomentsRepositoryImplTest {
        "data":{"type":"object","score":0.71,"top_score":0.88}}
     ]"""
 
+    /**
+     * The real shape of a parked car's day (Front Yard, 2026-09-07): three sightings of Sarah's
+     * Tesla at the curb, each a jittery path around one spot ended by a passer-by stealing the
+     * tracker, plus one genuine drive-through of the same car later. Newest first, like the API.
+     */
+    private val parkedCarJson = """[
+      {"id":"drive","label":"car","sub_label":"sarahs_tesla","camera":"hikvision_1","start_time":1788832052.0,"end_time":1788832056.0,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.8,"top_score":0.83,"sub_label_score":0.91,"box":[0.62,0.24,0.14,0.10],
+               "path_data":[[[0.10,0.30],1788832052.2],[[0.20,0.30],1788832052.4],[[0.30,0.30],1788832052.6],[[0.40,0.30],1788832052.8],[[0.50,0.30],1788832053.0],
+                            [[0.60,0.30],1788832053.2],[[0.70,0.30],1788832053.4],[[0.80,0.30],1788832053.6],[[0.90,0.30],1788832053.8],[[0.95,0.30],1788832054.0]]}},
+      {"id":"third","label":"car","sub_label":"sarahs_tesla","camera":"hikvision_1","start_time":1788802458.9,"end_time":null,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.8,"top_score":0.85,"sub_label_score":0.997,"box":[0.75,0.33,0.18,0.21],
+               "path_data":[[[0.84,0.54],1788802460.0],[[0.85,0.40],1788802461.0],[[0.84,0.54],1788802560.0],[[0.85,0.40],1788802561.0]]}},
+      {"id":"second","label":"car","sub_label":"andrews_tesla","camera":"hikvision_1","start_time":1788799948.1,"end_time":1788802465.0,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.8,"top_score":0.80,"sub_label_score":0.94,"box":[0.75,0.34,0.18,0.19],
+               "path_data":[[[0.84,0.54],1788800030.0],[[0.88,0.44],1788800034.0],[[0.84,0.54],1788800035.0],[[0.87,0.39],1788800049.0],[[0.59,0.34],1788802461.0]]}},
+      {"id":"first","label":"car","sub_label":"sarahs_tesla","camera":"hikvision_1","start_time":1788786387.8,"end_time":1788799377.0,
+       "has_clip":true,"has_snapshot":false,"zones":[],
+       "data":{"type":"object","score":0.8,"top_score":0.78,"sub_label_score":0.97,"box":[0.75,0.34,0.18,0.21],
+               "path_data":[[[0.84,0.53],1788786418.0],[[0.84,0.53],1788786418.5],[[0.83,0.37],1788788897.0],[[0.83,0.54],1788788897.5],[[0.72,0.50],1788799364.0],[[0.87,0.57],1788799365.0]]}}
+    ]"""
+
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
         repeat(200) {
             advanceUntilIdle()
@@ -130,8 +155,10 @@ class MomentsRepositoryImplTest {
             list.size == 2
         }
 
-        val person = list[0]
-        val car = list[1]
+        // The feed sorts by start, newest first, whatever order the payload arrived in — this
+        // fixture lists the older person first, and the car that started later leads the feed.
+        val car = list[0]
+        val person = list[1]
         assertEquals("1788401732.596325-eaak48", person.id)
         assertEquals("hikvision_1", person.cameraName)
         assertEquals(MomentCategory.PEOPLE, person.category)
@@ -143,7 +170,37 @@ class MomentsRepositoryImplTest {
         assertEquals(true, car.isInProgress)
         assertNull(car.durationSeconds)
         assertEquals(0.88, car.topScore!!, 0.001)
+        assertNull(car.box, "no box in the payload, no box on the moment")
+        assertEquals(1, car.sightings)
         assertNull(h.repo.observeError().first())
+    }
+
+    @Test
+    fun stillRedetectionsOfARecognisedCarFoldIntoOneCard() = runTest {
+        Harness.events = parkedCarJson
+        Harness.config = configJson
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("events to load") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
+
+            // The drive-through is its own card; the three curb sightings are one, still in progress.
+            assertEquals(listOf("drive", "first"), list.map { it.id })
+            val parked = list[1]
+            assertEquals(3, parked.sightings)
+            assertEquals(true, parked.isInProgress, "the latest sighting hadn't ended")
+            assertEquals("sarahs_tesla", parked.subLabel, "the surest name across the sightings")
+            assertEquals(0.997, parked.subLabelScore!!, 0.0001)
+            assertEquals(0.75, parked.box!!.x, 0.001)
+            assertEquals(1, list[0].sightings)
+            assertEquals(0.91, list[0].subLabelScore!!, 0.001)
+        } finally {
+            Harness.config = null
+        }
     }
 
     @Test

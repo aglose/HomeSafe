@@ -369,6 +369,17 @@ public fun com.meticulouscreations.homesafe.ui.screens.ClassifierLabelingScreen(
     - onBack: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.ConfidentCropsRow(count: kotlin.Int, expanded: kotlin.Boolean, busy: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>, onClear: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - count: STABLE (primitive type)
+    - expanded: STABLE (primitive type)
+    - busy: STABLE (primitive type)
+    - onToggle: STABLE (function type)
+    - onClear: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ConnectionRouteBadge(route: com.meticulouscreations.homesafe.domain.model.ConnectionRoute): kotlin.Unit
   skippable: true
   restartable: true
