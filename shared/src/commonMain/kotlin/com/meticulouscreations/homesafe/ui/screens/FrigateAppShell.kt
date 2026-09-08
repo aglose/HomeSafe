@@ -96,7 +96,25 @@ fun FrigateAppShell() {
             predictivePopTransitionSpec = { tabHandOver() },
             entryProvider = entryProvider {
                 entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack) }
-                entry<TopLevelRoute.Moments> { MomentsTabContent() }
+                entry<TopLevelRoute.Moments> {
+                    MomentsTabContent(
+                        // Full screen for a detection is the Home tab's camera screen, opened at
+                        // that instant: one full-width player for the camera, not a second one
+                        // here. It lands on the Home stack, so Back returns to the camera list —
+                        // and the Moments tab is one tap away, still where it was left.
+                        onOpenFullScreen = { event ->
+                            homeBackStack.add(
+                                CameraDetailRoute(
+                                    cameraName = event.cameraName,
+                                    warmStreamUrl = null,
+                                    warmPosterUrl = null,
+                                    openAtEpochSeconds = event.startEpochSeconds,
+                                ),
+                            )
+                            topLevelBackStack.addTopLevel(TopLevelRoute.Home)
+                        },
+                    )
+                }
                 entry<TopLevelRoute.Settings> {
                     SettingsTabNav(settingsBackStack) { openClassifier, openFaces ->
                         SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
@@ -248,8 +266,18 @@ private data object CameraListRoute
  * [warmStreamUrl] / [warmPosterUrl] are what the tapped card was already playing: the detail
  * screen binds to that same pooled player straight away, so the video is on screen from the
  * first frame instead of a placeholder while the view model works out the stream to join.
+ *
+ * [openAtEpochSeconds] is set only when the route came from a detection (the Moments tab's
+ * full-screen button), and opens the screen on the recording at that instant rather than live.
+ * It is part of the route's identity, so opening a second detection on the same camera is a new
+ * destination rather than a no-op on the one already up.
  */
-private data class CameraDetailRoute(val cameraName: String, val warmStreamUrl: String?, val warmPosterUrl: String?)
+private data class CameraDetailRoute(
+    val cameraName: String,
+    val warmStreamUrl: String?,
+    val warmPosterUrl: String?,
+    val openAtEpochSeconds: Double? = null,
+)
 private data class DetectionZonesRoute(val cameraName: String)
 
 /**
@@ -295,6 +323,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onBack = { backStack.removeLastOrNull() },
                         onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
+                        openAtEpochSeconds = route.openAtEpochSeconds,
                     )
                 }
                 entry<DetectionZonesRoute> { route ->
