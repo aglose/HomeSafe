@@ -39,6 +39,15 @@ data class MomentEvent(
      * Empty when Frigate reported no path (an API-created event, say).
      */
     val pathPoints: List<MaskPoint> = emptyList(),
+    /** The best frame's box; null for an API-created event. What [mergeStillVehicles] matches sightings on. */
+    val box: DetectionBox? = null,
+    /** How sure the classifier was of [subLabel]; null when Frigate didn't say. */
+    val subLabelScore: Double? = null,
+    /**
+     * How many Frigate events this stands for: 1 normally, more once [mergeStillVehicles] folded a
+     * parked vehicle's re-detections into it. The id, clip and thumbnail are the first sighting's.
+     */
+    val sightings: Int = 1,
 ) {
     val category: MomentCategory get() = categoryForLabel(label)
 
@@ -82,6 +91,11 @@ data class MomentPresentation(
      * the order it reached them; just the camera when it was in none.
      */
     val locationLabel: String,
+    /**
+     * "Seen 9 times · still there" / "Seen 3 times · last seen 2:24 PM" for a moment that stands
+     * for several sightings of the same parked vehicle; null for a single sighting.
+     */
+    val sightingsLabel: String?,
 )
 
 /**
@@ -90,11 +104,8 @@ data class MomentPresentation(
  */
 @OptIn(ExperimentalTime::class)
 fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentSystemDefault()): MomentPresentation {
-    val local = Instant.fromEpochSeconds(startEpochSeconds.toLong()).toLocalDateTime(timeZone)
-    val date = local.date
-    val hour12 = (local.hour + 11) % 12 + 1
-    val minute = local.minute.toString().padStart(2, '0')
-    val timeLabel = "$hour12:$minute ${if (local.hour < 12) "AM" else "PM"}"
+    val date = Instant.fromEpochSeconds(startEpochSeconds.toLong()).toLocalDateTime(timeZone).date
+    val timeLabel = clockLabel(startEpochSeconds, timeZone)
 
     val daysAgo = today.toEpochDays() - date.toEpochDays()
     val dateGroup = when {
@@ -115,6 +126,11 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     val badge = subLabel?.takeIf { it.isNotBlank() }?.let { "$label · ${subLabelDisplayName(it)}" } ?: label
     val places = zones.filter { it.isNotBlank() }.joinToString(", ") { zoneDisplayName(it).replaceFirstChar(Char::uppercase) }
     val location = if (places.isEmpty()) cameraDisplayName else "$cameraDisplayName · $places"
+    val sightingsLabel = when {
+        sightings <= 1 -> null
+        endEpochSeconds == null -> "Seen $sightings times · still there"
+        else -> "Seen $sightings times · last seen ${clockLabel(endEpochSeconds, timeZone)}"
+    }
 
     return MomentPresentation(
         title = title,
@@ -124,7 +140,17 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
         dateSubLabel = dateSubLabel,
         badgeLabel = badge,
         locationLabel = location,
+        sightingsLabel = sightingsLabel,
     )
+}
+
+/** "8:42 AM" */
+@OptIn(ExperimentalTime::class)
+private fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
+    val local = Instant.fromEpochSeconds(epochSeconds.toLong()).toLocalDateTime(timeZone)
+    val hour12 = (local.hour + 11) % 12 + 1
+    val minute = local.minute.toString().padStart(2, '0')
+    return "$hour12:$minute ${if (local.hour < 12) "AM" else "PM"}"
 }
 
 private fun Month.shortName(): String = name.lowercase().replaceFirstChar { it.uppercase() }.take(3)

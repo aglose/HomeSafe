@@ -45,6 +45,7 @@ class MomentEventTest {
         assertEquals("Andrew detected", p.title, "a recognised sub-label becomes the subject")
         assertEquals("person · Andrew", p.badgeLabel)
         assertEquals("Car detected", event(label = "car", start = start).present(today, utc).title)
+        assertNull(p.sightingsLabel, "a single sighting has no sightings line")
     }
 
     @Test

@@ -114,9 +114,11 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
     ) {
         item(key = "categories", contentType = "categories") { CategoriesCard(uiState = uiState, data = data, viewModel = viewModel) }
         item(key = "train", contentType = "train") { TrainCard(uiState = uiState, data = data, onTrain = viewModel::train) }
+        val uncertain = data.uncertainQueue
+        val confident = data.confidentQueue
         item(key = "queue-title", contentType = "title") {
             Text(
-                text = if (data.queue.isEmpty()) "Nothing waiting to be labelled" else "${data.queue.size} waiting to be labelled",
+                text = if (uncertain.isEmpty()) "Nothing waiting to be labelled" else "${uncertain.size} waiting to be labelled",
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -130,7 +132,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
                 )
             }
         }
-        items(data.queue, key = { it.fileName }, contentType = { "crop" }) { crop ->
+        items(uncertain, key = { it.fileName }, contentType = { "crop" }) { crop ->
             CropCard(
                 crop = crop,
                 imageUrl = viewModel.imageUrl(crop.fileName),
@@ -140,6 +142,60 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
                 onLabel = { viewModel.label(crop.fileName, it) },
                 onDiscard = { viewModel.discard(crop.fileName) },
             )
+        }
+        if (confident.isNotEmpty()) {
+            item(key = "confident-summary", contentType = "confident") {
+                ConfidentCropsRow(
+                    count = confident.size,
+                    expanded = uiState.showConfident,
+                    busy = confident.all { it.fileName in uiState.busyFiles },
+                    onToggle = viewModel::toggleConfident,
+                    onClear = viewModel::clearConfident,
+                )
+            }
+        }
+        if (uiState.showConfident) {
+            items(confident, key = { it.fileName }, contentType = { "crop" }) { crop ->
+                CropCard(
+                    crop = crop,
+                    imageUrl = viewModel.imageUrl(crop.fileName),
+                    categories = data.categories,
+                    busy = crop.fileName in uiState.busyFiles,
+                    decided = uiState.decided[crop.fileName],
+                    onLabel = { viewModel.label(crop.fileName, it) },
+                    onDiscard = { viewModel.discard(crop.fileName) },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * The crops the model is 100 % sure about, folded away: mostly "Not ours" for every passing street
+ * car. Show them when a new car needs naming; clear them to make room in Frigate's capped queue.
+ */
+@Composable
+private fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onClear: () -> Unit) {
+    Card {
+        Text(
+            text = "$count more the model is sure about",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Text(
+            text = "Usually cars that aren't yours. A car you've never named looks the same to the model, so show them to teach it a new one.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(onClick = onToggle, enabled = !busy) { Text(if (expanded) "Hide" else "Show") }
+            TextButton(onClick = onClear, enabled = !busy) {
+                if (busy) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Text("Clear $count")
+                }
+            }
         }
     }
 }

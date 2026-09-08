@@ -39,6 +39,8 @@ data class ClassifierLabelingUiState(
     val notice: String? = null,
     val noticeIsError: Boolean = false,
     val newCategoryDraft: String = "",
+    /** Whether the crops the model is sure about are listed too (see [ClassifierDataset.confidentQueue]). */
+    val showConfident: Boolean = false,
 )
 
 /**
@@ -76,7 +78,7 @@ class ClassifierLabelingViewModel(
         _uiState.update { it.copy(isLoading = it.dataset == null, loadError = null) }
         viewModelScope.launch {
             getClassifierDatasetUseCase(modelName)
-                .onSuccess { data -> _uiState.update { it.copy(isLoading = false, dataset = data, decided = emptyMap()) } }
+                .onSuccess { data -> _uiState.update { it.copy(isLoading = false, dataset = data, decided = emptyMap(), showConfident = false) } }
                 .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.message ?: "Couldn't load the classifier") } }
         }
     }
@@ -89,6 +91,38 @@ class ClassifierLabelingViewModel(
     fun discard(fileName: String) = decide(fileName, null) { discardClassifierCropsUseCase(modelName, listOf(fileName)) }
 
     fun setNewCategoryDraft(text: String) = _uiState.update { it.copy(newCategoryDraft = text) }
+
+    fun toggleConfident() = _uiState.update { it.copy(showConfident = !it.showConfident) }
+
+    /**
+     * Throws away every crop the model is sure about, in one request. They're the noise Frigate
+     * saves on every frame of every passing car; clearing them makes room in Frigate's capped queue
+     * for the crops that teach it something.
+     */
+    fun clearConfident() {
+        val state = _uiState.value
+        val files = state.dataset?.confidentQueue.orEmpty().map { it.fileName }.filterNot { it in state.busyFiles }
+        if (files.isEmpty()) return
+        _uiState.update { it.copy(busyFiles = it.busyFiles + files, notice = null) }
+        viewModelScope.launch {
+            discardClassifierCropsUseCase(modelName, files)
+                .onSuccess {
+                    _uiState.update { current ->
+                        val data = current.dataset
+                        current.copy(
+                            busyFiles = current.busyFiles - files.toSet(),
+                            dataset = data?.copy(queue = data.queue.filterNot { it.fileName in files }),
+                            showConfident = false,
+                            notice = "Cleared ${files.size} crops the model was sure about",
+                            noticeIsError = false,
+                        )
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(busyFiles = it.busyFiles - files.toSet(), notice = "Couldn't clear: ${e.message}", noticeIsError = true) }
+                }
+        }
+    }
 
     /** "Ron and Judy's Mercedes" -> category key `ron_and_judys_mercedes`, created on the server. */
     fun createCategory() {

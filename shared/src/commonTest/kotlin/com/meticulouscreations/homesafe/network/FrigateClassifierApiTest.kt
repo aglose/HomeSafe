@@ -117,6 +117,23 @@ class FrigateClassifierApiTest {
     }
 
     @Test
+    fun confidentCropsAreSplitOutOfTheQueue() {
+        val sureNotOurs = UnlabeledCrop.fromFileName("1788832095.985398-hkvbhs-1788832096.567646-none-1.0.webp")
+        val sureOurs = UnlabeledCrop.fromFileName("1788832091.745689-e2bxi0-1788832104.148959-sarahs_tesla-1.0.webp")
+        val nearlySure = UnlabeledCrop.fromFileName("1788832130.376381-6wpol8-1788832130.907575-none-0.98.webp")
+        val untrained = UnlabeledCrop.fromFileName("1788623987.354018-0au6wn-1788624005.174541-unknown-0.0.webp")
+        val mined = UnlabeledCrop.fromFileName("example_007.jpg")
+        assertTrue(sureNotOurs.isConfident)
+        assertTrue(sureOurs.isConfident)
+        assertTrue(!nearlySure.isConfident && !untrained.isConfident && !mined.isConfident)
+
+        val model = com.meticulouscreations.homesafe.domain.model.ClassifierModel("known_cars", listOf("car"))
+        val dataset = ClassifierDataset(model, mapOf("none" to 1), listOf(sureNotOurs, nearlySure, sureOurs, untrained, mined), hasTrained = true, newImagesSinceTraining = 0)
+        assertEquals(listOf(nearlySure, untrained, mined), dataset.uncertainQueue)
+        assertEquals(listOf(sureNotOurs, sureOurs), dataset.confidentQueue)
+    }
+
+    @Test
     fun datasetKnowsWhenItCanTrainAndOrdersNoneLast() {
         val model = com.meticulouscreations.homesafe.domain.model.ClassifierModel("known_cars", listOf("car"))
         val one = ClassifierDataset(model, mapOf("none" to 19), emptyList(), hasTrained = false, newImagesSinceTraining = 0)

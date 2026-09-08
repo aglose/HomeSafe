@@ -107,6 +107,12 @@ class DetectionAlertServiceTest {
         /** Where the object went (Frigate's `path_data` points), by id; absent means no path. */
         val pathById = mutableMapOf<String, List<Pair<Double, Double>>>()
 
+        /** The best frame's box `[x, y, w, h]`, by id; absent means Frigate sent none. */
+        val boxById = mutableMapOf<String, List<Double>>()
+
+        /** The camera, by id; absent means the Front Door. */
+        val cameraById = mutableMapOf<String, String>()
+
         /** `/api/config`, or null to 404 it (no zones drawn anywhere). */
         var config: String? = null
         val afters = mutableListOf<String>()
@@ -119,7 +125,9 @@ class DetectionAlertServiceTest {
                         val subLabel = subLabelById[id]?.let { "\"$it\"" } ?: "null"
                         val end = endedById[id]?.toString() ?: "null"
                         val path = pathById[id].orEmpty().joinToString(",", "[", "]") { (x, y) -> "[[$x,$y],$start]" }
-                        """{"id":"$id","label":"$label","sub_label":$subLabel,"camera":"amcrest_1","start_time":$start,"end_time":$end,"has_clip":false,"has_snapshot":false,"zones":$zones,"data":{"type":"object","path_data":$path}}"""
+                        val box = boxById[id]?.joinToString(",", ",\"box\":[", "]").orEmpty()
+                        val camera = cameraById[id] ?: "amcrest_1"
+                        """{"id":"$id","label":"$label","sub_label":$subLabel,"camera":"$camera","start_time":$start,"end_time":$end,"has_clip":false,"has_snapshot":false,"zones":$zones,"data":{"type":"object","path_data":$path$box}}"""
                     }
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
@@ -311,6 +319,71 @@ class DetectionAlertServiceTest {
         settle()
         assertEquals(listOf("intruder", "car"), h.notifier.posted.map { it.id }, "back home, the driveway rule holds again")
         assertTrue(h.presenceRepo.presence.subscriptionCount.value > 0, "the poller keeps presence collected so it stays fresh")
+    }
+
+    /** A driveway spot and the jittery path a parked car produces there. */
+    private val spot = listOf(0.25, 0.40, 0.19, 0.16)
+    private val parkedPath = listOf(0.35 to 0.57, 0.31 to 0.66, 0.35 to 0.57, 0.31 to 0.66)
+    private val driveThrough = List(20) { 0.05 + it * 0.0474 to 0.57 }
+
+    @Test
+    fun aParkedCarNotifiesOnceAndItsStillRedetectionsStayQuiet() = runTest {
+        val h = Harness(this, on)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.boxById["parked"] = spot
+        h.pathById["parked"] = parkedPath
+        h.events += Triple("parked", "car", 1_000_001.0)
+        eventually("the parked car") { h.notifier.posted.map { it.id } == listOf("parked") }
+
+        // Forty minutes and then ninety: the tracker was stolen and Frigate saw the car anew, at the same spot.
+        h.clockNow = 1_002_401.0
+        h.boxById["again"] = spot
+        h.pathById["again"] = parkedPath
+        h.events += Triple("again", "car", 1_002_401.0)
+        settle()
+        h.clockNow = 1_005_401.0
+        h.boxById["and-again"] = spot
+        h.pathById["and-again"] = parkedPath
+        h.events += Triple("and-again", "car", 1_005_401.0)
+        settle()
+        assertEquals(listOf("parked"), h.notifier.posted.map { it.id }, "a still car where one was already reported is the same car")
+
+        h.boxById["leaving"] = spot
+        h.pathById["leaving"] = driveThrough
+        h.events += Triple("leaving", "car", 1_005_500.0)
+        eventually("the departure") { h.notifier.posted.map { it.id } == listOf("parked", "leaving") }
+
+        h.clockNow = 1_005_500.0 + 6 * 3600 + 1   // the memory has expired: a car here now is news again
+        h.boxById["next-day"] = spot
+        h.pathById["next-day"] = parkedPath
+        h.events += Triple("next-day", "car", h.clockNow)
+        eventually("the next day's car") { h.notifier.posted.map { it.id } == listOf("parked", "leaving", "next-day") }
+    }
+
+    @Test
+    fun aStillCarAtAnotherSpotOrOnAnotherCameraStillNotifies() = runTest {
+        val h = Harness(this, on)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.boxById["parked"] = spot
+        h.pathById["parked"] = parkedPath
+        h.events += Triple("parked", "car", 1_000_001.0)
+        eventually("the parked car") { h.notifier.posted.map { it.id } == listOf("parked") }
+
+        h.boxById["elsewhere"] = listOf(0.60, 0.30, 0.12, 0.10)
+        h.pathById["elsewhere"] = listOf(0.66 to 0.40, 0.66 to 0.41)
+        h.events += Triple("elsewhere", "car", 1_000_060.0)
+        eventually("the car at another spot") { h.notifier.posted.map { it.id } == listOf("parked", "elsewhere") }
+
+        h.boxById["front-yard"] = spot
+        h.pathById["front-yard"] = parkedPath
+        h.cameraById["front-yard"] = "hikvision_1"
+        h.events += Triple("front-yard", "car", 1_000_120.0)
+        eventually("the car on the other camera") { h.notifier.posted.map { it.id } == listOf("parked", "elsewhere", "front-yard") }
+        assertTrue(h.notifier.posted.last().body.startsWith("Front Yard · "), h.notifier.posted.last().body)
     }
 
     @Test

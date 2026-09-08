@@ -22,7 +22,18 @@ data class UnlabeledCrop(
     val guessedCategory: String?,
     val guessedScore: Double?,
 ) {
+    /**
+     * The model is certain of its guess: a `none-1.0` crop of a passing street car, or a 1.0 of a
+     * car it already knows. Not worth a person's time by default — Frigate saves a crop on every
+     * frame it classifies, so these flood the queue — but kept reachable rather than deleted: a
+     * brand-new car's crops look exactly like this, and the queue is the only place it can be named.
+     */
+    val isConfident: Boolean get() = guessedScore != null && guessedScore >= CONFIDENT_SCORE
+
     companion object {
+        /** Frigate rounds scores to two decimals, so 1.0 is what "100 %" looks like. */
+        const val CONFIDENT_SCORE = 1.0
+
         /**
          * Frigate names live attempts `<eventId>-<frameEpoch>-<category>-<score>.webp`, where the
          * event id itself is `<epoch>-<6 chars>`, and history-mined examples `example_NNN.jpg`.
@@ -54,12 +65,18 @@ data class ClassifierDataset(
     val model: ClassifierModel,
     /** Category -> number of labelled images. Includes `none`. */
     val categoryCounts: Map<String, Int>,
-    /** Newest first. */
+    /** Every crop waiting for a label, newest first; see [uncertainQueue] and [confidentQueue]. */
     val queue: List<UnlabeledCrop>,
     val hasTrained: Boolean,
     /** Labelled images added since the last training; training is worthwhile when this is > 0. */
     val newImagesSinceTraining: Int,
 ) {
+    /** The crops worth a person's eye: the model's guess is under 100 %, or it has no guess. */
+    val uncertainQueue: List<UnlabeledCrop> get() = queue.filterNot { it.isConfident }
+
+    /** The crops the model is sure about, shown on request so a new car can still be labelled from one. */
+    val confidentQueue: List<UnlabeledCrop> get() = queue.filter { it.isConfident }
+
     val categories: List<String> get() = categoryCounts.keys.sortedWith(compareBy({ it == NONE_CATEGORY }, { it }))
 
     /** Frigate needs two classes; `none` counts as one. */

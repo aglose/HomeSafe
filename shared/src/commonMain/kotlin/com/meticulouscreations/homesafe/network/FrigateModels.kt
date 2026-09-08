@@ -198,6 +198,8 @@ data class FrigateEvent(
 data class FrigateEventData(
     @SerialName("top_score") val topScore: Double? = null,
     val score: Double? = null,
+    /** How sure the classifier was of the event's `sub_label`; absent when no classifier named it. */
+    @SerialName("sub_label_score") val subLabelScore: Double? = null,
     val type: String? = null,
     /** The best frame's box as `[x, y, w, h]`, each a fraction of the detect frame. */
     val box: List<Double>? = null,
