@@ -67,11 +67,29 @@ val localCredentials = Properties().apply {
 // (also gitignored). Back both up: the key is the app's identity for updates and for Play.
 // When the file is absent (CI, another machine) release falls back to the debug key with a warning
 // so the build still succeeds — that APK is installable but is not the real release identity.
-val keystoreProperties = Properties().apply {
-    val file = rootProject.file("keystore.properties")
-    if (file.exists()) {
-        file.inputStream().use { load(it) }
+// Anything headed for Play passes -PrequireReleaseSigning=true, which makes that fallback fail
+// the build instead of shipping the wrong identity.
+//
+// CI has no keystore.properties: the publish job decodes the key from a secret and passes the
+// three passwords as the environment variables below, so they never land in a file inside the
+// workspace. The properties file wins wherever it exists, so this machine is unaffected.
+val keystoreProperties: Map<String, String> = run {
+    val fromFile = Properties().apply {
+        val file = rootProject.file("keystore.properties")
+        if (file.exists()) {
+            file.inputStream().use { load(it) }
+        }
     }
+    listOf(
+        "storeFile" to "ANDROID_KEYSTORE_FILE",
+        "storePassword" to "ANDROID_KEYSTORE_PASSWORD",
+        "keyAlias" to "ANDROID_KEY_ALIAS",
+        "keyPassword" to "ANDROID_KEY_PASSWORD"
+    ).mapNotNull { (key, environmentVariable) ->
+        val value = fromFile.getProperty(key)
+            ?: providers.environmentVariable(environmentVariable).orNull
+        value?.takeIf { it.isNotBlank() }?.let { key to it }
+    }.toMap()
 }
 
 android {
@@ -82,7 +100,11 @@ android {
         applicationId = "com.meticulouscreations.homesafe"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
+        // Play refuses any upload whose versionCode is not strictly greater than everything already
+        // on the track, so CI passes the GitHub Actions run number (-PversionCode=..., see the
+        // publish-internal job in .github/workflows/ci.yml). A local build keeps 1; nothing built
+        // locally is uploaded.
+        versionCode = providers.gradleProperty("versionCode").map(String::toInt).getOrElse(1)
         versionName = "1.0"
     }
     packaging {
@@ -91,12 +113,14 @@ android {
         }
     }
     signingConfigs {
-        if (keystoreProperties.isNotEmpty()) {
+        // All four or none: a half-configured signing config fails deep inside the packaging task
+        // with a much worse message than the debug-key warning below.
+        if (keystoreProperties.keys.containsAll(listOf("storeFile", "storePassword", "keyAlias", "keyPassword"))) {
             create("release") {
-                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(keystoreProperties.getValue("storeFile"))
+                storePassword = keystoreProperties.getValue("storePassword")
+                keyAlias = keystoreProperties.getValue("keyAlias")
+                keyPassword = keystoreProperties.getValue("keyPassword")
             }
         }
     }
@@ -123,12 +147,24 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug").also {
-                logger.warn(
-                    "androidApp: keystore.properties not found at ${rootProject.file("keystore.properties")} — " +
-                        "signing the release build with the debug key. See androidApp/build.gradle.kts."
-                )
-            }
+            // -PrequireReleaseSigning=true turns that fallback into a hard failure. The publish job
+            // sets it: a bundle signed with the debug key is a different app identity, which Play
+            // rejects — and a silent fallback would be worse than a red build.
+            signingConfig = signingConfigs.findByName("release")
+                ?: if (providers.gradleProperty("requireReleaseSigning").orNull == "true") {
+                    throw GradleException(
+                        "androidApp: no release signing config — ${rootProject.file("keystore.properties")} is absent " +
+                            "and ANDROID_KEYSTORE_FILE/_PASSWORD, ANDROID_KEY_ALIAS/_PASSWORD are not all set. " +
+                            "-PrequireReleaseSigning=true, so refusing to sign the release build with the debug key."
+                    )
+                } else {
+                    signingConfigs.getByName("debug").also {
+                        logger.warn(
+                            "androidApp: keystore.properties not found at ${rootProject.file("keystore.properties")} — " +
+                                "signing the release build with the debug key. See androidApp/build.gradle.kts."
+                        )
+                    }
+                }
             buildConfigField("String", "TEST_SERVER_URL", "\"\"")
             buildConfigField("String", "TEST_USERNAME", "\"\"")
             buildConfigField("String", "TEST_PASSWORD", "\"\"")

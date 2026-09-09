@@ -210,3 +210,122 @@ jobs:
       - name: Fail unless every job succeeded
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') || contains(needs.*.result, 'skipped')
         run: exit 1
+
+  publish-internal:
+    name: Publish to Play internal testing
+    # Only on main, and only once every job feeding ci-green has passed: what reaches the
+    # testers has been through exactly the same gate as a merge. A red CI leaves this skipped.
+    needs: ci-green
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # Holds the release secrets, so they exist on no other job in this workflow. Add required
+    # reviewers to this environment in repo settings if a build should ever wait for a human.
+    environment: play-internal
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The run number is unique and only ever increases for this workflow, so it satisfies Play's
+      # "strictly greater than anything already uploaded" rule with no state to keep. If Play
+      # already holds a higher versionCode, set the repository variable VERSION_CODE_OFFSET to lift
+      # the run number past it — only ever raise it. Workflow expressions have no arithmetic, so
+      # the sum is done here rather than in an `env:` block.
+      - name: Work out the versionCode
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          OFFSET: ${{ vars.VERSION_CODE_OFFSET }}
+        run: echo "VERSION_CODE=$(( RUN_NUMBER + ${OFFSET:-0} ))" >> "$GITHUB_ENV"
+
+      # Every one of these is load-bearing, and the two failure modes are silent: without the
+      # keystore the release build would fall back to the debug key, and without the Firebase
+      # config the shipped app cannot register for push. Stop before spending a build on either.
+      - name: Check the release secrets are present
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          missing=
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS \
+                      ANDROID_KEY_PASSWORD PLAY_SERVICE_ACCOUNT_JSON GOOGLE_SERVICES_JSON; do
+            eval "value=\${$name}"
+            [ -n "$value" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing secrets in the play-internal environment:$missing — see docs/release-to-play.md"
+            exit 1
+          fi
+
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: echo "$GOOGLE_SERVICES_JSON" | base64 --decode > androidApp/google-services.json
+
+      # The upload key itself: the app's identity on Play, and unrecoverable if lost. It is
+      # gitignored and the runner is torn down after the job, but keep it out of any uploaded
+      # artifact all the same. The passwords stay in the environment rather than in a file.
+      - name: Write the release keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          mkdir -p androidApp/keystore
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > androidApp/keystore/homesafe-release.jks
+
+      # androidApp/build.gradle.kts reads these four when there is no keystore.properties, and
+      # -PrequireReleaseSigning=true turns a missing one into a failed build instead of a bundle
+      # signed with the debug key.
+      - name: ./gradlew :androidApp:bundleRelease
+        env:
+          ANDROID_KEYSTORE_FILE: androidApp/keystore/homesafe-release.jks
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          ./gradlew :androidApp:bundleRelease \
+            -PversionCode="$VERSION_CODE" \
+            -PrequireReleaseSigning=true \
+            --stacktrace
+
+      # Play shows this to internal testers as the release notes for the build.
+      - name: Release notes from the commit subject
+        run: |
+          mkdir -p build/whatsnew
+          {
+            git log -1 --pretty=%s
+            echo
+            echo "${GITHUB_SHA:0:7}"
+          } | head -c 500 > build/whatsnew/whatsnew-en-US
+          cat build/whatsnew/whatsnew-en-US
+
+      - name: Upload to the internal track
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.meticulouscreations.homesafe
+          releaseFiles: androidApp/build/outputs/bundle/release/androidApp-release.aab
+          track: internal
+          status: completed
+          # Lets Play deobfuscate R8-minified stack traces from testers' crash reports.
+          mappingFile: androidApp/build/outputs/mapping/release/mapping.txt
+          whatsNewDirectory: build/whatsnew
+
+      # Keeps the exact artefact and its mapping file for the versionCode that went out — the
+      # mapping is the only way to read a stack trace from that build once R8 has renamed it.
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-bundle-${{ env.VERSION_CODE }}
+          path: |
+            androidApp/build/outputs/bundle/release/*.aab
+            androidApp/build/outputs/mapping/release/mapping.txt
+          retention-days: 90
