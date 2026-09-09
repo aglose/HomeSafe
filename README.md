@@ -118,6 +118,12 @@ Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
   - JS target: `./gradlew :shared:jsTest`
 - iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
 
+### Releasing
+
+Every push to `main` with a green CI publishes a signed bundle to Play internal testing. The
+one-time Play Console and secret setup that makes that work is in
+[docs/release-to-play.md](docs/release-to-play.md).
+
 ---
 
 Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),

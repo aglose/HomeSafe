@@ -25,3 +25,7 @@ GoogleService-Info.plist*
 # Release signing: the key lives in androidApp/keystore/ and its passwords in keystore.properties (see androidApp/build.gradle.kts)
 keystore.properties
 androidApp/keystore/
+
+# Where AGP drops the signed bundle and its mapping file after a release build. CI keeps these
+# as a workflow artifact instead (see docs/release-to-play.md); locally they are ~80 MB of output.
+androidApp/release/
