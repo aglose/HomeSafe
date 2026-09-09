@@ -222,12 +222,6 @@ jobs:
     # Holds the release secrets, so they exist on no other job in this workflow. Add required
     # reviewers to this environment in repo settings if a build should ever wait for a human.
     environment: play-internal
-    env:
-      # Unique and monotonic for this workflow, so it satisfies Play's "strictly greater than
-      # anything already uploaded" rule without any state to keep. If the app on Play already has
-      # a higher versionCode, set the repository variable VERSION_CODE_OFFSET to lift the run
-      # number past it — never lower it, and never reset it.
-      VERSION_CODE: ${{ github.run_number + (vars.VERSION_CODE_OFFSET && fromJSON(vars.VERSION_CODE_OFFSET) || 0) }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -237,6 +231,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
+
+      # The run number is unique and only ever increases for this workflow, so it satisfies Play's
+      # "strictly greater than anything already uploaded" rule with no state to keep. If Play
+      # already holds a higher versionCode, set the repository variable VERSION_CODE_OFFSET to lift
+      # the run number past it — only ever raise it. Workflow expressions have no arithmetic, so
+      # the sum is done here rather than in an `env:` block.
+      - name: Work out the versionCode
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+          OFFSET: ${{ vars.VERSION_CODE_OFFSET }}
+        run: echo "VERSION_CODE=$(( RUN_NUMBER + ${OFFSET:-0} ))" >> "$GITHUB_ENV"
 
       # Every one of these is load-bearing, and the two failure modes are silent: without the
       # keystore the release build would fall back to the debug key, and without the Firebase
@@ -287,7 +292,7 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           ./gradlew :androidApp:bundleRelease \
-            -PversionCode=${{ env.VERSION_CODE }} \
+            -PversionCode="$VERSION_CODE" \
             -PrequireReleaseSigning=true \
             --stacktrace
 

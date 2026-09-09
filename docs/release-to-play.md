@@ -46,16 +46,34 @@ very first upload. So, by hand, once:
 
 ### The service account
 
-The upload needs a Google Cloud service account that Play trusts:
+The upload authenticates as a Google Cloud service account that Play trusts. It is created in
+Google Cloud and granted its rights in Play Console — two different consoles, which is what makes
+this fiddly.
 
-1. Play Console → **Setup → API access** → link (or create) a Google Cloud project.
-2. Create a service account there; in Google Cloud, give it a **JSON key** and download it.
-3. Back in Play Console → **Users and permissions**, invite the service account's email and grant
-   it, for this app: *View app information*, *Create and edit draft releases*, and
-   *Release to testing tracks*. It needs nothing else — in particular it does not need production
-   release rights.
-4. Permission changes take a few minutes to propagate; the first upload attempt right after
-   granting them can still 401.
+1. **Link a Cloud project.** Play Console → **Setup → API access**. If nothing is linked, it
+   offers to link an existing Google Cloud project or make one; the `homesafe-percysafe` Firebase
+   project is fine.
+2. **Enable the API** in that Cloud project:
+   [Google Play Android Developer API](https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com).
+   This is the easiest step to miss, and skipping it fails the upload with a 403 that reads like a
+   permissions problem.
+3. **Create the service account** in Google Cloud → **IAM & Admin → Service Accounts** (the API
+   access page links straight there). It needs **no GCP roles at all** — every right it has comes
+   from Play. Note its email, which ends `@<project>.iam.gserviceaccount.com`.
+4. **Create the key**: on that service account's row, **⋮ → Manage keys → Add key →
+   Create new key → JSON → Create**. The downloaded file is the credential that becomes
+   `PLAY_SERVICE_ACCOUNT_JSON`. Anyone holding it can publish as you, so it goes straight into the
+   secret and nowhere else.
+5. **Grant it access to the app**: Play Console → **Users and permissions → Invite new users**,
+   paste the service account email, and in the **App permissions** tab select HomeSafe and grant
+   *View app information* and *Release apps to testing tracks*. Nothing more — it does not need
+   production release rights. (Play renames these checkboxes from time to time; those two are the
+   minimum, whatever they are currently called.) Then **Invite user**.
+6. **Wait a few minutes.** Permission changes propagate slowly, and an upload attempted right
+   after granting them can still fail with a 401.
+
+A Firebase Admin SDK service-account key is *not* a substitute: it authenticates to Firebase, has
+no Play grant, and will be rejected.
 
 ## The secrets
 
