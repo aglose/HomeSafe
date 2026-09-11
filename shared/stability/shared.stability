@@ -217,11 +217,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playhe
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog(biometricDisplayName: kotlin.String, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog(biometricDisplayName: kotlin.String, replacesSavedLogin: kotlin.Boolean, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - biometricDisplayName: STABLE (String is immutable)
+    - replacesSavedLogin: STABLE (primitive type)
     - onSave: STABLE (function type)
     - onDismiss: STABLE (function type)
 
