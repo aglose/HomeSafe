@@ -167,7 +167,16 @@ class WebRtcConnectFlow(
 ) {
     /** [streamKey] identifies the stream in [memory]; the source's HLS URL. */
     suspend fun connect(endpoint: WebRtcEndpoint, streamKey: String): WebRtcConnectResult {
-        val peer = peers.create(endpoint.audio)
+        // The engine can refuse to build a peer at all (no native library, a bad configuration);
+        // that is a join failure like any other, not an exception for the caller to survive.
+        val peer = try {
+            peers.create(endpoint.audio)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            memory.markFailed(streamKey)
+            return WebRtcConnectResult.Failed(WebRtcFailure.PeerFailed(e.message ?: "peer creation failed"))
+        }
         val result = try {
             attempt(peer, endpoint)
         } catch (e: CancellationException) {

@@ -184,6 +184,19 @@ class WebRtcConnectFlowTest {
     }
 
     @Test
+    fun aPeerThatCannotBeCreatedIsAJoinFailureNotAnException() = runTest {
+        val h = Harness()
+        val flow = WebRtcConnectFlow(h.signaling, { error("libwebrtc missing") }, h.memory)
+
+        val result = flow.connect(endpoint, streamKey)
+
+        assertEquals(WebRtcConnectResult.Failed(WebRtcFailure.PeerFailed("libwebrtc missing")), result)
+        assertTrue(h.signaling.offers.isEmpty())
+        h.memory.markFailed(streamKey)
+        assertFalse(h.memory.allowsWebRtc(streamKey), "counted like any other failed join")
+    }
+
+    @Test
     fun aPeerThatFailsWhileWaitingForItsFirstFrameDoesNotWaitOutTheFrameTimeout() = runTest {
         val h = Harness()
         val result = CompletableDeferred<WebRtcConnectResult>()

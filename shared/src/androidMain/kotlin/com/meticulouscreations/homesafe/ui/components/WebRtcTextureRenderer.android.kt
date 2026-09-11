@@ -24,8 +24,10 @@ import java.util.concurrent.CountDownLatch
  * synchronously, since the texture is gone the moment the callback returns — when it's
  * destroyed. [release] tears the renderer down; the view is dead after that.
  *
- * [onFrameRendered] fires on the render thread after every frame drawn to this view; callers
- * that only care about the first one keep their own flag.
+ * [onFrameRendered] fires on the main thread each time the surface has taken a new frame —
+ * `onSurfaceTextureUpdated`, i.e. after the render thread has actually swapped it in, not when a
+ * frame was merely handed to the renderer. Callers that only care about the first one keep
+ * their own flag.
  */
 internal class WebRtcTextureRenderer(
     context: Context,
@@ -55,13 +57,14 @@ internal class WebRtcTextureRenderer(
                 return true
             }
 
-            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
+            override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {
+                onFrameRendered?.invoke()
+            }
         }
     }
 
     override fun onFrame(frame: VideoFrame) {
         renderer.onFrame(frame)
-        onFrameRendered?.invoke()
     }
 
     /** Paints the view transparent, so whatever is stacked beneath it shows through until the next frame. */

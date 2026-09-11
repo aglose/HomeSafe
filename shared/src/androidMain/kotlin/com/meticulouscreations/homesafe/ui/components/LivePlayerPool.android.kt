@@ -184,11 +184,22 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         player.addListener(listener)
     }
 
-    /** Play [next]. A no-op when it's already the current, healthy source — that's the shared-player fast path. */
+    /**
+     * Play [next]. When it's already the current, healthy source — the shared-player fast path —
+     * nothing restarts; but a WebRTC endpoint arriving for a source HLS is carrying (the detail
+     * screen's warm join names only the URL, its view model's request adds the endpoint) starts
+     * a join alongside, and the peer takes over when it has a frame. Losing the endpoint while a
+     * peer is playing changes nothing: the picture is the same camera either way.
+     */
     fun load(next: VideoSource) {
         val current = source
         if (current != null && current.url == next.url && !needsColdStart) {
             source = next
+            val endpoint = (next as? VideoSource.Live)?.webRtc
+            val hlsCarrying = transport == LiveTransport.HLS && joinJob == null
+            if (endpoint != null && hlsCarrying && activeBinders > 0 && LiveTransportMemory.shared.allowsWebRtc(next.url)) {
+                startWebRtc(next, endpoint)
+            }
             return
         }
         source = next
@@ -305,6 +316,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         joinJob = scope.launch {
             val result = webRtc.connect(endpoint, streamKey = toLoad.url)
             val elapsed = SystemClock.elapsedRealtime() - startedAt
+            joinJob = null
             if (source?.url != toLoad.url) {
                 // Superseded while joining: the newer load owns the holder now.
                 (result as? WebRtcConnectResult.Connected)?.peer?.close()
@@ -318,7 +330,9 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
 
                 is WebRtcConnectResult.Failed -> {
                     Log.w(LOG_TAG, "$key: webrtc join failed after ${elapsed}ms (${result.reason}); playing HLS")
-                    startHls(toLoad)
+                    // Unless HLS is already carrying this very source (a join started from the
+                    // fast path above), in which case there is nothing to start.
+                    if (transport != LiveTransport.HLS || player.playbackState == Player.STATE_IDLE) startHls(toLoad)
                 }
             }
         }

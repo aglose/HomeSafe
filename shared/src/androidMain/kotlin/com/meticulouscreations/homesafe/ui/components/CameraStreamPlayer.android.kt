@@ -124,9 +124,11 @@ actual fun CameraStreamPlayer(
             isOpaque = false
         }
     }
-    // Only a source that can play over WebRTC gets a renderer (each one owns a render thread);
-    // once made it stays for the holder, since the detail screen's source keeps the endpoint.
-    val wantsWebRtc = source is VideoSource.Live && source.webRtc != null
+    // Only a binder that may see WebRTC frames gets a renderer (each one owns a render thread):
+    // its source carries an endpoint, or the holder is already playing a peer — the detail
+    // screen's warm join names only the URL, and must still draw the card's peer. Once made it
+    // stays for the holder.
+    val wantsWebRtc = (source is VideoSource.Live && source.webRtc != null) || transport == LiveTransport.WEBRTC
     val renderer = if (wantsWebRtc) remember(holder) { RendererLease(context) }.renderer else null
 
     // The last frame of whichever surface this one took over from (see LivePlayerHolder.bindSurface),
@@ -239,7 +241,8 @@ actual fun CameraStreamPlayer(
         onStopOrDispose { holder.onBinderStopped() }
     }
 
-    LaunchedEffect(holder, source.url) { holder.load(source) }
+    // Keyed on the endpoint as well as the URL: the same stream gaining one is a load the holder acts on.
+    LaunchedEffect(holder, source.url, (source as? VideoSource.Live)?.webRtc) { holder.load(source) }
 
     LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
 
