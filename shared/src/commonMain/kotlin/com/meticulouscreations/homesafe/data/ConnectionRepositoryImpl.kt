@@ -5,7 +5,9 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.LOCAL_SERVER_URL
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.StaleBiometricCredentialsException
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.network.CredentialsRejectedException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.NetworkMonitor
@@ -113,6 +115,17 @@ class ConnectionRepositoryImpl(
                 // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
                 // credential saved before this route existed carries none at all.
                 connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
+                    .recoverCatching { error ->
+                        // The server answered and refused the saved password: it has changed
+                        // server-side, and every future biometric attempt would fail the same
+                        // way. Forgetting it here turns the dead end into the normal first-time
+                        // flow — sign in with the password, get offered to save it. A transport
+                        // failure or a server error says nothing about the password, so those
+                        // keep the saved login.
+                        if (error !is CredentialsRejectedException) throw error
+                        biometricCredentialStore.clear()
+                        throw StaleBiometricCredentialsException()
+                    }
             },
             onFailure = { Result.failure(it) },
         )
