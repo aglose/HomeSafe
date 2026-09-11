@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.StaleBiometricCredentialsException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import io.ktor.client.HttpClient
@@ -26,6 +27,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -45,6 +48,9 @@ class ConnectionRepositoryImplTest {
 
         /** When true, the server answers the login endpoint but refuses the credentials. */
         var rejectLogin = false
+
+        /** When true, the login endpoint falls over (500) — says nothing about the credentials. */
+        var loginBroken = false
         val requests = mutableListOf<Pair<String, String>>()
 
         /** When true, only plain http is answered; https fails at the transport, as a plaintext port does. */
@@ -60,7 +66,9 @@ class ConnectionRepositoryImplTest {
                 path.endsWith("/api/version") -> respond("0.15.0", HttpStatusCode.OK)
 
                 path.endsWith("/api/login") ->
-                    if (rejectLogin) {
+                    if (loginBroken) {
+                        respond("", HttpStatusCode.InternalServerError)
+                    } else if (rejectLogin) {
                         respond("", HttpStatusCode.Unauthorized)
                     } else {
                         respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=token-for-$host; Path=/"))
@@ -85,6 +93,22 @@ class ConnectionRepositoryImplTest {
 
     private class FakeNetworkMonitor : NetworkMonitor {
         override val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+    }
+
+    /** A store that holds one saved login and hands it over without a prompt. */
+    private class FakeBiometrics(private var saved: SavedCredentials?) : BiometricCredentialStore {
+        override fun isAvailable() = true
+        override fun displayName() = "fingerprint"
+        override fun hasSavedCredentials() = saved != null
+        override suspend fun save(credentials: SavedCredentials): Result<Unit> {
+            saved = credentials
+            return Result.success(Unit)
+        }
+        override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> =
+            saved?.let { Result.success(it) } ?: Result.failure(IllegalStateException("nothing saved"))
+        override fun clear() {
+            saved = null
+        }
     }
 
     private object NoBiometrics : BiometricCredentialStore {
@@ -128,7 +152,7 @@ class ConnectionRepositoryImplTest {
         h.network.changes.tryEmit(Unit)
     }
 
-    private class Harness(scope: TestScope) {
+    private class Harness(scope: TestScope, val biometrics: BiometricCredentialStore = NoBiometrics) {
         val frigate = FakeFrigate()
         val network = FakeNetworkMonitor()
         val cameraDao = InMemoryCameraDao()
@@ -144,7 +168,7 @@ class ConnectionRepositoryImplTest {
             apiClient = apiClient,
             connectionHistoryDao = historyDao,
             cameraDao = cameraDao,
-            biometricCredentialStore = NoBiometrics,
+            biometricCredentialStore = biometrics,
             networkMonitor = network,
             appScope = scope.backgroundScope,
         )
@@ -283,5 +307,48 @@ class ConnectionRepositoryImplTest {
         // One attempt only: the server answered, so there is no point trying the other scheme.
         assertEquals(1, h.frigate.logins(localHost))
         assertNull(h.repository.activeConnection.value)
+    }
+
+    @Test
+    fun aBiometricSignInTheServerRefusesForgetsTheSavedLogin() = runTest {
+        val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "old-password", localUrl)))
+        h.frigate.rejectLogin = true   // the password was changed on the server since it was saved
+
+        val result = h.repository.signInWithBiometrics()
+        advanceUntilIdle()
+
+        assertIs<StaleBiometricCredentialsException>(result.exceptionOrNull())
+        // The dead end is cleared: the next launch goes straight to the password form, and a
+        // successful sign-in there is offered for saving like the very first one was.
+        assertFalse(h.biometrics.hasSavedCredentials())
+        assertNull(h.repository.activeConnection.value)
+    }
+
+    @Test
+    fun aServerErrorDuringBiometricSignInKeepsTheSavedLogin() = runTest {
+        val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "pw", localUrl)))
+        h.frigate.loginBroken = true
+
+        val result = h.repository.signInWithBiometrics()
+        advanceUntilIdle()
+
+        assertTrue(result.isFailure)
+        assertFalse(result.exceptionOrNull() is StaleBiometricCredentialsException)
+        // A 500 says nothing about the password; forgetting it would only add a retype.
+        assertTrue(h.biometrics.hasSavedCredentials())
+    }
+
+    @Test
+    fun aBiometricSignInTheServerAcceptsSignsInWithTheSavedLogin() = runTest {
+        val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "pw", localUrl)))
+        var unlocked = false
+
+        val result = h.repository.signInWithBiometrics(onCredentialsUnlocked = { unlocked = true })
+        advanceUntilIdle()
+
+        assertTrue(unlocked)
+        assertEquals("andrew", result.getOrThrow().username)
+        assertTrue(h.biometrics.hasSavedCredentials())
+        assertNotNull(h.repository.activeConnection.value)
     }
 }
