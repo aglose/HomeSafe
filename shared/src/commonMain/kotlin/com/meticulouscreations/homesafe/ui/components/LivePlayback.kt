@@ -46,6 +46,30 @@ internal object LivePlaybackPolicy {
     /** Slower cadence once a snapshot fetch has failed, so an unreachable server isn't polled hard. */
     const val POSTER_RETRY_MS = 3_000L
 
+    /**
+     * How long a WebRTC join may take from creating the offer to ICE reporting a connection.
+     * Host candidates over the LAN or Tailscale pair in well under a second; anything slower is
+     * a blocked port or a dead route, and the HLS fallback is the faster way to a picture.
+     */
+    const val WEBRTC_CONNECT_TIMEOUT_MS = 3_000L
+
+    /**
+     * How long a connected peer may go without delivering a decoded frame. Bounded by the
+     * camera's keyframe interval (a new consumer starts at the next keyframe; 2 s on these
+     * cameras) plus decoder start-up.
+     */
+    const val WEBRTC_FIRST_FRAME_TIMEOUT_MS = 5_000L
+
+    /** How many WebRTC joins of one stream may fail before the fallback sticks — see [WEBRTC_FALLBACK_TTL_MS]. */
+    const val WEBRTC_FAILURES_BEFORE_FALLBACK = 2
+
+    /**
+     * How long a stream stays on HLS after WebRTC gave up on it, before the next cold start
+     * tries WebRTC again. Long enough not to pay the connect timeout on every rebind while a
+     * port is blocked; short enough that fixing the firewall is felt without restarting the app.
+     */
+    const val WEBRTC_FALLBACK_TTL_MS = 10 * 60_000L
+
     private const val FIRST_RETRY_DELAY_MS = 250L
     private const val MAX_RETRY_DELAY_MS = 30_000L
 

@@ -23,6 +23,14 @@ class LivePlaybackPolicyTest {
     }
 
     @Test
+    fun aLiveSourceGainingOrLosingItsWebRtcEndpointIsStillTheSameCameraSoTheSwapIsWarm() {
+        val webRtc = live.copy(webRtc = WebRtcEndpoint("http://frigate:1984/api/webrtc?src=cam", audio = false))
+        assertFalse(LivePlaybackPolicy.isColdSwap(previous = live, next = webRtc))
+        assertFalse(LivePlaybackPolicy.isColdSwap(previous = webRtc, next = liveFull))
+        assertEquals(live.url, webRtc.url)
+    }
+
+    @Test
     fun anythingInvolvingARecordingIsCold() {
         assertTrue(LivePlaybackPolicy.isColdSwap(previous = live, next = recording))
         assertTrue(LivePlaybackPolicy.isColdSwap(previous = recording, next = live))

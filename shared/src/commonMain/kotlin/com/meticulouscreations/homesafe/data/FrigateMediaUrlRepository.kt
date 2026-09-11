@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.network.frigateEventThumbnailUrl
 import com.meticulouscreations.homesafe.network.frigateLiveStreamUrl
 import com.meticulouscreations.homesafe.network.frigateRecordingSnapshotUrl
 import com.meticulouscreations.homesafe.network.frigateSnapshotUrl
+import com.meticulouscreations.homesafe.network.frigateWebRtcSignalingUrl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -16,6 +17,9 @@ class FrigateMediaUrlRepository : MediaUrlRepository {
 
     override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>): String =
         frigateLiveStreamUrl(serverUrl, streamName, audioCodecs)
+
+    override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String): String =
+        frigateWebRtcSignalingUrl(serverUrl, streamName)
 
     override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?): String {
         val url = frigateSnapshotUrl(serverUrl, cameraName, height)
