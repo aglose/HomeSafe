@@ -151,6 +151,8 @@ kotlin {
             implementation(libs.play.services.location)
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.exoplayer.hls)
+            // Live view over WebRTC (WebRtcPeer.android.kt); Media3 stays for HLS and recordings.
+            implementation(libs.stream.webrtc.android)
             implementation(libs.androidx.biometric)
             implementation(libs.androidx.fragment)
         }

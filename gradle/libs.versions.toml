@@ -27,6 +27,8 @@ ktor = "3.5.2"
 kotlinx-serialization = "1.11.0"
 kotlinx-datetime = "0.8.0"
 media3 = "1.11.0"
+# libwebrtc for Android, Stream's build of the upstream org.webrtc API (live view over WebRTC).
+stream-webrtc = "1.3.10"
 coil = "3.6.1"
 # Desktop video: JavaCV's FFmpeg frame grabber plus the bundled FFmpeg natives it drives.
 # The two must move together — the presets version's "-1.5.14" tail is the JavaCV/JavaCPP
@@ -89,6 +91,7 @@ kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 media3-exoplayer = { module = "androidx.media3:media3-exoplayer", version.ref = "media3" }
 media3-exoplayer-hls = { module = "androidx.media3:media3-exoplayer-hls", version.ref = "media3" }
+stream-webrtc-android = { module = "io.getstream:stream-webrtc-android", version.ref = "stream-webrtc" }
 javacv = { module = "org.bytedeco:javacv", version.ref = "javacpp" }
 javacpp = { module = "org.bytedeco:javacpp", version.ref = "javacpp" }
 ffmpeg = { module = "org.bytedeco:ffmpeg", version.ref = "ffmpeg" }

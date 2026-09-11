@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
@@ -65,6 +66,7 @@ class HomeViewModelTest {
     private object FakeMediaUrls : MediaUrlRepository {
         override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>) =
             "$serverUrl/live/$streamName"
+        override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String) = "$serverUrl/webrtc/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) =
             "$serverUrl/snapshot/$cameraName?h=$height"
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
@@ -116,6 +118,7 @@ class HomeViewModelTest {
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(connection),
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
+            getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
@@ -150,6 +153,7 @@ class HomeViewModelTest {
 
         assertEquals(1, collected.size)
         assertEquals("http://frigate.test:8971/live/front_door_sub", collected[0].streamUrl, "the grid plays the grid stream, not the full-quality one")
+        assertEquals("http://frigate.test:8971/webrtc/front_door_sub", collected[0].webRtcSignalingUrl, "and can negotiate WebRTC for that same stream")
         assertEquals("http://frigate.test:8971/snapshot/front_door?h=480", collected[0].posterUrl)
     }
 
@@ -159,6 +163,7 @@ class HomeViewModelTest {
         val collected = tiles(h.viewModel)
 
         assertNull(collected[0].streamUrl, "a disabled camera has nothing to play")
+        assertNull(collected[0].webRtcSignalingUrl)
         assertNull(collected[0].posterUrl)
     }
 
@@ -168,6 +173,7 @@ class HomeViewModelTest {
         val collected = tiles(h.viewModel)
 
         assertNull(collected[0].streamUrl, "disconnected: the card shows a placeholder rather than a URL that cannot load")
+        assertNull(collected[0].webRtcSignalingUrl)
         assertNull(collected[0].posterUrl)
     }
 

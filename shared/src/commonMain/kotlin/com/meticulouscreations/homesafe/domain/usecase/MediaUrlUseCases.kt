@@ -10,6 +10,12 @@ class GetLiveStreamUrlUseCase(private val mediaUrls: MediaUrlRepository) {
         mediaUrls.liveStreamUrl(serverUrl, streamName, audioCodecs)
 }
 
+/** See [MediaUrlRepository.liveWebRtcSignalingUrl]. */
+@Inject
+class GetLiveWebRtcSignalingUrlUseCase(private val mediaUrls: MediaUrlRepository) {
+    operator fun invoke(serverUrl: String, streamName: String): String = mediaUrls.liveWebRtcSignalingUrl(serverUrl, streamName)
+}
+
 /** See [MediaUrlRepository.cameraSnapshotUrl]. */
 @Inject
 class GetCameraSnapshotUrlUseCase(private val mediaUrls: MediaUrlRepository) {
