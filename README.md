@@ -31,8 +31,9 @@ The server's private LAN address is hardcoded as `LOCAL_SERVER_URL` in
 [`NetworkMonitor`'s package](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/network/LocalNetworkConfig.kt)
 — there's only ever one household server, so it isn't a connect-screen field. On sign-in, and
 again whenever the OS reports a network change, the app probes that address with a short
-timeout and uses it for everything — API, snapshots, and live/recorded video — when it
-answers; otherwise it uses the Tailscale URL entered on the connect screen. The choice is made
+timeout — over the compiled-in scheme first, then the other one, since whether Frigate's port
+speaks TLS is a server setting — and uses it for everything — API, snapshots, and live/recorded
+video — when it answers; otherwise it uses the Tailscale URL entered on the connect screen. The choice is made
 by probing rather than by reading the SSID, so a router that splits one LAN into several SSIDs
 needs no special handling, and the app never needs location permission. The active route shows
 as a badge in the top bar and under Settings → Server Information.

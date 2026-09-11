@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Everything the app does is a request to the Frigate server. Firebase's manifest happens to
+         merge this in as well, but the app's networking shouldn't hang on a transitive dependency. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Lets the app notice Wi-Fi ↔ cellular changes and re-pick the server's local vs Tailscale address. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Detection alerts are posted as local notifications (see AlertNotifier.android.kt); Android 13+ asks the user first. -->

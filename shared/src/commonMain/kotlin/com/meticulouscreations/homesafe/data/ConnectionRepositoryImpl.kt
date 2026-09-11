@@ -97,9 +97,13 @@ class ConnectionRepositoryImpl(
         password: String,
     ): Result<SavedCredentials> = signInMutex.withLock {
         val normalizedLocalUrl = localUrl?.trim()?.takeIf { it.isNotEmpty() }
-        val route = preferredRoute(normalizedLocalUrl)
+        val overTailscale = ActiveConnection(
+            serverUrl = serverUrl,
+            localUrl = normalizedLocalUrl,
+            route = ConnectionRoute.TAILSCALE,
+        )
         signIn(
-            connection = ActiveConnection(serverUrl = serverUrl, localUrl = normalizedLocalUrl, route = route),
+            connection = overTailscale.routedTo(reachableLocalUrl(normalizedLocalUrl)),
             username = username,
             password = password,
             recordInHistory = true,
@@ -124,12 +128,33 @@ class ConnectionRepositoryImpl(
         biometricCredentialStore.clear()
     }
 
-    /** Local if the LAN address answers within [LOCAL_PROBE_TIMEOUT_MS]; Tailscale otherwise (or when there is no LAN address). */
-    private suspend fun preferredRoute(localUrl: String?): ConnectionRoute =
-        if (localUrl != null && apiClient.isReachable(localUrl, LOCAL_PROBE_TIMEOUT_MS)) {
-            ConnectionRoute.LOCAL_NETWORK
-        } else {
-            ConnectionRoute.TAILSCALE
+    /**
+     * The LAN URL to sign in on, or null to take the Tailscale route: [localUrl] if it answers
+     * within [LOCAL_PROBE_TIMEOUT_MS], else the same address over the other scheme if that does.
+     * [LOCAL_SERVER_URL] is compiled in with one scheme, but whether Frigate's port speaks TLS is
+     * a server setting that can change under it; probing the compiled-in scheme alone would then
+     * fail silently and leave the app on Tailscale while sitting next to the server. Two probes
+     * at most, so a remote sign-in waits no longer than twice the probe timeout.
+     */
+    private suspend fun reachableLocalUrl(localUrl: String?): String? {
+        if (localUrl == null) return null
+        if (apiClient.isReachable(localUrl, LOCAL_PROBE_TIMEOUT_MS)) return localUrl
+        val swapped = swapUrlScheme(localUrl) ?: return null
+        return swapped.takeIf { apiClient.isReachable(it, LOCAL_PROBE_TIMEOUT_MS) }
+    }
+
+    /** True when this connection already uses what [reachableLocalUrl] calls for: Tailscale, or the LAN over that exact URL. */
+    private fun ActiveConnection.alreadyUses(reachableLocalUrl: String?): Boolean =
+        when (reachableLocalUrl) {
+            null -> route == ConnectionRoute.TAILSCALE
+            else -> route == ConnectionRoute.LOCAL_NETWORK && localUrl == reachableLocalUrl
+        }
+
+    /** The connection [reachableLocalUrl] calls for, keeping the LAN address on file when it isn't answering. */
+    private fun ActiveConnection.routedTo(reachableLocalUrl: String?): ActiveConnection =
+        when (reachableLocalUrl) {
+            null -> copy(route = ConnectionRoute.TAILSCALE)
+            else -> copy(route = ConnectionRoute.LOCAL_NETWORK, localUrl = reachableLocalUrl)
         }
 
     /**
@@ -202,7 +227,8 @@ class ConnectionRepositoryImpl(
 
     /**
      * After the network changed: if the address we should be using differs from the one in
-     * use, sign in again over the preferred one. A failed attempt (e.g. Tailscale hasn't
+     * use — the other route, or the LAN address now answering over the other scheme — sign in
+     * again over the preferred one. A failed attempt (e.g. Tailscale hasn't
      * finished coming up after leaving home) is retried on an interval until it succeeds or
      * the next network change supersedes it.
      */
@@ -211,14 +237,19 @@ class ConnectionRepositoryImpl(
             val credentials = sessionCredentials ?: return
             val current = _activeConnection.value ?: return
             val localUrl = current.localUrl ?: return
-            val preferred = preferredRoute(localUrl)
-            if (preferred == current.route) return
+            val reachableLocalUrl = reachableLocalUrl(localUrl)
+            if (current.alreadyUses(reachableLocalUrl)) return
 
             val switched = signInMutex.withLock {
                 // Re-check under the lock: a user-driven connect may have landed in the meantime.
                 val latest = _activeConnection.value ?: return
-                if (latest.route == preferred) return
-                signIn(latest.copy(route = preferred), credentials.username, credentials.password, recordInHistory = false)
+                if (latest.alreadyUses(reachableLocalUrl)) return
+                signIn(
+                    connection = latest.routedTo(reachableLocalUrl),
+                    username = credentials.username,
+                    password = credentials.password,
+                    recordInHistory = false,
+                )
             }
             if (switched.isSuccess) return
             delay(ROUTE_SWITCH_RETRY_MS)

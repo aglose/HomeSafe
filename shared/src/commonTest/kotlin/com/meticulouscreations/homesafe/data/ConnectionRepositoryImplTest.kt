@@ -50,12 +50,16 @@ class ConnectionRepositoryImplTest {
         /** When true, only plain http is answered; https fails at the transport, as a plaintext port does. */
         var httpsRejected = false
 
+        /** When true, only https is answered; plain http fails at the transport, as a TLS-only port does. */
+        var httpRejected = false
+
         val engine = MockEngine { request ->
             val host = request.url.host
             val path = request.url.encodedPath
             requests += host to path
             if (host == "192.168.68.55" && !localReachable) error("No route to host")
             if (httpsRejected && request.url.protocol.name == "https") error("Unable to parse TLS packet header")
+            if (httpRejected && request.url.protocol.name == "http") error("unexpected end of stream")
             when {
                 path.endsWith("/api/version") -> respond("0.15.0", HttpStatusCode.OK)
 
@@ -269,6 +273,26 @@ class ConnectionRepositoryImplTest {
         assertEquals(serverUrl, result.getOrThrow().serverUrl)
         assertEquals(serverUrl, h.repository.mostRecentConnection.first()?.serverUrl)
         assertEquals(listOf("backyard", "front_door"), h.cameraDao.observeByServer(serverUrl).first().map { it.name }.sorted())
+    }
+
+    @Test
+    fun usesTheLanOverHttpsWhenThatIsTheOnlySchemeTheServerSpeaks() = runTest {
+        val h = Harness(this)
+        h.frigate.httpRejected = true // TLS was turned on at the server; the compiled-in LAN URL still says http
+        val httpsLocalUrl = "https://$localHost:8971"
+
+        val result = h.repository.connect("https://$tailscaleHost:8971", localUrl, "andrew", "pw")
+        eventually("the LAN route over https") { h.repository.currentServerUrl.value == httpsLocalUrl }
+
+        assertTrue(result.isSuccess)
+        val connection = assertNotNull(h.repository.activeConnection.value)
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, connection.route)
+        assertEquals(httpsLocalUrl, connection.activeUrl)
+        assertEquals(httpsLocalUrl, result.getOrThrow().localUrl)
+        // Both LAN schemes were probed; only the one that answered was signed in to, and Tailscale never was.
+        assertEquals(2, h.frigate.probes(localHost))
+        assertEquals(1, h.frigate.logins(localHost))
+        assertEquals(0, h.frigate.logins(tailscaleHost))
     }
 
     @Test
