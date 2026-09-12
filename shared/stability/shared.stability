@@ -166,6 +166,17 @@ private fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: com
     - onSendTest: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.ArrangeBar(arranging: kotlin.Boolean, unplacedCount: kotlin.Int, pendingCamera: kotlin.String?, onToggleArranging: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - arranging: STABLE (primitive type)
+    - unplacedCount: STABLE (primitive type)
+    - pendingCamera: STABLE (class with no mutable properties)
+    - onToggleArranging: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, people: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.KnownPerson>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
@@ -295,6 +306,21 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(camera
     - openAtEpochSeconds: STABLE (class with no mutable properties)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CameraMarker(mapped: com.meticulouscreations.homesafe.viewmodel.MappedCamera, arranging: kotlin.Boolean, panelWidth: androidx.compose.ui.unit.Dp, panelHeight: androidx.compose.ui.unit.Dp, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onClick: kotlin.Function0<kotlin.Unit>, onMove: kotlin.Function3<@[ParameterName(name = \, onRemove: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - mapped: STABLE (marked @Stable or @Immutable)
+    - arranging: STABLE (primitive type)
+    - panelWidth: STABLE (marked @Stable or @Immutable)
+    - panelHeight: STABLE (marked @Stable or @Immutable)
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - onClick: STABLE (function type)
+    - onMove: STABLE (function type)
+    - onRemove: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -311,6 +337,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraPipelineRows(camer
     - busy: STABLE (primitive type)
     - onDetection: STABLE (function type)
     - onMotion: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CameraTray(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MappedCamera>, selected: kotlin.String?, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - cameras: RUNTIME (requires runtime check)
+    - selected: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Card(content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -552,7 +588,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.Header(title: kotlin.Str
     - onRefresh: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.LazyItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, header: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.LazyItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
   params:
@@ -560,7 +596,25 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
     - cameras: RUNTIME (requires runtime check)
     - onAwayBack: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - header: STABLE (composable function type)
     - cameraCard: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.HomeHeader(selected: com.meticulouscreations.homesafe.domain.model.HomeLayout, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.HomeLayout, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - selected: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.HomeListLayout(viewModel: com.meticulouscreations.homesafe.viewmodel.HomeViewModel, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - viewModel: RUNTIME (requires runtime check)
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - onCameraClick: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
@@ -595,6 +649,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.LayerPicker(editor: com.
     - onSelect: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.LayoutSwitchButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, isSelected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - isSelected: STABLE (primitive type)
+    - onClick: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.LivePill(isLive: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -617,6 +681,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.LoadingRow(text: kotlin.
   restartable: true
   params:
     - text: STABLE (String is immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.MarkerVideo(tile: com.meticulouscreations.homesafe.viewmodel.CameraTile, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, animatedVisibilityScope: androidx.compose.animation.AnimatedVisibilityScope, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - tile: STABLE (marked @Stable or @Immutable)
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - animatedVisibilityScope: UNKNOWN (interface or non-final class; concrete implementation unknown)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, expanded: kotlin.Boolean, clipRequest: com.meticulouscreations.homesafe.ui.components.PlayerRequest?, clipPosterUrl: kotlin.String?, clipError: kotlin.String?, clipBuffering: kotlin.Boolean, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -701,6 +775,30 @@ private fun com.meticulouscreations.homesafe.ui.screens.PresenceDeviceRow(device
   restartable: true
   params:
     - device: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PropertyMapPanel(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MappedCamera>, arranging: kotlin.Boolean, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onMove: kotlin.Function3<@[ParameterName(name = \, onRemove: kotlin.Function1<@[ParameterName(name = \, onTapEmpty: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - cameras: RUNTIME (requires runtime check)
+    - arranging: STABLE (primitive type)
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - onCameraClick: STABLE (function type)
+    - onMove: STABLE (function type)
+    - onRemove: STABLE (function type)
+    - onTapEmpty: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.PropertyMapTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, header: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - onCameraClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - header: STABLE (composable function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, contentDescription: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, active: kotlin.Boolean, available: kotlin.Boolean, size: androidx.compose.ui.unit.Dp, iconSize: androidx.compose.ui.unit.Dp): kotlin.Unit
@@ -962,6 +1060,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.layerColor(layer: com.me
   restartable: false
   params:
     - layer: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.propertyPlanColors(): com.meticulouscreations.homesafe.ui.components.PropertyPlanColors
+  skippable: false
+  restartable: false
+  params:
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.rememberCameraVideoOverlayClip(animatedVisibilityScope: androidx.compose.animation.AnimatedVisibilityScope, visibleRadius: androidx.compose.ui.unit.Dp, hiddenRadius: androidx.compose.ui.unit.Dp): androidx.compose.animation.SharedTransitionScope.OverlayClip

@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.HomeLayout
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraPlacementsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
@@ -44,6 +45,7 @@ class PropertyMapViewModel(
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     observeCameraPlacementsUseCase: ObserveCameraPlacementsUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
+    private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
     private val placeCameraUseCase: PlaceCameraUseCase,
     private val removeCameraPlacementUseCase: RemoveCameraPlacementUseCase,
@@ -65,6 +67,7 @@ class PropertyMapViewModel(
                     // The plan's markers are small, so they take the grid stream, not full quality.
                     streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
                     posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = MARKER_POSTER_HEIGHT),
+                    webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
                 )
             }
             MappedCamera(tile, byName[camera.name])

@@ -406,6 +406,7 @@ private fun MarkerVideo(
                 streamUrl = streamUrl,
                 modifier = Modifier.fillMaxSize(),
                 posterUrl = tile.posterUrl,
+                webRtcSignalingUrl = tile.webRtcSignalingUrl,
                 playerKey = tile.camera.name,
                 onStreamStatusChanged = { status = it },
             )

@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.domain.repository.PropertyLayoutRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraPlacementsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
@@ -60,6 +61,7 @@ class PropertyMapViewModelTest {
     private object FakeMediaUrls : MediaUrlRepository {
         override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>) =
             "$serverUrl/live/$streamName"
+        override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String) = "$serverUrl/webrtc/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) =
             "$serverUrl/snapshot/$cameraName?h=$height"
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
@@ -107,6 +109,7 @@ class PropertyMapViewModelTest {
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(FakeConnection(serverUrl)),
             observeCameraPlacementsUseCase = ObserveCameraPlacementsUseCase(layoutRepo),
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
+            getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             placeCameraUseCase = PlaceCameraUseCase(layoutRepo),
             removeCameraPlacementUseCase = RemoveCameraPlacementUseCase(layoutRepo),
