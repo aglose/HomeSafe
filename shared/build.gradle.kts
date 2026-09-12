@@ -290,3 +290,14 @@ dependencies {
     add("kspJs", libs.room.compiler)
     add("kspWasmJs", libs.room.compiler)
 }
+
+// Lint's model and analysis tasks for the Android host-test source set read KSP's generated
+// sources for that source set (build/generated/ksp/android/androidHostTest) but, in this
+// KMP + AGP 9 layout, nothing wires an edge to the task that writes them. Gradle only notices
+// when both ends are in the same graph, i.e. when the host tests and lint are requested in one
+// invocation, and then rejects it with "Property has implicit dependency". CI splits those
+// across jobs, so only a local all-in-one run hits it.
+tasks.matching { it.name == "generateAndroidHostTestLintModel" || it.name == "lintAnalyzeAndroidHostTest" }
+    .configureEach {
+        dependsOn("kspAndroidHostTest")
+    }
