@@ -4,8 +4,8 @@ HLS puts a couple of seconds of segments between the camera and the screen, and 
 to fetch a playlist and a segment before anything moves. WebRTC is a peer connection straight to
 go2rtc: after one signaling round trip the server pushes frames as the camera produces them, so a
 card shows moving video within a keyframe interval of connecting and stays a fraction of a second
-behind live. This is how Android plays every live stream now; HLS remains the fallback there and
-the only path on iOS and desktop (see "Platforms" below).
+behind live. This is how Android and iOS play every live stream now; HLS remains the fallback there and
+the only path on desktop (see "Platforms" below).
 
 ## How a join works
 
@@ -52,8 +52,17 @@ libwebrtc decodes Opus natively, which is what the cameras publish, so nothing i
   everything else about the holder (binders, idle stop, cold generations, retries) is the same for
   both. Media3 still plays HLS and every recording. The audio module is built with media
   attributes so sound follows the speaker/headphones route, not the earpiece.
-- **iOS** — still HLS through AVFoundation. The common flow is ready for a peer implemented on
-  the Swift side over `WebRTC.xcframework` (no cinterop needed), which is the next step.
+- **iOS** — the engine lives on the Swift side: `iosApp/iosApp/WebRtc/WebRtcPeerBridge.swift`
+  implements the shared module's `IosWebRtcPeer` contract (`WebRtcPeer.ios.kt`) over the
+  `WebRTC` Swift package (stasel/WebRTC, Google's `WebRTC.xcframework`), and `iOSApp.swift`
+  registers its factory through `startIosApp(webRtc:)`. The Kotlin framework is a static
+  library with no cinterop against libwebrtc, so nothing on the Kotlin side links it; a build
+  without the bridge (the simulator unit tests) simply plays HLS. The peer's video is drawn by
+  an `RTCMTLVideoView` (`scaleToFill`, like every other live surface) inside a container view
+  the Kotlin player composable stacks over its `AVPlayerLayer` and hides while HLS is the
+  picture. The audio session is configured playback-only before the first peer, so there is
+  no microphone prompt and sound stays on the speaker route. Opus decodes natively, so the
+  detail screen has sound over WebRTC where HLS on AVFoundation had none.
 - **Desktop** — stays on HLS through FFmpeg. libwebrtc for the JVM would add a second large
   native bundle per platform for a small latency win.
 

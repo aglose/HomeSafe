@@ -44,22 +44,27 @@ private const val POLL_INTERVAL_MS = 250L
 
 /**
  * Binds a [LivePlayerHolder] (pooled per [playerKey], see [LivePlayerPool]) to this call site's
- * own [AVPlayerLayer], and draws a live poster over it until that layer has a real frame.
+ * own surfaces, and draws a live poster over them until one has a real frame.
  *
- * The holder owns the [platform.AVFoundation.AVPlayer], its item, its retry loop and its
- * idle/lifecycle policy; this composable owns only the layer, the poster and the caller's
- * callbacks. Several may bind to one holder at once (the grid card and the detail screen
- * overlap during the shared-element transition) — AVFoundation happily drives many layers from
- * one player.
+ * The holder owns the players, its source, its retry loop and its idle/lifecycle policy; this
+ * composable owns only the surfaces, the poster and the caller's callbacks. Several may bind to
+ * one holder at once (the grid card and the detail screen overlap during the shared-element
+ * transition).
+ *
+ * Two surfaces in one interop view, one per engine ([LivePlayerHolder.transport]): an
+ * [AVPlayerLayer] for HLS (AVFoundation happily drives many layers from one player), and above
+ * it a plain container view the Swift-side WebRTC engine draws the peer's video into, hidden
+ * whenever the holder is on HLS so the layer shows through.
  *
  * The poster sits ON TOP of the player: Compose Multiplatform renders a `UIKitView` *below* its
  * own Metal layer and punches a transparent hole through everything Compose drew in that region,
  * so anything drawn beneath the interop view is erased, and an empty `AVPlayerLayer` shows the
- * window's default (white) background through that hole. It hides once this layer reports
- * `readyForDisplay` for an item that is itself ready — both checks, because right after a cold
- * restart the layer can still claim readiness for the item that was just replaced — and reappears
- * only when the holder's [LivePlayerHolder.coldStartGeneration] moves on (a cold reconnect, a
- * return from a long background), never across a warm live-to-live swap.
+ * window's default (white) background through that hole. It hides once this binder's surface
+ * for the current transport has a frame — the layer reports `readyForDisplay` for an item that
+ * is itself ready (both checks, because right after a cold restart the layer can still claim
+ * readiness for the item that was just replaced), or the WebRTC container's renderer has drawn —
+ * and reappears only when the holder's [LivePlayerHolder.coldStartGeneration] moves on (a cold
+ * reconnect, a return from a long background), never across a warm live-to-live swap.
  *
  * Like the Android player, the video is stretched to fill the caller's (always 16:9) box rather
  * than cropped to its own pixel aspect — see the Android implementation for why.
@@ -91,6 +96,7 @@ actual fun CameraStreamPlayer(
 
     var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
     val posterVisible = renderedGeneration != holder.coldStartGeneration
+    val transport = holder.transport
 
     val playerLayer = remember(holder) {
         AVPlayerLayer().apply {
@@ -101,6 +107,14 @@ actual fun CameraStreamPlayer(
             // aspect re-cropped the picture on every quality change. The poster matches.
             videoGravity = AVLayerVideoGravityResize
             backgroundColor = UIColor.clearColor.CGColor
+        }
+    }
+    // Where the WebRTC engine draws; hidden while HLS is the picture. Sized with the host view.
+    val webRtcContainer = remember(holder) {
+        UIView(frame = CGRectMake(0.0, 0.0, 0.0, 0.0)).apply {
+            backgroundColor = UIColor.clearColor
+            opaque = false
+            hidden = true
         }
     }
 
@@ -115,10 +129,20 @@ actual fun CameraStreamPlayer(
             }
         }
         holder.addListener(listener)
+        // The engine calls back on the main thread once this container's renderer has drawn;
+        // only a frame for the current transport counts.
+        holder.bindRenderer(webRtcContainer) {
+            if (holder.transport == LiveTransport.WEBRTC) renderedGeneration = holder.coldStartGeneration
+        }
         onDispose {
             holder.removeListener(listener)
+            holder.unbindRenderer(webRtcContainer)
             playerLayer.player = null
         }
+    }
+
+    LaunchedEffect(webRtcContainer, transport) {
+        webRtcContainer.hidden = transport != LiveTransport.WEBRTC
     }
 
     LifecycleStartEffect(holder) {
@@ -126,7 +150,8 @@ actual fun CameraStreamPlayer(
         onStopOrDispose { holder.onBinderStopped() }
     }
 
-    LaunchedEffect(holder, source.url) { holder.load(source) }
+    // Keyed on the endpoint as well as the URL: the same stream gaining one is a load the holder acts on.
+    LaunchedEffect(holder, source.url, (source as? VideoSource.Live)?.webRtc) { holder.load(source) }
 
     LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
 
@@ -150,16 +175,21 @@ actual fun CameraStreamPlayer(
         var reportedStatus: LiveStreamStatus? = null
         while (isActive) {
             delay(POLL_INTERVAL_MS)
+            val webRtcShowing = holder.transport == LiveTransport.WEBRTC
             val item = player.currentItem
-            if (playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
+            if (!webRtcShowing && playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
                 renderedGeneration = holder.coldStartGeneration
             }
-            val hasAudio = item?.hasAudioTrack() ?: false
+            val hasAudio = if (webRtcShowing) holder.webRtcHasAudio else item?.hasAudioTrack() ?: false
             if (hasAudio != reportedHasAudio) {
                 reportedHasAudio = hasAudio
                 currentOnAudioAvailabilityChanged(hasAudio)
             }
-            val starved = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+            val starved = if (webRtcShowing) {
+                holder.webRtcStalled
+            } else {
+                player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+            }
             currentOnBufferingChanged(starved)
             // Same two bits as the Android side: nothing displayed yet for this cold start, and
             // the player starved mid-stream. Reported only on change — this loop runs four times
@@ -189,11 +219,13 @@ actual fun CameraStreamPlayer(
                         CATransaction.begin()
                         CATransaction.setDisableActions(true)
                         playerLayer.frame = bounds
+                        webRtcContainer.setFrame(bounds)
                         CATransaction.commit()
                     }
                 }.apply {
                     backgroundColor = UIColor.clearColor
                     layer.addSublayer(playerLayer)
+                    addSubview(webRtcContainer)
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -213,7 +245,7 @@ actual fun CameraStreamPlayer(
 private fun AVPlayerItem.hasAudioTrack(): Boolean =
     tracks.any { (it as? AVPlayerItemTrack)?.assetTrack?.mediaType == AVMediaTypeAudio }
 
-/** HLS on AVFoundation decodes AAC but not Opus, so that's all it's worth asking go2rtc for. */
+/** HLS on AVFoundation decodes AAC but not Opus, so that's all it's worth asking go2rtc for. (WebRTC decodes Opus natively.) */
 actual val liveAudioCodecs: List<String> = listOf("aac")
 
 /** Ties a pool lease to a `remember` slot so it's released on forget *and* on abandon. */
