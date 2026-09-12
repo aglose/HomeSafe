@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.HomeLayout
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHomeLayoutUseCase
@@ -29,7 +30,13 @@ import kotlinx.coroutines.launch
  * disconnected or while the camera is disabled on the server — the card shows a placeholder then.
  */
 @Immutable
-data class CameraTile(val camera: Camera, val streamUrl: String?, val posterUrl: String?)
+data class CameraTile(
+    val camera: Camera,
+    val streamUrl: String?,
+    val posterUrl: String?,
+    /** Where the card's player can negotiate WebRTC for the same stream; null wherever [streamUrl] is. */
+    val webRtcSignalingUrl: String? = null,
+)
 
 @Inject
 @ViewModelKey
@@ -38,6 +45,7 @@ class HomeViewModel(
     observeCamerasUseCase: ObserveCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
+    private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeHomeLayoutUseCase: ObserveHomeLayoutUseCase,
@@ -88,6 +96,7 @@ class HomeViewModel(
             camera = camera,
             streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
             posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT),
+            webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
         )
     }
 

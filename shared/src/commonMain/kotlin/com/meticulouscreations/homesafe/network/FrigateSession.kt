@@ -15,10 +15,21 @@ import kotlin.math.floor
  * simultaneous players silent and cheap.
  */
 fun frigateLiveStreamUrl(serverUrl: String, cameraName: String, audioCodecs: List<String> = emptyList()): String {
-    val host = serverUrl.substringAfter("://").substringBefore(":").substringBefore("/")
     val audio = if (audioCodecs.isEmpty()) "" else "&video&audio=${audioCodecs.joinToString(",")}"
-    return "http://$host:1984/api/stream.m3u8?src=$cameraName$audio"
+    return "http://${go2rtcHost(serverUrl)}:1984/api/stream.m3u8?src=$cameraName$audio"
 }
+
+/**
+ * go2rtc's WebRTC signaling endpoint for one of a camera's stream names: an SDP offer is POSTed
+ * here and the answer comes back in the response (WHEP-style; see `WhepSignalingClient`). Same
+ * port and trust model as [frigateLiveStreamUrl]. Which tracks the peer asks for is in the offer,
+ * not the URL, so there is no audio parameter.
+ */
+fun frigateWebRtcSignalingUrl(serverUrl: String, cameraName: String): String =
+    "http://${go2rtcHost(serverUrl)}:1984/api/webrtc?src=$cameraName"
+
+/** go2rtc shares Frigate's host; only the port differs. */
+private fun go2rtcHost(serverUrl: String): String = serverUrl.substringAfter("://").substringBefore(":").substringBefore("/")
 
 /**
  * Frigate's seekable HLS playlist of everything [cameraName] recorded between

@@ -10,4 +10,4 @@ package com.meticulouscreations.homesafe.domain.model
  * Update this if the server's LAN address changes. A DHCP reservation on the router for the
  * server's MAC address is what keeps it from changing on its own.
  */
-const val LOCAL_SERVER_URL = "http://192.168.68.55:8971"
+const val LOCAL_SERVER_URL = "http://192.168.68.64:8971"

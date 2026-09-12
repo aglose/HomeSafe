@@ -37,13 +37,14 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(req
     - onAudioAvailabilityChanged: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, playerKey: kotlin.String?, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, webRtcSignalingUrl: kotlin.String?, playerKey: kotlin.String?, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - streamUrl: STABLE (String is immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
     - posterUrl: STABLE (class with no mutable properties)
+    - webRtcSignalingUrl: STABLE (class with no mutable properties)
     - playerKey: STABLE (class with no mutable properties)
     - onStreamStatusChanged: STABLE (function type)
 
@@ -217,11 +218,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playhe
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog(biometricDisplayName: kotlin.String, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog(biometricDisplayName: kotlin.String, replacesSavedLogin: kotlin.Boolean, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - biometricDisplayName: STABLE (String is immutable)
+    - replacesSavedLogin: STABLE (primitive type)
     - onSave: STABLE (function type)
     - onDismiss: STABLE (function type)
 

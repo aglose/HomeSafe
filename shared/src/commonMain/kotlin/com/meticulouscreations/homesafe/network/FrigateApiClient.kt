@@ -11,6 +11,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
@@ -20,7 +21,10 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
 /** The server answered, but not with success — bad credentials, say. The transport itself was fine. */
-class FrigateResponseException(message: String) : Exception(message)
+open class FrigateResponseException(message: String) : Exception(message)
+
+/** The server understood the login and turned it down: the username or password is wrong for this server. */
+class CredentialsRejectedException(message: String) : FrigateResponseException(message)
 
 /**
  * Talks to a Frigate NVR's REST API. Login establishes a session cookie on [httpClient]
@@ -35,7 +39,10 @@ class FrigateApiClient(private val httpClient: HttpClient) {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(user = username, password = password))
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Login failed: ${response.status}")
+        if (response.status.isSuccess()) return@runCatching
+        val message = "Login failed: ${response.status}"
+        val rejected = response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden
+        throw if (rejected) CredentialsRejectedException(message) else FrigateResponseException(message)
     }
 
     /**

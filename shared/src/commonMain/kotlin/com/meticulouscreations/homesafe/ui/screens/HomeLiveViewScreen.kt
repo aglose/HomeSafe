@@ -313,6 +313,7 @@ private fun CameraCard(
                     streamUrl = streamUrl,
                     modifier = Modifier.fillMaxSize(),
                     posterUrl = tile.posterUrl,
+                    webRtcSignalingUrl = tile.webRtcSignalingUrl,
                     playerKey = camera.name,
                     onStreamStatusChanged = { streamStatus = it },
                 )
