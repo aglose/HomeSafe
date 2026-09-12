@@ -69,8 +69,8 @@ soon as the network allows, never an old photo in between:
 - **Fast recovery.** go2rtc's HLS sessions expire while a player is paused; the first retry now
   fires after 250 ms rather than a second, and retries never give up while someone is watching (one
   request every 30 s at most), so video comes back on its own after a server restart.
-- **WebRTC first, HLS as the fallback (Android).** A live source carries go2rtc's WebRTC
-  signaling URL alongside its HLS URL. The Android player joins over a peer connection — one
+- **WebRTC first, HLS as the fallback (Android and iOS).** A live source carries go2rtc's WebRTC
+  signaling URL alongside its HLS URL. The player joins over a peer connection — one
   signaling round trip, then frames as the camera sends them, a fraction of a second behind live
   — and starts HLS for the same source if the join doesn't connect within 3 s or show a frame
   within 5 s, without disturbing the poster. A stream that fails twice stays on HLS for ten
@@ -81,7 +81,7 @@ resolve to the same 4K main stream because no `live.streams` sub stream is confi
 Adding one (see `FrigateApiClient.toFrigateCamera`) is the single biggest remaining win for
 connect time and battery: the grid would decode a 720p stream per camera instead of 4K.
 
-Android plays HLS with ExoPlayer (and live over WebRTC with libwebrtc), iOS with AVFoundation. Desktop has neither, so it decodes
+Android plays HLS with ExoPlayer and iOS with AVFoundation; both play live over WebRTC with libwebrtc. Desktop has neither, so it decodes
 the same HLS itself, with FFmpeg through JavaCV (`FfmpegPlaybackSession.jvm.kt`): a decode thread
 per open stream, frames converted straight to BGRA and handed to Skia, and a presentation loop
 that plays them out on the stream's own timestamps rather than on the rate they were decoded at.
