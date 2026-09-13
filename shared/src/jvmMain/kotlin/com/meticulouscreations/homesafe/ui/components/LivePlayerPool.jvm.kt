@@ -27,8 +27,8 @@ import kotlinx.coroutines.swing.Swing
  *    place this is simpler than the other two platforms, which have to bridge a real frame from
  *    the outgoing surface to the incoming one.
  *  - It plays only while at least one binder is attached and started ([onBinderStarted] /
- *    [onBinderStopped]); otherwise it pauses immediately and, after
- *    [LivePlaybackPolicy.IDLE_STOP_MS], gives up the connection entirely.
+ *    [onBinderStopped]); otherwise it pauses immediately and, after the idle window
+ *    ([LivePlaybackPolicy.awaitIdleWindow]), gives up the connection entirely.
  *  - Live sources recover from go2rtc's session expiry and from network errors by opening a fresh
  *    session, backing off per [LivePlaybackPolicy.retryDelayMs], but only while someone is
  *    watching. Recordings get no retry: binders report those failures to their caller.
@@ -208,7 +208,7 @@ internal class LivePlayerHolder(val key: String?) {
         // expire it out from under us, so drop it now and reopen on the way back.
         if (source is VideoSource.Live) closeSession()
         idleStopJob = scope.launch {
-            delay(LivePlaybackPolicy.IDLE_STOP_MS)
+            LivePlaybackPolicy.awaitIdleWindow()
             if (source is VideoSource.Recording) resumePositionMs = positionMs
             closeSession()
             needsColdStart = true

@@ -12,6 +12,13 @@ import Shared
 ///
 /// libwebrtc calls its delegates on its own threads; every callback into Kotlin is hopped to
 /// the main queue first, which is where all of the shared player code runs.
+///
+/// "Video disabled" detaches the renderers from the track rather than disabling the track:
+/// libwebrtc keeps decoding a remote track either way, and a disabled remote track hands its
+/// renderers black frames — which would paint over the last good picture the moment a viewer
+/// pressed pause. Detached renderers keep what they last drew, and re-attaching shows the very
+/// next decoded frame, which is what lets the shared holder keep a peer on standby and swap it
+/// back in without a new join.
 final class WebRtcPeerBridgeFactory: NSObject, IosWebRtcPeerFactory {
 
     static let shared = WebRtcPeerBridgeFactory()
@@ -118,7 +125,7 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
         view.delegate = delegate
         container.addSubview(view)
         renderers[key] = (container, view, delegate)
-        videoTrack?.add(view)
+        if videoEnabled { videoTrack?.add(view) }
     }
 
     func detachRenderer(container: UIView) {
@@ -128,8 +135,12 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
     }
 
     func setVideoEnabled(enabled: Bool) {
+        guard videoEnabled != enabled else { return }
         videoEnabled = enabled
-        videoTrack?.isEnabled = enabled
+        guard let track = videoTrack else { return }
+        for entry in renderers.values {
+            if enabled { track.add(entry.view) } else { track.remove(entry.view) }
+        }
     }
 
     func setMuted(muted: Bool) {
@@ -183,9 +194,11 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
             guard let self, !self.closed else { return }
             if let video = track as? RTCVideoTrack {
                 self.videoTrack = video
-                video.isEnabled = self.videoEnabled
+                // Always counting, so a peer nobody is drawing still reports its first frame.
                 video.add(self.frameCounter)
-                for entry in self.renderers.values { video.add(entry.view) }
+                if self.videoEnabled {
+                    for entry in self.renderers.values { video.add(entry.view) }
+                }
             } else if let audio = track as? RTCAudioTrack {
                 self.audioTrack = audio
                 audio.isEnabled = !self.muted

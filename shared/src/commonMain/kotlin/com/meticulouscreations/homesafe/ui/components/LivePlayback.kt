@@ -15,7 +15,12 @@ import coil3.compose.LocalPlatformContext
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.size.Precision
+import com.meticulouscreations.homesafe.AppVisibility
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.mapLatest
 import kotlin.math.min
 
 /**
@@ -31,14 +36,37 @@ import kotlin.math.min
  * what the poster layer covers.
  */
 internal object LivePlaybackPolicy {
-    /** How long a player with nobody watching stays paused-but-connected before its network session and decoder are released. */
+    /**
+     * How long a player with nobody watching stays paused-but-connected before its network
+     * session and decoder are released, while the app is in the background: the phone is in a
+     * pocket, and every second of held-open stream is battery and data for nothing.
+     */
     const val IDLE_STOP_MS = 30_000L
 
     /**
-     * How long a pooled player outlives its last binder before the pool forgets it entirely.
-     * Kept a little past [IDLE_STOP_MS] so a quick "tab away and back" reuses the same object.
+     * The same window while the app is on screen: the user is on another tab, or in one camera's
+     * detail screen while the rest of the grid waits. Coming back inside this window is a warm
+     * resume — the picture moves on the next frame instead of after a fresh join and a keyframe.
+     * Streams left connected but unwatched keep flowing from the server, so the window is
+     * generous rather than unbounded. See [awaitIdleWindow].
      */
-    const val POOL_RELEASE_MS = 45_000L
+    const val IDLE_STOP_FOREGROUND_MS = 90_000L
+
+    /**
+     * How long a pooled player outlives its last binder before the pool forgets it entirely.
+     * Kept past the longer idle window so a "tab away and back" reuses the same object.
+     */
+    const val POOL_RELEASE_MS = IDLE_STOP_FOREGROUND_MS + 15_000L
+
+    /**
+     * How long a holder keeps a WebRTC peer it no longer shows — because the user stepped from
+     * the grid stream to the full-quality one, or back — when that peer carries the expensive
+     * stream (the one with audio: the detail screen's full-quality join). Long enough for "open
+     * a camera, back to the grid, open it again" to be instant; short enough that the main
+     * stream isn't left flowing for a viewer who has moved on. A peer carrying the cheap grid
+     * stream is kept for as long as the holder itself is alive (see [standbyTtlMs]).
+     */
+    const val STANDBY_PEER_TTL_MS = 20_000L
 
     /** Cadence of the fresh-snapshot refresh while no video frame is on screen. */
     const val POSTER_REFRESH_MS = 1_000L
@@ -72,6 +100,38 @@ internal object LivePlaybackPolicy {
 
     private const val FIRST_RETRY_DELAY_MS = 250L
     private const val MAX_RETRY_DELAY_MS = 30_000L
+
+    /** The idle window that applies right now: [IDLE_STOP_FOREGROUND_MS] on screen, [IDLE_STOP_MS] otherwise. */
+    fun idleStopMs(appInForeground: Boolean): Long = if (appInForeground) IDLE_STOP_FOREGROUND_MS else IDLE_STOP_MS
+
+    /**
+     * Suspends for the idle window, restarting the countdown from the new window whenever the
+     * app's visibility changes: a player left unwatched on screen and then backgrounded is
+     * released [IDLE_STOP_MS] after the app went away, not [IDLE_STOP_FOREGROUND_MS] after the
+     * viewer left. [inForeground] defaults to the app's real state; tests pass their own.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun awaitIdleWindow(inForeground: Flow<Boolean> = AppVisibility.inForeground) {
+        inForeground.mapLatest { delay(idleStopMs(it)) }.first()
+    }
+
+    /**
+     * Whether a peer joined for [have] can show a source that asks for [want] without a new
+     * join. The video is the same the moment the signaling URL is the same — go2rtc's stream
+     * name is in it — and a peer that negotiated audio can play silently for a source that
+     * didn't ask for any (volume, not track selection, is how mute works), but not the reverse:
+     * WHEP has no renegotiation, so audio can't be added to a peer that offered without it.
+     */
+    fun canServe(have: WebRtcEndpoint, want: WebRtcEndpoint): Boolean =
+        have.signalingUrl == want.signalingUrl && (have.audio || !want.audio)
+
+    /**
+     * How long a peer joined for [endpoint] is kept on standby once the holder stops showing it:
+     * null for the cheap grid stream (kept until the holder itself lets go), [STANDBY_PEER_TTL_MS]
+     * for the full-quality one. The audio flag is the tell — only the detail screen's
+     * full-quality source asks for sound.
+     */
+    fun standbyTtlMs(endpoint: WebRtcEndpoint): Long? = if (endpoint.audio) STANDBY_PEER_TTL_MS else null
 
     /**
      * Whether swapping the player from [previous] to [next] should be treated as a cold start

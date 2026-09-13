@@ -33,6 +33,12 @@ import kotlin.coroutines.resumeWithException
  * so the grid card and the detail screen both draw during the shared-element transition, and
  * the peer counts frames itself for [firstFrameReceived] regardless of who is drawing.
  *
+ * "Video disabled" ([setVideoEnabled]) detaches the sinks rather than disabling the track:
+ * libwebrtc keeps decoding a remote track either way, and a *disabled* remote track hands its
+ * sinks black frames — which would paint over the last good picture the moment a viewer pressed
+ * pause. Detached sinks simply stop being called, so the surface keeps its frame, and the peer
+ * is ready to resume (or be handed to another surface) on the very next decoded frame.
+ *
  * libwebrtc calls its observers on its own signaling thread; anything that touches this
  * object's collections is hopped to the main thread, where every caller of this class lives.
  */
@@ -144,20 +150,23 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
         }
     }
 
-    /** Frames go to [sink] from now on (and to every other sink still attached). */
+    /** Frames go to [sink] from now on (and to every other sink still attached), while video is enabled. */
     fun addSink(sink: VideoSink) {
         if (closed || !sinks.add(sink)) return
-        videoTrack?.addSink(sink)
+        if (videoEnabled) videoTrack?.addSink(sink)
     }
 
     fun removeSink(sink: VideoSink) {
         if (!sinks.remove(sink)) return
+        // A no-op in libwebrtc for a sink the track doesn't have (video disabled).
         videoTrack?.removeSink(sink)
     }
 
     override fun setVideoEnabled(enabled: Boolean) {
+        if (videoEnabled == enabled) return
         videoEnabled = enabled
-        videoTrack?.setEnabled(enabled)
+        val track = videoTrack ?: return
+        if (enabled) sinks.forEach(track::addSink) else sinks.forEach(track::removeSink)
     }
 
     override fun setMuted(muted: Boolean) {
@@ -185,9 +194,9 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
         when (track) {
             is VideoTrack -> {
                 videoTrack = track
-                track.setEnabled(videoEnabled)
+                // Always counting, so a peer nobody is drawing still reports its first frame.
                 track.addSink(frameCounter)
-                sinks.forEach(track::addSink)
+                if (videoEnabled) sinks.forEach(track::addSink)
             }
 
             is AudioTrack -> {
