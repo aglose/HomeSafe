@@ -103,8 +103,8 @@ soon as the network allows, never an old photo in between:
   detaches the renderers instead, so the last frame stays up and the very next decoded frame is
   what shows on resume.
 - **Start-up costs paid behind the sign-in screen.** libwebrtc's native initialisation and the
-  shared EGL context are built on a background thread at launch (`warmUpLivePlayback`), not
-  inside the first camera's join.
+  shared EGL context are built at launch (`warmUpLivePlayback`), not inside the first camera's
+  join.
 - **A poster that is never stale.** While a surface has no frame of its own — first open, a
   reconnect, a return from a long background — `LivePosterLayer` shows the last snapshot this
   device saw (from disk, same frame the card appears), replaces it with a freshly fetched
@@ -126,7 +126,11 @@ soon as the network allows, never an old photo in between:
   signaling round trip, then frames as the camera sends them, a fraction of a second behind live
   — and starts HLS for the same source if the join doesn't connect within 3 s or show a frame
   within 5 s, without disturbing the poster. A stream that fails twice stays on HLS for ten
-  minutes. See [docs/webrtc-live.md](docs/webrtc-live.md) for the flow and the server setup.
+  minutes. A stream the app hasn't joined over WebRTC in the last ten minutes (first open after
+  launch, a route it has never joined on) plays HLS *alongside* the join, so a picture is up in the
+  second or two HLS needs even when ICE can't get through, and the peer takes over on its first
+  frame; a proven stream joins over WebRTC alone. See [docs/webrtc-live.md](docs/webrtc-live.md)
+  for the flow and the server setup.
 
 The grid plays each camera's *grid* stream and the detail screen its *live* stream; today both
 resolve to the same 4K main stream because no `live.streams` sub stream is configured in Frigate.

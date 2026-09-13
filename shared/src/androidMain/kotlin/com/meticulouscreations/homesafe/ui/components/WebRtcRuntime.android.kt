@@ -13,9 +13,8 @@ import org.webrtc.audio.JavaAudioDeviceModule
  * one EGL context that decoders and renderers all draw through (so a decoded frame reaches a
  * `TextureView` without a copy), and one audio device module.
  *
- * Safe to call from any thread: the player stack uses it from the main thread, and the launch
- * warm-up ([warmUpLivePlayback]) builds it on a background one so the first join doesn't pay
- * for libwebrtc's start-up in front of the user. Both handles are plain values once made.
+ * Guarded so it is safe from any thread, though everything that uses it — the player stack and
+ * the launch warm-up ([warmUpLivePlayback]) alike — runs on the main thread.
  */
 internal object WebRtcRuntime {
 

@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.ui.components
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.TextureView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -71,6 +72,7 @@ import kotlinx.coroutines.isActive
  * over posters.
  */
 private const val POSITION_POLL_INTERVAL_MS = 250L
+private const val LOG_TAG = "HomeSafeLive"
 
 /** Fallback for hiding the poster if a surface swap ever fails to re-fire `onRenderedFirstFrame`: this many polls of steady playback. */
 private const val STEADY_PLAYBACK_POLLS_TO_TRUST = 3
@@ -205,6 +207,7 @@ actual fun CameraStreamPlayer(
                 if (renderedFor != generation) {
                     renderedFor = generation
                     mainThread.post {
+                        Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation (transport=${holder.transport})")
                         if (holder.transport == LiveTransport.WEBRTC) {
                             renderedGeneration = generation
                             bridgeFrame = null

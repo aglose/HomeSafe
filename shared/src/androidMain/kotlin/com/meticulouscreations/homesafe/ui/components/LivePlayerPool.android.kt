@@ -177,11 +177,17 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
 
     /** WebRTC frames go to [renderer] too, from the current peer and any that replaces it. */
     fun bindRenderer(renderer: WebRtcTextureRenderer) {
-        if (renderers.add(renderer)) peer?.addSink(renderer)
+        if (renderers.add(renderer)) {
+            peer?.addSink(renderer)
+            Log.d(LOG_TAG, "$key: renderer bound (${renderers.size} attached, peer=${peer != null}, transport=$transport)")
+        }
     }
 
     fun unbindRenderer(renderer: WebRtcTextureRenderer) {
-        if (renderers.remove(renderer)) peer?.removeSink(renderer)
+        if (renderers.remove(renderer)) {
+            peer?.removeSink(renderer)
+            Log.d(LOG_TAG, "$key: renderer unbound (${renderers.size} attached)")
+        }
     }
 
     /** True while the player holds no usable session for [source]: never loaded, stopped when idle, or failed. */
@@ -326,7 +332,18 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         // caller thought: its next frame is the picture, so no poster and no generation bump.
         if (endpoint != null && adoptExistingPeer(endpoint)) return
         if (cold) coldStartGeneration++
-        if (endpoint != null && LiveTransportMemory.shared.allowsWebRtc(toLoad.url)) {
+        val memory = LiveTransportMemory.shared
+        if (endpoint != null && memory.allowsWebRtc(toLoad.url)) {
+            // A stream this app hasn't joined over WebRTC lately gets HLS alongside the join: a
+            // picture at HLS speed while ICE finds its way (or doesn't), and the peer takes over
+            // on its first frame exactly as it does on the warm fast path in [load]. A proven
+            // stream skips the shadow — its join shows a frame within a keyframe interval — and
+            // so does a warm swap away from a peer that is still drawing: that peer's picture
+            // stays up until the new one has a frame, which is better than any shadow.
+            if (peer == null && !memory.recentlyConnected(toLoad.url)) {
+                Log.d(LOG_TAG, "$key: unproven stream; playing HLS while the webrtc join runs")
+                startHls(toLoad)
+            }
             startWebRtc(toLoad, endpoint)
         } else {
             startHls(toLoad)
@@ -403,6 +420,11 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         webRtcHasAudio = newPeer.hasAudio.value
         transport = LiveTransport.WEBRTC
         consecutiveFailures = 0
+        Log.d(
+            LOG_TAG,
+            "$key: adopted peer for ${endpoint.signalingUrl} (audio=${endpoint.audio}); ${renderers.size} renderers attached, " +
+                "video=${requestedPlayWhenReady && activeBinders > 0}, generation=$coldStartGeneration",
+        )
         if (previous != null) park(previous, previousEndpoint)
         // The HLS session, if one was carrying this camera, has nothing left to show.
         if (player.playbackState != Player.STATE_IDLE) player.stop()
@@ -595,9 +617,8 @@ internal object LivePlayerPool {
     }
 
     /**
-     * Everything a first join would otherwise build on the main thread: the signaling client
-     * and libwebrtc itself (native load, peer connection factory, EGL). Any thread; see
-     * [warmUpLivePlayback].
+     * Everything a first join would otherwise build lazily: the signaling client and libwebrtc
+     * itself (native load, peer connection factory, EGL). See [warmUpLivePlayback].
      */
     fun warmUp(appContext: Context) {
         connectFlow(appContext)

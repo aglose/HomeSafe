@@ -296,7 +296,13 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         // A peer already decoding this camera's video is warm by definition: no poster, no generation bump.
         if (endpoint != null && adoptExistingPeer(endpoint)) return
         if (cold) coldStartGeneration++
-        if (endpoint != null && webRtcAllowed(toLoad.url)) startWebRtc(toLoad, endpoint) else startHls(toLoad)
+        if (endpoint != null && webRtcAllowed(toLoad.url)) {
+            // See the Android holder: an unproven stream with no peer still drawing plays HLS while the join runs.
+            if (peer == null && !LiveTransportMemory.shared.recentlyConnected(toLoad.url)) startHls(toLoad)
+            startWebRtc(toLoad, endpoint)
+        } else {
+            startHls(toLoad)
+        }
     }
 
     /** Serves [endpoint] from the peer on screen or the standby when either can ([LivePlaybackPolicy.canServe]); false means a join is needed. */
