@@ -13,10 +13,13 @@ import org.webrtc.audio.JavaAudioDeviceModule
  * one EGL context that decoders and renderers all draw through (so a decoded frame reaches a
  * `TextureView` without a copy), and one audio device module.
  *
- * Main thread only, like everything else in the live player stack.
+ * Safe to call from any thread: the player stack uses it from the main thread, and the launch
+ * warm-up ([warmUpLivePlayback]) builds it on a background one so the first join doesn't pay
+ * for libwebrtc's start-up in front of the user. Both handles are plain values once made.
  */
 internal object WebRtcRuntime {
 
+    private val lock = Any()
     private var factory: PeerConnectionFactory? = null
     private var eglBase: EglBase? = null
 
@@ -25,9 +28,9 @@ internal object WebRtcRuntime {
      * be built for a card before — or without — a peer ever being made.
      */
     val eglContext: EglBase.Context
-        get() = (eglBase ?: EglBase.create().also { eglBase = it }).eglBaseContext
+        get() = synchronized(lock) { (eglBase ?: EglBase.create().also { eglBase = it }).eglBaseContext }
 
-    fun peerConnectionFactory(context: Context): PeerConnectionFactory {
+    fun peerConnectionFactory(context: Context): PeerConnectionFactory = synchronized(lock) {
         factory?.let { return it }
         val appContext = context.applicationContext
         PeerConnectionFactory.initialize(
@@ -49,7 +52,7 @@ internal object WebRtcRuntime {
             .setUseHardwareAcousticEchoCanceler(false)
             .setUseHardwareNoiseSuppressor(false)
             .createAudioDeviceModule()
-        return PeerConnectionFactory.builder()
+        PeerConnectionFactory.builder()
             .setOptions(PeerConnectionFactory.Options())
             .setVideoDecoderFactory(DefaultVideoDecoderFactory(egl))
             .setVideoEncoderFactory(DefaultVideoEncoderFactory(egl, false, false))

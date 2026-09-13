@@ -14,6 +14,10 @@ interface CameraDao {
     @Query("DELETE FROM CameraEntity WHERE serverUrl = :serverUrl")
     suspend fun deleteByServer(serverUrl: String)
 
+    /** Drops [serverUrl]'s cameras that are not in [names] — the second half of a refresh that never empties the list. */
+    @Query("DELETE FROM CameraEntity WHERE serverUrl = :serverUrl AND name NOT IN (:names)")
+    suspend fun deleteOthers(serverUrl: String, names: List<String>)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(cameras: List<CameraEntity>)
 }

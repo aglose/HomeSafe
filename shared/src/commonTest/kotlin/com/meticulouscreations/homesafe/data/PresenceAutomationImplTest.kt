@@ -87,6 +87,7 @@ class PresenceAutomationImplTest {
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
+        override fun onAppVisibilityChanged(visible: Boolean) = Unit
 
         fun route(route: ConnectionRoute?) {
             activeConnection.value = route?.let { ActiveConnection("http://100.99.163.71:8971", "http://192.168.68.55:8971", it) }

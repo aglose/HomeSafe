@@ -26,6 +26,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 private const val LOG_TAG = "HomeSafeLive"
@@ -39,8 +40,9 @@ private const val LOG_TAG = "HomeSafeLive"
  *    their own surface. Any number may be attached at once — the grid card and the detail
  *    screen overlap for the length of the shared-element transition.
  *  - It plays only while at least one binder is attached and its lifecycle is started
- *    ([onBinderStarted]/[onBinderStopped]); otherwise it pauses immediately and, after
- *    [LivePlaybackPolicy.IDLE_STOP_MS], drops its network session and decoder ([needsColdStart]).
+ *    ([onBinderStarted]/[onBinderStopped]); otherwise it pauses immediately and, after the idle
+ *    window ([LivePlaybackPolicy.awaitIdleWindow] — longer while the app is on screen), drops its
+ *    network sessions and decoder ([needsColdStart]).
  *  - [coldStartGeneration] ticks on every cold (re)start. A binder shows its poster until it has
  *    rendered a frame for the current generation, so a snapshot covers a stale frame exactly when
  *    it should (cold start, reconnect, return from a long background) and never when it shouldn't
@@ -54,6 +56,16 @@ private const val LOG_TAG = "HomeSafeLive"
  *    until the new peer has a frame — and a join that fails (see [WebRtcConnectFlow]) starts HLS
  *    for the same source without a new generation, so the poster that was already up simply
  *    gives way to HLS video.
+ *
+ *    A camera has two live sources — the grid stream and the detail screen's full-quality one —
+ *    and a viewer moves between them every time they open a card and come back. Rather than join
+ *    afresh each way (a signaling round trip, then a wait for the next keyframe, with the picture
+ *    frozen meanwhile), the peer that was showing the previous source is kept on **standby**:
+ *    still connected and decoding, drawn nowhere, silent. Stepping back to its source promotes it
+ *    on the spot, and the picture moves again on the next decoded frame. Which peers are kept and
+ *    for how long is [LivePlaybackPolicy.standbyTtlMs]; which requests a peer can serve is
+ *    [LivePlaybackPolicy.canServe] — so for a camera with one stream, the peer the detail screen
+ *    joined with audio also plays the silent grid card, and nothing rejoins at all.
  *  - **HLS** through one [ExoPlayer], for recordings, for live sources without an endpoint, and
  *    as the fallback. ExoPlayer renders to a single surface, so when a second binder takes over
  *    the new surface is blank until the next video frame; [bindSurface] hands the incoming
@@ -121,8 +133,19 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     /** Every attached WebRTC renderer; the live peer feeds them all, and a new peer inherits them. */
     private val renderers = LinkedHashSet<WebRtcTextureRenderer>()
     private var peer: AndroidWebRtcPeer? = null
+
+    /** What [peer] was joined for — the question [LivePlaybackPolicy.canServe] answers against. */
+    private var peerEndpoint: WebRtcEndpoint? = null
     private var peerWatchJob: Job? = null
     private var joinJob: Job? = null
+
+    /** A connected peer this holder stopped showing but may want back; see the class doc. At most one. */
+    private var standby: StandbyPeer? = null
+
+    private class StandbyPeer(val peer: AndroidWebRtcPeer, val endpoint: WebRtcEndpoint) {
+        var expiryJob: Job? = null
+        var watchJob: Job? = null
+    }
 
     /** Route HLS video to [surface]; returns the last frame of the surface it replaces, if that had one. */
     fun bindSurface(surface: TextureView): Bitmap? {
@@ -250,6 +273,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         idleStopJob?.cancel()
         joinJob?.cancel()
         dropPeer()
+        dropStandby()
         renderers.clear()
         scope.cancel()
         player.removeListener(listener)
@@ -266,7 +290,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         }
         // Warm: the session is still alive, so this is a jump to the live edge on data the
         // player already has — the last frame stays up until the next one lands. A WebRTC peer
-        // has no buffer to skip; re-enabling its track is the whole resume.
+        // has no buffer to skip; re-enabling its video is the whole resume.
         if (current is VideoSource.Live && transport == LiveTransport.HLS) player.seekToDefaultPosition()
         applyPlayWhenReady()
     }
@@ -275,11 +299,12 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         retryJob?.cancel()
         applyPlayWhenReady()
         idleStopJob = scope.launch {
-            delay(LivePlaybackPolicy.IDLE_STOP_MS)
+            LivePlaybackPolicy.awaitIdleWindow()
             if (source is VideoSource.Recording) resumePositionMs = player.currentPosition
             joinJob?.cancel()
             joinJob = null
             dropPeer()
+            dropStandby()
             player.stop()
             needsColdStart = true
         }
@@ -288,21 +313,47 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     private fun applyPlayWhenReady() {
         val playing = requestedPlayWhenReady && activeBinders > 0
         player.playWhenReady = playing
-        // A paused or unwatched peer stops decoding; the connection itself stays up for the idle window.
+        // A paused or unwatched peer stops feeding its surfaces; the connection itself stays up for the idle window.
         peer?.setVideoEnabled(playing)
     }
 
     private fun start(toLoad: VideoSource, cold: Boolean) {
         needsColdStart = false
-        if (cold) coldStartGeneration++
         joinJob?.cancel()
         joinJob = null
         val endpoint = (toLoad as? VideoSource.Live)?.webRtc
+        // A peer already decoding this camera's video is warm by definition, whatever the
+        // caller thought: its next frame is the picture, so no poster and no generation bump.
+        if (endpoint != null && adoptExistingPeer(endpoint)) return
+        if (cold) coldStartGeneration++
         if (endpoint != null && LiveTransportMemory.shared.allowsWebRtc(toLoad.url)) {
             startWebRtc(toLoad, endpoint)
         } else {
             startHls(toLoad)
         }
+    }
+
+    /**
+     * Serves [endpoint] from a peer this holder already has, if one can ([LivePlaybackPolicy.canServe]):
+     * the one on screen (nothing to do beyond the source bookkeeping the caller did), or the
+     * standby, which is promoted. Returns false when a real join is needed.
+     */
+    private fun adoptExistingPeer(endpoint: WebRtcEndpoint): Boolean {
+        val active = peer
+        val activeEndpoint = peerEndpoint
+        if (active != null && activeEndpoint != null && transport == LiveTransport.WEBRTC && LivePlaybackPolicy.canServe(activeEndpoint, endpoint)) {
+            Log.d(LOG_TAG, "$key: current peer already carries ${endpoint.signalingUrl}; nothing to join")
+            applyPlayWhenReady()
+            return true
+        }
+        val parked = standby ?: return false
+        if (!LivePlaybackPolicy.canServe(parked.endpoint, endpoint)) return false
+        standby = null
+        parked.expiryJob?.cancel()
+        parked.watchJob?.cancel()
+        Log.d(LOG_TAG, "$key: promoting the standby peer for ${endpoint.signalingUrl}")
+        adopt(parked.peer, parked.endpoint)
+        return true
     }
 
     /**
@@ -325,7 +376,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             when (result) {
                 is WebRtcConnectResult.Connected -> {
                     Log.d(LOG_TAG, "$key: webrtc joined in ${elapsed}ms")
-                    adopt(result.peer as AndroidWebRtcPeer)
+                    adopt(result.peer as AndroidWebRtcPeer, endpoint)
                 }
 
                 is WebRtcConnectResult.Failed -> {
@@ -338,10 +389,13 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         }
     }
 
-    private fun adopt(newPeer: AndroidWebRtcPeer) {
+    /** [newPeer] becomes the picture; whatever was showing it before is parked or closed. */
+    private fun adopt(newPeer: AndroidWebRtcPeer, endpoint: WebRtcEndpoint) {
         val previous = peer
+        val previousEndpoint = peerEndpoint
         peerWatchJob?.cancel()
         peer = newPeer
+        peerEndpoint = endpoint
         renderers.forEach(newPeer::addSink)
         newPeer.setMuted(muted)
         newPeer.setVideoEnabled(requestedPlayWhenReady && activeBinders > 0)
@@ -349,10 +403,55 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         webRtcHasAudio = newPeer.hasAudio.value
         transport = LiveTransport.WEBRTC
         consecutiveFailures = 0
-        previous?.close()
+        if (previous != null) park(previous, previousEndpoint)
         // The HLS session, if one was carrying this camera, has nothing left to show.
         if (player.playbackState != Player.STATE_IDLE) player.stop()
         watch(newPeer)
+    }
+
+    /**
+     * Keeps [old] connected but unseen and unheard, so a step back to its source is instant.
+     * Only a healthy peer is worth keeping; anything else — and any earlier standby, since one
+     * is all that is ever needed — is closed. A standby that loses its connection is dropped
+     * quietly (the normal join path covers that source next time), and the expensive stream's
+     * peer is dropped after [LivePlaybackPolicy.standbyTtlMs] regardless.
+     */
+    private fun park(old: AndroidWebRtcPeer, endpoint: WebRtcEndpoint?) {
+        if (endpoint == null || old.state.value != WebRtcPeerState.Connected) {
+            old.close()
+            return
+        }
+        dropStandby()
+        renderers.forEach(old::removeSink)
+        old.setMuted(true)
+        val parked = StandbyPeer(old, endpoint)
+        parked.watchJob = scope.launch {
+            old.state.first { it != WebRtcPeerState.Connected }
+            if (standby === parked) {
+                standby = null
+                old.close()
+            }
+        }
+        LivePlaybackPolicy.standbyTtlMs(endpoint)?.let { ttl ->
+            parked.expiryJob = scope.launch {
+                delay(ttl)
+                if (standby === parked) {
+                    Log.d(LOG_TAG, "$key: standby peer for ${endpoint.signalingUrl} expired")
+                    standby = null
+                    parked.watchJob?.cancel()
+                    old.close()
+                }
+            }
+        }
+        standby = parked
+    }
+
+    private fun dropStandby() {
+        val parked = standby ?: return
+        standby = null
+        parked.expiryJob?.cancel()
+        parked.watchJob?.cancel()
+        parked.peer.close()
     }
 
     private fun watch(watched: AndroidWebRtcPeer) {
@@ -375,6 +474,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         peerWatchJob = null
         val dropped = peer ?: return
         peer = null
+        peerEndpoint = null
         dropped.close()
         webRtcStalled = false
         webRtcHasAudio = false
@@ -397,10 +497,15 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         applyPlayWhenReady()
     }
 
-    /** The connection went away after it had been adopted: start over (which consults the memory again), backing off like HLS does. */
+    /**
+     * The connection went away after it had been adopted: start over (which consults the memory
+     * again), backing off like HLS does. The standby goes too — whatever took the network out
+     * from under one peer took it from the other.
+     */
     private fun handleWebRtcLoss() {
         needsColdStart = true
         dropPeer()
+        dropStandby()
         val failed = source as? VideoSource.Live ?: return
         if (activeBinders == 0) return
         consecutiveFailures++
@@ -458,6 +563,7 @@ internal object LivePlayerPool {
 
     private val entries = HashMap<String, Entry>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val webRtcLock = Any()
     private var webRtc: WebRtcConnectFlow? = null
 
     fun acquire(context: Context, key: String?): LivePlayerHolder {
@@ -488,10 +594,22 @@ internal object LivePlayerPool {
         }
     }
 
-    /** One signaling client and peer factory for every holder; libwebrtc itself is initialised on the first peer. */
-    private fun connectFlow(appContext: Context): WebRtcConnectFlow = webRtc ?: WebRtcConnectFlow(
-        signaling = WhepSignalingClient(HttpClient(OkHttp) { install(HttpTimeout) }),
-        peers = { audio -> AndroidWebRtcPeer(WebRtcRuntime.peerConnectionFactory(appContext), audio) },
-        memory = LiveTransportMemory.shared,
-    ).also { webRtc = it }
+    /**
+     * Everything a first join would otherwise build on the main thread: the signaling client
+     * and libwebrtc itself (native load, peer connection factory, EGL). Any thread; see
+     * [warmUpLivePlayback].
+     */
+    fun warmUp(appContext: Context) {
+        connectFlow(appContext)
+        WebRtcRuntime.peerConnectionFactory(appContext)
+    }
+
+    /** One signaling client and peer factory for every holder; libwebrtc itself is initialised on the first peer (or by [warmUp]). */
+    private fun connectFlow(appContext: Context): WebRtcConnectFlow = synchronized(webRtcLock) {
+        webRtc ?: WebRtcConnectFlow(
+            signaling = WhepSignalingClient(HttpClient(OkHttp) { install(HttpTimeout) }),
+            peers = { audio -> AndroidWebRtcPeer(WebRtcRuntime.peerConnectionFactory(appContext), audio) },
+            memory = LiveTransportMemory.shared,
+        ).also { webRtc = it }
+    }
 }

@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.network
 import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
+import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.cookies
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
@@ -12,6 +14,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
@@ -26,13 +29,29 @@ open class FrigateResponseException(message: String) : Exception(message)
 /** The server understood the login and turned it down: the username or password is wrong for this server. */
 class CredentialsRejectedException(message: String) : FrigateResponseException(message)
 
+/** What a server made of the session cookies presented to it — see [FrigateApiClient.checkSession]. */
+sealed interface SessionCheck {
+    /** The server accepted the session and reports it belongs to [username] (`anonymous` when the server runs without auth). */
+    data class Valid(val username: String) : SessionCheck
+
+    /** The server answered and turned the session away: no cookie, an expired one, or one signed by a different server. */
+    data object Rejected : SessionCheck
+
+    /** No usable answer: a connection failure, a timeout, or an unexpected status. Says nothing about the session. */
+    data object Unreachable : SessionCheck
+}
+
 /**
  * Talks to a Frigate NVR's REST API. Login establishes a session cookie on [httpClient]
  * (via the `HttpCookies` plugin), which subsequent requests on the same client reuse
- * automatically — no manual bearer-token bookkeeping needed.
+ * automatically — no manual bearer-token bookkeeping needed. [cookieStorage] is the jar that
+ * plugin was installed with, so a session can be filed under a second address of the same
+ * server ([copySession]) — the plugin itself only exposes reads.
  */
-@Inject
-class FrigateApiClient(private val httpClient: HttpClient) {
+class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, private val cookieStorage: CookiesStorage) {
+
+    /** For tests that never move a session between addresses: a jar the client doesn't read. */
+    constructor(httpClient: HttpClient) : this(httpClient, AcceptAllCookiesStorage())
 
     suspend fun login(serverUrl: String, username: String, password: String): Result<Unit> = runCatching {
         val response = httpClient.post("${serverUrl.trimEnd('/')}/api/login") {
@@ -288,6 +307,52 @@ class FrigateApiClient(private val httpClient: HttpClient) {
         }
         check(response.status.isSuccess()) { "Couldn't load recordings: ${response.status}" }
         response.body<List<FrigateRecording>>()
+    }
+
+    /**
+     * Asks [serverUrl] who the session cookies held for it belong to, within [timeoutMillis].
+     * `/api/profile` sits behind Frigate's auth like everything else, so a 401 means the cookies
+     * presented were not minted by the server answering — which is exactly the question a
+     * host that merely *claims* to be the household server has to answer before it is trusted
+     * with anything (see `ConnectionRepositoryImpl`). A transport failure is reported as
+     * [SessionCheck.Unreachable] rather than thrown.
+     */
+    suspend fun checkSession(serverUrl: String, timeoutMillis: Long): SessionCheck =
+        try {
+            val response = httpClient.get("${serverUrl.trimEnd('/')}/api/profile") {
+                timeout {
+                    requestTimeoutMillis = timeoutMillis
+                    connectTimeoutMillis = timeoutMillis
+                    socketTimeoutMillis = timeoutMillis
+                }
+            }
+            when {
+                response.status.isSuccess() -> SessionCheck.Valid(response.body<FrigateProfileResponse>().username)
+                response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden -> SessionCheck.Rejected
+                else -> SessionCheck.Unreachable
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            SessionCheck.Unreachable
+        }
+
+    /**
+     * Makes the session cookies held for [fromUrl] available to requests for [toUrl] as well.
+     * Frigate's session token is a JWT signed with the server's own secret and bound to no host,
+     * so a token issued by the server at one address is just as valid at any other address of
+     * the same server — which is how the LAN address can be used without ever sending the
+     * password to it. Returns false when there is nothing to copy (auth disabled server-side,
+     * or not signed in at [fromUrl]).
+     */
+    suspend fun copySession(fromUrl: String, toUrl: String): Boolean {
+        val cookies = httpClient.cookies(fromUrl)
+        if (cookies.isEmpty()) return false
+        val target = Url(toUrl)
+        // The stored copy carries the source host as its domain; cleared so the jar files this
+        // one under the target host instead.
+        cookies.forEach { cookieStorage.addCookie(target, it.copy(domain = null)) }
+        return true
     }
 
     /**

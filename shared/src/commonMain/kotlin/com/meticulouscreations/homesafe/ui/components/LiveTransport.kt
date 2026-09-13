@@ -60,7 +60,12 @@ interface WebRtcPeer {
     /** Applies the server's answer; ICE starts on return. Throws when the answer can't be applied. */
     suspend fun setAnswer(sdp: String)
 
-    /** Stops or resumes decoding the remote video without tearing the connection down. */
+    /**
+     * Stops or resumes delivering the remote video to whatever is drawing it, without tearing
+     * the connection down. The engine keeps decoding either way (there is no way to pause a
+     * WHEP stream), so resuming shows the next frame at once — and what was last drawn stays
+     * on screen meanwhile, rather than being replaced by black.
+     */
     fun setVideoEnabled(enabled: Boolean)
 
     fun setMuted(muted: Boolean)

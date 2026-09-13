@@ -52,4 +52,12 @@ interface ConnectionRepository {
 
     /** Forgets any saved biometric credentials. Does not require a biometric prompt. */
     fun forgetBiometricCredentials()
+
+    /**
+     * The app came on screen ([visible] true) or left it. After a long enough stretch away the
+     * route is re-chosen and the session re-checked — the network may have changed while the
+     * app was suspended, and the session cookie may have expired — so the first request the
+     * returning screens make doesn't fail.
+     */
+    fun onAppVisibilityChanged(visible: Boolean)
 }

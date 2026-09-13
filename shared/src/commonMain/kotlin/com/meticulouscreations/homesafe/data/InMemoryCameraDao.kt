@@ -15,8 +15,18 @@ class InMemoryCameraDao : CameraDao {
         camerasByServer.value = camerasByServer.value - serverUrl
     }
 
+    override suspend fun deleteOthers(serverUrl: String, names: List<String>) {
+        val kept = camerasByServer.value[serverUrl].orEmpty().filter { it.name in names }
+        camerasByServer.value = camerasByServer.value + (serverUrl to kept)
+    }
+
     override suspend fun insertAll(cameras: List<CameraEntity>) {
-        val byServer = cameras.groupBy { it.serverUrl }
-        camerasByServer.value = camerasByServer.value + byServer
+        // REPLACE semantics per (serverUrl, name), like the Room DAO: existing rows survive.
+        val updated = camerasByServer.value.toMutableMap()
+        cameras.groupBy { it.serverUrl }.forEach { (serverUrl, incoming) ->
+            val incomingNames = incoming.map { it.name }.toSet()
+            updated[serverUrl] = updated[serverUrl].orEmpty().filter { it.name !in incomingNames } + incoming
+        }
+        camerasByServer.value = updated
     }
 }
