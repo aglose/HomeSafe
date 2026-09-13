@@ -9,7 +9,7 @@
         <error line="88" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/App.kt">
-        <error line="36" column="5" source="compose:modifier-missing-check" />
+        <error line="38" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="141" column="5" source="compose:parameter-naming" />

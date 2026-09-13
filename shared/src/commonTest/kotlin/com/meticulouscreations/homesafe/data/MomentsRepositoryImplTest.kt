@@ -62,6 +62,7 @@ class MomentsRepositoryImplTest {
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
+        override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
     private class Harness(scope: TestScope, url: String? = "http://192.168.68.55:8971", failEvents: Boolean = false) {

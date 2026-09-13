@@ -43,6 +43,8 @@ import dev.zacsweers.metrox.viewmodel.ViewModelGraph
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
+import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
@@ -77,6 +79,9 @@ interface AppGraph : ViewModelGraph {
      * go through this same instance rather than its own cookie-less client.
      */
     val httpClient: HttpClient
+
+    /** What the platform handed the graph at creation; the live-player warm-up needs it at start. */
+    val platformContext: PlatformContext
 
     val connectionRepository: ConnectionRepository
     val settingsRepository: SettingsRepository
@@ -188,13 +193,22 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideAppCoroutineScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The jar behind [provideHttpClient]'s cookie plugin, shared with [FrigateApiClient] so a
+     * session issued at one of the server's addresses can be filed under the other — the plugin
+     * only reads from it.
+     */
     @SingleIn(AppScope::class)
     @Provides
-    fun provideHttpClient(): HttpClient = HttpClient {
+    fun provideCookieStorage(): CookiesStorage = AcceptAllCookiesStorage()
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideHttpClient(cookieStorage: CookiesStorage): HttpClient = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
-        install(HttpCookies)
+        install(HttpCookies) { storage = cookieStorage }
         install(HttpTimeout) {
             requestTimeoutMillis = 10_000
         }

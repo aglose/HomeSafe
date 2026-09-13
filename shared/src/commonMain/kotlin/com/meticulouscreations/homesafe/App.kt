@@ -9,6 +9,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.compose.LifecycleStartEffect
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import coil3.ImageLoader
@@ -16,6 +17,7 @@ import coil3.SingletonImageLoader
 import coil3.annotation.ExperimentalCoilApi
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import com.meticulouscreations.homesafe.di.AppGraph
+import com.meticulouscreations.homesafe.ui.components.warmUpLivePlayback
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 import com.meticulouscreations.homesafe.ui.screens.FrigateAppShell
 import com.meticulouscreations.homesafe.ui.screens.RootCrossfade
@@ -49,6 +51,22 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
         // home geofence flip this phone's presence. Both idempotent; both outlive any tab.
         appGraph.deviceRegistrar.start()
         appGraph.presenceAutomation.start()
+        // libwebrtc's one-off native start-up, done now behind the sign-in screen rather than
+        // inside the first camera's join.
+        warmUpLivePlayback(appGraph.platformContext)
+    }
+
+    // The root lifecycle is the app's: started while it is on screen, stopped when it goes to
+    // the background. The live players use it to decide how long an unwatched stream stays
+    // connected, and the connection repository to re-check the route and session after a long
+    // absence — before the returning screens make their first requests.
+    LifecycleStartEffect(appGraph) {
+        AppVisibility.update(true)
+        appGraph.connectionRepository.onAppVisibilityChanged(visible = true)
+        onStopOrDispose {
+            AppVisibility.update(false)
+            appGraph.connectionRepository.onAppVisibilityChanged(visible = false)
+        }
     }
 
     CompositionLocalProvider(LocalMetroViewModelFactory provides appGraph.metroViewModelFactory) {

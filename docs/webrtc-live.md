@@ -38,6 +38,22 @@ LAN↔Tailscale route flip no longer pass through black. Every binder (grid card
 draws through its own renderer attached as a sink on the same video track, so there is no
 surface hand-over to bridge either.
 
+**Standby peers.** A camera has two live sources — the grid stream and the detail screen's
+full-quality one — and a viewer moves between them every time they open a card and come back.
+The holder keeps the peer it stopped showing on standby rather than closing it: still connected
+and decoding, drawn nowhere, silent. Stepping back promotes it and the picture moves again on the
+next decoded frame, with no signaling round trip and no keyframe wait. `LivePlaybackPolicy.canServe`
+says which requests a peer can serve (same signaling URL; a peer with audio also serves a silent
+request, never the reverse — WHEP has no renegotiation), and `standbyTtlMs` how long one is kept:
+the grid peer for the life of the holder, the full-quality peer (real bandwidth) for 20 s. For a
+single-stream camera the detail screen's peer therefore also plays the grid card, muted, and
+nothing rejoins.
+
+**Pause.** libwebrtc keeps decoding a remote track whether or not it is enabled, and a *disabled*
+remote track hands its sinks black frames. Both engines therefore implement "video disabled" by
+detaching the renderers from the track, so a paused surface keeps its last frame and shows the
+very next decoded frame on resume.
+
 Audio: only the detail screen's full-quality source asks for it (`audio = true`). The grid streams
 are video-only on the server, and the join-then-upgrade plan hands sound over with the upgrade.
 libwebrtc decodes Opus natively, which is what the cameras publish, so nothing is transcoded.

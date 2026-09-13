@@ -28,18 +28,51 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 ### Local network vs Tailscale
 
 The server's private LAN address is hardcoded as `LOCAL_SERVER_URL` in
-[`NetworkMonitor`'s package](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/network/LocalNetworkConfig.kt)
-— there's only ever one household server, so it isn't a connect-screen field. On sign-in, and
-again whenever the OS reports a network change, the app probes that address with a short
-timeout and uses it for everything — API, snapshots, and live/recorded video — when it
-answers; otherwise it uses the Tailscale URL entered on the connect screen. The choice is made
-by probing rather than by reading the SSID, so a router that splits one LAN into several SSIDs
-needs no special handling, and the app never needs location permission. The active route shows
-as a badge in the top bar and under Settings → Server Information.
+[`LocalNetworkConfig.kt`](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/domain/model/LocalNetworkConfig.kt)
+— there's only ever one household server, so it isn't a connect-screen field. When the device is
+on the server's Wi-Fi the app uses that address for everything — API, snapshots, and live/recorded
+video — with no VPN hop; otherwise it uses the Tailscale URL entered on the connect screen. The
+choice is made by probing rather than by reading the SSID, so a router that splits one LAN into
+several SSIDs needs no special handling, and the app never needs location permission. The active
+route shows as a badge in the top bar and under Settings → Server Information.
+
+**The LAN address has to prove it is the server before it is trusted with anything.** The
+Tailscale address is the server's identity — reaching it means WireGuard to a node the tailnet
+vouches for — so that is the only address the password is ever sent to. The LAN address is just
+an IP on whatever Wi-Fi the phone happens to be on; a coffee shop on the same `192.168.68.0/22`
+would answer at it too. So on sign-in (`ConnectionRepositoryImpl`):
+
+1. The login goes to the Tailscale URL, and the LAN address is probed at the same time (a short
+   `/api/version` with a 1.5 s cap), so being away from home costs nothing extra.
+2. If the LAN answered, the session token the Tailscale login produced is filed under the LAN
+   host in the cookie jar and the LAN host is asked whose session it is (`/api/profile`).
+   Frigate's token is a JWT signed with the server's own secret and bound to no host, so only
+   the household server can accept it. If it does, the LAN route is used; if it doesn't — a
+   different server, or something merely answering on that port — the LAN host gets no
+   password and no traffic, and the Tailscale route is used.
+3. Only when the Tailscale login fails at the transport level (Tailscale switched off at home)
+   and the LAN answers does the password go over the LAN, as the last resort.
+
+Route flips work the same way: whenever the OS reports a network change, the LAN address is
+re-probed and the session is *moved* — copied to the other address and confirmed there — not
+re-established. The password is sent once per sign-in, ever; if the server has forgotten the
+session (a restart, or a night's expiry), it is renewed on the Tailscale address and carried over.
+Coming back to the foreground after more than 15 s in the background runs the same check, so a
+phone that left the house while the app was suspended (iOS delivers no path events to a
+suspended app) is on the right route, with a working session, before the first card asks for a
+picture.
+
+Sign-in itself is short on the critical path: with the server's cameras already cached from a
+previous session the app is connected the moment the session is confirmed, and `/api/config` is
+refreshed behind the grid (in place, so the list never blinks empty). A first sign-in with no cache
+still waits for the list.
 
 For the LAN route to work the server has to accept Frigate's ports (8971 and 1984) from the
 LAN, not only from its Tailscale interface, and `LOCAL_SERVER_URL` has to match its actual LAN
-address (a DHCP reservation on the router keeps that from drifting).
+address (a DHCP reservation on the router keeps that from drifting). What the LAN route does *not*
+protect is go2rtc's own port (1984), which has no auth of its own: anyone on the household Wi-Fi
+who can reach it can ask it for a stream. Scope the firewall rule to the LAN subnet, and to the
+devices that need it if the router allows.
 
 ### Live video pipeline
 
@@ -51,8 +84,27 @@ soon as the network allows, never an old photo in between:
   the already-decoding player to the detail screen (live video is up before the shared-element
   transition ends) and coming back hands it back. Players live in a per-platform `LivePlayerPool`
   and pause the moment nothing is watching them (a card scrolled out, a tab switch, the app going
-  to the background), resume at the live edge on return, and only drop their session after 30 s
-  idle — so anything shorter than that is instant.
+  to the background) and resume at the live edge on return. How long an unwatched player keeps its
+  connection depends on why nobody is watching (`LivePlaybackPolicy.awaitIdleWindow`): 90 s while
+  the app is on screen — the user is on another tab, or inside one camera while the rest of the
+  grid waits — and 30 s once the app itself has gone to the background, counted from that moment.
+  Anything inside the window is a warm resume; the picture moves again on the next frame.
+- **Two live sources per camera, both kept.** A viewer steps between the grid stream and the
+  detail screen's full-quality stream every time they open a card and come back. Rather than
+  join afresh each way (a signaling round trip, then a wait for the next keyframe, with the
+  picture frozen meanwhile) the holder keeps the WebRTC peer it stopped showing on *standby* —
+  connected and decoding, drawn nowhere, silent — and promotes it on the way back
+  (`LivePlaybackPolicy.canServe` / `standbyTtlMs`). The cheap grid peer is kept for as long as
+  the holder lives; the full-quality one, which costs real bandwidth, for 20 s. For a camera with
+  a single stream the peer the detail screen joined with sound also plays the silent grid card,
+  and nothing rejoins at all.
+- **Pause keeps the picture.** libwebrtc keeps decoding a remote track whether or not it is
+  "enabled", and a disabled remote track hands its renderers black frames; pausing therefore
+  detaches the renderers instead, so the last frame stays up and the very next decoded frame is
+  what shows on resume.
+- **Start-up costs paid behind the sign-in screen.** libwebrtc's native initialisation and the
+  shared EGL context are built on a background thread at launch (`warmUpLivePlayback`), not
+  inside the first camera's join.
 - **A poster that is never stale.** While a surface has no frame of its own — first open, a
   reconnect, a return from a long background — `LivePosterLayer` shows the last snapshot this
   device saw (from disk, same frame the card appears), replaces it with a freshly fetched
