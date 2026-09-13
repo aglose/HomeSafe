@@ -2,7 +2,9 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.HomeLayout
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
@@ -12,12 +14,16 @@ import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
+import com.meticulouscreations.homesafe.domain.repository.PropertyLayoutRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveHomeLayoutUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetHomeLayoutUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -65,6 +71,7 @@ class HomeViewModelTest {
     private object FakeMediaUrls : MediaUrlRepository {
         override fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String>) =
             "$serverUrl/live/$streamName"
+        override fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String) = "$serverUrl/webrtc/$streamName"
         override fun cameraSnapshotUrl(serverUrl: String, cameraName: String, height: Int?, cacheBuster: Long?) =
             "$serverUrl/snapshot/$cameraName?h=$height"
         override fun eventThumbnailUrl(serverUrl: String, eventId: String) = "$serverUrl/thumb/$eventId"
@@ -97,6 +104,23 @@ class HomeViewModelTest {
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
+        override fun onAppVisibilityChanged(visible: Boolean) = Unit
+    }
+
+    private class FakePropertyLayout : PropertyLayoutRepository {
+        val placements = MutableStateFlow<List<CameraPlacement>>(emptyList())
+        val homeLayout = MutableStateFlow(HomeLayout.DEFAULT)
+        override fun observePlacements(): Flow<List<CameraPlacement>> = placements
+        override suspend fun place(placement: CameraPlacement) {
+            placements.value = placements.value.filterNot { it.cameraName == placement.cameraName } + placement
+        }
+        override suspend fun removePlacement(cameraName: String) {
+            placements.value = placements.value.filterNot { it.cameraName == cameraName }
+        }
+        override fun observeHomeLayout(): Flow<HomeLayout> = homeLayout
+        override suspend fun setHomeLayout(layout: HomeLayout) {
+            homeLayout.value = layout
+        }
     }
 
     private object FakePushToken : PushTokenProvider {
@@ -112,13 +136,17 @@ class HomeViewModelTest {
         val cameraRepo = FakeCameras(cameras)
         val presenceRepo = FakePresence(everyoneAway)
         val connection = FakeConnection(serverUrl)
+        val propertyLayout = FakePropertyLayout()
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(connection),
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
+            getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
+            observeHomeLayoutUseCase = ObserveHomeLayoutUseCase(propertyLayout),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
+            setHomeLayoutUseCase = SetHomeLayoutUseCase(propertyLayout),
         )
     }
 
@@ -150,6 +178,7 @@ class HomeViewModelTest {
 
         assertEquals(1, collected.size)
         assertEquals("http://frigate.test:8971/live/front_door_sub", collected[0].streamUrl, "the grid plays the grid stream, not the full-quality one")
+        assertEquals("http://frigate.test:8971/webrtc/front_door_sub", collected[0].webRtcSignalingUrl, "and can negotiate WebRTC for that same stream")
         assertEquals("http://frigate.test:8971/snapshot/front_door?h=480", collected[0].posterUrl)
     }
 
@@ -159,6 +188,7 @@ class HomeViewModelTest {
         val collected = tiles(h.viewModel)
 
         assertNull(collected[0].streamUrl, "a disabled camera has nothing to play")
+        assertNull(collected[0].webRtcSignalingUrl)
         assertNull(collected[0].posterUrl)
     }
 
@@ -168,6 +198,7 @@ class HomeViewModelTest {
         val collected = tiles(h.viewModel)
 
         assertNull(collected[0].streamUrl, "disconnected: the card shows a placeholder rather than a URL that cannot load")
+        assertNull(collected[0].webRtcSignalingUrl)
         assertNull(collected[0].posterUrl)
     }
 
@@ -178,6 +209,29 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertTrue(h.viewModel.everyoneAway.value)
+    }
+
+    @Test
+    fun theLayoutStartsUnknownAndThenFollowsWhatWasStored() = runTest {
+        val h = Harness()
+        assertNull(h.viewModel.layout.value, "null keeps the skeleton up rather than flashing the wrong layout")
+
+        activate(h.viewModel.layout)
+        advanceUntilIdle()
+        assertEquals(HomeLayout.LIST, h.viewModel.layout.value)
+    }
+
+    @Test
+    fun switchingLayoutIsRemembered() = runTest {
+        val h = Harness()
+        activate(h.viewModel.layout)
+        advanceUntilIdle()
+
+        h.viewModel.setLayout(HomeLayout.MAP)
+        advanceUntilIdle()
+
+        assertEquals(HomeLayout.MAP, h.viewModel.layout.value)
+        assertEquals(HomeLayout.MAP, h.propertyLayout.homeLayout.value, "the choice is written through, not just held in the view model")
     }
 
     @Test

@@ -2,7 +2,12 @@ package com.meticulouscreations.homesafe.ui.components
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.meticulouscreations.homesafe.network.WhepSignalingClient
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.darwin.Darwin
+import io.ktor.client.plugins.HttpTimeout
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import platform.AVFoundation.AVPlayer
@@ -35,9 +41,13 @@ import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
 import platform.CoreMedia.kCMTimePositiveInfinity
 import platform.CoreMedia.kCMTimeZero
+import platform.Foundation.NSDate
+import platform.Foundation.NSLog
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
+import platform.Foundation.timeIntervalSince1970
+import platform.UIKit.UIView
 
 private const val HOLDER_POLL_INTERVAL_MS = 250L
 private const val PREFERRED_FORWARD_BUFFER_SECONDS = 3.0
@@ -47,13 +57,26 @@ internal const val PREFERRED_TIMESCALE = 600
 private const val HTTP_HEADER_FIELDS_KEY = "AVURLAssetHTTPHeaderFieldsKey"
 
 /**
- * One [AVPlayer] that outlives any single composable — the iOS counterpart of the Android
- * `LivePlayerHolder`, with the same policy (see [LivePlaybackPolicy]): binders attach and each
- * show it through their own `AVPlayerLayer` (any number of layers may display one player at
- * once); it plays only while a started binder is attached, pauses otherwise, and drops its item
- * after [LivePlaybackPolicy.IDLE_STOP_MS] idle; live sources recover from go2rtc session expiry
- * by loading a fresh item; [coldStartGeneration] tells binders when to cover the layer with a
- * poster.
+ * One long-lived player per camera — the iOS counterpart of the Android `LivePlayerHolder`,
+ * with the same policy (see [LivePlaybackPolicy]): binders attach and each show it through
+ * their own surfaces; it plays only while a started binder is attached, pauses otherwise, and
+ * drops its sessions after the idle window ([LivePlaybackPolicy.awaitIdleWindow]);
+ * [coldStartGeneration] tells binders when to cover the picture with a poster.
+ *
+ * Two engines, and [transport] says which is showing the picture:
+ *
+ *  - **WebRTC**, for a live source that carries a [WebRtcEndpoint] when a Swift-side engine is
+ *    registered ([IosWebRtc.peerFactory]) and [LiveTransportMemory] hasn't ruled it out: an
+ *    [IosWebRtcPeerAdapter] whose remote video track is drawn into every attached container
+ *    view. Joins are make-before-break; a failed join starts HLS for the same source without a
+ *    new generation, so the poster already up gives way to HLS video. As on Android, the peer
+ *    that showed the previous live source is kept on standby — connected, decoding, drawn
+ *    nowhere — so stepping between the grid stream and the full-quality one swaps peers instead
+ *    of joining again (see the Android holder for the reasoning; the rules are
+ *    [LivePlaybackPolicy.canServe] and [LivePlaybackPolicy.standbyTtlMs]).
+ *  - **HLS** through one [AVPlayer] (any number of `AVPlayerLayer`s may display it), for
+ *    recordings, sources without an endpoint, and as the fallback. Live sources recover from
+ *    go2rtc session expiry by loading a fresh item.
  *
  * `AVPlayerItem.status` and `AVPlayerLayer.readyForDisplay` are KVO-only with no notification
  * equivalent, and this codebase's iOS interop favours block-based APIs over raw KVO/NSObject
@@ -61,7 +84,7 @@ private const val HTTP_HEADER_FIELDS_KEY = "AVURLAssetHTTPHeaderFieldsKey"
  * combined with NotificationCenter observation for end/stall/failure events.
  */
 @OptIn(ExperimentalForeignApi::class)
-internal class LivePlayerHolder(val key: String?) {
+internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConnectFlow) {
 
     /** Recording-only events a binder relays to its caller; live sources handle theirs internally. */
     interface Listener {
@@ -81,7 +104,20 @@ internal class LivePlayerHolder(val key: String?) {
     var coldStartGeneration by mutableIntStateOf(0)
         private set
 
+    /** Which engine is showing the picture. Compose state: binders show the matching surface. */
+    var transport by mutableStateOf(LiveTransport.HLS)
+        private set
+
+    /** WebRTC only: ICE lost its path and is trying to get it back. */
+    var webRtcStalled by mutableStateOf(false)
+        private set
+
+    /** WebRTC only: the peer has an audio track. */
+    var webRtcHasAudio by mutableStateOf(false)
+        private set
+
     private var requestedPlayWhenReady = true
+    private var muted = true
     private var activeBinders = 0
     private var needsColdStart = true
     private var resumePositionMs: Long? = null
@@ -93,9 +129,27 @@ internal class LivePlayerHolder(val key: String?) {
     private var failedObserver: Any? = null
     private var stalledObserver: Any? = null
 
+    /** Every attached WebRTC container and its first-frame callback; the live peer draws into them all, and a new peer inherits them. */
+    private val renderers = LinkedHashMap<UIView, () -> Unit>()
+    private var peer: IosWebRtcPeerAdapter? = null
+
+    /** What [peer] was joined for — the question [LivePlaybackPolicy.canServe] answers against. */
+    private var peerEndpoint: WebRtcEndpoint? = null
+    private var peerWatchJob: Job? = null
+    private var joinJob: Job? = null
+
+    /** A connected peer this holder stopped showing but may want back. At most one. */
+    private var standby: StandbyPeer? = null
+
+    private class StandbyPeer(val peer: IosWebRtcPeerAdapter, val endpoint: WebRtcEndpoint) {
+        var expiryJob: Job? = null
+        var watchJob: Job? = null
+    }
+
     private val pollJob = scope.launch {
         while (isActive) {
             delay(HOLDER_POLL_INTERVAL_MS)
+            if (transport != LiveTransport.HLS) continue
             val item = player.currentItem ?: continue
             when (source) {
                 is VideoSource.Live -> if (item.error != null) {
@@ -119,10 +173,28 @@ internal class LivePlayerHolder(val key: String?) {
         listeners -= listener
     }
 
+    /** WebRTC frames are drawn into [container] too, by the current peer and any that replaces it; [onFrame] fires when it has drawn. */
+    fun bindRenderer(container: UIView, onFrame: () -> Unit) {
+        if (renderers.put(container, onFrame) == null) peer?.addRenderer(container, onFrame)
+    }
+
+    fun unbindRenderer(container: UIView) {
+        if (renderers.remove(container) != null) peer?.removeRenderer(container)
+    }
+
+    /**
+     * Play [next]. When it's already the current, healthy source — the shared-player fast path —
+     * nothing restarts; but a WebRTC endpoint arriving for a source HLS is carrying (the detail
+     * screen's warm join names only the URL, its view model's request adds the endpoint) starts
+     * a join alongside, and the peer takes over when it has a frame.
+     */
     fun load(next: VideoSource) {
         val current = source
         if (current != null && current.url == next.url && !needsColdStart) {
             source = next
+            val endpoint = (next as? VideoSource.Live)?.webRtc
+            val hlsCarrying = transport == LiveTransport.HLS && joinJob == null
+            if (endpoint != null && hlsCarrying && activeBinders > 0 && webRtcAllowed(next.url)) startWebRtc(next, endpoint)
             return
         }
         source = next
@@ -143,9 +215,11 @@ internal class LivePlayerHolder(val key: String?) {
         applyPlayWhenReady()
     }
 
-    /** Sticks across item replacements and cold restarts: `muted` lives on the player, not the item. */
+    /** Sticks across item replacements, cold restarts and either engine: `muted` lives on the holder. */
     fun setMuted(muted: Boolean) {
+        this.muted = muted
         player.muted = muted
+        peer?.setMuted(muted)
     }
 
     fun onBinderStarted() {
@@ -164,6 +238,10 @@ internal class LivePlayerHolder(val key: String?) {
         pollJob.cancel()
         retryJob?.cancel()
         idleStopJob?.cancel()
+        joinJob?.cancel()
+        dropPeer()
+        dropStandby()
+        renderers.clear()
         scope.cancel()
         clearObservers()
         player.pause()
@@ -177,8 +255,9 @@ internal class LivePlayerHolder(val key: String?) {
             start(current, cold = true)
             return
         }
-        // Warm: jump to the live edge of the item the player still holds; the layer keeps its last frame meanwhile.
-        if (current is VideoSource.Live) player.seekToTime(kCMTimePositiveInfinity.readValue())
+        // Warm: jump to the live edge of the item the player still holds; the layer keeps its
+        // last frame meanwhile. A peer has no buffer to skip; re-enabling its video is the resume.
+        if (current is VideoSource.Live && transport == LiveTransport.HLS) player.seekToTime(kCMTimePositiveInfinity.readValue())
         applyPlayWhenReady()
     }
 
@@ -186,11 +265,15 @@ internal class LivePlayerHolder(val key: String?) {
         retryJob?.cancel()
         applyPlayWhenReady()
         idleStopJob = scope.launch {
-            delay(LivePlaybackPolicy.IDLE_STOP_MS)
+            LivePlaybackPolicy.awaitIdleWindow()
             if (source is VideoSource.Recording) {
                 val seconds = CMTimeGetSeconds(player.currentTime())
                 if (!seconds.isNaN()) resumePositionMs = (seconds * 1000).toLong()
             }
+            joinJob?.cancel()
+            joinJob = null
+            dropPeer()
+            dropStandby()
             clearObservers()
             player.replaceCurrentItemWithPlayerItem(null)
             needsColdStart = true
@@ -198,12 +281,168 @@ internal class LivePlayerHolder(val key: String?) {
     }
 
     private fun applyPlayWhenReady() {
-        if (requestedPlayWhenReady && activeBinders > 0) player.play() else player.pause()
+        val playing = requestedPlayWhenReady && activeBinders > 0
+        if (playing) player.play() else player.pause()
+        peer?.setVideoEnabled(playing)
     }
+
+    private fun webRtcAllowed(streamUrl: String): Boolean = IosWebRtc.peerFactory != null && LiveTransportMemory.shared.allowsWebRtc(streamUrl)
 
     private fun start(toLoad: VideoSource, cold: Boolean) {
         needsColdStart = false
+        joinJob?.cancel()
+        joinJob = null
+        val endpoint = (toLoad as? VideoSource.Live)?.webRtc
+        // A peer already decoding this camera's video is warm by definition: no poster, no generation bump.
+        if (endpoint != null && adoptExistingPeer(endpoint)) return
         if (cold) coldStartGeneration++
+        if (endpoint != null && webRtcAllowed(toLoad.url)) {
+            // See the Android holder: an unproven stream with no peer still drawing plays HLS while the join runs.
+            if (peer == null && !LiveTransportMemory.shared.recentlyConnected(toLoad.url)) startHls(toLoad)
+            startWebRtc(toLoad, endpoint)
+        } else {
+            startHls(toLoad)
+        }
+    }
+
+    /** Serves [endpoint] from the peer on screen or the standby when either can ([LivePlaybackPolicy.canServe]); false means a join is needed. */
+    private fun adoptExistingPeer(endpoint: WebRtcEndpoint): Boolean {
+        val active = peer
+        val activeEndpoint = peerEndpoint
+        if (active != null && activeEndpoint != null && transport == LiveTransport.WEBRTC && LivePlaybackPolicy.canServe(activeEndpoint, endpoint)) {
+            applyPlayWhenReady()
+            return true
+        }
+        val parked = standby ?: return false
+        if (!LivePlaybackPolicy.canServe(parked.endpoint, endpoint)) return false
+        standby = null
+        parked.expiryJob?.cancel()
+        parked.watchJob?.cancel()
+        NSLog("HomeSafeLive: %s promoting the standby peer", key ?: "-")
+        adopt(parked.peer, parked.endpoint)
+        return true
+    }
+
+    /** Joins in the background while whatever is on screen stays there; see the Android holder for the reasoning. */
+    private fun startWebRtc(toLoad: VideoSource.Live, endpoint: WebRtcEndpoint) {
+        val startedAt = NSDate().timeIntervalSince1970
+        joinJob = scope.launch {
+            val result = webRtc.connect(endpoint, streamKey = toLoad.url)
+            val elapsedMs = ((NSDate().timeIntervalSince1970 - startedAt) * 1000).toLong()
+            joinJob = null
+            if (source?.url != toLoad.url) {
+                (result as? WebRtcConnectResult.Connected)?.peer?.close()
+                return@launch
+            }
+            when (result) {
+                is WebRtcConnectResult.Connected -> {
+                    NSLog("HomeSafeLive: %s webrtc joined in %d ms", key ?: "-", elapsedMs)
+                    adopt(result.peer as IosWebRtcPeerAdapter, endpoint)
+                }
+
+                is WebRtcConnectResult.Failed -> {
+                    NSLog("HomeSafeLive: %s webrtc join failed after %d ms (%s); playing HLS", key ?: "-", elapsedMs, result.reason.toString())
+                    if (transport != LiveTransport.HLS || player.currentItem == null) startHls(toLoad)
+                }
+            }
+        }
+    }
+
+    /** [newPeer] becomes the picture; whatever was showing it before is parked or closed. */
+    private fun adopt(newPeer: IosWebRtcPeerAdapter, endpoint: WebRtcEndpoint) {
+        val previous = peer
+        val previousEndpoint = peerEndpoint
+        peerWatchJob?.cancel()
+        peer = newPeer
+        peerEndpoint = endpoint
+        renderers.forEach { (container, onFrame) -> newPeer.addRenderer(container, onFrame) }
+        newPeer.setMuted(muted)
+        newPeer.setVideoEnabled(requestedPlayWhenReady && activeBinders > 0)
+        webRtcStalled = false
+        webRtcHasAudio = newPeer.hasAudio.value
+        transport = LiveTransport.WEBRTC
+        consecutiveFailures = 0
+        if (previous != null) park(previous, previousEndpoint)
+        // The HLS session, if one was carrying this camera, has nothing left to show.
+        clearObservers()
+        player.pause()
+        player.replaceCurrentItemWithPlayerItem(null)
+        watch(newPeer)
+    }
+
+    private fun watch(watched: IosWebRtcPeerAdapter) {
+        peerWatchJob = scope.launch {
+            launch { watched.hasAudio.collect { if (peer === watched) webRtcHasAudio = it } }
+            watched.state.collect { state ->
+                if (peer !== watched) return@collect
+                when (state) {
+                    WebRtcPeerState.Connected -> webRtcStalled = false
+                    WebRtcPeerState.Disconnected -> webRtcStalled = true
+                    is WebRtcPeerState.Failed, WebRtcPeerState.Closed -> handleWebRtcLoss()
+                    WebRtcPeerState.Connecting -> Unit
+                }
+            }
+        }
+    }
+
+    /**
+     * Keeps [old] connected but unseen and unheard, so a step back to its source is instant; see
+     * the Android holder's `park` for the rules. Only a healthy peer is kept, and only one.
+     */
+    private fun park(old: IosWebRtcPeerAdapter, endpoint: WebRtcEndpoint?) {
+        if (endpoint == null || old.state.value != WebRtcPeerState.Connected) {
+            old.close()
+            return
+        }
+        dropStandby()
+        renderers.keys.forEach(old::removeRenderer)
+        old.setMuted(true)
+        val parked = StandbyPeer(old, endpoint)
+        parked.watchJob = scope.launch {
+            old.state.first { it != WebRtcPeerState.Connected }
+            if (standby === parked) {
+                standby = null
+                old.close()
+            }
+        }
+        LivePlaybackPolicy.standbyTtlMs(endpoint)?.let { ttl ->
+            parked.expiryJob = scope.launch {
+                delay(ttl)
+                if (standby === parked) {
+                    standby = null
+                    parked.watchJob?.cancel()
+                    old.close()
+                }
+            }
+        }
+        standby = parked
+    }
+
+    private fun dropStandby() {
+        val parked = standby ?: return
+        standby = null
+        parked.expiryJob?.cancel()
+        parked.watchJob?.cancel()
+        parked.peer.close()
+    }
+
+    private fun dropPeer() {
+        peerWatchJob?.cancel()
+        peerWatchJob = null
+        val dropped = peer ?: return
+        peer = null
+        peerEndpoint = null
+        dropped.close()
+        webRtcStalled = false
+        webRtcHasAudio = false
+    }
+
+    private fun startHls(toLoad: VideoSource) {
+        // A working peer's last frame is on the containers over the player layer; a fresh
+        // generation puts the poster over both until HLS draws, and the binders hide the containers.
+        if (peer != null && !needsColdStart) coldStartGeneration++
+        dropPeer()
+        transport = LiveTransport.HLS
         // Each start registers a fresh set of observers on the new item; without this the previous
         // item's observer tokens would sit in NotificationCenter forever.
         clearObservers()
@@ -222,6 +461,22 @@ internal class LivePlayerHolder(val key: String?) {
         resumePositionMs = null
         registerObservers(item)
         applyPlayWhenReady()
+    }
+
+    /** The connection went away after it had been adopted: start over (which consults the memory again), backing off like HLS does. */
+    private fun handleWebRtcLoss() {
+        needsColdStart = true
+        dropPeer()
+        dropStandby()
+        val failed = source as? VideoSource.Live ?: return
+        if (activeBinders == 0) return
+        consecutiveFailures++
+        NSLog("HomeSafeLive: %s webrtc connection lost; retry %d", key ?: "-", consecutiveFailures)
+        retryJob?.cancel()
+        retryJob = scope.launch {
+            delay(LivePlaybackPolicy.retryDelayMs(consecutiveFailures))
+            if (source == failed && activeBinders > 0 && needsColdStart) start(failed, cold = true)
+        }
     }
 
     private fun registerObservers(item: AVPlayerItem) {
@@ -272,6 +527,7 @@ internal class LivePlayerHolder(val key: String?) {
     }
 
     private fun scheduleLiveRetry() {
+        if (transport != LiveTransport.HLS) return // a stale item notification under a working peer
         needsColdStart = true
         val failed = source as? VideoSource.Live ?: return
         if (activeBinders == 0 || retryJob?.isActive == true) return
@@ -294,9 +550,21 @@ internal object LivePlayerPool {
     private val entries = HashMap<String, Entry>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    /** One signaling client for every holder; a peer is only ever made when a Swift-side factory is registered. */
+    private val webRtc: WebRtcConnectFlow by lazy {
+        WebRtcConnectFlow(
+            signaling = WhepSignalingClient(HttpClient(Darwin) { install(HttpTimeout) }),
+            peers = { audio ->
+                val factory = IosWebRtc.peerFactory ?: error("no WebRTC engine registered")
+                IosWebRtcPeerAdapter(factory, audio)
+            },
+            memory = LiveTransportMemory.shared,
+        )
+    }
+
     fun acquire(key: String?): LivePlayerHolder {
-        if (key == null) return LivePlayerHolder(key = null)
-        val entry = entries.getOrPut(key) { Entry(LivePlayerHolder(key)) }
+        if (key == null) return LivePlayerHolder(key = null, webRtc = webRtc)
+        val entry = entries.getOrPut(key) { Entry(LivePlayerHolder(key, webRtc)) }
         entry.releaseJob?.cancel()
         entry.releaseJob = null
         entry.refCount++

@@ -26,6 +26,12 @@ class FrigateSessionTest {
     }
 
     @Test
+    fun webRtcSignalingUrlSharesTheHostAndGo2rtcPort() {
+        assertEquals("http://frigate:1984/api/webrtc?src=cam_sub", frigateWebRtcSignalingUrl("https://frigate:8971/", "cam_sub"))
+        assertEquals("http://192.168.68.64:1984/api/webrtc?src=cam", frigateWebRtcSignalingUrl("http://192.168.68.64:8971", "cam"))
+    }
+
+    @Test
     fun liveStreamUrlAsksForAudioOnlyWhenGivenCodecs() {
         assertEquals(
             "http://frigate:1984/api/stream.m3u8?src=cam&video&audio=aac,opus",

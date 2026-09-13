@@ -49,6 +49,7 @@ class DeviceRegistrarTest {
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
+        override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
     private class FakeSettings : SettingsRepository {

@@ -29,7 +29,13 @@ sealed interface ConnectUiState {
 
     /** Credentials are in hand and the server is being asked to accept them. */
     data object Connecting : ConnectUiState
-    data class Success(val credentials: SavedCredentials) : ConnectUiState
+
+    /**
+     * Signed in. [viaBiometrics] says whether the accepted credentials came out of the biometric
+     * store — in which case they are by definition what's saved — or were typed, and may be
+     * newer than whatever the store holds.
+     */
+    data class Success(val credentials: SavedCredentials, val viaBiometrics: Boolean) : ConnectUiState
     data class Error(val message: String) : ConnectUiState
 }
 
@@ -67,7 +73,7 @@ class SecureConnectionViewModel(
         _uiState.value = ConnectUiState.Connecting
         viewModelScope.launch {
             connectToServerUseCase(serverUrl, username, password)
-                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials) }
+                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = false) }
                 .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Couldn't connect to server") }
         }
     }
@@ -77,8 +83,13 @@ class SecureConnectionViewModel(
         _uiState.value = ConnectUiState.AwaitingBiometrics
         viewModelScope.launch {
             signInWithBiometricsUseCase(onCredentialsUnlocked = { _uiState.value = ConnectUiState.Connecting })
-                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials) }
-                .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Biometric sign-in failed") }
+                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = true) }
+                .onFailure { error ->
+                    // A refused saved password is forgotten by the repository; drop the
+                    // biometric button along with it so the form is the obvious next step.
+                    refreshSavedCredentials()
+                    _uiState.value = ConnectUiState.Error(error.message ?: "Biometric sign-in failed")
+                }
         }
     }
 

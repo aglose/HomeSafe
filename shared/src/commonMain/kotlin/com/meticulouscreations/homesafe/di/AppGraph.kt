@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
+import com.meticulouscreations.homesafe.data.PropertyLayoutDao
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
@@ -15,6 +16,7 @@ import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
+import com.meticulouscreations.homesafe.data.createPropertyLayoutDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -41,6 +43,8 @@ import dev.zacsweers.metrox.viewmodel.ViewModelGraph
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
+import io.ktor.client.plugins.cookies.CookiesStorage
 import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CoroutineScope
@@ -75,6 +79,9 @@ interface AppGraph : ViewModelGraph {
      * go through this same instance rather than its own cookie-less client.
      */
     val httpClient: HttpClient
+
+    /** What the platform handed the graph at creation; the live-player warm-up needs it at start. */
+    val platformContext: PlatformContext
 
     val connectionRepository: ConnectionRepository
     val settingsRepository: SettingsRepository
@@ -115,6 +122,11 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideSettingsDao(platformContext: PlatformContext): SettingsDao =
         createSettingsDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun providePropertyLayoutDao(platformContext: PlatformContext): PropertyLayoutDao =
+        createPropertyLayoutDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides
@@ -181,13 +193,22 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideAppCoroutineScope(): CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
+    /**
+     * The jar behind [provideHttpClient]'s cookie plugin, shared with [FrigateApiClient] so a
+     * session issued at one of the server's addresses can be filed under the other — the plugin
+     * only reads from it.
+     */
     @SingleIn(AppScope::class)
     @Provides
-    fun provideHttpClient(): HttpClient = HttpClient {
+    fun provideCookieStorage(): CookiesStorage = AcceptAllCookiesStorage()
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideHttpClient(cookieStorage: CookiesStorage): HttpClient = HttpClient {
         install(ContentNegotiation) {
             json(Json { ignoreUnknownKeys = true })
         }
-        install(HttpCookies)
+        install(HttpCookies) { storage = cookieStorage }
         install(HttpTimeout) {
             requestTimeoutMillis = 10_000
         }

@@ -112,12 +112,15 @@ fun SecureConnectionScreen(
         }
     }
 
-    // A successful login (manual or biometric) either offers to save credentials for next
-    // time, or — if there's nothing new to offer — proceeds straight into the app.
+    // A successful login either offers to save the credentials for next time, or proceeds
+    // straight into the app. A typed password is offered even when a login is already saved:
+    // the saved one may be stale (the server's password changed), and a biometric-gated store
+    // can't be compared against without a prompt, so the offer is the way to keep it current.
+    // A biometric login is what's saved by definition, so there is nothing to offer.
     LaunchedEffect(uiState) {
         val state = uiState
         if (state is ConnectUiState.Success) {
-            if (viewModel.biometricLoginAvailable && !hasSavedBiometricCredentials) {
+            if (viewModel.biometricLoginAvailable && !state.viaBiometrics) {
                 biometricSaveOffer = state.credentials
             } else {
                 onConnected()
@@ -131,6 +134,7 @@ fun SecureConnectionScreen(
     biometricSaveOffer?.let { credentials ->
         BiometricSaveOfferDialog(
             biometricDisplayName = viewModel.biometricDisplayName,
+            replacesSavedLogin = hasSavedBiometricCredentials,
             onSave = {
                 biometricSaveOffer = null
                 coroutineScope.launch {
@@ -378,23 +382,27 @@ fun SecureConnectionScreen(
 @Composable
 private fun BiometricSaveOfferDialog(
     biometricDisplayName: String,
+    /** A login is already saved; this offer replaces it with the one that just worked. */
+    replacesSavedLogin: Boolean,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val extraColors = LocalFrigateExtraColors.current
+    val title = if (replacesSavedLogin) "Update $biometricDisplayName sign-in?" else "Enable $biometricDisplayName sign-in?"
+    val body = if (replacesSavedLogin) {
+        "You signed in with your password. Save it so $biometricDisplayName sign-in uses this login " +
+            "next time instead of the one saved before."
+    } else {
+        "Skip retyping your password next time — sign in with $biometricDisplayName instead. " +
+            "Your credentials are encrypted and can only be unlocked with your biometrics."
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = MaterialTheme.colorScheme.surface,
         titleContentColor = extraColors.textPrimary,
         textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-        title = { Text("Enable $biometricDisplayName sign-in?", style = MaterialTheme.typography.headlineSmall) },
-        text = {
-            Text(
-                "Skip retyping your password next time — sign in with $biometricDisplayName instead. " +
-                    "Your credentials are encrypted and can only be unlocked with your biometrics.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
-        },
+        title = { Text(title, style = MaterialTheme.typography.headlineSmall) },
+        text = { Text(body, style = MaterialTheme.typography.bodyMedium) },
         confirmButton = {
             Button(
                 onClick = onSave,
@@ -403,7 +411,7 @@ private fun BiometricSaveOfferDialog(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             ) {
-                Text("Enable", style = MaterialTheme.typography.labelLarge)
+                Text(if (replacesSavedLogin) "Update" else "Enable", style = MaterialTheme.typography.labelLarge)
             }
         },
         dismissButton = {

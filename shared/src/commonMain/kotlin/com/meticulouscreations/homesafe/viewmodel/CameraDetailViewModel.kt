@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
@@ -29,6 +30,7 @@ import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
+import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
 import com.meticulouscreations.homesafe.ui.components.liveAudioCodecs
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
@@ -66,7 +68,22 @@ sealed interface CameraDetailUiState {
         /** The camera's grid-quality stream, used to fast-join live before upgrading to [streamUrl]; see [planLiveJoin]. */
         val gridStreamUrl: String?,
         val posterUrl: String?,
-    ) : CameraDetailUiState
+        /** WebRTC signaling for [streamUrl] and [gridStreamUrl] respectively; null wherever the stream URL is. */
+        val webRtcSignalingUrl: String? = null,
+        val gridWebRtcSignalingUrl: String? = null,
+    ) : CameraDetailUiState {
+        /**
+         * The WebRTC way to the same video as [url] (one of this camera's two stream URLs), or
+         * null if there is none. Sound rides only on the full-quality stream: the grid stream is
+         * video-only on the server, and the join-then-upgrade plan hands audio over with the
+         * upgrade rather than negotiating it twice.
+         */
+        fun webRtcEndpointFor(url: String): WebRtcEndpoint? = when (url) {
+            streamUrl -> webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = true) }
+            gridStreamUrl -> gridWebRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
+            else -> null
+        }
+    }
     data object NotFound : CameraDetailUiState
 }
 
@@ -174,6 +191,7 @@ class CameraDetailViewModel(
     private val updatePlaybackPreferencesUseCase: UpdatePlaybackPreferencesUseCase,
     observeServerOverviewUseCase: ObserveServerOverviewUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
+    private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
@@ -226,6 +244,8 @@ class CameraDetailViewModel(
                     streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.liveStreamName, audioCodecs = liveAudioCodecs),
                     gridStreamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
                     posterUrl = posterUrl,
+                    webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.liveStreamName),
+                    gridWebRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
                 )
 
             else -> CameraDetailUiState.Found(camera, streamUrl = null, gridStreamUrl = null, posterUrl = posterUrl)
@@ -388,8 +408,9 @@ class CameraDetailViewModel(
         val liveUrl = found?.streamUrl ?: return null
         val gridUrl = found.gridStreamUrl ?: liveUrl
         val plan = planLiveJoin(gridUrl, liveUrl, current.quality)
-        if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found.posterUrl) else qualityUpgradeJob?.cancel()
-        return PlayerRequest(VideoSource.Live(plan.joinUrl, found.posterUrl), playWhenReady = playWhenReady, muted = current.isMuted)
+        if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found) else qualityUpgradeJob?.cancel()
+        val source = VideoSource.Live(plan.joinUrl, found.posterUrl, found.webRtcEndpointFor(plan.joinUrl))
+        return PlayerRequest(source, playWhenReady = playWhenReady, muted = current.isMuted)
     }
 
     private fun PlaybackUiState.withSound(soundOn: Boolean): PlaybackUiState {
@@ -418,7 +439,7 @@ class CameraDetailViewModel(
      * cross-platform callback surface today, and a short fixed delay is enough to avoid upgrading
      * mid-stall without adding a fourth platform-specific signal just for this one swap.
      */
-    private fun scheduleQualityUpgrade(liveUrl: String, posterUrl: String?) {
+    private fun scheduleQualityUpgrade(liveUrl: String, found: CameraDetailUiState.Found) {
         qualityUpgradeJob?.cancel()
         qualityUpgradeJob = viewModelScope.launch {
             delay(QUALITY_UPGRADE_DELAY_MS)
@@ -427,7 +448,8 @@ class CameraDetailViewModel(
                 // may have paused during the few seconds the grid-quality join was standing in, and
                 // this swap must not silently resume playback out from under a paused viewer.
                 if (current.isLive && current.quality == StreamQuality.AUTO) {
-                    current.copy(playerRequest = PlayerRequest(VideoSource.Live(liveUrl, posterUrl), playWhenReady = current.isPlaying, muted = current.isMuted))
+                    val source = VideoSource.Live(liveUrl, found.posterUrl, found.webRtcEndpointFor(liveUrl))
+                    current.copy(playerRequest = PlayerRequest(source, playWhenReady = current.isPlaying, muted = current.isMuted))
                 } else {
                     current
                 }

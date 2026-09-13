@@ -19,3 +19,7 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# libwebrtc calls back into org.webrtc.* from JNI by name; the AAR ships consumer rules, but
+# R8 full mode has stripped observer methods before, so keep the whole package explicitly.
+-keep class org.webrtc.** { *; }

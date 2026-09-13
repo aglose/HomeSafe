@@ -1,6 +1,9 @@
 package com.meticulouscreations.homesafe.ui.components
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.TextureView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
@@ -31,14 +34,21 @@ import kotlinx.coroutines.isActive
 
 /**
  * Binds a [LivePlayerHolder] (pooled per [playerKey], see [LivePlayerPool]) to this call site's
- * own `TextureView`, and draws a live poster over it until that surface has a real frame.
+ * own surfaces, and draws a live poster over them until one has a real frame.
  *
- * The holder owns the [androidx.media3.exoplayer.ExoPlayer], its source, its retry loop and its
- * idle/lifecycle policy; this composable owns only what's specific to one place on screen: the
- * surface, the poster, and the caller's callbacks. Several of these can be bound to one holder at
- * the same time (the grid card and the detail screen overlap during the shared-element
- * transition); frames go to whichever surface was bound most recently, and each `TextureView`
- * keeps showing its last frame after it stops receiving them.
+ * The holder owns the players, its source, its retry loop and its idle/lifecycle policy; this
+ * composable owns only what's specific to one place on screen: the surfaces, the poster, and
+ * the caller's callbacks. Several of these can be bound to one holder at the same time (the
+ * grid card and the detail screen overlap during the shared-element transition).
+ *
+ * Two surfaces, stacked, one per engine the holder can play through ([LivePlayerHolder.transport]):
+ *
+ *  - Underneath, a bare `TextureView` for HLS. ExoPlayer draws to whichever binder's was bound
+ *    most recently, and each keeps showing its last frame after it stops receiving them.
+ *  - On top, a [WebRtcTextureRenderer], created only for a source that carries a WebRTC
+ *    endpoint. It's a sink on the peer's video track, so every binder draws every frame — no
+ *    hand-over between binders to bridge. It's transparent until it has drawn, and is cleared
+ *    again whenever the holder goes back to HLS, so the HLS surface shows through.
  *
  * The video is stretched to fill whatever box the caller gives it — no letterboxing, no
  * aspect-ratio crop — and so is the poster (see [VideoPosterLayer]). Every box in this app is a
@@ -50,19 +60,21 @@ import kotlinx.coroutines.isActive
  * picture re-cropped every time it changed quality. Filling the box shows both streams with the
  * same geometry, so a quality swap or a reconnect never moves the picture.
  *
- * The poster is a [VideoPosterLayer] drawn *on top* of the video and hidden once this surface
+ * The poster is a [VideoPosterLayer] drawn *on top* of the video and hidden once a surface here
  * renders its first frame for the holder's current [LivePlayerHolder.coldStartGeneration]. That
- * covers the cases where the surface has nothing or something stale to show — a brand-new
- * surface, a cold connect, a reconnect after an error, a return from a long background — with a
+ * covers the cases where the surfaces have nothing or something stale to show — a brand-new
+ * binder, a cold connect, a reconnect after an error, a return from a long background — with a
  * snapshot that is at most a second old, and leaves a good frame alone across warm swaps.
  *
- * A bare `TextureView` is used rather than [androidx.media3.ui.PlayerView]: PlayerView's default
- * `SurfaceView` punches its own hole in the window and doesn't composite with Compose content
- * above or below it, which is how black boxes used to persist over posters.
+ * A bare `TextureView` is used rather than [androidx.media3.ui.PlayerView] or libwebrtc's
+ * `SurfaceViewRenderer`: a `SurfaceView` punches its own hole in the window and doesn't
+ * composite with Compose content above or below it, which is how black boxes used to persist
+ * over posters.
  */
 private const val POSITION_POLL_INTERVAL_MS = 250L
+private const val LOG_TAG = "HomeSafeLive"
 
-/** Fallback for hiding the poster if a surface swap ever fails to re-fire `onRenderedFirstFrame`: this many polls of steady playback. */
+/** Fallback for hiding the poster if a surface never reports its first frame (an HLS surface swap, a WebRTC renderer's report misattributed): this many polls of steady playback. */
 private const val STEADY_PLAYBACK_POLLS_TO_TRUST = 3
 
 @Composable
@@ -90,7 +102,7 @@ actual fun CameraStreamPlayer(
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
     val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
 
-    // The cold-start generation this surface last rendered a frame for; the poster stays up
+    // The cold-start generation a surface here last rendered a frame for; the poster stays up
     // until it catches up with the holder's current one.
     var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
     val posterVisible = renderedGeneration != holder.coldStartGeneration
@@ -98,7 +110,9 @@ actual fun CameraStreamPlayer(
     // The two bits behind LiveStreamStatus: nothing decoded yet for this cold start (the poster is
     // still up), and the player starved mid-stream. Reported from an effect rather than straight
     // out of the listener so the caller sees one value per distinct state, not one per event.
-    var starved by remember(holder) { mutableStateOf(false) }
+    var hlsStarved by remember(holder) { mutableStateOf(false) }
+    val transport = holder.transport
+    val starved = if (transport == LiveTransport.WEBRTC) holder.webRtcStalled else hlsStarved
     val streamStatus = when {
         posterVisible -> LiveStreamStatus.Connecting
         starved -> LiveStreamStatus.Buffering
@@ -112,6 +126,13 @@ actual fun CameraStreamPlayer(
             isOpaque = false
         }
     }
+    // Only a binder that may see WebRTC frames gets a renderer (each one owns a render thread):
+    // its source carries an endpoint, or the holder is already playing a peer — the detail
+    // screen's warm join names only the URL, and must still draw the card's peer. Once made it
+    // stays for the holder.
+    val wantsWebRtc = (source is VideoSource.Live && source.webRtc != null) || transport == LiveTransport.WEBRTC
+    val renderer = if (wantsWebRtc) remember(holder) { RendererLease(context) }.renderer else null
+
     // The last frame of whichever surface this one took over from (see LivePlayerHolder.bindSurface),
     // shown until this surface has a frame of its own. Cleared on that first frame.
     var bridgeFrame by remember(holder) { mutableStateOf<ImageBitmap?>(null) }
@@ -121,6 +142,12 @@ actual fun CameraStreamPlayer(
             modifier = Modifier.fillMaxSize(),
             factory = { textureView },
         )
+        if (renderer != null) {
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { renderer },
+            )
+        }
         val bridge = bridgeFrame
         val posterUrl = source.posterUrl
         if (bridge != null) {
@@ -140,14 +167,15 @@ actual fun CameraStreamPlayer(
 
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
+                if (holder.transport != LiveTransport.HLS) return
                 renderedGeneration = holder.coldStartGeneration
                 holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                starved = playbackState == Player.STATE_BUFFERING
-                currentOnBufferingChanged(playbackState == Player.STATE_BUFFERING)
+                hlsStarved = playbackState == Player.STATE_BUFFERING
+                if (holder.transport == LiveTransport.HLS) currentOnBufferingChanged(playbackState == Player.STATE_BUFFERING)
                 if (playbackState == Player.STATE_ENDED && currentSource is VideoSource.Recording) {
                     currentOnPlaybackEnded()
                 }
@@ -158,16 +186,66 @@ actual fun CameraStreamPlayer(
             }
 
             override fun onTracksChanged(tracks: Tracks) {
-                currentOnAudioAvailabilityChanged(tracks.hasAudio())
+                if (holder.transport == LiveTransport.HLS) currentOnAudioAvailabilityChanged(tracks.hasAudio())
             }
         }
         player.addListener(listener)
-        // A warm holder won't re-announce its tracks either.
-        currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
         onDispose {
             player.removeListener(listener)
             holder.unbindSurface(textureView)
         }
+    }
+
+    if (renderer != null) {
+        DisposableEffect(holder, renderer) {
+            val mainThread = Handler(Looper.getMainLooper())
+            // The generation this surface has been seen showing the peer's picture for. Recorded
+            // only when the holder is on WebRTC at the moment the surface updates: a swap that
+            // lands while the holder is still on HLS is not a frame of the peer's (the renderer's
+            // clear is one — see below), and recording it would make every real frame that
+            // follows look like a repeat, leaving the poster up for good. That is exactly what
+            // happened to grid cards, which bind before their join, while the detail screen,
+            // binding to a holder already on WebRTC, was fine.
+            var renderedFor = -1
+            val onSurfaceUpdated = Runnable {
+                if (holder.transport != LiveTransport.WEBRTC) return@Runnable
+                val generation = holder.coldStartGeneration
+                if (renderedFor == generation) return@Runnable
+                renderedFor = generation
+                Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation")
+                renderedGeneration = generation
+                bridgeFrame = null
+            }
+            renderer.onFrameRendered = {
+                // TextureView reports surface updates on the UI thread; hop only if that ever changes.
+                if (Looper.myLooper() == Looper.getMainLooper()) onSurfaceUpdated.run() else mainThread.post(onSurfaceUpdated)
+            }
+            holder.bindRenderer(renderer)
+            onDispose {
+                holder.unbindRenderer(renderer)
+                renderer.onFrameRendered = null
+            }
+        }
+
+        // Back on HLS after WebRTC: the peer's last frame must not sit on top of the HLS surface.
+        // Only on that transition — a renderer starts transparent, and clearing it on the initial
+        // HLS transport swapped a blank frame into the surface for no reason.
+        var lastTransport by remember(renderer) { mutableStateOf<LiveTransport?>(null) }
+        LaunchedEffect(renderer, transport) {
+            if (transport == LiveTransport.HLS && lastTransport == LiveTransport.WEBRTC) renderer.clear()
+            lastTransport = transport
+        }
+    }
+
+    // A warm holder won't re-announce its tracks, and the peer's audio arrives after adoption.
+    LaunchedEffect(holder, transport, holder.webRtcHasAudio) {
+        when (transport) {
+            LiveTransport.WEBRTC -> currentOnAudioAvailabilityChanged(holder.webRtcHasAudio)
+            LiveTransport.HLS -> currentOnAudioAvailabilityChanged(player.currentTracks.hasAudio())
+        }
+    }
+    LaunchedEffect(holder, transport, holder.webRtcStalled) {
+        if (transport == LiveTransport.WEBRTC) currentOnBufferingChanged(holder.webRtcStalled)
     }
 
     LifecycleStartEffect(holder) {
@@ -175,7 +253,8 @@ actual fun CameraStreamPlayer(
         onStopOrDispose { holder.onBinderStopped() }
     }
 
-    LaunchedEffect(holder, source.url) { holder.load(source) }
+    // Keyed on the endpoint as well as the URL: the same stream gaining one is a load the holder acts on.
+    LaunchedEffect(holder, source.url, (source as? VideoSource.Live)?.webRtc) { holder.load(source) }
 
     LaunchedEffect(holder, request.playWhenReady) { holder.setPlayWhenReady(request.playWhenReady) }
 
@@ -189,11 +268,19 @@ actual fun CameraStreamPlayer(
     LaunchedEffect(holder) {
         var steadyPolls = 0
         while (isActive) {
-            val steady = player.playbackState == Player.STATE_READY && player.isPlaying
+            // Steady on either engine: HLS ready and playing, or a WebRTC peer that has been adopted
+            // (the join waited for its first decoded frame) and isn't stalled. A surface that has
+            // still not reported a frame after this many polls is trusted to be showing one anyway,
+            // so a missed or misattributed report can't leave the poster up over live video.
+            val steady = when (holder.transport) {
+                LiveTransport.HLS -> player.playbackState == Player.STATE_READY && player.isPlaying
+                LiveTransport.WEBRTC -> !holder.webRtcStalled
+            }
             steadyPolls = if (steady) steadyPolls + 1 else 0
-            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST) {
+            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST && renderedGeneration != holder.coldStartGeneration) {
+                Log.d(LOG_TAG, "${holder.key}: trusting steady ${holder.transport} playback for generation ${holder.coldStartGeneration}")
                 renderedGeneration = holder.coldStartGeneration
-                holder.onSurfaceRenderedFrame(textureView)
+                if (holder.transport == LiveTransport.HLS) holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
             }
             if (currentSource is VideoSource.Recording && player.playbackState == Player.STATE_READY) {
@@ -221,4 +308,13 @@ private class HolderLease(context: Context, key: String?) : RememberObserver {
     override fun onRemembered() = Unit
     override fun onForgotten() = LivePlayerPool.release(holder)
     override fun onAbandoned() = LivePlayerPool.release(holder)
+}
+
+/** Same idea for the WebRTC renderer, whose render thread must be torn down when this call site goes. */
+private class RendererLease(context: Context) : RememberObserver {
+    val renderer = WebRtcTextureRenderer(context, WebRtcRuntime.eglContext)
+
+    override fun onRemembered() = Unit
+    override fun onForgotten() = renderer.release()
+    override fun onAbandoned() = renderer.release()
 }

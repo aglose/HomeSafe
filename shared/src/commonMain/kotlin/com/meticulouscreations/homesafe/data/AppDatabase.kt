@@ -38,8 +38,10 @@ class CategorySwitchesMovedToZones : AutoMigrationSpec
         AlertZoneRuleEntity::class,
         PlaybackPreferencesEntity::class,
         DeviceIdentityEntity::class,
+        CameraPlacementEntity::class,
+        HomeLayoutEntity::class,
     ],
-    version = 9,
+    version = 10,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -51,6 +53,9 @@ class CategorySwitchesMovedToZones : AutoMigrationSpec
         // 8 -> 9: automatic presence — SettingsEntity.automaticPresence (default off) and this
         // install's relay identity ([DeviceIdentityEntity], a new table).
         AutoMigration(from = 8, to = 9),
+        // 9 -> 10: the property plan — where each camera sits ([CameraPlacementEntity]) and
+        // which layout the Home tab is showing ([HomeLayoutEntity]), both new tables.
+        AutoMigration(from = 9, to = 10),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -58,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao
     abstract fun cameraDao(): CameraDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun propertyLayoutDao(): PropertyLayoutDao
 }
 
 // The Room compiler generates the `actual` implementations for each target.
@@ -72,8 +78,9 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
  * `createXDao` call returns a DAO from that same instance, never opening a second connection.
  * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
  * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
- * [InMemorySettingsDao]).
+ * [InMemorySettingsDao], [InMemoryPropertyLayoutDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
 expect fun createCameraDao(context: PlatformContext): CameraDao
 expect fun createSettingsDao(context: PlatformContext): SettingsDao
+expect fun createPropertyLayoutDao(context: PlatformContext): PropertyLayoutDao

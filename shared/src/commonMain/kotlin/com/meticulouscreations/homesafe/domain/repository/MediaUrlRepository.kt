@@ -14,6 +14,13 @@ interface MediaUrlRepository {
     fun liveStreamUrl(serverUrl: String, streamName: String, audioCodecs: List<String> = emptyList()): String
 
     /**
+     * Where a WebRTC session for one of a camera's stream names is negotiated: the player POSTs
+     * its SDP offer here and gets the answer back. The lower-latency route to the same video as
+     * [liveStreamUrl]; players keep that HLS URL as the fallback.
+     */
+    fun liveWebRtcSignalingUrl(serverUrl: String, streamName: String): String
+
+    /**
      * The camera's most recent frame, optionally scaled server-side to [height]. A non-null
      * [cacheBuster] is appended so the image is fetched afresh rather than served from a cache.
      */

@@ -24,13 +24,21 @@ sealed interface VideoSource {
     val posterUrl: String?
 
     /**
-     * go2rtc's live HLS stream. While no video frame has been decoded yet (cold start, or a
-     * reconnect after an error), platforms that support it show [posterUrl] — Frigate's
-     * latest-snapshot endpoint, fetched fresh and refreshed once a second by [VideoPosterLayer]
-     * — instead of a black box or a stale picture.
+     * A camera's live stream. [url] is go2rtc's HLS playlist for it — the identity of the
+     * source (two `Live`s with the same [url] are the same stream, whatever else differs) and
+     * what plays when WebRTC isn't available. [webRtc], when set, is the lower-latency way to
+     * the same video: platforms with a WebRTC engine try it first and fall back to [url] (see
+     * `LiveTransportMemory`); the others ignore it. While no video frame has been decoded yet
+     * (cold start, or a reconnect after an error), platforms that support it show [posterUrl] —
+     * Frigate's latest-snapshot endpoint, fetched fresh and refreshed once a second by
+     * [VideoPosterLayer] — instead of a black box or a stale picture.
      */
     @Immutable
-    data class Live(override val url: String, override val posterUrl: String? = null) : VideoSource {
+    data class Live(
+        override val url: String,
+        override val posterUrl: String? = null,
+        val webRtc: WebRtcEndpoint? = null,
+    ) : VideoSource {
         override val headers: Map<String, String> get() = emptyMap()
     }
 
@@ -48,6 +56,15 @@ sealed interface VideoSource {
         override val posterUrl: String? = null,
     ) : VideoSource
 }
+
+/**
+ * How to negotiate a WebRTC session for a live stream: where the SDP offer goes ([signalingUrl],
+ * see `frigateWebRtcSignalingUrl`) and whether to ask for the camera's audio track at all. The
+ * grid passes `audio = false` — several silent players at once should cost as little as
+ * possible — and the single-camera view asks for sound.
+ */
+@Immutable
+data class WebRtcEndpoint(val signalingUrl: String, val audio: Boolean)
 
 /**
  * An in-place seek within the current [VideoSource.Recording]. [id] makes every request distinct,
@@ -129,16 +146,24 @@ expect fun CameraStreamPlayer(
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
 )
 
-/** Plays a camera's live HLS stream, reporting only how far it has got — see [LiveStreamStatus]. */
+/**
+ * Plays a camera's live stream without sound, reporting only how far it has got — see
+ * [LiveStreamStatus]. [webRtcSignalingUrl], when given, lets platforms with a WebRTC engine
+ * join over that instead of [streamUrl]'s HLS; the grid's silent cards are the caller.
+ */
 @Composable
 fun CameraStreamPlayer(
     streamUrl: String,
     modifier: Modifier = Modifier,
     posterUrl: String? = null,
+    webRtcSignalingUrl: String? = null,
     playerKey: String? = null,
     onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
 ) {
-    val request = remember(streamUrl, posterUrl) { PlayerRequest(VideoSource.Live(streamUrl, posterUrl)) }
+    val request = remember(streamUrl, posterUrl, webRtcSignalingUrl) {
+        val webRtc = webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
+        PlayerRequest(VideoSource.Live(streamUrl, posterUrl, webRtc))
+    }
     CameraStreamPlayer(
         request = request,
         modifier = modifier,
