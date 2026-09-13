@@ -103,14 +103,21 @@ sealed interface WebRtcConnectResult {
 }
 
 /**
- * Remembers, per stream, that WebRTC isn't working right now, so a card that rebinds every few
- * seconds doesn't pay the connect timeout each time before showing a picture.
+ * Remembers, per stream, how WebRTC has been going, so a cold start can choose well:
+ *
+ *  - **Failing.** A card that rebinds every few seconds shouldn't pay the connect timeout each
+ *    time before showing a picture. A stream is allowed
+ *    [LivePlaybackPolicy.WEBRTC_FAILURES_BEFORE_FALLBACK] failed joins; after that it stays on
+ *    HLS until [LivePlaybackPolicy.WEBRTC_FALLBACK_TTL_MS] has passed since the last failure
+ *    ([allowsWebRtc]). Any successful join wipes the failures.
+ *  - **Proven.** A stream that joined over WebRTC within [LivePlaybackPolicy.WEBRTC_PROVEN_TTL_MS]
+ *    is trusted to do so again quickly ([recentlyConnected]); one that hasn't — first open after
+ *    launch, a new network, or a route this app has never joined on — gets HLS started alongside
+ *    the join so a picture is up at HLS speed whatever ICE does (see the holders' `start`).
  *
  * A stream's key is its HLS URL — host included, so the LAN and Tailscale routes to the same
- * camera are separate entries, and moving between networks naturally gets a fresh try. A stream
- * is allowed [LivePlaybackPolicy.WEBRTC_FAILURES_BEFORE_FALLBACK] failed joins; after that it
- * stays on HLS until [LivePlaybackPolicy.WEBRTC_FALLBACK_TTL_MS] has passed since the last
- * failure. Any successful join wipes its record. Session-scoped: nothing is persisted.
+ * camera are separate entries, and moving between networks naturally gets a fresh try.
+ * Session-scoped: nothing is persisted.
  *
  * Not thread-safe; every caller runs on the main thread, like the player holders that use it.
  */
@@ -118,10 +125,12 @@ class LiveTransportMemory(
     private val now: () -> Long = { currentTimeMillis() },
     private val failuresBeforeFallback: Int = LivePlaybackPolicy.WEBRTC_FAILURES_BEFORE_FALLBACK,
     private val fallbackTtlMs: Long = LivePlaybackPolicy.WEBRTC_FALLBACK_TTL_MS,
+    private val provenTtlMs: Long = LivePlaybackPolicy.WEBRTC_PROVEN_TTL_MS,
 ) {
     private class Record(var failures: Int, var lastFailureAt: Long)
 
     private val records = HashMap<String, Record>()
+    private val lastConnectedAt = HashMap<String, Long>()
 
     /** Whether the next cold start of [streamKey] should try WebRTC before HLS. */
     fun allowsWebRtc(streamKey: String): Boolean {
@@ -133,18 +142,35 @@ class LiveTransportMemory(
         return record.failures < failuresBeforeFallback
     }
 
+    /**
+     * Whether [streamKey] joined over WebRTC within [LivePlaybackPolicy.WEBRTC_PROVEN_TTL_MS] and
+     * has not failed since — i.e. a fresh join can be expected to show a frame within a keyframe
+     * interval, and needn't be shadowed by an HLS session.
+     */
+    fun recentlyConnected(streamKey: String): Boolean {
+        val at = lastConnectedAt[streamKey] ?: return false
+        if (now() - at >= provenTtlMs) {
+            lastConnectedAt.remove(streamKey)
+            return false
+        }
+        return true
+    }
+
     fun markFailed(streamKey: String) {
         val record = records.getOrPut(streamKey) { Record(failures = 0, lastFailureAt = 0L) }
         record.failures++
         record.lastFailureAt = now()
+        lastConnectedAt.remove(streamKey)
     }
 
     fun markConnected(streamKey: String) {
         records.remove(streamKey)
+        lastConnectedAt[streamKey] = now()
     }
 
     fun clear() {
         records.clear()
+        lastConnectedAt.clear()
     }
 
     companion object {

@@ -326,7 +326,18 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         // caller thought: its next frame is the picture, so no poster and no generation bump.
         if (endpoint != null && adoptExistingPeer(endpoint)) return
         if (cold) coldStartGeneration++
-        if (endpoint != null && LiveTransportMemory.shared.allowsWebRtc(toLoad.url)) {
+        val memory = LiveTransportMemory.shared
+        if (endpoint != null && memory.allowsWebRtc(toLoad.url)) {
+            // A stream this app hasn't joined over WebRTC lately gets HLS alongside the join: a
+            // picture at HLS speed while ICE finds its way (or doesn't), and the peer takes over
+            // on its first frame exactly as it does on the warm fast path in [load]. A proven
+            // stream skips the shadow — its join shows a frame within a keyframe interval — and
+            // so does a warm swap away from a peer that is still drawing: that peer's picture
+            // stays up until the new one has a frame, which is better than any shadow.
+            if (peer == null && !memory.recentlyConnected(toLoad.url)) {
+                Log.d(LOG_TAG, "$key: unproven stream; playing HLS while the webrtc join runs")
+                startHls(toLoad)
+            }
             startWebRtc(toLoad, endpoint)
         } else {
             startHls(toLoad)

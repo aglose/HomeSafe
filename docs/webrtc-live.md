@@ -32,6 +32,14 @@ for ten minutes from the last failure before WebRTC is tried again; a successful
 record. It is keyed by the HLS URL, host included, so the LAN and Tailscale routes to one camera
 are separate entries and moving between networks naturally gets a fresh try.
 
+It also remembers which streams have *proven* WebRTC lately (`recentlyConnected`, ten minutes from
+the last successful join). A cold start of an unproven stream — the first open after launch, or a
+route the app has never joined on — starts HLS alongside the WebRTC join rather than sitting on
+the poster for the join's full budget (3 s + 5 s) when ICE can't get through: the picture is up at
+HLS speed, and the peer takes over on its first frame through the same make-before-break as the
+warm fast path. A proven stream joins over WebRTC alone, since its join shows a frame within a
+keyframe interval and the shadow would only cost the server an HLS session.
+
 Joins are make-before-break. The previous engine — an HLS session or an older peer — keeps
 drawing until the new peer has a frame, so a quality upgrade on the detail screen and a
 LAN↔Tailscale route flip no longer pass through black. Every binder (grid card, detail screen)

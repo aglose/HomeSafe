@@ -98,6 +98,16 @@ internal object LivePlaybackPolicy {
      */
     const val WEBRTC_FALLBACK_TTL_MS = 10 * 60_000L
 
+    /**
+     * How long a successful WebRTC join vouches for the next cold start of the same stream. Inside
+     * it the holder joins over WebRTC alone; outside it — the first open after launch, a route the
+     * app hasn't joined on yet — HLS is started alongside the join, so a picture is on screen in
+     * the second or two HLS needs rather than after the join's full budget when ICE can't get
+     * through ([WEBRTC_CONNECT_TIMEOUT_MS] plus [WEBRTC_FIRST_FRAME_TIMEOUT_MS], eight seconds of
+     * poster). The cost of the shadow is one short HLS session per unproven cold start.
+     */
+    const val WEBRTC_PROVEN_TTL_MS = 10 * 60_000L
+
     private const val FIRST_RETRY_DELAY_MS = 250L
     private const val MAX_RETRY_DELAY_MS = 30_000L
 
