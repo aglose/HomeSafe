@@ -42,6 +42,9 @@ import platform.UIKit.UIView
 
 private const val POLL_INTERVAL_MS = 250L
 
+/** How many polls of an unstalled WebRTC peer hide the poster on their own, should the renderer's own first-frame report never come. */
+private const val STEADY_WEBRTC_POLLS_TO_TRUST = 3
+
 /**
  * Binds a [LivePlayerHolder] (pooled per [playerKey], see [LivePlayerPool]) to this call site's
  * own surfaces, and draws a live poster over them until one has a real frame.
@@ -173,6 +176,7 @@ actual fun CameraStreamPlayer(
         // ride the same poll; reported only on change so the caller isn't recomposed four times a second.
         var reportedHasAudio: Boolean? = null
         var reportedStatus: LiveStreamStatus? = null
+        var steadyWebRtcPolls = 0
         while (isActive) {
             delay(POLL_INTERVAL_MS)
             val webRtcShowing = holder.transport == LiveTransport.WEBRTC
@@ -180,6 +184,11 @@ actual fun CameraStreamPlayer(
             if (!webRtcShowing && playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
                 renderedGeneration = holder.coldStartGeneration
             }
+            // Same safety net as the Android binder: an adopted peer (the join waited for its first
+            // decoded frame) that isn't stalled is showing a picture, whether or not this container's
+            // renderer got round to reporting it.
+            steadyWebRtcPolls = if (webRtcShowing && !holder.webRtcStalled) steadyWebRtcPolls + 1 else 0
+            if (steadyWebRtcPolls >= STEADY_WEBRTC_POLLS_TO_TRUST) renderedGeneration = holder.coldStartGeneration
             val hasAudio = if (webRtcShowing) holder.webRtcHasAudio else item?.hasAudioTrack() ?: false
             if (hasAudio != reportedHasAudio) {
                 reportedHasAudio = hasAudio
