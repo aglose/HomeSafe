@@ -74,7 +74,7 @@ import kotlinx.coroutines.isActive
 private const val POSITION_POLL_INTERVAL_MS = 250L
 private const val LOG_TAG = "HomeSafeLive"
 
-/** Fallback for hiding the poster if a surface swap ever fails to re-fire `onRenderedFirstFrame`: this many polls of steady playback. */
+/** Fallback for hiding the poster if a surface never reports its first frame (an HLS surface swap, a WebRTC renderer's report misattributed): this many polls of steady playback. */
 private const val STEADY_PLAYBACK_POLLS_TO_TRUST = 3
 
 @Composable
@@ -199,21 +199,26 @@ actual fun CameraStreamPlayer(
     if (renderer != null) {
         DisposableEffect(holder, renderer) {
             val mainThread = Handler(Looper.getMainLooper())
-            // Called on the render thread for every frame; only the first per generation matters,
-            // and only that one is hopped to the main thread.
+            // The generation this surface has been seen showing the peer's picture for. Recorded
+            // only when the holder is on WebRTC at the moment the surface updates: a swap that
+            // lands while the holder is still on HLS is not a frame of the peer's (the renderer's
+            // clear is one — see below), and recording it would make every real frame that
+            // follows look like a repeat, leaving the poster up for good. That is exactly what
+            // happened to grid cards, which bind before their join, while the detail screen,
+            // binding to a holder already on WebRTC, was fine.
             var renderedFor = -1
-            renderer.onFrameRendered = {
+            val onSurfaceUpdated = Runnable {
+                if (holder.transport != LiveTransport.WEBRTC) return@Runnable
                 val generation = holder.coldStartGeneration
-                if (renderedFor != generation) {
-                    renderedFor = generation
-                    mainThread.post {
-                        Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation (transport=${holder.transport})")
-                        if (holder.transport == LiveTransport.WEBRTC) {
-                            renderedGeneration = generation
-                            bridgeFrame = null
-                        }
-                    }
-                }
+                if (renderedFor == generation) return@Runnable
+                renderedFor = generation
+                Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation")
+                renderedGeneration = generation
+                bridgeFrame = null
+            }
+            renderer.onFrameRendered = {
+                // TextureView reports surface updates on the UI thread; hop only if that ever changes.
+                if (Looper.myLooper() == Looper.getMainLooper()) onSurfaceUpdated.run() else mainThread.post(onSurfaceUpdated)
             }
             holder.bindRenderer(renderer)
             onDispose {
@@ -222,9 +227,13 @@ actual fun CameraStreamPlayer(
             }
         }
 
-        // Back on HLS: the peer's last frame must not sit on top of the HLS surface.
+        // Back on HLS after WebRTC: the peer's last frame must not sit on top of the HLS surface.
+        // Only on that transition — a renderer starts transparent, and clearing it on the initial
+        // HLS transport swapped a blank frame into the surface for no reason.
+        var lastTransport by remember(renderer) { mutableStateOf<LiveTransport?>(null) }
         LaunchedEffect(renderer, transport) {
-            if (transport == LiveTransport.HLS) renderer.clear()
+            if (transport == LiveTransport.HLS && lastTransport == LiveTransport.WEBRTC) renderer.clear()
+            lastTransport = transport
         }
     }
 
@@ -259,11 +268,19 @@ actual fun CameraStreamPlayer(
     LaunchedEffect(holder) {
         var steadyPolls = 0
         while (isActive) {
-            val steady = holder.transport == LiveTransport.HLS && player.playbackState == Player.STATE_READY && player.isPlaying
+            // Steady on either engine: HLS ready and playing, or a WebRTC peer that has been adopted
+            // (the join waited for its first decoded frame) and isn't stalled. A surface that has
+            // still not reported a frame after this many polls is trusted to be showing one anyway,
+            // so a missed or misattributed report can't leave the poster up over live video.
+            val steady = when (holder.transport) {
+                LiveTransport.HLS -> player.playbackState == Player.STATE_READY && player.isPlaying
+                LiveTransport.WEBRTC -> !holder.webRtcStalled
+            }
             steadyPolls = if (steady) steadyPolls + 1 else 0
-            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST) {
+            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST && renderedGeneration != holder.coldStartGeneration) {
+                Log.d(LOG_TAG, "${holder.key}: trusting steady ${holder.transport} playback for generation ${holder.coldStartGeneration}")
                 renderedGeneration = holder.coldStartGeneration
-                holder.onSurfaceRenderedFrame(textureView)
+                if (holder.transport == LiveTransport.HLS) holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
             }
             if (currentSource is VideoSource.Recording && player.playbackState == Player.STATE_READY) {
