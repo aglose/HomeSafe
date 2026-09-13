@@ -103,8 +103,8 @@ soon as the network allows, never an old photo in between:
   detaches the renderers instead, so the last frame stays up and the very next decoded frame is
   what shows on resume.
 - **Start-up costs paid behind the sign-in screen.** libwebrtc's native initialisation and the
-  shared EGL context are built on a background thread at launch (`warmUpLivePlayback`), not
-  inside the first camera's join.
+  shared EGL context are built at launch (`warmUpLivePlayback`), not inside the first camera's
+  join.
 - **A poster that is never stale.** While a surface has no frame of its own — first open, a
   reconnect, a return from a long background — `LivePosterLayer` shows the last snapshot this
   device saw (from disk, same frame the card appears), replaces it with a freshly fetched

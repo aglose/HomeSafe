@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.ui.components
 
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +24,8 @@ import org.webrtc.VideoSink
 import org.webrtc.VideoTrack
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+
+private const val LOG_TAG = "HomeSafeLive"
 
 /**
  * A receive-only libwebrtc peer connection, exposed to the common join logic as [WebRtcPeer].
@@ -154,6 +157,7 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
     fun addSink(sink: VideoSink) {
         if (closed || !sinks.add(sink)) return
         if (videoEnabled) videoTrack?.addSink(sink)
+        Log.d(LOG_TAG, "sink added; track=${videoTrack != null}, video enabled=$videoEnabled, sinks=${sinks.size}")
     }
 
     fun removeSink(sink: VideoSink) {
@@ -197,6 +201,7 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
                 // Always counting, so a peer nobody is drawing still reports its first frame.
                 track.addSink(frameCounter)
                 if (videoEnabled) sinks.forEach(track::addSink)
+                Log.d(LOG_TAG, "video track adopted; ${sinks.size} sinks, video enabled=$videoEnabled")
             }
 
             is AudioTrack -> {

@@ -177,11 +177,17 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
 
     /** WebRTC frames go to [renderer] too, from the current peer and any that replaces it. */
     fun bindRenderer(renderer: WebRtcTextureRenderer) {
-        if (renderers.add(renderer)) peer?.addSink(renderer)
+        if (renderers.add(renderer)) {
+            peer?.addSink(renderer)
+            Log.d(LOG_TAG, "$key: renderer bound (${renderers.size} attached, peer=${peer != null}, transport=$transport)")
+        }
     }
 
     fun unbindRenderer(renderer: WebRtcTextureRenderer) {
-        if (renderers.remove(renderer)) peer?.removeSink(renderer)
+        if (renderers.remove(renderer)) {
+            peer?.removeSink(renderer)
+            Log.d(LOG_TAG, "$key: renderer unbound (${renderers.size} attached)")
+        }
     }
 
     /** True while the player holds no usable session for [source]: never loaded, stopped when idle, or failed. */
@@ -414,6 +420,11 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         webRtcHasAudio = newPeer.hasAudio.value
         transport = LiveTransport.WEBRTC
         consecutiveFailures = 0
+        Log.d(
+            LOG_TAG,
+            "$key: adopted peer for ${endpoint.signalingUrl} (audio=${endpoint.audio}); ${renderers.size} renderers attached, " +
+                "video=${requestedPlayWhenReady && activeBinders > 0}, generation=$coldStartGeneration",
+        )
         if (previous != null) park(previous, previousEndpoint)
         // The HLS session, if one was carrying this camera, has nothing left to show.
         if (player.playbackState != Player.STATE_IDLE) player.stop()
@@ -606,9 +617,8 @@ internal object LivePlayerPool {
     }
 
     /**
-     * Everything a first join would otherwise build on the main thread: the signaling client
-     * and libwebrtc itself (native load, peer connection factory, EGL). Any thread; see
-     * [warmUpLivePlayback].
+     * Everything a first join would otherwise build lazily: the signaling client and libwebrtc
+     * itself (native load, peer connection factory, EGL). See [warmUpLivePlayback].
      */
     fun warmUp(appContext: Context) {
         connectFlow(appContext)
