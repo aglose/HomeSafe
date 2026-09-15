@@ -295,6 +295,16 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(camera
     - openAtEpochSeconds: STABLE (class with no mutable properties)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MomentCameraOption>, selectedCameraName: kotlin.String?, selectedCameraLabel: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - cameras: RUNTIME (requires runtime check)
+    - selectedCameraName: STABLE (class with no mutable properties)
+    - selectedCameraLabel: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -334,6 +344,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.CategoriesCard(uiState: 
     - uiState: STABLE (marked @Stable or @Immutable)
     - data: RUNTIME (requires runtime check)
     - viewModel: RUNTIME (requires runtime check)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CategoryFilterChip(selected: com.meticulouscreations.homesafe.domain.model.MomentCategory, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - selected: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Chip(label: kotlin.String, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -453,11 +471,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.EditorCanvas(uiState: co
     - viewModel: RUNTIME (requires runtime check)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, historyDayLabel: kotlin.String?, hasError: kotlin.Boolean, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, cameraLabel: kotlin.String?, historyDayLabel: kotlin.String?, hasError: kotlin.Boolean, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - category: STABLE (class with no mutable properties)
+    - cameraLabel: STABLE (class with no mutable properties)
     - historyDayLabel: STABLE (class with no mutable properties)
     - hasError: STABLE (primitive type)
     - hasOlder: STABLE (primitive type)
@@ -505,12 +524,24 @@ private fun com.meticulouscreations.homesafe.ui.screens.FeedEnd(hasOlder: kotlin
     - onLoadOlder: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FilterChip(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.FilterMenuChip(label: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector?, active: kotlin.Boolean, menuDescription: kotlin.String, menu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - category: STABLE (class with no mutable properties)
-    - selected: STABLE (primitive type)
+    - label: STABLE (String is immutable)
+    - icon: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+    - menuDescription: STABLE (String is immutable)
+    - menu: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.FilterMenuItem(label: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector?, checked: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - icon: STABLE (marked @Stable or @Immutable)
+    - checked: STABLE (primitive type)
     - onClick: STABLE (function type)
 
 @Composable
@@ -695,13 +726,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kot
     - url: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onSelectCamera: kotlin.Function1<kotlin.String?, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - downloadState: STABLE (marked @Stable or @Immutable)
     - onSelectCategory: STABLE (function type)
+    - onSelectCamera: STABLE (function type)
     - onShowDay: STABLE (function type)
     - onLoadOlder: STABLE (function type)
     - onCardClick: STABLE (function type)

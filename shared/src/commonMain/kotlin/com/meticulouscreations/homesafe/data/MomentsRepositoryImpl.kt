@@ -37,7 +37,7 @@ import kotlinx.coroutines.sync.withLock
  * continuously, a stale cache would show detections that have since been purged, and the feed
  * re-polls on a short interval anyway. The in-memory list is the truth for the session.
  *
- * The feed is a window (see [MomentsPaging]) held as two raw lists: [head], the window's first
+ * The feed is a window (see [MomentsPaging]), optionally narrowed to one camera, held as two raw lists: [head], the window's first
  * page, which the poll replaces wholesale, and [tail], the older pages [loadOlder] appends one at
  * a time, each contiguous with the last. Zones and vehicle-visit folding run over the two joined,
  * so a parked car whose sightings straddle a page boundary still folds into one card. Paging
@@ -60,8 +60,17 @@ class MomentsRepositoryImpl(
     private val _error = MutableStateFlow<String?>(null)
     private val _paging = MutableStateFlow(MomentsPaging())
 
-    /** The window's top edge; null is live. See [MomentsPaging.beforeEpochSeconds]. */
-    private val window = MutableStateFlow<Double?>(null)
+    /** Which slice of the server's detections the feed is: where it opens and which camera it's on. */
+    private data class Window(
+        /** The top edge; null is live. See [MomentsPaging.beforeEpochSeconds]. */
+        val before: Double? = null,
+        /** Null is every camera. */
+        val camera: String? = null,
+    ) {
+        val cameras: List<String>? get() = camera?.let(::listOf)
+    }
+
+    private val window = MutableStateFlow(Window())
 
     /**
      * The zones drawn on each camera, for [inZones]: read from `/api/config` on the first poll
@@ -77,7 +86,7 @@ class MomentsRepositoryImpl(
     private var tail: List<MomentEvent> = emptyList()
 
     /** Which (server, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
-    private var loadedFor: Pair<String, Double?>? = null
+    private var loadedFor: Pair<String, Window>? = null
 
     /** One page down at a time: a second [loadOlder] while one is in flight is simply ignored. */
     private val olderInFlight = Mutex()
@@ -88,21 +97,21 @@ class MomentsRepositoryImpl(
     // channelFlow, not flow: collectLatest runs its body in a child coroutine, and emitting from
     // there would violate the flow invariant at runtime. send() from a child is what channelFlow is for.
     private val poller: Flow<Unit> = channelFlow {
-        combine(activeUrl, window) { url, before -> url to before }.collectLatest { (url, before) ->
+        combine(activeUrl, window) { url, window -> url to window }.collectLatest { (url, window) ->
             if (url == null) {
                 stateLock.withLock { reset(loadedFor = null) }
                 return@collectLatest
             }
             // Coming back to the same window (a tab switch, say) keeps the pages already loaded
             // and only refreshes the top; a new server or a moved window starts over.
-            stateLock.withLock { if (loadedFor != url to before) reset(loadedFor = url to before) }
+            stateLock.withLock { if (loadedFor != url to window) reset(loadedFor = url to window) }
             var polls = 0
             while (true) {
-                fetchHead(url, before, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
+                fetchHead(url, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
                 polls++
                 send(Unit)
                 // A window into the past doesn't change under us; only the live feed is worth re-asking for.
-                if (before != null) return@collectLatest
+                if (window.before != null) return@collectLatest
                 delay(POLL_INTERVAL_MS)
             }
         }
@@ -121,7 +130,36 @@ class MomentsRepositoryImpl(
     override fun observePaging(): Flow<MomentsPaging> = _paging.asStateFlow()
 
     override fun showBefore(epochSeconds: Double?) {
-        window.value = epochSeconds
+        window.update { it.copy(before = epochSeconds) }
+    }
+
+    override fun showCamera(cameraName: String?) {
+        window.update { it.copy(camera = cameraName) }
+    }
+
+    /**
+     * Its own poll rather than a slice of [observeMoments]: that feed is whatever window the
+     * Moments tab last opened — another camera, an earlier day — and even live, a quiet camera's
+     * newest moments needn't be among the newest hundred across all of them. Zones come from the
+     * feed's cache, read here only when nothing has read them for this server yet. A failed poll
+     * keeps what was shown; the feed is where fetch errors are reported.
+     */
+    override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = channelFlow {
+        activeUrl.collectLatest { url ->
+            if (url == null) {
+                send(emptyList())
+                return@collectLatest
+            }
+            while (true) {
+                loadZones(url, force = false)
+                // More than [limit] raw: zones drop some detections and folding merges others.
+                apiClient.getEvents(url, limit = maxOf(limit, RECENT_RAW_EVENTS), cameras = listOf(cameraName)).onSuccess { events ->
+                    val zones = stateLock.withLock { zonesByCamera }
+                    send(events.map { it.toDomain() }.inZones(zones).mergeVehicleVisits().take(limit))
+                }
+                delay(POLL_INTERVAL_MS)
+            }
+        }
     }
 
     override suspend fun loadOlder() {
@@ -132,7 +170,7 @@ class MomentsRepositoryImpl(
             val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
             if (oldest == null || target?.first != url || !_paging.value.hasOlder) return
             _paging.update { it.copy(loadingOlder = true) }
-            apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = oldest)
+            apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = target?.second?.cameras)
                 .onSuccess { events ->
                     stateLock.withLock {
                         // Only if the window hasn't moved while the page was in flight.
@@ -170,9 +208,10 @@ class MomentsRepositoryImpl(
         )
     }
 
-    private suspend fun fetchHead(url: String, before: Double?, includeZones: Boolean) {
+    /** Re-reads [url]'s zones when [force]d, or when what's cached belongs to another server (or nothing). */
+    private suspend fun loadZones(url: String, force: Boolean) {
         // A failed config read keeps the last zones (or none): the feed still shows, just unplaced.
-        if (includeZones || url != zonesUrl) {
+        if (force || url != stateLock.withLock { zonesUrl }) {
             apiClient.getServerConfig(url).onSuccess { config ->
                 stateLock.withLock {
                     zonesByCamera = config.zonesByCamera()
@@ -180,10 +219,14 @@ class MomentsRepositoryImpl(
                 }
             }
         }
-        apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = before)
+    }
+
+    private suspend fun fetchHead(url: String, window: Window, includeZones: Boolean) {
+        loadZones(url, force = includeZones)
+        apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .onSuccess { events ->
                 stateLock.withLock {
-                    if (loadedFor == url to before) {
+                    if (loadedFor == url to window) {
                         head = events.map { it.toDomain() }
                         // With older pages already below, the last page loaded is still the last one
                         // down; a fresh head short of a page is the whole of what the server has.
@@ -196,12 +239,12 @@ class MomentsRepositoryImpl(
     }
 
     /** Under [stateLock]. Forgets the lists and points them at [loadedFor]. */
-    private fun reset(loadedFor: Pair<String, Double?>?) {
+    private fun reset(loadedFor: Pair<String, Window>?) {
         this.loadedFor = loadedFor
         head = emptyList()
         tail = emptyList()
         _moments.value = emptyList()
-        _paging.value = MomentsPaging(beforeEpochSeconds = loadedFor?.second)
+        _paging.value = MomentsPaging(beforeEpochSeconds = loadedFor?.second?.before)
     }
 
     /**
@@ -220,6 +263,9 @@ class MomentsRepositoryImpl(
         const val POLL_INTERVAL_MS = 30_000L
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
+
+        /** How many detections a camera's recent strip reads to find its few moments. */
+        const val RECENT_RAW_EVENTS = 25
     }
 }
 
