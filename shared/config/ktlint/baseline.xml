@@ -49,10 +49,7 @@
         <error line="67" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="73" column="5" source="compose:modifier-missing-check" />
-    </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/MomentsScreen.kt">
-        <error line="82" column="5" source="compose:modifier-missing-check" />
+        <error line="90" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="85" column="5" source="compose:modifier-missing-check" />

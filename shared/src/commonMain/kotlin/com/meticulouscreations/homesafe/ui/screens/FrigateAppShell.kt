@@ -80,12 +80,20 @@ fun FrigateAppShell() {
         TopLevelRoute.Settings -> settingsBackStack.size <= 1
         else -> true
     }
+    // The Home list's quick look at one camera. Its layer is drawn by the shell, over the bars,
+    // so the zoomed picture gets the whole screen.
+    val cardZoom = rememberCameraCardZoomState()
 
     ShellScaffold(
         showTopBar = showTopBar,
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
         selectedTab = topLevelBackStack.topLevelKey,
         onSelectTab = { topLevelBackStack.addTopLevel(it) },
+        overlay = {
+            CameraCardZoomOverlay(state = cardZoom) { tile ->
+                homeBackStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
+            }
+        },
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -95,7 +103,7 @@ fun FrigateAppShell() {
             popTransitionSpec = { tabHandOver() },
             predictivePopTransitionSpec = { tabHandOver() },
             entryProvider = entryProvider {
-                entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack) }
+                entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack, cardZoom) }
                 entry<TopLevelRoute.Moments> {
                     MomentsTabContent(
                         // Full screen for a detection is the Home tab's camera screen, opened at
@@ -145,6 +153,8 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * Edge-to-edge: the background paints under the system bars, and each piece that must stay
  * tappable steps in from its own bar — the top bar from the status bar, the floating nav from
  * the navigation bar, and everything from a display cutout at the sides (landscape notch).
+ *
+ * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into.
  */
 @Composable
 internal fun ShellScaffold(
@@ -152,6 +162,7 @@ internal fun ShellScaffold(
     topBar: @Composable () -> Unit,
     selectedTab: TopLevelRoute,
     onSelectTab: (TopLevelRoute) -> Unit,
+    overlay: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -181,6 +192,8 @@ internal fun ShellScaffold(
                 .navigationBarsPadding()
                 .padding(bottom = 16.dp),
         )
+
+        overlay()
     }
 }
 
@@ -294,7 +307,7 @@ private data class DetectionZonesRoute(val cameraName: String)
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -306,6 +319,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
                 entry<CameraListRoute> {
                     HomeTabContent(
                         sharedTransitionScope = this@SharedTransitionLayout,
+                        zoomState = cardZoom,
                         onCameraClick = { tile ->
                             backStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
                         },
