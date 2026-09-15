@@ -13,7 +13,7 @@ import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIApplication
 import platform.UIKit.UIApplicationDidEnterBackgroundNotification
-import platform.UIKit.UIApplicationStateBackground
+import platform.UIKit.UIApplicationState
 import platform.UIKit.UIApplicationWillEnterForegroundNotification
 import platform.UIKit.UIViewController
 
@@ -131,7 +131,7 @@ internal object IosAppVisibility {
         ) { update(appGraph, visible = false) }
         // A geofence crossing can relaunch the app in the background (see IosApp); the first
         // screen is then made without the foreground ever having been entered.
-        update(appGraph, visible = UIApplication.sharedApplication.applicationState != UIApplicationStateBackground)
+        update(appGraph, visible = UIApplication.sharedApplication.applicationState != UIApplicationState.UIApplicationStateBackground)
     }
 
     private fun update(appGraph: AppGraph, visible: Boolean) {
