@@ -113,9 +113,9 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
         daysAgo <= 0 -> "Today"
         daysAgo == 1L -> "Yesterday"
         daysAgo < 7 -> date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
-        else -> "${date.month.shortName()} ${date.day}"
+        else -> date.shortLabel()
     }
-    val dateSubLabel = "${date.month.shortName()} ${date.day}"
+    val dateSubLabel = date.shortLabel()
 
     // "Sarah's Tesla in the driveway", "Person on the front lawn", "Car detected": the subject is
     // the classifier's name for the object when it has one, and the place is the last zone the
@@ -155,6 +155,9 @@ private fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
 }
 
 private fun Month.shortName(): String = name.lowercase().replaceFirstChar { it.uppercase() }.take(3)
+
+/** "Sep 2": how the feed names a day, in its headers and on the chip that opens it at one. */
+fun LocalDate.shortLabel(): String = "${month.shortName()} $day"
 
 /** A filesystem-safe on-device filename for this event's downloaded clip, e.g. "homesafe_front_door_1788401732.mp4". */
 fun MomentEvent.downloadFileName(): String {

@@ -17,12 +17,16 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -32,11 +36,23 @@ import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,13 +64,26 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.shortLabel
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
+import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
+
+/** How many of the list's last items may be on screen before the next page is asked for. */
+private const val LOAD_OLDER_LOOKAHEAD = 4
 
 private val MomentCategory.label: String
     get() = when (this) {
@@ -75,17 +104,74 @@ private val MomentCategory.icon: ImageVector?
 /**
  * The "Moments" tab: Frigate's detections, newest first, filterable, each expandable to play its clip.
  *
+ * The feed pages: it opens at now (or at the end of a day picked from the calendar chip) and
+ * fetches the next page down as the list nears its end, so every day Frigate still holds is
+ * reachable by scrolling — and an old one directly, without scrolling through everything since.
+ *
  * [onOpenFullScreen] hands a detection off to its camera's detail screen, which plays the
  * recording from that instant on the full-width player — the way out of the card-sized one.
  */
 @Composable
-fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit) {
+fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifier = Modifier) {
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
 
+    MomentsFeed(
+        state = state,
+        downloadState = downloadState,
+        onSelectCategory = viewModel::selectCategory,
+        onShowDay = viewModel::showDay,
+        onLoadOlder = viewModel::loadOlder,
+        onCardClick = viewModel::toggleExpanded,
+        onClipBuffering = viewModel::onClipBuffering,
+        onClipError = viewModel::onClipPlaybackError,
+        onDownloadClick = viewModel::downloadClip,
+        onFullScreenClick = { event ->
+            // Close the inline player on the way out: playback moves to the
+            // detail screen, and two players on one clip would both hold audio.
+            viewModel.collapse()
+            onOpenFullScreen(event)
+        },
+        modifier = modifier,
+    )
+}
+
+/**
+ * The tab with its state hoisted: what [MomentsTabContent] draws once it has read the view
+ * model. Nothing here reaches for a graph, so it can be previewed and tested from fixtures.
+ * The only state it keeps is whether the day picker is up — a fact about this composition, not
+ * about the feed.
+ */
+@Composable
+internal fun MomentsFeed(
+    state: MomentsUiState,
+    downloadState: DownloadUiState,
+    onSelectCategory: (MomentCategory) -> Unit,
+    onShowDay: (LocalDate?) -> Unit,
+    onLoadOlder: () -> Unit,
+    onCardClick: (MomentEvent) -> Unit,
+    onClipBuffering: (Boolean) -> Unit,
+    onClipError: () -> Unit,
+    onDownloadClick: (MomentEvent) -> Unit,
+    onFullScreenClick: (MomentEvent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var pickingDay by remember { mutableStateOf(false) }
+
+    if (pickingDay) {
+        MomentDayPicker(
+            initialDayUtcMillis = state.historyDay?.atStartOfDayIn(TimeZone.UTC)?.toEpochMilliseconds(),
+            onPick = { day ->
+                pickingDay = false
+                onShowDay(day)
+            },
+            onDismiss = { pickingDay = false },
+        )
+    }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(horizontal = 24.dp)
             // Under the shell's floating top bar (see shellTopBarClearance); the filter chips
@@ -93,17 +179,31 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit) {
             .padding(top = shellTopBarClearance() + 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        // The calendar is pinned at the row's end, outside the chips' scroll: on a phone the
+        // four chips already overrun the width, and a control that only shows up after a
+        // sideways scroll nobody knows to make might as well not be there.
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            MomentCategory.entries.forEach { category ->
-                FilterChip(
-                    category = category,
-                    selected = category == state.selectedCategory,
-                    onClick = { viewModel.selectCategory(category) },
-                )
+            Row(
+                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                MomentCategory.entries.forEach { category ->
+                    FilterChip(
+                        category = category,
+                        selected = category == state.selectedCategory,
+                        onClick = { onSelectCategory(category) },
+                    )
+                }
             }
+            HistoryChip(
+                dayLabel = state.historyDay?.shortLabel(),
+                onClick = { pickingDay = true },
+                onClear = { onShowDay(null) },
+            )
         }
 
         state.error?.let { message ->
@@ -116,9 +216,19 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit) {
         }
 
         if (state.groups.isEmpty()) {
-            EmptyMoments(category = state.selectedCategory, hasError = state.error != null)
+            EmptyMoments(
+                category = state.selectedCategory,
+                historyDayLabel = state.historyDay?.shortLabel(),
+                hasError = state.error != null,
+                hasOlder = state.hasOlder,
+                loadingOlder = state.loadingOlder,
+                onLoadOlder = onLoadOlder,
+            )
         } else {
+            val listState = rememberLazyListState()
+            LoadOlderWhenNearTheEnd(listState, hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
             LazyColumn(
+                state = listState,
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = bottomNavClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
@@ -142,41 +252,198 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit) {
                             isDownloading = isDownloading,
                             downloadSucceeded = downloadSucceeded,
                             downloadErrorMessage = downloadErrorMessage,
-                            onClick = { viewModel.toggleExpanded(item.event) },
-                            onClipBuffering = viewModel::onClipBuffering,
-                            onClipError = viewModel::onClipPlaybackError,
-                            onDownloadClick = { viewModel.downloadClip(item.event) },
-                            onFullScreenClick = {
-                                // Close the inline player on the way out: playback moves to the
-                                // detail screen, and two players on one clip would both hold audio.
-                                viewModel.collapse()
-                                onOpenFullScreen(item.event)
-                            },
+                            onClick = { onCardClick(item.event) },
+                            onClipBuffering = onClipBuffering,
+                            onClipError = onClipError,
+                            onDownloadClick = { onDownloadClick(item.event) },
+                            onFullScreenClick = { onFullScreenClick(item.event) },
                         )
                     }
+                }
+                item(key = "feed-end", contentType = "feed-end") {
+                    FeedEnd(hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
                 }
             }
         }
     }
 }
 
+/**
+ * Asks for the next page once the last few items are on screen, so the feed reads as endless
+ * rather than stopping at a button. Re-evaluated as pages land: a page whose cards the current
+ * filter hides leaves the list where it was, still near the end, and the next is fetched — the
+ * chip's answer to "any animals last week?" is to keep looking, not to say nothing.
+ */
 @Composable
-private fun EmptyMoments(category: MomentCategory, hasError: Boolean) {
+private fun LoadOlderWhenNearTheEnd(listState: LazyListState, hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit) {
+    val nearTheEnd by remember(listState) {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()?.index ?: -1
+            last >= info.totalItemsCount - LOAD_OLDER_LOOKAHEAD
+        }
+    }
+    val loadOlder by rememberUpdatedState(onLoadOlder)
+    LaunchedEffect(nearTheEnd, hasOlder, loadingOlder) {
+        if (nearTheEnd && hasOlder && !loadingOlder) loadOlder()
+    }
+}
+
+/**
+ * The list's last item: a spinner while the next page is on its way, a button when the reader
+ * beat the lookahead to the end, and a full stop once the server has nothing older.
+ */
+@Composable
+private fun FeedEnd(hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () -> Unit) {
+    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+        when {
+            loadingOlder -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+
+            hasOlder -> TextButton(onClick = onLoadOlder) { Text("Load older moments") }
+
+            else -> Text(
+                text = "That's everything the server still has.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun EmptyMoments(
+    category: MomentCategory,
+    historyDayLabel: String?,
+    hasError: Boolean,
+    hasOlder: Boolean,
+    loadingOlder: Boolean,
+    onLoadOlder: () -> Unit,
+) {
     // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
     // happened in a zone whose movement list includes it, or when Frigate recognised who or
     // what it was. Say so, rather than looking broken.
+    val what = if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
     val message = when {
         hasError -> "Couldn't reach the server for detections."
+
+        // A window into the past that came up empty is a different fact from a quiet feed: the
+        // pages fetched so far had none, and there may be more below.
+        historyDayLabel != null && hasOlder -> "No $what in the most recent pages before $historyDayLabel."
+
+        historyDayLabel != null -> "No $what on or before $historyDayLabel that the server still has."
+
         category != MomentCategory.ALL -> "No ${category.label.lowercase()} to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+
         else -> "Nothing to show yet. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
     }
     Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomNavClearance()), contentAlignment = Alignment.Center) {
-        Text(
-            text = message,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 24.dp),
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 24.dp),
+            )
+            // A filter can empty the loaded pages without the server being out of moments: offer
+            // the next page rather than leaving a wall the reader can't see past.
+            when {
+                loadingOlder -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                hasOlder -> TextButton(onClick = onLoadOlder) { Text("Look further back") }
+            }
+        }
+    }
+}
+
+/**
+ * The calendar at the end of the filter row: tapping it picks a day to open the feed at. Live
+ * it is just the icon, the width the chips can spare; once a day is picked it names the day
+ * ([dayLabel], null while live) and grows a close that returns the feed to now.
+ */
+@Composable
+private fun HistoryChip(dayLabel: String?, onClick: () -> Unit, onClear: () -> Unit) {
+    val selected = dayLabel != null
+    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Row(
+        modifier = Modifier
+            .clip(CircleShape)
+            .then(
+                if (selected) {
+                    Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
+                } else {
+                    Modifier
+                        .background(MaterialTheme.colorScheme.surface, CircleShape)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), CircleShape)
+                },
+            )
+            .clickable(onClick = onClick)
+            .padding(start = if (selected) 14.dp else 9.dp, end = if (selected) 8.dp else 9.dp, top = 8.dp, bottom = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Filled.CalendarMonth,
+            contentDescription = if (selected) null else "Pick a day",
+            tint = contentColor,
+            modifier = Modifier.width(18.dp).aspectRatio(1f),
         )
+        if (dayLabel != null) {
+            Text(
+                text = "From $dayLabel",
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor,
+            )
+        }
+        if (selected) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = "Back to the latest moments",
+                tint = contentColor,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onClear)
+                    .padding(2.dp)
+                    .width(16.dp)
+                    .aspectRatio(1f),
+            )
+        }
+    }
+}
+
+/**
+ * Material's calendar, limited to today and earlier: there are no detections from tomorrow.
+ * The picker works in UTC-midnight millis ([initialDayUtcMillis] included; null starts it on
+ * today), so the chosen day is read back in UTC — reading it in the local zone would shift it
+ * a day west of Greenwich.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalTime::class)
+@Composable
+private fun MomentDayPicker(initialDayUtcMillis: Long?, onPick: (LocalDate) -> Unit, onDismiss: () -> Unit) {
+    val today = remember { Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date }
+    val todayUtcMillis = remember(today) { today.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds() }
+    val pickerState = rememberDatePickerState(
+        initialSelectedDateMillis = initialDayUtcMillis ?: todayUtcMillis,
+        selectableDates = remember(todayUtcMillis) {
+            object : SelectableDates {
+                override fun isSelectableDate(utcTimeMillis: Long): Boolean = utcTimeMillis <= todayUtcMillis
+
+                override fun isSelectableYear(year: Int): Boolean = year <= today.year
+            }
+        },
+    )
+    DatePickerDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val millis = pickerState.selectedDateMillis ?: return@TextButton
+                    onPick(Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date)
+                },
+                enabled = pickerState.selectedDateMillis != null,
+            ) { Text("Show") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    ) {
+        DatePicker(state = pickerState)
     }
 }
 

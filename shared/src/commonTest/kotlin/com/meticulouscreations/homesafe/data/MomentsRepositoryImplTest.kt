@@ -67,12 +67,22 @@ class MomentsRepositoryImplTest {
 
     private class Harness(scope: TestScope, url: String? = "http://192.168.68.55:8971", failEvents: Boolean = false) {
         val hosts = mutableListOf<String>()
+
+        /** Every `/api/events` request's query string, in order: what the feed asked the server for. */
+        val eventQueries = mutableListOf<String>()
         val engine = MockEngine { req ->
             hosts += req.url.host
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
-                req.url.encodedPath.endsWith("/api/events") -> respond(events, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+
+                req.url.encodedPath.endsWith("/api/events") -> {
+                    eventQueries += req.url.encodedQuery
+                    val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
+                    respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                }
+
                 req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+
                 else -> respond("", HttpStatusCode.NotFound)
             }
         }
@@ -88,8 +98,26 @@ class MomentsRepositoryImplTest {
 
             /** `/api/config`, or null to 404 it the way a test that isn't about zones expects. */
             var config: String? = null
+
+            /** When set, answers `/api/events` by its `before` (null for none) instead of with [events]. */
+            var eventsFor: ((before: Double?) -> String)? = null
         }
     }
+
+    /** [count] one-person detections, one a second, newest first from [newestStart] — the shape of a full page. */
+    private fun personsJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") { i ->
+        val start = newestStart - i
+        """{"id":"e$start","label":"person","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
+            "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+    }
+
+    private suspend fun MomentsRepositoryImpl.paging() = observePaging().first()
+
+    /**
+     * The page requests, the polls left out: [eventually] advances virtual time past the poll
+     * interval every round, so the head is re-read any number of times along the way.
+     */
+    private val Harness.pageQueries: List<String> get() = eventQueries.filter { "before=" in it }
 
     /** Front Yard's real zones (2026-09-06): the street wants only birds, the sidewalk wants everything. */
     private val configJson = """{"cameras":{"hikvision_1":{"zones":{
@@ -252,6 +280,93 @@ class MomentsRepositoryImplTest {
         }
         assertNotNull(err)
         assertEquals(emptyList(), h.repo.observeMoments().first())
+    }
+
+    @Test
+    fun theNextPageStartsBeforeTheOldestDetectionAndSitsBelowTheHead() = runTest {
+        // A full page of 100 from the top; below it the server has two more, then nothing.
+        Harness.eventsFor = { before -> if (before == null) personsJson(2000, 100) else personsJson(1900, 2) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("the first page") {
+                list = h.repo.observeMoments().first()
+                list.size == 100
+            }
+            assertEquals(true, h.repo.paging().hasOlder, "a full page means there may be more")
+            assertEquals(emptyList(), h.pageQueries, "the live feed is read from the top, with no cursor")
+
+            h.repo.loadOlder()
+
+            list = h.repo.observeMoments().first()
+            assertEquals(102, list.size)
+            assertEquals(listOf("e1900", "e1899"), list.takeLast(2).map { it.id })
+            // The cursor is the oldest detection fetched, rendered the way every Frigate timestamp is.
+            assertEquals(listOf("limit=100&before=1901.000"), h.pageQueries)
+            val paging = h.repo.paging()
+            assertEquals(false, paging.hasOlder, "a short page is the end of what the server has")
+            assertEquals(false, paging.loadingOlder)
+
+            // Nothing older: asking again doesn't even go to the server.
+            h.repo.loadOlder()
+            assertEquals(1, h.pageQueries.size)
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun openingTheFeedAtAnEarlierInstantStartsOverBelowIt() = runTest {
+        Harness.eventsFor = { before ->
+            when (before) {
+                null -> personsJson(2000, 100)
+                1500.0 -> personsJson(1499, 1)
+                else -> fail("unexpected before=$before")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("the live feed") {
+                list = h.repo.observeMoments().first()
+                list.size == 100
+            }
+
+            h.repo.showBefore(1500.0)
+            eventually("the window to move") {
+                list = h.repo.observeMoments().first()
+                list.map { it.id } == listOf("e1499")
+            }
+            assertEquals("limit=100&before=1500.000", h.pageQueries.last())
+            val paging = h.repo.paging()
+            assertEquals(1500.0, paging.beforeEpochSeconds)
+            assertEquals(false, paging.hasOlder)
+
+            // Back to now: the live page again, and the window's edge gone with it.
+            h.repo.showBefore(null)
+            eventually("the live feed again") {
+                list = h.repo.observeMoments().first()
+                list.size == 100
+            }
+            assertNull(h.repo.paging().beforeEpochSeconds)
+            assertEquals(true, h.repo.paging().hasOlder)
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aShortFirstPageIsTheWholeFeed() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        backgroundScope.launch { h.repo.observeMoments().collect {} }
+        eventually("events to load") { h.repo.observeMoments().first().size == 2 }
+        assertEquals(false, h.repo.paging().hasOlder)
+
+        h.repo.loadOlder()
+        assertEquals(emptyList(), h.pageQueries, "nothing older to ask for")
     }
 
     @Test

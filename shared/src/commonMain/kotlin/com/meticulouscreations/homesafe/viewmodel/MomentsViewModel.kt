@@ -7,14 +7,18 @@ import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
+import com.meticulouscreations.homesafe.domain.model.endOfDayEpochSeconds
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.LoadOlderMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import dev.zacsweers.metro.AppScope
@@ -23,6 +27,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -50,6 +55,15 @@ data class MomentsUiState(
     val groups: List<MomentGroup> = emptyList(),
     val selectedCategory: MomentCategory = MomentCategory.ALL,
     val error: String? = null,
+    /**
+     * The day the feed was opened at, when it was: it shows that day and earlier, newest first.
+     * Null is the live feed.
+     */
+    val historyDay: LocalDate? = null,
+    /** The server has older detections below the last loaded; the feed can ask for the next page. */
+    val hasOlder: Boolean = false,
+    /** The next page down is on its way. */
+    val loadingOlder: Boolean = false,
     /** The card currently opened to play its clip, if any. */
     val expandedEventId: String? = null,
     /** The clip player request for [expandedEventId]; null while it's being resolved. */
@@ -77,7 +91,10 @@ data class DownloadUiState(
 class MomentsViewModel(
     observeMomentsUseCase: ObserveMomentsUseCase,
     observeMomentsErrorUseCase: ObserveMomentsErrorUseCase,
+    observeMomentsPagingUseCase: ObserveMomentsPagingUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
+    private val loadOlderMomentsUseCase: LoadOlderMomentsUseCase,
+    private val showMomentsBeforeUseCase: ShowMomentsBeforeUseCase,
     private val getMomentClipStreamUseCase: GetMomentClipStreamUseCase,
     private val downloadMomentClipUseCase: DownloadMomentClipUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
@@ -88,6 +105,7 @@ class MomentsViewModel(
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
 
     private val _selectedCategory = MutableStateFlow(MomentCategory.ALL)
+    private val _historyDay = MutableStateFlow<LocalDate?>(null)
     private val _clip = MutableStateFlow(ClipState())
     private var clipJob: Job? = null
 
@@ -95,13 +113,14 @@ class MomentsViewModel(
     val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
     private var downloadJob: Job? = null
 
-    val uiState: StateFlow<MomentsUiState> = combine(
+    /** The cards: the feed filtered, presented and grouped by day. Everything that isn't about the open clip. */
+    private val feed: Flow<MomentsUiState> = combine(
         observeMomentsUseCase(),
         _selectedCategory,
         observeMomentsErrorUseCase(),
-        _clip,
+        observeMomentsPagingUseCase(),
         serverUrl,
-    ) { events, category, error, clip, serverUrl ->
+    ) { events, category, error, paging, serverUrl ->
         val day = today()
         val items = events
             .filter { category == MomentCategory.ALL || it.category == category }
@@ -122,6 +141,14 @@ class MomentsViewModel(
             groups = groups,
             selectedCategory = category,
             error = error,
+            hasOlder = paging.hasOlder,
+            loadingOlder = paging.loadingOlder,
+        )
+    }
+
+    val uiState: StateFlow<MomentsUiState> = combine(feed, _historyDay, _clip) { feed, historyDay, clip ->
+        feed.copy(
+            historyDay = historyDay,
             expandedEventId = clip.eventId,
             clipRequest = clip.request,
             clipPosterUrl = clip.posterUrl,
@@ -132,6 +159,23 @@ class MomentsViewModel(
 
     fun selectCategory(category: MomentCategory) {
         _selectedCategory.value = category
+    }
+
+    /**
+     * Opens the feed at the end of [day] — that day and earlier, newest first — or, with null,
+     * back at now. The open clip closes with the feed it was in: the card it belonged to is
+     * about to vanish, and a player under a list that just changed underneath it is a confusing thing.
+     */
+    fun showDay(day: LocalDate?) {
+        if (_historyDay.value == day) return
+        collapse()
+        _historyDay.value = day
+        showMomentsBeforeUseCase(day?.endOfDayEpochSeconds(TimeZone.currentSystemDefault()))
+    }
+
+    /** Asks for the next page down. Safe to call freely: the repository ignores it while one is in flight or nothing is left. */
+    fun loadOlder() {
+        viewModelScope.launch { loadOlderMomentsUseCase() }
     }
 
     /** Tapping the open card closes it; tapping another swaps to it. Only events with a clip open. */
