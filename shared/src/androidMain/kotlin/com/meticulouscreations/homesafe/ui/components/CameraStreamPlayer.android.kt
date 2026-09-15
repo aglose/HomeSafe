@@ -318,3 +318,6 @@ private class RendererLease(context: Context) : RememberObserver {
     override fun onForgotten() = renderer.release()
     override fun onAbandoned() = renderer.release()
 }
+
+/** ExoPlayer renders HLS to the one TextureView bound last (see [LivePlayerHolder.bindSurface]). */
+actual val liveSurfaceIsExclusive: Boolean = true

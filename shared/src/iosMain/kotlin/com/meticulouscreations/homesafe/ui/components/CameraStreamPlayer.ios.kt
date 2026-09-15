@@ -265,3 +265,6 @@ private class HolderLease(key: String?) : RememberObserver {
     override fun onForgotten() = LivePlayerPool.release(holder)
     override fun onAbandoned() = LivePlayerPool.release(holder)
 }
+
+/** AVFoundation drives any number of player layers, and the WebRTC engine draws into every bound container. */
+actual val liveSurfaceIsExclusive: Boolean = false
