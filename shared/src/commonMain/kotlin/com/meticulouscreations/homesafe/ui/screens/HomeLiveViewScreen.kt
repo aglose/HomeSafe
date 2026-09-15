@@ -24,9 +24,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Videocam
-import androidx.compose.material.icons.filled.ViewAgenda
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -45,7 +43,6 @@ import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -53,7 +50,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
-import com.meticulouscreations.homesafe.domain.model.HomeLayout
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
@@ -71,14 +67,7 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/**
- * The "Home" tab's content, in whichever layout the user last chose: the stacked list of camera
- * cards, or the property plan with each camera playing where it stands. Both open the same
- * full-screen camera screen, and both hand the video over as a shared element on the way.
- *
- * While the stored choice is still being read the list's skeleton stands in, since that is also
- * what the sign-in screen has just been showing — see [ShellSkeleton].
- */
+/** The "Home" tab's content: a greeting and the cameras reported by the connected Frigate server. */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeTabContent(
@@ -86,30 +75,6 @@ fun HomeTabContent(
     onCameraClick: (CameraTile) -> Unit = {},
 ) {
     val viewModel: HomeViewModel = metroViewModel()
-    val layout by viewModel.layout.collectAsStateWithLifecycle()
-
-    if (layout == HomeLayout.MAP) {
-        PropertyMapTabContent(
-            sharedTransitionScope = sharedTransitionScope,
-            onCameraClick = onCameraClick,
-            header = { HomeHeader(selected = HomeLayout.MAP, onSelect = viewModel::setLayout) },
-        )
-    } else {
-        HomeListLayout(
-            viewModel = viewModel,
-            sharedTransitionScope = sharedTransitionScope,
-            onCameraClick = onCameraClick,
-        )
-    }
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-private fun HomeListLayout(
-    viewModel: HomeViewModel,
-    sharedTransitionScope: SharedTransitionScope,
-    onCameraClick: (CameraTile) -> Unit,
-) {
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
 
@@ -121,82 +86,11 @@ private fun HomeListLayout(
         cameras = cameras,
         onAwayBack = viewModel::markBack,
         modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
-        header = { HomeHeader(selected = HomeLayout.LIST, onSelect = viewModel::setLayout) },
     ) { tile ->
         CameraCard(
             tile = tile,
             sharedTransitionScope = sharedTransitionScope,
             modifier = Modifier.animateItem().clickable { onCameraClick(tile) },
-        )
-    }
-}
-
-/**
- * The greeting, and the switch between the two Home layouts. Shared by both so the row stays
- * put when the layout under it changes — only the content below the header moves.
- */
-@Composable
-internal fun HomeHeader(
-    selected: HomeLayout,
-    onSelect: (HomeLayout) -> Unit,
-) {
-    val extraColors = LocalFrigateExtraColors.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // Fixed for the life of this screen: a greeting that flips mid-scroll would be odd.
-        val greeting = remember { greetingForHour(currentLocalHour()) }
-        Text(
-            text = greeting,
-            style = MaterialTheme.typography.displayLarge,
-            color = extraColors.textPrimary,
-            modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp),
-        )
-        Row(
-            modifier = Modifier
-                .background(extraColors.glassFill, CircleShape)
-                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
-                .padding(3.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            LayoutSwitchButton(
-                icon = Icons.Filled.ViewAgenda,
-                label = "Camera list",
-                isSelected = selected == HomeLayout.LIST,
-                onClick = { onSelect(HomeLayout.LIST) },
-            )
-            LayoutSwitchButton(
-                icon = Icons.Filled.Map,
-                label = "Property map",
-                isSelected = selected == HomeLayout.MAP,
-                onClick = { onSelect(HomeLayout.MAP) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun LayoutSwitchButton(
-    icon: ImageVector,
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .size(34.dp)
-            .clip(CircleShape)
-            .then(if (isSelected) Modifier.background(MaterialTheme.colorScheme.primaryContainer) else Modifier)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(17.dp),
         )
     }
 }
@@ -220,9 +114,9 @@ internal fun HomeFeed(
     cameras: List<CameraTile>?,
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
-    header: @Composable () -> Unit = { HomeHeader(selected = HomeLayout.LIST, onSelect = {}) },
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
+    val extraColors = LocalFrigateExtraColors.current
     // The skeleton's frame clock runs only while there is a skeleton to drive.
     val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
 
@@ -235,7 +129,15 @@ internal fun HomeFeed(
             item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
         }
 
-        item(key = "header") { header() }
+        item(key = "greeting") {
+            // Fixed for the life of this screen: a greeting that flips mid-scroll would be odd.
+            val greeting = remember { greetingForHour(currentLocalHour()) }
+            Text(
+                text = greeting,
+                style = MaterialTheme.typography.displayLarge,
+                color = extraColors.textPrimary,
+            )
+        }
 
         val loadedCameras = cameras
         if (loadedCameras == null) {
