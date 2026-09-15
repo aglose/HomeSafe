@@ -12,6 +12,3 @@ actual fun createCameraDao(context: PlatformContext): CameraDao =
 
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     InMemorySettingsDao()
-
-actual fun createPropertyLayoutDao(context: PlatformContext): PropertyLayoutDao =
-    InMemoryPropertyLayoutDao()
