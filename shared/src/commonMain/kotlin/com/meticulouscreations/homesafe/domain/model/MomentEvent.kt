@@ -64,7 +64,7 @@ data class MomentEvent(
 
 /**
  * Maps Frigate's COCO-style labels onto the feed's three filter chips. Labels outside these
- * sets (e.g. "package", "umbrella") still appear under "All Events"; only the chips they don't
+ * sets (e.g. "package", "umbrella") still appear under "All events"; only the type filters they don't
  * belong to hide them.
  */
 fun categoryForLabel(label: String): MomentCategory = when (label.lowercase()) {

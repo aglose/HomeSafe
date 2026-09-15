@@ -35,6 +35,20 @@ interface MomentsRepository {
      */
     fun showBefore(epochSeconds: Double?)
 
+    /**
+     * Narrows the window to one camera, asked of the server rather than filtered from what's
+     * loaded, so a quiet camera's moments aren't pages deep beneath a busy one's. Like
+     * [showBefore], the feed forgets what it had and starts over. Null is every camera.
+     */
+    fun showCamera(cameraName: String?)
+
+    /**
+     * [cameraName]'s newest [limit] moments, placed and folded the way [observeMoments] does it,
+     * but fetched for that camera alone and always from now: nothing the Moments feed is
+     * narrowed or scrolled back to changes it. Polls while collected.
+     */
+    fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>>
+
     suspend fun refresh()
 
     /** A playable stream for a detection's clip, authenticated for the current session. */

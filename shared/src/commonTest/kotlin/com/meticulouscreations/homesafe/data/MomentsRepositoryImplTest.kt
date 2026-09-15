@@ -358,6 +358,46 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun narrowingToACameraAsksTheServerForItsMomentsAloneAndPagesWithinIt() = runTest {
+        Harness.eventsFor = { _ -> personsJson(2000, 100) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the live feed") { h.repo.observeMoments().first().size == 100 }
+            assertEquals("limit=100", h.eventQueries.first(), "every camera asks for no camera at all")
+
+            h.repo.showCamera("amcrest_1")
+            eventually("the narrowed head") { h.eventQueries.last() == "limit=100&cameras=amcrest_1" }
+            eventually("the narrowed feed") { h.repo.observeMoments().first().size == 100 }
+
+            h.repo.loadOlder()
+            assertEquals("limit=100&before=1901.000&cameras=amcrest_1", h.pageQueries.last(), "the next page stays on the camera")
+
+            h.repo.showCamera(null)
+            eventually("every camera again") { h.eventQueries.last() == "limit=100" }
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aCamerasRecentMomentsAreItsOwnFromNowWhereverTheFeedIs() = runTest {
+        Harness.events = personsJson(2000, 25)
+        val h = Harness(this)
+        // The Moments feed is off looking at another camera's past; the recent strip doesn't follow it.
+        h.repo.showBefore(1500.0)
+        h.repo.showCamera("amcrest_1")
+
+        var recent = emptyList<com.meticulouscreations.homesafe.domain.model.MomentEvent>()
+        backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3).collect { recent = it } }
+        eventually("recent moments") { recent.isNotEmpty() }
+
+        assertEquals(listOf("e2000", "e1999", "e1998"), recent.map { it.id })
+        // Polled like the feed ([eventually] runs virtual time on), but every poll is the same question.
+        assertEquals(listOf("limit=25&cameras=hikvision_1"), h.eventQueries.distinct())
+    }
+
+    @Test
     fun aShortFirstPageIsTheWholeFeed() = runTest {
         Harness.events = eventsJson
         val h = Harness(this)
