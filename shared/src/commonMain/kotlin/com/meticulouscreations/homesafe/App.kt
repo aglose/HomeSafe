@@ -32,29 +32,14 @@ private data object AppShellRoute
  * The root composable. The only place the [AppGraph] is touched from UI code: it installs the
  * graph's view-model factory as [LocalMetroViewModelFactory], after which every screen obtains
  * its view model with `metroViewModel()` / `assistedMetroViewModel()` and never sees the graph.
+ *
+ * The iOS 26 host does not compose this: its sign-in screen and its tabs are separate Compose
+ * view controllers under a native tab bar (see `IosShell.kt`), each wrapped in [AppChrome] with
+ * [startAppServices] called once and the app's visibility read from UIKit instead of a lifecycle.
  */
-@OptIn(ExperimentalCoilApi::class)
 @Composable
 fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? = null) {
-    // Route Coil through the app's one shared Ktor client so image requests carry Frigate's
-    // session cookie. Camera snapshots (`/api/<camera>/latest.jpg`) live on the authenticated
-    // API port; with Coil's own cookie-less default client they 401 and never render.
-    remember(appGraph) {
-        SingletonImageLoader.setSafe { context ->
-            ImageLoader.Builder(context)
-                .components { add(KtorNetworkFetcherFactory(appGraph.httpClient)) }
-                .build()
-        }
-        // Idle until the user turns notifications on in Settings; started here so it outlives any tab.
-        appGraph.detectionAlertService.start()
-        // Tell the relay who this install is once a server is active, and let the LAN and the
-        // home geofence flip this phone's presence. Both idempotent; both outlive any tab.
-        appGraph.deviceRegistrar.start()
-        appGraph.presenceAutomation.start()
-        // libwebrtc's one-off native start-up, done now behind the sign-in screen rather than
-        // inside the first camera's join.
-        warmUpLivePlayback(appGraph.platformContext)
-    }
+    remember(appGraph) { startAppServices(appGraph) }
 
     // The root lifecycle is the app's: started while it is on screen, stopped when it goes to
     // the background. The live players use it to decide how long an unwatched stream stays
@@ -69,36 +54,70 @@ fun App(appGraph: AppGraph, debugAutofillCredentials: DebugAutofillCredentials? 
         }
     }
 
+    AppChrome(appGraph) {
+        val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
+        NavDisplay(
+            backStack = backStack,
+            onBack = { backStack.removeLastOrNull() },
+            // The sign-in screen already shows the shell's chrome while it authenticates
+            // (see ShellSkeleton), so this dissolve only ever changes the content inside it.
+            transitionSpec = { RootCrossfade },
+            popTransitionSpec = { RootCrossfade },
+            predictivePopTransitionSpec = { RootCrossfade },
+            entryProvider = entryProvider {
+                entry<SecureConnectionRoute> {
+                    SecureConnectionScreen(
+                        debugAutofillCredentials = debugAutofillCredentials,
+                        onConnected = {
+                            // Connecting replaces the back stack: the system back button
+                            // should exit the app from the shell, not return to this screen.
+                            backStack.clear()
+                            backStack.add(AppShellRoute)
+                        },
+                    )
+                }
+                entry<AppShellRoute> { FrigateAppShell() }
+            },
+        )
+    }
+}
+
+/**
+ * What runs for as long as the app does, started once by whichever root hosts the UI. Every
+ * start here is idempotent, so a second root (the iOS 26 host has several) costs nothing.
+ */
+@OptIn(ExperimentalCoilApi::class)
+internal fun startAppServices(appGraph: AppGraph) {
+    // Route Coil through the app's one shared Ktor client so image requests carry Frigate's
+    // session cookie. Camera snapshots (`/api/<camera>/latest.jpg`) live on the authenticated
+    // API port; with Coil's own cookie-less default client they 401 and never render.
+    SingletonImageLoader.setSafe { context ->
+        ImageLoader.Builder(context)
+            .components { add(KtorNetworkFetcherFactory(appGraph.httpClient)) }
+            .build()
+    }
+    // Idle until the user turns notifications on in Settings; started here so it outlives any tab.
+    appGraph.detectionAlertService.start()
+    // Tell the relay who this install is once a server is active, and let the LAN and the
+    // home geofence flip this phone's presence. Both idempotent; both outlive any tab.
+    appGraph.deviceRegistrar.start()
+    appGraph.presenceAutomation.start()
+    // libwebrtc's one-off native start-up, done now behind the sign-in screen rather than
+    // inside the first camera's join.
+    warmUpLivePlayback(appGraph.platformContext)
+}
+
+/**
+ * Everything a screen needs around it: the graph's view-model factory (see [App]), the theme,
+ * and an opaque ground of the app's own colour under every screen, so no transition can ever
+ * expose the platform window behind Compose (a light theme on Android).
+ */
+@Composable
+internal fun AppChrome(appGraph: AppGraph, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalMetroViewModelFactory provides appGraph.metroViewModelFactory) {
         FrigateTheme {
-            val backStack = remember { mutableStateListOf<Any>(SecureConnectionRoute) }
-
-            // An opaque ground of the app's own colour under every screen, so no transition can
-            // ever expose the platform window behind Compose (a light theme on Android).
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                NavDisplay(
-                    backStack = backStack,
-                    onBack = { backStack.removeLastOrNull() },
-                    // The sign-in screen already shows the shell's chrome while it authenticates
-                    // (see ShellSkeleton), so this dissolve only ever changes the content inside it.
-                    transitionSpec = { RootCrossfade },
-                    popTransitionSpec = { RootCrossfade },
-                    predictivePopTransitionSpec = { RootCrossfade },
-                    entryProvider = entryProvider {
-                        entry<SecureConnectionRoute> {
-                            SecureConnectionScreen(
-                                debugAutofillCredentials = debugAutofillCredentials,
-                                onConnected = {
-                                    // Connecting replaces the back stack: the system back button
-                                    // should exit the app from the shell, not return to this screen.
-                                    backStack.clear()
-                                    backStack.add(AppShellRoute)
-                                },
-                            )
-                        }
-                        entry<AppShellRoute> { FrigateAppShell() }
-                    },
-                )
+                content()
             }
         }
     }
