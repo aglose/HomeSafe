@@ -1,0 +1,131 @@
+package com.meticulouscreations.homesafe.uitest
+
+import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.v2.runComposeUiTest
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
+import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
+import com.meticulouscreations.homesafe.viewmodel.MomentGroup
+import com.meticulouscreations.homesafe.viewmodel.MomentItem
+import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlin.test.Test
+import kotlin.test.assertEquals
+
+/**
+ * The Moments feed rendered for real. [MomentsFeed] is the stateless half of the tab, so it can
+ * be driven from fixtures with no graph behind it — and with no clip open, so no player is
+ * asked to connect to anything.
+ *
+ * `mainClock.autoAdvance = false` for the same reason as [HomeFeedUiTest]: a card's LIVE badge
+ * pulses forever, so the composition is never idle.
+ */
+@OptIn(ExperimentalTestApi::class)
+class MomentsFeedUiTest {
+
+    private val today = LocalDate(2026, 9, 14)
+
+    private fun item(id: String, startEpochSeconds: Double) = MomentEvent(
+        id = id,
+        cameraName = "front_door",
+        label = "person",
+        subLabel = null,
+        startEpochSeconds = startEpochSeconds,
+        endEpochSeconds = startEpochSeconds + 12,
+        topScore = 0.9,
+        hasClip = true,
+        hasSnapshot = false,
+    ).let { MomentItem(it, it.present(today, TimeZone.UTC), thumbnailUrl = null) }
+
+    private val aDay = listOf(MomentGroup("Sep 10", "Sep 10", listOf(item("a", 1_789_000_000.0), item("b", 1_788_990_000.0))))
+
+    private fun runFeed(state: MomentsUiState, onLoadOlder: () -> Unit = {}, onShowDay: (LocalDate?) -> Unit = {}, block: androidx.compose.ui.test.ComposeUiTest.() -> Unit) =
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                FrigatePreview {
+                    MomentsFeed(
+                        state = state,
+                        downloadState = DownloadUiState(),
+                        onSelectCategory = {},
+                        onShowDay = onShowDay,
+                        onLoadOlder = onLoadOlder,
+                        onCardClick = {},
+                        onClipBuffering = {},
+                        onClipError = {},
+                        onDownloadClick = {},
+                        onFullScreenClick = {},
+                    )
+                }
+            }
+            block()
+        }
+
+    @Test
+    fun theFeedEndsInAnOfferOfOlderMomentsWhileTheServerHasThem() {
+        var asked = 0
+        runFeed(MomentsUiState(groups = aDay, hasOlder = true), onLoadOlder = { asked++ }) {
+            onAllNodesWithText("Person detected").assertCountEquals(2)
+            onNodeWithText("Load older moments").assertIsDisplayed().performClick()
+            // Two cards and the footer all fit, so the lookahead asked once on its own; the tap asked again.
+            assertEquals(2, asked)
+        }
+    }
+
+    @Test
+    fun theFeedEndsInAFullStopOnceTheServerHasNothingOlder() = runFeed(MomentsUiState(groups = aDay, hasOlder = false)) {
+        onNodeWithText("That's everything the server still has.").assertIsDisplayed()
+        onAllNodesWithText("Load older moments").assertCountEquals(0)
+    }
+
+    @Test
+    fun aSpinnerStandsInForTheButtonWhileThePageIsOnItsWay() = runFeed(MomentsUiState(groups = aDay, hasOlder = true, loadingOlder = true)) {
+        onAllNodesWithText("Load older moments").assertCountEquals(0)
+    }
+
+    @Test
+    fun theCalendarChipNamesTheDayTheFeedIsOpenedAtAndClearsIt() {
+        var shown: LocalDate? = LocalDate(2026, 9, 10)
+        runFeed(MomentsUiState(groups = aDay, historyDay = LocalDate(2026, 9, 10)), onShowDay = { shown = it }) {
+            onNodeWithText("From Sep 10").assertIsDisplayed()
+            onNodeWithContentDescription("Back to the latest moments").performClick()
+            assertEquals(null, shown)
+        }
+    }
+
+    @Test
+    fun theLiveFeedsChipOffersToPickADay() = runFeed(MomentsUiState(groups = aDay)) {
+        onNodeWithContentDescription("Pick a day").assertIsDisplayed()
+        onAllNodesWithContentDescription("Back to the latest moments").assertCountEquals(0)
+    }
+
+    @Test
+    fun anEmptyWindowIntoThePastOffersToLookFurtherBack() {
+        var asked = 0
+        runFeed(
+            MomentsUiState(selectedCategory = MomentCategory.ANIMALS, historyDay = LocalDate(2026, 9, 10), hasOlder = true),
+            onLoadOlder = { asked++ },
+        ) {
+            onNodeWithText("No animals in the most recent pages before Sep 10.").assertIsDisplayed()
+            onNodeWithText("Look further back").performClick()
+            assertEquals(1, asked)
+        }
+    }
+
+    @Test
+    fun anEmptyWindowWithNothingOlderSaysSoAndOffersNothing() = runFeed(MomentsUiState(historyDay = LocalDate(2026, 9, 10), hasOlder = false)) {
+        onNodeWithText("No detections on or before Sep 10 that the server still has.").assertIsDisplayed()
+        onAllNodesWithText("Look further back").assertCountEquals(0)
+    }
+}

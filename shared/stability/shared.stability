@@ -489,12 +489,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.EditorCanvas(uiState: co
     - viewModel: RUNTIME (requires runtime check)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, hasError: kotlin.Boolean): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, historyDayLabel: kotlin.String?, hasError: kotlin.Boolean, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - category: STABLE (class with no mutable properties)
+    - historyDayLabel: STABLE (class with no mutable properties)
     - hasError: STABLE (primitive type)
+    - hasOlder: STABLE (primitive type)
+    - loadingOlder: STABLE (primitive type)
+    - onLoadOlder: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ErrorPanel(message: kotlin.String, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -526,6 +530,15 @@ public fun com.meticulouscreations.homesafe.ui.screens.FaceLibraryScreen(onBack:
   restartable: true
   params:
     - onBack: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.FeedEnd(hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - hasOlder: STABLE (primitive type)
+    - loadingOlder: STABLE (primitive type)
+    - onLoadOlder: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FilterChip(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -586,6 +599,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.Header(title: kotlin.Str
     - subtitle: STABLE (String is immutable)
     - onBack: STABLE (function type)
     - onRefresh: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.HistoryChip(dayLabel: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClear: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - dayLabel: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+    - onClear: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, header: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.LazyItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
@@ -676,6 +698,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.LoadFailedRow(message: k
     - onRetry: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.LoadOlderWhenNearTheEnd(listState: androidx.compose.foundation.lazy.LazyListState, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - listState: STABLE (marked @Stable or @Immutable)
+    - hasOlder: STABLE (primitive type)
+    - loadingOlder: STABLE (primitive type)
+    - onLoadOlder: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.LoadingRow(text: kotlin.String): kotlin.Unit
   skippable: true
   restartable: true
@@ -721,6 +753,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentDateHeader(dateGro
     - dateSubLabel: STABLE (String is immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.MomentDayPicker(initialDayUtcMillis: kotlin.Long?, onPick: kotlin.Function1<kotlinx.datetime.LocalDate, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - initialDayUtcMillis: STABLE (class with no mutable properties)
+    - onPick: STABLE (function type)
+    - onDismiss: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
@@ -728,11 +769,29 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kot
     - url: STABLE (class with no mutable properties)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(onOpenFullScreen: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - downloadState: STABLE (marked @Stable or @Immutable)
+    - onSelectCategory: STABLE (function type)
+    - onShowDay: STABLE (function type)
+    - onLoadOlder: STABLE (function type)
+    - onCardClick: STABLE (function type)
+    - onClipBuffering: STABLE (function type)
+    - onClipError: STABLE (function type)
+    - onDownloadClick: STABLE (function type)
+    - onFullScreenClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(onOpenFullScreen: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onOpenFullScreen: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PeopleCard(uiState: com.meticulouscreations.homesafe.viewmodel.FaceLibraryUiState, library: com.meticulouscreations.homesafe.domain.model.FaceLibrary, viewModel: com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel): kotlin.Unit
