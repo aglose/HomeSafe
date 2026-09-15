@@ -26,6 +26,3 @@ actual fun createCameraDao(context: PlatformContext): CameraDao =
 
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     appDatabase.settingsDao()
-
-actual fun createPropertyLayoutDao(context: PlatformContext): PropertyLayoutDao =
-    appDatabase.propertyLayoutDao()
