@@ -108,12 +108,15 @@ struct ShellTabView: View {
         TabView(selection: $coordinator.selection) {
             Tab("Home", systemImage: "house.fill", value: ShellCoordinator.Selection.home) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.home))
+                    .ignoresSafeArea()
             }
             Tab("Moments", systemImage: "film.stack.fill", value: ShellCoordinator.Selection.moments) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.moments))
+                    .ignoresSafeArea()
             }
             Tab("Settings", systemImage: "gearshape.fill", value: ShellCoordinator.Selection.settings) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.settings))
+                    .ignoresSafeArea()
             }
         }
         // The app's Material primary (FrigateDarkColorScheme.primary, #FFB59D) for the selected
