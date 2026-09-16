@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
+import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
 import com.meticulouscreations.homesafe.domain.model.endOfDayEpochSeconds
 import com.meticulouscreations.homesafe.domain.model.present
@@ -14,11 +15,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LoadOlderMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import dev.zacsweers.metro.AppScope
@@ -33,6 +36,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -50,10 +56,18 @@ data class MomentItem(val event: MomentEvent, val presentation: MomentPresentati
 @Immutable
 data class MomentGroup(val dateGroup: String, val dateSubLabel: String, val items: List<MomentItem>)
 
+/** A camera the feed can be narrowed to: Frigate's key for it, and what the UI calls it. */
+@Immutable
+data class MomentCameraOption(val name: String, val displayName: String)
+
 @Immutable
 data class MomentsUiState(
     val groups: List<MomentGroup> = emptyList(),
     val selectedCategory: MomentCategory = MomentCategory.ALL,
+    /** Every camera on the server, in the server's order, for the camera filter. */
+    val cameras: List<MomentCameraOption> = emptyList(),
+    /** The camera the feed is narrowed to; null shows every camera. */
+    val selectedCamera: MomentCameraOption? = null,
     val error: String? = null,
     /**
      * The day the feed was opened at, when it was: it shows that day and earlier, newest first.
@@ -93,8 +107,10 @@ class MomentsViewModel(
     observeMomentsErrorUseCase: ObserveMomentsErrorUseCase,
     observeMomentsPagingUseCase: ObserveMomentsPagingUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
+    observeCamerasUseCase: ObserveCamerasUseCase,
     private val loadOlderMomentsUseCase: LoadOlderMomentsUseCase,
     private val showMomentsBeforeUseCase: ShowMomentsBeforeUseCase,
+    private val showMomentsFromCameraUseCase: ShowMomentsFromCameraUseCase,
     private val getMomentClipStreamUseCase: GetMomentClipStreamUseCase,
     private val downloadMomentClipUseCase: DownloadMomentClipUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
@@ -105,6 +121,7 @@ class MomentsViewModel(
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
 
     private val _selectedCategory = MutableStateFlow(MomentCategory.ALL)
+    private val _selectedCameraName = MutableStateFlow<String?>(null)
     private val _historyDay = MutableStateFlow<LocalDate?>(null)
     private val _clip = MutableStateFlow(ClipState())
     private var clipJob: Job? = null
@@ -113,17 +130,53 @@ class MomentsViewModel(
     val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
     private var downloadJob: Job? = null
 
+    /**
+     * What the feed is narrowed to. A picked camera the server no longer lists (a switch to
+     * another server, a camera removed from the config) reads as every camera, rather than a
+     * filter nobody can see the option for; while the list is still loading it is kept.
+     */
+    private val filters: StateFlow<Filters> = combine(
+        _selectedCategory,
+        _selectedCameraName,
+        observeCamerasUseCase(),
+    ) { category, cameraName, cameras ->
+        val options = cameras.map { MomentCameraOption(it.name, it.displayName) }
+        val camera = cameraName?.let { name ->
+            options.firstOrNull { it.name == name } ?: MomentCameraOption(name, cameraDisplayName(name)).takeIf { options.isEmpty() }
+        }
+        Filters(category, options, camera)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Filters(MomentCategory.ALL, emptyList(), null))
+
+    init {
+        // The server does the narrowing (a quiet camera's moments would otherwise be pages deep
+        // beneath a busy one's), so the repository follows the camera in force for as long as
+        // this view model lives — including when a vanished camera falls back to every camera,
+        // and on creation, where it undoes a narrowing a previous feed left behind.
+        viewModelScope.launch {
+            filters.map { it.camera?.name }.distinctUntilChanged().collect { showMomentsFromCameraUseCase(it) }
+        }
+        // A new camera is a new feed: the open clip's card is about to vanish with the old one.
+        viewModelScope.launch {
+            filters.map { it.camera?.name }.distinctUntilChanged().drop(1).collect { collapse() }
+        }
+    }
+
     /** The cards: the feed filtered, presented and grouped by day. Everything that isn't about the open clip. */
     private val feed: Flow<MomentsUiState> = combine(
         observeMomentsUseCase(),
-        _selectedCategory,
+        filters,
         observeMomentsErrorUseCase(),
         observeMomentsPagingUseCase(),
         serverUrl,
-    ) { events, category, error, paging, serverUrl ->
+    ) { events, filters, error, paging, serverUrl ->
         val day = today()
+        val category = filters.category
+        val cameraName = filters.camera?.name
         val items = events
             .filter { category == MomentCategory.ALL || it.category == category }
+            // The server already narrowed the feed; this only hides the old camera's cards in the
+            // moment between a pick and the repository starting over.
+            .filter { cameraName == null || it.cameraName == cameraName }
             .map { event ->
                 // Built here, not in the card, so a LAN/Tailscale route flip re-points every thumbnail at once.
                 // Deliberately NOT gated on hasSnapshot: that flag is about the full-frame snapshot.jpg, which
@@ -140,6 +193,8 @@ class MomentsViewModel(
         MomentsUiState(
             groups = groups,
             selectedCategory = category,
+            cameras = filters.cameras,
+            selectedCamera = filters.camera,
             error = error,
             hasOlder = paging.hasOlder,
             loadingOlder = paging.loadingOlder,
@@ -159,6 +214,11 @@ class MomentsViewModel(
 
     fun selectCategory(category: MomentCategory) {
         _selectedCategory.value = category
+    }
+
+    /** Narrows the feed to one camera, by its Frigate name (the server is asked for just its moments); null shows every camera again. */
+    fun selectCamera(cameraName: String?) {
+        _selectedCameraName.value = cameraName
     }
 
     /**
@@ -242,6 +302,8 @@ class MomentsViewModel(
     }
 
     private fun today(): LocalDate = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+
+    private data class Filters(val category: MomentCategory, val cameras: List<MomentCameraOption>, val camera: MomentCameraOption?)
 
     private data class ClipState(
         val eventId: String? = null,

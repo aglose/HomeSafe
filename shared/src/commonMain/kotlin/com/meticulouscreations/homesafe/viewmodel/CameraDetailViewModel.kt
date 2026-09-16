@@ -20,8 +20,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUs
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveRecentCameraMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
@@ -184,7 +184,7 @@ class CameraDetailViewModel(
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getRecordingHistoryUseCase: GetRecordingHistoryUseCase,
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
-    observeMomentsUseCase: ObserveMomentsUseCase,
+    observeRecentCameraMomentsUseCase: ObserveRecentCameraMomentsUseCase,
     observeSettingsUseCase: ObserveSettingsUseCase,
     private val updateSettingsUseCase: UpdateSettingsUseCase,
     observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
@@ -212,19 +212,19 @@ class CameraDetailViewModel(
     private fun now(): Double = clock.now().toEpochMilliseconds() / 1000.0
 
     /**
-     * This camera's newest detections for the "Recent Activity" strip. Same feed and mapper as the
-     * Moments tab, so a detection reads identically in both places; capped small because this is a
-     * glance, not the list — the Moments tab is where the full history lives.
+     * This camera's newest detections for the "Recent Activity" strip. Same placing, folding and
+     * mapper as the Moments tab, so a detection reads identically in both places, but asked of the
+     * server for this camera alone: the Moments feed may be narrowed to another camera or opened at
+     * an earlier day. Capped small because this is a glance, not the list — the Moments tab is where
+     * the full history lives.
      */
     @OptIn(ExperimentalTime::class)
     val recentMoments: StateFlow<List<MomentItem>> = combine(
-        observeMomentsUseCase(),
+        observeRecentCameraMomentsUseCase(cameraName, limit = RECENT_MOMENTS),
         serverUrl,
     ) { events, serverUrl ->
         val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         events
-            .filter { it.cameraName == cameraName }
-            .take(RECENT_MOMENTS)
             .map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 

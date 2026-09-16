@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
+import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
 import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
@@ -50,7 +51,16 @@ class MomentsFeedUiTest {
 
     private val aDay = listOf(MomentGroup("Sep 10", "Sep 10", listOf(item("a", 1_789_000_000.0), item("b", 1_788_990_000.0))))
 
-    private fun runFeed(state: MomentsUiState, onLoadOlder: () -> Unit = {}, onShowDay: (LocalDate?) -> Unit = {}, block: androidx.compose.ui.test.ComposeUiTest.() -> Unit) =
+    private val cameras = listOf(MomentCameraOption("front_door", "Front Door"), MomentCameraOption("backyard", "Backyard"))
+
+    private fun runFeed(
+        state: MomentsUiState,
+        onLoadOlder: () -> Unit = {},
+        onShowDay: (LocalDate?) -> Unit = {},
+        onSelectCategory: (MomentCategory) -> Unit = {},
+        onSelectCamera: (String?) -> Unit = {},
+        block: androidx.compose.ui.test.ComposeUiTest.() -> Unit,
+    ) =
         runComposeUiTest {
             mainClock.autoAdvance = false
             setContent {
@@ -58,7 +68,8 @@ class MomentsFeedUiTest {
                     MomentsFeed(
                         state = state,
                         downloadState = DownloadUiState(),
-                        onSelectCategory = {},
+                        onSelectCategory = onSelectCategory,
+                        onSelectCamera = onSelectCamera,
                         onShowDay = onShowDay,
                         onLoadOlder = onLoadOlder,
                         onCardClick = {},
@@ -121,6 +132,50 @@ class MomentsFeedUiTest {
             onNodeWithText("Look further back").performClick()
             assertEquals(1, asked)
         }
+    }
+
+    @Test
+    fun theCameraChipListsTheServersCamerasAndPicksOne() {
+        var picked: String? = "unset"
+        runFeed(MomentsUiState(groups = aDay, cameras = cameras), onSelectCamera = { picked = it }) {
+            onNodeWithText("All cameras").performClick()
+            mainClock.advanceTimeBy(500)
+            onNodeWithText("Backyard").assertIsDisplayed().performClick()
+            assertEquals("backyard", picked)
+        }
+    }
+
+    @Test
+    fun aPickedCameraNamesItselfOnTheChipAndCanBeCleared() {
+        var picked: String? = "unset"
+        // No cards: every fixture card is on the front door, and would answer to its name too.
+        runFeed(
+            MomentsUiState(cameras = cameras, selectedCamera = cameras[0]),
+            onSelectCamera = { picked = it },
+        ) {
+            onNodeWithText("Front Door").performClick()
+            mainClock.advanceTimeBy(500)
+            onNodeWithText("All cameras").assertIsDisplayed().performClick()
+            assertEquals(null, picked)
+        }
+    }
+
+    @Test
+    fun theTypeChipPicksACategoryFromItsMenu() {
+        var picked: MomentCategory? = null
+        runFeed(MomentsUiState(groups = aDay, cameras = cameras), onSelectCategory = { picked = it }) {
+            onNodeWithText("All events").performClick()
+            mainClock.advanceTimeBy(500)
+            onNodeWithText("Vehicles").assertIsDisplayed().performClick()
+            assertEquals(MomentCategory.VEHICLES, picked)
+        }
+    }
+
+    @Test
+    fun anEmptyFeedNarrowedToACameraNamesIt() = runFeed(
+        MomentsUiState(selectedCategory = MomentCategory.PEOPLE, cameras = cameras, selectedCamera = cameras[1], historyDay = LocalDate(2026, 9, 10)),
+    ) {
+        onNodeWithText("No people on Backyard on or before Sep 10 that the server still has.").assertIsDisplayed()
     }
 
     @Test

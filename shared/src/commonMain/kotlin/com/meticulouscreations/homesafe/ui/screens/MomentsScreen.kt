@@ -1,13 +1,15 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -20,10 +22,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -38,6 +40,8 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +75,7 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
+import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
@@ -87,7 +93,7 @@ private const val LOAD_OLDER_LOOKAHEAD = 4
 
 private val MomentCategory.label: String
     get() = when (this) {
-        MomentCategory.ALL -> "All Events"
+        MomentCategory.ALL -> "All events"
         MomentCategory.PEOPLE -> "People"
         MomentCategory.VEHICLES -> "Vehicles"
         MomentCategory.ANIMALS -> "Animals"
@@ -121,6 +127,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         state = state,
         downloadState = downloadState,
         onSelectCategory = viewModel::selectCategory,
+        onSelectCamera = viewModel::selectCamera,
         onShowDay = viewModel::showDay,
         onLoadOlder = viewModel::loadOlder,
         onCardClick = viewModel::toggleExpanded,
@@ -140,14 +147,16 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
 /**
  * The tab with its state hoisted: what [MomentsTabContent] draws once it has read the view
  * model. Nothing here reaches for a graph, so it can be previewed and tested from fixtures.
- * The only state it keeps is whether the day picker is up — a fact about this composition, not
- * about the feed.
+ * The only state it keeps is whether the day picker or a filter's menu is up — facts about this
+ * composition, not about the feed.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun MomentsFeed(
     state: MomentsUiState,
     downloadState: DownloadUiState,
     onSelectCategory: (MomentCategory) -> Unit,
+    onSelectCamera: (String?) -> Unit,
     onShowDay: (LocalDate?) -> Unit,
     onLoadOlder: () -> Unit,
     onCardClick: (MomentEvent) -> Unit,
@@ -179,26 +188,24 @@ internal fun MomentsFeed(
             .padding(top = shellTopBarClearance() + 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // The calendar is pinned at the row's end, outside the chips' scroll: on a phone the
-        // four chips already overrun the width, and a control that only shows up after a
-        // sideways scroll nobody knows to make might as well not be there.
-        Row(
+        // One chip per filter, each opening a menu of its options, rather than a chip per option:
+        // a row of category chips already overran a phone's width, and a chip for every camera
+        // on top of them would bury most of the choices behind a sideways scroll. The chips wrap
+        // rather than scroll: with a camera, a type and a day all picked they don't fit one line
+        // on a phone, and a filter in force that has scrolled out of sight reads as no filter.
+        FlowRow(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                MomentCategory.entries.forEach { category ->
-                    FilterChip(
-                        category = category,
-                        selected = category == state.selectedCategory,
-                        onClick = { onSelectCategory(category) },
-                    )
-                }
-            }
+            CameraFilterChip(
+                cameras = state.cameras,
+                selectedCameraName = state.selectedCamera?.name,
+                selectedCameraLabel = state.selectedCamera?.displayName,
+                onSelect = onSelectCamera,
+            )
+            CategoryFilterChip(selected = state.selectedCategory, onSelect = onSelectCategory)
             HistoryChip(
                 dayLabel = state.historyDay?.shortLabel(),
                 onClick = { pickingDay = true },
@@ -218,6 +225,7 @@ internal fun MomentsFeed(
         if (state.groups.isEmpty()) {
             EmptyMoments(
                 category = state.selectedCategory,
+                cameraLabel = state.selectedCamera?.displayName,
                 historyDayLabel = state.historyDay?.shortLabel(),
                 hasError = state.error != null,
                 hasOlder = state.hasOlder,
@@ -313,6 +321,7 @@ private fun FeedEnd(hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () ->
 @Composable
 private fun EmptyMoments(
     category: MomentCategory,
+    cameraLabel: String?,
     historyDayLabel: String?,
     hasError: Boolean,
     hasOlder: Boolean,
@@ -322,7 +331,8 @@ private fun EmptyMoments(
     // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
     // happened in a zone whose movement list includes it, or when Frigate recognised who or
     // what it was. Say so, rather than looking broken.
-    val what = if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
+    val kind = if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
+    val what = if (cameraLabel != null) "$kind on $cameraLabel" else kind
     val message = when {
         hasError -> "Couldn't reach the server for detections."
 
@@ -332,7 +342,9 @@ private fun EmptyMoments(
 
         historyDayLabel != null -> "No $what on or before $historyDayLabel that the server still has."
 
-        category != MomentCategory.ALL -> "No ${category.label.lowercase()} to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+        category != MomentCategory.ALL -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+
+        cameraLabel != null -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
 
         else -> "Nothing to show yet. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
     }
@@ -447,37 +459,139 @@ private fun MomentDayPicker(initialDayUtcMillis: Long?, onPick: (LocalDate) -> U
     }
 }
 
+/**
+ * Which camera the feed shows. The chip names the camera once one is picked ([selectedCameraLabel],
+ * null for every camera) and fills in, so a narrowed feed never passes for the whole one.
+ */
 @Composable
-private fun FilterChip(category: MomentCategory, selected: Boolean, onClick: () -> Unit) {
-    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-    Row(
-        modifier = Modifier
-            .clip(CircleShape)
-            .then(
-                if (selected) {
-                    Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
-                } else {
-                    Modifier
-                        .background(MaterialTheme.colorScheme.surface, CircleShape)
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), CircleShape)
-                },
+private fun CameraFilterChip(
+    cameras: List<MomentCameraOption>,
+    selectedCameraName: String?,
+    selectedCameraLabel: String?,
+    onSelect: (String?) -> Unit,
+) {
+    FilterMenuChip(
+        label = selectedCameraLabel ?: "All cameras",
+        icon = Icons.Filled.Videocam,
+        active = selectedCameraName != null,
+        menuDescription = "Filter by camera",
+    ) { dismiss ->
+        FilterMenuItem(label = "All cameras", icon = null, checked = selectedCameraName == null) {
+            dismiss()
+            onSelect(null)
+        }
+        cameras.forEach { camera ->
+            FilterMenuItem(label = camera.displayName, icon = Icons.Filled.Videocam, checked = camera.name == selectedCameraName) {
+                dismiss()
+                onSelect(camera.name)
+            }
+        }
+    }
+}
+
+/** What kind of detection the feed shows: everything, or just people, vehicles or animals. */
+@Composable
+private fun CategoryFilterChip(selected: MomentCategory, onSelect: (MomentCategory) -> Unit) {
+    FilterMenuChip(
+        label = selected.label,
+        icon = selected.icon,
+        active = selected != MomentCategory.ALL,
+        menuDescription = "Filter by type",
+    ) { dismiss ->
+        MomentCategory.entries.forEach { category ->
+            FilterMenuItem(label = category.label, icon = category.icon, checked = category == selected) {
+                dismiss()
+                onSelect(category)
+            }
+        }
+    }
+}
+
+/**
+ * A pill that opens a menu of one filter's options: it shows the option in force, filled when
+ * that option narrows the feed ([active]) and outlined when it doesn't. [menu] gets a dismiss to
+ * call as an item is picked.
+ */
+@Composable
+private fun FilterMenuChip(
+    label: String,
+    icon: ImageVector?,
+    active: Boolean,
+    menuDescription: String,
+    menu: @Composable (dismiss: () -> Unit) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+    Box {
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .then(
+                    if (active) {
+                        Modifier.background(MaterialTheme.colorScheme.primary, CircleShape)
+                    } else {
+                        Modifier
+                            .background(MaterialTheme.colorScheme.surface, CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f), CircleShape)
+                    },
+                )
+                .clickable(onClickLabel = menuDescription) { expanded = true }
+                .padding(start = if (icon != null) 12.dp else 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (icon != null) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = contentColor,
+                    modifier = Modifier.width(18.dp).aspectRatio(1f),
+                )
+            }
+            // A camera name too long for a line gives way to an ellipsis, keeping the arrow in view.
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val icon = category.icon
-        if (icon != null) {
             Icon(
-                imageVector = icon,
+                imageVector = Icons.Filled.ArrowDropDown,
                 contentDescription = null,
                 tint = contentColor,
                 modifier = Modifier.width(18.dp).aspectRatio(1f),
             )
         }
-        Text(text = category.label, style = MaterialTheme.typography.labelMedium, color = contentColor)
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(16.dp),
+            // The hairline the feed's cards carry, as the camera screen's overflow menu does.
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
+        ) {
+            menu { expanded = false }
+        }
     }
+}
+
+/** One option in a filter's menu, ticked when it's the one in force. */
+@Composable
+private fun FilterMenuItem(label: String, icon: ImageVector?, checked: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(text = label, style = MaterialTheme.typography.labelLarge) },
+        leadingIcon = icon?.let {
+            { Icon(imageVector = it, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+        },
+        trailingIcon = if (checked) {
+            { Icon(imageVector = Icons.Filled.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary) }
+        } else {
+            null
+        },
+        onClick = onClick,
+    )
 }
 
 @Composable
