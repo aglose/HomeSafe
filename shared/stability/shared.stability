@@ -13,6 +13,14 @@ public fun com.meticulouscreations.homesafe.App(appGraph: com.meticulouscreation
     - debugAutofillCredentials: STABLE (class with no mutable properties)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulouscreations.homesafe.di.AppGraph, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - appGraph: UNKNOWN (interface or non-final class; concrete implementation unknown)
+    - content: STABLE (composable function type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.BufferingDots(color: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, dotSize: androidx.compose.ui.unit.Dp): kotlin.Unit
   skippable: true
   restartable: true
@@ -948,6 +956,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellSkeleton(): kotlin
   params:
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellTab(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - tab: STABLE (class with no mutable properties)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.SpanChip(span: com.meticulouscreations.homesafe.viewmodel.TimelineSpan, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -989,6 +1005,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.StorageUsageBar(label: k
     - usedFraction: STABLE (primitive type)
     - usedText: STABLE (String is immutable)
     - totalText: STABLE (String is immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - tab: STABLE (class with no mutable properties)
+    - nav: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.TimelineSection(cameraName: kotlin.String): kotlin.Unit

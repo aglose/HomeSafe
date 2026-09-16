@@ -24,6 +24,8 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
   - Wasm target (faster, modern browsers): `./gradlew :webApp:wasmJsBrowserDevelopmentRun`
   - JS target (slower, supports older browsers): `./gradlew :webApp:jsBrowserDevelopmentRun`
 - iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+  On iOS 26 the bottom navigation is a native Liquid Glass tab bar over Compose tabs, which needs
+  Xcode 26 to build; see [docs/ios-liquid-glass.md](docs/ios-liquid-glass.md).
 
 ### Local network vs Tailscale
 
