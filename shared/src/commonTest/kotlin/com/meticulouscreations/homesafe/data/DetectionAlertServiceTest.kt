@@ -328,71 +328,108 @@ class DetectionAlertServiceTest {
     private val driveThrough = List(20) { 0.05 + it * 0.0474 to 0.57 }
 
     @Test
-    fun aCarNotifiesOncePerVisitAndItsRedetectionsStayQuiet() = runTest {
+    fun aCarOnlyEverSeenSittingStillNeverNotifies() = runTest {
         val h = Harness(this, on)
         h.service.start()
         eventually("first poll") { h.afters.isNotEmpty() }
 
+        // The parked Tesla re-detected as the light changes: a two-point path, no travel, over in
+        // seconds — twice in two minutes, as on the Front Yard camera 2026-09-15.
         h.boxById["parked"] = spot
         h.pathById["parked"] = parkedPath
+        h.endedById["parked"] = 1_000_009.0
         h.events += Triple("parked", "car", 1_000_001.0)
-        eventually("the parked car") { h.notifier.posted.map { it.id } == listOf("parked") }
-
-        // Forty minutes and then ninety: the tracker was stolen and Frigate saw the car anew, at the same spot.
-        h.clockNow = 1_002_401.0
         h.boxById["again"] = spot
         h.pathById["again"] = parkedPath
-        h.events += Triple("again", "car", 1_002_401.0)
+        h.endedById["again"] = 1_000_130.0
+        h.events += Triple("again", "car", 1_000_120.0)
         settle()
-        h.clockNow = 1_005_401.0
-        h.boxById["and-again"] = spot
-        h.pathById["and-again"] = parkedPath
-        h.events += Triple("and-again", "car", 1_005_401.0)
-        settle()
-        assertEquals(listOf("parked"), h.notifier.posted.map { it.id }, "a still car where one was already reported is the same car")
+        assertTrue(h.notifier.posted.isEmpty(), "a car that never moved is not news")
 
-        // Pulling out a minute later is the tail of the same visit, not a second alert.
-        h.boxById["leaving"] = spot
-        h.pathById["leaving"] = driveThrough
-        h.events += Triple("leaving", "car", 1_005_460.0)
-        settle()
-        assertEquals(listOf("parked"), h.notifier.posted.map { it.id }, "a move inside the visit window is the same visit")
-
-        // Half an hour on, a car moving into that spot is a new arrival worth hearing about.
-        h.clockNow = 1_007_300.0
-        h.boxById["returning"] = spot
-        h.pathById["returning"] = driveThrough
-        h.events += Triple("returning", "car", 1_007_300.0)
-        eventually("the return") { h.notifier.posted.map { it.id } == listOf("parked", "returning") }
-
-        h.clockNow = 1_007_300.0 + 6 * 3600 + 1   // the memory has expired: a car here now is news again
-        h.boxById["next-day"] = spot
-        h.pathById["next-day"] = parkedPath
-        h.events += Triple("next-day", "car", h.clockNow)
-        eventually("the next day's car") { h.notifier.posted.map { it.id } == listOf("parked", "returning", "next-day") }
+        // A person is judged on their own terms, whatever the cars are doing.
+        h.events += Triple("walker", "person", 1_000_140.0)
+        eventually("the walker") { h.notifier.posted.map { it.id } == listOf("walker") }
     }
 
     @Test
-    fun aStillCarAtAnotherSpotOrOnAnotherCameraStillNotifies() = runTest {
+    fun aCarNotifiesOnceItMovesAndItsRedetectionsInTheVisitStayQuiet() = runTest {
+        val h = Harness(this, on, now = 1_000_000.0)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        // Pulling in: a point or two when first seen, so held rather than judged parked...
+        h.clockNow = 1_000_003.0
+        h.boxById["arriving"] = spot
+        h.pathById["arriving"] = listOf(0.35 to 0.57)
+        h.events += Triple("arriving", "car", 1_000_001.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "held while its path may still show travel")
+
+        // ...and posted the moment it does.
+        h.pathById["arriving"] = driveThrough
+        eventually("the arrival") { h.notifier.posted.map { it.id } == listOf("arriving") }
+
+        // Lost and re-acquired a minute later while it manoeuvres: the same visit, not a second alert.
+        h.clockNow = 1_000_060.0
+        h.boxById["again"] = spot
+        h.pathById["again"] = driveThrough
+        h.events += Triple("again", "car", 1_000_060.0)
+        settle()
+        assertEquals(listOf("arriving"), h.notifier.posted.map { it.id }, "a move inside the visit window is the same visit")
+
+        // Ten minutes on, a car moving into that spot is a new arrival worth hearing about.
+        h.clockNow = 1_000_660.0
+        h.boxById["returning"] = spot
+        h.pathById["returning"] = driveThrough
+        h.events += Triple("returning", "car", 1_000_660.0)
+        eventually("the return") { h.notifier.posted.map { it.id } == listOf("arriving", "returning") }
+    }
+
+    @Test
+    fun aStillCarStillInProgressPastTheGraceIsJudgedParked() = runTest {
+        val h = Harness(this, on, now = 1_000_000.0)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.clockNow = 1_000_003.0
+        h.boxById["sitting"] = spot
+        h.pathById["sitting"] = parkedPath
+        h.events += Triple("sitting", "car", 1_000_001.0)   // in progress, and stays so
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "held for now")
+
+        h.clockNow = 1_000_070.0                            // past the motion grace: judged as it stands, still
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "a car still sitting there after the grace is parked, not news")
+
+        // Nothing was posted for it, so a car moving into the same spot right after is not a repeat.
+        h.boxById["mover"] = spot
+        h.pathById["mover"] = driveThrough
+        h.events += Triple("mover", "car", 1_000_071.0)
+        eventually("the mover") { h.notifier.posted.map { it.id } == listOf("mover") }
+    }
+
+    @Test
+    fun aMovingCarAtAnotherSpotOrOnAnotherCameraNotifies() = runTest {
         val h = Harness(this, on)
         h.service.start()
         eventually("first poll") { h.afters.isNotEmpty() }
 
-        h.boxById["parked"] = spot
-        h.pathById["parked"] = parkedPath
-        h.events += Triple("parked", "car", 1_000_001.0)
-        eventually("the parked car") { h.notifier.posted.map { it.id } == listOf("parked") }
+        h.boxById["first"] = spot
+        h.pathById["first"] = driveThrough
+        h.events += Triple("first", "car", 1_000_001.0)
+        eventually("the first car") { h.notifier.posted.map { it.id } == listOf("first") }
 
         h.boxById["elsewhere"] = listOf(0.60, 0.30, 0.12, 0.10)
-        h.pathById["elsewhere"] = listOf(0.66 to 0.40, 0.66 to 0.41)
+        h.pathById["elsewhere"] = List(20) { 0.05 + it * 0.0474 to 0.40 }
         h.events += Triple("elsewhere", "car", 1_000_060.0)
-        eventually("the car at another spot") { h.notifier.posted.map { it.id } == listOf("parked", "elsewhere") }
+        eventually("the car at another spot") { h.notifier.posted.map { it.id } == listOf("first", "elsewhere") }
 
         h.boxById["front-yard"] = spot
-        h.pathById["front-yard"] = parkedPath
+        h.pathById["front-yard"] = driveThrough
         h.cameraById["front-yard"] = "hikvision_1"
         h.events += Triple("front-yard", "car", 1_000_120.0)
-        eventually("the car on the other camera") { h.notifier.posted.map { it.id } == listOf("parked", "elsewhere", "front-yard") }
+        eventually("the car on the other camera") { h.notifier.posted.map { it.id } == listOf("first", "elsewhere", "front-yard") }
         assertTrue(h.notifier.posted.last().body.startsWith("Front Yard · "), h.notifier.posted.last().body)
     }
 
