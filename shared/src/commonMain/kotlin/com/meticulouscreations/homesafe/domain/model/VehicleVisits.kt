@@ -3,24 +3,37 @@ package com.meticulouscreations.homesafe.domain.model
 import kotlin.math.abs
 
 /**
- * Folds one vehicle's repeated detections at one spot into a single moment — a visit.
+ * Folds one vehicle's repeated detections at one spot into a single moment — a visit — and drops
+ * the sightings of a vehicle that never went anywhere.
  *
  * Why (verified on the Front Yard camera, 2026-09-07): Frigate made 742 car events in a day, and
  * one car produced seven cards in the five minutes it took to pull in and park. Two things cause
  * that. A passing car steals a parked car's tracker id, which ends the event and starts a fresh
  * one at the same spot seconds later; and a car actually manoeuvring is picked up, lost and
  * re-acquired several times on the way in. Neither is something Frigate can be configured out of.
+ * And (2026-09-15) a car parked all day is re-detected every few minutes as the detector's box on
+ * it flickers: each is a brand-new object with a two-point path and no travel, filed as an alert.
  *
  * So a vehicle detected again on an overlapping box, on the same camera, soon after the last
  * sighting, is treated as the same visit rather than a new card. "Soon" depends on whether the
  * vehicle is moving: a car that is sitting still is the same parked car for [PARKED_GAP_SECONDS],
  * while one that is moving only counts as the same visit for [VISIT_GAP_SECONDS] — long enough to
  * cover the gaps while it manoeuvres, short enough that coming home this evening is not folded
- * into leaving this morning.
+ * into leaving this morning. And a still sighting that continues no visit is no moment at all: a
+ * vehicle is only news once it has moved. The push relay applies the same rule (`is_still` in
+ * relay/relay.py), so a phone hears about the same vehicles the feed shows.
  */
 object VehicleVisits {
     /** Share of the path that must sit within the box's size of the path's median for [isStill]. */
     const val STILL_FRACTION = 0.7
+
+    /**
+     * A path shorter than this is still whatever its shape. Frigate records a point when the
+     * object first appears, another on its next look, and then one per ~5% of the frame travelled,
+     * so three points is a single jump — the detector's box flipping between the whole car and
+     * part of it — and only from four is there a journey to judge.
+     */
+    const val MOVED_MIN_POINTS = 4
 
     /** How much two sightings' boxes must overlap to be the same vehicle in the same place. */
     const val MERGE_IOU = 0.3
@@ -35,14 +48,16 @@ object VehicleVisits {
 /**
  * True when the object barely moved: at least [VehicleVisits.STILL_FRACTION] of its path points lie
  * within r = max(box width, box height) of the path's median point on both axes. A path of fewer
- * than two points is still; an event with no box is never still (there is nothing to match it on).
+ * than [VehicleVisits.MOVED_MIN_POINTS] points is still; an event with no box is never still (there
+ * is nothing to match it on).
  *
- * This no longer decides whether a sighting folds — it decides how long the moment stays open for
- * another one. A parked car is expected to be re-detected for hours; a moving one is not.
+ * This decides two things: how long a moment stays open for another sighting (a parked car is
+ * expected to be re-detected for hours; a moving one is not), and whether a sighting that continues
+ * nothing is a moment at all (only if it moved — see [mergeVehicleVisits]).
  */
 fun MomentEvent.isStill(): Boolean {
     val box = box ?: return false
-    if (pathPoints.size < 2) return true
+    if (pathPoints.size < VehicleVisits.MOVED_MIN_POINTS) return true
     val mx = median(pathPoints.map { it.x })
     val my = median(pathPoints.map { it.y })
     val r = maxOf(box.w, box.h)
@@ -108,15 +123,24 @@ internal fun MomentEvent.foldedInto(anchor: MomentEvent): MomentEvent {
 
 /**
  * Collapses each vehicle's visit into one moment. Walks oldest-first: a vehicle folds into the most
- * recent moment it [repeats]; anything else — a person, a car somewhere else, a return hours later —
- * starts a moment of its own. Returns newest-first by start, like the API. Run this after [inZones],
- * so the street cars the zones reject never anchor a visit.
+ * recent moment it [repeats]; a vehicle that repeats nothing starts a moment of its own if it moved
+ * — a car somewhere else, a return hours later — and is dropped if it is [isStill], because a car
+ * that was only ever seen sitting there did nothing worth a card. Everything else — a person, a
+ * dog — passes through. Returns newest-first by start, like the API. Run this after [inZones], so
+ * the street cars the zones reject never anchor a visit.
  */
 fun List<MomentEvent>.mergeVehicleVisits(): List<MomentEvent> {
     val moments = ArrayList<MomentEvent>(size)
     for (event in sortedBy { it.startEpochSeconds }) {
-        val index = if (event.category == MomentCategory.VEHICLES) moments.indexOfLast { event.repeats(it) } else -1
-        if (index >= 0) moments[index] = event.foldedInto(moments[index]) else moments += event
+        if (event.category != MomentCategory.VEHICLES) {
+            moments += event
+            continue
+        }
+        val index = moments.indexOfLast { event.repeats(it) }
+        when {
+            index >= 0 -> moments[index] = event.foldedInto(moments[index])
+            !event.isStill() -> moments += event
+        }
     }
     return moments.sortedByDescending { it.startEpochSeconds }
 }
