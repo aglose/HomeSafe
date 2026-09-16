@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -80,17 +81,25 @@ class MomentsRepositoryImplTest {
         failEvents: Boolean = false,
         val clock: FakeClock = FakeClock(),
     ) {
-        val hosts = mutableListOf<String>()
+        // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
+        // on whatever thread Ktor finished its request on — [eventually] spends real time off the
+        // test dispatcher, so that is genuinely another thread — while the test body reads what has
+        // been recorded so far. Appending to a MutableList from one thread while another iterates it
+        // is a data race, and iOS caught it as a ConcurrentModificationException inside `distinct()`.
+        // Every read below is a snapshot, so no reader can see the list change under it.
+        private val _hosts = MutableStateFlow<List<String>>(emptyList())
+        val hosts: List<String> get() = _hosts.value
 
         /** Every `/api/events` request's query string, in order: what the feed asked the server for. */
-        val eventQueries = mutableListOf<String>()
+        private val _eventQueries = MutableStateFlow<List<String>>(emptyList())
+        val eventQueries: List<String> get() = _eventQueries.value
         val engine = MockEngine { req ->
-            hosts += req.url.host
+            _hosts.update { it + req.url.host }
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
-                    eventQueries += req.url.encodedQuery
+                    _eventQueries.update { it + req.url.encodedQuery }
                     val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
