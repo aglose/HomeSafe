@@ -171,6 +171,43 @@ only the host's natives; a distributable meant for other machines has to ask for
 
 The web target still shows the "Live view not yet available on this platform" placeholder.
 
+### The home screen's "In view now" strip
+
+Under the greeting, above the camera cards, the Home tab shows what is *standing* in view now:
+"Sarah's Tesla · Driveway · since 8:12 AM", with the crop Frigate cut of the car where it sits.
+It is there so the question the app gets opened for — is her car home? is there a car in the
+driveway that shouldn't be? — is answered before the first stream has connected. Tapping a card
+opens the camera that can see it. Nothing parked anywhere means no strip at all, rather than a row
+saying the driveway is empty.
+
+This is the other half of the vehicle-visit folding the Moments feed does
+([`VehicleVisits.kt`](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/domain/model/VehicleVisits.kt)),
+and deliberately not the same list. The feed answers "what happened?", so a car that only ever sat
+there is no moment at all and is dropped; the strip answers "what is there now?", where that car is
+the whole answer. Both fold sightings the same way — same camera, overlapping box, within
+`PARKED_GAP_SECONDS` — because that is what makes a parked car's endless re-detections one thing
+rather than forty. The rules the strip adds
+([`StationaryObjects.kt`](shared/src/commonMain/kotlin/com/meticulouscreations/homesafe/domain/model/StationaryObjects.kt)):
+
+- **Parked, not passing.** A stay shows only while its *latest* sighting is still. A car pulling
+  in or driving off is moving, so it leaves the strip for as long as it is driving and comes back
+  the moment it is re-detected sitting there.
+- **Only while Frigate keeps seeing it.** A stay survives its last sighting by `AT_REST_SECONDS`
+  (the same half hour that decides whether two sightings are the same parked car), or indefinitely
+  while the sighting is still in progress. Beyond that the app has no evidence either way and drops
+  the card rather than vouching for a car that may have gone. Once the last sighting is more than
+  five minutes old the card says when the car was actually last seen.
+- **Zones still decide.** The strip is placed by the same `inZones` pass as the feed, so a car out
+  on a street the zones reject is never reported as parked in the yard.
+- **It never guesses an arrival time.** The poll reads twelve hours back, capped at a page of
+  detections; when a stay begins at the edge of what was fetched, the card shows the car and its
+  place with no "since", rather than a time that is really just where the page stopped.
+
+It is its own poll across every camera (`MomentsRepository.observeStationaryObjects`), for the same
+reason the camera detail screen's recent strip is: the Moments feed's window is wherever that tab
+was last left — one camera, an earlier day — and this has to be every camera, now. It runs only
+while the Home tab is on screen.
+
 ### Running tests
 
 Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:

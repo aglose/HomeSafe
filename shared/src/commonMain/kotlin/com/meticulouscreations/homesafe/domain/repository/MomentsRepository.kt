@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.domain.repository
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
+import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import kotlinx.coroutines.flow.Flow
 
 /** Exposes Frigate's detections (people, vehicles, animals, ...) for the Moments feed. */
@@ -48,6 +49,15 @@ interface MomentsRepository {
      * narrowed or scrolled back to changes it. Polls while collected.
      */
     fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>>
+
+    /**
+     * The vehicles parked in view of any camera right now, folded and placed the way
+     * [observeMoments] folds a visit but kept even when the app never saw them arrive — see
+     * [com.meticulouscreations.homesafe.domain.model.stationaryObjects]. Its own poll, from now,
+     * across every camera: the feed's window is wherever the Moments tab last left it. Polls while
+     * collected.
+     */
+    fun observeStationaryObjects(): Flow<List<StationaryObject>>
 
     suspend fun refresh()
 

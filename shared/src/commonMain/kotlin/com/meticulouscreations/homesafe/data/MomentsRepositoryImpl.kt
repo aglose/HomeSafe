@@ -5,8 +5,10 @@ import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
+import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.inZones
 import com.meticulouscreations.homesafe.domain.model.mergeVehicleVisits
+import com.meticulouscreations.homesafe.domain.model.stationaryObjects
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -31,6 +33,8 @@ import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * No Room cache on purpose (same reasoning as recordings): Frigate mints and ends events
@@ -47,12 +51,14 @@ import kotlinx.coroutines.sync.withLock
  * The polling loop lives in [observeMoments] (not in `init`) so it only runs while something is
  * actually looking at the feed — a background tab shouldn't keep hitting the server.
  */
+@OptIn(ExperimentalTime::class)
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class MomentsRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionRepository: ConnectionRepository,
+    private val clock: Clock,
     appScope: CoroutineScope,
 ) : MomentsRepository {
 
@@ -156,6 +162,41 @@ class MomentsRepositoryImpl(
                 apiClient.getEvents(url, limit = maxOf(limit, RECENT_RAW_EVENTS), cameras = listOf(cameraName)).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
                     send(events.map { it.toDomain() }.inZones(zones).mergeVehicleVisits().take(limit))
+                }
+                delay(POLL_INTERVAL_MS)
+            }
+        }
+    }
+
+    /**
+     * Its own poll, like [observeRecentMoments], and for the same reason: the Moments feed's
+     * window may be narrowed to one camera or opened at an earlier day, and this has to be every
+     * camera, now. It reads back [STATIONARY_LOOKBACK_SECONDS] so a car parked this morning is
+     * still anchored to the moment it arrived, and tells [stationaryObjects] how far back the page
+     * actually reached — with a busy camera minting hundreds of car events a day, [PAGE_SIZE]
+     * detections can run out well inside that window, and a card shouldn't claim an arrival time
+     * it only inferred from where the page happened to stop.
+     */
+    override fun observeStationaryObjects(): Flow<List<StationaryObject>> = channelFlow {
+        activeUrl.collectLatest { url ->
+            if (url == null) {
+                send(emptyList())
+                return@collectLatest
+            }
+            while (true) {
+                loadZones(url, force = false)
+                val now = clock.now().toEpochMilliseconds() / 1000.0
+                val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
+                apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
+                    val zones = stateLock.withLock { zonesByCamera }
+                    // Full pages stop where the server ran the limit out, not where the window ends.
+                    val oldestFetched = if (events.size >= PAGE_SIZE) {
+                        events.minOfOrNull { it.startTime } ?: lookbackStart
+                    } else {
+                        lookbackStart
+                    }
+                    // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
+                    send(events.map { it.toDomain() }.inZones(zones).stationaryObjects(now, oldestFetched))
                 }
                 delay(POLL_INTERVAL_MS)
             }
@@ -266,6 +307,13 @@ class MomentsRepositoryImpl(
 
         /** How many detections a camera's recent strip reads to find its few moments. */
         const val RECENT_RAW_EVENTS = 25
+
+        /**
+         * How far back the in-view strip looks for the vehicles standing in the yard. Long enough
+         * to catch the morning's arrival — so a card can say "since 8:12 AM" rather than only that
+         * the car is there — without reaching back into yesterday's parking for a car that left.
+         */
+        const val STATIONARY_LOOKBACK_SECONDS = 12.0 * 60.0 * 60.0
     }
 }
 
