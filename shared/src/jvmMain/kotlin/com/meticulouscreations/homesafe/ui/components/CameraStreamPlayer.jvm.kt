@@ -160,3 +160,6 @@ private class HolderLease(key: String?) : RememberObserver {
     override fun onForgotten() = LivePlayerPool.release(holder)
     override fun onAbandoned() = LivePlayerPool.release(holder)
 }
+
+/** One video surface per player here; a second binder has to be handed the picture. */
+actual val liveSurfaceIsExclusive: Boolean = true
