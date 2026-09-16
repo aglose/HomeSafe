@@ -77,7 +77,19 @@ data class ClassifierDataset(
     /** The crops the model is sure about, shown on request so a new car can still be labelled from one. */
     val confidentQueue: List<UnlabeledCrop> get() = queue.filter { it.isConfident }
 
-    val categories: List<String> get() = categoryCounts.keys.sortedWith(compareBy({ it == NONE_CATEGORY }, { it }))
+    /**
+     * Every category a crop can be filed under, `none` last.
+     *
+     * Wider than [categoryCounts] on purpose, because a category with no images on the server is
+     * still a category a person can file into — Frigate creates the folder on the first crop that
+     * lands there. Without that the labelling screen shows a queue of crops and nothing to tap:
+     * `none` can never be typed into the new-category box (it would slug to `not_ours`), and a
+     * model whose dataset has been cleared keeps classifying into names the dataset no longer
+     * lists.
+     */
+    val categories: List<String>
+        get() = (categoryCounts.keys + NONE_CATEGORY + queue.mapNotNull { it.guessedCategory }.filter { isNameable(it) })
+            .sortedWith(compareBy({ it == NONE_CATEGORY }, { it }))
 
     /** Frigate needs two classes; `none` counts as one. */
     val canTrain: Boolean get() = categoryCounts.count { it.value > 0 } >= 2
@@ -85,5 +97,12 @@ data class ClassifierDataset(
     companion object {
         /** Frigate's reserved category: "one of these objects, but not one we care about". Never becomes a sub-label. */
         const val NONE_CATEGORY = "none"
+
+        /** What Frigate writes into a crop's file name when the model has no opinion yet. */
+        const val UNKNOWN_GUESS = "unknown"
+
+        /** A guess worth offering as a category of its own: a real name, not a placeholder. */
+        private fun isNameable(category: String): Boolean =
+            category.isNotBlank() && category != UNKNOWN_GUESS && category != NONE_CATEGORY
     }
 }
