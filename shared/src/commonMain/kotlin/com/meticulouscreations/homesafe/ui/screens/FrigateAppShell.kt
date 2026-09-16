@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
@@ -54,6 +55,7 @@ import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -62,20 +64,34 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 
-/** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
-@Composable
-fun FrigateAppShell() {
-    val viewModel: AppShellViewModel = metroViewModel()
-    val topLevelBackStack = remember { TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home) }
-    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+/**
+ * The shell's navigation state: which tab is up, and the nested back stack of each tab that has
+ * one. Owned here rather than inside the tab composables so the shell can tell when a tab has
+ * drilled into a screen that brings its own header (see [showsTopBar]), and so the Moments tab
+ * can land a detection on the Home stack (see [openDetection]).
+ *
+ * One instance outlives the tab composables: [FrigateAppShell] remembers it for the run of the
+ * shell, and the iOS 26 host (`IosShell.kt`), where each tab is its own Compose view controller
+ * under a native tab bar, shares one across all three. [onTabSelected] is how that host hears
+ * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
+ */
+@Stable
+internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
+    val topLevel = TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home)
 
     // The Home tab's nested back stack lives here, not in HomeTabNav, so the shell can tell when
     // Home has drilled into a camera. Those nested screens draw their own header row, and
     // stacking the shell bar above it would cost ~70dp of vertical space for no information.
-    val homeBackStack = remember { mutableStateListOf<Any>(CameraListRoute) }
+    val homeBackStack: SnapshotStateList<Any> = mutableStateListOf(CameraListRoute)
+
     // Same arrangement for Settings, which drills into a classifier's labelling screen.
-    val settingsBackStack = remember { mutableStateListOf<Any>(SettingsHomeRoute) }
-    val showTopBar = when (topLevelBackStack.topLevelKey) {
+    val settingsBackStack: SnapshotStateList<Any> = mutableStateListOf(SettingsHomeRoute)
+
+    /** The tab that is up, as far as Compose knows; under a native tab bar the bar itself is the truth. */
+    val selectedTab: TopLevelRoute get() = topLevel.topLevelKey
+
+    /** Whether [tab] is showing its root screen, which is when the shell's own top bar belongs above it. */
+    fun showsTopBar(tab: TopLevelRoute): Boolean = when (tab) {
         TopLevelRoute.Home -> homeBackStack.size <= 1
         TopLevelRoute.Settings -> settingsBackStack.size <= 1
         else -> true
@@ -84,52 +100,108 @@ fun FrigateAppShell() {
     // so the zoomed picture gets the whole screen.
     val cardZoom = rememberCameraCardZoomState()
 
+    fun selectTab(tab: TopLevelRoute) {
+        topLevel.addTopLevel(tab)
+        onTabSelected(tab)
+    }
+
+    /**
+     * Full screen for a detection is the Home tab's camera screen, opened at that instant: one
+     * full-width player for the camera, not a second one on the Moments tab. It lands on the
+     * Home stack, so Back returns to the camera list — and the Moments tab is one tap away,
+     * still where it was left.
+     */
+    fun openDetection(event: MomentEvent) {
+        homeBackStack.add(
+            CameraDetailRoute(
+                cameraName = event.cameraName,
+                warmStreamUrl = null,
+                warmPosterUrl = null,
+                openAtEpochSeconds = event.startEpochSeconds,
+            ),
+        )
+        selectTab(TopLevelRoute.Home)
+    }
+}
+
+/** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
+@Composable
+fun FrigateAppShell() {
+    val viewModel: AppShellViewModel = metroViewModel()
+    val nav = remember { ShellNavigation() }
+    // The Home list's quick look at one camera. Its layer is drawn by the shell, over the bars,
+    // so the zoomed picture gets the whole screen.
+    val cardZoom = rememberCameraCardZoomState()
+    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+
     ShellScaffold(
-        showTopBar = showTopBar,
+        showTopBar = nav.showsTopBar(nav.selectedTab),
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
-        selectedTab = topLevelBackStack.topLevelKey,
-        onSelectTab = { topLevelBackStack.addTopLevel(it) },
-        overlay = {
-            CameraCardZoomOverlay(state = cardZoom) { tile ->
-                homeBackStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
-            }
-        },
+        selectedTab = nav.selectedTab,
+        onSelectTab = nav::selectTab,
+        overlay = { CardZoomOverlay(nav, cardZoom) },
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
-            backStack = topLevelBackStack.backStack,
-            onBack = { topLevelBackStack.removeLast() },
+            backStack = nav.topLevel.backStack,
+            onBack = { nav.topLevel.removeLast() },
             transitionSpec = { tabHandOver() },
             popTransitionSpec = { tabHandOver() },
             predictivePopTransitionSpec = { tabHandOver() },
             entryProvider = entryProvider {
-                entry<TopLevelRoute.Home> { HomeTabNav(homeBackStack, cardZoom) }
-                entry<TopLevelRoute.Moments> {
-                    MomentsTabContent(
-                        // Full screen for a detection is the Home tab's camera screen, opened at
-                        // that instant: one full-width player for the camera, not a second one
-                        // here. It lands on the Home stack, so Back returns to the camera list —
-                        // and the Moments tab is one tap away, still where it was left.
-                        onOpenFullScreen = { event ->
-                            homeBackStack.add(
-                                CameraDetailRoute(
-                                    cameraName = event.cameraName,
-                                    warmStreamUrl = null,
-                                    warmPosterUrl = null,
-                                    openAtEpochSeconds = event.startEpochSeconds,
-                                ),
-                            )
-                            topLevelBackStack.addTopLevel(TopLevelRoute.Home)
-                        },
-                    )
-                }
-                entry<TopLevelRoute.Settings> {
-                    SettingsTabNav(settingsBackStack) { openClassifier, openFaces ->
-                        SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
-                    }
-                }
+                entry<TopLevelRoute.Home> { TabContent(TopLevelRoute.Home, nav, cardZoom) }
+                entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav, cardZoom) }
+                entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav, cardZoom) }
             },
         )
+    }
+}
+
+/**
+ * One tab of the shell on its own, for a host whose platform draws the tab bar: the shell's
+ * chrome around that tab's content, with no Compose bottom nav (the host provides
+ * [LocalNativeTabBar] as true) and no tab switching of its own — the host's bar is the truth
+ * about which tab is up, and [nav] only tells it when Compose wants a different one. The iOS 26
+ * Liquid Glass `TabView` hosts one of these per tab (see `IosShell.kt`).
+ */
+@Composable
+internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
+    val viewModel: AppShellViewModel = metroViewModel()
+    // Per tab, like the scaffold it lifts into: only Home ever opens it, and its layer covers
+    // this tab's Compose view (the native bar beneath is the platform's to draw).
+    val cardZoom = rememberCameraCardZoomState()
+    val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+
+    ShellScaffold(
+        showTopBar = nav.showsTopBar(tab),
+        topBar = { FrigateTopBar(activeConnection = activeConnection) },
+        selectedTab = tab,
+        onSelectTab = nav::selectTab,
+        overlay = { CardZoomOverlay(nav, cardZoom) },
+    ) {
+        TabContent(tab, nav, cardZoom)
+    }
+}
+
+/** What [tab] shows: its root screen, and the nested stack beyond it where the tab has one. */
+@Composable
+private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    when (tab) {
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom)
+
+        TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
+
+        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces ->
+            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
+        }
+    }
+}
+
+/** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
+@Composable
+private fun CardZoomOverlay(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    CameraCardZoomOverlay(state = cardZoom) { tile ->
+        nav.homeBackStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
     }
 }
 
@@ -153,6 +225,9 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * Edge-to-edge: the background paints under the system bars, and each piece that must stay
  * tappable steps in from its own bar — the top bar from the status bar, the floating nav from
  * the navigation bar, and everything from a display cutout at the sides (landscape notch).
+ *
+ * Under a native tab bar ([LocalNativeTabBar]) the floating nav is left out: the platform's bar
+ * sits where it would, and [bottomNavClearance] already keeps the content clear of it.
  *
  * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into.
  */
@@ -184,14 +259,16 @@ internal fun ShellScaffold(
             topBar()
         }
 
-        BottomNavBar(
-            selected = selectedTab,
-            onSelect = onSelectTab,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = 16.dp),
-        )
+        if (!LocalNativeTabBar.current) {
+            BottomNavBar(
+                selected = selectedTab,
+                onSelect = onSelectTab,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp),
+            )
+        }
 
         overlay()
     }
@@ -303,7 +380,7 @@ private data class DetectionZonesRoute(val cameraName: String)
  * shared-axis slide. Navigation 3 takes the specs from the entry nearer the top of the stack,
  * which is why they are attached to the detail entry rather than to the display.
  *
- * [backStack] is owned by [FrigateAppShell] (see there for why) and starts at [CameraListRoute].
+ * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable

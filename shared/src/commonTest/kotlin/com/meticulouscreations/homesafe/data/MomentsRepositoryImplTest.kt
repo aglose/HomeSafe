@@ -140,9 +140,10 @@ class MomentsRepositoryImplTest {
     ]"""
 
     /**
-     * The real shape of a parked car's day (Front Yard, 2026-09-07): three sightings of Sarah's
-     * Tesla at the curb, each a jittery path around one spot ended by a passer-by stealing the
-     * tracker, plus one genuine drive-through of the same car later. Newest first, like the API.
+     * The real shape of a parked car's day (Front Yard, 2026-09-07): Sarah's Tesla pulling up to
+     * the curb, then two sightings of it sitting there, each a jittery path around one spot ended
+     * by a passer-by stealing the tracker, plus one genuine drive-through of the same car later.
+     * Newest first, like the API.
      */
     private val parkedCarJson = """[
       {"id":"drive","label":"car","sub_label":"sarahs_tesla","camera":"hikvision_1","start_time":1788832052.0,"end_time":1788832056.0,
@@ -161,7 +162,7 @@ class MomentsRepositoryImplTest {
       {"id":"first","label":"car","sub_label":"sarahs_tesla","camera":"hikvision_1","start_time":1788786387.8,"end_time":1788799377.0,
        "has_clip":true,"has_snapshot":false,"zones":[],
        "data":{"type":"object","score":0.8,"top_score":0.78,"sub_label_score":0.97,"box":[0.75,0.34,0.18,0.21],
-               "path_data":[[[0.84,0.53],1788786418.0],[[0.84,0.53],1788786418.5],[[0.83,0.37],1788788897.0],[[0.83,0.54],1788788897.5],[[0.72,0.50],1788799364.0],[[0.87,0.57],1788799365.0]]}}
+               "path_data":[[[0.30,0.30],1788786418.0],[[0.45,0.35],1788786419.0],[[0.60,0.42],1788786420.0],[[0.75,0.48],1788786421.0],[[0.84,0.53],1788786422.0],[[0.84,0.53],1788799365.0]]}}
     ]"""
 
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
@@ -217,7 +218,7 @@ class MomentsRepositoryImplTest {
                 list.isNotEmpty()
             }
 
-            // The drive-through is its own card; the three curb sightings are one, still in progress.
+            // The drive-through is its own card; the arrival and the two curb sightings are one, still in progress.
             assertEquals(listOf("drive", "first"), list.map { it.id })
             val parked = list[1]
             assertEquals(3, parked.sightings)
@@ -355,6 +356,46 @@ class MomentsRepositoryImplTest {
         } finally {
             Harness.eventsFor = null
         }
+    }
+
+    @Test
+    fun narrowingToACameraAsksTheServerForItsMomentsAloneAndPagesWithinIt() = runTest {
+        Harness.eventsFor = { _ -> personsJson(2000, 100) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the live feed") { h.repo.observeMoments().first().size == 100 }
+            assertEquals("limit=100", h.eventQueries.first(), "every camera asks for no camera at all")
+
+            h.repo.showCamera("amcrest_1")
+            eventually("the narrowed head") { h.eventQueries.last() == "limit=100&cameras=amcrest_1" }
+            eventually("the narrowed feed") { h.repo.observeMoments().first().size == 100 }
+
+            h.repo.loadOlder()
+            assertEquals("limit=100&before=1901.000&cameras=amcrest_1", h.pageQueries.last(), "the next page stays on the camera")
+
+            h.repo.showCamera(null)
+            eventually("every camera again") { h.eventQueries.last() == "limit=100" }
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aCamerasRecentMomentsAreItsOwnFromNowWhereverTheFeedIs() = runTest {
+        Harness.events = personsJson(2000, 25)
+        val h = Harness(this)
+        // The Moments feed is off looking at another camera's past; the recent strip doesn't follow it.
+        h.repo.showBefore(1500.0)
+        h.repo.showCamera("amcrest_1")
+
+        var recent = emptyList<com.meticulouscreations.homesafe.domain.model.MomentEvent>()
+        backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3).collect { recent = it } }
+        eventually("recent moments") { recent.isNotEmpty() }
+
+        assertEquals(listOf("e2000", "e1999", "e1998"), recent.map { it.id })
+        // Polled like the feed ([eventually] runs virtual time on), but every poll is the same question.
+        assertEquals(listOf("limit=25&cameras=hikvision_1"), h.eventQueries.distinct())
     }
 
     @Test

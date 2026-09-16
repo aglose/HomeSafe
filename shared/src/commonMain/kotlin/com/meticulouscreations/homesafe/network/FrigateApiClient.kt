@@ -235,18 +235,21 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
      * [beforeEpochSeconds] restricts it to detections that started strictly before that moment
      * (Frigate's `before` filter): the next page of a feed asks for what started before the
      * oldest detection it already has, and a look back at an earlier day asks for what started
-     * before that day ended.
+     * before that day ended. [cameras] restricts it to detections on those cameras (Frigate's
+     * `cameras` filter, comma-separated); null or empty is every camera.
      */
     suspend fun getEvents(
         serverUrl: String,
         limit: Int = 100,
         afterEpochSeconds: Double? = null,
         beforeEpochSeconds: Double? = null,
+        cameras: List<String>? = null,
     ): Result<List<FrigateEvent>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
             parameter("limit", limit)
             if (afterEpochSeconds != null) parameter("after", formatEpochSeconds(afterEpochSeconds))
             if (beforeEpochSeconds != null) parameter("before", formatEpochSeconds(beforeEpochSeconds))
+            if (!cameras.isNullOrEmpty()) parameter("cameras", cameras.joinToString(","))
         }
         check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
         response.body<List<FrigateEvent>>()

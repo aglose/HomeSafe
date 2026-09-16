@@ -54,10 +54,14 @@ import kotlin.time.Instant
  * on any camera is posted — [AlertNotification.urgent], on the loud channel — whatever the zone
  * rules say. Presence is collected for the life of the poll so that flag stays fresh.
  *
- * A car is reported once per visit. Frigate re-detects the same vehicle over and over — a passer-by
- * steals a parked car's tracker, and a car manoeuvring is lost and re-acquired several times (see
- * `VehicleVisits`) — so a vehicle seen again at a spot one was already posted from is remembered as
- * another sighting instead of being posted again.
+ * A car is only reported once it has moved, and once per visit. Frigate re-detects the same
+ * vehicle over and over — a parked car is picked up anew every few minutes as the detector's box
+ * on it flickers, a passer-by steals its tracker, and a car manoeuvring is lost and re-acquired
+ * several times (see `VehicleVisits`). So a vehicle whose path shows no travel is held for a
+ * short grace while it is in progress (a car pulling in moves within seconds) and then dropped
+ * without a word, and a moving vehicle seen again at a spot one was just posted from is remembered
+ * as another sighting of that visit instead of being posted again. The push relay applies the
+ * same rule (`motion_verdict` in relay/relay.py).
  */
 class DetectionAlertService(
     private val apiClient: FrigateApiClient,
@@ -104,7 +108,8 @@ class DetectionAlertService(
         // People Frigate hasn't put a name to yet, held back while face recognition may still
         // catch up (see RECOGNITION_GRACE_SECONDS). Only used while "only strangers" is on.
         val pending = LinkedHashMap<String, FrigateEvent>()
-        // Vehicles already posted, newest last, so a parked car's re-detections stay quiet.
+        // Vehicles already posted, newest last, so a car being lost and re-acquired as it
+        // manoeuvres stays quiet after its first look.
         val recentVehicles = ArrayDeque<RecentVehicle>()
         // Each camera's zones, for MomentEvent.inZones; re-read now and then so an edit in the
         // zone editor takes effect without a restart. A failed read keeps the last zones.
@@ -146,28 +151,41 @@ class DetectionAlertService(
     }
 
     /**
-     * Frigate names a face a few seconds into a person's visit, and a stranger-only rule can't be
-     * applied until then. So a still-anonymous, still-present person is held for up to
-     * [RECOGNITION_GRACE_SECONDS] after they appeared before being judged a stranger.
+     * Two reasons to look again later rather than judge now. Frigate names a face a few seconds
+     * into a person's visit, and a stranger-only rule can't be applied until then, so a
+     * still-anonymous, still-present person is held for up to [RECOGNITION_GRACE_SECONDS] after
+     * they appeared before being judged a stranger. And a vehicle's path is a point or two when it
+     * first appears, whether it is pulling in or has sat there all day, so a still, still-present
+     * vehicle is held for up to [MOTION_GRACE_SECONDS] to give its path time to show travel.
      */
-    private fun shouldHold(event: FrigateEvent, now: Double): Boolean =
-        !everyoneAway &&
-            settings.value.quietFamiliarPeople &&
-            categoryForLabel(event.label) == MomentCategory.PEOPLE &&
-            !event.isRecognized &&
+    private fun shouldHold(event: FrigateEvent, now: Double): Boolean = when (categoryForLabel(event.label)) {
+        MomentCategory.PEOPLE ->
+            !everyoneAway &&
+                settings.value.quietFamiliarPeople &&
+                !event.isRecognized &&
+                event.endTime == null &&
+                now - event.startTime < RECOGNITION_GRACE_SECONDS
+
+        MomentCategory.VEHICLES ->
             event.endTime == null &&
-            now - event.startTime < RECOGNITION_GRACE_SECONDS
+                now - event.startTime < MOTION_GRACE_SECONDS &&
+                event.toDomain().isStill()
+
+        else -> false
+    }
 
     /**
      * Whether and how loudly to post: with nobody home every person notifies on the loud channel,
      * zone rules and the stranger rule notwithstanding; otherwise the user's rules decide, once
      * [inZones] has worked out where the object went and whether those zones wanted it at all —
      * a car crossing a birds-only street zone is dropped here, not judged as "anywhere else".
+     * A vehicle that never moved is dropped before any of that: it is not news, wherever it sat.
      */
     private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>, recentVehicles: ArrayDeque<RecentVehicle>) {
         val category = categoryForLabel(event.label)
         val escalated = everyoneAway && category == MomentCategory.PEOPLE
         val moment = event.toDomain()
+        if (category == MomentCategory.VEHICLES && moment.isStill()) return
         val placed = moment.inZones(zones[event.camera].orEmpty())
         if (!escalated && placed != null && isRepeatSighting(placed, recentVehicles)) return
         when {
@@ -189,19 +207,18 @@ class DetectionAlertService(
     private class RecentVehicle(var moment: MomentEvent, var lastSeenEpochSeconds: Double)
 
     /**
-     * True when [placed] is a still vehicle re-detected where one was already posted; the memory
-     * is updated to it. The poller judges an event at its start (it has no end yet), so the memory
-     * expires by time since the last sighting rather than by the feed's end-to-start gap.
+     * True when [placed] is a vehicle re-detected where one was posted within the visit window; the
+     * memory is updated to it. Only moving vehicles get here (still ones are dropped in [decide]),
+     * so the window is the visit's, [VehicleVisits.VISIT_GAP_SECONDS]. It can't come from
+     * `MomentEvent.repeats`: this runs at an event's start, when it has no end yet, so the gap is
+     * measured from the last sighting this poller actually saw.
      */
     private fun isRepeatSighting(placed: MomentEvent, recentVehicles: ArrayDeque<RecentVehicle>): Boolean {
         if (placed.category != MomentCategory.VEHICLES) return false
         val now = clock()
-        recentVehicles.removeAll { now - it.lastSeenEpochSeconds > VEHICLE_MEMORY_SECONDS }
-        // The window can't come from MomentEvent.repeats here: this runs at an event's start, when
-        // it has no end yet, so the gap is measured from the last sighting this poller actually saw.
-        val window = if (placed.isStill()) VEHICLE_MEMORY_SECONDS else VehicleVisits.VISIT_GAP_SECONDS
+        recentVehicles.removeAll { now - it.lastSeenEpochSeconds > VehicleVisits.VISIT_GAP_SECONDS }
         val prior = recentVehicles.lastOrNull {
-            placed.atSameSpotAs(it.moment) && placed.startEpochSeconds - it.lastSeenEpochSeconds <= window
+            placed.atSameSpotAs(it.moment) && placed.startEpochSeconds - it.lastSeenEpochSeconds <= VehicleVisits.VISIT_GAP_SECONDS
         } ?: return false
         prior.moment = placed.foldedInto(prior.moment)
         prior.lastSeenEpochSeconds = placed.startEpochSeconds
@@ -243,8 +260,8 @@ class DetectionAlertService(
         const val OVERLAP_SECONDS = 1.0
         const val RECOGNITION_GRACE_SECONDS = 20.0
 
-        /** How long a posted vehicle is remembered. A parked car is re-detected about hourly all day. */
-        const val VEHICLE_MEMORY_SECONDS = 6 * 3600.0
+        /** How long a still, in-progress vehicle is given to show some travel before it's judged parked. */
+        const val MOTION_GRACE_SECONDS = 60.0
         const val MAX_RECENT_VEHICLES = 20
     }
 }
