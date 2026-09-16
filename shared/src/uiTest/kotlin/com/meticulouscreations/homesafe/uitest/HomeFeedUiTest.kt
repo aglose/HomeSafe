@@ -53,6 +53,7 @@ class HomeFeedUiTest {
             firstSeenEpochSeconds = 1_789_400_000.0,
             lastSeenEpochSeconds = 1_789_408_700.0,
             seenRecently = lastSeenLabel == null,
+            sightings = 4,
             sinceIsKnown = true,
         ),
         presentation = StationaryObjectPresentation(

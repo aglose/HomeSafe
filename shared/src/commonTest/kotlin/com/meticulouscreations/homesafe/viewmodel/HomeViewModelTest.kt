@@ -184,6 +184,7 @@ class HomeViewModelTest {
         firstSeenEpochSeconds = 1_789_400_000.0,
         lastSeenEpochSeconds = 1_789_408_700.0,
         seenRecently = true,
+        sightings = 5,
         sinceIsKnown = true,
     )
 
