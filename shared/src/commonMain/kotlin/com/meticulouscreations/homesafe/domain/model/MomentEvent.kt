@@ -145,9 +145,9 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     )
 }
 
-/** "8:42 AM" */
+/** "8:42 AM" — shared with the home screen's in-view strip, which times its cards the same way. */
 @OptIn(ExperimentalTime::class)
-private fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
+internal fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
     val local = Instant.fromEpochSeconds(epochSeconds.toLong()).toLocalDateTime(timeZone)
     val hour12 = (local.hour + 11) % 12 + 1
     val minute = local.minute.toString().padStart(2, '0')

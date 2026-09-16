@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
+import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import dev.zacsweers.metro.Inject
 import kotlinx.coroutines.flow.Flow
@@ -34,4 +35,10 @@ class ShowMomentsFromCameraUseCase(private val momentsRepository: MomentsReposit
 @Inject
 class ObserveRecentCameraMomentsUseCase(private val momentsRepository: MomentsRepository) {
     operator fun invoke(cameraName: String, limit: Int): Flow<List<MomentEvent>> = momentsRepository.observeRecentMoments(cameraName, limit)
+}
+
+/** See [MomentsRepository.observeStationaryObjects]: the vehicles parked in view of any camera right now. */
+@Inject
+class ObserveStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {
+    operator fun invoke(): Flow<List<StationaryObject>> = momentsRepository.observeStationaryObjects()
 }

@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -77,6 +78,7 @@ class MomentsViewModelTest {
             camera.value = cameraName
         }
         override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = fail("unused")
+        override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
         override suspend fun refresh() = Unit
         override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
         override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")
