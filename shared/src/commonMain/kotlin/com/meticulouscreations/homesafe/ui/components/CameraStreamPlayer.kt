@@ -182,3 +182,11 @@ internal fun LiveViewUnavailablePlaceholder(modifier: Modifier = Modifier) {
         )
     }
 }
+
+/**
+ * Whether a pooled live player can draw to only one bound surface at a time, so that two
+ * binders sharing a `playerKey` must hand the picture over rather than both showing it. True
+ * where the platform player renders to a single surface (Android's HLS path); false where every
+ * bound surface gets every frame. The Home list's quick-look layer keys its hand-over on this.
+ */
+expect val liveSurfaceIsExclusive: Boolean
