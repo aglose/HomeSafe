@@ -7,14 +7,19 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -90,6 +95,14 @@ import kotlin.time.Instant
 
 /** How many of the list's last items may be on screen before the next page is asked for. */
 private const val LOAD_OLDER_LOOKAHEAD = 4
+
+/**
+ * The moment card's preview frame. Narrow enough that a card's title, location and time still
+ * fit on one line each beside it on a phone, and tall enough — it fills the card — that the
+ * frame reads as a scene rather than a letterboxed strip.
+ */
+private val THUMBNAIL_WIDTH = 128.dp
+private val THUMBNAIL_MIN_HEIGHT = 120.dp
 
 private val MomentCategory.label: String
     get() = when (this) {
@@ -638,24 +651,30 @@ private fun MomentCard(
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
             .clickable(onClick = onClick),
     ) {
-        Row {
+        // Intrinsic height so the preview can fill whatever the details beside it come to:
+        // a 16:9 band left the frame barely half the card's height, and squeezing Frigate's
+        // roughly square object thumbnail into it cropped the detection down to a sliver.
+        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
             Box(
                 modifier = Modifier
-                    .width(120.dp)
-                    .aspectRatio(16f / 9f)
+                    .width(THUMBNAIL_WIDTH)
+                    // The floor is for the shortest card (no second line of detail); every
+                    // other card is taller than this and the frame grows with it.
+                    .defaultMinSize(minHeight = THUMBNAIL_MIN_HEIGHT)
+                    .fillMaxHeight()
                     .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentAlignment = Alignment.Center,
             ) {
                 MomentThumbnail(url = item.thumbnailUrl)
                 if (event.hasClip) {
                     // The play icon has the frame to itself. The download used to sit in the
-                    // top-right corner here, close enough on a 120dp-wide thumbnail to read as
+                    // top-right corner here, close enough on a thumbnail this narrow to read as
                     // one cluster with it; it now lives on the details' bottom row.
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
                         contentDescription = "Play clip",
                         tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.size(28.dp).background(extraColors.glassFill, CircleShape).padding(4.dp),
+                        modifier = Modifier.size(32.dp).background(extraColors.glassFill, CircleShape).padding(4.dp),
                     )
                 }
                 if (p.durationLabel != null) {
@@ -886,9 +905,14 @@ private fun DownloadButton(
 /**
  * Coil goes through the app's shared Ktor client (see App.kt), which carries Frigate's session
  * cookie — that is what lets this hit the authenticated thumbnail endpoint.
+ *
+ * A BoxScope so the image can take the frame with matchParentSize rather than fillMaxSize: the
+ * frame's height is the card's intrinsic height, and a child sized to the fetched bitmap would
+ * be measured into that — a large thumbnail would then stretch the card to its pixel height.
+ * matchParentSize is measured against the frame after the frame is sized, so it cannot.
  */
 @Composable
-private fun MomentThumbnail(url: String?) {
+private fun BoxScope.MomentThumbnail(url: String?) {
     if (url == null) {
         Icon(
             imageVector = Icons.Filled.Videocam,
@@ -902,6 +926,6 @@ private fun MomentThumbnail(url: String?) {
         model = url,
         contentDescription = null,
         contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.matchParentSize(),
     )
 }
