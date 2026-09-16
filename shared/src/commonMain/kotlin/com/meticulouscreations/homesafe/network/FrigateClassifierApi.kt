@@ -11,6 +11,12 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.MapSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 
 /**
  * Frigate's custom-classification endpoints (0.16+): the models declared under
@@ -35,11 +41,18 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
         }
     }
 
-    /** Category -> file names, plus training bookkeeping. */
+    /**
+     * Category -> file names, plus training bookkeeping.
+     *
+     * Frigate answers in one of two shapes: the categories and the training metadata wrapped in an
+     * object, or the bare `category -> file names` map on the builds that keep no metadata. Read
+     * only as the wrapped shape, a bare answer parses into no categories at all — which is the
+     * labelling screen with nothing to file a crop under — so take either. See [classifierDataset].
+     */
     suspend fun getDataset(serverUrl: String, modelName: String): Result<FrigateClassifierDataset> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/classification/$modelName/dataset")
         check(response.status.isSuccess()) { "Couldn't load dataset: ${response.status}" }
-        response.body()
+        classifierDataset(response.body())
     }
 
     /** File names of crops waiting to be labelled (the model's `train/` folder). */
@@ -104,11 +117,31 @@ internal data class FrigateClassifierObjectConfig(
     @Serializable(with = FrigateMaskListSerializer::class) val objects: List<String> = emptyList(),
 )
 
-@Serializable
 data class FrigateClassifierDataset(
     val categories: Map<String, List<String>> = emptyMap(),
-    @SerialName("training_metadata") val trainingMetadata: FrigateTrainingMetadata? = null,
+    val trainingMetadata: FrigateTrainingMetadata? = null,
 )
+
+private val datasetJson = Json { ignoreUnknownKeys = true }
+private val categoryFilesSerializer = MapSerializer(String.serializer(), ListSerializer(String.serializer()))
+
+/**
+ * Reads either shape of the `/dataset` answer (see [FrigateClassifierApi.getDataset]): the wrapped
+ * one is the object whose `categories` is itself an object, and anything else is read as the bare
+ * `category -> file names` map, where every value is that category's list of files.
+ */
+internal fun classifierDataset(body: JsonElement): FrigateClassifierDataset {
+    val root = body as? JsonObject ?: return FrigateClassifierDataset()
+    val categories = root["categories"] as? JsonObject
+    if (categories == null && !root.containsKey("training_metadata")) {
+        return FrigateClassifierDataset(categories = datasetJson.decodeFromJsonElement(categoryFilesSerializer, root))
+    }
+    return FrigateClassifierDataset(
+        categories = categories?.let { datasetJson.decodeFromJsonElement(categoryFilesSerializer, it) } ?: emptyMap(),
+        trainingMetadata = (root["training_metadata"] as? JsonObject)
+            ?.let { datasetJson.decodeFromJsonElement(FrigateTrainingMetadata.serializer(), it) },
+    )
+}
 
 @Serializable
 data class FrigateTrainingMetadata(

@@ -52,6 +52,24 @@ class FrigateClassifierApiTest {
         assertEquals(true, dataset.trainingMetadata?.hasTrained)
     }
 
+    /** The other shape in the wild: no wrapper, no bookkeeping, just the folders. */
+    @Test
+    fun readsADatasetServedAsTheBareCategoryMap() = runTest {
+        val bare = """{"none":["none-1788624440.054334-ka18oa.png"],"sarahs_tesla":["sarahs_tesla-1788624439.587271-9a6mag.png"]}"""
+        val api = FrigateClassifierApi(client { HttpStatusCode.OK to bare })
+        val dataset = api.getDataset("http://frigate:8971", "known_cars").getOrThrow()
+        assertEquals(mapOf("none" to 1, "sarahs_tesla" to 1), dataset.categories.mapValues { it.value.size })
+        assertNull(dataset.trainingMetadata)
+    }
+
+    @Test
+    fun anEmptyDatasetReadsAsNoCategoriesRatherThanFailing() = runTest {
+        val api = FrigateClassifierApi(client { HttpStatusCode.OK to "{}" })
+        val dataset = api.getDataset("http://frigate:8971", "known_cars").getOrThrow()
+        assertTrue(dataset.categories.isEmpty())
+        assertNull(dataset.trainingMetadata)
+    }
+
     @Test
     fun labellingPostsTheFileAndCategoryTheWayFrigateExpects() = runTest {
         var captured: HttpRequestData? = null
@@ -131,6 +149,26 @@ class FrigateClassifierApiTest {
         val dataset = ClassifierDataset(model, mapOf("none" to 1), listOf(sureNotOurs, nearlySure, sureOurs, untrained, mined), hasTrained = true, newImagesSinceTraining = 0)
         assertEquals(listOf(nearlySure, untrained, mined), dataset.uncertainQueue)
         assertEquals(listOf(sureNotOurs, sureOurs), dataset.confidentQueue)
+    }
+
+    /**
+     * The empty-dataset trap: a model that has never been labelled (or whose dataset was cleared)
+     * still has a queue full of crops, and every one of them needs something to file it under.
+     */
+    @Test
+    fun everyCropCanBeFiledEvenWhenTheDatasetListsNoCategories() {
+        val model = com.meticulouscreations.homesafe.domain.model.ClassifierModel("known_cars", listOf("car"))
+        val guessed = UnlabeledCrop.fromFileName("1788832091.745689-e2bxi0-1788832104.148959-sarahs_tesla-0.91.webp")
+        val notOurs = UnlabeledCrop.fromFileName("1788832095.985398-hkvbhs-1788832096.567646-none-0.99.webp")
+        val untrained = UnlabeledCrop.fromFileName("1788623987.354018-0au6wn-1788624005.174541-unknown-0.0.webp")
+        val mined = UnlabeledCrop.fromFileName("example_007.jpg")
+
+        val empty = ClassifierDataset(model, emptyMap(), listOf(guessed, notOurs, untrained, mined), hasTrained = false, newImagesSinceTraining = 0)
+        assertEquals(listOf("sarahs_tesla", "none"), empty.categories, "\"Not ours\" is always offered, and so is a name the model already uses")
+
+        val nothingGuessed = ClassifierDataset(model, emptyMap(), listOf(untrained, mined), hasTrained = false, newImagesSinceTraining = 0)
+        assertEquals(listOf("none"), nothingGuessed.categories, "placeholders never become categories")
+        assertEquals(false, nothingGuessed.canTrain, "offering a category is not the same as having images in it")
     }
 
     @Test

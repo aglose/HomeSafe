@@ -116,12 +116,23 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
         item(key = "train", contentType = "train") { TrainCard(uiState = uiState, data = data, onTrain = viewModel::train) }
         val uncertain = data.uncertainQueue
         val confident = data.confidentQueue
+        // Walks the whole queue, so it's read once here rather than once per crop card.
+        val categories = data.categories
         item(key = "queue-title", contentType = "title") {
-            Text(
-                text = if (uncertain.isEmpty()) "Nothing waiting to be labelled" else "${uncertain.size} waiting to be labelled",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = if (uncertain.isEmpty()) "Nothing waiting to be labelled" else "${uncertain.size} waiting to be labelled",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (categories.none { it != ClassifierDataset.NONE_CATEGORY }) {
+                    Text(
+                        text = "Until you add a category above, the only thing to file these under is \"Not ours\".",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
         }
         if (data.queue.isEmpty()) {
             item(key = "queue-empty", contentType = "title") {
@@ -136,7 +147,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
             CropCard(
                 crop = crop,
                 imageUrl = viewModel.imageUrl(crop.fileName),
-                categories = data.categories,
+                categories = categories,
                 busy = crop.fileName in uiState.busyFiles,
                 decided = uiState.decided[crop.fileName],
                 onLabel = { viewModel.label(crop.fileName, it) },
@@ -159,7 +170,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
                 CropCard(
                     crop = crop,
                     imageUrl = viewModel.imageUrl(crop.fileName),
-                    categories = data.categories,
+                    categories = categories,
                     busy = crop.fileName in uiState.busyFiles,
                     decided = uiState.decided[crop.fileName],
                     onLabel = { viewModel.label(crop.fileName, it) },
@@ -297,7 +308,7 @@ private fun CropCard(
                 val guess = crop.guessedCategory
                 Text(
                     text = when {
-                        guess == null || guess == "unknown" -> "Model hasn't guessed"
+                        guess == null || guess == ClassifierDataset.UNKNOWN_GUESS -> "Model hasn't guessed"
                         crop.guessedScore != null -> "Model thinks: ${categoryDisplayName(guess)} (${(crop.guessedScore * 100).toInt()}%)"
                         else -> "Model thinks: ${categoryDisplayName(guess)}"
                     },
@@ -307,10 +318,10 @@ private fun CropCard(
                 crop.capturedEpochSeconds?.let {
                     Text(text = formatClockTime(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                if (decided != null || (decided == null && crop.fileName.isEmpty())) {
+                if (decided != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-                        Text(text = "Filed as ${categoryDisplayName(decided.orEmpty())}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                        Text(text = "Filed as ${categoryDisplayName(decided)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                     }
                 } else {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
