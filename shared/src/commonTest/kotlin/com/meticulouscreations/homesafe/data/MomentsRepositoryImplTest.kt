@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import io.ktor.client.HttpClient
@@ -25,6 +26,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -36,8 +38,11 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.fail
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
-@OptIn(ExperimentalCoroutinesApi::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
 class MomentsRepositoryImplTest {
 
     /** Verbatim from `GET /api/events` on Frigate 0.17.2 (the manual test event), plus one in-progress car. */
@@ -65,18 +70,36 @@ class MomentsRepositoryImplTest {
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
-    private class Harness(scope: TestScope, url: String? = "http://192.168.68.55:8971", failEvents: Boolean = false) {
-        val hosts = mutableListOf<String>()
+    /** Pinned so a test can place its detections relative to "now" — see the in-view tests. */
+    private class FakeClock(var nowEpochSeconds: Long = 1_789_400_000) : Clock {
+        override fun now(): Instant = Instant.fromEpochSeconds(nowEpochSeconds)
+    }
+
+    private class Harness(
+        scope: TestScope,
+        url: String? = "http://192.168.68.55:8971",
+        failEvents: Boolean = false,
+        val clock: FakeClock = FakeClock(),
+    ) {
+        // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
+        // on whatever thread Ktor finished its request on — [eventually] spends real time off the
+        // test dispatcher, so that is genuinely another thread — while the test body reads what has
+        // been recorded so far. Appending to a MutableList from one thread while another iterates it
+        // is a data race, and iOS caught it as a ConcurrentModificationException inside `distinct()`.
+        // Every read below is a snapshot, so no reader can see the list change under it.
+        private val _hosts = MutableStateFlow<List<String>>(emptyList())
+        val hosts: List<String> get() = _hosts.value
 
         /** Every `/api/events` request's query string, in order: what the feed asked the server for. */
-        val eventQueries = mutableListOf<String>()
+        private val _eventQueries = MutableStateFlow<List<String>>(emptyList())
+        val eventQueries: List<String> get() = _eventQueries.value
         val engine = MockEngine { req ->
-            hosts += req.url.host
+            _hosts.update { it + req.url.host }
             when {
                 failEvents -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
-                    eventQueries += req.url.encodedQuery
+                    _eventQueries.update { it + req.url.encodedQuery }
                     val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
@@ -92,7 +115,7 @@ class MomentsRepositoryImplTest {
             install(HttpTimeout)
         }
         val connection = FakeConnection(url)
-        val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, scope.backgroundScope)
+        val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, clock, scope.backgroundScope)
         companion object {
             lateinit var events: String
 
@@ -408,6 +431,46 @@ class MomentsRepositoryImplTest {
 
         h.repo.loadOlder()
         assertEquals(emptyList(), h.pageQueries, "nothing older to ask for")
+    }
+
+    @Test
+    fun theInViewStripKeepsTheParkedCarTheFeedThrowsAway() = runTest {
+        Harness.events = parkedCarJson
+        // A couple of minutes after the sighting that is still in progress: the Tesla is there now.
+        val h = Harness(this, clock = FakeClock(1_788_802_600))
+
+        var inView = emptyList<StationaryObject>()
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+        eventually("the in-view strip") { inView.isNotEmpty() }
+
+        val tesla = inView.single()
+        assertEquals("third", tesla.thumbnailEventId, "the newest sighting's crop: a picture of the car where it is now")
+        assertEquals("sarahs_tesla", tesla.subLabel, "the surest of the sightings names it")
+        assertEquals(1_788_786_387.8, tesla.firstSeenEpochSeconds, "the stay is anchored to the arrival, hours earlier")
+        assertEquals(3, tesla.sightings, "the arrival and the two curb sightings, as one car")
+        assertEquals(true, tesla.seenRecently, "the latest sighting hadn't ended")
+        assertEquals(true, tesla.sinceIsKnown, "a page short of the limit means the fetch really did reach back twelve hours")
+        assertEquals(1, h.eventQueries.distinct().count { "after=" in it }, "one question per poll: every camera, from now")
+    }
+
+    @Test
+    fun aCarOutOnTheStreetIsNotParkedInTheYard() = runTest {
+        Harness.events = zonedEventsJson
+        Harness.config = configJson
+        try {
+            val h = Harness(this, clock = FakeClock(1_788_726_700))
+
+            // Null until the first poll answers, so an empty strip can't be mistaken for one that never ran.
+            var inView: List<StationaryObject>? = null
+            backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+            eventually("the first in-view poll") { inView != null }
+
+            // The street car the zones reject, and the amcrest car with no box to place it by:
+            // neither is something the app can say is parked in the yard.
+            assertEquals(emptyList(), inView)
+        } finally {
+            Harness.config = null
+        }
     }
 
     @Test

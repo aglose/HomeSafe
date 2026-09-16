@@ -10,23 +10,29 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +55,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -61,6 +68,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
@@ -74,6 +82,7 @@ import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
+import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -95,6 +104,7 @@ fun HomeTabContent(
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
+    val inView by viewModel.inView.collectAsStateWithLifecycle()
 
     // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
     ReportFullyDrawnWhen { cameras != null }
@@ -103,6 +113,9 @@ fun HomeTabContent(
         everyoneAway = everyoneAway,
         cameras = cameras,
         onAwayBack = viewModel::markBack,
+        inView = inView,
+        // A parked car's card opens the camera watching it — where its own card would have gone.
+        onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
         modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
     ) { tile ->
         CameraCard(
@@ -122,6 +135,11 @@ fun HomeTabContent(
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
+ * Above the cameras, and below the greeting, sits [inView] when there is anything in it: the
+ * vehicles standing in view of a camera right now. It is deliberately the first thing on the
+ * page — the question it answers ("is her car in the driveway?") is the one the app gets opened
+ * for — and it disappears entirely when nothing is parked, rather than spending a row to say so.
+ *
  * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
  * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
  * card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
@@ -134,6 +152,8 @@ internal fun HomeFeed(
     cameras: List<CameraTile>?,
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
+    inView: List<InViewItem> = emptyList(),
+    onInViewClick: (InViewItem) -> Unit = {},
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
     val extraColors = LocalFrigateExtraColors.current
@@ -159,6 +179,10 @@ internal fun HomeFeed(
             )
         }
 
+        if (inView.isNotEmpty()) {
+            item(key = "in-view") { InViewNowSection(items = inView, onClick = onInViewClick, modifier = Modifier.animateItem()) }
+        }
+
         val loadedCameras = cameras
         if (loadedCameras == null) {
             items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
@@ -178,6 +202,101 @@ internal fun HomeFeed(
             }
         } else {
             items(loadedCameras, key = { it.camera.name }) { tile -> cameraCard(tile) }
+        }
+    }
+}
+
+/**
+ * "In view now": what is standing in the yard, as a strip of cards across the top of the home
+ * page. Usually one or two cars, which is why this is a plain [Row] that scrolls sideways rather
+ * than a lazy one — there is never enough here for laziness to pay for itself, and a Row measures
+ * its children in one pass.
+ */
+@Composable
+private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, modifier: Modifier = Modifier) {
+    val extraColors = LocalFrigateExtraColors.current
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "In view now",
+            style = MaterialTheme.typography.headlineSmall,
+            color = extraColors.textPrimary,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items.forEach { item -> InViewCard(item = item, onClick = { onClick(item) }) }
+        }
+    }
+}
+
+/**
+ * One parked vehicle: the crop Frigate cut of its most recent sighting, what the classifier calls
+ * it, and where it is. The second line is where and since when ("Driveway · since 8:12 AM"); the
+ * arrival is left off when the app only ever saw the car already parked, rather than guessing one.
+ * A third line appears only once the sighting has gone stale, because a card that says nothing
+ * about time is claiming the camera can see the car right now.
+ */
+@Composable
+private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
+    val extraColors = LocalFrigateExtraColors.current
+    val presentation = item.presentation
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = Modifier
+            .width(IN_VIEW_CARD_WIDTH)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceContainer)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Coil rides the app's authenticated Ktor client, which is what lets this hit Frigate's thumbnail endpoint.
+            if (item.thumbnailUrl != null) {
+                AsyncImage(
+                    model = item.thumbnailUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Icon(
+                    imageVector = Icons.Filled.DirectionsCar,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = presentation.title,
+                style = MaterialTheme.typography.labelLarge,
+                color = extraColors.textPrimary,
+                maxLines = 1,
+            )
+            Text(
+                text = listOfNotNull(presentation.placeLabel, presentation.sinceLabel).joinToString(" · "),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+            )
+            presentation.lastSeenLabel?.let { lastSeen ->
+                Text(
+                    text = lastSeen,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                )
+            }
         }
     }
 }
@@ -368,6 +487,9 @@ private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZon
 
 /** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
 const val HOME_FEED_TEST_TAG = "home_feed"
+
+/** Wide enough for "Ron and Judy's Mercedes" on one line, narrow enough that a second card shows it scrolls. */
+private val IN_VIEW_CARD_WIDTH: Dp = 232.dp
 
 /** Outlined placeholder cards shown until the camera cache answers — about a phone screen's worth. */
 private const val SKELETON_CARD_COUNT = 3
