@@ -218,7 +218,7 @@ internal fun CameraCard(
             // Fingers closing on a card mean nothing; only a spread is a look.
             override fun onPinchStarted(zoom: Float): Boolean {
                 val bounds = coordinates.value?.boundsInRoot()
-                if (zoom <= 1f || bounds == null) return false
+                if (zoom <= CARD_PINCH_OPEN_ZOOM_THRESHOLD || bounds == null) return false
                 haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
                 zoomState.openByPinch(tile, bounds)
                 return true
@@ -356,6 +356,12 @@ internal fun greetingForHour(hour: Int): String = when (hour) {
     in 12..16 -> "Good Afternoon"
     else -> "Good Evening"
 }
+
+/**
+ * A card opens only once the fingers have spread by a deliberate amount, not on the tiny outward
+ * wobble an otherwise inward pinch can produce while crossing touch slop on Android.
+ */
+private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 
 @OptIn(ExperimentalTime::class)
 private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour
