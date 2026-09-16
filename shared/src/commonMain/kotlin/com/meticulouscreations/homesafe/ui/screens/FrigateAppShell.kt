@@ -96,9 +96,6 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         TopLevelRoute.Settings -> settingsBackStack.size <= 1
         else -> true
     }
-    // The Home list's quick look at one camera. Its layer is drawn by the shell, over the bars,
-    // so the zoomed picture gets the whole screen.
-    val cardZoom = rememberCameraCardZoomState()
 
     fun selectTab(tab: TopLevelRoute) {
         topLevel.addTopLevel(tab)
