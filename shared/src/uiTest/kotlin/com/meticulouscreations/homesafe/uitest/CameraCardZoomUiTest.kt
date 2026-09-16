@@ -97,12 +97,15 @@ class CameraCardZoomUiTest {
     fun closingTwoFingersOnACardIsNotALook() = runComposeUiTest {
         val state = setUpHome()
 
+        // Slow enough to outlast any platform's long-press timeout: two fingers on a card must
+        // not read as one finger held on it.
         onNodeWithTag("card-front_door").performTouchInput {
             pinch(
                 start0 = center - Offset(width * 0.3f, 0f),
                 end0 = center - Offset(width * 0.1f, 0f),
                 start1 = center + Offset(width * 0.3f, 0f),
                 end1 = center + Offset(width * 0.1f, 0f),
+                durationMillis = 1_000,
             )
         }
         mainClock.advanceTimeBy(SETTLE_MS)

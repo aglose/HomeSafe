@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
@@ -188,12 +189,22 @@ private suspend fun PointerInputScope.detectPinch(
         // Once past slop, whether the caller took this gesture; a declined one is left alone.
         var tracking = false
         var declined = false
+        var secondFingerSeen = false
         val touchSlop = viewConfiguration.touchSlop
 
         awaitFirstDown(requireUnconsumed = false)
         do {
             val event = awaitPointerEvent()
             val canceled = event.changes.any { it.isConsumed }
+            if (!canceled && !secondFingerSeen && event.changes.count { it.pressed } >= 2) {
+                // A second finger makes this a pinch, whatever it goes on to do, so no tap or
+                // long press on this node should fire for it (a two-finger hold otherwise reads
+                // as a long press after the platform's timeout). Consuming that finger's landing
+                // stands the press down; the first finger is left alone, so a scroll container
+                // tracking it is unaffected.
+                secondFingerSeen = true
+                event.changes.forEach { if (it.changedToDown()) it.consume() }
+            }
             if (!canceled && !declined) {
                 val zoomChange = event.calculateZoom()
                 val panChange = event.calculatePan()
