@@ -7,6 +7,10 @@ config), turns each into a sentence like "Sarah's Tesla in the driveway", and se
 Firebase Cloud Messaging to every phone that registered. Phones register by POSTing their FCM
 token; the request is authenticated by forwarding the caller's Frigate session cookie to
 Frigate's own authenticated port, so the relay holds no secrets of its own beyond the FCM key.
+
+Not every alert is pushed. A vehicle is only news when it has actually gone somewhere, so an alert
+whose only objects are vehicles that never moved is held while it's open (a car pulling in shows
+travel within seconds) and dropped once it ends still — see `motion_verdict`.
 """
 
 import json
@@ -14,6 +18,7 @@ import logging
 import os
 import secrets
 import sqlite3
+from statistics import median
 import threading
 import time
 from typing import Any
@@ -382,6 +387,93 @@ def awaiting_recognition(item: dict[str, Any]) -> bool:
     return time.time() - float(item.get("start_time") or 0) < RECOGNITION_GRACE_SECONDS
 
 
+# ---------------------------------------------------------------- motion gate
+
+# Frigate re-detects a parked car all day: the detector's box on it flickers between the whole car
+# and part of it, the tracker registers a brand-new object, and Frigate's review maintainer files
+# an alert for any new object that has "moved at least once" — a fresh object's first jitter
+# counts. Seen on the Front Yard camera 2026-09-15: forty "car in the driveway" alerts in three
+# hours for two Teslas that never left the driveway, each a 2-point path with no travel. The
+# stationary classifier can't help; these objects die within seconds, before it gets a look.
+#
+# So a vehicle is only news once it has gone somewhere. Mirrors the app's VehicleVisits.isStill
+# and DetectionAlertService, which apply the same rule to the Moments feed and the in-app poller.
+VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle", "bicycle", "boat", "train", "vehicle"}
+# Share of the path that must sit within the box's size of the path's median for `is_still`.
+STILL_FRACTION = 0.7
+# A path shorter than this is still whatever its shape. Frigate records a point when the object
+# first appears, another on its next look, and then one per ~5% of the frame travelled, so three
+# points is a single jump — the detector's box flipping between the whole car and part of it —
+# and only from four is there a journey to judge.
+MOVED_MIN_POINTS = 4
+# An open alert whose vehicles haven't moved *yet* is judged again next poll, so a car pulling in
+# is pushed as soon as its path shows travel. Past this age it is judged as it stands.
+MOTION_WAIT_CAP_SECONDS = 600.0
+
+
+def event_detail(event_id: str) -> dict[str, Any] | None:
+    """One tracked object from `/api/events/{id}`, with its box and path; None if Frigate can't say."""
+    try:
+        r = requests.get(f"{FRIGATE}/api/events/{event_id}", timeout=5)
+        return r.json() if r.ok else None
+    except Exception as e:
+        log.warning("event %s lookup failed: %s", event_id, e)
+        return None
+
+
+def path_points(event: dict[str, Any]) -> list[tuple[float, float]]:
+    """The bottom-centre points of `data.path_data` (`[[[x, y], time], ...]`), in order."""
+    points = []
+    for sample in (event.get("data") or {}).get("path_data") or []:
+        if isinstance(sample, list) and sample and isinstance(sample[0], list) and len(sample[0]) >= 2:
+            points.append((float(sample[0][0]), float(sample[0][1])))
+    return points
+
+
+def is_still(event: dict[str, Any]) -> bool:
+    """
+    True when the object barely moved: at least STILL_FRACTION of its path points lie within
+    r = max(box width, box height) of the path's median point on both axes. A path of fewer than
+    MOVED_MIN_POINTS points is still (nothing has happened yet); an event with no box is never
+    still (there is nothing to judge it by). Same rule, same numbers, as the app's
+    `MomentEvent.isStill`.
+    """
+    box = (event.get("data") or {}).get("box")
+    if not box or len(box) < 4 or box[2] <= 0 or box[3] <= 0:
+        return False
+    points = path_points(event)
+    if len(points) < MOVED_MIN_POINTS:
+        return True
+    mx = median(x for x, _ in points)
+    my = median(y for _, y in points)
+    r = max(float(box[2]), float(box[3]))
+    near = sum(1 for x, y in points if abs(x - mx) <= r and abs(y - my) <= r)
+    return near / len(points) >= STILL_FRACTION
+
+
+def motion_verdict(item: dict[str, Any]) -> str:
+    """
+    Whether this alert has something in it that moved: "push" (yes, or it can't be judged and a
+    real alert is worth more than a quiet phone), "wait" (only vehicles so far and none has moved
+    yet, but the alert is still open) or "skip" (it ended and nothing in it ever moved).
+    """
+    data = item.get("data") or {}
+    # Review items suffix a classified object ("car-verified"); the label is what matters here.
+    labels = {str(o).removesuffix("-verified") for o in (data.get("objects") or [])}
+    detections = [d for d in (data.get("detections") or []) if d]
+    if not labels or not detections or any(label not in VEHICLE_LABELS for label in labels):
+        return "push"  # a person, a dog — news whatever the cars are doing
+    for event_id in detections:
+        event = event_detail(event_id)
+        if event is None or (event.get("data") or {}).get("type") not in (None, "object"):
+            return "push"
+        if not is_still(event):
+            return "push"
+    if item.get("end_time") is None and time.time() - float(item.get("start_time") or 0) < MOTION_WAIT_CAP_SECONDS:
+        return "wait"
+    return "skip"
+
+
 def poll_forever() -> None:
     # Everything that already exists at boot is history, not news.
     try:
@@ -409,6 +501,13 @@ def poll_forever() -> None:
                     continue
                 if awaiting_recognition(item):
                     continue  # not marked sent: judged again next poll, once Frigate has had time to name the face
+                verdict = motion_verdict(item)
+                if verdict == "wait":
+                    continue  # likewise: judged again once the car has had a chance to go somewhere
+                if verdict == "skip":
+                    with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), "(stationary)")), c.commit()))
+                    log.info("alert %s skipped: nothing in it moved (%s)", rid, ", ".join((item.get("data") or {}).get("objects") or []))
+                    continue
                 title, body = sentence(item, zones.get(item.get("camera", ""), []))
                 data = {
                     "review_id": rid,
