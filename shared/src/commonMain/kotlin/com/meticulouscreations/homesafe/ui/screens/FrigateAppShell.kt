@@ -126,6 +126,9 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
 fun FrigateAppShell() {
     val viewModel: AppShellViewModel = metroViewModel()
     val nav = remember { ShellNavigation() }
+    // The Home list's quick look at one camera. Its layer is drawn by the shell, over the bars,
+    // so the zoomed picture gets the whole screen.
+    val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
     ShellScaffold(
@@ -133,6 +136,7 @@ fun FrigateAppShell() {
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
+        overlay = { CardZoomOverlay(nav, cardZoom) },
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -142,9 +146,9 @@ fun FrigateAppShell() {
             popTransitionSpec = { tabHandOver() },
             predictivePopTransitionSpec = { tabHandOver() },
             entryProvider = entryProvider {
-                entry<TopLevelRoute.Home> { TabContent(TopLevelRoute.Home, nav) }
-                entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav) }
-                entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav) }
+                entry<TopLevelRoute.Home> { TabContent(TopLevelRoute.Home, nav, cardZoom) }
+                entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav, cardZoom) }
+                entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav, cardZoom) }
             },
         )
     }
@@ -160,6 +164,9 @@ fun FrigateAppShell() {
 @Composable
 internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     val viewModel: AppShellViewModel = metroViewModel()
+    // Per tab, like the scaffold it lifts into: only Home ever opens it, and its layer covers
+    // this tab's Compose view (the native bar beneath is the platform's to draw).
+    val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
 
     ShellScaffold(
@@ -167,22 +174,31 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
+        overlay = { CardZoomOverlay(nav, cardZoom) },
     ) {
-        TabContent(tab, nav)
+        TabContent(tab, nav, cardZoom)
     }
 }
 
 /** What [tab] shows: its root screen, and the nested stack beyond it where the tab has one. */
 @Composable
-private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation) {
+private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack)
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom)
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
 
         TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces ->
             SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
         }
+    }
+}
+
+/** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
+@Composable
+private fun CardZoomOverlay(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    CameraCardZoomOverlay(state = cardZoom) { tile ->
+        nav.homeBackStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
     }
 }
 
@@ -209,6 +225,8 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  *
  * Under a native tab bar ([LocalNativeTabBar]) the floating nav is left out: the platform's bar
  * sits where it would, and [bottomNavClearance] already keeps the content clear of it.
+ *
+ * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into.
  */
 @Composable
 internal fun ShellScaffold(
@@ -216,6 +234,7 @@ internal fun ShellScaffold(
     topBar: @Composable () -> Unit,
     selectedTab: TopLevelRoute,
     onSelectTab: (TopLevelRoute) -> Unit,
+    overlay: @Composable () -> Unit = {},
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -247,6 +266,8 @@ internal fun ShellScaffold(
                     .padding(bottom = 16.dp),
             )
         }
+
+        overlay()
     }
 }
 
@@ -360,7 +381,7 @@ private data class DetectionZonesRoute(val cameraName: String)
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -372,6 +393,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>) {
                 entry<CameraListRoute> {
                     HomeTabContent(
                         sharedTransitionScope = this@SharedTransitionLayout,
+                        zoomState = cardZoom,
                         onCameraClick = { tile ->
                             backStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
                         },

@@ -20,3 +20,6 @@ actual fun CameraStreamPlayer(
 
 /** No live player here yet, so no audio either. */
 actual val liveAudioCodecs: List<String> = emptyList()
+
+/** One video element per player here; a second binder has to be handed the picture. */
+actual val liveSurfaceIsExclusive: Boolean = true

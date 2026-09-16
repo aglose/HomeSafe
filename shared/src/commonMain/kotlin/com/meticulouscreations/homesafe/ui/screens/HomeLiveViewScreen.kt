@@ -7,10 +7,14 @@ import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,12 +48,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.node.Ref
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -60,10 +72,12 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
+import com.meticulouscreations.homesafe.ui.components.PinchGestureListener
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
 import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
+import com.meticulouscreations.homesafe.ui.components.pinchGestures
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
@@ -75,11 +89,16 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** The "Home" tab's content: a greeting and the cameras reported by the connected Frigate server. */
+/**
+ * The "Home" tab's content: a greeting and the cameras reported by the connected Frigate server.
+ * [zoomState] is the quick-look layer a pinched or long-pressed card lifts its video into; the
+ * shell draws it, over everything (see [CameraCardZoomOverlay]).
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun HomeTabContent(
     sharedTransitionScope: SharedTransitionScope,
+    zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
 ) {
     val viewModel: HomeViewModel = metroViewModel()
@@ -102,7 +121,9 @@ fun HomeTabContent(
         CameraCard(
             tile = tile,
             sharedTransitionScope = sharedTransitionScope,
-            modifier = Modifier.animateItem().clickable { onCameraClick(tile) },
+            zoomState = zoomState,
+            onClick = { onCameraClick(tile) },
+            modifier = Modifier.animateItem(),
         )
     }
 }
@@ -280,20 +301,56 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
     }
 }
 
+/**
+ * One camera's card: its live video, name and status. A tap is [onClick] (the camera's own
+ * screen); spreading two fingers on it, or holding one, lifts the video into [zoomState]'s
+ * quick-look layer — the pinch continuing there without a lift of the fingers.
+ */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun CameraCard(
+internal fun CameraCard(
     tile: CameraTile,
     sharedTransitionScope: SharedTransitionScope,
+    zoomState: CameraCardZoomState,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val camera = tile.camera
     val extraColors = LocalFrigateExtraColors.current
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
+    val haptic = LocalHapticFeedback.current
     val shape = RoundedCornerShape(CAMERA_CARD_CORNER_RADIUS)
     // What the badge says. Connecting until the player reports otherwise, so a card that has no
     // stream to play — or whose player hasn't got a frame up yet — never claims to be live.
     var streamStatus by remember(camera.name) { mutableStateOf(LiveStreamStatus.Connecting) }
+    // Where the card is on screen, for the quick-look layer to lift its video from. A Ref, not
+    // state: it moves on every scrolled frame and is only read inside gesture handlers.
+    val coordinates = remember { Ref<LayoutCoordinates>() }
+    // Where the finger last went down, card-local: the spot a long press zooms in on.
+    val lastPress = remember { Ref<Offset>() }
+    val interactionSource = remember { MutableInteractionSource() }
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { if (it is PressInteraction.Press) lastPress.value = it.pressPosition }
+    }
+    val pinchListener = remember(tile, zoomState, haptic) {
+        object : PinchGestureListener {
+            // Fingers closing on a card mean nothing; only a spread is a look.
+            override fun onPinchStarted(zoom: Float): Boolean {
+                val bounds = coordinates.value?.boundsInRoot()
+                if (zoom <= CARD_PINCH_OPEN_ZOOM_THRESHOLD || bounds == null) return false
+                haptic.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                zoomState.openByPinch(tile, bounds)
+                return true
+            }
+
+            override fun onPinch(zoomChange: Float, pan: Offset, centroid: Offset) {
+                val coords = coordinates.value ?: return
+                zoomState.pinchFromCard(zoomChange, pan, coords.localToRoot(centroid))
+            }
+
+            override fun onPinchEnded() = zoomState.pinchEnded()
+        }
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -304,7 +361,19 @@ private fun CameraCard(
                 Brush.verticalGradient(
                     listOf(MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.colorScheme.surfaceContainerHigh),
                 ),
-            ),
+            )
+            .onGloballyPositioned { coordinates.value = it }
+            .combinedClickable(
+                interactionSource = interactionSource,
+                indication = LocalIndication.current,
+                onLongClick = {
+                    val bounds = coordinates.value?.boundsInRoot() ?: return@combinedClickable
+                    val press = lastPress.value ?: Offset(bounds.width / 2f, bounds.height / 2f)
+                    zoomState.openByLongPress(tile, bounds, press)
+                },
+                onClick = onClick,
+            )
+            .pinchGestures(pinchListener),
     ) {
         // Only the video is the shared element. The card's chrome — border, title, status
         // badge — stays behind on the list while the video lifts out to the detail screen and
@@ -325,10 +394,18 @@ private fun CameraCard(
             }.fillMaxSize(),
         ) {
             val streamUrl = tile.streamUrl
-            if (streamUrl != null) {
+            if (streamUrl == null) {
+                Icon(
+                    imageVector = Icons.Filled.Videocam,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                    modifier = Modifier.align(Alignment.Center).size(56.dp),
+                )
+            } else if (zoomState.cardWithoutPlayer != camera.name) {
                 // The player is keyed by camera name so the detail screen picks up this very
                 // player (already decoding) when the card is tapped, and this card gets it back
-                // — still warm — on the way out.
+                // — still warm — on the way out. The quick-look layer borrows it the same way,
+                // and while it has it this card draws nothing (see CameraCardZoomState).
                 CameraStreamPlayer(
                     streamUrl = streamUrl,
                     modifier = Modifier.fillMaxSize(),
@@ -336,13 +413,6 @@ private fun CameraCard(
                     webRtcSignalingUrl = tile.webRtcSignalingUrl,
                     playerKey = camera.name,
                     onStreamStatusChanged = { streamStatus = it },
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Filled.Videocam,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-                    modifier = Modifier.align(Alignment.Center).size(56.dp),
                 )
             }
         }
@@ -405,6 +475,12 @@ internal fun greetingForHour(hour: Int): String = when (hour) {
     in 12..16 -> "Good Afternoon"
     else -> "Good Evening"
 }
+
+/**
+ * A card opens only once the fingers have spread by a deliberate amount, not on the tiny outward
+ * wobble an otherwise inward pinch can produce while crossing touch slop on Android.
+ */
+private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 
 @OptIn(ExperimentalTime::class)
 private fun currentLocalHour(): Int = Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).hour

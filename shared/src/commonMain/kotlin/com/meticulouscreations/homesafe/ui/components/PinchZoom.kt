@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
@@ -71,6 +72,12 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
 
     suspend fun animateReset() = animateTo(1f, Offset.Zero)
 
+    /** Straight back to 1x, no animation — for a surface that is about to be shown afresh. */
+    fun reset() {
+        scale = 1f
+        offset = Offset.Zero
+    }
+
     /** Zooms to [targetScale] with the content under [centroid] (viewport-local) staying put — a double-tap zoom. */
     suspend fun animateZoomTo(targetScale: Float, centroid: Offset) {
         val newScale = targetScale.coerceIn(1f, maxScale)
@@ -119,22 +126,86 @@ fun Modifier.pinchZoomContent(state: PinchZoomState): Modifier = onSizeChanged {
  * Makes this node the viewport: pinch to zoom, and — only once zoomed in — one-finger drag to pan.
  * At 1x a single-finger drag is deliberately left alone so an enclosing scroll container still
  * scrolls over the surface. Taps are never consumed, so tap handlers on descendants keep working.
+ *
+ * [onPinchEnded] runs when the fingers lift after a pinch or pan this node handled.
  */
-fun Modifier.pinchZoomGestures(state: PinchZoomState): Modifier = onSizeChanged { state.viewportSize = it }
-    .pointerInput(state) { detectPinchZoom(state) }
+fun Modifier.pinchZoomGestures(state: PinchZoomState, onPinchEnded: () -> Unit = {}): Modifier =
+    onSizeChanged { state.viewportSize = it }
+        .pointerInput(state, onPinchEnded) {
+            detectPinch(
+                isZoomed = { state.isZoomed },
+                onPinchStarted = { true },
+                onPinch = state::transformBy,
+                onPinchEnded = onPinchEnded,
+            )
+        }
 
-private suspend fun PointerInputScope.detectPinchZoom(state: PinchZoomState) {
+/**
+ * What a [pinchGestures] node reports. One remembered object rather than three lambdas: the
+ * node is keyed on it, and a recomposition that handed it fresh lambdas would restart the
+ * pointer input and drop a pinch in progress.
+ */
+@Stable
+interface PinchGestureListener {
+    /**
+     * The pinch has passed touch slop, with [zoom] the amount accumulated so far (above 1 for
+     * fingers spreading, below for closing). Return false to let this gesture go: nothing more is
+     * reported for it and nothing is consumed, so an enclosing scroll container keeps it.
+     */
+    fun onPinchStarted(zoom: Float): Boolean
+
+    /** One increment of a taken pinch, with the [centroid] in the node's own coordinates. */
+    fun onPinch(zoomChange: Float, pan: Offset, centroid: Offset)
+
+    /** The fingers lifted after a taken pinch. */
+    fun onPinchEnded() {}
+}
+
+/**
+ * Recognises a pinch on this node and hands it to [listener] rather than to a [PinchZoomState]
+ * of its own — for a surface whose zoom is drawn somewhere else, such as a camera card whose
+ * video lifts into an overlay the moment the fingers spread. Taken pinches have their moves
+ * consumed; single-finger drags are never taken, so the enclosing list still scrolls.
+ */
+fun Modifier.pinchGestures(listener: PinchGestureListener): Modifier = pointerInput(listener) {
+    detectPinch(
+        isZoomed = { false },
+        onPinchStarted = listener::onPinchStarted,
+        onPinch = listener::onPinch,
+        onPinchEnded = listener::onPinchEnded,
+    )
+}
+
+private suspend fun PointerInputScope.detectPinch(
+    isZoomed: () -> Boolean,
+    onPinchStarted: (zoom: Float) -> Boolean,
+    onPinch: (zoomChange: Float, pan: Offset, centroid: Offset) -> Unit,
+    onPinchEnded: () -> Unit,
+) {
     awaitEachGesture {
         var zoom = 1f
         var pan = Offset.Zero
         var pastTouchSlop = false
+        // Once past slop, whether the caller took this gesture; a declined one is left alone.
+        var tracking = false
+        var declined = false
+        var secondFingerSeen = false
         val touchSlop = viewConfiguration.touchSlop
 
         awaitFirstDown(requireUnconsumed = false)
         do {
             val event = awaitPointerEvent()
             val canceled = event.changes.any { it.isConsumed }
-            if (!canceled) {
+            if (!canceled && !secondFingerSeen && event.changes.count { it.pressed } >= 2) {
+                // A second finger makes this a pinch, whatever it goes on to do, so no tap or
+                // long press on this node should fire for it (a two-finger hold otherwise reads
+                // as a long press after the platform's timeout). Consuming that finger's landing
+                // stands the press down; the first finger is left alone, so a scroll container
+                // tracking it is unaffected.
+                secondFingerSeen = true
+                event.changes.forEach { if (it.changedToDown()) it.consume() }
+            }
+            if (!canceled && !declined) {
                 val zoomChange = event.calculateZoom()
                 val panChange = event.calculatePan()
 
@@ -143,17 +214,21 @@ private suspend fun PointerInputScope.detectPinchZoom(state: PinchZoomState) {
                     pan += panChange
                     val zoomMotion = abs(1 - zoom) * event.calculateCentroidSize(useCurrent = false)
                     val panMotion = pan.getDistance()
-                    if (zoomMotion > touchSlop || (panMotion > touchSlop && state.isZoomed)) pastTouchSlop = true
+                    if (zoomMotion > touchSlop || (panMotion > touchSlop && isZoomed())) {
+                        pastTouchSlop = true
+                        if (onPinchStarted(zoom)) tracking = true else declined = true
+                    }
                 }
 
-                if (pastTouchSlop) {
+                if (tracking) {
                     val centroid = event.calculateCentroid(useCurrent = false)
                     if (zoomChange != 1f || panChange != Offset.Zero) {
-                        state.transformBy(zoomChange, panChange, centroid)
+                        onPinch(zoomChange, panChange, centroid)
                     }
                     event.changes.forEach { if (it.positionChanged()) it.consume() }
                 }
             }
         } while (!canceled && event.changes.any { it.pressed })
+        if (tracking) onPinchEnded()
     }
 }
