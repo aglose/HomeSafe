@@ -9,7 +9,7 @@
         <error line="90" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/App.kt">
-        <error line="38" column="5" source="compose:modifier-missing-check" />
+        <error line="41" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="141" column="5" source="compose:parameter-naming" />
@@ -46,7 +46,7 @@
         <error line="115" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="67" column="5" source="compose:modifier-missing-check" />
+        <error line="126" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
         <error line="73" column="5" source="compose:modifier-missing-check" />
@@ -62,6 +62,9 @@
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
         <error line="74" column="5" source="compose:modifier-missing-check" />
         <error line="561" column="13" source="compose:param-order-check" />
+    </file>
+    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
+        <error line="42" column="14" source="compose:compositionlocal-allowlist" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="79" column="5" source="compose:modifier-missing-check" />
