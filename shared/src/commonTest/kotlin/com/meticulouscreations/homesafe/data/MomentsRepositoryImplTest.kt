@@ -209,6 +209,20 @@ class MomentsRepositoryImplTest {
                "path_data":[[[0.30,0.30],1788786418.0],[[0.45,0.35],1788786419.0],[[0.60,0.42],1788786420.0],[[0.75,0.48],1788786421.0],[[0.84,0.53],1788786422.0],[[0.84,0.53],1788799365.0]]}}
     ]"""
 
+    /**
+     * Real and virtual time enough for anything the repository was going to do to have happened.
+     * What [eventually] is for asserting that something starts being true, this is for asserting
+     * that something goes on being true — a feed that must *not* empty has to be given every
+     * chance to empty first, including the real time a cancelled fetch takes to unwind.
+     */
+    private suspend fun TestScope.settle() {
+        repeat(5) {
+            advanceUntilIdle()
+            withContext(Dispatchers.Default) { delay(25) }
+        }
+        advanceUntilIdle()
+    }
+
     private suspend fun TestScope.eventually(what: String, cond: suspend () -> Boolean) {
         repeat(200) {
             advanceUntilIdle()
@@ -526,6 +540,7 @@ class MomentsRepositoryImplTest {
 
         h.connection.flipToLocalNetwork("http://192.168.68.99:8971")
         eventually("the new address to be asked") { "192.168.68.99" in h.hosts }
+        settle()
 
         assertEquals(2, h.repo.observeMoments().first().size)
         val afterItFilled = sizes.value.dropWhile { it == 0 }
@@ -536,12 +551,15 @@ class MomentsRepositoryImplTest {
     fun losingTheConnectionLeavesTheMomentsOnScreen() = runTest {
         Harness.events = eventsJson
         val h = Harness(this)
-        backgroundScope.launch { h.repo.observeMoments().collect {} }
+        val sizes = MutableStateFlow<List<Int>>(emptyList())
+        backgroundScope.launch { h.repo.observeMoments().collect { list -> sizes.update { it + list.size } } }
         eventually("the feed") { h.repo.observeMoments().first().size == 2 }
 
         h.connection.disconnect()
-        advanceUntilIdle()
+        settle()
+
         assertEquals(2, h.repo.observeMoments().first().size, "a dropped session is not news that nothing happened")
+        assertEquals(emptyList(), sizes.value.dropWhile { it == 0 }.filter { it == 0 }, "the feed never went blank")
     }
 
     @Test

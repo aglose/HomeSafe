@@ -15,8 +15,8 @@ import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
-import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
+import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
