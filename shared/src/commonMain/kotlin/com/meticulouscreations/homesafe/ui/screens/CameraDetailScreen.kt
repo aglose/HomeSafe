@@ -244,6 +244,10 @@ fun CameraDetailScreen(
                     )
                 }
 
+                // Cars in view that a classifier still wants a name for. Polls and recomposes on
+                // its own, and takes no room when there's nothing to ask about.
+                LiveLabelingSection(cameraName = cameraName)
+
                 TimelineSection(cameraName = cameraName)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {

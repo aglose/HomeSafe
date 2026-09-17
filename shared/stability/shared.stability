@@ -416,7 +416,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.ClassifierLabelingScreen(
     - onBack: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.ConfidentCropsRow(count: kotlin.Int, expanded: kotlin.Boolean, busy: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>, onClear: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ConfidentCropsRow(count: kotlin.Int, expanded: kotlin.Boolean, busy: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>, onClear: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -447,7 +447,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ConnectionTextField(valu
     - visualTransformation: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CropCard(crop: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, categories: kotlin.collections.List<kotlin.String>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.CropCard(crop: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, categories: kotlin.collections.List<kotlin.String>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>?, knownAs: kotlin.String?): kotlin.Unit
   skippable: false
   restartable: true
   params:
@@ -458,6 +458,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CropCard(crop: com.metic
     - decided: STABLE (class with no mutable properties)
     - onLabel: STABLE (function type)
     - onDiscard: STABLE (function type)
+    - knownAs: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DetectionSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissError: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -693,6 +694,23 @@ private fun com.meticulouscreations.homesafe.ui.screens.LayerPicker(editor: com.
   params:
     - editor: STABLE (marked @Stable or @Immutable)
     - onSelect: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.LiveCropCard(card: com.meticulouscreations.homesafe.viewmodel.LiveLabelCard, busy: kotlin.Boolean, onLabel: kotlin.Function2<com.meticulouscreations.homesafe.viewmodel.LiveLabelCard, kotlin.String, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - card: STABLE (marked @Stable or @Immutable)
+    - busy: STABLE (primitive type)
+    - onLabel: STABLE (function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.LiveLabelingSection(cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - cameraName: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.LivePill(isLive: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit

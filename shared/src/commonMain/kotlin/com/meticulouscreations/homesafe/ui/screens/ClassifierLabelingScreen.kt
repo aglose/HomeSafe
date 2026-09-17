@@ -195,9 +195,11 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
 /**
  * The crops the model is 100 % sure about, folded away: mostly "Not ours" for every passing street
  * car. Show them when a new car needs naming; clear them to make room in Frigate's capped queue.
+ * Without [onClear] there's only Show: the live view's crops are one per car, and clearing those
+ * would only make room for that car's next crop.
  */
 @Composable
-private fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onClear: () -> Unit) {
+internal fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onClear: (() -> Unit)?) {
     Card {
         Text(
             text = "$count more the model is sure about",
@@ -211,11 +213,13 @@ private fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onTo
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(onClick = onToggle, enabled = !busy) { Text(if (expanded) "Hide" else "Show") }
-            TextButton(onClick = onClear, enabled = !busy) {
-                if (busy) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
-                } else {
-                    Text("Clear $count")
+            if (onClear != null) {
+                TextButton(onClick = onClear, enabled = !busy) {
+                    if (busy) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                    } else {
+                        Text("Clear $count")
+                    }
                 }
             }
         }
@@ -289,16 +293,22 @@ private fun TrainCard(uiState: ClassifierLabelingUiState, data: ClassifierDatase
     }
 }
 
+/**
+ * One crop, framed around its object, with the model's guess and a chip per category. Shared with
+ * the camera screen's live section, which passes the name Frigate already gives the car as
+ * [knownAs] and no [onDiscard]: throwing away a live car's crop only makes way for its next one.
+ */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CropCard(
+internal fun CropCard(
     crop: UnlabeledCrop,
     imageUrl: String?,
     categories: List<String>,
     busy: Boolean,
     decided: String?,
     onLabel: (String) -> Unit,
-    onDiscard: () -> Unit,
+    onDiscard: (() -> Unit)?,
+    knownAs: String? = null,
 ) {
     Card {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
@@ -341,6 +351,9 @@ private fun CropCard(
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
+                knownAs?.let {
+                    Text(text = "Frigate calls it ${subLabelDisplayName(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                }
                 crop.capturedEpochSeconds?.let {
                     Text(text = formatClockTime(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -355,7 +368,7 @@ private fun CropCard(
                             Chip(label = categoryDisplayName(category), selected = category == guess, onClick = { if (!busy) onLabel(category) })
                         }
                     }
-                    TextButton(onClick = onDiscard, enabled = !busy) { Text("Discard this crop") }
+                    if (onDiscard != null) TextButton(onClick = onDiscard, enabled = !busy) { Text("Discard this crop") }
                 }
             }
         }
@@ -404,7 +417,7 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit) {
 }
 
 /** `none` reads as "Not ours"; everything else gets the same humanising as sub-labels in the feed. */
-private fun categoryDisplayName(category: String): String =
+internal fun categoryDisplayName(category: String): String =
     if (category == ClassifierDataset.NONE_CATEGORY) "Not ours" else subLabelDisplayName(category)
 
 /** Red, not the theme's error colour: it has to stand out against any car in any light. */
