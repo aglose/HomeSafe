@@ -88,6 +88,35 @@ class FrigateClassifierApiTest {
         assertNull(entries[1].data?.box)
     }
 
+    /** What a camera is tracking now: its unfinished events, with a limit above Frigate's default page. */
+    @Test
+    fun inProgressEventsAreAskedForByCameraAndRead() = runTest {
+        var captured: HttpRequestData? = null
+        val api = FrigateClassifierApi(
+            client { req ->
+                captured = req
+                HttpStatusCode.OK to """[{"id":"1789612326.39659-abc123","label":"car","sub_label":"sarahs_tesla","camera":"driveway","start_time":1789612326.39659,"end_time":null,"data":{"box":[0.39,0.25,0.12,0.11]}}]"""
+            },
+        )
+
+        val events = api.getInProgressEvents("http://frigate:8971/", "driveway").getOrThrow()
+
+        val request = captured ?: fail("no request made")
+        assertEquals("/api/events", request.url.encodedPath)
+        assertEquals("driveway", request.url.parameters["cameras"])
+        assertEquals("1", request.url.parameters["in_progress"])
+        assertEquals("50", request.url.parameters["limit"])
+        assertEquals(listOf("1789612326.39659-abc123"), events.map { it.id })
+        assertEquals("sarahs_tesla", events.single().subLabel)
+        assertNull(events.single().endTime)
+    }
+
+    @Test
+    fun aFailedInProgressReadIsAFailure() = runTest {
+        val api = FrigateClassifierApi(client { HttpStatusCode.Unauthorized to "{}" })
+        assertTrue(api.getInProgressEvents("http://frigate:8971", "driveway").isFailure)
+    }
+
     /** From the real server on 2026-09-16: a parked car whose tracker jumped to another car for a moment. */
     @Test
     fun anEventsPositionAtAMomentIsTheLastPathPointBeforeIt() {

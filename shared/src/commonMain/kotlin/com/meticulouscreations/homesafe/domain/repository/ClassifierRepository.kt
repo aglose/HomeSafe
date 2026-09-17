@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.domain.repository
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.TrackedObject
 
 /**
  * Frigate's custom classifiers (e.g. the known-cars model) and the human-in-the-loop labelling
@@ -10,6 +11,9 @@ import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 interface ClassifierRepository {
     suspend fun getModels(): Result<List<ClassifierModel>>
     suspend fun getDataset(modelName: String): Result<ClassifierDataset>
+
+    /** What [cameraName] is tracking right now, for labelling a car while it's still in view. */
+    suspend fun getTrackedObjects(cameraName: String): Result<List<TrackedObject>>
 
     /** [category] is a Frigate-safe key (see [com.meticulouscreations.homesafe.domain.model.DetectionZone.slug]). */
     suspend fun createCategory(modelName: String, category: String): Result<Unit>

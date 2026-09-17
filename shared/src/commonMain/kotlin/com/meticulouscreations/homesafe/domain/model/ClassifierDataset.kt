@@ -175,6 +175,26 @@ data class SeenBox(
  */
 data class CropBox(val left: Double, val top: Double, val right: Double, val bottom: Double, val exact: Boolean = true)
 
+/** An object a camera is tracking right now (an in-progress Frigate event). */
+data class TrackedObject(
+    val eventId: String,
+    val label: String,
+    /** What Frigate has already named it, e.g. `sarahs_tesla`; null while nothing has. */
+    val subLabel: String?,
+)
+
+/**
+ * A tracked object and the crop that labels it. Frigate can't add an arbitrary frame to a dataset,
+ * so filing [crop] is the only way to teach the model about [tracked].
+ */
+data class LiveCandidate(val tracked: TrackedObject, val crop: UnlabeledCrop) {
+    /**
+     * The model is sure about this object's latest look: a parked neighbour's `none-1.0`, or a car
+     * it already names. Folded away like [ClassifierDataset.confidentQueue], for the same reason.
+     */
+    val isConfident: Boolean get() = crop.isConfident
+}
+
 /** Everything the labelling screen shows for one model. */
 data class ClassifierDataset(
     val model: ClassifierModel,
@@ -208,6 +228,21 @@ data class ClassifierDataset(
 
     /** Frigate needs two classes; `none` counts as one. */
     val canTrain: Boolean get() = categoryCounts.count { it.value > 0 } >= 2
+
+    /**
+     * The newest queued crop of each of [tracked] this model runs on, in [tracked]'s order: how a
+     * car that's in view right now gets labelled without hunting for it in a long queue. Frigate
+     * files every classification attempt under the object's event id, so a tracked car's crops are
+     * already here; one with none (the model never looked, or the queue cap pushed them out) is
+     * left out, because a crop is the only thing Frigate can file.
+     */
+    fun liveCandidates(tracked: List<TrackedObject>): List<LiveCandidate> {
+        val newestByEvent = queue.filter { it.eventId != null }
+            .groupBy { it.eventId }
+            .mapValues { (_, crops) -> crops.maxBy { it.capturedEpochSeconds ?: 0.0 } }
+        return tracked.filter { it.label in model.objects }
+            .mapNotNull { obj -> newestByEvent[obj.eventId]?.let { LiveCandidate(obj, it) } }
+    }
 
     companion object {
         /** Frigate's reserved category: "one of these objects, but not one we care about". Never becomes a sub-label. */

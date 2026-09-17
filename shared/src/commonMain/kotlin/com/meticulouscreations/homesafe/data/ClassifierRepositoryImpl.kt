@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.CropSubject
 import com.meticulouscreations.homesafe.domain.model.SeenBox
+import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -57,6 +58,12 @@ class ClassifierRepositoryImpl(
 
     override suspend fun createCategory(modelName: String, category: String): Result<Unit> =
         serverUrlOrFailure().fold({ api.createCategory(it, modelName, category) }, { Result.failure(it) })
+
+    override suspend fun getTrackedObjects(cameraName: String): Result<List<TrackedObject>> {
+        val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
+        return api.getInProgressEvents(serverUrl, cameraName)
+            .map { events -> events.map { TrackedObject(eventId = it.id, label = it.label, subLabel = it.subLabel) } }
+    }
 
     override suspend fun label(modelName: String, fileName: String, category: String): Result<Unit> =
         serverUrlOrFailure().fold({ api.categorize(it, modelName, fileName, category) }, { Result.failure(it) })

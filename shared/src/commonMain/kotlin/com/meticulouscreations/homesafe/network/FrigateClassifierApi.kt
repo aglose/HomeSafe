@@ -83,6 +83,17 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
         }
     }
 
+    /** What [cameraName] is tracking right now: its events that haven't ended. */
+    suspend fun getInProgressEvents(serverUrl: String, cameraName: String): Result<List<FrigateEvent>> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
+            parameter("cameras", cameraName)
+            parameter("in_progress", 1)
+            parameter("limit", IN_PROGRESS_LIMIT)
+        }
+        check(response.status.isSuccess()) { "Couldn't load tracked objects: ${response.status}" }
+        response.body()
+    }
+
     /**
      * Category -> file names, plus training bookkeeping.
      *
@@ -140,6 +151,9 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
 
         /** A car that parks and pulls away a few times adds a handful of entries; this is far past a batch's worth. */
         const val TIMELINE_LIMIT = 5_000
+
+        /** More than a camera ever tracks at once; Frigate would otherwise cap the answer at its default. */
+        const val IN_PROGRESS_LIMIT = 50
     }
 }
 
