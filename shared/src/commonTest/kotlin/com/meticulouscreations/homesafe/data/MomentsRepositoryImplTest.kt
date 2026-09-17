@@ -150,9 +150,22 @@ class MomentsRepositoryImplTest {
     private fun personsJson(newestStart: Long, count: Int): String = personsJson((0 until count).map { newestStart - it })
 
     /** One-person detections at exactly [starts], in the order given — for a page with a hole where one used to be. */
-    private fun personsJson(starts: List<Long>): String = starts.joinToString(",", "[", "]") { start ->
-        """{"id":"e$start","label":"person","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
+    private fun personsJson(starts: List<Long>, camera: String = "hikvision_1"): String = starts.joinToString(",", "[", "]") { start ->
+        """{"id":"e$start","label":"person","sub_label":null,"camera":"$camera","start_time":$start.0,"end_time":${start + 5}.0,
             "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+    }
+
+    /**
+     * [count] cars driving down Front Yard's street, one a second, newest first from [newestStart]:
+     * the evening traffic (2026-09-16) that filled a whole page with detections [configJson]'s
+     * birds-only street rejects. The path is the real street car's from [zonedEventsJson].
+     */
+    private fun streetCarsJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") {
+        val start = newestStart - it
+        """{"id":"car$start","label":"car","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 20}.0,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.71,"top_score":0.78,"box":[0.65,0.27,0.14,0.1],
+                    "path_data":[[[0.6219,0.2861],$start.5],[[0.7734,0.3222],${start + 10}.0],[[0.725,0.3667],${start + 19}.0]]}}"""
     }
 
     private suspend fun MomentsRepositoryImpl.paging() = observePaging().first()
@@ -606,6 +619,62 @@ class MomentsRepositoryImplTest {
             assertEquals(102, relaunch.repo.observeMoments().first().size, "the page below came off the device as well")
         } finally {
             Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aPageTheZonesEmptyReachesDownForMomentsToShow() = runTest {
+        // Two full pages of street traffic the zones reject, then the evening's real moments below them.
+        Harness.config = configJson
+        Harness.eventsFor = { before ->
+            when (before) {
+                null -> streetCarsJson(2000, 100)
+                1901.0 -> streetCarsJson(1900, 100)
+                1801.0 -> personsJson((1800L downTo 1781L).toList(), camera = "amcrest_1")
+                else -> fail("unexpected before=$before")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("the moments below the traffic") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
+
+            // Nobody tapped "Look further back": the feed went down for them, and stopped at the end.
+            assertEquals((1800L downTo 1781L).map { "e$it" }, list.map { it.id })
+            assertEquals(listOf("limit=100&before=1901.000", "limit=100&before=1801.000"), h.pageQueries)
+            assertEquals(false, h.repo.paging().hasOlder)
+            assertEquals(false, h.repo.paging().loadingOlder)
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    @Test
+    fun aCameraThatOnlySeesTheStreetStopsReachingDownAfterAFewPages() = runTest {
+        Harness.config = configJson
+        Harness.eventsFor = { before -> streetCarsJson(before?.toLong()?.minus(1) ?: 2000, 100) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to page down") { h.pageQueries.size == 5 }
+            settle()
+
+            // Still empty, and still offering more, but the walk down is left to the reader now —
+            // however many polls have come and gone meanwhile.
+            assertEquals(5, h.pageQueries.size, "a bounded walk, not the server's whole history")
+            assertEquals(emptyList(), h.repo.observeMoments().first())
+            assertEquals(true, h.repo.paging().hasOlder)
+
+            h.repo.loadOlder()
+            assertEquals(6, h.pageQueries.size, "asking by hand still goes further")
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
         }
     }
 
