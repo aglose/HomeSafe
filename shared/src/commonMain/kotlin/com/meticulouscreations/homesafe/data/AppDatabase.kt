@@ -48,8 +48,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         AlertZoneRuleEntity::class,
         PlaybackPreferencesEntity::class,
         DeviceIdentityEntity::class,
+        MomentEventEntity::class,
     ],
-    version = 11,
+    version = 12,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -66,6 +67,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         AutoMigration(from = 9, to = 10),
         // 10 -> 11: the property plan is gone; both of its tables are dropped.
         AutoMigration(from = 10, to = 11, spec = PropertyPlanDropped::class),
+        // 11 -> 12: the Moments feed's on-device copy of the detections it has been shown
+        // ([MomentEventEntity], a new table), so the feed opens on what it had rather than empty.
+        AutoMigration(from = 11, to = 12),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -73,6 +77,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao
     abstract fun cameraDao(): CameraDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun momentsDao(): MomentsDao
 }
 
 // The Room compiler generates the `actual` implementations for each target.
@@ -87,8 +92,9 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
  * `createXDao` call returns a DAO from that same instance, never opening a second connection.
  * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
  * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
- * [InMemorySettingsDao]).
+ * [InMemorySettingsDao], [InMemoryMomentsDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
 expect fun createCameraDao(context: PlatformContext): CameraDao
 expect fun createSettingsDao(context: PlatformContext): SettingsDao
+expect fun createMomentsDao(context: PlatformContext): MomentsDao

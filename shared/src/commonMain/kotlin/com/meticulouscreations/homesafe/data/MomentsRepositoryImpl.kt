@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
@@ -37,16 +39,27 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * No Room cache on purpose (same reasoning as recordings): Frigate mints and ends events
- * continuously, a stale cache would show detections that have since been purged, and the feed
- * re-polls on a short interval anyway. The in-memory list is the truth for the session.
- *
  * The feed is a window (see [MomentsPaging]), optionally narrowed to one camera, held as two raw lists: [head], the window's first
  * page, which the poll replaces wholesale, and [tail], the older pages [loadOlder] appends one at
  * a time, each contiguous with the last. Zones and vehicle-visit folding run over the two joined,
  * so a parked car whose sightings straddle a page boundary still folds into one card. Paging
  * cursors come from the raw lists, never the folded feed: the oldest *detection* fetched is
  * where the next page starts, whatever the feed made of it.
+ *
+ * **The window opens on what the device already has.** Every page the server answers is written
+ * to [MomentsDao] under the server's identity, and a window that has just opened — a launch, a
+ * different day, another camera — is filled from that cache before the first fetch is even sent.
+ * So the feed shows the moments it showed last time straight away, and still shows them when the
+ * server can't be reached at all. The fetch that follows is the truth and replaces the head
+ * wholesale; a page that comes back also prunes the rows in its own range that the server no
+ * longer has, which is how a detection Frigate purged leaves the cache too.
+ *
+ * **What counts as "the same feed" is the server, not the address it answers at.** The window is
+ * filed under [com.meticulouscreations.homesafe.domain.model.ActiveConnection.serverUrl] (the
+ * cameras are cached the same way), so a LAN ↔ Tailscale route flip re-fetches on the new address
+ * without starting the feed over, and a moment with no connection at all — the flip itself, the
+ * app coming back before the session is re-established — leaves what's loaded on screen rather
+ * than emptying it.
  *
  * The polling loop lives in [observeMoments] (not in `init`) so it only runs while something is
  * actually looking at the feed — a background tab shouldn't keep hitting the server.
@@ -58,6 +71,7 @@ import kotlin.time.ExperimentalTime
 class MomentsRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionRepository: ConnectionRepository,
+    private val momentsDao: MomentsDao,
     private val clock: Clock,
     appScope: CoroutineScope,
 ) : MomentsRepository {
@@ -78,6 +92,9 @@ class MomentsRepositoryImpl(
 
     private val window = MutableStateFlow(Window())
 
+    /** The server the feed reads: the [identity] its cache is filed under, and the [url] to ask right now. */
+    private data class Server(val identity: String, val url: String)
+
     /**
      * The zones drawn on each camera, for [inZones]: read from `/api/config` on the first poll
      * and then every [ZONES_EVERY_N_POLLS], since the config is big and only changes when someone
@@ -91,29 +108,37 @@ class MomentsRepositoryImpl(
     private var head: List<MomentEvent> = emptyList()
     private var tail: List<MomentEvent> = emptyList()
 
-    /** Which (server, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
+    /** Which (server identity, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
     private var loadedFor: Pair<String, Window>? = null
 
     /** One page down at a time: a second [loadOlder] while one is in flight is simply ignored. */
     private val olderInFlight = Mutex()
 
-    /** A StateFlow only emits on change, so a LAN/Tailscale route flip re-fetches on the new host and nothing else re-fetches. */
-    private val activeUrl = connectionRepository.currentServerUrl
+    /**
+     * A StateFlow only emits on change, so a route flip re-fetches on the new address and nothing
+     * else re-fetches. Both halves matter: the identity decides what the feed and its cache are
+     * for, the URL is merely where to ask.
+     */
+    private val server: Flow<Server?> = connectionRepository.activeConnection
+        .map { connection -> connection?.let { Server(identity = it.serverUrl, url = it.activeUrl) } }
+        .distinctUntilChanged()
+
+    private fun currentServer(): Server? =
+        connectionRepository.activeConnection.value?.let { Server(identity = it.serverUrl, url = it.activeUrl) }
 
     // channelFlow, not flow: collectLatest runs its body in a child coroutine, and emitting from
     // there would violate the flow invariant at runtime. send() from a child is what channelFlow is for.
     private val poller: Flow<Unit> = channelFlow {
-        combine(activeUrl, window) { url, window -> url to window }.collectLatest { (url, window) ->
-            if (url == null) {
-                stateLock.withLock { reset(loadedFor = null) }
-                return@collectLatest
-            }
-            // Coming back to the same window (a tab switch, say) keeps the pages already loaded
-            // and only refreshes the top; a new server or a moved window starts over.
-            stateLock.withLock { if (loadedFor != url to window) reset(loadedFor = url to window) }
+        combine(server, window) { server, window -> server to window }.collectLatest { (server, window) ->
+            // Disconnected: what's loaded stays on screen — it is what the cache would hand back
+            // anyway, and an empty feed reads as "nothing has happened", which isn't what this is.
+            if (server == null) return@collectLatest
+            // Coming back to the same window (a tab switch, a route flip) keeps the pages already
+            // loaded and only refreshes the top; a new server or a moved window opens on the cache.
+            if (stateLock.withLock { loadedFor } != server.identity to window) openOnCache(server.identity, window)
             var polls = 0
             while (true) {
-                fetchHead(url, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
+                fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
                 polls++
                 send(Unit)
                 // A window into the past doesn't change under us; only the live feed is worth re-asking for.
@@ -146,22 +171,30 @@ class MomentsRepositoryImpl(
     /**
      * Its own poll rather than a slice of [observeMoments]: that feed is whatever window the
      * Moments tab last opened — another camera, an earlier day — and even live, a quiet camera's
-     * newest moments needn't be among the newest hundred across all of them. Zones come from the
-     * feed's cache, read here only when nothing has read them for this server yet. A failed poll
-     * keeps what was shown; the feed is where fetch errors are reported.
+     * newest moments needn't be among the newest hundred across all of them. Like the feed, it
+     * opens on the cache so the strip isn't blank while the first poll runs, and files what it
+     * fetches there. Zones come from the feed's cache, read here only when nothing has read them
+     * for this server yet. A failed poll keeps what was shown; the feed is where fetch errors are
+     * reported.
      */
     override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = channelFlow {
-        activeUrl.collectLatest { url ->
-            if (url == null) {
+        val rawEvents = maxOf(limit, RECENT_RAW_EVENTS)
+        server.collectLatest { server ->
+            if (server == null) {
                 send(emptyList())
                 return@collectLatest
             }
+            cachedPage(server.identity, before = null, camera = cameraName, limit = rawEvents)
+                .takeIf { it.isNotEmpty() }
+                ?.let { send(it.mergeVehicleVisits().take(limit)) }
             while (true) {
-                loadZones(url, force = false)
+                loadZones(server.url, force = false)
                 // More than [limit] raw: zones drop some detections and folding merges others.
-                apiClient.getEvents(url, limit = maxOf(limit, RECENT_RAW_EVENTS), cameras = listOf(cameraName)).onSuccess { events ->
+                apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
-                    send(events.map { it.toDomain() }.inZones(zones).mergeVehicleVisits().take(limit))
+                    val placed = events.map { it.toDomain() }.inZones(zones)
+                    send(placed.mergeVehicleVisits().take(limit))
+                    cache(server.identity, cameraName, placed, from = events.minOfOrNull { it.startTime }, to = null)
                 }
                 delay(POLL_INTERVAL_MS)
             }
@@ -176,18 +209,21 @@ class MomentsRepositoryImpl(
      * actually reached — with a busy camera minting hundreds of car events a day, [PAGE_SIZE]
      * detections can run out well inside that window, and a card shouldn't claim an arrival time
      * it only inferred from where the page happened to stop.
+     *
+     * Deliberately not served from the cache: this answers "what is standing in the yard right
+     * now", and a car the app saw an hour ago is no evidence that it is still there.
      */
     override fun observeStationaryObjects(): Flow<List<StationaryObject>> = channelFlow {
-        activeUrl.collectLatest { url ->
-            if (url == null) {
+        server.collectLatest { server ->
+            if (server == null) {
                 send(emptyList())
                 return@collectLatest
             }
             while (true) {
-                loadZones(url, force = false)
+                loadZones(server.url, force = false)
                 val now = clock.now().toEpochMilliseconds() / 1000.0
                 val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-                apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
+                apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
                     // Full pages stop where the server ran the limit out, not where the window ends.
                     val oldestFetched = if (events.size >= PAGE_SIZE) {
@@ -206,23 +242,38 @@ class MomentsRepositoryImpl(
     override suspend fun loadOlder() {
         if (!olderInFlight.tryLock()) return
         try {
-            val url = activeUrl.value ?: return
+            val server = currentServer() ?: return
             // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
             val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
-            if (oldest == null || target?.first != url || !_paging.value.hasOlder) return
+            if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return
             _paging.update { it.copy(loadingOlder = true) }
-            apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = target?.second?.cameras)
+            apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = target.second.cameras)
                 .onSuccess { events ->
-                    stateLock.withLock {
+                    val page = events.map { it.toDomain() }
+                    val placed: List<MomentEvent>? = stateLock.withLock {
                         // Only if the window hasn't moved while the page was in flight.
-                        if (loadedFor == target) {
-                            tail = tail + events.map { it.toDomain() }
+                        if (loadedFor != target) {
+                            null
+                        } else {
+                            tail = tail + page
                             publish(lastPageFull = events.size >= PAGE_SIZE)
+                            page.inZones(zonesByCamera)
                         }
                     }
                     _error.value = null
+                    // The range this page covered is the cursor down to its oldest, and no higher:
+                    // it says nothing about the pages already above it.
+                    if (placed != null) {
+                        cache(server.identity, target.second.camera, placed, from = events.minOfOrNull { it.startTime }, to = oldest)
+                    }
                 }
-                .onFailure { _error.value = it.message ?: "Couldn't load older detections" }
+                .onFailure { failure ->
+                    // The server is unreachable, but the next page down may already be on the
+                    // device — an older page the feed has shown before is worth more than a message.
+                    if (!appendCachedOlder(target, oldest)) {
+                        _error.value = failure.message ?: "Couldn't load older detections"
+                    }
+                }
         } finally {
             _paging.update { it.copy(loadingOlder = false) }
             olderInFlight.unlock()
@@ -230,7 +281,7 @@ class MomentsRepositoryImpl(
     }
 
     override suspend fun refresh() {
-        connectionRepository.currentServerUrl.value?.let { fetchHead(it, window.value, includeZones = true) }
+        currentServer()?.let { fetchHead(it, window.value, includeZones = true) }
     }
 
     override suspend fun getClipStream(eventId: String): RecordingStream {
@@ -262,30 +313,89 @@ class MomentsRepositoryImpl(
         }
     }
 
-    private suspend fun fetchHead(url: String, window: Window, includeZones: Boolean) {
-        loadZones(url, force = includeZones)
-        apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
+    /**
+     * Points the lists at a window the feed has just moved to and fills its first page from the
+     * cache, so the new window paints with what the device has instead of blanking until the
+     * fetch lands. Nothing cached is simply an empty feed, exactly as before.
+     */
+    private suspend fun openOnCache(identity: String, window: Window) {
+        // Read outside the lock: a query is IO, and nothing else may touch the lists meanwhile.
+        val cached = cachedPage(identity, window.before, window.camera, PAGE_SIZE)
+        stateLock.withLock {
+            loadedFor = identity to window
+            head = cached
+            tail = emptyList()
+            _paging.value = MomentsPaging(beforeEpochSeconds = window.before)
+            // A full page off the device may have more below it; a short one is all the device has,
+            // and either way the first fetch that lands has the last word on it.
+            publish(lastPageFull = cached.size >= PAGE_SIZE)
+        }
+    }
+
+    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean) {
+        loadZones(server.url, force = includeZones)
+        apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .onSuccess { events ->
-                stateLock.withLock {
-                    if (loadedFor == url to window) {
-                        head = events.map { it.toDomain() }
+                val page = events.map { it.toDomain() }
+                val placed: List<MomentEvent>? = stateLock.withLock {
+                    if (loadedFor != server.identity to window) {
+                        null
+                    } else {
+                        head = page
                         // With older pages already below, the last page loaded is still the last one
                         // down; a fresh head short of a page is the whole of what the server has.
                         publish(lastPageFull = if (tail.isEmpty()) events.size >= PAGE_SIZE else _paging.value.hasOlder)
+                        page.inZones(zonesByCamera)
                     }
                 }
                 _error.value = null
+                if (placed != null) {
+                    cache(server.identity, window.camera, placed, from = events.minOfOrNull { it.startTime }, to = window.before)
+                }
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }
     }
 
-    /** Under [stateLock]. Forgets the lists and points them at [loadedFor]. */
-    private fun reset(loadedFor: Pair<String, Window>?) {
-        this.loadedFor = loadedFor
-        head = emptyList()
-        tail = emptyList()
-        _moments.value = emptyList()
-        _paging.value = MomentsPaging(beforeEpochSeconds = loadedFor?.second?.before)
+    /** [MomentsDao.page] as moments. A cache that can't be read is an empty one: it must never be why the feed fails. */
+    private suspend fun cachedPage(identity: String, before: Double?, camera: String?, limit: Int): List<MomentEvent> =
+        runCatching { momentsDao.page(identity, before, camera, limit) }
+            .getOrDefault(emptyList())
+            .map { it.toDomain() }
+
+    /**
+     * Files a page the server answered, and squares the cache with it over exactly the range that
+     * page covered: [from] (its oldest detection) up to [to] (the instant it was asked to start
+     * before, null for now). Anything still cached in that range the page didn't mention has been
+     * purged by Frigate, or rejected by the zones, and goes with it. The bounds matter — a page
+     * fetched below the feed says nothing about the pages above it. An empty page prunes nothing:
+     * a server that momentarily answers with nothing shouldn't cost the device all it had.
+     */
+    private suspend fun cache(identity: String, camera: String?, placed: List<MomentEvent>, from: Double?, to: Double?) {
+        if (from == null) return
+        // Writing is a nicety; failing to write must never surface as a broken feed.
+        runCatching {
+            momentsDao.insertAll(placed.map { it.toEntity(identity) })
+            momentsDao.deleteMissingInRange(
+                serverUrl = identity,
+                cameraName = camera,
+                fromEpochSeconds = from,
+                beforeEpochSeconds = to,
+                keptIds = placed.map { it.id },
+            )
+            momentsDao.trimToNewest(identity, CACHE_LIMIT)
+        }
+    }
+
+    /** The next page down out of the cache, when the server couldn't answer for it. True if it had one. */
+    private suspend fun appendCachedOlder(target: Pair<String, Window>, oldest: Double): Boolean {
+        val cached = cachedPage(target.first, before = oldest, camera = target.second.camera, limit = PAGE_SIZE)
+        if (cached.isEmpty()) return false
+        stateLock.withLock {
+            if (loadedFor != target) return false
+            tail = tail + cached
+            publish(lastPageFull = cached.size >= PAGE_SIZE)
+        }
+        return true
     }
 
     /**
@@ -304,6 +414,13 @@ class MomentsRepositoryImpl(
         const val POLL_INTERVAL_MS = 30_000L
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
+
+        /**
+         * How many of a server's detections the device keeps: a few pages down from the top, which
+         * is as far as anyone scrolls before switching to a day, and small enough that the table
+         * stays a cache rather than a copy of Frigate's database.
+         */
+        const val CACHE_LIMIT = 500
 
         /** How many detections a camera's recent strip reads to find its few moments. */
         const val RECENT_RAW_EVENTS = 25

@@ -12,3 +12,6 @@ actual fun createCameraDao(context: PlatformContext): CameraDao =
 
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     InMemorySettingsDao()
+
+actual fun createMomentsDao(context: PlatformContext): MomentsDao =
+    InMemoryMomentsDao()

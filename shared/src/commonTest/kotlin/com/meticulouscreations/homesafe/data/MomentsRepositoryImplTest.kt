@@ -23,7 +23,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
@@ -58,7 +57,22 @@ class MomentsRepositoryImplTest {
 
     private class FakeConnection(url: String?) : ConnectionRepository {
         override val currentServerUrl = MutableStateFlow(url)
-        override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
+        override val activeConnection = MutableStateFlow(
+            url?.let { ActiveConnection(serverUrl = it, localUrl = null, route = ConnectionRoute.TAILSCALE) },
+        )
+
+        /** A route flip: the same server — its Tailscale URL is its identity — answering at its LAN address now. */
+        fun flipToLocalNetwork(localUrl: String) {
+            activeConnection.update { it?.copy(localUrl = localUrl, route = ConnectionRoute.LOCAL_NETWORK) }
+            currentServerUrl.value = activeConnection.value?.activeUrl
+        }
+
+        /** The session gone: no address to ask, and no server to ask it of. */
+        fun disconnect() {
+            activeConnection.value = null
+            currentServerUrl.value = null
+        }
+
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
         override val biometricDisplayName = "biometrics"
@@ -77,10 +91,15 @@ class MomentsRepositoryImplTest {
 
     private class Harness(
         scope: TestScope,
-        url: String? = "http://192.168.68.55:8971",
+        url: String? = SERVER_URL,
         failEvents: Boolean = false,
         val clock: FakeClock = FakeClock(),
+        /** Shared between two harnesses to stand in for what a previous launch left on the device. */
+        val momentsDao: InMemoryMomentsDao = InMemoryMomentsDao(),
     ) {
+        /** Whether the server is answering at all right now; a test can take it away mid-run. */
+        var offline: Boolean = failEvents
+
         // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
         // on whatever thread Ktor finished its request on — [eventually] spends real time off the
         // test dispatcher, so that is genuinely another thread — while the test body reads what has
@@ -96,7 +115,7 @@ class MomentsRepositoryImplTest {
         val engine = MockEngine { req ->
             _hosts.update { it + req.url.host }
             when {
-                failEvents -> respond("boom", HttpStatusCode.InternalServerError)
+                offline -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
                     _eventQueries.update { it + req.url.encodedQuery }
@@ -115,7 +134,7 @@ class MomentsRepositoryImplTest {
             install(HttpTimeout)
         }
         val connection = FakeConnection(url)
-        val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, clock, scope.backgroundScope)
+        val repo = MomentsRepositoryImpl(FrigateApiClient(client), connection, momentsDao, clock, scope.backgroundScope)
         companion object {
             lateinit var events: String
 
@@ -128,8 +147,10 @@ class MomentsRepositoryImplTest {
     }
 
     /** [count] one-person detections, one a second, newest first from [newestStart] — the shape of a full page. */
-    private fun personsJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") { i ->
-        val start = newestStart - i
+    private fun personsJson(newestStart: Long, count: Int): String = personsJson((0 until count).map { newestStart - it })
+
+    /** One-person detections at exactly [starts], in the order given — for a page with a hole where one used to be. */
+    private fun personsJson(starts: List<Long>): String = starts.joinToString(",", "[", "]") { start ->
         """{"id":"e$start","label":"person","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
             "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
     }
@@ -474,6 +495,103 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun aNewLaunchOpensOnTheMomentsTheDeviceKept() = runTest {
+        Harness.events = eventsJson
+        val kept = InMemoryMomentsDao()
+        val first = Harness(this, momentsDao = kept)
+        backgroundScope.launch { first.repo.observeMoments().collect {} }
+        eventually("the first launch's feed") { first.repo.observeMoments().first().size == 2 }
+        eventually("the moments to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 2 }
+
+        // Launched again with the server out of reach: the feed is what the last launch left behind,
+        // in the order it was in, rather than the blank page it used to be.
+        val relaunch = Harness(this, failEvents = true, momentsDao = kept)
+        backgroundScope.launch { relaunch.repo.observeMoments().collect {} }
+        var ids = emptyList<String>()
+        eventually("the feed the device kept") {
+            ids = relaunch.repo.observeMoments().first().map { it.id }
+            ids.isNotEmpty()
+        }
+        assertEquals(listOf("1788401800.1-abc", "1788401732.596325-eaak48"), ids)
+    }
+
+    @Test
+    fun aRouteFlipAsksTheNewAddressWithoutEmptyingTheFeed() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        // Every size the feed has ever had, so a blank frame in the middle can't hide behind the end state.
+        val sizes = MutableStateFlow<List<Int>>(emptyList())
+        backgroundScope.launch { h.repo.observeMoments().collect { list -> sizes.update { it + list.size } } }
+        eventually("the feed") { h.repo.observeMoments().first().size == 2 }
+
+        h.connection.flipToLocalNetwork("http://192.168.68.99:8971")
+        eventually("the new address to be asked") { "192.168.68.99" in h.hosts }
+
+        assertEquals(2, h.repo.observeMoments().first().size)
+        val afterItFilled = sizes.value.dropWhile { it == 0 }
+        assertEquals(emptyList(), afterItFilled.filter { it == 0 }, "the same server at another address is not a new feed")
+    }
+
+    @Test
+    fun losingTheConnectionLeavesTheMomentsOnScreen() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        backgroundScope.launch { h.repo.observeMoments().collect {} }
+        eventually("the feed") { h.repo.observeMoments().first().size == 2 }
+
+        h.connection.disconnect()
+        advanceUntilIdle()
+        assertEquals(2, h.repo.observeMoments().first().size, "a dropped session is not news that nothing happened")
+    }
+
+    @Test
+    fun aDetectionTheServerNoLongerHasLeavesTheDeviceToo() = runTest {
+        Harness.events = personsJson(2000, 3)
+        val kept = InMemoryMomentsDao()
+        val h = Harness(this, momentsDao = kept)
+        backgroundScope.launch { h.repo.observeMoments().collect {} }
+        eventually("the feed") { h.repo.observeMoments().first().size == 3 }
+
+        eventually("all three to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 3 }
+
+        // Frigate's retention takes the middle one; the next poll comes back without it.
+        Harness.events = personsJson(listOf(2000L, 1998L))
+        eventually("the shorter feed") { h.repo.observeMoments().first().size == 2 }
+
+        var cached = emptyList<String>()
+        eventually("the device to let go of it too") {
+            cached = kept.page(SERVER_URL, null, null, limit = 10).map { it.id }
+            cached.size == 2
+        }
+        assertEquals(listOf("e2000", "e1998"), cached, "a purged detection can't sit on the device waiting for the next launch")
+    }
+
+    @Test
+    fun theNextPageDownComesOffTheDeviceWhenTheServerCannotAnswer() = runTest {
+        Harness.eventsFor = { before -> if (before == null) personsJson(2000, 100) else personsJson(1900, 2) }
+        try {
+            val kept = InMemoryMomentsDao()
+            val h = Harness(this, momentsDao = kept)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+            h.repo.loadOlder()
+            assertEquals(102, h.repo.observeMoments().first().size)
+            eventually("both pages to reach the device") { kept.page(SERVER_URL, null, null, limit = 200).size == 102 }
+
+            // Launched again with nothing to reach: the head comes off the device, and so does the page below it.
+            val relaunch = Harness(this, failEvents = true, momentsDao = kept)
+            backgroundScope.launch { relaunch.repo.observeMoments().collect {} }
+            eventually("the head the device kept") { relaunch.repo.observeMoments().first().size == 100 }
+            assertEquals(true, relaunch.repo.paging().hasOlder, "a full page off the device may have more below it")
+
+            relaunch.repo.loadOlder()
+            assertEquals(102, relaunch.repo.observeMoments().first().size, "the page below came off the device as well")
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
     fun disconnectedYieldsEmptyWithoutAnyRequest() = runTest {
         Harness.events = eventsJson
         val h = Harness(this, url = null)
@@ -482,3 +600,6 @@ class MomentsRepositoryImplTest {
         assertEquals(emptyList<String>(), h.hosts)
     }
 }
+
+/** The server the tests sign in to: its identity, and the address it answers at until a route flip moves it. */
+private const val SERVER_URL = "http://192.168.68.55:8971"

@@ -11,8 +11,13 @@ interface MomentsRepository {
     /**
      * Everything loaded so far in the current window (see [observePaging]), newest first: the
      * window's first page, which is re-fetched while observed, followed by every older page
-     * [loadOlder] has appended. Empty until connected; starts over when the server or the
-     * window changes.
+     * [loadOlder] has appended.
+     *
+     * A window that has just opened — a launch, another camera, an earlier day — starts as what
+     * the device kept from the last time it was shown, so the feed is rarely empty and never
+     * empty merely because the server is slow or out of reach; the fetch that follows replaces
+     * it. What the feed is filed under is the server's *identity*, not the address it happens to
+     * answer at, so a local ↔ remote route flip is not a new feed and doesn't blank this one.
      */
     fun observeMoments(): Flow<List<MomentEvent>>
 
@@ -46,7 +51,8 @@ interface MomentsRepository {
     /**
      * [cameraName]'s newest [limit] moments, placed and folded the way [observeMoments] does it,
      * but fetched for that camera alone and always from now: nothing the Moments feed is
-     * narrowed or scrolled back to changes it. Polls while collected.
+     * narrowed or scrolled back to changes it. Opens on what the device kept, like
+     * [observeMoments], then polls while collected.
      */
     fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>>
 

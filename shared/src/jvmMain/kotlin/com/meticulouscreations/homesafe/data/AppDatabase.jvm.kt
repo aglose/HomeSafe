@@ -26,3 +26,6 @@ actual fun createCameraDao(context: PlatformContext): CameraDao =
 
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     appDatabase.settingsDao()
+
+actual fun createMomentsDao(context: PlatformContext): MomentsDao =
+    appDatabase.momentsDao()
