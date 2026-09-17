@@ -111,6 +111,9 @@ class MomentsRepositoryImpl(
     /** Which (server identity, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
     private var loadedFor: Pair<String, Window>? = null
 
+    /** How many pages [fillShortFeed] has fetched for [loadedFor]; a newly opened window starts again at zero. */
+    private var autoFilledPages = 0
+
     /** One page down at a time: a second [loadOlder] while one is in flight is simply ignored. */
     private val olderInFlight = Mutex()
 
@@ -141,6 +144,7 @@ class MomentsRepositoryImpl(
                 fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
                 polls++
                 send(Unit)
+                fillShortFeed(server.identity, window)
                 // A window into the past doesn't change under us; only the live feed is worth re-asking for.
                 if (window.before != null) return@collectLatest
                 delay(POLL_INTERVAL_MS)
@@ -242,11 +246,20 @@ class MomentsRepositoryImpl(
     override suspend fun loadOlder() {
         if (!olderInFlight.tryLock()) return
         try {
-            val server = currentServer() ?: return
-            // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
-            val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
-            if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return
-            _paging.update { it.copy(loadingOlder = true) }
+            appendOlderPage()
+        } finally {
+            olderInFlight.unlock()
+        }
+    }
+
+    /** Under [olderInFlight]. Appends the next page down to the tail. True if one was appended, from the server or the cache. */
+    private suspend fun appendOlderPage(): Boolean {
+        val server = currentServer() ?: return false
+        // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
+        val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
+        if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return false
+        _paging.update { it.copy(loadingOlder = true) }
+        try {
             apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = target.second.cameras)
                 .onSuccess { events ->
                     val page = events.map { it.toDomain() }
@@ -266,17 +279,40 @@ class MomentsRepositoryImpl(
                     if (placed != null) {
                         cache(server.identity, target.second.camera, placed, from = events.minOfOrNull { it.startTime }, to = oldest)
                     }
+                    return placed != null
                 }
                 .onFailure { failure ->
                     // The server is unreachable, but the next page down may already be on the
                     // device — an older page the feed has shown before is worth more than a message.
-                    if (!appendCachedOlder(target, oldest)) {
-                        _error.value = failure.message ?: "Couldn't load older detections"
-                    }
+                    if (appendCachedOlder(target, oldest)) return true
+                    _error.value = failure.message ?: "Couldn't load older detections"
                 }
+            return false
         } finally {
             _paging.update { it.copy(loadingOlder = false) }
-            olderInFlight.unlock()
+        }
+    }
+
+    /**
+     * Pages down on the reader's behalf while the feed is too short to be worth looking at and the
+     * server has more. Pages are raw detections and the zones decide afterwards, so a busy street
+     * can fill the newest page — or several — with cars nobody asked to see, and the feed would
+     * otherwise open on "Nothing to show yet" with the evening's moments one tap further down.
+     * At most [AUTO_FILL_MAX_PAGES] per window, so a camera that only ever sees the street costs a
+     * bounded walk rather than the server's whole history; past that the feed's own "Look further
+     * back" is still there.
+     */
+    private suspend fun fillShortFeed(identity: String, window: Window) {
+        while (true) {
+            val more = stateLock.withLock {
+                val short = loadedFor == identity to window &&
+                    autoFilledPages < AUTO_FILL_MAX_PAGES &&
+                    _moments.value.size < AUTO_FILL_MIN_MOMENTS &&
+                    _paging.value.hasOlder
+                if (short) autoFilledPages++
+                short
+            }
+            if (!more || !olderInFlight.withLock { appendOlderPage() }) return
         }
     }
 
@@ -323,6 +359,7 @@ class MomentsRepositoryImpl(
         val cached = cachedPage(identity, window.before, window.camera, PAGE_SIZE)
         stateLock.withLock {
             loadedFor = identity to window
+            autoFilledPages = 0
             head = cached
             tail = emptyList()
             _paging.value = MomentsPaging(beforeEpochSeconds = window.before)
@@ -414,6 +451,12 @@ class MomentsRepositoryImpl(
         const val POLL_INTERVAL_MS = 30_000L
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
+
+        /** Fewer moments than this after the zones is a feed [fillShortFeed] pages down for: about two screens of cards. */
+        const val AUTO_FILL_MIN_MOMENTS = 10
+
+        /** The most pages [fillShortFeed] fetches for one window before leaving the rest to the reader. */
+        const val AUTO_FILL_MAX_PAGES = 5
 
         /**
          * How many of a server's detections the device keeps: a few pages down from the top, which
