@@ -304,7 +304,8 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
 /**
  * One camera's card: its live video, name and status. A tap is [onClick] (the camera's own
  * screen); spreading two fingers on it, or holding one, lifts the video into [zoomState]'s
- * quick-look layer — the pinch continuing there without a lift of the fingers.
+ * quick-look layer — the pinch, or the held finger's drag, continuing there without a lift of
+ * the fingers.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -373,6 +374,7 @@ internal fun CameraCard(
                 },
                 onClick = onClick,
             )
+            .quickLookHeldDrag(zoomState, camera.name)
             .pinchGestures(pinchListener),
     ) {
         // Only the video is the shared element. The card's chrome — border, title, status
