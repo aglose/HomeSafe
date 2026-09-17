@@ -94,9 +94,10 @@ jobs:
           echo "SCHEMA_DIR_STATUS_BEGIN"
           git status --porcelain -- shared/schemas
           echo "SCHEMA_DIR_STATUS_END"
-          echo "SCHEMA_12_BASE64_BEGIN"
-          base64 -w 200 shared/schemas/com.meticulouscreations.homesafe.data.AppDatabase/12.json
-          echo "SCHEMA_12_BASE64_END"
+          sha256sum shared/schemas/com.meticulouscreations.homesafe.data.AppDatabase/12.json
+          echo "SCHEMA_12_GZIP_BASE64_BEGIN"
+          gzip -9 -n -c shared/schemas/com.meticulouscreations.homesafe.data.AppDatabase/12.json | base64 -w 120
+          echo "SCHEMA_12_GZIP_BASE64_END"
 
       - uses: actions/upload-artifact@v7
         if: ${{ always() && matrix.artifact }}
