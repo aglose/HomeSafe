@@ -60,6 +60,11 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
             offset = offset.clampedFor(scale)
         }
 
+    // Drags that arrived during animateTo and haven't been folded into a frame of it yet.
+    private var animating = false
+    private var animationRun = 0
+    private var pendingPan = Offset.Zero
+
     /** One increment of a pinch: zoom about [centroid] (viewport-local) by [zoomChange], then drag by [pan]. */
     fun transformBy(zoomChange: Float, pan: Offset, centroid: Offset) {
         val newScale = (scale * zoomChange).coerceIn(1f, maxScale)
@@ -70,12 +75,25 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
         offset = newOffset.clampedFor(newScale)
     }
 
+    /**
+     * A one-finger drag of [pan]. Safe during [animateZoomTo]: the drag is carried on top of the
+     * animation's path instead of being overwritten by its next frame.
+     */
+    fun panBy(pan: Offset) {
+        if (animating) {
+            pendingPan += pan
+        } else {
+            offset = (offset + pan).clampedFor(scale)
+        }
+    }
+
     suspend fun animateReset() = animateTo(1f, Offset.Zero)
 
     /** Straight back to 1x, no animation — for a surface that is about to be shown afresh. */
     fun reset() {
         scale = 1f
         offset = Offset.Zero
+        pendingPan = Offset.Zero
     }
 
     /** Zooms to [targetScale] with the content under [centroid] (viewport-local) staying put — a double-tap zoom. */
@@ -89,10 +107,27 @@ class PinchZoomState(private val maxScale: Float = DEFAULT_MAX_SCALE) {
     private suspend fun animateTo(targetScale: Float, targetOffset: Offset) {
         val fromScale = scale
         val fromOffset = offset
-        animate(0f, 1f) { t, _ ->
-            scale = fromScale + (targetScale - fromScale) * t
-            // Clamped per frame: the viewport may be growing underneath the animation.
-            offset = (fromOffset + (targetOffset - fromOffset) * t).clampedFor(scale)
+        var drift = Offset.Zero
+        // A newer animation may start before this one's cancellation reaches its finally.
+        val run = ++animationRun
+        animating = true
+        try {
+            animate(0f, 1f) { t, _ ->
+                scale = fromScale + (targetScale - fromScale) * t
+                val path = fromOffset + (targetOffset - fromOffset) * t
+                // Clamped per frame: the viewport may be growing underneath the animation. Drift
+                // the clamp cut off is dropped, so dragging back moves the picture straight away.
+                offset = (path + drift + pendingPan).clampedFor(scale)
+                drift = offset - path
+                pendingPan = Offset.Zero
+            }
+        } finally {
+            if (run == animationRun) {
+                animating = false
+                // A drag that landed after the last frame.
+                offset = (offset + pendingPan).clampedFor(scale)
+                pendingPan = Offset.Zero
+            }
         }
     }
 

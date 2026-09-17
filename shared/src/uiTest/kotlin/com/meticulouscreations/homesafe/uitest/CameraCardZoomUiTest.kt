@@ -153,6 +153,30 @@ class CameraCardZoomUiTest {
     }
 
     @Test
+    fun theHoldingFingerDragsTheQuickLookWithoutLifting() = runComposeUiTest {
+        val state = setUpHome()
+        var cardWidth = 0f
+        onNodeWithTag("card-back_yard").performTouchInput {
+            cardWidth = width.toFloat()
+            down(center)
+        }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals("back_yard", state.target?.camera?.name)
+        val opened = state.zoom.offset
+
+        // Same finger, still down, now under the overlay: its stream stays with the card.
+        // Sideways only: in a portrait window a 2.5x video can still be too short to pan vertically.
+        onNodeWithTag("card-back_yard").performTouchInput { moveBy(Offset(-cardWidth * 0.2f, 0f)) }
+        mainClock.advanceTimeByFrame()
+
+        assertEquals(opened.x - cardWidth * 0.2f, state.zoom.offset.x, 1f)
+
+        onNodeWithTag("card-back_yard").performTouchInput { up() }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals("back_yard", state.target?.camera?.name, "letting go of a drag should leave the look open")
+    }
+
+    @Test
     fun closeSettlesTheVideoBackIntoItsCard() = runComposeUiTest {
         val state = setUpHome()
         onNodeWithTag("card-back_yard").performTouchInput { longClick(center) }
