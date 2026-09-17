@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
@@ -41,6 +42,7 @@ class ClassifierLabelingViewModelTest {
         val discarded = mutableListOf<List<String>>()
         override suspend fun getModels() = Result.success(listOf(dataset.model))
         override suspend fun getDataset(modelName: String) = Result.success(dataset)
+        override suspend fun getTrackedObjects(cameraName: String) = Result.success(emptyList<TrackedObject>())
         override suspend fun createCategory(modelName: String, category: String) = Result.success(Unit)
         override suspend fun label(modelName: String, fileName: String, category: String) = Result.success(Unit)
         override suspend fun discard(modelName: String, fileNames: List<String>): Result<Unit> {

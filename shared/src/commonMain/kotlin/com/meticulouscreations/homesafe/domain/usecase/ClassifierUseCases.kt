@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import dev.zacsweers.metro.Inject
 
@@ -15,6 +16,12 @@ class GetClassifierModelsUseCase(private val repository: ClassifierRepository) {
 @Inject
 class GetClassifierDatasetUseCase(private val repository: ClassifierRepository) {
     suspend operator fun invoke(modelName: String): Result<ClassifierDataset> = repository.getDataset(modelName)
+}
+
+/** What a camera is tracking right now; see [ClassifierDataset.liveCandidates] for why it matters to labelling. */
+@Inject
+class GetTrackedObjectsUseCase(private val repository: ClassifierRepository) {
+    suspend operator fun invoke(cameraName: String): Result<List<TrackedObject>> = repository.getTrackedObjects(cameraName)
 }
 
 /** See [ClassifierRepository.createCategory]; [category] must already be a Frigate-safe key. */

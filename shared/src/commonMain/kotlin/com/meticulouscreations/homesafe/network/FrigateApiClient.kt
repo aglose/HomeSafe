@@ -379,7 +379,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
             .takeIf { it.isNotEmpty() }
             ?.joinToString("; ", transform = ::renderCookieHeader)
 
-    private companion object {
+    internal companion object {
         /** Frigate's own defaults when a camera config omits `detect.width`/`height`. */
         const val DEFAULT_DETECT_WIDTH = 1280
         const val DEFAULT_DETECT_HEIGHT = 720

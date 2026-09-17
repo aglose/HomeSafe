@@ -4,6 +4,7 @@ import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
+import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
@@ -29,16 +30,68 @@ import kotlinx.serialization.json.JsonObject
 class FrigateClassifierApi(private val httpClient: HttpClient) {
 
     /** The custom models in `/api/config`, object models only (those with `object_config`). */
-    suspend fun getModels(serverUrl: String): Result<List<FrigateClassifierModel>> = runCatching {
+    suspend fun getModels(serverUrl: String): Result<List<FrigateClassifierModel>> = getConfig(serverUrl).map { it.models }
+
+    /** [getModels], plus each camera's detect resolution, which a queued crop was cut from. */
+    suspend fun getConfig(serverUrl: String): Result<FrigateClassifierConfig> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
         check(response.status.isSuccess()) { "Couldn't load config: ${response.status}" }
-        response.body<FrigateClassificationRoot>().classification?.custom.orEmpty().map { (name, model) ->
-            FrigateClassifierModel(
-                name = name,
-                enabled = model.enabled,
-                objects = model.objectConfig?.objects.orEmpty(),
-            )
+        val root = response.body<FrigateClassificationRoot>()
+        FrigateClassifierConfig(
+            models = root.classification?.custom.orEmpty().map { (name, model) ->
+                FrigateClassifierModel(
+                    name = name,
+                    enabled = model.enabled,
+                    objects = model.objectConfig?.objects.orEmpty(),
+                )
+            },
+            detectSizes = root.cameras.mapValues { (_, camera) ->
+                FrigateDetectSize(
+                    width = camera.detect?.width ?: FrigateApiClient.DEFAULT_DETECT_WIDTH,
+                    height = camera.detect?.height ?: FrigateApiClient.DEFAULT_DETECT_HEIGHT,
+                )
+            },
+        )
+    }
+
+    /**
+     * The tracked objects [eventIds] name, for where each queued crop's object stood. Asked for in
+     * batches so a full queue's worth of ids stays a sensible URL; ids Frigate no longer has are
+     * simply missing from the answer.
+     */
+    suspend fun getEvents(serverUrl: String, eventIds: Collection<String>): Result<List<FrigateEvent>> = runCatching {
+        eventIds.distinct().chunked(EVENT_IDS_PER_REQUEST).flatMap { batch ->
+            val response = httpClient.get("${serverUrl.trimEnd('/')}/api/event_ids") { parameter("ids", batch.joinToString(",")) }
+            check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
+            response.body<List<FrigateEvent>>()
         }
+    }
+
+    /**
+     * The boxes Frigate kept for [eventIds] at each lifecycle moment (first seen, parked, moved,
+     * gone), oldest first, in batches like [getEvents]. A queued crop can only be framed exactly
+     * when one of these is the box it was cut from; see `CropSubject.boxInCrop`.
+     */
+    suspend fun getTimeline(serverUrl: String, eventIds: Collection<String>): Result<List<FrigateTimelineEntry>> = runCatching {
+        eventIds.distinct().chunked(EVENT_IDS_PER_REQUEST).flatMap { batch ->
+            val response = httpClient.get("${serverUrl.trimEnd('/')}/api/timeline") {
+                parameter("source_id", batch.joinToString(","))
+                parameter("limit", TIMELINE_LIMIT)
+            }
+            check(response.status.isSuccess()) { "Couldn't load timeline: ${response.status}" }
+            response.body<List<FrigateTimelineEntry>>()
+        }
+    }
+
+    /** What [cameraName] is tracking right now: its events that haven't ended. */
+    suspend fun getInProgressEvents(serverUrl: String, cameraName: String): Result<List<FrigateEvent>> = runCatching {
+        val response = httpClient.get("${serverUrl.trimEnd('/')}/api/events") {
+            parameter("cameras", cameraName)
+            parameter("in_progress", 1)
+            parameter("limit", IN_PROGRESS_LIMIT)
+        }
+        check(response.status.isSuccess()) { "Couldn't load tracked objects: ${response.status}" }
+        response.body()
     }
 
     /**
@@ -92,6 +145,16 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
             throw FrigateResponseException(result?.message ?: "Request failed: ${response.status}")
         }
     }
+
+    private companion object {
+        const val EVENT_IDS_PER_REQUEST = 50
+
+        /** A car that parks and pulls away a few times adds a handful of entries; this is far past a batch's worth. */
+        const val TIMELINE_LIMIT = 5_000
+
+        /** More than a camera ever tracks at once; Frigate would otherwise cap the answer at its default. */
+        const val IN_PROGRESS_LIMIT = 50
+    }
 }
 
 /** A queued crop's image. Authenticated like everything else; Coil rides the app's Ktor client. */
@@ -100,8 +163,33 @@ fun frigateClassifierQueueImageUrl(serverUrl: String, modelName: String, fileNam
 
 data class FrigateClassifierModel(val name: String, val enabled: Boolean, val objects: List<String>)
 
+data class FrigateDetectSize(val width: Int, val height: Int)
+
+/** One lifecycle moment of a tracked object, from `/api/timeline`; [data] carries the box at that moment. */
 @Serializable
-internal data class FrigateClassificationRoot(val classification: FrigateClassificationBlock? = null)
+data class FrigateTimelineEntry(
+    @SerialName("source_id") val sourceId: String,
+    val timestamp: Double,
+    val data: FrigateTimelineData? = null,
+)
+
+@Serializable
+data class FrigateTimelineData(
+    /** `[x, y, w, h]`, each a fraction of the detect frame; absent on entries that aren't about an object's position. */
+    val box: List<Double>? = null,
+)
+
+data class FrigateClassifierConfig(
+    val models: List<FrigateClassifierModel>,
+    /** Camera name -> detect resolution. */
+    val detectSizes: Map<String, FrigateDetectSize> = emptyMap(),
+)
+
+@Serializable
+internal data class FrigateClassificationRoot(
+    val classification: FrigateClassificationBlock? = null,
+    val cameras: Map<String, FrigateCameraConfig> = emptyMap(),
+)
 
 @Serializable
 internal data class FrigateClassificationBlock(val custom: Map<String, FrigateCustomClassifierConfig> = emptyMap())

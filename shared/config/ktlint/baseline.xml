@@ -27,14 +27,14 @@
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
         <error line="109" column="5" source="compose:modifier-missing-check" />
-        <error line="314" column="5" source="compose:state-param-check" />
-        <error line="317" column="5" source="compose:lambda-param-in-effect" />
-        <error line="317" column="5" source="compose:parameter-naming" />
-        <error line="565" column="47" source="compose:lambda-param-in-effect" />
+        <error line="318" column="5" source="compose:state-param-check" />
+        <error line="321" column="5" source="compose:lambda-param-in-effect" />
+        <error line="321" column="5" source="compose:parameter-naming" />
+        <error line="569" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
-        <error line="64" column="5" source="compose:modifier-missing-check" />
-        <error line="115" column="64" source="compose:vm-forwarding-check" />
+        <error line="75" column="5" source="compose:modifier-missing-check" />
+        <error line="126" column="64" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/DetectionZonesScreen.kt">
         <error line="81" column="5" source="compose:modifier-missing-check" />

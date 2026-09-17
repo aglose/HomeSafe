@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.network
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
+import com.meticulouscreations.homesafe.domain.model.MaskPoint
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -41,6 +42,94 @@ class FrigateClassifierApiTest {
         val api = FrigateClassifierApi(client { HttpStatusCode.OK to configJson })
         val models = api.getModels("http://frigate:8971").getOrThrow()
         assertEquals(listOf(FrigateClassifierModel("known_cars", enabled = true, objects = listOf("car"))), models)
+    }
+
+    @Test
+    fun readsEachCamerasDetectSizeAlongsideTheModels() = runTest {
+        val withCameras = configJson.dropLast(1) + ""","cameras":{"hikvision_1":{"detect":{"width":640,"height":360}},"bare":{}}}"""
+        val api = FrigateClassifierApi(client { HttpStatusCode.OK to withCameras })
+        val config = api.getConfig("http://frigate:8971").getOrThrow()
+        assertEquals(listOf("known_cars"), config.models.map { it.name })
+        assertEquals(mapOf("hikvision_1" to FrigateDetectSize(640, 360), "bare" to FrigateDetectSize(1280, 720)), config.detectSizes)
+    }
+
+    /** A full queue names a few dozen events; they go out in batches, each id once. */
+    @Test
+    fun eventsAreFetchedByIdInBatches() = runTest {
+        val requested = mutableListOf<List<String>>()
+        val api = FrigateClassifierApi(
+            client { req ->
+                val ids = req.url.parameters["ids"].orEmpty().split(",")
+                requested += ids
+                HttpStatusCode.OK to ids.joinToString(",", "[", "]") { """{"id":"$it","label":"car","camera":"hikvision_1","start_time":1.0}""" }
+            },
+        )
+        val ids = (1..60).map { "1789612326.39659-id$it" }
+        val events = api.getEvents("http://frigate:8971", ids + ids.take(5)).getOrThrow()
+        assertEquals(listOf(50, 10), requested.map { it.size })
+        assertEquals(ids, events.map { it.id })
+    }
+
+    /** Trimmed from the real server on 2026-09-16: one event's lifecycle, the last entry without a box. */
+    @Test
+    fun timelineBoxesAreFetchedForAllTheQueuedEventsAtOnce() = runTest {
+        var query: Map<String, String?> = emptyMap()
+        val api = FrigateClassifierApi(
+            client { req ->
+                query = req.url.parameters.names().associateWith { req.url.parameters[it] }
+                HttpStatusCode.OK to """[{"timestamp":1789612937.165,"camera":"hikvision_1","source":"tracked_object","source_id":"1789612937.165365-rf22rm","class_type":"visible","data":{"camera":"hikvision_1","label":"car","sub_label":null,"box":[0.484,0.214,0.075,0.053],"region":[0.5,0.0,0.5,0.888],"attribute":""}},
+                    {"timestamp":1789613141.81,"camera":"hikvision_1","source":"tracked_object","source_id":"1789612937.165365-rf22rm","class_type":"gone","data":{}}]"""
+            },
+        )
+        val entries = api.getTimeline("http://frigate:8971", listOf("1789612937.165365-rf22rm", "1789612326.39659-dg7l5c")).getOrThrow()
+        assertEquals("1789612937.165365-rf22rm,1789612326.39659-dg7l5c", query["source_id"])
+        assertEquals(listOf(0.484, 0.214, 0.075, 0.053), entries[0].data?.box)
+        assertEquals(1789612937.165, entries[0].timestamp)
+        assertNull(entries[1].data?.box)
+    }
+
+    /** What a camera is tracking now: its unfinished events, with a limit above Frigate's default page. */
+    @Test
+    fun inProgressEventsAreAskedForByCameraAndRead() = runTest {
+        var captured: HttpRequestData? = null
+        val api = FrigateClassifierApi(
+            client { req ->
+                captured = req
+                HttpStatusCode.OK to """[{"id":"1789612326.39659-abc123","label":"car","sub_label":"sarahs_tesla","camera":"driveway","start_time":1789612326.39659,"end_time":null,"data":{"box":[0.39,0.25,0.12,0.11]}}]"""
+            },
+        )
+
+        val events = api.getInProgressEvents("http://frigate:8971/", "driveway").getOrThrow()
+
+        val request = captured ?: fail("no request made")
+        assertEquals("/api/events", request.url.encodedPath)
+        assertEquals("driveway", request.url.parameters["cameras"])
+        assertEquals("1", request.url.parameters["in_progress"])
+        assertEquals("50", request.url.parameters["limit"])
+        assertEquals(listOf("1789612326.39659-abc123"), events.map { it.id })
+        assertEquals("sarahs_tesla", events.single().subLabel)
+        assertNull(events.single().endTime)
+    }
+
+    @Test
+    fun aFailedInProgressReadIsAFailure() = runTest {
+        val api = FrigateClassifierApi(client { HttpStatusCode.Unauthorized to "{}" })
+        assertTrue(api.getInProgressEvents("http://frigate:8971", "driveway").isFailure)
+    }
+
+    /** From the real server on 2026-09-16: a parked car whose tracker jumped to another car for a moment. */
+    @Test
+    fun anEventsPositionAtAMomentIsTheLastPathPointBeforeIt() {
+        val data = Json { ignoreUnknownKeys = true }.decodeFromString(
+            FrigateEventData.serializer(),
+            """{"box":[0.390625,0.25833,0.125,0.11389],"path_data":[[[0.4547,0.375],1789612330.591865],[[0.4562,0.375],1789612330.784124],[[0.5125,0.325],1789612990.373736],[[0.4547,0.375],1789612990.591818]]}""",
+        )
+        assertEquals(MaskPoint(0.4562, 0.375), data.bottomCentreAt(1789612658.45132))
+        assertEquals(MaskPoint(0.5125, 0.325), data.bottomCentreAt(1789612990.45))
+        assertEquals(MaskPoint(0.4547, 0.375), data.bottomCentreAt(1789612000.0), "before the path starts, its first point")
+
+        val noPath = Json { ignoreUnknownKeys = true }.decodeFromString(FrigateEventData.serializer(), """{"box":[0.25,0.5,0.5,0.25]}""")
+        assertEquals(MaskPoint(0.5, 0.75), noPath.bottomCentreAt(1.0), "without a path, the best frame's bottom-centre")
     }
 
     @Test
