@@ -29,6 +29,9 @@ actual fun createCameraDao(context: PlatformContext): CameraDao =
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     appDatabase.settingsDao()
 
+actual fun createMomentsDao(context: PlatformContext): MomentsDao =
+    appDatabase.momentsDao()
+
 @OptIn(ExperimentalForeignApi::class)
 private fun documentDirectory(): String {
     val documentDirectory = NSFileManager.defaultManager.URLForDirectory(

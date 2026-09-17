@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
+import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
@@ -15,6 +16,7 @@ import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
+import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -120,6 +122,11 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideSettingsDao(platformContext: PlatformContext): SettingsDao =
         createSettingsDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideMomentsDao(platformContext: PlatformContext): MomentsDao =
+        createMomentsDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides
