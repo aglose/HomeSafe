@@ -63,8 +63,10 @@ data class LiveLabelingUiState(
  *
  * Nothing polls on its own. The screen calls [refresh] on a timer while it's started, which keeps
  * a backgrounded app off the server and keeps tests free of a flow that never completes. Each
- * refresh is one cheap request when the camera tracks nothing a classifier runs on; the datasets,
- * which cost several, are read only when it does.
+ * refresh is one cheap request when the camera tracks nothing a classifier runs on. The datasets
+ * cost several (queue, events, timeline), and a parked car stays tracked for hours, so they're
+ * re-read only when the cars in view change, or every [DATASET_REREAD_EVERY] refreshes to pick
+ * up a crop Frigate saved since.
  */
 @AssistedInject
 class LiveLabelingViewModel(
@@ -99,6 +101,11 @@ class LiveLabelingViewModel(
 
     private var noticeJob: Job? = null
 
+    /** The datasets last read, by model, and which tracked objects they were read for. */
+    private var datasets: Map<String, ClassifierDataset> = emptyMap()
+    private var datasetsReadFor: Set<String> = emptySet()
+    private var refreshesSinceDatasetRead = 0
+
     /**
      * Re-reads what the camera is tracking and the crops that would label it. A failed read keeps
      * the cards already shown rather than flashing the section away over one dropped request.
@@ -111,8 +118,18 @@ class LiveLabelingViewModel(
         } else {
             classifierModels()?.filter { model -> model.enabled && model.objects.any { it in labels } } ?: return
         }
+        val relevantIds = tracked.filter { obj -> relevant.any { obj.label in it.objects } }.mapTo(HashSet()) { it.eventId }
+        refreshesSinceDatasetRead++
+        val stale = relevantIds != datasetsReadFor ||
+            refreshesSinceDatasetRead >= DATASET_REREAD_EVERY ||
+            relevant.any { it.name !in datasets }
+        if (stale) {
+            datasets = relevant.associate { model -> model.name to getClassifierDatasetUseCase(model.name).getOrElse { return } }
+            datasetsReadFor = relevantIds
+            refreshesSinceDatasetRead = 0
+        }
         val cards = relevant.flatMap { model ->
-            val dataset = getClassifierDatasetUseCase(model.name).getOrElse { return }
+            val dataset = datasets.getValue(model.name)
             // Walks the whole queue, so it's read once per model rather than once per card.
             val categories = dataset.categories
             dataset.liveCandidates(tracked).map { candidate ->
@@ -167,5 +184,8 @@ class LiveLabelingViewModel(
     companion object {
         /** How long "Filed as ..." stays up: long enough to read, short enough not to linger over the next car. */
         const val NOTICE_MS = 4_000L
+
+        /** At the screen's ten-second poll, a steady scene re-reads the datasets every half minute. */
+        const val DATASET_REREAD_EVERY = 3
     }
 }

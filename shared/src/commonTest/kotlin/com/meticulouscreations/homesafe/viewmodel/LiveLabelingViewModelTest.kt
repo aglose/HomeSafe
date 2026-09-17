@@ -139,7 +139,31 @@ class LiveLabelingViewModelTest {
         assertEquals(listOf("sarahs_tesla", "none"), card.categories)
         assertEquals("http://frigate/clips/known_cars/train/${arrivingCrop.fileName}", card.imageUrl)
         assertEquals(1, repo.modelReads, "the models are read once for the visit")
-        assertEquals(2, repo.datasetReads, "the queue is re-read on every refresh while a car is in view")
+        assertEquals(1, repo.datasetReads, "the same cars in view don't re-read the queue")
+    }
+
+    /** A parked car stays tracked for hours; the datasets are several requests each. */
+    @Test
+    fun theQueueIsReReadWhenTheCarsChangeOrEveryFewRefreshes() = runTest(dispatcher) {
+        val repo = FakeClassifiers(tracked = listOf(parkedNeighbour), dataset = dataset)
+        val vm = viewModel(repo)
+
+        vm.refresh()
+        assertEquals(1, repo.datasetReads)
+
+        repo.tracked = listOf(parkedNeighbour, arriving)
+        vm.refresh()
+        assertEquals(2, repo.datasetReads, "a car pulled in")
+        assertEquals(2, vm.uiState.value.cards.size)
+
+        repeat(LiveLabelingViewModel.DATASET_REREAD_EVERY - 1) { vm.refresh() }
+        assertEquals(2, repo.datasetReads, "nothing changed")
+        vm.refresh()
+        assertEquals(3, repo.datasetReads, "but a crop saved since still turns up")
+
+        repo.tracked = listOf(parkedNeighbour)
+        vm.refresh()
+        assertEquals(listOf(parkedCrop), vm.uiState.value.cards.map { it.candidate.crop }, "a car that left goes at once")
     }
 
     @Test
