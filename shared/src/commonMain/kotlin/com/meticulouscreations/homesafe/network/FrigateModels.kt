@@ -227,6 +227,24 @@ data class FrigateEventData(
         if (b.size < 4) return emptyList()
         return listOf(MaskPoint(b[0] + b[2] / 2, b[1] + b[3]))
     }
+
+    /**
+     * Where the object's bottom-centre was at [epochSeconds]: the last path point recorded at or
+     * before then (Frigate only adds one when the object moves, so the last one still holds), the
+     * first when the moment predates the path, and the best frame's when there's no path at all.
+     */
+    fun bottomCentreAt(epochSeconds: Double): MaskPoint? {
+        val timed = pathData.orEmpty().mapNotNull { sample ->
+            val entry = sample as? JsonArray ?: return@mapNotNull null
+            val point = entry.firstOrNull() as? JsonArray ?: return@mapNotNull null
+            val x = (point.getOrNull(0) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val y = (point.getOrNull(1) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            val time = (entry.getOrNull(1) as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return@mapNotNull null
+            time to MaskPoint(x, y)
+        }.sortedBy { it.first }
+        if (timed.isNotEmpty()) return (timed.lastOrNull { it.first <= epochSeconds } ?: timed.first()).second
+        return bottomCentrePath().firstOrNull()
+    }
 }
 
 /** One recorded clip as reported by Frigate's `/api/{camera}/recordings`. */

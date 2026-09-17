@@ -36,18 +36,29 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
+import com.meticulouscreations.homesafe.domain.model.CropBox
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.ui.formatClockTime
@@ -300,7 +311,22 @@ private fun CropCard(
                 contentAlignment = Alignment.Center,
             ) {
                 if (imageUrl != null) {
-                    AsyncImage(model = imageUrl, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                    // The crop's own pixel size, which is what places the object inside it; null until it loads.
+                    var imageSize by remember(imageUrl) { mutableStateOf<IntSize?>(null) }
+                    val box = imageSize?.let { crop.subject?.boxInCrop(it.width, it.height) }
+                    AsyncImage(
+                        model = imageUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        onSuccess = { imageSize = IntSize(it.result.image.width, it.result.image.height) },
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .drawWithContent {
+                                drawContent()
+                                val loaded = imageSize
+                                if (box != null && loaded != null) drawSubjectFrame(box, loaded)
+                            },
+                    )
                 }
                 if (busy) CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
             }
@@ -381,5 +407,29 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit) {
 private fun categoryDisplayName(category: String): String =
     if (category == ClassifierDataset.NONE_CATEGORY) "Not ours" else subLabelDisplayName(category)
 
-@Suppress("unused")
-private val unusedColor: Color = Color.Unspecified
+/** Red, not the theme's error colour: it has to stand out against any car in any light. */
+private val SubjectFrameColor = Color(0xFFFF3B30)
+
+/**
+ * Outlines the object a crop was cut around, so a crop of two overlapping cars says which one it's
+ * asking about: solid when it's the box of that very frame, dashed when it's an estimate (see
+ * [com.meticulouscreations.homesafe.domain.model.CropSubject.boxInCrop]). [box] is in fractions of
+ * the image, which is fitted into the tile; the object's long edge runs the full width of its crop,
+ * so the outline is pulled in by half its stroke to stay on screen.
+ */
+private fun DrawScope.drawSubjectFrame(box: CropBox, image: IntSize) {
+    val scale = minOf(size.width / image.width, size.height / image.height)
+    val width = image.width * scale
+    val height = image.height * scale
+    val originX = (size.width - width) / 2
+    val originY = (size.height - height) / 2
+    val stroke = 2.dp.toPx()
+    val inset = stroke / 2
+    val left = (originX + box.left.toFloat() * width).coerceAtLeast(originX + inset)
+    val top = (originY + box.top.toFloat() * height).coerceAtLeast(originY + inset)
+    val right = (originX + box.right.toFloat() * width).coerceAtMost(originX + width - inset)
+    val bottom = (originY + box.bottom.toFloat() * height).coerceAtMost(originY + height - inset)
+    if (right <= left || bottom <= top) return
+    val dashes = if (box.exact) null else PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
+    drawRect(color = SubjectFrameColor, topLeft = Offset(left, top), size = Size(right - left, bottom - top), style = Stroke(width = stroke, pathEffect = dashes))
+}
