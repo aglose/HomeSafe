@@ -73,10 +73,12 @@ class HomeViewModel(
 ) : ViewModel() {
 
     /**
-     * The vehicles standing in view of a camera right now — "Sarah's Tesla · Driveway · since
-     * 8:12 AM" — so opening the app answers whether a car is home without reading the feed for
-     * it. Empty while disconnected, and empty when nothing is parked anywhere: the strip is then
-     * not drawn at all rather than announcing that the driveway is empty.
+     * The household's cars standing in view of a camera right now — "Sarah's Tesla · Driveway ·
+     * since 8:12 AM" — so opening the app answers whether a car is home without reading the feed
+     * for it. Opens on what the device last knew and is corrected by the first poll, so it reads
+     * the same whether the server has answered yet or not. Empty while signed out, and empty when
+     * none of them is parked anywhere: the strip is then not drawn at all rather than announcing
+     * that the driveway is empty.
      *
      * Collecting it is what starts the poll behind it, so it runs only while the Home tab is up.
      */

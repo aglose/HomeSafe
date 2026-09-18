@@ -7,9 +7,11 @@ import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
 /**
- * What the home screen's "In view now" strip is built from: the vehicles the cameras can see
- * sitting where they were left — is Sarah's Tesla in the driveway, is there a car in front of the
- * house that shouldn't be — answered at a glance instead of by reading the Moments feed backwards.
+ * What the home screen's "In view now" strip is built from: the household's cars the cameras can
+ * see sitting where they were left — is Sarah's Tesla in the driveway — answered at a glance
+ * instead of by reading the Moments feed backwards. Only cars the classifier has put a name to:
+ * a stranger's car parked out front is a moment for the feed, not furniture for the strip, and
+ * a card that can only say "Car" tells the reader nothing they didn't know.
  *
  * This is the other half of [mergeVehicleVisits], and deliberately not the same list. The feed
  * asks "what happened?", so a vehicle that only ever sat there is no moment at all and gets
@@ -20,9 +22,11 @@ import kotlin.time.Instant
  *
  * A stay is reported when its *latest* sighting is [isStill]: a car on its way in or out is
  * moving, so it stops being furniture for as long as it is driving, and comes back the moment it
- * is re-detected parked. And it is only claimed to be in view while Frigate keeps seeing it —
+ * is re-detected parked. It is only claimed to be in view while Frigate keeps seeing it —
  * [AT_REST_SECONDS] since the last sighting ended, or an event still in progress. Beyond that the
- * app has no evidence either way and says nothing rather than something stale.
+ * app has no evidence either way and says nothing rather than something stale. And it is only
+ * reported at all when some sighting in the stay was recognized: the classifier names a car on
+ * some frames and misses it on others, so the stay is judged as a whole, not sighting by sighting.
  */
 object StationaryObjects {
     /**
@@ -50,7 +54,11 @@ data class StationaryObject(
     val cameraName: String,
     /** Frigate's object label, e.g. "car", "truck". */
     val label: String,
-    /** The classifier's name for it ("sarahs_tesla"), or null for a car it doesn't know. */
+    /**
+     * The classifier's name for it ("sarahs_tesla"). Never null or the unknown guess on the way
+     * out of [stationaryObjects], which drops the stays nobody named; nullable because the type
+     * is also what a single unrecognized sighting folds into on the way there.
+     */
     val subLabel: String?,
     /** Where it is, in the order it got there; the last is where it ended up. */
     val zones: List<String>,
@@ -79,7 +87,7 @@ data class StationaryObject(
 
 /** How a [StationaryObject] reads on its card. Derived, like [MomentPresentation], never stored. */
 data class StationaryObjectPresentation(
-    /** "Sarah's Tesla", or just "Car" for one the classifier doesn't know. */
+    /** "Sarah's Tesla". Falls back to the Frigate label ("Car") only for a subject built outside [stationaryObjects]. */
     val title: String,
     /** "Driveway" — where it is; the camera's name when it is in no zone. */
     val placeLabel: String,
@@ -148,6 +156,8 @@ fun List<MomentEvent>.stationaryObjects(
     }
     return stays
         .filter { it.isAtRest(nowEpochSeconds) }
+        // Judged on the whole stay: one recognized sighting names the car for the frames that missed it.
+        .filter { it.named != null }
         .map { it.toStationaryObject(nowEpochSeconds, oldestFetchedEpochSeconds) }
         .sortedByDescending { it.firstSeenEpochSeconds }
 }

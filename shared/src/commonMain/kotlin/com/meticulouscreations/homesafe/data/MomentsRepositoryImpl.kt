@@ -214,8 +214,15 @@ class MomentsRepositoryImpl(
      * detections can run out well inside that window, and a card shouldn't claim an arrival time
      * it only inferred from where the page happened to stop.
      *
-     * Deliberately not served from the cache: this answers "what is standing in the yard right
-     * now", and a car the app saw an hour ago is no evidence that it is still there.
+     * Like the feed, it opens on the cache and files what it fetches there: the strip paints with
+     * the cars the device last knew about while the first poll is still on its way to the server,
+     * and keeps showing them for as long as the server can't be reached. The cache is only ever a
+     * stand-in for an answer the server hasn't given yet — every poll that lands replaces it
+     * wholesale, and the clock runs against the cached sightings just as it does against fetched
+     * ones, so a car unseen for [com.meticulouscreations.homesafe.domain.model.StationaryObjects.AT_REST_SECONDS]
+     * drops off whether the server is answering or not. The one thing the cache can't know is
+     * that a sighting still in progress when it was written has since ended: that car reads as in
+     * view until the first fetch corrects it, which is seconds away once connected.
      */
     override fun observeStationaryObjects(): Flow<List<StationaryObject>> = channelFlow {
         server.collectLatest { server ->
@@ -223,24 +230,48 @@ class MomentsRepositoryImpl(
                 send(emptyList())
                 return@collectLatest
             }
+            cachedStationaryObjects(server.identity).takeIf { it.isNotEmpty() }?.let { send(it) }
             while (true) {
                 loadZones(server.url, force = false)
                 val now = clock.now().toEpochMilliseconds() / 1000.0
                 val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-                apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
-                    val zones = stateLock.withLock { zonesByCamera }
-                    // Full pages stop where the server ran the limit out, not where the window ends.
-                    val oldestFetched = if (events.size >= PAGE_SIZE) {
-                        events.minOfOrNull { it.startTime } ?: lookbackStart
-                    } else {
-                        lookbackStart
+                apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart)
+                    .onSuccess { events ->
+                        val zones = stateLock.withLock { zonesByCamera }
+                        // Full pages stop where the server ran the limit out, not where the window ends.
+                        val oldestFetched = if (events.size >= PAGE_SIZE) {
+                            events.minOfOrNull { it.startTime } ?: lookbackStart
+                        } else {
+                            lookbackStart
+                        }
+                        // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
+                        val placed = events.map { it.toDomain() }.inZones(zones)
+                        send(placed.stationaryObjects(now, oldestFetched))
+                        // The same slice the live feed files — the newest detections across every camera — so the
+                        // two share one cache rather than fighting over it.
+                        cache(server.identity, camera = null, placed, from = events.minOfOrNull { it.startTime }, to = null)
                     }
-                    // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
-                    send(events.map { it.toDomain() }.inZones(zones).stationaryObjects(now, oldestFetched))
-                }
+                    // Unreachable: the cache stands in, re-aged against the clock so a car stops being claimed on time.
+                    .onFailure { send(cachedStationaryObjects(server.identity)) }
                 delay(POLL_INTERVAL_MS)
             }
         }
+    }
+
+    /**
+     * The in-view strip out of the cache: this server's cached detections back to the lookback
+     * window, folded exactly as a fetched page would be. How far the cache reaches is its oldest
+     * row — it is a few pages of the feed, not necessarily twelve hours — so a stay that starts
+     * at its edge says where the car is without claiming since when, the same courtesy a full
+     * page from the server gets.
+     */
+    private suspend fun cachedStationaryObjects(identity: String): List<StationaryObject> {
+        val now = clock.now().toEpochMilliseconds() / 1000.0
+        val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
+        val page = cachedPage(identity, before = null, camera = null, limit = PAGE_SIZE)
+        // A cache whose oldest row is older than the window covers the whole window; one that stops inside it stops there.
+        val reach = maxOf(page.minOfOrNull { it.startEpochSeconds } ?: lookbackStart, lookbackStart)
+        return page.filter { it.startEpochSeconds >= lookbackStart }.stationaryObjects(now, reach)
     }
 
     override suspend fun loadOlder() {
