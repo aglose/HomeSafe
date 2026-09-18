@@ -91,6 +91,8 @@ class ConnectionRepositoryImplTest {
             requests += host to path
             if (host == localHost && !localReachable) error("No route to host")
             if (host == tailscaleHost && !tailscaleReachable) error("Connection timed out")
+            // The compiled-in LAN address is some other house's: nothing answers there.
+            if (host != localHost && host != tailscaleHost) error("No route to host")
             if (httpsRejected && request.url.protocol.name == "https") error("Unable to parse TLS packet header")
             val token = request.headers[HttpHeaders.Cookie]?.substringAfter("frigate_token=", "")?.substringBefore(';')?.takeIf { it.isNotEmpty() }
             val authenticated = token != null && token in issuedTokens && !(host == localHost && rogueLocalHost)
@@ -204,10 +206,14 @@ class ConnectionRepositoryImplTest {
         h.network.changes.tryEmit(Unit)
     }
 
-    private inner class Harness(scope: TestScope, val biometrics: BiometricCredentialStore = NoBiometrics) {
+    private inner class Harness(
+        scope: TestScope,
+        val biometrics: BiometricCredentialStore = NoBiometrics,
+        /** Shared between two harnesses to stand in for what a previous launch left on the device. */
+        val cameraDao: InMemoryCameraDao = InMemoryCameraDao(),
+    ) {
         val frigate = FakeFrigate(tailscaleHost, localHost)
         val network = FakeNetworkMonitor()
-        val cameraDao = InMemoryCameraDao()
         val historyDao = InMemoryConnectionHistoryDao()
         val clock = FakeClock()
         val cookieStorage = AcceptAllCookiesStorage()
@@ -531,6 +537,51 @@ class ConnectionRepositoryImplTest {
         assertTrue(result.isFailure)
         assertFalse(result.exceptionOrNull() is StaleBiometricCredentialsException)
         // A 500 says nothing about the password; forgetting it would only add a retype.
+        assertTrue(h.biometrics.hasSavedCredentials())
+    }
+
+    @Test
+    fun aSavedLoginOpensOnWhatTheDeviceKeptWhileTheServerIsStillBooting() = runTest {
+        // An earlier launch signed in and cached the cameras.
+        val kept = InMemoryCameraDao()
+        Harness(this, cameraDao = kept).repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+
+        // Opened again after a power cut: the server is rebooting and nothing answers on either address.
+        val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "pw", localUrl)), cameraDao = kept)
+        h.frigate.tailscaleReachable = false
+        h.frigate.localReachable = false
+        val result = h.repository.signInWithBiometrics()
+        advanceUntilIdle()
+
+        // In, on the last known server, with what the device kept — not stuck on a sign-in error.
+        assertEquals("andrew", result.getOrThrow().username)
+        assertEquals(serverUrl, h.repository.activeConnection.value?.activeUrl)
+        assertEquals(0, h.frigate.logins(localHost), "the password went nowhere it isn't allowed to")
+        assertTrue(h.biometrics.hasSavedCredentials())
+        val loginsWhileDown = h.frigate.logins(tailscaleHost)
+
+        // The server comes up: the session is minted behind the screens, with no prompt.
+        h.frigate.tailscaleReachable = true
+        h.frigate.localReachable = true
+        eventually("a login once the server answers") { h.frigate.logins(tailscaleHost) > loginsWhileDown }
+        eventually("a working session on the address in use") { h.apiClient.sessionCookieHeader(serverUrl) != null }
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+        assertEquals(0, h.frigate.logins(localHost))
+    }
+
+    @Test
+    fun aSavedLoginForAServerTheDeviceHasNeverShownStillNeedsTheServer() = runTest {
+        val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "pw", localUrl)))
+        h.frigate.tailscaleReachable = false
+        h.frigate.localReachable = false
+
+        val result = h.repository.signInWithBiometrics()
+        advanceUntilIdle()
+
+        // Nothing cached means nothing to open on; and nothing answered, so nothing is known about the password.
+        assertTrue(result.isFailure)
+        assertNull(h.repository.activeConnection.value)
         assertTrue(h.biometrics.hasSavedCredentials())
     }
 
