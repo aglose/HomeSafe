@@ -63,6 +63,13 @@ import kotlin.time.ExperimentalTime
  *
  * The polling loop lives in [observeMoments] (not in `init`) so it only runs while something is
  * actually looking at the feed — a background tab shouldn't keep hitting the server.
+ *
+ * **A server that doesn't answer is asked again soon, not next poll.** The cache means the feed
+ * has something to show meanwhile, but what it shows is only as fresh as the last answer, and
+ * the usual reason for no answer — the server still booting, the VPN still coming up when the
+ * app is opened after a long idle — clears in seconds. So a failed fetch is retried after
+ * [RETRY_INTERVAL_MS], doubling up to [POLL_INTERVAL_MS] ([nextPollDelayMs]), and a window into
+ * the past that couldn't be fetched keeps asking too, instead of settling for the cache.
  */
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -140,14 +147,17 @@ class MomentsRepositoryImpl(
             // loaded and only refreshes the top; a new server or a moved window opens on the cache.
             if (stateLock.withLock { loadedFor } != server.identity to window) openOnCache(server.identity, window)
             var polls = 0
+            var failures = 0
             while (true) {
-                fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
+                val fetched = fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
                 polls++
+                failures = if (fetched) 0 else failures + 1
                 send(Unit)
                 fillShortFeed(server.identity, window)
-                // A window into the past doesn't change under us; only the live feed is worth re-asking for.
-                if (window.before != null) return@collectLatest
-                delay(POLL_INTERVAL_MS)
+                // A window into the past doesn't change under us; once it has been fetched, only
+                // the live feed is worth re-asking for.
+                if (window.before != null && fetched) return@collectLatest
+                delay(nextPollDelayMs(failures))
             }
         }
     }.shareIn(appScope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000))
@@ -191,16 +201,18 @@ class MomentsRepositoryImpl(
             cachedPage(server.identity, before = null, camera = cameraName, limit = rawEvents)
                 .takeIf { it.isNotEmpty() }
                 ?.let { send(it.mergeVehicleVisits().take(limit)) }
+            var failures = 0
             while (true) {
                 loadZones(server.url, force = false)
                 // More than [limit] raw: zones drop some detections and folding merges others.
-                apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
+                val fetched = apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
                     val placed = events.map { it.toDomain() }.inZones(zones)
                     send(placed.mergeVehicleVisits().take(limit))
                     cache(server.identity, cameraName, placed, from = events.minOfOrNull { it.startTime }, to = null)
-                }
-                delay(POLL_INTERVAL_MS)
+                }.isSuccess
+                failures = if (fetched) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
             }
         }
     }
@@ -223,11 +235,12 @@ class MomentsRepositoryImpl(
                 send(emptyList())
                 return@collectLatest
             }
+            var failures = 0
             while (true) {
                 loadZones(server.url, force = false)
                 val now = clock.now().toEpochMilliseconds() / 1000.0
                 val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-                apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
+                val fetched = apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
                     // Full pages stop where the server ran the limit out, not where the window ends.
                     val oldestFetched = if (events.size >= PAGE_SIZE) {
@@ -237,8 +250,9 @@ class MomentsRepositoryImpl(
                     }
                     // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
                     send(events.map { it.toDomain() }.inZones(zones).stationaryObjects(now, oldestFetched))
-                }
-                delay(POLL_INTERVAL_MS)
+                }.isSuccess
+                failures = if (fetched) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
             }
         }
     }
@@ -369,9 +383,10 @@ class MomentsRepositoryImpl(
         }
     }
 
-    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean) {
+    /** Replaces the head with the server's newest page. False when the server didn't answer (the feed keeps what it has). */
+    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean): Boolean {
         loadZones(server.url, force = includeZones)
-        apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
+        return apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .onSuccess { events ->
                 val page = events.map { it.toDomain() }
                 val placed: List<MomentEvent>? = stateLock.withLock {
@@ -391,7 +406,21 @@ class MomentsRepositoryImpl(
                 }
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }
+            .isSuccess
     }
+
+    /**
+     * How long a poll loop waits before asking again: the poll interval after an answer; after
+     * [consecutiveFailures] without one, [RETRY_INTERVAL_MS] doubling each time until it is the
+     * poll interval again, so a server that is nearly up is caught within seconds and one that
+     * is down for the evening isn't hammered.
+     */
+    private fun nextPollDelayMs(consecutiveFailures: Int): Long =
+        if (consecutiveFailures == 0) {
+            POLL_INTERVAL_MS
+        } else {
+            minOf(POLL_INTERVAL_MS, RETRY_INTERVAL_MS shl minOf(consecutiveFailures - 1, RETRY_MAX_DOUBLINGS))
+        }
 
     /** [MomentsDao.page] as moments. A cache that can't be read is an empty one: it must never be why the feed fails. */
     private suspend fun cachedPage(identity: String, before: Double?, camera: String?, limit: Int): List<MomentEvent> =
@@ -449,6 +478,12 @@ class MomentsRepositoryImpl(
 
     private companion object {
         const val POLL_INTERVAL_MS = 30_000L
+
+        /** The first retry after a fetch the server didn't answer; see [nextPollDelayMs]. */
+        const val RETRY_INTERVAL_MS = 5_000L
+
+        /** Enough doublings of [RETRY_INTERVAL_MS] to reach [POLL_INTERVAL_MS]; also keeps the shift from overflowing. */
+        const val RETRY_MAX_DOUBLINGS = 3
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
 
