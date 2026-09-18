@@ -546,6 +546,83 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun theInViewStripOpensOnTheCarsTheDeviceKept() = runTest {
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        val first = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        var firstInView = emptyList<StationaryObject>()
+        backgroundScope.launch { first.repo.observeStationaryObjects().collect { firstInView = it } }
+        eventually("the first launch's strip") { firstInView.isNotEmpty() }
+        eventually("the sightings to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 4 }
+
+        // Launched again with the server out of reach: the Tesla is still on the strip, from the
+        // sightings the last launch filed, rather than the blank the strip used to be until a poll landed.
+        val relaunch = Harness(this, failEvents = true, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        var inView = emptyList<StationaryObject>()
+        backgroundScope.launch { relaunch.repo.observeStationaryObjects().collect { inView = it } }
+        eventually("the strip the device kept") { inView.isNotEmpty() }
+
+        val tesla = inView.single()
+        assertEquals("third", tesla.thumbnailEventId)
+        assertEquals("sarahs_tesla", tesla.subLabel)
+        assertEquals(3, tesla.sightings, "folded off the cache exactly as off the server")
+        assertEquals(true, tesla.seenRecently, "the cache can't know an in-progress sighting has since ended; the first fetch will")
+        assertEquals(false, tesla.sinceIsKnown, "the stay starts at the cache's oldest row: the device may not have watched it arrive")
+    }
+
+    @Test
+    fun theServerReplacesWhatTheCacheShowed() = runTest {
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        // What a previous launch left behind: a neighbour's car Frigate has since purged, still in progress as far as the device knows.
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "stale", cameraName = "hikvision_1", label = "car", subLabel = "ron_judys_mercedes",
+                    startEpochSeconds = 1_788_800_000.0, endEpochSeconds = null, topScore = 0.8, hasClip = true, hasSnapshot = false,
+                    zones = "", pathPoints = "0.3,0.7;0.31,0.7", boxX = 0.2, boxY = 0.6, boxW = 0.2, boxH = 0.2, subLabelScore = 0.9,
+                ),
+            ),
+        )
+        val h = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+
+        // Every list the strip has shown, by name, so the order the cache and the server arrived in is on record.
+        val shown = MutableStateFlow<List<List<String?>>>(emptyList())
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect { list -> shown.update { it + listOf(list.map { s -> s.subLabel }) } } }
+        eventually("the server's answer") { shown.value.lastOrNull() == listOf("sarahs_tesla") }
+
+        assertEquals(listOf("ron_judys_mercedes"), shown.value.first(), "the cache painted first, before the fetch was answered")
+        eventually("the purged car to leave the cache") { kept.page(SERVER_URL, null, null, limit = 10).none { it.id == "stale" } }
+    }
+
+    @Test
+    fun aStaleCarBeforeTheOldestFetchedSightingIsStillPruned() = runTest {
+        // A short page: the server answers with fewer than PAGE_SIZE, so its own oldest sighting
+        // ("first", starting 1788786387.8) is well inside the 12h window the app actually asked
+        // for — the fetch answered for the whole window back to lookbackStart, not merely back to
+        // the sighting it happened to return.
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        // Parked hours before any sighting the fetch returns, but still inside the lookback window:
+        // exactly the gap a prune keyed on the raw oldest event would leave untouched.
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "gone", cameraName = "hikvision_1", label = "car", subLabel = "old_neighbour_car",
+                    startEpochSeconds = 1_788_770_000.0, endEpochSeconds = 1_788_770_100.0, topScore = 0.8, hasClip = true, hasSnapshot = false,
+                    zones = "", pathPoints = "0.3,0.7;0.31,0.7", boxX = 0.2, boxY = 0.6, boxW = 0.2, boxH = 0.2, subLabelScore = 0.9,
+                ),
+            ),
+        )
+        val h = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect {} }
+
+        eventually("the gap car to be pruned by the server's answer") {
+            kept.page(SERVER_URL, null, null, limit = 10).none { it.id == "gone" }
+        }
+    }
+
+    @Test
     fun aNewLaunchOpensOnTheMomentsTheDeviceKept() = runTest {
         Harness.events = eventsJson
         val kept = InMemoryMomentsDao()

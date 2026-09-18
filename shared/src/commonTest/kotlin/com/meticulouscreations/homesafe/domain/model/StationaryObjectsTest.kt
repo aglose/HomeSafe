@@ -10,8 +10,9 @@ import kotlin.test.assertTrue
 /**
  * The home screen's "In view now" strip, which answers a different question from the Moments feed
  * and therefore keeps what the feed throws away: the car that has only ever been seen sitting in
- * the driveway. Fixtures are the Front Yard shapes [VehicleVisitsTest] uses — a parked car's
- * jitter around one spot, and a car crossing the frame.
+ * the driveway — provided the classifier knows whose it is. Fixtures are the Front Yard shapes
+ * [VehicleVisitsTest] uses — a parked car's jitter around one spot, and a car crossing the frame —
+ * and every sighting is Sarah's Tesla unless a test says otherwise.
  */
 class StationaryObjectsTest {
 
@@ -33,8 +34,8 @@ class StationaryObjectsTest {
         end: Double? = start + 60,
         label: String = "car",
         camera: String = "hikvision_1",
-        subLabel: String? = null,
-        subLabelScore: Double? = null,
+        subLabel: String? = "sarahs_tesla",
+        subLabelScore: Double? = 0.8,
         box: DetectionBox? = driveway,
         path: List<Pair<Double, Double>> = parkedPath,
         zones: List<String> = listOf("driveway"),
@@ -110,7 +111,7 @@ class StationaryObjectsTest {
         val stay = listOf(
             sighting("s1", at(8, 0), subLabel = "sarahs_tesla", subLabelScore = 0.62),
             sighting("s2", at(8, 10), subLabel = "ron_judys_mercedes", subLabelScore = 0.91),
-            sighting("s3", at(8, 20)),
+            sighting("s3", at(8, 20), subLabel = null, subLabelScore = null),
         ).stationaryObjects(nowEpochSeconds = at(8, 25))
 
         assertEquals("ron_judys_mercedes", stay.single().subLabel, "the classifier flips between similar cars; the surest sighting names the card")
@@ -166,14 +167,42 @@ class StationaryObjectsTest {
     }
 
     @Test
-    fun anUnknownCarIsNamedByItsLabelAndPlacedByItsCameraWhenItIsInNoZone() {
+    fun aCarNobodyNamedIsNotFurniture() {
+        // Parked all morning, but a stranger's — or one the classifier looked at and shrugged.
+        val unnamed = listOf(
+            sighting("u1", at(8, 0), subLabel = null, subLabelScore = null),
+            sighting("u2", at(8, 15), subLabel = null, subLabelScore = null),
+        )
+        val shrugged = listOf(sighting("n1", at(8, 5), subLabel = FaceLibrary.UNKNOWN_GUESS, subLabelScore = 0.99))
+
+        assertEquals(emptyList(), unnamed.stationaryObjects(nowEpochSeconds = at(8, 20)), "a card that can only say \"Car\" says nothing")
+        assertEquals(emptyList(), shrugged.stationaryObjects(nowEpochSeconds = at(8, 20)), "the classifier's own \"none\" is not a name")
+    }
+
+    @Test
+    fun oneRecognizedSightingNamesTheWholeStay() {
+        // The classifier catches the car on one frame in three: the stay is still Sarah's, start to finish.
+        val stay = listOf(
+            sighting("s1", at(8, 0), subLabel = null, subLabelScore = null),
+            sighting("s2", at(8, 10), subLabel = "sarahs_tesla", subLabelScore = 0.7),
+            sighting("s3", at(8, 20), subLabel = null, subLabelScore = null),
+        ).stationaryObjects(nowEpochSeconds = at(8, 25))
+
+        assertEquals("sarahs_tesla", stay.single().subLabel)
+        assertEquals("s3", stay.single().thumbnailEventId, "the newest crop, even though that frame missed the name")
+        assertEquals(at(8, 0), stay.single().firstSeenEpochSeconds, "anchored to the arrival, which also missed the name")
+        assertEquals(3, stay.single().sightings)
+    }
+
+    @Test
+    fun aKnownCarInNoZoneIsPlacedByItsCamera() {
         val stay = listOf(sighting("s1", at(8, 12), label = "truck", zones = emptyList()))
             .stationaryObjects(nowEpochSeconds = at(8, 15))
             .single()
 
         val presentation = stay.present(today = day, timeZone = utc)
 
-        assertEquals("Truck", presentation.title)
+        assertEquals("Sarah's Tesla", presentation.title, "the name, never the label, on a known car")
         assertEquals("Front Yard", presentation.placeLabel)
     }
 
