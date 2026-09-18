@@ -61,6 +61,15 @@ import kotlin.time.ExperimentalTime
  * cookie is keyed by host in the client's jar, so switching address means copying it across, not
  * signing in again; a switch is silent and the user never sees a prompt. Cameras are cached under
  * the Tailscale URL — the server's identity — so the list doesn't blink when the route flips.
+ *
+ * **Offline.** A saved login is a login the server accepted once already. When the app is opened
+ * again and the server can't be reached at all — the box is still booting after a power cut, the
+ * VPN hasn't come up yet — and this device has connected to that server before, the saved login
+ * opens the app on what the device kept (cameras, moments) rather than on an error, and the
+ * session is minted behind the screens by the same revalidation a long absence runs
+ * ([refreshRoute]), which keeps trying until the server answers. Only a server that answers can
+ * refuse: a password it rejects still ends the saved login on the spot ([signInWithBiometrics]),
+ * and a first sign-in still needs the server. See [resumeOffline].
  */
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -135,18 +144,29 @@ class ConnectionRepositoryImpl(
                 onCredentialsUnlocked()
                 // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
                 // credential saved before this route existed carries none at all.
-                connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
-                    .recoverCatching { error ->
-                        // The server answered and refused the saved password: it has changed
-                        // server-side, and every future biometric attempt would fail the same
-                        // way. Forgetting it here turns the dead end into the normal first-time
-                        // flow — sign in with the password, get offered to save it. A transport
-                        // failure or a server error says nothing about the password, so those
-                        // keep the saved login.
-                        if (error !is CredentialsRejectedException) throw error
+                val attempt = connect(credentials.serverUrl, LOCAL_SERVER_URL, credentials.username, credentials.password)
+                when (val error = attempt.exceptionOrNull()) {
+                    null -> attempt
+
+                    // The server answered and refused the saved password: it has changed
+                    // server-side, and every future biometric attempt would fail the same
+                    // way. Forgetting it here turns the dead end into the normal first-time
+                    // flow — sign in with the password, get offered to save it. A transport
+                    // failure or a server error says nothing about the password, so those
+                    // keep the saved login.
+                    is CredentialsRejectedException -> {
                         biometricCredentialStore.clear()
-                        throw StaleBiometricCredentialsException()
+                        Result.failure(StaleBiometricCredentialsException())
                     }
+
+                    // The server answered, just not well (a 500): it is there, so nothing is
+                    // gained by pretending otherwise. The user sees the error and tries again.
+                    is FrigateResponseException -> attempt
+
+                    // Nothing answered. If this device has been here before, that is not a
+                    // reason to keep the user out of what it kept.
+                    else -> if (resumeOffline(credentials)) Result.success(credentials) else attempt
+                }
             },
             onFailure = { Result.failure(it) },
         )
@@ -289,6 +309,30 @@ class ConnectionRepositoryImpl(
         sessionCredentials = credentials
         _activeConnection.value = connection
         return Result.success(Unit)
+    }
+
+    /**
+     * Opens the app on the saved login without the server: the last known connection goes live
+     * with [credentials] behind it, and [refreshRoute] is started to mint a session the moment
+     * the server answers (it retries on an interval until then). Only for a server this device
+     * has cameras cached for — anything else has nothing to show and needs the server anyway.
+     * The route starts as Tailscale, the address the password is allowed to go to; the
+     * revalidation moves it to the LAN if that is what answers. Returns whether it did so.
+     */
+    private suspend fun resumeOffline(credentials: SavedCredentials): Boolean = signInMutex.withLock {
+        // A sign-in that landed in the meantime is the real thing; don't replace it.
+        if (_activeConnection.value != null) return true
+        if (cameraDao.observeByServer(credentials.serverUrl).first().isEmpty()) return false
+        sessionCredentials = credentials
+        _activeConnection.value = ActiveConnection(
+            serverUrl = credentials.serverUrl,
+            localUrl = LOCAL_SERVER_URL,
+            route = ConnectionRoute.TAILSCALE,
+        )
+        if (revalidationJob?.isActive != true) {
+            revalidationJob = appScope.launch { refreshRoute(verifySession = true) }
+        }
+        true
     }
 
     private suspend fun refreshCameras(connection: ActiveConnection) {

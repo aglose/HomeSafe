@@ -18,6 +18,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -28,7 +29,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -36,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -100,6 +104,9 @@ class MomentsRepositoryImplTest {
         /** Whether the server is answering at all right now; a test can take it away mid-run. */
         var offline: Boolean = failEvents
 
+        /** When set, every request waits on it before anything else happens: a server that accepts connections but is still coming up. */
+        var stalled: CompletableDeferred<Unit>? = null
+
         // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
         // on whatever thread Ktor finished its request on — [eventually] spends real time off the
         // test dispatcher, so that is genuinely another thread — while the test body reads what has
@@ -113,12 +120,14 @@ class MomentsRepositoryImplTest {
         private val _eventQueries = MutableStateFlow<List<String>>(emptyList())
         val eventQueries: List<String> get() = _eventQueries.value
         val engine = MockEngine { req ->
+            stalled?.await()
             _hosts.update { it + req.url.host }
+            // Recorded whether or not the server answers: an ask is an ask.
+            if (req.url.encodedPath.endsWith("/api/events")) _eventQueries.update { it + req.url.encodedQuery }
             when {
                 offline -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
-                    _eventQueries.update { it + req.url.encodedQuery }
                     val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
@@ -243,6 +252,21 @@ class MomentsRepositoryImplTest {
             withContext(Dispatchers.Default) { delay(25) }
         }
         fail("Timed out waiting for $what")
+    }
+
+    /**
+     * Lets exactly [seconds] of virtual time pass, a second at a time, with real time between for
+     * the mock engine's thread to answer whatever that second set off. Unlike [eventually], which
+     * skips ahead to whatever is scheduled next, this is for asserting *when* the repository asks.
+     */
+    private suspend fun TestScope.passVirtual(seconds: Int) {
+        repeat(seconds) {
+            advanceTimeBy(1_000)
+            repeat(3) {
+                runCurrent()
+                withContext(Dispatchers.Default) { delay(10) }
+            }
+        }
     }
 
     @Test
@@ -590,6 +614,70 @@ class MomentsRepositoryImplTest {
             ids.isNotEmpty()
         }
         assertEquals(listOf("1788401800.1-abc", "1788401732.596325-eaak48"), ids)
+    }
+
+    @Test
+    fun aRelaunchAgainstAServerStillBootingShowsWhatTheDeviceKeptWhileItWaits() = runTest {
+        Harness.events = eventsJson
+        val kept = InMemoryMomentsDao()
+        val first = Harness(this, momentsDao = kept)
+        backgroundScope.launch { first.repo.observeMoments().collect {} }
+        eventually("the moments to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 2 }
+
+        // Opened again after a power cut: the server accepts the connection but is still coming
+        // up, so nothing it is asked comes back yet. The feed is what the device kept, at once,
+        // and not an error — nothing has gone wrong, the answer is merely on its way.
+        val relaunch = Harness(this, momentsDao = kept)
+        val serverUp = CompletableDeferred<Unit>()
+        relaunch.stalled = serverUp
+        backgroundScope.launch { relaunch.repo.observeMoments().collect {} }
+        var ids = emptyList<String>()
+        eventually("the feed the device kept") {
+            ids = relaunch.repo.observeMoments().first().map { it.id }
+            ids.isNotEmpty()
+        }
+        assertEquals(listOf("1788401800.1-abc", "1788401732.596325-eaak48"), ids)
+        assertEquals(emptyList(), relaunch.eventQueries, "the server hasn't answered anything yet")
+        assertNull(relaunch.repo.observeError().first(), "waiting is not an error")
+
+        // The server finishes booting, with the night's detections: the fetch that was waiting lands and has the last word.
+        Harness.events = personsJson(1_788_500_000, 3)
+        serverUp.complete(Unit)
+        eventually("the server's feed") { relaunch.repo.observeMoments().first().size == 3 }
+    }
+
+    @Test
+    fun comingBackToAServerThatIsNotAnsweringKeepsTheFeedAndAsksAgainWithinSeconds() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        val watcher = backgroundScope.launch { h.repo.observeMoments().collect {} }
+        eventually("the feed") { h.repo.observeMoments().first().size == 2 }
+
+        // The app goes to the background for the night: nothing is looking, so the poll stops.
+        watcher.cancel()
+        advanceUntilIdle()
+        val asksBeforeReturn = h.eventQueries.size
+
+        // Meanwhile the server was rebooted, and it is still coming up when the app returns.
+        h.offline = true
+        val sizes = MutableStateFlow<List<Int>>(emptyList())
+        backgroundScope.launch { h.repo.observeMoments().collect { list -> sizes.update { it + list.size } } }
+        passVirtual(3)
+        assertTrue(h.eventQueries.size > asksBeforeReturn, "the returning feed asked the server")
+        assertEquals(2, h.repo.observeMoments().first().size, "the feed is what it was, not blank")
+        assertEquals(emptyList(), sizes.value.filter { it == 0 }, "never blank on the way back")
+        assertNotNull(h.repo.observeError().first(), "but it says the server didn't answer")
+
+        // A server that didn't answer is asked again in seconds (5s, then 15s), not a whole poll later.
+        val asksAfterReturn = h.eventQueries.size
+        passVirtual(25)
+        assertTrue(h.eventQueries.size - asksAfterReturn >= 2, "asked again ${h.eventQueries.size - asksAfterReturn} times in 25s")
+
+        // It comes up: the feed catches up with the night's detections on the next retry.
+        Harness.events = personsJson(1_788_500_000, 3)
+        h.offline = false
+        eventually("the feed to catch up") { h.repo.observeMoments().first().size == 3 }
+        assertNull(h.repo.observeError().first())
     }
 
     @Test
