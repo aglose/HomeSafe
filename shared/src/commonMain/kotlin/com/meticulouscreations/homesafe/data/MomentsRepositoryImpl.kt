@@ -261,8 +261,10 @@ class MomentsRepositoryImpl(
                         val placed = events.map { it.toDomain() }.inZones(zones)
                         send(placed.stationaryObjects(now, oldestFetched))
                         // The same slice the live feed files — the newest detections across every camera — so the
-                        // two share one cache rather than fighting over it.
-                        cache(server.identity, camera = null, placed, from = events.minOfOrNull { it.startTime }, to = null)
+                        // two share one cache rather than fighting over it. [oldestFetched], not the raw oldest
+                        // event: a short or empty page still answered for the whole window back to
+                        // [lookbackStart], and a car purged from that gap must be pruned from the cache too.
+                        cache(server.identity, camera = null, placed, from = oldestFetched, to = null)
                     }
                     // Unreachable: the cache stands in, re-aged against the clock so a car stops being claimed on time.
                     .onFailure { send(cachedStationaryObjects(server.identity)) }
