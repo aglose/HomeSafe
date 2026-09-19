@@ -1,7 +1,14 @@
 package com.meticulouscreations.homesafe.ui.components
 
+import androidx.compose.runtime.MonotonicFrameClock
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -77,5 +84,42 @@ class PinchZoomStateTest {
         assertEquals(Offset.Zero, state.offset)
         state.transformBy(zoomChange = 100f, pan = Offset.Zero, centroid = centre)
         assertEquals(PinchZoomState.DEFAULT_MAX_SCALE, state.scale)
+    }
+
+    @Test
+    fun aDragDuringTheZoomAnimationSurvivesIt() = runTest {
+        val state = letterboxed()
+        val job = launch {
+            withContext(FrameClock) { state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, centre) }
+        }
+        // Part way in, the video is wide enough to be dragged 100 left.
+        advanceTimeBy(150)
+        assertTrue(state.scale > 1.5f, "expected to be well into the zoom, was ${state.scale}")
+        state.panBy(Offset(-100f, 0f))
+        advanceUntilIdle()
+        job.join()
+
+        assertEquals(PinchZoomState.DOUBLE_TAP_SCALE, state.scale)
+        // Zooming about the centre targets no offset: all that's left is the drag.
+        assertEquals(-100f, state.offset.x, 0.01f)
+    }
+
+    @Test
+    fun aDragIsBoundedLikeAnyPan() {
+        val state = letterboxed()
+        state.transformBy(zoomChange = 2f, pan = Offset.Zero, centroid = centre)
+        state.panBy(Offset(5000f, 0f))
+        assertEquals(500f, state.offset.x)
+    }
+
+    /** Frames every 16ms of the test's virtual time. */
+    private object FrameClock : MonotonicFrameClock {
+        private var nanos = 0L
+
+        override suspend fun <R> withFrameNanos(onFrame: (frameTimeNanos: Long) -> R): R {
+            delay(16)
+            nanos += 16_000_000L
+            return onFrame(nanos)
+        }
     }
 }

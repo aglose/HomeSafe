@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -40,6 +42,8 @@ import androidx.compose.ui.geometry.lerp
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -145,6 +149,12 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
         zoom.transformBy(zoomChange, pan / frame.scale, centroid)
     }
 
+    /** The finger that held a card open has moved by [pan] (root pixels): drag the picture with it. */
+    fun panFromCard(pan: Offset) {
+        // Through the lift transform, as for a pinch: the picture keeps up with the finger mid-lift.
+        zoom.panBy(pan / liftFrame().scale)
+    }
+
     /** The fingers lifted: a look that ended back at 1x is over. */
     fun pinchEnded() {
         if (target != null && !zoom.isZoomed) close()
@@ -218,6 +228,31 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     private companion object {
         val LIFT_SPEC = tween<Float>(NAV_TRANSITION_MS, easing = NavEnterEasing)
+    }
+}
+
+/**
+ * Lets the finger that long-pressed a card open the quick look carry straight on into panning it,
+ * without lifting. The press keeps its pointer stream on the card (Compose routes a gesture to the
+ * nodes hit at touch-down), so the card forwards the finger's moves to [state]. Only the look for
+ * [cameraName] is dragged, and only moves nothing nearer has consumed — a pinch that opened it
+ * pans on its own.
+ */
+internal fun Modifier.quickLookHeldDrag(state: CameraCardZoomState, cameraName: String): Modifier = pointerInput(state, cameraName) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val finger = event.changes.filter { it.pressed }.singleOrNull()
+            if (finger != null && finger.previousPressed && !finger.isConsumed && state.target?.camera?.name == cameraName) {
+                val delta = finger.positionChange()
+                if (delta != Offset.Zero) {
+                    state.panFromCard(delta)
+                    // Keeps the list under the look from scrolling along.
+                    finger.consume()
+                }
+            }
+        } while (event.changes.any { it.pressed })
     }
 }
 

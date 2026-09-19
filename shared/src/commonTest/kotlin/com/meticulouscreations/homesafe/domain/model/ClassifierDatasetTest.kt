@@ -8,7 +8,8 @@ import kotlin.test.assertTrue
 /**
  * [ClassifierDataset.categories] is what the labelling screen puts under a crop, and it is wider
  * than the server's own category list on purpose — see the property's own note. These pin that
- * width, and that widening it left the training gate alone.
+ * width, and that widening it left the training gate alone. The rest pin how the camera screen's
+ * live section finds a queued crop for each car in view ([ClassifierDataset.liveCandidates]).
  */
 class ClassifierDatasetTest {
 
@@ -83,5 +84,48 @@ class ClassifierDatasetTest {
         val data = dataset(categoryCounts = mapOf("sarahs_tesla" to 0, "none" to 2))
         assertEquals(listOf("sarahs_tesla", "none"), data.categories)
         assertFalse(data.canTrain)
+    }
+
+    /** A crop of event [eventId] taken at [frameEpoch], named the way Frigate names live attempts. */
+    private fun cropOf(eventId: String, frameEpoch: String, guess: String = "none", score: Double = 0.42) =
+        UnlabeledCrop.fromFileName("$eventId-$frameEpoch-$guess-$score.webp")
+
+    @Test
+    fun aTrackedCarIsOfferedWithItsNewestCrop() {
+        val older = cropOf("1788832091.745689-e2bxi0", "1788832092.0")
+        val newest = cropOf("1788832091.745689-e2bxi0", "1788832104.5", guess = "sarahs_tesla", score = 0.71)
+        val car = TrackedObject(eventId = "1788832091.745689-e2bxi0", label = "car", subLabel = null)
+        // Out of order on purpose: the newest is picked by when it was taken, not where it sits.
+        val data = dataset(queue = listOf(older, newest))
+        assertEquals(listOf(LiveCandidate(car, newest)), data.liveCandidates(listOf(car)))
+    }
+
+    @Test
+    fun onlyTrackedObjectsTheModelRunsOnAndHasACropOfAreOffered() {
+        val car = TrackedObject("1788832091.745689-e2bxi0", "car", subLabel = null)
+        val person = TrackedObject("1788832095.985398-hkvbhs", "person", subLabel = null)
+        val carWithoutCrops = TrackedObject("1788832130.376381-6wpol8", "car", subLabel = null)
+        val parkedNamed = TrackedObject("1788830000.000000-parked", "car", subLabel = "sarahs_tesla")
+        val data = dataset(
+            queue = listOf(
+                cropOf(car.eventId, "1788832092.0"),
+                // Were a person's crop ever queued, the model still doesn't run on people.
+                cropOf(person.eventId, "1788832096.0"),
+                cropOf(parkedNamed.eventId, "1788830001.0", guess = "sarahs_tesla", score = 1.0),
+                // A car that has left: its crops stay queued, but it's no longer on camera.
+                cropOf("1788820000.000000-gone00", "1788820001.0"),
+            ),
+        )
+
+        val candidates = data.liveCandidates(listOf(parkedNamed, person, car, carWithoutCrops))
+
+        assertEquals(listOf(parkedNamed.eventId, car.eventId), candidates.map { it.tracked.eventId }, "in the order Frigate tracks them")
+        assertEquals(listOf(true, false), candidates.map { it.isConfident }, "the named car's 100 % crop is folded away")
+    }
+
+    @Test
+    fun historyMinedExamplesNeverMatchATrackedObject() {
+        val car = TrackedObject("1788832091.745689-e2bxi0", "car", subLabel = null)
+        assertTrue(dataset(queue = listOf(UnlabeledCrop.fromFileName("example_001.jpg"))).liveCandidates(listOf(car)).isEmpty())
     }
 }

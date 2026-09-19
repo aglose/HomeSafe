@@ -57,11 +57,13 @@ interface MomentsRepository {
     fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>>
 
     /**
-     * The vehicles parked in view of any camera right now, folded and placed the way
-     * [observeMoments] folds a visit but kept even when the app never saw them arrive — see
-     * [com.meticulouscreations.homesafe.domain.model.stationaryObjects]. Its own poll, from now,
-     * across every camera: the feed's window is wherever the Moments tab last left it. Polls while
-     * collected.
+     * The household's cars parked in view of any camera right now — only the ones the classifier
+     * has named — folded and placed the way [observeMoments] folds a visit but kept even when the
+     * app never saw them arrive — see [com.meticulouscreations.homesafe.domain.model.stationaryObjects].
+     * Its own poll, from now, across every camera: the feed's window is wherever the Moments tab
+     * last left it. Opens on the device's cache of detections like [observeMoments] does, so the
+     * strip has something to show before the server answers and while it can't, then polls while
+     * collected; each answer replaces the cached list wholesale.
      */
     fun observeStationaryObjects(): Flow<List<StationaryObject>>
 

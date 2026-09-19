@@ -18,6 +18,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -28,7 +29,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -36,6 +39,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.test.fail
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -100,6 +104,9 @@ class MomentsRepositoryImplTest {
         /** Whether the server is answering at all right now; a test can take it away mid-run. */
         var offline: Boolean = failEvents
 
+        /** When set, every request waits on it before anything else happens: a server that accepts connections but is still coming up. */
+        var stalled: CompletableDeferred<Unit>? = null
+
         // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
         // on whatever thread Ktor finished its request on — [eventually] spends real time off the
         // test dispatcher, so that is genuinely another thread — while the test body reads what has
@@ -113,12 +120,14 @@ class MomentsRepositoryImplTest {
         private val _eventQueries = MutableStateFlow<List<String>>(emptyList())
         val eventQueries: List<String> get() = _eventQueries.value
         val engine = MockEngine { req ->
+            stalled?.await()
             _hosts.update { it + req.url.host }
+            // Recorded whether or not the server answers: an ask is an ask.
+            if (req.url.encodedPath.endsWith("/api/events")) _eventQueries.update { it + req.url.encodedQuery }
             when {
                 offline -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
-                    _eventQueries.update { it + req.url.encodedQuery }
                     val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
@@ -150,9 +159,22 @@ class MomentsRepositoryImplTest {
     private fun personsJson(newestStart: Long, count: Int): String = personsJson((0 until count).map { newestStart - it })
 
     /** One-person detections at exactly [starts], in the order given — for a page with a hole where one used to be. */
-    private fun personsJson(starts: List<Long>): String = starts.joinToString(",", "[", "]") { start ->
-        """{"id":"e$start","label":"person","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
+    private fun personsJson(starts: List<Long>, camera: String = "hikvision_1"): String = starts.joinToString(",", "[", "]") { start ->
+        """{"id":"e$start","label":"person","sub_label":null,"camera":"$camera","start_time":$start.0,"end_time":${start + 5}.0,
             "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+    }
+
+    /**
+     * [count] cars driving down Front Yard's street, one a second, newest first from [newestStart]:
+     * the evening traffic (2026-09-16) that filled a whole page with detections [configJson]'s
+     * birds-only street rejects. The path is the real street car's from [zonedEventsJson].
+     */
+    private fun streetCarsJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") {
+        val start = newestStart - it
+        """{"id":"car$start","label":"car","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 20}.0,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.71,"top_score":0.78,"box":[0.65,0.27,0.14,0.1],
+                    "path_data":[[[0.6219,0.2861],$start.5],[[0.7734,0.3222],${start + 10}.0],[[0.725,0.3667],${start + 19}.0]]}}"""
     }
 
     private suspend fun MomentsRepositoryImpl.paging() = observePaging().first()
@@ -230,6 +252,21 @@ class MomentsRepositoryImplTest {
             withContext(Dispatchers.Default) { delay(25) }
         }
         fail("Timed out waiting for $what")
+    }
+
+    /**
+     * Lets exactly [seconds] of virtual time pass, a second at a time, with real time between for
+     * the mock engine's thread to answer whatever that second set off. Unlike [eventually], which
+     * skips ahead to whatever is scheduled next, this is for asserting *when* the repository asks.
+     */
+    private suspend fun TestScope.passVirtual(seconds: Int) {
+        repeat(seconds) {
+            advanceTimeBy(1_000)
+            repeat(3) {
+                runCurrent()
+                withContext(Dispatchers.Default) { delay(10) }
+            }
+        }
     }
 
     @Test
@@ -509,6 +546,83 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun theInViewStripOpensOnTheCarsTheDeviceKept() = runTest {
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        val first = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        var firstInView = emptyList<StationaryObject>()
+        backgroundScope.launch { first.repo.observeStationaryObjects().collect { firstInView = it } }
+        eventually("the first launch's strip") { firstInView.isNotEmpty() }
+        eventually("the sightings to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 4 }
+
+        // Launched again with the server out of reach: the Tesla is still on the strip, from the
+        // sightings the last launch filed, rather than the blank the strip used to be until a poll landed.
+        val relaunch = Harness(this, failEvents = true, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        var inView = emptyList<StationaryObject>()
+        backgroundScope.launch { relaunch.repo.observeStationaryObjects().collect { inView = it } }
+        eventually("the strip the device kept") { inView.isNotEmpty() }
+
+        val tesla = inView.single()
+        assertEquals("third", tesla.thumbnailEventId)
+        assertEquals("sarahs_tesla", tesla.subLabel)
+        assertEquals(3, tesla.sightings, "folded off the cache exactly as off the server")
+        assertEquals(true, tesla.seenRecently, "the cache can't know an in-progress sighting has since ended; the first fetch will")
+        assertEquals(false, tesla.sinceIsKnown, "the stay starts at the cache's oldest row: the device may not have watched it arrive")
+    }
+
+    @Test
+    fun theServerReplacesWhatTheCacheShowed() = runTest {
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        // What a previous launch left behind: a neighbour's car Frigate has since purged, still in progress as far as the device knows.
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "stale", cameraName = "hikvision_1", label = "car", subLabel = "ron_judys_mercedes",
+                    startEpochSeconds = 1_788_800_000.0, endEpochSeconds = null, topScore = 0.8, hasClip = true, hasSnapshot = false,
+                    zones = "", pathPoints = "0.3,0.7;0.31,0.7", boxX = 0.2, boxY = 0.6, boxW = 0.2, boxH = 0.2, subLabelScore = 0.9,
+                ),
+            ),
+        )
+        val h = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+
+        // Every list the strip has shown, by name, so the order the cache and the server arrived in is on record.
+        val shown = MutableStateFlow<List<List<String?>>>(emptyList())
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect { list -> shown.update { it + listOf(list.map { s -> s.subLabel }) } } }
+        eventually("the server's answer") { shown.value.lastOrNull() == listOf("sarahs_tesla") }
+
+        assertEquals(listOf("ron_judys_mercedes"), shown.value.first(), "the cache painted first, before the fetch was answered")
+        eventually("the purged car to leave the cache") { kept.page(SERVER_URL, null, null, limit = 10).none { it.id == "stale" } }
+    }
+
+    @Test
+    fun aStaleCarBeforeTheOldestFetchedSightingIsStillPruned() = runTest {
+        // A short page: the server answers with fewer than PAGE_SIZE, so its own oldest sighting
+        // ("first", starting 1788786387.8) is well inside the 12h window the app actually asked
+        // for — the fetch answered for the whole window back to lookbackStart, not merely back to
+        // the sighting it happened to return.
+        Harness.events = parkedCarJson
+        val kept = InMemoryMomentsDao()
+        // Parked hours before any sighting the fetch returns, but still inside the lookback window:
+        // exactly the gap a prune keyed on the raw oldest event would leave untouched.
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "gone", cameraName = "hikvision_1", label = "car", subLabel = "old_neighbour_car",
+                    startEpochSeconds = 1_788_770_000.0, endEpochSeconds = 1_788_770_100.0, topScore = 0.8, hasClip = true, hasSnapshot = false,
+                    zones = "", pathPoints = "0.3,0.7;0.31,0.7", boxX = 0.2, boxY = 0.6, boxW = 0.2, boxH = 0.2, subLabelScore = 0.9,
+                ),
+            ),
+        )
+        val h = Harness(this, clock = FakeClock(1_788_802_600), momentsDao = kept)
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect {} }
+
+        eventually("the gap car to be pruned by the server's answer") {
+            kept.page(SERVER_URL, null, null, limit = 10).none { it.id == "gone" }
+        }
+    }
+
+    @Test
     fun aNewLaunchOpensOnTheMomentsTheDeviceKept() = runTest {
         Harness.events = eventsJson
         val kept = InMemoryMomentsDao()
@@ -527,6 +641,70 @@ class MomentsRepositoryImplTest {
             ids.isNotEmpty()
         }
         assertEquals(listOf("1788401800.1-abc", "1788401732.596325-eaak48"), ids)
+    }
+
+    @Test
+    fun aRelaunchAgainstAServerStillBootingShowsWhatTheDeviceKeptWhileItWaits() = runTest {
+        Harness.events = eventsJson
+        val kept = InMemoryMomentsDao()
+        val first = Harness(this, momentsDao = kept)
+        backgroundScope.launch { first.repo.observeMoments().collect {} }
+        eventually("the moments to reach the device") { kept.page(SERVER_URL, null, null, limit = 10).size == 2 }
+
+        // Opened again after a power cut: the server accepts the connection but is still coming
+        // up, so nothing it is asked comes back yet. The feed is what the device kept, at once,
+        // and not an error — nothing has gone wrong, the answer is merely on its way.
+        val relaunch = Harness(this, momentsDao = kept)
+        val serverUp = CompletableDeferred<Unit>()
+        relaunch.stalled = serverUp
+        backgroundScope.launch { relaunch.repo.observeMoments().collect {} }
+        var ids = emptyList<String>()
+        eventually("the feed the device kept") {
+            ids = relaunch.repo.observeMoments().first().map { it.id }
+            ids.isNotEmpty()
+        }
+        assertEquals(listOf("1788401800.1-abc", "1788401732.596325-eaak48"), ids)
+        assertEquals(emptyList(), relaunch.eventQueries, "the server hasn't answered anything yet")
+        assertNull(relaunch.repo.observeError().first(), "waiting is not an error")
+
+        // The server finishes booting, with the night's detections: the fetch that was waiting lands and has the last word.
+        Harness.events = personsJson(1_788_500_000, 3)
+        serverUp.complete(Unit)
+        eventually("the server's feed") { relaunch.repo.observeMoments().first().size == 3 }
+    }
+
+    @Test
+    fun comingBackToAServerThatIsNotAnsweringKeepsTheFeedAndAsksAgainWithinSeconds() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        val watcher = backgroundScope.launch { h.repo.observeMoments().collect {} }
+        eventually("the feed") { h.repo.observeMoments().first().size == 2 }
+
+        // The app goes to the background for the night: nothing is looking, so the poll stops.
+        watcher.cancel()
+        advanceUntilIdle()
+        val asksBeforeReturn = h.eventQueries.size
+
+        // Meanwhile the server was rebooted, and it is still coming up when the app returns.
+        h.offline = true
+        val sizes = MutableStateFlow<List<Int>>(emptyList())
+        backgroundScope.launch { h.repo.observeMoments().collect { list -> sizes.update { it + list.size } } }
+        passVirtual(3)
+        assertTrue(h.eventQueries.size > asksBeforeReturn, "the returning feed asked the server")
+        assertEquals(2, h.repo.observeMoments().first().size, "the feed is what it was, not blank")
+        assertEquals(emptyList(), sizes.value.filter { it == 0 }, "never blank on the way back")
+        assertNotNull(h.repo.observeError().first(), "but it says the server didn't answer")
+
+        // A server that didn't answer is asked again in seconds (5s, then 15s), not a whole poll later.
+        val asksAfterReturn = h.eventQueries.size
+        passVirtual(25)
+        assertTrue(h.eventQueries.size - asksAfterReturn >= 2, "asked again ${h.eventQueries.size - asksAfterReturn} times in 25s")
+
+        // It comes up: the feed catches up with the night's detections on the next retry.
+        Harness.events = personsJson(1_788_500_000, 3)
+        h.offline = false
+        eventually("the feed to catch up") { h.repo.observeMoments().first().size == 3 }
+        assertNull(h.repo.observeError().first())
     }
 
     @Test
@@ -606,6 +784,62 @@ class MomentsRepositoryImplTest {
             assertEquals(102, relaunch.repo.observeMoments().first().size, "the page below came off the device as well")
         } finally {
             Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aPageTheZonesEmptyReachesDownForMomentsToShow() = runTest {
+        // Two full pages of street traffic the zones reject, then the evening's real moments below them.
+        Harness.config = configJson
+        Harness.eventsFor = { before ->
+            when (before) {
+                null -> streetCarsJson(2000, 100)
+                1901.0 -> streetCarsJson(1900, 100)
+                1801.0 -> personsJson((1800L downTo 1781L).toList(), camera = "amcrest_1")
+                else -> fail("unexpected before=$before")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            var list = h.repo.observeMoments().first()
+            eventually("the moments below the traffic") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
+
+            // Nobody tapped "Look further back": the feed went down for them, and stopped at the end.
+            assertEquals((1800L downTo 1781L).map { "e$it" }, list.map { it.id })
+            assertEquals(listOf("limit=100&before=1901.000", "limit=100&before=1801.000"), h.pageQueries)
+            assertEquals(false, h.repo.paging().hasOlder)
+            assertEquals(false, h.repo.paging().loadingOlder)
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    @Test
+    fun aCameraThatOnlySeesTheStreetStopsReachingDownAfterAFewPages() = runTest {
+        Harness.config = configJson
+        Harness.eventsFor = { before -> streetCarsJson(before?.toLong()?.minus(1) ?: 2000, 100) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to page down") { h.pageQueries.size == 5 }
+            settle()
+
+            // Still empty, and still offering more, but the walk down is left to the reader now —
+            // however many polls have come and gone meanwhile.
+            assertEquals(5, h.pageQueries.size, "a bounded walk, not the server's whole history")
+            assertEquals(emptyList(), h.repo.observeMoments().first())
+            assertEquals(true, h.repo.paging().hasOlder)
+
+            h.repo.loadOlder()
+            assertEquals(6, h.pageQueries.size, "asking by hand still goes further")
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
         }
     }
 

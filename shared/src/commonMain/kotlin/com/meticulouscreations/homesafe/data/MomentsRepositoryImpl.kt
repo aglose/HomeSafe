@@ -63,6 +63,13 @@ import kotlin.time.ExperimentalTime
  *
  * The polling loop lives in [observeMoments] (not in `init`) so it only runs while something is
  * actually looking at the feed — a background tab shouldn't keep hitting the server.
+ *
+ * **A server that doesn't answer is asked again soon, not next poll.** The cache means the feed
+ * has something to show meanwhile, but what it shows is only as fresh as the last answer, and
+ * the usual reason for no answer — the server still booting, the VPN still coming up when the
+ * app is opened after a long idle — clears in seconds. So a failed fetch is retried after
+ * [RETRY_INTERVAL_MS], doubling up to [POLL_INTERVAL_MS] ([nextPollDelayMs]), and a window into
+ * the past that couldn't be fetched keeps asking too, instead of settling for the cache.
  */
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -111,6 +118,9 @@ class MomentsRepositoryImpl(
     /** Which (server identity, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
     private var loadedFor: Pair<String, Window>? = null
 
+    /** How many pages [fillShortFeed] has fetched for [loadedFor]; a newly opened window starts again at zero. */
+    private var autoFilledPages = 0
+
     /** One page down at a time: a second [loadOlder] while one is in flight is simply ignored. */
     private val olderInFlight = Mutex()
 
@@ -137,13 +147,17 @@ class MomentsRepositoryImpl(
             // loaded and only refreshes the top; a new server or a moved window opens on the cache.
             if (stateLock.withLock { loadedFor } != server.identity to window) openOnCache(server.identity, window)
             var polls = 0
+            var failures = 0
             while (true) {
-                fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
+                val fetched = fetchHead(server, window, includeZones = polls % ZONES_EVERY_N_POLLS == 0)
                 polls++
+                failures = if (fetched) 0 else failures + 1
                 send(Unit)
-                // A window into the past doesn't change under us; only the live feed is worth re-asking for.
-                if (window.before != null) return@collectLatest
-                delay(POLL_INTERVAL_MS)
+                fillShortFeed(server.identity, window)
+                // A window into the past doesn't change under us; once it has been fetched, only
+                // the live feed is worth re-asking for.
+                if (window.before != null && fetched) return@collectLatest
+                delay(nextPollDelayMs(failures))
             }
         }
     }.shareIn(appScope, SharingStarted.WhileSubscribed(stopTimeoutMillis = 5_000))
@@ -187,16 +201,18 @@ class MomentsRepositoryImpl(
             cachedPage(server.identity, before = null, camera = cameraName, limit = rawEvents)
                 .takeIf { it.isNotEmpty() }
                 ?.let { send(it.mergeVehicleVisits().take(limit)) }
+            var failures = 0
             while (true) {
                 loadZones(server.url, force = false)
                 // More than [limit] raw: zones drop some detections and folding merges others.
-                apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
+                val fetched = apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
                     val zones = stateLock.withLock { zonesByCamera }
                     val placed = events.map { it.toDomain() }.inZones(zones)
                     send(placed.mergeVehicleVisits().take(limit))
                     cache(server.identity, cameraName, placed, from = events.minOfOrNull { it.startTime }, to = null)
-                }
-                delay(POLL_INTERVAL_MS)
+                }.isSuccess
+                failures = if (fetched) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
             }
         }
     }
@@ -210,8 +226,15 @@ class MomentsRepositoryImpl(
      * detections can run out well inside that window, and a card shouldn't claim an arrival time
      * it only inferred from where the page happened to stop.
      *
-     * Deliberately not served from the cache: this answers "what is standing in the yard right
-     * now", and a car the app saw an hour ago is no evidence that it is still there.
+     * Like the feed, it opens on the cache and files what it fetches there: the strip paints with
+     * the cars the device last knew about while the first poll is still on its way to the server,
+     * and keeps showing them for as long as the server can't be reached. The cache is only ever a
+     * stand-in for an answer the server hasn't given yet — every poll that lands replaces it
+     * wholesale, and the clock runs against the cached sightings just as it does against fetched
+     * ones, so a car unseen for [com.meticulouscreations.homesafe.domain.model.StationaryObjects.AT_REST_SECONDS]
+     * drops off whether the server is answering or not. The one thing the cache can't know is
+     * that a sighting still in progress when it was written has since ended: that car reads as in
+     * view until the first fetch corrects it, which is seconds away once connected.
      */
     override fun observeStationaryObjects(): Flow<List<StationaryObject>> = channelFlow {
         server.collectLatest { server ->
@@ -219,34 +242,72 @@ class MomentsRepositoryImpl(
                 send(emptyList())
                 return@collectLatest
             }
+            cachedStationaryObjects(server.identity).takeIf { it.isNotEmpty() }?.let { send(it) }
+            var failures = 0
             while (true) {
                 loadZones(server.url, force = false)
                 val now = clock.now().toEpochMilliseconds() / 1000.0
                 val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
-                apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart).onSuccess { events ->
-                    val zones = stateLock.withLock { zonesByCamera }
-                    // Full pages stop where the server ran the limit out, not where the window ends.
-                    val oldestFetched = if (events.size >= PAGE_SIZE) {
-                        events.minOfOrNull { it.startTime } ?: lookbackStart
-                    } else {
-                        lookbackStart
+                val fetched = apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart)
+                    .onSuccess { events ->
+                        val zones = stateLock.withLock { zonesByCamera }
+                        // Full pages stop where the server ran the limit out, not where the window ends.
+                        val oldestFetched = if (events.size >= PAGE_SIZE) {
+                            events.minOfOrNull { it.startTime } ?: lookbackStart
+                        } else {
+                            lookbackStart
+                        }
+                        // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
+                        val placed = events.map { it.toDomain() }.inZones(zones)
+                        send(placed.stationaryObjects(now, oldestFetched))
+                        // The same slice the live feed files — the newest detections across every camera — so the
+                        // two share one cache rather than fighting over it. [oldestFetched], not the raw oldest
+                        // event: a short or empty page still answered for the whole window back to
+                        // [lookbackStart], and a car purged from that gap must be pruned from the cache too.
+                        cache(server.identity, camera = null, placed, from = oldestFetched, to = null)
                     }
-                    // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
-                    send(events.map { it.toDomain() }.inZones(zones).stationaryObjects(now, oldestFetched))
-                }
-                delay(POLL_INTERVAL_MS)
+                    // Unreachable: the cache stands in, re-aged against the clock so a car stops being claimed on time.
+                    .onFailure { send(cachedStationaryObjects(server.identity)) }
+                    .isSuccess
+                failures = if (fetched) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
             }
         }
+    }
+
+    /**
+     * The in-view strip out of the cache: this server's cached detections back to the lookback
+     * window, folded exactly as a fetched page would be. How far the cache reaches is its oldest
+     * row — it is a few pages of the feed, not necessarily twelve hours — so a stay that starts
+     * at its edge says where the car is without claiming since when, the same courtesy a full
+     * page from the server gets.
+     */
+    private suspend fun cachedStationaryObjects(identity: String): List<StationaryObject> {
+        val now = clock.now().toEpochMilliseconds() / 1000.0
+        val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
+        val page = cachedPage(identity, before = null, camera = null, limit = PAGE_SIZE)
+        // A cache whose oldest row is older than the window covers the whole window; one that stops inside it stops there.
+        val reach = maxOf(page.minOfOrNull { it.startEpochSeconds } ?: lookbackStart, lookbackStart)
+        return page.filter { it.startEpochSeconds >= lookbackStart }.stationaryObjects(now, reach)
     }
 
     override suspend fun loadOlder() {
         if (!olderInFlight.tryLock()) return
         try {
-            val server = currentServer() ?: return
-            // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
-            val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
-            if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return
-            _paging.update { it.copy(loadingOlder = true) }
+            appendOlderPage()
+        } finally {
+            olderInFlight.unlock()
+        }
+    }
+
+    /** Under [olderInFlight]. Appends the next page down to the tail. True if one was appended, from the server or the cache. */
+    private suspend fun appendOlderPage(): Boolean {
+        val server = currentServer() ?: return false
+        // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
+        val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
+        if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return false
+        _paging.update { it.copy(loadingOlder = true) }
+        try {
             apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = target.second.cameras)
                 .onSuccess { events ->
                     val page = events.map { it.toDomain() }
@@ -266,17 +327,40 @@ class MomentsRepositoryImpl(
                     if (placed != null) {
                         cache(server.identity, target.second.camera, placed, from = events.minOfOrNull { it.startTime }, to = oldest)
                     }
+                    return placed != null
                 }
                 .onFailure { failure ->
                     // The server is unreachable, but the next page down may already be on the
                     // device — an older page the feed has shown before is worth more than a message.
-                    if (!appendCachedOlder(target, oldest)) {
-                        _error.value = failure.message ?: "Couldn't load older detections"
-                    }
+                    if (appendCachedOlder(target, oldest)) return true
+                    _error.value = failure.message ?: "Couldn't load older detections"
                 }
+            return false
         } finally {
             _paging.update { it.copy(loadingOlder = false) }
-            olderInFlight.unlock()
+        }
+    }
+
+    /**
+     * Pages down on the reader's behalf while the feed is too short to be worth looking at and the
+     * server has more. Pages are raw detections and the zones decide afterwards, so a busy street
+     * can fill the newest page — or several — with cars nobody asked to see, and the feed would
+     * otherwise open on "Nothing to show yet" with the evening's moments one tap further down.
+     * At most [AUTO_FILL_MAX_PAGES] per window, so a camera that only ever sees the street costs a
+     * bounded walk rather than the server's whole history; past that the feed's own "Look further
+     * back" is still there.
+     */
+    private suspend fun fillShortFeed(identity: String, window: Window) {
+        while (true) {
+            val more = stateLock.withLock {
+                val short = loadedFor == identity to window &&
+                    autoFilledPages < AUTO_FILL_MAX_PAGES &&
+                    _moments.value.size < AUTO_FILL_MIN_MOMENTS &&
+                    _paging.value.hasOlder
+                if (short) autoFilledPages++
+                short
+            }
+            if (!more || !olderInFlight.withLock { appendOlderPage() }) return
         }
     }
 
@@ -323,6 +407,7 @@ class MomentsRepositoryImpl(
         val cached = cachedPage(identity, window.before, window.camera, PAGE_SIZE)
         stateLock.withLock {
             loadedFor = identity to window
+            autoFilledPages = 0
             head = cached
             tail = emptyList()
             _paging.value = MomentsPaging(beforeEpochSeconds = window.before)
@@ -332,9 +417,10 @@ class MomentsRepositoryImpl(
         }
     }
 
-    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean) {
+    /** Replaces the head with the server's newest page. False when the server didn't answer (the feed keeps what it has). */
+    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean): Boolean {
         loadZones(server.url, force = includeZones)
-        apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
+        return apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .onSuccess { events ->
                 val page = events.map { it.toDomain() }
                 val placed: List<MomentEvent>? = stateLock.withLock {
@@ -354,7 +440,21 @@ class MomentsRepositoryImpl(
                 }
             }
             .onFailure { _error.value = it.message ?: "Couldn't load detections" }
+            .isSuccess
     }
+
+    /**
+     * How long a poll loop waits before asking again: the poll interval after an answer; after
+     * [consecutiveFailures] without one, [RETRY_INTERVAL_MS] doubling each time until it is the
+     * poll interval again, so a server that is nearly up is caught within seconds and one that
+     * is down for the evening isn't hammered.
+     */
+    private fun nextPollDelayMs(consecutiveFailures: Int): Long =
+        if (consecutiveFailures == 0) {
+            POLL_INTERVAL_MS
+        } else {
+            minOf(POLL_INTERVAL_MS, RETRY_INTERVAL_MS shl minOf(consecutiveFailures - 1, RETRY_MAX_DOUBLINGS))
+        }
 
     /** [MomentsDao.page] as moments. A cache that can't be read is an empty one: it must never be why the feed fails. */
     private suspend fun cachedPage(identity: String, before: Double?, camera: String?, limit: Int): List<MomentEvent> =
@@ -412,8 +512,20 @@ class MomentsRepositoryImpl(
 
     private companion object {
         const val POLL_INTERVAL_MS = 30_000L
+
+        /** The first retry after a fetch the server didn't answer; see [nextPollDelayMs]. */
+        const val RETRY_INTERVAL_MS = 5_000L
+
+        /** Enough doublings of [RETRY_INTERVAL_MS] to reach [POLL_INTERVAL_MS]; also keeps the shift from overflowing. */
+        const val RETRY_MAX_DOUBLINGS = 3
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
+
+        /** Fewer moments than this after the zones is a feed [fillShortFeed] pages down for: about two screens of cards. */
+        const val AUTO_FILL_MIN_MOMENTS = 10
+
+        /** The most pages [fillShortFeed] fetches for one window before leaving the rest to the reader. */
+        const val AUTO_FILL_MAX_PAGES = 5
 
         /**
          * How many of a server's detections the device keeps: a few pages down from the top, which
