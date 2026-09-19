@@ -131,10 +131,12 @@ class StationaryObjectsTest {
 
     @Test
     fun twoCarsAreListedNewestArrivalFirst() {
+        // Two cars, so two names: one car seen on two cameras is one card, whichever saw it (see
+        // oneCarTwoCamerasCanSeeIsOneCard).
         val inView = listOf(
             sighting("morning", at(8, 0), camera = "hikvision_1"),
             sighting("morning2", at(8, 30), camera = "hikvision_1"),
-            sighting("evening", at(8, 40), camera = "hikvision_2"),
+            sighting("evening", at(8, 40), camera = "hikvision_2", subLabel = "andrews_tesla"),
         ).stationaryObjects(nowEpochSeconds = at(8, 45))
 
         assertEquals(listOf("evening", "morning2"), inView.map { it.thumbnailEventId }, "the car that just pulled in leads")
@@ -177,6 +179,67 @@ class StationaryObjectsTest {
 
         assertEquals(emptyList(), unnamed.stationaryObjects(nowEpochSeconds = at(8, 20)), "a card that can only say \"Car\" says nothing")
         assertEquals(emptyList(), shrugged.stationaryObjects(nowEpochSeconds = at(8, 20)), "the classifier's own \"none\" is not a name")
+    }
+
+    @Test
+    fun oneCarTwoCamerasCanSeeIsOneCard() {
+        // The Tesla on the street is in shot from the front door and the front yard, so Frigate
+        // tracks it twice over. Folding can't join them — it needs one camera — and the strip
+        // listed the same car twice, in two places (2026-09-19).
+        val street = listOf(
+            sighting("d1", at(6, 24), end = at(6, 26), camera = "front_door", zones = listOf("street")),
+            sighting("y1", at(6, 32), end = at(6, 34), camera = "front_yard", zones = listOf("street")),
+        ).stationaryObjects(nowEpochSeconds = at(6, 44))
+
+        val tesla = street.single()
+        assertEquals("sarahs_tesla", tesla.subLabel)
+        assertEquals(at(6, 24), tesla.firstSeenEpochSeconds, "it got there when the first camera saw it")
+        assertEquals("y1", tesla.thumbnailEventId, "shown where it is now: the freshest of the two views")
+        assertEquals("front_yard", tesla.cameraName)
+        assertEquals(at(6, 34), tesla.lastSeenEpochSeconds)
+        assertEquals(2, tesla.sightings, "both runs counted, not one of them thrown away")
+    }
+
+    @Test
+    fun aJumpInTheBoxOnOneCameraIsStillOneCard() {
+        // Same camera, but the detector's box lands somewhere else entirely — off the car and back
+        // on — so the two runs never overlap enough to fold. It is one parked car all the same.
+        val elsewhere = DetectionBox(0.05, 0.05, 0.12, 0.12)
+        val jumped = listOf(
+            sighting("j1", at(7, 0), end = at(7, 2)),
+            sighting("j2", at(7, 10), end = at(7, 12), box = elsewhere, path = List(8) { 0.11 + (it % 2) * 0.01 to 0.11 }),
+        ).stationaryObjects(nowEpochSeconds = at(7, 20))
+
+        assertEquals(1, jumped.size, "one car, however the box behaved")
+        assertEquals(at(7, 0), jumped.single().firstSeenEpochSeconds)
+        assertEquals("j2", jumped.single().thumbnailEventId)
+    }
+
+    @Test
+    fun anInProgressSightingIsTheFresherOfTwoHoweverTheClockReads() {
+        // One camera still has the car; the other stopped seeing it later by the clock. "Still in
+        // sight" beats "ended at 7:12", so the card is the one that can vouch for the car now.
+        val both = listOf(
+            sighting("open", at(7, 0), end = null, camera = "front_door"),
+            sighting("shut", at(7, 5), end = at(7, 12), camera = "front_yard"),
+        ).stationaryObjects(nowEpochSeconds = at(7, 14))
+
+        val car = both.single()
+        assertEquals("open", car.thumbnailEventId)
+        assertEquals("front_door", car.cameraName)
+        assertEquals(true, car.seenRecently)
+    }
+
+    @Test
+    fun twoCarsOnTheSameCameraStayTwoCards() {
+        // The rule is one card per car, not one card per camera: two named cars parked in view
+        // are two things the reader wants to see.
+        val two = listOf(
+            sighting("a1", at(8, 0), subLabel = "sarahs_tesla"),
+            sighting("b1", at(8, 5), subLabel = "andrews_tesla", box = DetectionBox(0.05, 0.05, 0.12, 0.12), path = List(8) { 0.11 + (it % 2) * 0.01 to 0.11 }),
+        ).stationaryObjects(nowEpochSeconds = at(8, 10))
+
+        assertEquals(listOf("andrews_tesla", "sarahs_tesla"), two.map { it.subLabel }, "newest arrival first")
     }
 
     @Test

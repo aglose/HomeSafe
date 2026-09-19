@@ -20,6 +20,12 @@ import kotlin.time.Instant
  * box, within [VehicleVisits.PARKED_GAP_SECONDS] — because that rule is what makes a parked car's
  * endless re-detections one thing rather than forty.
  *
+ * Folding alone is not enough to keep a car to one card, because it needs one camera and an
+ * overlapping box: a car parked where two cameras overlap, or one whose box the detector jumps
+ * across, ends up as two runs of sightings that no amount of folding will join. So the named runs
+ * are grouped by the car at the end and reported once each. Two cards for one Tesla, in two
+ * places, is not a thing that can be true of a parked car.
+ *
  * A stay is reported when its *latest* sighting is [isStill]: a car on its way in or out is
  * moving, so it stops being furniture for as long as it is driving, and comes back the moment it
  * is re-detected parked. It is only claimed to be in view while Frigate keeps seeing it —
@@ -158,6 +164,13 @@ fun List<MomentEvent>.stationaryObjects(
         .filter { it.isAtRest(nowEpochSeconds) }
         // Judged on the whole stay: one recognized sighting names the car for the frames that missed it.
         .filter { it.named != null }
+        // One card per car, whatever saw it. A car parked where two cameras overlap is two runs of
+        // sightings that never fold, because folding needs one camera and an overlapping box; so is
+        // one camera's run either side of a jump in the detector's box on it. Either way the strip
+        // would list the same Tesla twice, in two places, which is not a thing that can be true.
+        .groupBy { it.carName }
+        .values
+        .map { runs -> runs.reduce(Stay::andAlso) }
         .map { it.toStationaryObject(nowEpochSeconds, oldestFetchedEpochSeconds) }
         .sortedByDescending { it.firstSeenEpochSeconds }
 }
@@ -170,6 +183,26 @@ private data class Stay(
     val named: MomentEvent?,
     val sightings: Int = first.sightings,
 ) {
+    /**
+     * Which car this is: the classifier's name for it, folded to one case so two spellings of one
+     * name are one car. Null until some sighting names it, which [stationaryObjects] has already
+     * required by the time it groups on this.
+     */
+    val carName: String? get() = named?.subLabel?.lowercase()
+
+    /**
+     * Two runs of sightings of the same car as one stay. There is no continuity between them to
+     * preserve — that is why they are two — so only the ends survive: the earlier arrival, which
+     * is when the car got there, and the fresher sighting, which is where it is and whether a
+     * camera still has it. The sightings add up and the surer name wins, as in [folding].
+     */
+    fun andAlso(other: Stay): Stay = Stay(
+        first = if (other.first.startEpochSeconds < first.startEpochSeconds) other.first else first,
+        latest = if (other.latest.seenUntil > latest.seenUntil) other.latest else latest,
+        named = listOfNotNull(named, other.named).maxByOrNull { it.subLabelScore ?: 0.0 },
+        sightings = sightings + other.sightings,
+    )
+
     /** This stay with one more sighting of the same vehicle at the same spot folded into it. */
     fun folding(event: MomentEvent): Stay = copy(
         latest = event,
@@ -198,6 +231,13 @@ private data class Stay(
             first.startEpochSeconds > oldestFetchedEpochSeconds + FETCH_EDGE_MARGIN_SECONDS,
     )
 }
+
+/**
+ * How recently a sighting was seen, for choosing the fresher of two: one still in progress is as
+ * fresh as a sighting gets, so it outranks any that has ended.
+ */
+private val MomentEvent.seenUntil: Double
+    get() = endEpochSeconds ?: Double.MAX_VALUE
 
 /**
  * How far inside the fetched window a stay must start for its arrival to count as observed. A
