@@ -282,12 +282,15 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
     but `everyone_away` is decided by the counting ones alone: at least one, and all of them away.
     A device that has *left* but is still inside its dwell (see `promote_pending`) shows as
     `pending_away` and is not away yet. `this_device` matches a device_id or, for old apps, a token.
+    `id` and `last_seen` let Settings tell a phone in use from an old install, and remove the
+    latter (`DELETE /devices/{id}`).
     """
     rows = with_db(lambda c: c.execute(
-        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since FROM devices ORDER BY created"
+        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since, last_seen FROM devices ORDER BY created"
     ).fetchall())
     devices = [
         {
+            "id": d,
             "name": n,
             "platform": p,
             "away": bool(a),
@@ -296,8 +299,9 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
             "build": b,
             "counts": counts_for_away(p, b),
             "pending_away": ps is not None,
+            "last_seen": ls,
         }
-        for d, t, n, p, a, u, b, ps in rows
+        for d, t, n, p, a, u, b, ps, ls in rows
     ]
     counting = [d for d in devices if d["counts"]]
     return {
@@ -673,6 +677,11 @@ def register(device: Device, request: Request) -> dict[str, Any]:
 
 @app.delete("/devices/{ident}")
 def unregister(ident: str, request: Request) -> dict[str, Any]:
+    """
+    Forgets an install. Its own secret may remove itself; a signed-in user's cookie may remove any
+    device — how Settings clears out old installs. One that is still installed comes back the next
+    time it connects and re-registers.
+    """
     authenticate(request, ident)
     with_db(lambda c: (c.execute("DELETE FROM devices WHERE device_id=? OR token=?", (ident, ident)), c.commit()))
     return {"ok": True}
@@ -731,6 +740,10 @@ def get_presence(request: Request, device: str | None = None, token: str | None 
     """Who's home. Pass this phone's `device` (or, old apps, `token`) so its own entry comes back flagged `this_device`."""
     ident = device or token
     authenticate(request, ident)
+    if ident:
+        # A phone asking about itself is a phone in use: the app polls this about once a minute
+        # while it's open, so `last_seen` separates the household's phones from old installs.
+        with_db(lambda c: (c.execute("UPDATE devices SET last_seen=? WHERE device_id=? OR token=?", (time.time(), ident, ident)), c.commit()))
     return presence_snapshot(ident)
 
 

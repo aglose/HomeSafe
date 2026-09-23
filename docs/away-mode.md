@@ -20,7 +20,7 @@ Registration answers with the id and a **device secret**:
 | Route | Auth | Body | Answer |
 | --- | --- | --- | --- |
 | `POST /devices` | cookie, or bearer | `{"device_id","token"?, "platform","name","quiet_familiar","build"}` | `{"ok", "device_id", "secret"}` |
-| `DELETE /devices/{id}` | cookie, or bearer | — | `{"ok"}` |
+| `DELETE /devices/{id}` | cookie (any device), or bearer (itself) | — | `{"ok"}` |
 | `PUT /devices/{id}/presence` | cookie, or bearer | `{"away": bool, "source": "manual"\|"geofence"\|"lan", "dwell_seconds": n}` | presence snapshot |
 | `GET /presence?device={id}` | cookie, or bearer | — | presence snapshot |
 | `PUT /home` / `DELETE /home` | cookie | `{"lat","lng","radius_m"}` | presence snapshot |
@@ -38,13 +38,18 @@ returned on every registration.
 **The snapshot**:
 
 ```json
-{"devices":[{"name","platform","away","away_updated","this_device","build","counts","pending_away"}],
+{"devices":[{"id","name","platform","away","away_updated","this_device","build","counts","pending_away","last_seen"}],
  "everyone_away": bool,
  "home": {"lat","lng","radius_m","updated","by"} | null}
 ```
 
 - `this_device` is true on the entry whose `device_id` (or, for old apps, token) matches the
   `?device=` query or the `PUT` path.
+- `id` is the `device_id` — what `DELETE /devices/{id}` takes. `last_seen` is when the relay last
+  heard from the install: `POST /devices`, `PUT .../presence`, and `GET /presence?device=` for
+  the device it names (the app polls that about once a minute while open), so an install nobody
+  uses any more stops moving. Both are absent from relays before 2026-09-22; the app then offers
+  no remove button and folds nothing away for staleness.
 - `everyone_away` = at least one **counting** device (below) **and** all of those away.
   `pending_away` devices are not away.
 - `POST /devices` (re-registration on every connect and LAN/Tailscale flip) never touches
@@ -181,8 +186,8 @@ somebody is home, behave exactly as before.
   `ObserveLocationAccessUseCase`, `RequestLocationAccessUseCase`, `SetHomeHereUseCase`, `ClearHomeUseCase`.
 - `PushRelayApi.registerDevice(url, DeviceRegistration, secret?)` → `DeviceCredentials`;
   `setPresence(url, deviceId, secret?, away, source, dwellSeconds)`; `getPresence(url, deviceId,
-  secret?)`; `setHome(url, home?)` — internal `@Serializable` DTOs, `Authorization: Bearer` when a
-  secret is known. `DeviceInfo.build` is read off the installed app (`FLAG_DEBUGGABLE` on Android,
+  secret?)`; `setHome(url, home?)`; `removeDevice(url, deviceId)` (cookie only) — internal
+  `@Serializable` DTOs, `Authorization: Bearer` when a secret is known. `DeviceInfo.build` is read off the installed app (`FLAG_DEBUGGABLE` on Android,
   `Platform.isDebugBinary` on iOS); `PresenceDevice.countsForAway` / `pendingAway` carry the
   relay's verdict back (defaulting to true / false, so an older relay behaves as it did).
 - `DetectionAlertService` (the in-app 15 s poller) collects presence while polling; when
@@ -190,10 +195,15 @@ somebody is home, behave exactly as before.
   `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
   urgent ones on the new `away_alerts` channel (IMPORTANCE_HIGH, alarm sound, `CATEGORY_ALARM`);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
-- Settings tab: an "Away mode" section after Alerts — "I'm away" switch for this phone, one line
-  per device (`Google Pixel 10 Pro XL · away since 4:12 PM` / `· home`, and
-  `· debug, not counted` greyed out for a device the relay doesn't count), a caption explaining
-  the escalation. Disabled with a caption when push isn't supported on the platform or the relay
+- Settings tab: an "Away mode" section after Alerts — "I'm away" switch for this phone, then the
+  devices as `HouseholdDeviceList` splits them: counted phones heard from in the last week first,
+  and this phone (even a debug build), each with its status (`away since 4:12 PM` / `home` /
+  `leaving…`), when it was last seen, and `debug, not counted` greyed out for a device the relay
+  doesn't count. Debug installs and anything silent for a week fold under "N other devices",
+  which says how many of them still count — an old install of a real phone keeps voting "home"
+  until it's removed. Every row but this phone's has a remove button (with a confirmation) that
+  calls `DELETE /devices/{id}` on the session cookie; an install that's still in use re-registers
+  on its next connect. Then a caption explaining the escalation. Disabled with a caption when push isn't supported on the platform or the relay
   couldn't be reached. `SettingsViewModel` carries `presence`, `awayBusy`, `awayError`,
   `locationAccess`, `geofenceSupported`, `homeBusy`, `homeError`; presence is refreshed in the
   tab's `LifecycleResumeEffect`.
