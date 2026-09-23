@@ -186,6 +186,30 @@ class HomeFeedUiTest {
     }
 
     @Test
+    fun theSummarySaysWhatIsGoingOnAndOpensTheMoments() = runComposeUiTest {
+        var opened = 0
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = listOf(tile("front_door")),
+                    onAwayBack = {},
+                    statusHeadline = "Person at Backyard",
+                    statusDetails = "3 min ago · 1 camera on · Everyone home",
+                    onStatusClick = { opened++ },
+                ) { }
+            }
+        }
+
+        onNodeWithText("Person at Backyard").assertIsDisplayed()
+        onNodeWithText("3 min ago · 1 camera on · Everyone home").assertIsDisplayed()
+        onNodeWithText("Person at Backyard").performClick()
+
+        assertEquals(1, opened, "the summary is the way into the feed it summarises")
+    }
+
+    @Test
     fun imBackReportsTheTapOnce() = runComposeUiTest {
         var backTaps = 0
         mainClock.autoAdvance = false
