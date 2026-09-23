@@ -43,3 +43,9 @@ class ObserveRecentCameraMomentsUseCase(private val momentsRepository: MomentsRe
 class ObserveStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {
     operator fun invoke(): Flow<List<StationaryObject>> = momentsRepository.observeStationaryObjects()
 }
+
+/** See [MomentsRepository.observeLatestMoment]: the newest detection on any camera, for the home page's summary. */
+@Inject
+class ObserveLatestMomentUseCase(private val momentsRepository: MomentsRepository) {
+    operator fun invoke(): Flow<MomentEvent?> = momentsRepository.observeLatestMoment()
+}

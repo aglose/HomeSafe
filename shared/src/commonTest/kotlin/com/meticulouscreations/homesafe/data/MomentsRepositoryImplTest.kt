@@ -947,6 +947,45 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun theLatestMomentOpensOnWhatTheDeviceKept() = runTest {
+        val kept = InMemoryMomentsDao()
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "kept", cameraName = "hikvision_2", label = "person", subLabel = null,
+                    startEpochSeconds = 1_789_399_000.0, endEpochSeconds = 1_789_399_030.0, topScore = 0.9, hasClip = true,
+                    hasSnapshot = false, zones = "", pathPoints = "", boxX = null, boxY = null, boxW = null, boxH = null,
+                    subLabelScore = null,
+                ),
+            ),
+        )
+        // The server out of reach: the home page's summary still has something to say.
+        val h = Harness(this, failEvents = true, momentsDao = kept)
+
+        var latest: com.meticulouscreations.homesafe.domain.model.MomentEvent? = null
+        backgroundScope.launch { h.repo.observeLatestMoment().collect { latest = it } }
+        eventually("the kept moment") { latest != null }
+
+        assertEquals("kept", latest?.id)
+        assertEquals(emptyList(), h.eventQueries, "read off the device; it asks the server nothing itself")
+    }
+
+    @Test
+    fun theLatestMomentFollowsThePollsWhateverTheFeedIsNarrowedTo() = runTest {
+        Harness.events = personsJson(listOf(1_789_399_500L, 1_789_399_000L), camera = "hikvision_2")
+        val h = Harness(this)
+        // The Moments tab was left on another camera's past; the home page's summary is every camera, now.
+        h.repo.showBefore(1500.0)
+        h.repo.showCamera("amcrest_1")
+
+        var latest: com.meticulouscreations.homesafe.domain.model.MomentEvent? = null
+        backgroundScope.launch { h.repo.observeLatestMoment().collect { latest = it } }
+        // The home page's in-view poll is what files fresh detections while the summary is on screen.
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect {} }
+        eventually("the polled moment") { latest?.id == "e1789399500" }
+    }
+
+    @Test
     fun disconnectedYieldsEmptyWithoutAnyRequest() = runTest {
         Harness.events = eventsJson
         val h = Harness(this, url = null)
