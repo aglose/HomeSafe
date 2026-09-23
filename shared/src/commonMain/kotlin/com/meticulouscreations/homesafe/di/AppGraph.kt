@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.MomentsDao
+import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
@@ -92,6 +93,9 @@ interface AppGraph : ViewModelGraph {
 
     /** Started once by [com.meticulouscreations.homesafe.App]; Android's messaging service also reaches it on token rotation. */
     val deviceRegistrar: DeviceRegistrar
+
+    /** A pushed notification's picture and clip, for Android's messaging service (which may have woken with no session). */
+    val pushedAlertMedia: PushedAlertMedia
 
     /**
      * Started once by [com.meticulouscreations.homesafe.App]. Also the entry point for what the OS

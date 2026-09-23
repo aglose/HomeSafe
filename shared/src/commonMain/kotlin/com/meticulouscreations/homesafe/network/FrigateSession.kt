@@ -76,6 +76,10 @@ fun swapUrlScheme(url: String): String? = when {
 fun frigateEventThumbnailUrl(serverUrl: String, eventId: String): String =
     "${serverUrl.trimEnd('/')}/api/events/$eventId/thumbnail.jpg"
 
+/** A detection's animated preview, a short GIF Frigate builds from its recording. Authenticated. */
+fun frigateEventPreviewGifUrl(serverUrl: String, eventId: String): String =
+    "${serverUrl.trimEnd('/')}/api/events/$eventId/preview.gif"
+
 /**
  * A detection's clip as a seekable HLS playlist, served by the same `/vod` machinery as camera
  * recordings — so it plays through [com.meticulouscreations.homesafe.ui.components.VideoSource.Recording]
