@@ -221,7 +221,7 @@ class VehicleVisitsTest {
         val parked = event("parked", at(19, 42), at(19, 45), zones = listOf("driveway"), subLabel = "andrews_tesla", subLabelScore = 0.9)
         val only = listOf(arriving, parked).mergeVehicleVisits().single()
         assertEquals(listOf("street", "driveway"), only.zones)
-        assertEquals("Andrews Tesla in the driveway", only.present(day, utc).title)
+        assertEquals("Andrew's Tesla in the driveway", only.present(day, utc).title)
     }
 
     @Test
