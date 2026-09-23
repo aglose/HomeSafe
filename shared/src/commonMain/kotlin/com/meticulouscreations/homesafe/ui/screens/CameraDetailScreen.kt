@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,16 +26,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.VolumeOff
-import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.CropFree
-import androidx.compose.material.icons.filled.Hd
-import androidx.compose.material.icons.filled.HdrAuto
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Sd
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -58,7 +50,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -70,13 +61,11 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
-import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
@@ -303,7 +292,7 @@ fun CameraDetailScreen(
  * and pass the same key, which is why the key lives here and not at each call site.
  */
 @Composable
-private fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
+internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
     assistedMetroViewModel<CameraDetailViewModel, CameraDetailViewModel.Factory>(key = cameraName) {
         create(cameraName)
     }
@@ -465,102 +454,6 @@ private fun PlayerSurface(
 }
 
 /**
- * Quality, speaker and alerts under the player. The speaker takes the prominent centre slot
- * (none of the cameras have a microphone, so there is no two-way talk button). Quality and
- * sound are saved preferences shared by every camera. Collects `playback` and `alerts` itself
- * so the position polls that update `playback` while a recording plays recompose only this row.
- *
- * @param hasQualityChoice whether this camera has a second, lighter stream to switch to; without
- *   one the quality button still shows the saved choice but explains itself when tapped.
- */
-@Composable
-private fun QuickActionsRow(
-    cameraName: String,
-    hasQualityChoice: Boolean,
-    showHint: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val viewModel = cameraDetailViewModel(cameraName)
-    val playback by viewModel.playback.collectAsStateWithLifecycle()
-    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .offset(y = (-32).dp)
-            .padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(24.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val displayName = cameraDisplayName(cameraName)
-        // Quality: cycles Auto → High → Low. Only the full stream carries audio, so Low also
-        // dims the speaker (through the player's own audio-availability report).
-        QuickActionButton(
-            icon = when (playback.quality) {
-                StreamQuality.AUTO -> Icons.Filled.HdrAuto
-                StreamQuality.HIGH -> Icons.Filled.Hd
-                StreamQuality.LOW -> Icons.Filled.Sd
-            },
-            contentDescription = "Video quality: ${playback.quality.label}",
-            available = hasQualityChoice,
-            onClick = {
-                if (hasQualityChoice) {
-                    val next = playback.quality.next
-                    viewModel.setQuality(next)
-                    showHint(
-                        when (next) {
-                            StreamQuality.AUTO -> "Auto quality: starts light, sharpens in a moment"
-                            StreamQuality.HIGH -> "High quality"
-                            StreamQuality.LOW -> "Low quality: lighter on data, no sound"
-                        },
-                    )
-                } else {
-                    showHint("This camera has a single stream quality")
-                }
-            },
-        )
-        // Speaker: the saved sound preference. It flips even while what's playing is silent
-        // (go2rtc's sub-streams and Frigate's recordings are video-only), so the choice is
-        // ready when audio arrives; the dimming says the stream has nothing to play right now.
-        QuickActionButton(
-            icon = if (playback.isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-            contentDescription = if (playback.isMuted) "Turn sound on" else "Turn sound off",
-            active = !playback.isMuted,
-            available = playback.hasAudio,
-            size = PRIMARY_QUICK_ACTION_SIZE,
-            iconSize = PRIMARY_QUICK_ACTION_ICON_SIZE,
-            onClick = {
-                val soundOn = playback.isMuted
-                viewModel.toggleMuted()
-                showHint(
-                    when {
-                        soundOn && !playback.hasAudio -> "Sound on, but this stream has no audio"
-                        soundOn -> "Sound on"
-                        else -> "Sound off"
-                    },
-                )
-            },
-        )
-        // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
-        QuickActionButton(
-            icon = if (alerts.enabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
-            contentDescription = if (alerts.enabled) "Turn off alerts for $displayName" else "Turn on alerts for $displayName",
-            active = alerts.enabled,
-            onClick = {
-                val enabled = !alerts.enabled
-                viewModel.setAlertsEnabled(enabled)
-                showHint(
-                    when {
-                        !enabled -> "Alerts off for $displayName"
-                        !alerts.pushNotificationsEnabled -> "Alerts on for $displayName. Notifications are off in Settings."
-                        else -> "Alerts on for $displayName"
-                    },
-                )
-            },
-        )
-    }
-}
-
-/**
  * The recording frame for [epochSeconds], debounced so a drag asks Frigate for a frame only once
  * the finger has paused for a beat (each frame is an ffmpeg extraction server-side), and layered
  * over the previous frame so a still-loading one never flashes the video through.
@@ -611,13 +504,6 @@ private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: I
     val placeable = measurable.measure(Constraints.fixed(width, height))
     layout(width, height) { placeable.place(0, 0) }
 }
-
-/** Material's disabled-content alpha, for a control that's present but can't act yet. */
-private const val UNAVAILABLE_ALPHA = 0.38f
-private val QUICK_ACTION_SIZE = 64.dp
-private val QUICK_ACTION_ICON_SIZE = 24.dp
-private val PRIMARY_QUICK_ACTION_SIZE = 80.dp
-private val PRIMARY_QUICK_ACTION_ICON_SIZE = 32.dp
 
 /** A fresh instance per tap (identity equality), so repeating the same words restarts the auto-clear. */
 private class QuickActionHint(val text: String)
@@ -741,41 +627,6 @@ private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 4.dp),
     )
-}
-
-/**
- * A round secondary action under the player. [active] fills it (a toggle that's on);
- * [available] false dims it but keeps it tappable, so the tap can say why it did nothing.
- */
-@Composable
-private fun QuickActionButton(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    contentDescription: String,
-    onClick: () -> Unit,
-    active: Boolean = false,
-    available: Boolean = true,
-    size: Dp = QUICK_ACTION_SIZE,
-    iconSize: Dp = QUICK_ACTION_ICON_SIZE,
-) {
-    val background = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-    val tint = if (active) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.primary
-    Box(
-        modifier = Modifier
-            .size(size)
-            .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
-            .clip(CircleShape)
-            .background(background, CircleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (active) 0f else 0.2f), CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = contentDescription,
-            tint = tint,
-            modifier = Modifier.size(iconSize),
-        )
-    }
 }
 
 /**
