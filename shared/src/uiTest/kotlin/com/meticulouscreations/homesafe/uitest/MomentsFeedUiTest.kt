@@ -11,11 +11,13 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.groupIntoVisits
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
+import com.meticulouscreations.homesafe.viewmodel.MomentClip
 import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
@@ -58,6 +60,7 @@ class MomentsFeedUiTest {
         onLoadOlder: () -> Unit = {},
         onShowDay: (LocalDate?) -> Unit = {},
         onSelectCategory: (MomentCategory) -> Unit = {},
+        onUnfamiliarOnlyChange: (Boolean) -> Unit = {},
         onSelectCamera: (String?) -> Unit = {},
         block: androidx.compose.ui.test.ComposeUiTest.() -> Unit,
     ) =
@@ -69,6 +72,7 @@ class MomentsFeedUiTest {
                         state = state,
                         downloadState = DownloadUiState(),
                         onSelectCategory = onSelectCategory,
+                        onUnfamiliarOnlyChange = onUnfamiliarOnlyChange,
                         onSelectCamera = onSelectCamera,
                         onShowDay = onShowDay,
                         onLoadOlder = onLoadOlder,
@@ -182,5 +186,74 @@ class MomentsFeedUiTest {
     fun anEmptyWindowWithNothingOlderSaysSoAndOffersNothing() = runFeed(MomentsUiState(historyDay = LocalDate(2026, 9, 10), hasOlder = false)) {
         onNodeWithText("No detections on or before Sep 10 that the server still has.").assertIsDisplayed()
         onAllNodesWithText("Look further back").assertCountEquals(0)
+    }
+
+    @Test
+    fun theTypeMenuOffersUnfamiliarOnlyAndTheChipNamesIt() {
+        var unfamiliar: Boolean? = null
+        runFeed(MomentsUiState(groups = aDay), onUnfamiliarOnlyChange = { unfamiliar = it }) {
+            onNodeWithText("All events").performClick()
+            mainClock.advanceTimeBy(500)
+            onNodeWithText("Unfamiliar only").assertIsDisplayed().performClick()
+            assertEquals(true, unfamiliar)
+        }
+    }
+
+    @Test
+    fun anUnfamiliarPeopleFeedSaysSoOnTheChipAndWhenEmpty() = runFeed(MomentsUiState(selectedCategory = MomentCategory.PEOPLE, unfamiliarOnly = true)) {
+        onNodeWithText("Unfamiliar people").assertIsDisplayed()
+        onNodeWithText("No unfamiliar people to show.", substring = true).assertIsDisplayed()
+    }
+
+    /** Five clips of one person a few seconds apart: one card. */
+    private val visit: MomentItem = run {
+        val start = 1_789_000_000.0
+        val events = List(5) { i ->
+            MomentEvent("v$i", "backyard", "person", null, start + i * 20, start + i * 20 + 12, 0.9, hasClip = true, hasSnapshot = false)
+        }
+        val folded = events.groupIntoVisits().single()
+        MomentItem(
+            folded.lead,
+            folded.present(today, TimeZone.UTC),
+            thumbnailUrl = null,
+            key = folded.key,
+            kind = folded.kind,
+            clips = folded.events.map { e -> e.present(today, TimeZone.UTC).let { MomentClip(e, it.timeLabel, it.title, it.durationLabel) } },
+        )
+    }
+
+    @Test
+    fun aVisitIsOneCardWhoseTextPlaysItAndWhoseCountListsItsClips() {
+        var played: MomentEvent? = null
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                FrigatePreview {
+                    MomentsFeed(
+                        state = MomentsUiState(groups = listOf(MomentGroup("Sep 10", "Sep 10", listOf(visit)))),
+                        downloadState = DownloadUiState(),
+                        onSelectCategory = {},
+                        onUnfamiliarOnlyChange = {},
+                        onSelectCamera = {},
+                        onShowDay = {},
+                        onLoadOlder = {},
+                        onCardClick = { played = it },
+                        onClipBuffering = {},
+                        onClipError = {},
+                        onDownloadClick = {},
+                        onFullScreenClick = {},
+                    )
+                }
+            }
+            onAllNodesWithText("Person detected").assertCountEquals(1)
+            // The title is text, not the thumbnail, and still plays the visit's first clip.
+            onNodeWithText("Person detected").performClick()
+            assertEquals("v0", played?.id)
+            onNodeWithText("5 clips").performClick()
+            mainClock.advanceTimeBy(1_000)
+            onAllNodesWithText("Person detected", useUnmergedTree = true).assertCountEquals(6)
+            onAllNodesWithText("Person detected", useUnmergedTree = true)[5].performClick()
+            assertEquals("v4", played?.id)
+        }
     }
 }

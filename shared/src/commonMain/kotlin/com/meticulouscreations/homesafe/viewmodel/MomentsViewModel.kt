@@ -6,9 +6,11 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
+import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
 import com.meticulouscreations.homesafe.domain.model.endOfDayEpochSeconds
+import com.meticulouscreations.homesafe.domain.model.groupIntoVisits
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -48,9 +50,36 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
-/** A detection plus everything the card needs to draw it. [thumbnailUrl] is null only while disconnected. */
+/**
+ * A feed entry plus everything the card needs to draw it. [thumbnailUrl] is null only while disconnected.
+ *
+ * For one detection that is all there is. For several folded into a visit or a household car's
+ * routine stretch ([kind]), [event] is the one a tap plays and whose thumbnail stands for the
+ * lot, [presentation] reads for the whole entry, and [clips] lists every detection in it, oldest
+ * first, for the card to open onto.
+ */
 @Immutable
-data class MomentItem(val event: MomentEvent, val presentation: MomentPresentation, val thumbnailUrl: String?)
+data class MomentItem(
+    val event: MomentEvent,
+    val presentation: MomentPresentation,
+    val thumbnailUrl: String?,
+    /** What the list keys the entry on: stays put while a visit grows newer clips. */
+    val key: String = event.id,
+    val kind: VisitKind = VisitKind.SINGLE,
+    val clips: List<MomentClip> = emptyList(),
+)
+
+/** One detection inside a folded entry, as its row in the opened list reads. */
+@Immutable
+data class MomentClip(
+    val event: MomentEvent,
+    /** "6:55 PM" */
+    val timeLabel: String,
+    /** "Person on the front lawn" */
+    val title: String,
+    /** "0:12", or null while still in progress. */
+    val durationLabel: String?,
+)
 
 /** A date header and the cards beneath it, in feed order. */
 @Immutable
@@ -64,6 +93,11 @@ data class MomentCameraOption(val name: String, val displayName: String)
 data class MomentsUiState(
     val groups: List<MomentGroup> = emptyList(),
     val selectedCategory: MomentCategory = MomentCategory.ALL,
+    /**
+     * Hides what Frigate put a name to — a recognised face, one of the household's cars — so
+     * what is left is the people and vehicles nobody here knows. Combines with [selectedCategory].
+     */
+    val unfamiliarOnly: Boolean = false,
     /** Every camera on the server, in the server's order, for the camera filter. */
     val cameras: List<MomentCameraOption> = emptyList(),
     /** The camera the feed is narrowed to; null shows every camera. */
@@ -121,6 +155,7 @@ class MomentsViewModel(
     private val serverUrl: StateFlow<String?> = observeCurrentServerUrlUseCase()
 
     private val _selectedCategory = MutableStateFlow(MomentCategory.ALL)
+    private val _unfamiliarOnly = MutableStateFlow(false)
     private val _selectedCameraName = MutableStateFlow<String?>(null)
     private val _historyDay = MutableStateFlow<LocalDate?>(null)
     private val _clip = MutableStateFlow(ClipState())
@@ -137,15 +172,16 @@ class MomentsViewModel(
      */
     private val filters: StateFlow<Filters> = combine(
         _selectedCategory,
+        _unfamiliarOnly,
         _selectedCameraName,
         observeCamerasUseCase(),
-    ) { category, cameraName, cameras ->
+    ) { category, unfamiliarOnly, cameraName, cameras ->
         val options = cameras.map { MomentCameraOption(it.name, it.displayName) }
         val camera = cameraName?.let { name ->
             options.firstOrNull { it.name == name } ?: MomentCameraOption(name, cameraDisplayName(name)).takeIf { options.isEmpty() }
         }
-        Filters(category, options, camera)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, Filters(MomentCategory.ALL, emptyList(), null))
+        Filters(category, unfamiliarOnly, options, camera)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Filters(MomentCategory.ALL, false, emptyList(), null))
 
     init {
         // The server does the narrowing (a quiet camera's moments would otherwise be pages deep
@@ -161,7 +197,10 @@ class MomentsViewModel(
         }
     }
 
-    /** The cards: the feed filtered, presented and grouped by day. Everything that isn't about the open clip. */
+    /**
+     * The cards: the feed filtered, folded into visits, presented and grouped by day. Everything
+     * that isn't about the open clip.
+     */
     private val feed: Flow<MomentsUiState> = combine(
         observeMomentsUseCase(),
         filters,
@@ -177,14 +216,27 @@ class MomentsViewModel(
             // The server already narrowed the feed; this only hides the old camera's cards in the
             // moment between a pick and the repository starting over.
             .filter { cameraName == null || it.cameraName == cameraName }
-            .map { event ->
+            // Folded after the filters, so a visit's gaps are judged between the detections on
+            // screen, and before "unfamiliar only", which judges the visit as a whole.
+            .groupIntoVisits()
+            .filter { !filters.unfamiliarOnly || !it.isFamiliar }
+            .map { visit ->
+                val lead = visit.lead
                 // Built here, not in the card, so a LAN/Tailscale route flip re-points every thumbnail at once.
                 // Deliberately NOT gated on hasSnapshot: that flag is about the full-frame snapshot.jpg, which
                 // needs `snapshots: enabled` in Frigate's config. The object thumbnail is served for every
                 // tracked object regardless (verified: has_snapshot=false yet thumbnail.jpg -> 200), so
                 // gating on it would hide thumbnails for every real detection on a server without snapshots.
-                val thumb = serverUrl?.let { getEventThumbnailUrlUseCase(it, event.id) }
-                MomentItem(event, event.present(day), thumb)
+                val thumb = serverUrl?.let { getEventThumbnailUrlUseCase(it, lead.id) }
+                val clips = if (visit.kind == VisitKind.SINGLE) {
+                    emptyList()
+                } else {
+                    visit.events.map { event ->
+                        val p = event.present(day)
+                        MomentClip(event, p.timeLabel, p.title, p.durationLabel)
+                    }
+                }
+                MomentItem(lead, visit.present(day), thumb, key = visit.key, kind = visit.kind, clips = clips)
             }
         // groupBy preserves encounter order, and the feed arrives newest-first, so "Today" leads.
         val groups = items
@@ -193,6 +245,7 @@ class MomentsViewModel(
         MomentsUiState(
             groups = groups,
             selectedCategory = category,
+            unfamiliarOnly = filters.unfamiliarOnly,
             cameras = filters.cameras,
             selectedCamera = filters.camera,
             error = error,
@@ -214,6 +267,11 @@ class MomentsViewModel(
 
     fun selectCategory(category: MomentCategory) {
         _selectedCategory.value = category
+    }
+
+    /** Shows only what Frigate couldn't put a name to (see [MomentsUiState.unfamiliarOnly]), or everything again. */
+    fun setUnfamiliarOnly(unfamiliarOnly: Boolean) {
+        _unfamiliarOnly.value = unfamiliarOnly
     }
 
     /** Narrows the feed to one camera, by its Frigate name (the server is asked for just its moments); null shows every camera again. */
@@ -303,7 +361,7 @@ class MomentsViewModel(
 
     private fun today(): LocalDate = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
 
-    private data class Filters(val category: MomentCategory, val cameras: List<MomentCameraOption>, val camera: MomentCameraOption?)
+    private data class Filters(val category: MomentCategory, val unfamiliarOnly: Boolean, val cameras: List<MomentCameraOption>, val camera: MomentCameraOption?)
 
     private data class ClipState(
         val eventId: String? = null,
