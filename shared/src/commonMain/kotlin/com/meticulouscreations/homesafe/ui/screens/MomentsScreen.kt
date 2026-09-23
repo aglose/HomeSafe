@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -37,8 +38,12 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
@@ -48,6 +53,7 @@ import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SelectableDates
@@ -55,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -62,6 +69,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,6 +82,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.model.shortLabel
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
@@ -85,6 +94,7 @@ import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -96,9 +106,12 @@ import kotlin.time.Instant
 /** How many of the list's last items may be on screen before the next page is asked for. */
 private const val LOAD_OLDER_LOOKAHEAD = 4
 
+/** How long after an entry opens it is followed as it grows (see [KeepGrowingEntryInView]): the length of the unfold, with room to spare. */
+private const val REVEAL_WINDOW_MS = 700L
+
 /**
- * The moment card's preview frame. Narrow enough that a card's title, location and time still
- * fit on one line each beside it on a phone, and tall enough — it fills the card — that the
+ * The moment card's preview frame. Narrow enough that a card's title and its time and place
+ * still fit beside it on a phone, and tall enough — it fills the card — that the
  * frame reads as a scene rather than a letterboxed strip.
  */
 private val THUMBNAIL_WIDTH = 128.dp
@@ -140,6 +153,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         state = state,
         downloadState = downloadState,
         onSelectCategory = viewModel::selectCategory,
+        onUnfamiliarOnlyChange = viewModel::setUnfamiliarOnly,
         onSelectCamera = viewModel::selectCamera,
         onShowDay = viewModel::showDay,
         onLoadOlder = viewModel::loadOlder,
@@ -160,8 +174,8 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
 /**
  * The tab with its state hoisted: what [MomentsTabContent] draws once it has read the view
  * model. Nothing here reaches for a graph, so it can be previewed and tested from fixtures.
- * The only state it keeps is whether the day picker or a filter's menu is up — facts about this
- * composition, not about the feed.
+ * The only state it keeps is whether the day picker or a filter's menu is up, and which folded
+ * entries have their clips listed — facts about this composition, not about the feed.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -169,6 +183,7 @@ internal fun MomentsFeed(
     state: MomentsUiState,
     downloadState: DownloadUiState,
     onSelectCategory: (MomentCategory) -> Unit,
+    onUnfamiliarOnlyChange: (Boolean) -> Unit,
     onSelectCamera: (String?) -> Unit,
     onShowDay: (LocalDate?) -> Unit,
     onLoadOlder: () -> Unit,
@@ -180,6 +195,9 @@ internal fun MomentsFeed(
     modifier: Modifier = Modifier,
 ) {
     var pickingDay by remember { mutableStateOf(false) }
+    // Keyed by MomentItem.key, which holds while a visit grows newer clips.
+    var openEntries by remember { mutableStateOf(emptySet<String>()) }
+    var justOpenedEntry by remember { mutableStateOf<String?>(null) }
 
     if (pickingDay) {
         MomentDayPicker(
@@ -218,7 +236,12 @@ internal fun MomentsFeed(
                 selectedCameraLabel = state.selectedCamera?.displayName,
                 onSelect = onSelectCamera,
             )
-            CategoryFilterChip(selected = state.selectedCategory, onSelect = onSelectCategory)
+            CategoryFilterChip(
+                selected = state.selectedCategory,
+                unfamiliarOnly = state.unfamiliarOnly,
+                onSelect = onSelectCategory,
+                onUnfamiliarOnlyChange = onUnfamiliarOnlyChange,
+            )
             HistoryChip(
                 dayLabel = state.historyDay?.shortLabel(),
                 onClick = { pickingDay = true },
@@ -238,6 +261,7 @@ internal fun MomentsFeed(
         if (state.groups.isEmpty()) {
             EmptyMoments(
                 category = state.selectedCategory,
+                unfamiliarOnly = state.unfamiliarOnly,
                 cameraLabel = state.selectedCamera?.displayName,
                 historyDayLabel = state.historyDay?.shortLabel(),
                 hasError = state.error != null,
@@ -248,6 +272,11 @@ internal fun MomentsFeed(
         } else {
             val listState = rememberLazyListState()
             LoadOlderWhenNearTheEnd(listState, hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
+            // Whichever entry just grew — a clip opened, or a visit's clips listed — is scrolled
+            // up out from under the floating nav, rather than growing where nobody can see it.
+            val playingEntry = state.expandedEventId?.let { id -> state.groups.firstNotNullOfOrNull { g -> g.items.firstOrNull { it.plays(id) }?.key } }
+            KeepGrowingEntryInView(listState, trigger = state.expandedEventId, entryKey = playingEntry)
+            KeepGrowingEntryInView(listState, trigger = justOpenedEntry, entryKey = justOpenedEntry)
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f),
@@ -258,27 +287,51 @@ internal fun MomentsFeed(
                     item(key = "header-${group.dateGroup}-${group.dateSubLabel}", contentType = "date-header") {
                         MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel)
                     }
-                    items(group.items, key = { it.event.id }, contentType = { "moment-card" }) { item ->
-                        val expanded = state.expandedEventId == item.event.id
-                        val isDownloading = downloadState.downloadingEventId == item.event.id
-                        val downloadSucceeded = downloadState.resultEventId == item.event.id && downloadState.resultError == null
-                        val downloadErrorMessage = downloadState.resultError.takeIf { downloadState.resultEventId == item.event.id }
-                        MomentCard(
-                            item = item,
-                            expanded = expanded,
-                            clipRequest = if (expanded) state.clipRequest else null,
-                            clipPosterUrl = if (expanded) state.clipPosterUrl else null,
-                            clipError = if (expanded) state.clipError else null,
-                            clipBuffering = expanded && state.clipBuffering,
-                            isDownloading = isDownloading,
-                            downloadSucceeded = downloadSucceeded,
-                            downloadErrorMessage = downloadErrorMessage,
-                            onClick = { onCardClick(item.event) },
-                            onClipBuffering = onClipBuffering,
-                            onClipError = onClipError,
-                            onDownloadClick = { onDownloadClick(item.event) },
-                            onFullScreenClick = { onFullScreenClick(item.event) },
+                    items(group.items, key = { it.key }, contentType = { if (it.kind == VisitKind.ROUTINE) "routine-row" else "moment-card" }) { item ->
+                        // The clip open in this entry, if the one playing is any of its detections.
+                        val playing = state.expandedEventId?.let { id -> item.eventFor(id) }
+                        val clipsOpen = item.key in openEntries
+                        val onToggleClips = {
+                            openEntries = if (clipsOpen) openEntries - item.key else openEntries + item.key
+                            justOpenedEntry = if (clipsOpen) null else item.key
+                        }
+                        val player = ClipPlayerState(
+                            playingEventId = playing?.id,
+                            request = if (playing != null) state.clipRequest else null,
+                            posterUrl = if (playing != null) state.clipPosterUrl else null,
+                            error = if (playing != null) state.clipError else null,
+                            buffering = playing != null && state.clipBuffering,
                         )
+                        if (item.kind == VisitKind.ROUTINE) {
+                            RoutineRow(
+                                item = item,
+                                clipsOpen = clipsOpen,
+                                player = player,
+                                onToggleClips = onToggleClips,
+                                onPlay = onCardClick,
+                                onClipBuffering = onClipBuffering,
+                                onClipError = onClipError,
+                                onFullScreenClick = { playing?.let(onFullScreenClick) },
+                            )
+                        } else {
+                            val isDownloading = downloadState.downloadingEventId == item.event.id
+                            val downloadSucceeded = downloadState.resultEventId == item.event.id && downloadState.resultError == null
+                            val downloadErrorMessage = downloadState.resultError.takeIf { downloadState.resultEventId == item.event.id }
+                            MomentCard(
+                                item = item,
+                                clipsOpen = clipsOpen,
+                                player = player,
+                                isDownloading = isDownloading,
+                                downloadSucceeded = downloadSucceeded,
+                                downloadErrorMessage = downloadErrorMessage,
+                                onPlay = onCardClick,
+                                onToggleClips = onToggleClips,
+                                onClipBuffering = onClipBuffering,
+                                onClipError = onClipError,
+                                onDownloadClick = { onDownloadClick(item.event) },
+                                onFullScreenClick = { playing?.let(onFullScreenClick) },
+                            )
+                        }
                     }
                 }
                 item(key = "feed-end", contentType = "feed-end") {
@@ -334,6 +387,7 @@ private fun FeedEnd(hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () ->
 @Composable
 private fun EmptyMoments(
     category: MomentCategory,
+    unfamiliarOnly: Boolean,
     cameraLabel: String?,
     historyDayLabel: String?,
     hasError: Boolean,
@@ -344,7 +398,7 @@ private fun EmptyMoments(
     // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
     // happened in a zone whose movement list includes it, or when Frigate recognised who or
     // what it was. Say so, rather than looking broken.
-    val kind = if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
+    val kind = (if (unfamiliarOnly) "unfamiliar " else "") + if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
     val what = if (cameraLabel != null) "$kind on $cameraLabel" else kind
     val message = when {
         hasError -> "Couldn't reach the server for detections."
@@ -355,7 +409,7 @@ private fun EmptyMoments(
 
         historyDayLabel != null -> "No $what on or before $historyDayLabel that the server still has."
 
-        category != MomentCategory.ALL -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+        category != MomentCategory.ALL || unfamiliarOnly -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
 
         cameraLabel != null -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
 
@@ -502,13 +556,28 @@ private fun CameraFilterChip(
     }
 }
 
-/** What kind of detection the feed shows: everything, or just people, vehicles or animals. */
+/**
+ * What kind of detection the feed shows: everything, or just people, vehicles or animals — and,
+ * beneath them, whether to leave out what Frigate recognised. "Unfamiliar only" is a switch that
+ * sits alongside the type rather than one more type, so "unfamiliar people" is one pick away, and
+ * the chip names both ("Unfamiliar people") so the narrowing never goes unseen.
+ */
 @Composable
-private fun CategoryFilterChip(selected: MomentCategory, onSelect: (MomentCategory) -> Unit) {
+private fun CategoryFilterChip(
+    selected: MomentCategory,
+    unfamiliarOnly: Boolean,
+    onSelect: (MomentCategory) -> Unit,
+    onUnfamiliarOnlyChange: (Boolean) -> Unit,
+) {
+    val label = when {
+        !unfamiliarOnly -> selected.label
+        selected == MomentCategory.ALL -> "Unfamiliar"
+        else -> "Unfamiliar ${selected.label.lowercase()}"
+    }
     FilterMenuChip(
-        label = selected.label,
-        icon = selected.icon,
-        active = selected != MomentCategory.ALL,
+        label = label,
+        icon = selected.icon ?: Icons.Filled.PersonSearch.takeIf { unfamiliarOnly },
+        active = selected != MomentCategory.ALL || unfamiliarOnly,
         menuDescription = "Filter by type",
     ) { dismiss ->
         MomentCategory.entries.forEach { category ->
@@ -516,6 +585,11 @@ private fun CategoryFilterChip(selected: MomentCategory, onSelect: (MomentCatego
                 dismiss()
                 onSelect(category)
             }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+        FilterMenuItem(label = "Unfamiliar only", icon = Icons.Filled.PersonSearch, checked = unfamiliarOnly) {
+            dismiss()
+            onUnfamiliarOnlyChange(!unfamiliarOnly)
         }
     }
 }
@@ -623,18 +697,63 @@ private fun MomentDateHeader(dateGroup: String, dateSubLabel: String) {
     }
 }
 
+/** Whether [eventId] is this entry's detection or one of its clips. */
+private fun MomentItem.plays(eventId: String): Boolean = eventFor(eventId) != null
+
+/** This entry's detection with [eventId], its lead or one of its clips; null when it holds none. */
+private fun MomentItem.eventFor(eventId: String): MomentEvent? =
+    if (event.id == eventId) event else clips.firstOrNull { it.event.id == eventId }?.event
+
+/**
+ * The inline player's side of [MomentsUiState], handed only to the entry whose detection is
+ * playing: every other entry gets the idle one, so opening a clip recomposes one card, not the feed.
+ */
+@Immutable
+private data class ClipPlayerState(
+    /** The detection playing in this entry; null when none of its detections is. */
+    val playingEventId: String? = null,
+    val request: PlayerRequest? = null,
+    val posterUrl: String? = null,
+    val error: String? = null,
+    val buffering: Boolean = false,
+)
+
+/**
+ * Scrolls the entry [entryKey] up as it grows, until its bottom clears the floating nav, for a
+ * moment after [trigger] changes. Opening the clip of the last card on screen used to unfold the
+ * player beneath the nav, where it played unseen; this follows the expansion as it animates. It
+ * never lifts the entry's top above the list's, and gives way to the reader's own scrolling.
+ */
+@Composable
+private fun KeepGrowingEntryInView(listState: LazyListState, trigger: String?, entryKey: String?) {
+    LaunchedEffect(trigger) {
+        if (trigger == null || entryKey == null) return@LaunchedEffect
+        withTimeoutOrNull(REVEAL_WINDOW_MS) {
+            snapshotFlow {
+                val info = listState.layoutInfo
+                val entry = info.visibleItemsInfo.firstOrNull { it.key == entryKey } ?: return@snapshotFlow 0
+                val overflow = entry.offset + entry.size - (info.viewportEndOffset - info.afterContentPadding)
+                overflow.coerceAtMost(entry.offset).coerceAtLeast(0)
+            }.collect { overflow -> if (overflow > 0) listState.scrollBy(overflow.toFloat()) }
+        }
+    }
+}
+
+/**
+ * A detection, or a visit of several, as a card: the thumbnail beside what, when and where, and
+ * the whole top of the card plays the clip — the thumbnail's play icon is only the hint. A visit
+ * adds its clip count, which opens a list of the clips so any one of them can be played.
+ */
 @Composable
 private fun MomentCard(
     item: MomentItem,
-    expanded: Boolean,
-    clipRequest: PlayerRequest?,
-    clipPosterUrl: String?,
-    clipError: String?,
-    clipBuffering: Boolean,
+    clipsOpen: Boolean,
+    player: ClipPlayerState,
     isDownloading: Boolean,
     downloadSucceeded: Boolean,
     downloadErrorMessage: String?,
-    onClick: () -> Unit,
+    onPlay: (MomentEvent) -> Unit,
+    onToggleClips: () -> Unit,
     onClipBuffering: (Boolean) -> Unit,
     onClipError: () -> Unit,
     onDownloadClick: () -> Unit,
@@ -648,13 +767,19 @@ private fun MomentCard(
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp)),
     ) {
         // Intrinsic height so the preview can fill whatever the details beside it come to:
         // a 16:9 band left the frame barely half the card's height, and squeezing Frigate's
         // roughly square object thumbnail into it cropped the detection down to a sliver.
-        Row(modifier = Modifier.height(IntrinsicSize.Min)) {
+        Row(
+            modifier = Modifier
+                .height(IntrinsicSize.Min)
+                .clickable(
+                    enabled = event.hasClip,
+                    onClickLabel = if (player.playingEventId == event.id) "Close clip" else "Play clip",
+                ) { onPlay(event) },
+        ) {
             Box(
                 modifier = Modifier
                     .width(THUMBNAIL_WIDTH)
@@ -672,7 +797,7 @@ private fun MomentCard(
                     // one cluster with it; it now lives on the details' bottom row.
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = "Play clip",
+                        contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(32.dp).background(extraColors.glassFill, CircleShape).padding(4.dp),
                     )
@@ -716,25 +841,22 @@ private fun MomentCard(
                 verticalArrangement = Arrangement.SpaceBetween,
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(
-                            text = p.title,
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f),
-                        )
-                        Text(
-                            text = p.timeLabel,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    // The title has the width to itself: the time used to share its line and cut
+                    // a car's name down to "Andrew's Tesla on the…". The time leads the line below
+                    // instead, where a long place name gives way to it rather than the other way round.
                     Text(
-                        text = p.locationLabel,
+                        text = p.title,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = "${p.timeLabel} · ${p.locationLabel}",
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                     p.sightingsLabel?.let {
                         Text(
@@ -744,6 +866,7 @@ private fun MomentCard(
                             maxLines = 1,
                         )
                     }
+                    p.clipCountLabel?.let { ClipsToggle(label = it, open = clipsOpen, onClick = onToggleClips) }
                 }
                 // The badge and the clip's download share the card's bottom line, at opposite
                 // ends, where the download has room of its own instead of crowding the thumbnail.
@@ -775,59 +898,206 @@ private fun MomentCard(
             }
         }
 
+        if (item.clips.isNotEmpty()) {
+            AnimatedVisibility(visible = clipsOpen) {
+                MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay)
+            }
+        }
+
         // The clip opens beneath the card rather than navigating away, so the feed stays in place.
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(visible = player.playingEventId != null) {
+            InlineClipPlayer(player = player, onClipBuffering = onClipBuffering, onClipError = onClipError, onFullScreenClick = onFullScreenClick)
+        }
+    }
+}
+
+/**
+ * A household car's comings and goings, folded into one quiet row: "Andrew's Tesla came and went
+ * 6×", the span and the cameras. No thumbnail and no badge — the family's own car doing what it
+ * does every day is the least of the feed's news. A tap lists the sightings, any of which plays.
+ */
+@Composable
+private fun RoutineRow(
+    item: MomentItem,
+    clipsOpen: Boolean,
+    player: ClipPlayerState,
+    onToggleClips: () -> Unit,
+    onPlay: (MomentEvent) -> Unit,
+    onClipBuffering: (Boolean) -> Unit,
+    onClipError: () -> Unit,
+    onFullScreenClick: () -> Unit,
+) {
+    val p = item.presentation
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp)),
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(onClickLabel = if (clipsOpen) "Hide sightings" else "Show sightings", onClick = onToggleClips)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Box(
-                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
-                // Error is checked before the player: an error that lands after the request was set
-                // must win, or it would be masked behind a player that never paints a frame.
-                when {
-                    clipError != null -> Text(clipError, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                Icon(
+                    imageVector = Icons.Filled.DirectionsCar,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = p.title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = "${p.timeLabel} · ${p.locationLabel}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(
+                imageVector = if (clipsOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        AnimatedVisibility(visible = clipsOpen) {
+            MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay)
+        }
+        AnimatedVisibility(visible = player.playingEventId != null) {
+            InlineClipPlayer(player = player, onClipBuffering = onClipBuffering, onClipError = onClipError, onFullScreenClick = onFullScreenClick)
+        }
+    }
+}
 
-                    clipRequest != null -> {
-                        // Keyed by event so collapsing and reopening, or scrolling the card away and
-                        // back, rebinds to the same player (paused where it was) instead of reloading.
-                        CameraStreamPlayer(
-                            request = clipRequest,
-                            modifier = Modifier.fillMaxSize(),
-                            playerKey = "event:${event.id}",
-                            onPositionChanged = {},
-                            onBufferingChanged = onClipBuffering,
-                            onPlaybackEnded = {},
-                            onPlaybackError = onClipError,
-                        )
-                        // Drawn after the player so it sits on top of the poster, which stays until the first frame.
-                        if (clipBuffering) CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
-                    }
+/** "5 clips ▾": what a visit folds together, and the way to list them. */
+@Composable
+private fun ClipsToggle(label: String, open: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .clickable(onClickLabel = if (open) "Hide clips" else "Show clips", onClick = onClick)
+            .padding(vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+        Icon(
+            imageVector = if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.secondary,
+            modifier = Modifier.size(16.dp),
+        )
+    }
+}
 
-                    else -> {
-                        // The clip URL is still being resolved, but the frame at the event's start is
-                        // already known — show it now so the box never opens empty.
-                        if (clipPosterUrl != null) {
-                            // FillBounds to match the player's own poster and video (see CameraStreamPlayer),
-                            // so the hand-over to the player doesn't shift the picture.
-                            AsyncImage(
-                                model = clipPosterUrl,
-                                contentDescription = null,
-                                contentScale = ContentScale.FillBounds,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    }
-                }
-
-                // Last in the box so it sits over the player, and offered even while the clip is
-                // still loading or failed: the detail screen plays the camera's recording from
-                // this moment, which is a way through when the event's own clip won't play.
-                FullScreenButton(
-                    onClick = onFullScreenClick,
-                    modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+/** A folded entry's detections, oldest first, one row each; a tap plays that one, the one playing is marked. */
+@Composable
+private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (MomentEvent) -> Unit) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+        item.clips.forEach { clip ->
+            val playing = clip.event.id == playingEventId
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(enabled = clip.event.hasClip, onClickLabel = if (playing) "Close clip" else "Play clip") { onPlay(clip.event) }
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    imageVector = if (playing) Icons.Filled.GraphicEq else Icons.Filled.PlayArrow,
+                    contentDescription = null,
+                    tint = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+                Text(text = clip.timeLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    text = clip.title,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = clip.durationLabel ?: "LIVE",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
+    }
+}
+
+/** The card-width player a card opens beneath itself, with the way out to the full-width one. */
+@Composable
+private fun InlineClipPlayer(player: ClipPlayerState, onClipBuffering: (Boolean) -> Unit, onClipError: () -> Unit, onFullScreenClick: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        contentAlignment = Alignment.Center,
+    ) {
+        // Error is checked before the player: an error that lands after the request was set
+        // must win, or it would be masked behind a player that never paints a frame.
+        when {
+            player.error != null -> Text(player.error, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+
+            player.request != null -> {
+                // Keyed by event so collapsing and reopening, or scrolling the card away and
+                // back, rebinds to the same player (paused where it was) instead of reloading.
+                CameraStreamPlayer(
+                    request = player.request,
+                    modifier = Modifier.fillMaxSize(),
+                    playerKey = "event:${player.playingEventId}",
+                    onPositionChanged = {},
+                    onBufferingChanged = onClipBuffering,
+                    onPlaybackEnded = {},
+                    onPlaybackError = onClipError,
+                )
+                // Drawn after the player so it sits on top of the poster, which stays until the first frame.
+                if (player.buffering) CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 2.dp)
+            }
+
+            else -> {
+                // The clip URL is still being resolved, but the frame at the event's start is
+                // already known — show it now so the box never opens empty.
+                if (player.posterUrl != null) {
+                    // FillBounds to match the player's own poster and video (see CameraStreamPlayer),
+                    // so the hand-over to the player doesn't shift the picture.
+                    AsyncImage(
+                        model = player.posterUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.FillBounds,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
+
+        // Last in the box so it sits over the player, and offered even while the clip is
+        // still loading or failed: the detail screen plays the camera's recording from
+        // this moment, which is a way through when the event's own clip won't play.
+        FullScreenButton(
+            onClick = onFullScreenClick,
+            modifier = Modifier.align(Alignment.TopEnd).padding(8.dp),
+        )
     }
 }
 

@@ -85,7 +85,10 @@ data class MomentPresentation(
     val dateGroup: String,
     /** "Sep 2" — the group header's right-hand sub label. */
     val dateSubLabel: String,
-    /** The pill on the card: the label, with any sub-label appended ("PERSON · ANDREW"). */
+    /**
+     * The pill on the card: Frigate's label ("PERSON", "CAR"). A recognised name is left to the
+     * title, which already leads with it; the pill used to repeat it ("CAR · ANDREWS TESLA").
+     */
     val badgeLabel: String,
     /**
      * "Front Yard · Sidewalk, Front lawn" — the camera, then every zone the object was in, in
@@ -97,6 +100,11 @@ data class MomentPresentation(
      * for several sightings of the same parked vehicle; null for a single sighting.
      */
     val sightingsLabel: String?,
+    /**
+     * "5 clips" / "6 sightings" on an entry that folds several detections together (see
+     * [MomentVisit.present]), where it doubles as the control that lists them; null for one detection.
+     */
+    val clipCountLabel: String? = null,
 )
 
 /**
@@ -121,10 +129,11 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     // the classifier's name for the object when it has one, and the place is the last zone the
     // object entered — where it ended up matters more than where it came from.
     val noun = label.lowercase().replaceFirstChar { it.uppercase() }
-    val subject = subLabel?.takeIf { it.isNotBlank() }?.let { subLabelDisplayName(it) } ?: noun
+    // A placeholder the classifier or the face model files things under ("none", "unknown") is
+    // not a name, and the card never offers one as if it were.
+    val subject = subLabel?.takeIf { isFamiliar }?.let { subLabelDisplayName(it) } ?: noun
     val place = zones.lastOrNull { it.isNotBlank() }
     val title = if (place != null) "$subject ${zonePhrase(place)}" else "$subject detected"
-    val badge = subLabel?.takeIf { it.isNotBlank() }?.let { "$label · ${subLabelDisplayName(it)}" } ?: label
     val places = zones.filter { it.isNotBlank() }.joinToString(", ") { zoneDisplayName(it).replaceFirstChar(Char::uppercase) }
     val location = if (places.isEmpty()) cameraDisplayName else "$cameraDisplayName · $places"
     val sightingsLabel = when {
@@ -139,7 +148,7 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
         durationLabel = durationSeconds?.let { formatMomentDuration(it) },
         dateGroup = dateGroup,
         dateSubLabel = dateSubLabel,
-        badgeLabel = badge,
+        badgeLabel = label,
         locationLabel = location,
         sightingsLabel = sightingsLabel,
     )

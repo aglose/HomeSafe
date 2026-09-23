@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
+import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -134,8 +135,8 @@ class MomentsViewModelTest {
         event("d", "backyard", "dog"),
     )
 
-    private inner class Harness(cameras: List<Camera> = listOf(Camera("front_door", true), Camera("backyard", true))) {
-        val moments = FakeMoments(feed)
+    private inner class Harness(cameras: List<Camera> = listOf(Camera("front_door", true), Camera("backyard", true)), events: List<MomentEvent> = feed) {
+        val moments = FakeMoments(events)
         val cameraRepo = FakeCameras(cameras)
         val viewModel = MomentsViewModel(
             observeMomentsUseCase = ObserveMomentsUseCase(moments),
@@ -231,5 +232,43 @@ class MomentsViewModelTest {
         val state = state(harness.viewModel)
         assertEquals(MomentCameraOption("backyard", "Backyard"), state.selectedCamera)
         assertEquals(listOf("c", "d"), state.ids)
+    }
+
+    /** One person's visit in five clips, the household's car coming and going, and a stranger's car. */
+    private val evening: List<MomentEvent> = run {
+        val t0 = 1_789_390_000.0
+        fun at(id: String, offset: Double, label: String = "person", camera: String = "backyard", sub: String? = null) =
+            MomentEvent(id, camera, label, sub, t0 + offset, t0 + offset + 10, 0.9, hasClip = true, hasSnapshot = false)
+        List(5) { at("p$it", it * 20.0) } +
+            List(3) { at("t$it", 600.0 + it * 400, label = "car", camera = "front_door", sub = "andrews_tesla") } +
+            at("stranger", 3_000.0, label = "car", camera = "front_door")
+    }
+
+    @Test
+    fun aVisitIsOneCardThatListsItsClips() = runTest(dispatcher) {
+        val items = state(Harness(events = evening).viewModel).groups.flatMap { it.items }
+        assertEquals(listOf(VisitKind.SINGLE, VisitKind.ROUTINE, VisitKind.VISIT), items.map { it.kind }, "newest first")
+        val visit = items.last()
+        assertEquals("p0", visit.key)
+        assertEquals("p0", visit.event.id, "the card plays the visit's first clip")
+        assertEquals(listOf("p0", "p1", "p2", "p3", "p4"), visit.clips.map { it.event.id })
+        assertEquals("5 clips", visit.presentation.clipCountLabel)
+        assertEquals("http://frigate.test:8971/thumb/p0", visit.thumbnailUrl)
+        assertEquals("Andrew's Tesla came and went 3×", items[1].presentation.title)
+    }
+
+    @Test
+    fun unfamiliarOnlyHidesTheHouseholdsCarsAndRecognisedPeople() = runTest(dispatcher) {
+        val named = MomentEvent("andrew", "front_door", "person", "andrew", 1_789_395_000.0, 1_789_395_010.0, 0.9, hasClip = true, hasSnapshot = false)
+        val harness = Harness(events = evening + named)
+        state(harness.viewModel)
+        harness.viewModel.setUnfamiliarOnly(true)
+        advanceUntilIdle()
+        val state = harness.viewModel.uiState.value
+        assertEquals(true, state.unfamiliarOnly)
+        assertEquals(listOf("p0", "stranger"), state.ids)
+        harness.viewModel.selectCategory(MomentCategory.VEHICLES)
+        advanceUntilIdle()
+        assertEquals(listOf("stranger"), harness.viewModel.uiState.value.ids, "and combines with the type")
     }
 }

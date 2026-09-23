@@ -1,7 +1,7 @@
 # Familiar vs. stranger alerts
 
 Frigate's face recognition puts a name on a `person` detection (the event's `sub_label`) when a
-registered face matches. HomeSafe uses that in two places.
+registered face matches. HomeSafe uses that in three places.
 
 ## Teaching Frigate who's who — Settings › Recognition › Faces
 
@@ -34,6 +34,15 @@ Because Frigate names a face a few seconds into a visit, `DetectionAlertService`
 still-anonymous, still-present person for up to `RECOGNITION_GRACE_SECONDS` (20 s) before judging
 them a stranger, re-reading the event on each poll so a late name suppresses the notification.
 People who already left, or who are named on first sight, are decided immediately.
+
+## "Unfamiliar only" — the Moments feed
+
+The feed's type filter has an "Unfamiliar only" switch beneath the types (`MomentsUiState.unfamiliarOnly`,
+not persisted). It hides every entry Frigate put a name to: a recognised face, or one of the
+household's cars (a vehicle whose classifier sub-label is a real category — `none`/`not_ours` and
+`unknown` are never names, see `MomentEvent.isFamiliar`). It judges folded visits as a whole
+(`MomentVisit.isFamiliar` in `domain/model/MomentVisits.kt`), because Frigate names a face a few
+clips into a visit and the unnamed clips around it are the same person.
 
 ## Server prerequisites
 

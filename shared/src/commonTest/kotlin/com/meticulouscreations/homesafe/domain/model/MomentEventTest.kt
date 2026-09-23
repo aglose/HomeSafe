@@ -43,7 +43,7 @@ class MomentEventTest {
         assertEquals("8:42 AM", p.timeLabel)
         assertEquals("0:15", p.durationLabel)
         assertEquals("Andrew detected", p.title, "a recognised sub-label becomes the subject")
-        assertEquals("person · Andrew", p.badgeLabel)
+        assertEquals("person", p.badgeLabel, "the name is in the title; the pill doesn't repeat it")
         assertEquals("Car detected", event(label = "car", start = start).present(today, utc).title)
         assertNull(p.sightingsLabel, "a single sighting has no sightings line")
     }
@@ -58,7 +58,7 @@ class MomentEventTest {
         assertEquals("Dog on the sidewalk", title("dog", zones = listOf("sidewalk")))
         assertEquals("Car on the street", title("car", zones = listOf("street")))
         assertEquals("Sarah's Tesla detected", title("car", "sarahs_tesla"))
-        assertEquals("car · Sarah's Tesla", event(label = "car", start = start, sub = "sarahs_tesla").present(today, utc).badgeLabel)
+        assertEquals("car", event(label = "car", start = start, sub = "sarahs_tesla").present(today, utc).badgeLabel)
     }
 
     @Test
@@ -70,6 +70,30 @@ class MomentEventTest {
         assertEquals("in the driveway", zonePhrase("driveway"))
         assertEquals("on the front lawn", zonePhrase("front_lawn"))
         assertEquals("in the back_yard".replace("_", " "), zonePhrase("back_yard"))
+    }
+
+    @Test
+    fun anOwnersApostropheLostToTheKeyIsPutBack() {
+        // The household's own categories, as the labelling screen's slug filed them.
+        assertEquals("Andrew's Tesla", subLabelDisplayName("andrews_tesla"))
+        assertEquals("Yaya's Car", subLabelDisplayName("yayas_car"))
+        assertEquals("In-Laws' Mercedes", subLabelDisplayName("in_laws_mercedes"))
+        assertEquals("Andrew's Model 3", subLabelDisplayName("andrews_model_3"))
+        assertEquals("Yaya's BMW", subLabelDisplayName("yayas_bmw"))
+        assertEquals("Parents' Van", subLabelDisplayName("parents_van"))
+        // Names with an s of their own, with or without the apostrophe's s left in the key.
+        assertEquals("James's Car", subLabelDisplayName("james_car"))
+        assertEquals("James's Car", subLabelDisplayName("jamess_car"))
+        assertEquals("Chris's Truck", subLabelDisplayName("chris_truck"))
+        // Not the shape of an owner and a vehicle: left as it was.
+        assertEquals("Andrews", subLabelDisplayName("andrews"))
+        assertEquals("Andrew", subLabelDisplayName("andrew"))
+        assertEquals("Bus Stop", subLabelDisplayName("bus_stop"))
+        assertEquals("Andrews Delivery", subLabelDisplayName("andrews_delivery"))
+        assertEquals("Boss Car", subLabelDisplayName("boss_car"), "a double s is left alone rather than guessed at")
+        assertEquals("Known Cars", subLabelDisplayName("known_cars"))
+        // The spelled-out names still win.
+        assertEquals("Ron and Judy's Mercedes", subLabelDisplayName("ron_judys_mercedes"))
     }
 
     @Test
