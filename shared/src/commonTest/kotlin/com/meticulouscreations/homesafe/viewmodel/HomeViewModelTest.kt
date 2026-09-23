@@ -130,7 +130,7 @@ class HomeViewModelTest {
         override suspend fun loadOlder() = fail("unused")
         override fun showBefore(epochSeconds: Double?) = fail("unused")
         override fun showCamera(cameraName: String?) = fail("unused")
-        override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = fail("unused")
+        override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
         override suspend fun refresh() = fail("unused")
         override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
         override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")

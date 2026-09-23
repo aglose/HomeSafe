@@ -28,19 +28,28 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.previewNowEpochSeconds
 import com.meticulouscreations.homesafe.ui.preview.previewRecordingSegments
+import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
+import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import kotlin.math.floor
+import kotlin.math.roundToLong
 
 /**
  * A YouTube-live style DVR scrubber: a window of history ending at "now" (the right edge), with
  * recorded coverage drawn as bars whose height follows motion intensity, and a playhead the user
  * can drag or tap. Coverage left of the playhead is tinted as "played".
+ *
+ * [detections] are marked above the bars, a dot at each one's start coloured by what it was, so
+ * the bars say *when* something moved and the dots say *what*. Dots too close to tell apart merge
+ * (see [timelineMarkers]); a tap on or near one — anywhere above the bars — goes to
+ * [onDetectionTap] with where it started, and a tap anywhere else seeks there as before.
  */
 @Composable
 fun RecordingTimeline(
@@ -55,13 +64,18 @@ fun RecordingTimeline(
     onScrubEnd: () -> Unit,
     onSeek: (epochSeconds: Double) -> Unit,
     modifier: Modifier = Modifier,
+    detections: List<TimelineDetection> = emptyList(),
+    onDetectionTap: (startEpochSeconds: Double) -> Unit = onSeek,
 ) {
     val windowStart = nowEpochSeconds - span.seconds
     val frame by rememberUpdatedState(TimelineFrame(windowStart, span.seconds.toDouble()))
+    val currentDetections by rememberUpdatedState(detections)
     val currentOnScrubStart by rememberUpdatedState(onScrubStart)
     val currentOnScrub by rememberUpdatedState(onScrub)
     val currentOnScrubEnd by rememberUpdatedState(onScrubEnd)
     val currentOnSeek by rememberUpdatedState(onSeek)
+    val currentOnDetectionTap by rememberUpdatedState(onDetectionTap)
+    val markerColors = LocalFrigateExtraColors.current
 
     val textMeasurer = rememberTextMeasurer()
     val colorScheme = MaterialTheme.colorScheme
@@ -81,12 +95,20 @@ fun RecordingTimeline(
     Canvas(
         modifier = modifier
             .fillMaxWidth()
-            .height(96.dp)
+            .height(TIMELINE_HEIGHT)
             .clip(shape)
             .background(colorScheme.surface)
             .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.1f), shape)
             .pointerInput(Unit) {
-                detectTapGestures { offset -> currentOnSeek(frame.epochAt(offset.x, size.width)) }
+                detectTapGestures { offset ->
+                    // Above the bars a tap is aimed at a dot, and the dots are small: the nearest within reach takes it.
+                    val marker = if (offset.y < TRACK_TOP.toPx()) {
+                        frame.markers(currentDetections, size.width.toFloat(), MARKER_MERGE.toPx()).markerNear(offset.x, MARKER_TAP_REACH.toPx())
+                    } else {
+                        null
+                    }
+                    if (marker != null) currentOnDetectionTap(marker.epochSeconds) else currentOnSeek(frame.epochAt(offset.x, size.width))
+                }
             }
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
@@ -104,7 +126,8 @@ fun RecordingTimeline(
     ) {
         val width = size.width
         val labelTop = 10.dp.toPx()
-        val trackTop = 36.dp.toPx()
+        val markerY = MARKER_LANE_CENTER.toPx()
+        val trackTop = TRACK_TOP.toPx()
         val trackBottom = size.height - 16.dp.toPx()
         fun xFor(epoch: Double): Float = ((epoch - windowStart) / span.seconds * width).toFloat()
 
@@ -115,7 +138,7 @@ fun RecordingTimeline(
             strokeWidth = 2.dp.toPx(),
         )
 
-        ticks.forEachIndexed { index, tick ->
+        ticks.forEach { tick ->
             val x = xFor(tick)
             drawLine(
                 color = colorScheme.outlineVariant.copy(alpha = 0.25f),
@@ -123,9 +146,12 @@ fun RecordingTimeline(
                 end = Offset(x, trackBottom),
                 strokeWidth = 1.dp.toPx(),
             )
+        }
+        // Every tick keeps its line, but only as many labels as fit side by side get drawn.
+        val slots = ticks.mapIndexed { index, tick -> TickLabelSlot(tickOrdinal(tick, span.tickSeconds), xFor(tick), tickLabels[index].size.width.toFloat()) }
+        tickLabelsToDraw(slots, width, inset = 4.dp.toPx(), gap = 8.dp.toPx()).forEach { index ->
             val layout = tickLabels[index]
-            val labelX = (x - layout.size.width / 2f).coerceIn(4.dp.toPx(), (width - layout.size.width - 4.dp.toPx()).coerceAtLeast(0f))
-            drawText(layout, color = colorScheme.onSurfaceVariant, topLeft = Offset(labelX, labelTop))
+            drawText(layout, color = colorScheme.onSurfaceVariant, topLeft = Offset(slots[index].centerX - layout.size.width / 2f, labelTop))
         }
 
         val coverage = CoverageGeometry(windowStart, nowEpochSeconds, span.seconds.toDouble(), trackTop, trackBottom, maxMotion)
@@ -134,6 +160,19 @@ fun RecordingTimeline(
         val indicatorX = xFor(indicatorEpoch).coerceIn(0f, width)
         clipRect(right = indicatorX) {
             drawCoverage(segments, coverage, base = colorScheme.primaryContainer.copy(alpha = 0.55f), heat = colorScheme.primaryContainer, objects = colorScheme.secondary)
+        }
+
+        frame.markers(detections, width, MARKER_MERGE.toPx()).forEach { marker ->
+            val color = markerColors.forCategory(marker.category, fallback = colorScheme.onSurfaceVariant)
+            // A faint stem down into the bars ties each dot to the motion it explains.
+            drawLine(color.copy(alpha = 0.3f), start = Offset(marker.x, markerY), end = Offset(marker.x, trackBottom), strokeWidth = 1.dp.toPx())
+            val radius = (if (marker.count > 1) MARKER_MERGED_RADIUS else MARKER_RADIUS).toPx()
+            val ring = radius + 1.5.dp.toPx()
+            // Something that just happened sits on the live edge: keep its dot whole inside the card.
+            val center = Offset(marker.x.coerceIn(ring, (width - ring).coerceAtLeast(ring)), markerY)
+            // A ring in the card's colour keeps neighbouring dots and the stems behind them apart.
+            drawCircle(colorScheme.surface, radius = ring, center = center)
+            drawCircle(color, radius = radius, center = center)
         }
 
         val playheadColor = if (isLive && scrubEpochSeconds == null) colorScheme.error else colorScheme.primary
@@ -155,7 +194,32 @@ fun RecordingTimeline(
 private data class TimelineFrame(val windowStartEpochSeconds: Double, val spanSeconds: Double) {
     fun epochAt(x: Float, width: Int): Double =
         windowStartEpochSeconds + (x / width.coerceAtLeast(1)).coerceIn(0f, 1f) * spanSeconds
+
+    /** The dots for [detections] in this frame: the same call draws them and resolves a tap on them, so the two always agree. */
+    fun markers(detections: List<TimelineDetection>, width: Float, mergeWithin: Float): List<TimelineMarker> =
+        timelineMarkers(detections, windowStartEpochSeconds, spanSeconds, width, mergeWithin)
 }
+
+private fun FrigateExtraColors.forCategory(category: MomentCategory, fallback: Color): Color = when (category) {
+    MomentCategory.PEOPLE -> peopleMarker
+    MomentCategory.VEHICLES -> vehiclesMarker
+    MomentCategory.ANIMALS -> animalsMarker
+    MomentCategory.ALL -> fallback
+}
+
+private val TIMELINE_HEIGHT = 108.dp
+
+/** Where the detection dots sit: between the tick labels and the top of the bars. */
+private val MARKER_LANE_CENTER = 38.dp
+private val TRACK_TOP = 50.dp
+private val MARKER_RADIUS = 3.5.dp
+private val MARKER_MERGED_RADIUS = 5.dp
+
+/** Detections starting closer together than this share a dot: a little over two dots' width. */
+private val MARKER_MERGE = 12.dp
+
+/** How far from a dot a tap still counts as on it — a finger is far wider than the dot. */
+private val MARKER_TAP_REACH = 18.dp
 
 private class CoverageGeometry(
     val windowStart: Double,
@@ -222,6 +286,10 @@ private fun DrawScope.drawScrubLabel(
     drawText(layout, color = foreground, topLeft = Offset(left + paddingX, boxTop + paddingY))
 }
 
+/** How many [intervalSeconds] [tick] is from the epoch in local time: which labels [tickLabelsToDraw] thins by. */
+private fun tickOrdinal(tick: Double, intervalSeconds: Long): Long =
+    ((tick + localUtcOffsetSeconds(tick)) / intervalSeconds).roundToLong()
+
 /** Tick times inside the window, aligned to local-time multiples of [intervalSeconds]. */
 private fun timelineTicks(windowStart: Double, windowEnd: Double, intervalSeconds: Long): List<Double> {
     val offset = localUtcOffsetSeconds(windowStart)
@@ -251,6 +319,7 @@ private fun RecordingTimelineLivePreview() {
             onScrubEnd = {},
             onSeek = {},
             modifier = Modifier.padding(16.dp),
+            detections = previewTimelineDetections,
         )
     }
 }
@@ -271,6 +340,15 @@ private fun RecordingTimelineScrubbingPreview() {
             onScrubEnd = {},
             onSeek = {},
             modifier = Modifier.padding(16.dp),
+            detections = previewTimelineDetections,
         )
     }
 }
+
+private val previewTimelineDetections = listOf(
+    TimelineDetection(previewNowEpochSeconds - 300, MomentCategory.PEOPLE),
+    TimelineDetection(previewNowEpochSeconds - 420, MomentCategory.VEHICLES),
+    TimelineDetection(previewNowEpochSeconds - 480, MomentCategory.PEOPLE),
+    TimelineDetection(previewNowEpochSeconds - 5_200, MomentCategory.ANIMALS),
+    TimelineDetection(previewNowEpochSeconds - 7_900, MomentCategory.VEHICLES),
+)
