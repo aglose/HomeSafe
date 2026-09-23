@@ -26,6 +26,9 @@ Use the run configurations provided by the run widget in your IDE's toolbar. You
 - iOS app: open the [/iosApp](./iosApp) directory in Xcode and run it from there.
   On iOS 26 the bottom navigation is a native Liquid Glass tab bar over Compose tabs, which needs
   Xcode 26 to build; see [docs/ios-liquid-glass.md](docs/ios-liquid-glass.md).
+  Kotlin/Native incremental compilation is on (`kotlin.incremental.native=true` in
+  `gradle.properties`), so rebuilding after an edit to `shared` recompiles only what changed. It is
+  experimental in Kotlin 2.4.20; if an iOS build acts strangely, flip it to `false` to rule it out.
 
 ### Local network vs Tailscale
 
