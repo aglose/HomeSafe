@@ -28,6 +28,17 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- homesafe://moment?camera=…&start_time=…: one detection, full screen (MomentDeepLink.kt).
+                 The app's own notifications name this Activity explicitly; the filter is what lets
+                 the same link open from anywhere else (adb, a browser, another app). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="homesafe" android:host="moment" />
+            </intent-filter>
         </activity>
 
         <!-- Receives pushes from the HomeSafe relay (see androidApp/.../push/) and fresh FCM tokens. -->

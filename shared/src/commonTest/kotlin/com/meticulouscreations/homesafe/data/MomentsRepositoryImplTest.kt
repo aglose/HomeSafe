@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -175,6 +176,20 @@ class MomentsRepositoryImplTest {
             "has_clip":true,"has_snapshot":false,"zones":[],
             "data":{"type":"object","score":0.71,"top_score":0.78,"box":[0.65,0.27,0.14,0.1],
                     "path_data":[[[0.6219,0.2861],$start.5],[[0.7734,0.3222],${start + 10}.0],[[0.725,0.3667],${start + 19}.0]]}}"""
+    }
+
+    /**
+     * [count] re-detections of the car parked at Front Yard's curb, one a second, newest first
+     * from [newestStart]: each a new object with a two-point path around one spot, which
+     * [com.meticulouscreations.homesafe.domain.model.mergeVehicleVisits] drops as a car that
+     * never went anywhere. The box is the real parked Tesla's from [parkedCarJson].
+     */
+    private fun parkedJitterJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") {
+        val start = newestStart - it
+        """{"id":"parked$start","label":"car","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 1}.0,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.8,"top_score":0.8,"box":[0.75,0.34,0.18,0.21],
+                    "path_data":[[[0.84,0.54],$start.2],[[0.85,0.40],$start.8]]}}"""
     }
 
     private suspend fun MomentsRepositoryImpl.paging() = observePaging().first()
@@ -484,13 +499,101 @@ class MomentsRepositoryImplTest {
         h.repo.showBefore(1500.0)
         h.repo.showCamera("amcrest_1")
 
-        var recent = emptyList<com.meticulouscreations.homesafe.domain.model.MomentEvent>()
+        var recent = emptyList<MomentEvent>()
         backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3).collect { recent = it } }
         eventually("recent moments") { recent.isNotEmpty() }
 
         assertEquals(listOf("e2000", "e1999", "e1998"), recent.map { it.id })
         // Polled like the feed ([eventually] runs virtual time on), but every poll is the same question.
-        assertEquals(listOf("limit=25&cameras=hikvision_1"), h.eventQueries.distinct())
+        assertEquals(listOf("limit=100&cameras=hikvision_1"), h.eventQueries.distinct())
+    }
+
+    @Test
+    fun aParkedCarsRedetectionsDoNotEmptyACamerasRecentActivity() = runTest {
+        // Front Yard, 2026-09-22: a full page of the parked car's re-detections, the evening's people below it.
+        Harness.eventsFor = { before ->
+            when (before) {
+                null -> parkedJitterJson(2000, 100)
+                1901.0 -> personsJson((1900L downTo 1881L).toList())
+                else -> fail("unexpected before=$before")
+            }
+        }
+        try {
+            val h = Harness(this)
+            // Null until the strip says anything, so "nothing yet" can't pass for "nothing".
+            var recent: List<MomentEvent>? = null
+            backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3).collect { recent = it } }
+            eventually("the people below the parked car") { !recent.isNullOrEmpty() }
+
+            assertEquals(listOf("e1900", "e1899", "e1898"), recent!!.map { it.id })
+            assertEquals(
+                listOf("limit=100&cameras=hikvision_1", "limit=100&before=1901.000&cameras=hikvision_1"),
+                h.eventQueries.distinct(),
+                "one page down, and no further once three moments survived",
+            )
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aCameraThatOnlySeesItsParkedCarSaysSoAfterAFewPages() = runTest {
+        Harness.eventsFor = { before -> parkedJitterJson(before?.toLong()?.minus(1) ?: 2000, 100) }
+        try {
+            val h = Harness(this)
+            var recent: List<MomentEvent>? = null
+            backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3).collect { recent = it } }
+            eventually("the first answer") { recent != null }
+            settle()
+
+            // An answer (nothing to show) rather than a strip that never stops loading, and a bounded walk to get it.
+            assertEquals(emptyList(), recent)
+            assertEquals(5, h.eventQueries.distinct().size, "a few pages per poll, not the server's whole history")
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aCamerasRecentMomentsReachBackAsFarAsTheTimelineShows() = runTest {
+        val clock = FakeClock()
+        val now = clock.nowEpochSeconds
+        // A person every second from ten seconds ago; the timeline shows the last 150 seconds.
+        Harness.eventsFor = { before -> personsJson(before?.toLong()?.minus(1) ?: (now - 10), 100) }
+        try {
+            val h = Harness(this, clock = clock)
+            var recent: List<MomentEvent>? = null
+            backgroundScope.launch { h.repo.observeRecentMoments("hikvision_1", limit = 3, lookbackSeconds = 150.0).collect { recent = it } }
+            eventually("the lookback's moments") { (recent?.size ?: 0) > 3 }
+
+            assertEquals((now - 10 downTo now - 150).map { "e$it" }, recent!!.map { it.id }, "everything since the cutoff, and nothing older")
+            assertEquals(2, h.eventQueries.distinct().size, "the second page already reached past the cutoff")
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun aCamerasRecentMomentsSayNothingUntilTheyKnow() = runTest {
+        Harness.events = personsJson(2000, 3)
+        val h = Harness(this)
+        val serverUp = CompletableDeferred<Unit>()
+        h.stalled = serverUp
+        var emissions = 0
+        var recent: List<MomentEvent>? = null
+        backgroundScope.launch {
+            h.repo.observeRecentMoments("hikvision_1", limit = 3).collect {
+                emissions++
+                recent = it
+            }
+        }
+        settle()
+        // Nothing cached and nothing answered: not an empty list, which the screen would read as "no detections".
+        assertEquals(0, emissions)
+
+        serverUp.complete(Unit)
+        eventually("the server's answer") { recent != null }
+        assertEquals(listOf("e2000", "e1999", "e1998"), recent!!.map { it.id })
     }
 
     @Test
@@ -841,6 +944,45 @@ class MomentsRepositoryImplTest {
             Harness.eventsFor = null
             Harness.config = null
         }
+    }
+
+    @Test
+    fun theLatestMomentOpensOnWhatTheDeviceKept() = runTest {
+        val kept = InMemoryMomentsDao()
+        kept.insertAll(
+            listOf(
+                MomentEventEntity(
+                    serverUrl = SERVER_URL, id = "kept", cameraName = "hikvision_2", label = "person", subLabel = null,
+                    startEpochSeconds = 1_789_399_000.0, endEpochSeconds = 1_789_399_030.0, topScore = 0.9, hasClip = true,
+                    hasSnapshot = false, zones = "", pathPoints = "", boxX = null, boxY = null, boxW = null, boxH = null,
+                    subLabelScore = null,
+                ),
+            ),
+        )
+        // The server out of reach: the home page's summary still has something to say.
+        val h = Harness(this, failEvents = true, momentsDao = kept)
+
+        var latest: com.meticulouscreations.homesafe.domain.model.MomentEvent? = null
+        backgroundScope.launch { h.repo.observeLatestMoment().collect { latest = it } }
+        eventually("the kept moment") { latest != null }
+
+        assertEquals("kept", latest?.id)
+        assertEquals(emptyList(), h.eventQueries, "read off the device; it asks the server nothing itself")
+    }
+
+    @Test
+    fun theLatestMomentFollowsThePollsWhateverTheFeedIsNarrowedTo() = runTest {
+        Harness.events = personsJson(listOf(1_789_399_500L, 1_789_399_000L), camera = "hikvision_2")
+        val h = Harness(this)
+        // The Moments tab was left on another camera's past; the home page's summary is every camera, now.
+        h.repo.showBefore(1500.0)
+        h.repo.showCamera("amcrest_1")
+
+        var latest: com.meticulouscreations.homesafe.domain.model.MomentEvent? = null
+        backgroundScope.launch { h.repo.observeLatestMoment().collect { latest = it } }
+        // The home page's in-view poll is what files fresh detections while the summary is on screen.
+        backgroundScope.launch { h.repo.observeStationaryObjects().collect {} }
+        eventually("the polled moment") { latest?.id == "e1789399500" }
     }
 
     @Test

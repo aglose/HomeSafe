@@ -16,6 +16,7 @@ travel within seconds) and dropped once it ends still — see `motion_verdict`.
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 from statistics import median
@@ -24,7 +25,7 @@ import time
 from typing import Any
 
 import requests
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from google.auth.transport.requests import AuthorizedSession
 from google.oauth2 import service_account
 from pydantic import BaseModel
@@ -165,23 +166,31 @@ def fcm_session() -> AuthorizedSession:
     return _session
 
 
-def send_push(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> tuple[bool, str]:
-    """One FCM message. `away` escalates it: the app's loud "away_alerts" channel on Android, time-sensitive on iOS."""
-    aps: dict[str, Any] = {"sound": "default", "thread-id": data.get("camera", "")}
+def push_message(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> dict[str, Any]:
+    """
+    The FCM v1 body for one phone. Android gets a *data-only* message: with a `notification`
+    block, Android draws a backgrounded app's notification itself — no picture, no clip, and a
+    tap that can't say which moment it was — so the app's messaging service must always be the
+    one to post it (text at once, then its picture and clip; see HomeSafeMessagingService.kt).
+    The title and body travel in the data for that. iOS draws its own banner from `aps.alert`.
+    `away` escalates it: the app's loud "away_alerts" channel on Android, time-sensitive on iOS.
+    """
+    aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "sound": "default", "thread-id": data.get("camera", "")}
     if away:
         aps["interruption-level"] = "time-sensitive"
-    message = {
+    return {
         "message": {
             "token": token,
-            "notification": {"title": title, "body": body},
-            "data": data,
-            "android": {
-                "priority": "high",
-                "notification": {"channel_id": AWAY_CHANNEL_ID if away else "detections", "tag": data.get("review_id", "")},
-            },
+            "data": {**data, "title": title, "body": body},
+            "android": {"priority": "high"},
             "apns": {"headers": {"apns-priority": "10"}, "payload": {"aps": aps}},
         }
     }
+
+
+def send_push(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> tuple[bool, str]:
+    """One FCM message; see `push_message` for its shape."""
+    message = push_message(token, title, body, data, away=away)
     r = fcm_session().post(f"https://fcm.googleapis.com/v1/projects/{PROJECT}/messages:send", json=message, timeout=15)
     if r.ok:
         return True, ""
@@ -273,12 +282,15 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
     but `everyone_away` is decided by the counting ones alone: at least one, and all of them away.
     A device that has *left* but is still inside its dwell (see `promote_pending`) shows as
     `pending_away` and is not away yet. `this_device` matches a device_id or, for old apps, a token.
+    `id` and `last_seen` let Settings tell a phone in use from an old install, and remove the
+    latter (`DELETE /devices/{id}`).
     """
     rows = with_db(lambda c: c.execute(
-        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since FROM devices ORDER BY created"
+        "SELECT device_id, token, name, platform, away, away_updated, build, away_pending_since, last_seen FROM devices ORDER BY created"
     ).fetchall())
     devices = [
         {
+            "id": d,
             "name": n,
             "platform": p,
             "away": bool(a),
@@ -287,8 +299,9 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
             "build": b,
             "counts": counts_for_away(p, b),
             "pending_away": ps is not None,
+            "last_seen": ls,
         }
-        for d, t, n, p, a, u, b, ps in rows
+        for d, t, n, p, a, u, b, ps, ls in rows
     ]
     counting = [d for d in devices if d["counts"]]
     return {
@@ -664,6 +677,11 @@ def register(device: Device, request: Request) -> dict[str, Any]:
 
 @app.delete("/devices/{ident}")
 def unregister(ident: str, request: Request) -> dict[str, Any]:
+    """
+    Forgets an install. Its own secret may remove itself; a signed-in user's cookie may remove any
+    device — how Settings clears out old installs. One that is still installed comes back the next
+    time it connects and re-registers.
+    """
     authenticate(request, ident)
     with_db(lambda c: (c.execute("DELETE FROM devices WHERE device_id=? OR token=?", (ident, ident)), c.commit()))
     return {"ok": True}
@@ -722,6 +740,10 @@ def get_presence(request: Request, device: str | None = None, token: str | None 
     """Who's home. Pass this phone's `device` (or, old apps, `token`) so its own entry comes back flagged `this_device`."""
     ident = device or token
     authenticate(request, ident)
+    if ident:
+        # A phone asking about itself is a phone in use: the app polls this about once a minute
+        # while it's open, so `last_seen` separates the household's phones from old installs.
+        with_db(lambda c: (c.execute("UPDATE devices SET last_seen=? WHERE device_id=? OR token=?", (time.time(), ident, ident)), c.commit()))
     return presence_snapshot(ident)
 
 
@@ -756,6 +778,41 @@ def list_devices(request: Request) -> list[dict[str, Any]]:
         {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts_for_away(p, b), "push": bool(push), "pending_away": bool(pend)}
         for p, n, cr, ls, a, b, push, pend in rows
     ]
+
+
+# What a phone may fetch about an event through the relay: the pictures a pushed notification
+# shows. Only these, only by a well-formed Frigate event id, so the route can't be walked to the
+# rest of Frigate's unauthenticated internal API.
+EVENT_MEDIA = {"thumbnail.jpg": "image/jpeg", "preview.gif": "image/gif"}
+EVENT_ID = re.compile(r"[0-9]+\.[0-9]+-[a-z0-9]+")
+
+
+def event_media_url(event_id: str, name: str) -> str | None:
+    """Frigate's internal URL for one of an event's `EVENT_MEDIA`, or None when either part isn't one."""
+    if name not in EVENT_MEDIA or not EVENT_ID.fullmatch(event_id):
+        return None
+    return f"{FRIGATE}/api/events/{event_id}/{name}"
+
+
+@app.get("/events/{event_id}/{name}")
+def event_media(event_id: str, name: str, request: Request, device: str | None = None) -> Response:
+    """
+    An event's thumbnail or animated preview, for the notification a push became. The phone
+    that got the push may have no Frigate session — it was woken from the background — so it
+    proves itself with its device secret, like presence does; a session cookie works too.
+    """
+    url = event_media_url(event_id, name)
+    if url is None:
+        raise HTTPException(status_code=404, detail="No such media")
+    authenticate(request, device)
+    try:
+        r = requests.get(url, timeout=20)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Frigate unreachable: {e}")
+    if r.status_code != 200:
+        # Frigate 404s a preview until the event has frames for it; the app asks again.
+        raise HTTPException(status_code=404, detail=f"Frigate answered {r.status_code}")
+    return Response(content=r.content, media_type=EVENT_MEDIA[name], headers={"Cache-Control": "private, max-age=3600"})
 
 
 @app.post("/test")

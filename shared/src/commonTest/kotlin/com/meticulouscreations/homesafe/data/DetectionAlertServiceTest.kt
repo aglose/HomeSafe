@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -73,6 +74,7 @@ class DetectionAlertServiceTest {
         override suspend fun refresh() = Result.success(Unit)
         override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int) = Result.success(Unit)
         override suspend fun setHome(home: HomeLocation?) = Result.success(Unit)
+        override suspend fun removeDevice(deviceId: String) = Result.success(Unit)
 
         fun everyoneAway(away: Boolean) {
             presence.value = HouseholdPresence(
@@ -82,13 +84,21 @@ class DetectionAlertServiceTest {
         }
     }
 
+    /**
+     * Each detection is posted several times as its media arrives (text, picture, preview), each
+     * post replacing the last. [posted] is what the shade shows — the latest post per detection,
+     * in the order they first appeared — and [history] is every post as it was made.
+     */
     private class FakeNotifier(override val isSupported: Boolean = true) : AlertNotifier {
-        val posted = mutableListOf<AlertNotification>()
+        val history = mutableListOf<AlertNotification>()
+        private val latest = LinkedHashMap<String, AlertNotification>()
+        val posted: List<AlertNotification> get() = latest.values.toList()
         override suspend fun permissionStatus() = NotificationPermission.GRANTED
         override suspend fun requestPermission() = true
         override fun openSystemSettings() = Unit
         override fun notify(notification: AlertNotification) {
-            posted += notification
+            history += notification
+            latest[notification.id] = notification
         }
     }
 
@@ -114,6 +124,10 @@ class DetectionAlertServiceTest {
         /** The camera, by id; absent means the Front Door. */
         val cameraById = mutableMapOf<String, String>()
 
+        /** How many times `preview.gif` 404s before Frigate has one; [Int.MAX_VALUE] for never. */
+        var previewMisses = 0
+        var previewAsks = 0
+
         /** `/api/config`, or null to 404 it (no zones drawn anywhere). */
         var config: String? = null
         val afters = mutableListOf<String>()
@@ -135,6 +149,13 @@ class DetectionAlertServiceTest {
 
                 req.url.encodedPath.contains("/thumbnail.jpg") -> respond(byteArrayOf(1, 2, 3), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/jpeg"))
 
+                req.url.encodedPath.contains("/preview.gif") ->
+                    if (previewAsks++ < previewMisses) {
+                        respond("", HttpStatusCode.NotFound)
+                    } else {
+                        respond(byteArrayOf(7, 8, 9), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "image/gif"))
+                    }
+
                 req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
 
                 else -> respond("", HttpStatusCode.NotFound)
@@ -155,6 +176,8 @@ class DetectionAlertServiceTest {
             scope = scope.backgroundScope,
             clock = { clockNow },
             pollIntervalMs = 100,
+            previewWindowSeconds = 0.0,
+            previewRetryDelaysMs = listOf(10, 10),
         )
     }
 
@@ -187,7 +210,7 @@ class DetectionAlertServiceTest {
         assertTrue(h.notifier.posted.isEmpty())
 
         h.events += Triple("fresh", "person", 1_000_005.0)
-        eventually("the new detection") { h.notifier.posted.size == 1 }
+        eventually("the new detection") { h.notifier.posted.singleOrNull()?.animation != null }
         val posted = h.notifier.posted.single()
         assertEquals("fresh", posted.id)
         assertEquals("Person detected", posted.title)
@@ -196,6 +219,44 @@ class DetectionAlertServiceTest {
 
         settle()
         assertEquals(1, h.notifier.posted.size, "later polls must not repeat it")
+    }
+
+    @Test
+    fun postsTextAtOnceThenThePictureThenTheClipUnderOneId() = runTest {
+        val h = Harness(this, on)
+        h.previewMisses = 2   // Frigate hasn't flushed the preview frames yet on the first two asks
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.events += Triple("visit", "person", 1_000_005.0)
+        eventually("the clip") { h.notifier.posted.singleOrNull()?.animation != null }
+
+        val stages = h.notifier.history
+        assertEquals(listOf("visit", "visit", "visit"), stages.map { it.id }, "one notification, updated in place")
+        assertTrue(stages[0].thumbnail == null && stages[0].animation == null, "the first post doesn't wait on any download")
+        assertEquals(listOf<Byte>(1, 2, 3), stages[1].thumbnail?.toList(), "then the picture")
+        assertEquals(null, stages[1].animation)
+        assertEquals(listOf<Byte>(7, 8, 9), stages[2].animation?.toList(), "then the clip, once Frigate has one")
+        assertEquals(listOf<Byte>(1, 2, 3), stages[2].thumbnail?.toList(), "keeping the picture")
+        assertEquals(3, h.previewAsks, "asked again while it 404'd")
+        stages.forEach { stage ->
+            assertEquals(MomentDeepLink("visit", "amcrest_1", 1_000_005.0), stage.target, "every stage opens the moment")
+        }
+    }
+
+    @Test
+    fun aDetectionWithNoPreviewKeepsItsPicture() = runTest {
+        val h = Harness(this, on)
+        h.previewMisses = Int.MAX_VALUE
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.events += Triple("brief", "person", 1_000_005.0)
+        eventually("the picture") { h.notifier.posted.singleOrNull()?.thumbnail != null }
+        settle()
+        assertEquals(3, h.previewAsks, "one ask, then one per retry, then it gives up")
+        assertEquals(2, h.notifier.history.size, "text, then picture; no clip to add")
+        assertEquals(null, h.notifier.posted.single().animation)
     }
 
     @Test

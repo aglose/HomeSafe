@@ -4,6 +4,8 @@ import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -27,6 +29,7 @@ import platform.UserNotifications.UNNotificationPresentationOptionList
 import platform.UserNotifications.UNNotificationPresentationOptionSound
 import platform.UserNotifications.UNNotificationPresentationOptions
 import platform.UserNotifications.UNNotificationRequest
+import platform.UserNotifications.UNNotificationResponse
 import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
 import platform.UserNotifications.UNUserNotificationCenterDelegateProtocol
@@ -36,29 +39,73 @@ import platform.posix.fopen
 import platform.posix.fwrite
 import kotlin.coroutines.resume
 
+/** `userInfo` key marking a post as an update to one already shown (its picture or clip arriving). */
+private const val KEY_UPDATE = "homesafe_update"
+
 /**
- * Local notifications through `UNUserNotificationCenter`. iOS hides a local notification while
- * its app is in the foreground unless the center's delegate says otherwise, so [delegate] asks
- * for the banner in that case too — a detection is worth seeing whichever tab is open.
+ * The notification center's delegate: how iOS tells the app a notification is about to show
+ * while it's in front, and that one was tapped.
+ *
+ * iOS hides a local notification while its app is in the foreground unless told otherwise, so
+ * the first post of a detection asks for the banner and sound — a detection is worth seeing
+ * whichever tab is open — and its updates (picture, clip) only refresh the entry in the list.
+ *
+ * A tap hands the detection to [MomentDeepLinks], which the shell opens full screen. iOS delivers
+ * the tap that launches the app before `didFinishLaunching` returns, so this is installed from
+ * `startIosApp` at launch, not when the notifier is first used.
+ */
+internal object IosNotificationTaps {
+    // A class held here rather than this object being the delegate: Kotlin/Native can't generate
+    // code for an `object` that subclasses NSObject. The reference also keeps it alive — the
+    // center's `delegate` is weak.
+    private val delegate = NotificationCenterDelegate()
+
+    fun install() {
+        val center = UNUserNotificationCenter.currentNotificationCenter()
+        if (center.delegate !== delegate) center.delegate = delegate
+    }
+}
+
+private class NotificationCenterDelegate :
+    NSObject(),
+    UNUserNotificationCenterDelegateProtocol {
+    override fun userNotificationCenter(
+        center: UNUserNotificationCenter,
+        willPresentNotification: UNNotification,
+        withCompletionHandler: (UNNotificationPresentationOptions) -> Unit,
+    ) {
+        val isUpdate = willPresentNotification.request.content.userInfo[KEY_UPDATE] != null
+        withCompletionHandler(
+            if (isUpdate) {
+                UNNotificationPresentationOptionList
+            } else {
+                UNNotificationPresentationOptionBanner or UNNotificationPresentationOptionSound or UNNotificationPresentationOptionList
+            },
+        )
+    }
+
+    override fun userNotificationCenter(
+        center: UNUserNotificationCenter,
+        didReceiveNotificationResponse: UNNotificationResponse,
+        withCompletionHandler: () -> Unit,
+    ) {
+        val info = didReceiveNotificationResponse.notification.request.content.userInfo
+        MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+        withCompletionHandler()
+    }
+}
+
+/**
+ * Local notifications through `UNUserNotificationCenter`, posted in stages under one identifier
+ * (see [AlertNotification]). The clip is Frigate's preview GIF, attached as-is: iOS plays an
+ * animated GIF attachment in the expanded notification on its own.
  */
 @OptIn(ExperimentalForeignApi::class)
 private class IosAlertNotifier : AlertNotifier {
     private val center = UNUserNotificationCenter.currentNotificationCenter()
 
-    private val delegate = object : NSObject(), UNUserNotificationCenterDelegateProtocol {
-        override fun userNotificationCenter(
-            center: UNUserNotificationCenter,
-            willPresentNotification: UNNotification,
-            withCompletionHandler: (UNNotificationPresentationOptions) -> Unit,
-        ) {
-            withCompletionHandler(
-                UNNotificationPresentationOptionBanner or UNNotificationPresentationOptionSound or UNNotificationPresentationOptionList,
-            )
-        }
-    }
-
     init {
-        center.delegate = delegate
+        IosNotificationTaps.install()
     }
 
     override val isSupported = true
@@ -86,16 +133,21 @@ private class IosAlertNotifier : AlertNotifier {
     }
 
     override fun notify(notification: AlertNotification) {
+        val isUpdate = notification.thumbnail != null || notification.animation != null
         val content = UNMutableNotificationContent().apply {
             setTitle(notification.title)
             setBody(notification.body)
-            setSound(UNNotificationSound.defaultSound)
+            // Only the first post sounds; a picture or clip arriving is an update, not a second alert.
+            if (!isUpdate) setSound(UNNotificationSound.defaultSound)
+            setUserInfo(notification.target?.toMap().orEmpty() + if (isUpdate) mapOf(KEY_UPDATE to "1") else emptyMap())
         }
-        notification.thumbnail?.let { bytes ->
-            // Attachments must be files; the center copies it, so a temp file is fine.
-            val path = NSTemporaryDirectory() + "homesafe_alert_${notification.id.filter { it.isLetterOrDigit() }}.jpg"
+        // The clip if there is one, else the picture. Attachments must be files; the center moves
+        // it into its own store, so a temp file named for the detection is fine.
+        val (bytes, extension) = notification.animation?.let { it to "gif" } ?: notification.thumbnail?.let { it to "jpg" } ?: (null to "")
+        if (bytes != null) {
+            val path = NSTemporaryDirectory() + "homesafe_alert_${notification.id.filter { it.isLetterOrDigit() }}.$extension"
             if (writeToFile(path, bytes)) {
-                UNNotificationAttachment.attachmentWithIdentifier("thumbnail", NSURL.fileURLWithPath(path), null, null)
+                UNNotificationAttachment.attachmentWithIdentifier("preview", NSURL.fileURLWithPath(path), null, null)
                     ?.let { content.setAttachments(listOf(it)) }
             }
         }

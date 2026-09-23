@@ -78,7 +78,8 @@ class MomentsViewModelTest {
             cameraCalls += cameraName
             camera.value = cameraName
         }
-        override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = fail("unused")
+        override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
+        override fun observeLatestMoment(): Flow<MomentEvent?> = fail("unused")
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
         override suspend fun refresh() = Unit
         override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")

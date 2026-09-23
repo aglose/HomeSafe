@@ -89,6 +89,16 @@ class PushRelayApi(private val httpClient: HttpClient) {
     }
 
     /**
+     * Forgets another install ([deviceId]), e.g. an old one a reinstall left behind: it stops
+     * getting pushes and stops counting for away mode. A user action on someone else's row, so it
+     * rides on the session cookie alone — this install's secret only speaks for itself.
+     */
+    suspend fun removeDevice(serverUrl: String, deviceId: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/devices/$deviceId"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
+    /**
      * Sets — or with null clears — the household's home. A user action, so it rides on the
      * session cookie; [deviceId] only lets the answer flag this phone's own row, as `/presence` does.
      */
@@ -104,6 +114,20 @@ class PushRelayApi(private val httpClient: HttpClient) {
         }
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
         response.body<RelayPresence>().toDomain()
+    }
+
+    /**
+     * One of a pushed alert's pictures — [name] is `thumbnail.jpg` or `preview.gif` — fetched
+     * through the relay, which proxies Frigate. The push may have woken the app with no Frigate
+     * session, so this is the install's own door: [deviceId] and its [secret].
+     */
+    suspend fun getEventMedia(serverUrl: String, eventId: String, name: String, deviceId: String, secret: String?): Result<ByteArray> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/events/$eventId/$name")) {
+            parameter("device", deviceId)
+            bearer(secret)
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<ByteArray>()
     }
 
     private fun HttpRequestBuilder.bearer(secret: String?) {
@@ -167,7 +191,7 @@ internal data class RelayPresence(
     val home: RelayHome? = null,
 ) {
     fun toDomain() = HouseholdPresence(
-        devices = devices.map { PresenceDevice(it.name, it.platform, it.away, it.awayUpdated, it.thisDevice, it.counts, it.pendingAway) },
+        devices = devices.map { PresenceDevice(it.name, it.platform, it.away, it.awayUpdated, it.thisDevice, it.counts, it.pendingAway, it.id, it.lastSeen) },
         everyoneAway = everyoneAway,
         home = home?.let { HomeLocation(it.lat, it.lng, it.radiusMeters) },
     )
@@ -190,4 +214,7 @@ internal data class RelayPresenceDevice(
     /** Older relays don't send this; treat their devices as counting, which is what they did. */
     val counts: Boolean = true,
     @SerialName("pending_away") val pendingAway: Boolean = false,
+    /** The device_id; older relays don't send it, and their devices can't be removed from the app. */
+    val id: String? = null,
+    @SerialName("last_seen") val lastSeen: Double? = null,
 )

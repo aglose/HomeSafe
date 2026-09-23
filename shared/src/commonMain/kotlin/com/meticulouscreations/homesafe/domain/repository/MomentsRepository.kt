@@ -49,12 +49,16 @@ interface MomentsRepository {
     fun showCamera(cameraName: String?)
 
     /**
-     * [cameraName]'s newest [limit] moments, placed and folded the way [observeMoments] does it,
-     * but fetched for that camera alone and always from now: nothing the Moments feed is
-     * narrowed or scrolled back to changes it. Opens on what the device kept, like
-     * [observeMoments], then polls while collected.
+     * [cameraName]'s newest [limit] moments, and every other moment that started within the last
+     * [lookbackSeconds], placed and folded the way [observeMoments] does it, newest first, but
+     * fetched for that camera alone and always from now: nothing the Moments feed is narrowed or
+     * scrolled back to changes it. Pages back past detections the zones and folding throw away,
+     * within a bound, rather than coming up empty under a parked car's re-detections. Opens on
+     * what the device kept, like [observeMoments], then polls while collected. Emits nothing
+     * until it has something to say — the cache or an answer — so a first emission, even an
+     * empty one, means the camera really has nothing to show.
      */
-    fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>>
+    fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double = 0.0): Flow<List<MomentEvent>>
 
     /**
      * The household's cars parked in view of any camera right now — only the ones the classifier
@@ -66,6 +70,15 @@ interface MomentsRepository {
      * collected; each answer replaces the cached list wholesale.
      */
     fun observeStationaryObjects(): Flow<List<StationaryObject>>
+
+    /**
+     * The newest detection the device knows of on any camera, placed the way [observeMoments]
+     * places it; null when it knows of none. Unlike the feed it ignores where the Moments tab's
+     * window was left, so the home page can say what last happened whatever the feed is narrowed
+     * to. It reads what the polls already running have fetched rather than asking the server
+     * itself, so it is as fresh as the freshest of them.
+     */
+    fun observeLatestMoment(): Flow<MomentEvent?>
 
     suspend fun refresh()
 

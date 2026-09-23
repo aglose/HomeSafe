@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -88,6 +89,15 @@ class PresenceRepositoryImpl(
     override suspend fun setHome(home: HomeLocation?): Result<Unit> {
         val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
         return relayApi.setHome(url, home, identity.deviceId()).map { _presence.value = it }
+    }
+
+    override suspend fun removeDevice(deviceId: String): Result<Unit> {
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        return relayApi.removeDevice(url, deviceId).onSuccess {
+            // Gone from the list at once; the re-read after it is only for what else changed.
+            _presence.update { it.copy(devices = it.devices.filterNot { device -> device.id == deviceId }) }
+            fetch(url)
+        }
     }
 
     private suspend fun fetch(url: String): Result<Unit> =

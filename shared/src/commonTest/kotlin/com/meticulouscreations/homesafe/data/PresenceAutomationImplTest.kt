@@ -66,6 +66,8 @@ class PresenceAutomationImplTest {
             homeSet += home
             return Result.success(Unit)
         }
+
+        override suspend fun removeDevice(deviceId: String): Result<Unit> = Result.success(Unit)
     }
 
     private class FakeSettings(automatic: Boolean) : SettingsRepository {

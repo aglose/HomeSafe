@@ -122,7 +122,7 @@ fun StationaryObject.present(today: LocalDate, timeZone: TimeZone = TimeZone.cur
 
 /** "6:12 PM" for today, "6:12 PM yesterday" for the night before, "6:12 PM Sep 14" for anything older. */
 @OptIn(ExperimentalTime::class)
-private fun dayQualifiedClockLabel(epochSeconds: Double, today: LocalDate, timeZone: TimeZone): String {
+internal fun dayQualifiedClockLabel(epochSeconds: Double, today: LocalDate, timeZone: TimeZone): String {
     val date = Instant.fromEpochSeconds(epochSeconds.toLong()).toLocalDateTime(timeZone).date
     val clock = clockLabel(epochSeconds, timeZone)
     return when (today.toEpochDays() - date.toEpochDays()) {

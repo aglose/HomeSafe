@@ -39,6 +39,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -56,6 +57,8 @@ import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -63,6 +66,7 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.coroutines.flow.filterNotNull
 
 /**
  * The shell's navigation state: which tab is up, and the nested back stack of each tab that has
@@ -108,16 +112,33 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
      * Home stack, so Back returns to the camera list — and the Moments tab is one tap away,
      * still where it was left.
      */
-    fun openDetection(event: MomentEvent) {
-        homeBackStack.add(
-            CameraDetailRoute(
-                cameraName = event.cameraName,
-                warmStreamUrl = null,
-                warmPosterUrl = null,
-                openAtEpochSeconds = event.startEpochSeconds,
-            ),
+    fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds)
+
+    /** The same destination for a notification tap: see [MomentDeepLinks]. */
+    fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds)
+
+    private fun openDetection(cameraName: String, startEpochSeconds: Double) {
+        val route = CameraDetailRoute(
+            cameraName = cameraName,
+            warmStreamUrl = null,
+            warmPosterUrl = null,
+            openAtEpochSeconds = startEpochSeconds,
         )
+        // A second tap on the same notification (or a relaunch re-delivering it) is already up.
+        if (homeBackStack.lastOrNull() != route) homeBackStack.add(route)
         selectTab(TopLevelRoute.Home)
+    }
+
+    /**
+     * Opens every moment a notification tap asks for, for as long as the caller runs. The link
+     * is consumed only here, once the shell exists, which is what lets a tap that cold-starts
+     * the app wait out the sign-in screen and still land on the moment.
+     */
+    suspend fun openMomentsFromNotifications() {
+        MomentDeepLinks.pending.filterNotNull().collect { link ->
+            openMoment(link)
+            MomentDeepLinks.consume(link)
+        }
     }
 }
 
@@ -130,6 +151,7 @@ fun FrigateAppShell() {
     // so the zoomed picture gets the whole screen.
     val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+    LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
@@ -184,12 +206,12 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
 @Composable
 private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom)
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, onOpenMoments = { nav.selectTab(TopLevelRoute.Moments) })
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
 
-        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces ->
-            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
+        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces, openServer ->
+            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer)
         }
     }
 }
@@ -355,7 +377,7 @@ private data object CameraListRoute
  * first frame instead of a placeholder while the view model works out the stream to join.
  *
  * [openAtEpochSeconds] is set only when the route came from a detection (the Moments tab's
- * full-screen button), and opens the screen on the recording at that instant rather than live.
+ * full-screen button, or a notification tap), and opens the screen on the recording at that instant rather than live.
  * It is part of the route's identity, so opening a second detection on the same camera is a new
  * destination rather than a no-op on the one already up.
  */
@@ -378,10 +400,11 @@ private data class DetectionZonesRoute(val cameraName: String)
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
+ * [onOpenMoments] switches to the Moments tab, for the summary at the top of the camera list.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, onOpenMoments: () -> Unit) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -397,6 +420,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         onCameraClick = { tile ->
                             backStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
                         },
+                        onOpenMoments = onOpenMoments,
                     )
                 }
                 entry<CameraDetailRoute>(
