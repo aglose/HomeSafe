@@ -50,7 +50,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         DeviceIdentityEntity::class,
         MomentEventEntity::class,
     ],
-    version = 12,
+    version = 13,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -70,6 +70,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 11 -> 12: the Moments feed's on-device copy of the detections it has been shown
         // ([MomentEventEntity], a new table), so the feed opens on what it had rather than empty.
         AutoMigration(from = 11, to = 12),
+        // 12 -> 13: quiet hours and "only when everyone's away" — four SettingsEntity columns,
+        // all defaulting to off (the window defaults to 10 PM to 7 AM, unused until switched on).
+        AutoMigration(from = 12, to = 13),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

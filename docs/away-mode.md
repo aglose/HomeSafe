@@ -168,6 +168,17 @@ Items go into the same `sent` table as ordinary alerts, so a person alert while 
 escalated, and the normal pass then skips it. Non-person alerts while away, and everything while
 somebody is home, behave exactly as before.
 
+### Quiet hours and "only when everyone's away"
+
+Two per-phone choices under Settings → Alerts hold back *ordinary* alerts and never Away ones:
+quiet hours (a daily window, e.g. 10 PM to 7 AM, that may wrap midnight) and "only when
+everyone's away" (ordinary alerts never; the phone hears only the escalated pushes above). The
+app sends them on every registration as `quiet_start` / `quiet_end` (minutes after local
+midnight, absent while off), `only_away`, and the clock to read them by, `tz` (IANA) with
+`utc_offset` (minutes) as a fallback. `broadcast()` skips a phone that is `silenced()` for an
+ordinary alert; `away=True` pushes and the `/test` push go to every phone. The in-app poller
+applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
+
 ## App
 
 - `domain/model/HouseholdPresence.kt` — `PresenceDevice`, `HouseholdPresence` (+ `EMPTY`, `thisDevice`).

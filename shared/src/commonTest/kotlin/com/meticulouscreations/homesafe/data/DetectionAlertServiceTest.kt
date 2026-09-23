@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
+import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
@@ -37,6 +38,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -176,6 +178,8 @@ class DetectionAlertServiceTest {
             scope = scope.backgroundScope,
             clock = { clockNow },
             pollIntervalMs = 100,
+            // The harness clock starts at 1970-01-12 13:46:40 UTC, so its local time is 1:46 PM.
+            timeZone = { TimeZone.UTC },
             previewWindowSeconds = 0.0,
             previewRetryDelaysMs = listOf(10, 10),
         )
@@ -381,6 +385,46 @@ class DetectionAlertServiceTest {
         settle()
         assertEquals(listOf("intruder", "car"), h.notifier.posted.map { it.id }, "back home, the driveway rule holds again")
         assertTrue(h.presenceRepo.presence.subscriptionCount.value > 0, "the poller keeps presence collected so it stays fresh")
+    }
+
+    @Test
+    fun quietHoursHoldBackOrdinaryAlertsButNeverAwayOnes() = runTest {
+        // 1 PM to 3 PM around the harness's 1:46 PM.
+        val h = Harness(this, on.copy(quietHours = QuietHours(enabled = true, startMinute = 13 * 60, endMinute = 15 * 60)))
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.events += Triple("nap", "person", 1_000_001.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "inside quiet hours an ordinary alert stays quiet")
+
+        h.presenceRepo.everyoneAway(true)
+        h.events += Triple("intruder", "person", 1_000_002.0)
+        eventually("the away alert") { h.notifier.posted.map { it.id } == listOf("intruder") }
+        assertTrue(h.notifier.posted.single().urgent)
+
+        h.presenceRepo.everyoneAway(false)
+        h.clockNow = 1_000_000.0 + 90 * 60   // 3:16 PM: the window has closed
+        h.events += Triple("after", "person", 1_000_000.0 + 90 * 60)
+        eventually("the first alert after quiet hours") { h.notifier.posted.map { it.id } == listOf("intruder", "after") }
+        assertTrue(h.notifier.posted.none { it.id == "nap" }, "what quiet hours held back is not replayed")
+    }
+
+    @Test
+    fun onlyWhenEveryoneIsAwayHearsNothingElse() = runTest {
+        val h = Harness(this, on.copy(onlyWhenAway = true))
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+
+        h.events += Triple("visitor", "person", 1_000_001.0)
+        h.events += Triple("dog", "dog", 1_000_002.0)
+        settle()
+        assertTrue(h.notifier.posted.isEmpty(), "somebody's home: nothing notifies")
+
+        h.presenceRepo.everyoneAway(true)
+        h.events += Triple("intruder", "person", 1_000_003.0)
+        eventually("the away alert") { h.notifier.posted.map { it.id } == listOf("intruder") }
+        assertEquals("Away: Person detected", h.notifier.posted.single().title)
     }
 
     /** A driveway spot and the jittery path a parked car produces there. */

@@ -53,7 +53,9 @@ import kotlin.time.Instant
  *
  * Away mode (see docs/away-mode.md): while [PresenceRepository] says everyone is away, any person
  * on any camera is posted — [AlertNotification.urgent], on the loud channel — whatever the zone
- * rules say. Presence is collected for the life of the poll so that flag stays fresh.
+ * rules say. Presence is collected for the life of the poll so that flag stays fresh. Quiet hours
+ * and "only when everyone's away" ([AlertSettings.ordinaryAlertsSilenced]) hold back everything
+ * else, but never those.
  *
  * A car is only reported once it has moved, and once per visit. Frigate re-detects the same
  * vehicle over and over — a parked car is picked up anew every few minutes as the detector's box
@@ -79,6 +81,8 @@ class DetectionAlertService(
     /** Epoch seconds; injectable so tests control the baseline. */
     private val clock: () -> Double,
     private val pollIntervalMs: Long,
+    /** Where quiet hours are read; asked on every detection so a phone that travels keeps local time. */
+    private val timeZone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     /** How long after a detection starts its animated preview is complete (Frigate's 20 s, plus frames landing late). */
     private val previewWindowSeconds: Double = PREVIEW_WINDOW_SECONDS,
     /** Waits between asks for a preview that isn't there yet; its length is how many retries there are. */
@@ -186,7 +190,8 @@ class DetectionAlertService(
 
     /**
      * Whether and how loudly to post: with nobody home every person notifies on the loud channel,
-     * zone rules and the stranger rule notwithstanding; otherwise the user's rules decide, once
+     * zone rules, quiet hours and the stranger rule notwithstanding; otherwise nothing posts during
+     * quiet hours (or ever, with "only when everyone's away"), and outside them the user's rules decide, once
      * [inZones] has worked out where the object went and whether those zones wanted it at all —
      * a car crossing a birds-only street zone is dropped here, not judged as "anywhere else".
      * A vehicle that never moved is dropped before any of that: it is not news, wherever it sat.
@@ -194,6 +199,7 @@ class DetectionAlertService(
     private suspend fun decide(url: String, event: FrigateEvent, zones: Map<String, List<DetectionZone>>, recentVehicles: ArrayDeque<RecentVehicle>) {
         val category = categoryForLabel(event.label)
         val escalated = everyoneAway && category == MomentCategory.PEOPLE
+        if (!escalated && settings.value.ordinaryAlertsSilenced(localMinuteOfDay())) return
         val moment = event.toDomain()
         if (category == MomentCategory.VEHICLES && moment.isStill()) return
         val placed = moment.inZones(zones[event.camera].orEmpty())
@@ -236,6 +242,13 @@ class DetectionAlertService(
     }
 
     private val everyoneAway: Boolean get() = presenceRepository.presence.value.everyoneAway
+
+    /** Minutes since local midnight by [clock], for quiet hours. */
+    @OptIn(ExperimentalTime::class)
+    private fun localMinuteOfDay(): Int {
+        val time = Instant.fromEpochSeconds(clock().toLong()).toLocalDateTime(timeZone()).time
+        return time.hour * 60 + time.minute
+    }
 
     /** A named person. Frigate only writes a sub-label for a face above its recognition threshold, but guard its "unknown" marker anyway. */
     private val FrigateEvent.isRecognized: Boolean

@@ -149,6 +149,69 @@ class MotionVerdict(unittest.TestCase):
         self.assertEqual("push", relay.motion_verdict(self.item(["car"], [])))
 
 
+class QuietHours(unittest.TestCase):
+    # 2026-01-15 06:30 UTC: 22:30 the evening before in Los Angeles (PST, UTC-8), 07:30 in Berlin (CET, UTC+1).
+    NOW = 1768458600.0
+
+    def test_a_window_that_wraps_midnight(self):
+        self.assertTrue(relay.in_quiet_hours(22 * 60, 7 * 60, 23 * 60))
+        self.assertTrue(relay.in_quiet_hours(22 * 60, 7 * 60, 0))
+        self.assertTrue(relay.in_quiet_hours(22 * 60, 7 * 60, 6 * 60 + 59))
+        self.assertFalse(relay.in_quiet_hours(22 * 60, 7 * 60, 7 * 60), "the end minute is outside")
+        self.assertFalse(relay.in_quiet_hours(22 * 60, 7 * 60, 12 * 60))
+
+    def test_a_daytime_window(self):
+        self.assertTrue(relay.in_quiet_hours(13 * 60, 15 * 60, 13 * 60))
+        self.assertFalse(relay.in_quiet_hours(13 * 60, 15 * 60, 15 * 60))
+        self.assertFalse(relay.in_quiet_hours(13 * 60, 15 * 60, 12 * 60))
+
+    def test_an_unset_or_empty_window_is_never_quiet(self):
+        self.assertFalse(relay.in_quiet_hours(None, None, 0))
+        self.assertFalse(relay.in_quiet_hours(22 * 60, None, 23 * 60))
+        self.assertFalse(relay.in_quiet_hours(8 * 60, 8 * 60, 8 * 60))
+
+    def test_the_phones_own_clock_decides(self):
+        self.assertEqual(22 * 60 + 30, relay.local_minute(self.NOW, "America/Los_Angeles", None))
+        self.assertEqual(7 * 60 + 30, relay.local_minute(self.NOW, "Europe/Berlin", None))
+        night = (22 * 60, 7 * 60)
+        self.assertTrue(relay.silenced(False, *night, "America/Los_Angeles", -480, self.NOW))
+        self.assertFalse(relay.silenced(False, *night, "Europe/Berlin", 60, self.NOW))
+
+    def test_an_unknown_zone_falls_back_to_the_reported_offset(self):
+        self.assertEqual(22 * 60 + 30, relay.local_minute(self.NOW, "Not/A_Zone", -480))
+        self.assertEqual(22 * 60 + 30, relay.local_minute(self.NOW, None, -480))
+        self.assertIsNone(relay.local_minute(self.NOW, None, None))
+        self.assertFalse(relay.silenced(False, 0, 23 * 60 + 59, None, None, self.NOW), "no clock to read: never quiet")
+
+    def test_only_away_silences_every_ordinary_alert(self):
+        self.assertTrue(relay.silenced(True, None, None, None, None, self.NOW))
+
+    def test_an_existing_database_gains_the_columns_and_keeps_its_phones(self):
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "relay.db")
+            old = sqlite3.connect(path)
+            old.execute(
+                "CREATE TABLE devices ("
+                " device_id TEXT PRIMARY KEY, token TEXT UNIQUE, platform TEXT, name TEXT, created REAL, last_seen REAL,"
+                " away INTEGER NOT NULL DEFAULT 0, away_updated REAL, quiet_familiar INTEGER NOT NULL DEFAULT 0,"
+                " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL)"
+            )
+            old.execute("INSERT INTO devices (device_id, token, platform, name, away) VALUES ('d1', 't1', 'android', 'Pixel', 1)")
+            old.commit()
+            old.close()
+            real, relay.DB_PATH = relay.DB_PATH, path
+            try:
+                conn = relay.db()
+                row = conn.execute("SELECT name, away, quiet_start, quiet_end, only_away, tz, utc_offset FROM devices").fetchone()
+                conn.close()
+            finally:
+                relay.DB_PATH = real
+            self.assertEqual(("Pixel", 1, None, None, 0, None, None), row)
+
+
 class Devices(unittest.TestCase):
     """The presence snapshot and device removal, against a scratch database."""
 

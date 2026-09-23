@@ -1,9 +1,13 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.AlertPreset
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.domain.model.withPreset
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -132,6 +136,35 @@ class DeviceRegistrarTest {
         connection.currentServerUrl.value = "http://100.99.163.71:8971"
         settle()
         assertEquals(3, h.posts.size, "LAN -> Tailscale flip: the relay is the same box, but say so on the new address")
+    }
+
+    @Test
+    fun quietHoursAndOnlyAwayAreToldToTheRelayButZoneRulesAreNot() = runTest {
+        val h = Harness(this, FakeConnection(url = "http://192.168.68.55:8971"))
+        h.registrar.start()
+        settle()
+        val first = h.posts.single()
+        assertTrue("quiet_start" !in first && "only_away" !in first, "off: nothing to say, and an older relay reads that as off too")
+        assertTrue(""""tz":""" in first && """"utc_offset":""" in first, first)
+
+        h.settings.settings.value = AlertSettings.DEFAULT.copy(quietHours = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 7 * 60))
+        settle()
+        assertEquals(2, h.posts.size)
+        assertTrue(""""quiet_start":1320""" in h.posts[1] && """"quiet_end":420""" in h.posts[1], h.posts[1])
+
+        h.settings.settings.value = h.settings.settings.value.copy(onlyWhenAway = true)
+        settle()
+        assertEquals(3, h.posts.size)
+        assertTrue(""""only_away":true""" in h.posts[2], h.posts[2])
+
+        h.settings.settings.value = h.settings.settings.value.withPreset(AlertPreset.PEOPLE_ONLY, listOf(AlertZone("amcrest_1", null)))
+        settle()
+        assertEquals(3, h.posts.size, "the relay doesn't apply zone rules, so a rule change isn't news to it")
+
+        h.settings.settings.value = h.settings.settings.value.copy(quietHours = QuietHours(enabled = false, startMinute = 22 * 60, endMinute = 7 * 60))
+        settle()
+        assertEquals(4, h.posts.size)
+        assertTrue("quiet_start" !in h.posts[3], "switched off: the window is kept on the phone, not sent")
     }
 
     @Test

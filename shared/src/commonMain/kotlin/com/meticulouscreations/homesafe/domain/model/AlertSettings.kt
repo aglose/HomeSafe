@@ -23,7 +23,22 @@ data class AlertSettings(
      * nobody has to remember to. Off by default — it needs location access the user must grant.
      */
     val automaticPresence: Boolean = false,
+    /** A nightly window in which ordinary alerts stay quiet; Away alerts still come through. */
+    val quietHours: QuietHours = QuietHours.DEFAULT,
+    /**
+     * Only hear about things while the house is empty: ordinary alerts never notify, and what's
+     * left are the Away alerts (every person, on the loud channel) that fire once everyone has
+     * left — see docs/away-mode.md.
+     */
+    val onlyWhenAway: Boolean = false,
 ) {
+    /**
+     * Whether an ordinary — not Away — alert at [minuteOfDay] (minutes after local midnight)
+     * stays quiet, whatever the zone rules want: all day with [onlyWhenAway], inside the
+     * [quietHours] window otherwise. Away alerts never ask.
+     */
+    fun ordinaryAlertsSilenced(minuteOfDay: Int): Boolean = onlyWhenAway || quietHours.contains(minuteOfDay)
+
     fun categoriesFor(place: AlertZone): Set<MomentCategory> = zoneRules[place] ?: DEFAULT_CATEGORIES
 
     /**
@@ -75,5 +90,29 @@ data class AlertSettings(
     companion object {
         val DEFAULT_CATEGORIES: Set<MomentCategory> = setOf(MomentCategory.PEOPLE, MomentCategory.VEHICLES)
         val DEFAULT = AlertSettings(pushNotificationsEnabled = false)
+    }
+}
+
+/**
+ * A daily window, in minutes after local midnight, in which ordinary alerts stay quiet. It may
+ * wrap midnight (10 PM to 7 AM is the usual shape) and ends just before [endMinute]. A window
+ * that starts where it ends is empty rather than all day — all day is what
+ * [AlertSettings.onlyWhenAway] is for. The times are kept while [enabled] is off, so switching
+ * it back on brings back the window the user last chose.
+ */
+data class QuietHours(
+    val enabled: Boolean = false,
+    val startMinute: Int = 22 * 60,
+    val endMinute: Int = 7 * 60,
+) {
+    fun contains(minuteOfDay: Int): Boolean = enabled &&
+        when {
+            startMinute == endMinute -> false
+            startMinute < endMinute -> minuteOfDay in startMinute until endMinute
+            else -> minuteOfDay >= startMinute || minuteOfDay < endMinute
+        }
+
+    companion object {
+        val DEFAULT = QuietHours()
     }
 }
