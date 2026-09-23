@@ -93,7 +93,7 @@ public fun com.meticulouscreations.homesafe.ui.components.PulsingDot(color: andr
     - pulsing: STABLE (primitive type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.RecordingTimeline(segments: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.RecordingSegment>, span: com.meticulouscreations.homesafe.viewmodel.TimelineSpan, nowEpochSeconds: kotlin.Double, playheadEpochSeconds: kotlin.Double?, scrubEpochSeconds: kotlin.Double?, isLive: kotlin.Boolean, onScrubStart: kotlin.Function0<kotlin.Unit>, onScrub: kotlin.Function1<@[ParameterName(name = \, onScrubEnd: kotlin.Function0<kotlin.Unit>, onSeek: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.RecordingTimeline(segments: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.RecordingSegment>, span: com.meticulouscreations.homesafe.viewmodel.TimelineSpan, nowEpochSeconds: kotlin.Double, playheadEpochSeconds: kotlin.Double?, scrubEpochSeconds: kotlin.Double?, isLive: kotlin.Boolean, onScrubStart: kotlin.Function0<kotlin.Unit>, onScrub: kotlin.Function1<@[ParameterName(name = \, onScrubEnd: kotlin.Function0<kotlin.Unit>, onSeek: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, detections: kotlin.collections.List<com.meticulouscreations.homesafe.ui.components.TimelineDetection>, onDetectionTap: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: false
   restartable: true
   params:
@@ -108,6 +108,8 @@ public fun com.meticulouscreations.homesafe.ui.components.RecordingTimeline(segm
     - onScrubEnd: STABLE (function type)
     - onSeek: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - detections: RUNTIME (requires runtime check)
+    - onDetectionTap: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen(predicate: kotlin.Function0<kotlin.Boolean>): kotlin.Unit

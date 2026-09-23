@@ -189,32 +189,66 @@ class MomentsRepositoryImpl(
      * opens on the cache so the strip isn't blank while the first poll runs, and files what it
      * fetches there. Zones come from the feed's cache, read here only when nothing has read them
      * for this server yet. A failed poll keeps what was shown; the feed is where fetch errors are
-     * reported.
+     * reported, and a disconnect keeps it too, as the feed does.
+     *
+     * **It pages back until it has something to show** (2026-09-22): Front Yard's Recent Activity
+     * said "No detections on this camera yet" on an evening the Moments tab listed ten. A car
+     * parked in the driveway is re-detected every few minutes, each sighting a still, two-point
+     * path that [mergeVehicleVisits] drops, so the newest page could be nothing but that car and
+     * fold away to nothing. So each poll reads down, a page at a time, until [limit] moments
+     * survive and the pages reach [lookbackSeconds] back — what the camera's timeline marks —
+     * or the server runs out, or [RECENT_MAX_PAGES] have been read. The cursor is the oldest raw
+     * detection, as in [appendOlderPage], and the pages are folded together, so a visit that
+     * straddles a page boundary is still one moment.
      */
-    override fun observeRecentMoments(cameraName: String, limit: Int): Flow<List<MomentEvent>> = channelFlow {
-        val rawEvents = maxOf(limit, RECENT_RAW_EVENTS)
+    override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = channelFlow {
         server.collectLatest { server ->
-            if (server == null) {
-                send(emptyList())
-                return@collectLatest
+            if (server == null) return@collectLatest
+            fun cutoff(): Double = clock.now().toEpochMilliseconds() / 1000.0 - lookbackSeconds
+
+            // The newest [limit] whatever their age, and everything younger than the lookback besides.
+            fun List<MomentEvent>.recent(): List<MomentEvent> {
+                val since = cutoff()
+                return mergeVehicleVisits().filterIndexed { index, moment -> index < limit || moment.startEpochSeconds >= since }
             }
-            cachedPage(server.identity, before = null, camera = cameraName, limit = rawEvents)
+            cachedPage(server.identity, before = null, camera = cameraName, limit = RECENT_MAX_PAGES * PAGE_SIZE)
                 .takeIf { it.isNotEmpty() }
-                ?.let { send(it.mergeVehicleVisits().take(limit)) }
+                ?.let { send(it.recent()) }
             var failures = 0
             while (true) {
                 loadZones(server.url, force = false)
-                // More than [limit] raw: zones drop some detections and folding merges others.
-                val fetched = apiClient.getEvents(server.url, limit = rawEvents, cameras = listOf(cameraName)).onSuccess { events ->
-                    val zones = stateLock.withLock { zonesByCamera }
-                    val placed = events.map { it.toDomain() }.inZones(zones)
-                    send(placed.mergeVehicleVisits().take(limit))
-                    cache(server.identity, cameraName, placed, from = events.minOfOrNull { it.startTime }, to = null)
-                }.isSuccess
-                failures = if (fetched) 0 else failures + 1
+                val pages = fetchRecentPages(server.url, cameraName, limit, cutoff())
+                if (pages != null) {
+                    val (placed, oldest) = pages
+                    send(placed.recent())
+                    cache(server.identity, cameraName, placed, from = oldest, to = null)
+                }
+                failures = if (pages != null) 0 else failures + 1
                 delay(nextPollDelayMs(failures))
             }
         }
+    }
+
+    /**
+     * The pages behind [observeRecentMoments]: [cameraName]'s detections from now, placed by the
+     * zones, read down until [limit] moments survive folding and the oldest reaches [cutoff], or
+     * the server has no more, or [RECENT_MAX_PAGES] have been read. Returns them with the oldest
+     * raw start read (what the cache is squared against), or null if the server didn't answer the
+     * first page. A later page that fails ends the walk on what was read so far.
+     */
+    private suspend fun fetchRecentPages(url: String, cameraName: String, limit: Int, cutoff: Double): Pair<List<MomentEvent>, Double?>? {
+        var placed = emptyList<MomentEvent>()
+        var oldest: Double? = null
+        for (page in 0 until RECENT_MAX_PAGES) {
+            val events = apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = listOf(cameraName))
+                .getOrElse { return if (page == 0) null else placed to oldest }
+            val zones = stateLock.withLock { zonesByCamera }
+            placed = placed + events.map { it.toDomain() }.inZones(zones)
+            oldest = events.minOfOrNull { it.startTime } ?: oldest
+            val enough = placed.mergeVehicleVisits().size >= limit && (oldest ?: cutoff) <= cutoff
+            if (events.size < PAGE_SIZE || enough) break
+        }
+        return placed to oldest
     }
 
     /**
@@ -534,8 +568,12 @@ class MomentsRepositoryImpl(
          */
         const val CACHE_LIMIT = 500
 
-        /** How many detections a camera's recent strip reads to find its few moments. */
-        const val RECENT_RAW_EVENTS = 25
+        /**
+         * The most pages [observeRecentMoments] reads per poll: enough to see past a parked car's
+         * afternoon of re-detections, or most of a busy camera's day for the 24-hour timeline,
+         * without walking the server's whole history every thirty seconds.
+         */
+        const val RECENT_MAX_PAGES = 5
 
         /**
          * How far back the in-view strip looks for the vehicles standing in the yard. Long enough

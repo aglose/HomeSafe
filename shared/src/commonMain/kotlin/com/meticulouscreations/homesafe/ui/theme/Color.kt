@@ -61,11 +61,18 @@ val FrigateDarkColorScheme = darkColorScheme(
 data class FrigateExtraColors(
     val textPrimary: Color,
     val glassFill: Color,
+    /** A detection on the camera timeline, by what it was: warm for people, cool for vehicles, amber for animals. */
+    val peopleMarker: Color,
+    val vehiclesMarker: Color,
+    val animalsMarker: Color,
 )
 
 val FrigateDarkExtraColors = FrigateExtraColors(
     textPrimary = Color(0xFFF4F3EF),
     glassFill = Color(0xFF1C1C1A).copy(alpha = 0.6f),
+    peopleMarker = Color(0xFFFFB59D),
+    vehiclesMarker = Color(0xFF9DC4E8),
+    animalsMarker = Color(0xFFE6C77A),
 )
 
 val LocalFrigateExtraColors = staticCompositionLocalOf { FrigateDarkExtraColors }
