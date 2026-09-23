@@ -83,11 +83,24 @@ class PushRelayApiPresenceTest {
     }
 
     @Test
+    fun eachDeviceCarriesItsIdAndWhenTheRelayLastHeardFromIt() = runTest {
+        val (api, _) = api(
+            """{"devices":[{"id":"dev-old","name":"Apple iPhone","platform":"ios","away":false,"this_device":false,"last_seen":1700000000.5}],
+               "everyone_away":false}""",
+        )
+        val device = api.getPresence("http://frigate:8971", "dev-1").getOrThrow().devices.single()
+        assertEquals("dev-old", device.id)
+        assertEquals(1_700_000_000.5, device.lastSeenEpochSeconds)
+    }
+
+    @Test
     fun aRelayThatPredatesTheNewFieldsStillWorks() = runTest {
         val (api, _) = api("""{"devices":[{"name":"Pixel","platform":"android","away":false,"this_device":true}],"everyone_away":false}""")
         val presence = api.getPresence("http://frigate:8971", "dev-1").getOrThrow()
         assertTrue(presence.devices.single().countsForAway)
         assertFalse(presence.devices.single().pendingAway)
+        assertEquals(null, presence.devices.single().id, "no id: the row simply can't be removed from the app")
+        assertEquals(null, presence.devices.single().lastSeenEpochSeconds)
         assertEquals(null, presence.home)
     }
 }

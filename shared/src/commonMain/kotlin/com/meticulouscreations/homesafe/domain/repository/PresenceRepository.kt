@@ -27,4 +27,10 @@ interface PresenceRepository {
 
     /** Sets (or, with null, clears) the household's home; every phone's geofence follows [presence]. */
     suspend fun setHome(home: HomeLocation?): Result<Unit>
+
+    /**
+     * Forgets another install ([PresenceDevice.id]) — an old one a reinstall left behind — and
+     * re-reads [presence]. One that is still installed re-registers the next time it connects.
+     */
+    suspend fun removeDevice(deviceId: String): Result<Unit>
 }

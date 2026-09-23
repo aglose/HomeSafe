@@ -210,8 +210,8 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
 
-        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces ->
-            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces)
+        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces, openServer ->
+            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer)
         }
     }
 }

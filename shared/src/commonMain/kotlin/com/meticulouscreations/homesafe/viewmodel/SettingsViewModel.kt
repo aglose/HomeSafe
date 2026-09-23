@@ -29,6 +29,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.OpenNotificationSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshServerOverviewUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RemoveHouseholdDeviceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RequestLocationAccessUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RequestNotificationPermissionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SendTestNotificationUseCase
@@ -74,6 +75,8 @@ data class SettingsUiState(
     val awayBusy: Boolean = false,
     /** Why the relay couldn't be read or told, e.g. it's down. */
     val awayError: String? = null,
+    /** The device being removed from the relay, by id; its row's remove button waits for the answer. */
+    val removingDevice: String? = null,
     /** Automatic presence: whether a geofence is possible on this platform at all... */
     val geofenceSupported: Boolean = false,
     /** ...and how much location the phone lets us see. Only [LocationAccess.ALWAYS] makes the fence useful. */
@@ -117,6 +120,7 @@ private data class LocalState(
     val classifiers: List<ClassifierModel> = emptyList(),
     val awayBusy: Boolean = false,
     val awayError: String? = null,
+    val removingDevice: String? = null,
     val homeBusy: Boolean = false,
     val homeError: String? = null,
     val alertVolume: AlertVolume? = null,
@@ -143,6 +147,7 @@ class SettingsViewModel(
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val setAwayUseCase: SetAwayUseCase,
+    private val removeHouseholdDeviceUseCase: RemoveHouseholdDeviceUseCase,
     observeLocationAccessUseCase: ObserveLocationAccessUseCase,
     private val requestLocationAccessUseCase: RequestLocationAccessUseCase,
     private val setHomeHereUseCase: SetHomeHereUseCase,
@@ -181,6 +186,7 @@ class SettingsViewModel(
                 classifiers = local.classifiers,
                 awayBusy = local.awayBusy,
                 awayError = local.awayError,
+                removingDevice = local.removingDevice,
                 geofenceSupported = geofenceSupported,
                 homeBusy = local.homeBusy,
                 homeError = local.homeError,
@@ -320,6 +326,19 @@ class SettingsViewModel(
         viewModelScope.launch {
             val result = setAwayUseCase(away)
             local.update { it.copy(awayBusy = false, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
+        }
+    }
+
+    /**
+     * Forgets another install ([deviceId]) on the relay — an old one a reinstall left behind, or a
+     * debug build. The Settings row asks first; this just does it.
+     */
+    fun removeDevice(deviceId: String) {
+        if (local.value.removingDevice != null) return
+        local.update { it.copy(removingDevice = deviceId, awayError = null) }
+        viewModelScope.launch {
+            val result = removeHouseholdDeviceUseCase(deviceId)
+            local.update { it.copy(removingDevice = null, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
         }
     }
 

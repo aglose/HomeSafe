@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -36,15 +37,18 @@ data class ClassifierRoute(val modelName: String)
 /** Frigate's face library: who it recognises and the faces waiting for a name. */
 data object FacesRoute
 
+/** The server's diagnostics — address, load, detector, disk, retention, AI features — off the main page. */
+data object ServerRoute
+
 /**
  * The Settings tab's own nested navigation: the settings page, and drilling into a classifier's
- * labelling screen or the face library. [content] renders the settings page and receives the
- * callbacks that open them.
+ * labelling screen, the face library, or the server's diagnostics. [content] renders the
+ * settings page and receives the callbacks that open them.
  */
 @Composable
 fun SettingsTabNav(
     backStack: SnapshotStateList<Any>,
-    content: @Composable (openClassifier: (String) -> Unit, openFaces: () -> Unit) -> Unit,
+    content: @Composable (openClassifier: (String) -> Unit, openFaces: () -> Unit, openServer: () -> Unit) -> Unit,
 ) {
     NavDisplay(
         backStack = backStack,
@@ -57,6 +61,7 @@ fun SettingsTabNav(
                 content(
                     { modelName -> backStack.add(ClassifierRoute(modelName)) },
                     { backStack.add(FacesRoute) },
+                    { backStack.add(ServerRoute) },
                 )
             }
             entry<ClassifierRoute> { route ->
@@ -66,6 +71,7 @@ fun SettingsTabNav(
                 )
             }
             entry<FacesRoute> { FaceLibraryScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<ServerRoute> { ServerSettingsScreen(onBack = { backStack.removeLastOrNull() }) }
         },
     )
 }
@@ -86,7 +92,7 @@ fun RecognitionSection(
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(text = "Recognition", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
         if (faceRecognitionEnabled == true) {
-            RecognitionRow(
+            SettingsLinkRow(
                 icon = Icons.Filled.Face,
                 title = "Faces",
                 description = "Name the faces Frigate saw so it can tell family from strangers",
@@ -94,7 +100,7 @@ fun RecognitionSection(
             )
         }
         models.forEach { model ->
-            RecognitionRow(
+            SettingsLinkRow(
                 icon = Icons.Filled.DirectionsCar,
                 title = model.displayName,
                 description = "Label what the ${model.objects.joinToString(" and ")} classifier saw, and retrain it",
@@ -104,8 +110,18 @@ fun RecognitionSection(
     }
 }
 
+/**
+ * The way into the server's diagnostics ([ServerSettingsScreen]), last on the page, with a
+ * [summary] line — route, disk, health — so the page still says at a glance whether all is well.
+ */
 @Composable
-private fun RecognitionRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
+internal fun ServerSummaryRow(summary: String, onOpen: () -> Unit) {
+    SettingsLinkRow(icon = Icons.Filled.Dns, title = "Server", description = summary, onClick = onOpen)
+}
+
+/** One row that opens a page of its own: an icon, what it is, a line about it, and a chevron. */
+@Composable
+private fun SettingsLinkRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = Modifier

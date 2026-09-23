@@ -25,6 +25,12 @@ class SetAwayUseCase(private val presenceRepository: PresenceRepository) {
     suspend operator fun invoke(away: Boolean): Result<Unit> = presenceRepository.setThisDeviceAway(away)
 }
 
+/** Forgets another install the relay still lists — typically an old one a reinstall left behind. */
+@Inject
+class RemoveHouseholdDeviceUseCase(private val presenceRepository: PresenceRepository) {
+    suspend operator fun invoke(deviceId: String): Result<Unit> = presenceRepository.removeDevice(deviceId)
+}
+
 /** Automatic presence: what the phone may see of its location, and whether a geofence is even possible here. */
 @Inject
 class ObserveLocationAccessUseCase(private val automation: PresenceAutomation) {
