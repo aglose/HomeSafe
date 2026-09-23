@@ -8,9 +8,6 @@
         <error line="90" column="5" source="compose:lambda-param-event-trailing" />
         <error line="90" column="5" source="compose:parameter-naming" />
     </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/App.kt">
-        <error line="41" column="5" source="compose:modifier-missing-check" />
-    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="141" column="5" source="compose:parameter-naming" />
         <error line="142" column="5" source="compose:parameter-naming" />
@@ -26,11 +23,11 @@
         <error line="19" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
-        <error line="109" column="5" source="compose:modifier-missing-check" />
-        <error line="318" column="5" source="compose:state-param-check" />
-        <error line="321" column="5" source="compose:lambda-param-in-effect" />
-        <error line="321" column="5" source="compose:parameter-naming" />
-        <error line="569" column="47" source="compose:lambda-param-in-effect" />
+        <error line="98" column="5" source="compose:modifier-missing-check" />
+        <error line="307" column="5" source="compose:state-param-check" />
+        <error line="310" column="5" source="compose:lambda-param-in-effect" />
+        <error line="310" column="5" source="compose:parameter-naming" />
+        <error line="462" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="75" column="5" source="compose:modifier-missing-check" />
@@ -60,11 +57,11 @@
         <error line="74" column="5" source="compose:modifier-missing-check" />
         <error line="561" column="13" source="compose:param-order-check" />
     </file>
-    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
-        <error line="42" column="14" source="compose:compositionlocal-allowlist" />
-    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="79" column="5" source="compose:modifier-missing-check" />
+    </file>
+    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
+        <error line="42" column="14" source="compose:compositionlocal-allowlist" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/theme/Color.kt">
         <error line="71" column="5" source="compose:compositionlocal-allowlist" />
