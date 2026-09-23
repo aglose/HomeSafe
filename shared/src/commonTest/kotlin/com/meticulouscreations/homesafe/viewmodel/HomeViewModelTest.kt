@@ -24,6 +24,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import kotlinx.coroutines.Dispatchers
@@ -31,12 +32,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -118,9 +121,10 @@ class HomeViewModelTest {
         override suspend fun token(): String? = "test-token"
     }
 
-    /** Only the in-view strip is read here; the feed's own methods belong to its view model's test. */
-    private class FakeMoments(private val inView: List<StationaryObject>) : MomentsRepository {
+    /** Only the in-view strip and the latest moment are read here; the feed's own methods belong to its view model's test. */
+    private class FakeMoments(private val inView: List<StationaryObject>, private val latest: Flow<MomentEvent?>) : MomentsRepository {
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = MutableStateFlow(inView)
+        override fun observeLatestMoment(): Flow<MomentEvent?> = latest
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
         override fun observeError(): Flow<String?> = fail("unused")
         override fun observePaging(): Flow<MomentsPaging> = fail("unused")
@@ -138,6 +142,7 @@ class HomeViewModelTest {
         serverUrl: String? = "http://frigate.test:8971",
         everyoneAway: Boolean = false,
         inView: List<StationaryObject> = emptyList(),
+        latestMoment: Flow<MomentEvent?> = flowOf(null),
     ) {
         val cameraRepo = FakeCameras(cameras)
         val presenceRepo = FakePresence(everyoneAway)
@@ -150,7 +155,8 @@ class HomeViewModelTest {
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
-            observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(FakeMoments(inView)),
+            observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(FakeMoments(inView, latestMoment)),
+            observeLatestMomentUseCase = ObserveLatestMomentUseCase(FakeMoments(inView, latestMoment)),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
             clock = object : Clock {
                 // 18:00 UTC, a couple of hours after [tesla] arrived and the same day wherever the
@@ -266,6 +272,40 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertNull(h.viewModel.inView.value.single().thumbnailUrl, "no server to fetch the crop from")
+    }
+
+    /**
+     * `status` recomputes on a timer so "3 min ago" keeps counting, which is a delay loop that
+     * never goes idle — so these tests run what is due now rather than advancing until idle.
+     */
+    @Test
+    fun aRecentDetectionHeadsTheSummary() = runTest {
+        val h = Harness(
+            cameras = listOf(Camera(name = "front_door", enabled = true), Camera(name = "garage", enabled = false)),
+            // Three minutes before the harness clock's 18:00 UTC.
+            latestMoment = flowOf(
+                MomentEvent(
+                    id = "e1", cameraName = "hikvision_2", label = "person", subLabel = null,
+                    startEpochSeconds = 1_789_408_560.0, endEpochSeconds = 1_789_408_620.0,
+                    topScore = 0.9, hasClip = true, hasSnapshot = true,
+                ),
+            ),
+        )
+        activate(h.viewModel.status)
+        runCurrent()
+
+        assertEquals("Person at Backyard", h.viewModel.status.value.headline)
+        assertEquals("3 min ago · 1 of 2 cameras on", h.viewModel.status.value.details, "no presence part until the relay names a phone")
+    }
+
+    @Test
+    fun theSummaryHoldsItsHeadlineUntilTheLatestMomentHasBeenRead() = runTest {
+        val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), latestMoment = emptyFlow())
+        activate(h.viewModel.status)
+        runCurrent()
+
+        assertNull(h.viewModel.status.value.headline, "not read yet, which is not the same as quiet")
+        assertEquals("1 camera on", h.viewModel.status.value.details)
     }
 
     @Test
