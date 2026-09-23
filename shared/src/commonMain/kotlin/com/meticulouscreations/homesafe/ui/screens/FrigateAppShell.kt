@@ -206,7 +206,7 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
 @Composable
 private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom)
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, onOpenMoments = { nav.selectTab(TopLevelRoute.Moments) })
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
 
@@ -400,10 +400,11 @@ private data class DetectionZonesRoute(val cameraName: String)
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
+ * [onOpenMoments] switches to the Moments tab, for the summary at the top of the camera list.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, onOpenMoments: () -> Unit) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -419,6 +420,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         onCameraClick = { tile ->
                             backStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
                         },
+                        onOpenMoments = onOpenMoments,
                     )
                 }
                 entry<CameraDetailRoute>(
