@@ -1,5 +1,6 @@
 """
-Offline checks for the relay's pure decisions. Runs with nothing but the standard library:
+Offline checks for the relay's pure decisions, and for its device table against a scratch SQLite
+database. Runs with nothing but the standard library:
 
     python3 -m unittest relay/test_relay.py
 
@@ -146,6 +147,53 @@ class MotionVerdict(unittest.TestCase):
         self.assertEqual("push", relay.motion_verdict(self.item(["car"], ["api"])))
         self.assertEqual("push", relay.motion_verdict(self.item([], [])))
         self.assertEqual("push", relay.motion_verdict(self.item(["car"], [])))
+
+
+class Devices(unittest.TestCase):
+    """The presence snapshot and device removal, against a scratch database."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._path, self._conn, self._auth = relay.DB_PATH, relay.CONN, relay.authenticate
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        # Stands in for the cookie: a signed-in user, who may act on any device.
+        relay.authenticate = lambda request, device=None: "andrew"
+
+    def tearDown(self):
+        relay.CONN.close()
+        relay.DB_PATH, relay.CONN, relay.authenticate = self._path, self._conn, self._auth
+        self._dir.cleanup()
+
+    def add(self, device_id, name, build="release", last_seen=1000.0):
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO devices (device_id, platform, name, created, last_seen, build) VALUES (?,?,?,?,?,?)",
+            (device_id, "android", name, last_seen, last_seen, build),
+        ), c.commit()))
+
+    def test_the_snapshot_names_each_device_and_when_it_was_last_seen(self):
+        self.add("pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
+        self.add("emulator", "Google sdk_gphone64_arm64", build="debug", last_seen=2000.0)
+        devices = relay.presence_snapshot("pixel")["devices"]
+        self.assertEqual(["pixel", "emulator"], [d["id"] for d in devices])
+        self.assertEqual([1000.0, 2000.0], [d["last_seen"] for d in devices])
+        self.assertEqual([True, False], [d["this_device"] for d in devices])
+
+    def test_a_phone_reading_presence_is_seen_and_the_others_are_not(self):
+        self.add("pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
+        self.add("old-pixel", "Google Pixel 10 Pro XL", last_seen=1000.0)
+        snapshot = relay.get_presence(request=None, device="pixel")
+        seen = {d["id"]: d["last_seen"] for d in snapshot["devices"]}
+        self.assertGreater(seen["pixel"], time.time() - 60)
+        self.assertEqual(1000.0, seen["old-pixel"])
+
+    def test_a_signed_in_user_can_remove_another_device(self):
+        self.add("pixel", "Google Pixel 10 Pro XL")
+        self.add("old-iphone", "Apple iPhone")
+        self.assertEqual({"ok": True}, relay.unregister("old-iphone", request=None))
+        self.assertEqual(["pixel"], [d["id"] for d in relay.presence_snapshot("pixel")["devices"]])
 
 
 if __name__ == "__main__":

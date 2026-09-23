@@ -87,6 +87,11 @@ class PresenceRepositoryImplTest {
                     respond(presenceJson(null), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
+                req.method == HttpMethod.Delete && req.url.encodedPath.startsWith("/devices/") -> {
+                    away.remove(req.url.encodedPath.removePrefix("/devices/"))
+                    respond("""{"ok":true}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                }
+
                 req.method == HttpMethod.Delete && req.url.encodedPath == "/home" -> {
                     home = null
                     respond(presenceJson(null), HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
@@ -101,7 +106,7 @@ class PresenceRepositoryImplTest {
 
         private fun presenceJson(thisDevice: String?): String {
             val devices = away.entries.joinToString(",") { (id, isAway) ->
-                """{"name":"${if (id == "dev-pixel") "Google Pixel" else "iPhone"}","platform":"${if (id == "dev-pixel") "android" else "ios"}","away":$isAway,"away_updated":${if (isAway) "1700000000.5" else "null"},"this_device":${id == thisDevice}}"""
+                """{"id":"$id","name":"${if (id == "dev-pixel") "Google Pixel" else "iPhone"}","platform":"${if (id == "dev-pixel") "android" else "ios"}","away":$isAway,"away_updated":${if (isAway) "1700000000.5" else "null"},"this_device":${id == thisDevice}}"""
             }
             val homeJson = home?.let { """{"lat":${it.latitude},"lng":${it.longitude},"radius_m":${it.radiusMeters}}""" } ?: "null"
             return """{"devices":[$devices],"everyone_away":${away.values.all { it }},"home":$homeJson}"""
@@ -223,6 +228,18 @@ class PresenceRepositoryImplTest {
         assertTrue(h.repository.setHome(null).isSuccess)
         assertEquals("DELETE 192.168.68.55/home?device=dev-pixel", h.requests.last())
         assertNull(h.repository.presence.value.home)
+    }
+
+    @Test
+    fun removingAnotherDeviceRidesOnTheSessionAndDropsItFromTheList() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.55:8971")).registered()
+        assertTrue(h.repository.refresh().isSuccess)
+        assertEquals(listOf("dev-pixel", "dev-iphone"), h.repository.presence.value.devices.map { it.id })
+
+        assertTrue(h.repository.removeDevice("dev-iphone").isSuccess)
+        assertEquals("DELETE 192.168.68.55/devices/dev-iphone", h.requests[1])
+        assertNull(h.authorizations[1], "another install's row: the cookie, since this install's secret only speaks for itself")
+        assertEquals(listOf("dev-pixel"), h.repository.presence.value.devices.map { it.id })
     }
 
     @Test

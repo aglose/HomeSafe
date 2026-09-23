@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,16 +21,22 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
@@ -38,6 +45,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,10 +60,12 @@ import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
+import com.meticulouscreations.homesafe.domain.model.HouseholdDeviceList
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.domain.model.formatLastSeen
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
 import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
@@ -65,13 +78,18 @@ import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlin.math.roundToInt
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
- * The "Settings" tab: what the connected Frigate server is and is doing (live, from its stats
- * and config), the per-camera detection switches, and this device's alert preferences.
+ * The "Settings" tab, everyday things first: this device's alert preferences, away mode, and
+ * teaching the server faces and cars. Then the per-camera detection switches — rarely touched,
+ * but a control rather than a readout, and one that decides whether a camera alerts at all, so
+ * they stay on this page. Last, one row into what the server is and is doing (live, from its
+ * stats and config), summarised in a line.
  */
 @Composable
-fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () -> Unit = {}) {
+fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () -> Unit = {}, onOpenServer: () -> Unit = {}) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -94,14 +112,6 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             .padding(top = shellTopBarClearance() + 8.dp, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
-        ServerSection(state, onRetry = viewModel::retryOverview)
-        StorageSection(state.overview)
-        DetectionSection(
-            state = state,
-            onDetection = viewModel::setCameraDetection,
-            onMotion = viewModel::setCameraMotion,
-            onDismissError = viewModel::dismissCameraError,
-        )
         AlertsSection(
             state = state,
             onPushNotifications = viewModel::setPushNotifications,
@@ -117,6 +127,7 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             onRequestLocation = viewModel::requestLocationAccess,
             onSetHomeHere = viewModel::setHomeHere,
             onClearHome = viewModel::clearHome,
+            onRemoveDevice = viewModel::removeDevice,
         )
         RecognitionSection(
             models = state.classifiers,
@@ -124,11 +135,18 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             onOpen = onOpenClassifier,
             onOpenFaces = onOpenFaces,
         )
+        DetectionSection(
+            state = state,
+            onDetection = viewModel::setCameraDetection,
+            onMotion = viewModel::setCameraMotion,
+            onDismissError = viewModel::dismissCameraError,
+        )
+        ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError), onOpen = onOpenServer)
     }
 }
 
 @Composable
-private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
+internal fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
     SettingsSection(title = "Server", icon = Icons.Filled.Dns) {
         state.connection?.let { connection ->
             SettingsCaption("Connected to ${connection.activeUrl}")
@@ -187,7 +205,7 @@ private fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
 }
 
 @Composable
-private fun StorageSection(overview: ServerOverview?) {
+internal fun StorageSection(overview: ServerOverview?) {
     SettingsSection(title = "Storage & Retention", icon = Icons.Filled.Storage) {
         if (overview == null) {
             LoadingRow("Reading disk usage…")
@@ -225,7 +243,7 @@ private fun DetectionSection(
     onMotion: (String, Boolean) -> Unit,
     onDismissError: () -> Unit,
 ) {
-    SettingsSection(title = "Detection Pipeline", icon = Icons.Filled.PersonSearch) {
+    SettingsSection(title = "Cameras", icon = Icons.Filled.PersonSearch) {
         val overview = state.overview
         if (overview == null) {
             LoadingRow("Reading camera pipelines…")
@@ -250,7 +268,17 @@ private fun DetectionSection(
                 TextButton(onClick = onDismissError) { Text("Dismiss") }
             }
         }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+    }
+}
+
+/** What Frigate's config switches on beyond detection. Read-only: each needs a config.yml edit and a restart. */
+@Composable
+internal fun AiFeaturesSection(overview: ServerOverview?) {
+    SettingsSection(title = "AI Features", icon = Icons.Filled.AutoAwesome) {
+        if (overview == null) {
+            LoadingRow("Reading the server's config…")
+            return@SettingsSection
+        }
         InfoRow(label = "Face recognition", value = onOff(overview.faceRecognitionEnabled))
         InfoRow(label = "License plate recognition", value = onOff(overview.licensePlateRecognitionEnabled))
         InfoRow(label = "Semantic search", value = onOff(overview.semanticSearchEnabled))
@@ -399,6 +427,7 @@ private fun AwaySection(
     onRequestLocation: () -> Unit,
     onSetHomeHere: () -> Unit,
     onClearHome: () -> Unit,
+    onRemoveDevice: (String) -> Unit,
 ) {
     SettingsSection(title = "Away mode", icon = Icons.Filled.Home) {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
@@ -421,7 +450,7 @@ private fun AwaySection(
         )
         if (state.presence.devices.isNotEmpty()) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            state.presence.devices.forEach { device -> PresenceDeviceRow(device) }
+            PresenceDeviceList(state, onRemoveDevice)
             if (state.presence.everyoneAway) {
                 SettingsCaption("Nobody home — alerts are escalated on both phones.", error = true)
             }
@@ -497,19 +526,104 @@ private fun AutomaticPresenceRows(
 }
 
 /**
- * "Google Pixel 10 Pro XL · away since 4:12 PM" / "· home" / "· leaving…" — one line per phone
- * the relay knows. A debug install is greyed out and says so: it hears the alerts but doesn't get a vote.
+ * The phones the relay knows, as [HouseholdDeviceList] splits them: the ones that decide away
+ * mode up front, and old installs and debug builds folded under "N other devices". Any device
+ * but this one can be removed, after a confirmation — the usual cleanup after a reinstall.
+ */
+@OptIn(ExperimentalTime::class)
+@Composable
+private fun PresenceDeviceList(state: SettingsUiState, onRemove: (String) -> Unit) {
+    val devices = state.presence.devices
+    // Read once per snapshot: "seen 5 days ago" doesn't need to tick while the page is open.
+    val now = remember(devices) { Clock.System.now().epochSeconds.toDouble() }
+    val list = remember(devices, now) { HouseholdDeviceList.of(devices, now) }
+    var showOthers by rememberSaveable { mutableStateOf(false) }
+    var confirming by remember { mutableStateOf<PresenceDevice?>(null) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        list.primary.forEach { device ->
+            PresenceDeviceRow(device, now, removing = device.id == state.removingDevice, onRemove = { confirming = device })
+        }
+        if (list.others.isNotEmpty()) {
+            OtherDevicesToggle(count = list.others.size, counted = list.countedOthers, expanded = showOthers, onToggle = { showOthers = !showOthers })
+            if (showOthers) {
+                list.others.forEach { device ->
+                    PresenceDeviceRow(device, now, removing = device.id == state.removingDevice, onRemove = { confirming = device })
+                }
+            }
+        }
+    }
+
+    confirming?.let { device ->
+        AlertDialog(
+            onDismissRequest = { confirming = null },
+            title = { Text("Remove ${presenceDeviceName(device)}?") },
+            text = {
+                Text(
+                    "It stops getting alerts and no longer counts for away mode. " +
+                        "If HomeSafe is still installed on it, it comes back the next time the app opens.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirming = null
+                    device.id?.let(onRemove)
+                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+/** "4 other devices", and what they are; tapping shows or hides them. */
+@Composable
+private fun OtherDevicesToggle(count: Int, counted: Int, expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClick = onToggle).padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = if (count == 1) "1 other device" else "$count other devices",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            SettingsCaption(
+                when (counted) {
+                    0 -> "Debug builds, and installs not heard from in a week. None of them count for away mode."
+                    1 -> "Debug builds, and installs not heard from in a week. One still counts for away mode — remove it if nobody uses it."
+                    else -> "Debug builds, and installs not heard from in a week. $counted still count for away mode — remove the ones nobody uses."
+                },
+            )
+        }
+        Icon(
+            imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+            contentDescription = if (expanded) "Hide other devices" else "Show other devices",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * "Google Pixel 10 Pro XL", then "away since 4:12 PM" / "home" / "leaving…", when the relay last
+ * heard from it, and whether it counts. A debug install is greyed out and says so: it hears the
+ * alerts but doesn't get a vote. Every row but this phone's has a remove button.
  */
 @Composable
-private fun PresenceDeviceRow(device: PresenceDevice) {
-    val name = device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { "Unnamed device" } }
+private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, removing: Boolean, onRemove: () -> Unit) {
     val status = when {
         device.away && device.updatedEpochSeconds != null -> "away since ${formatClockTime(device.updatedEpochSeconds)}"
         device.away -> "away"
         device.pendingAway -> "leaving…"
         else -> "home"
     }
-    val suffix = (if (device.isThisDevice) " · this phone" else "") + (if (device.countsForAway) "" else " · debug, not counted")
+    val details = listOfNotNull(
+        "this phone".takeIf { device.isThisDevice },
+        status,
+        device.lastSeenEpochSeconds?.takeIf { !device.isThisDevice }?.let { formatLastSeen(it, nowEpochSeconds) },
+        "debug, not counted".takeIf { !device.countsForAway },
+    ).joinToString(" · ")
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulsingDot(
             color = when {
@@ -521,13 +635,27 @@ private fun PresenceDeviceRow(device: PresenceDevice) {
             size = 6.dp,
             pulsing = (device.away || device.pendingAway) && device.countsForAway,
         )
-        Text(
-            text = "$name · $status$suffix",
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (device.countsForAway) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = presenceDeviceName(device),
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (device.countsForAway) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SettingsCaption(details)
+        }
+        when {
+            removing -> CircularProgressIndicator(modifier = Modifier.padding(12.dp).size(16.dp), strokeWidth = 2.dp)
+
+            // Removing this phone would only last until its next connect; an older relay sends no id to remove by.
+            !device.isThisDevice && device.id != null -> IconButton(onClick = onRemove) {
+                Icon(Icons.Filled.Close, contentDescription = "Remove ${presenceDeviceName(device)}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
     }
 }
+
+private fun presenceDeviceName(device: PresenceDevice): String =
+    device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { "Unnamed device" } }
 
 // ---- Building blocks ---------------------------------------------------------------------------
 

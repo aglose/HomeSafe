@@ -21,6 +21,13 @@ data class PresenceDevice(
      * be unless something says "home" first. See `docs/away-mode.md`.
      */
     val pendingAway: Boolean = false,
+    /** The relay's key for this install, which is what removing it names; null from a relay that predates it. */
+    val id: String? = null,
+    /**
+     * When the relay last heard from this install — a registration, a presence change, or the
+     * app reading presence, which it does about once a minute while open. Null from an older relay.
+     */
+    val lastSeenEpochSeconds: Double? = null,
 )
 
 /** Where home is, for the geofence every phone draws. Household state, kept by the relay. */
@@ -61,5 +68,55 @@ data class HouseholdPresence(
 
     companion object {
         val EMPTY = HouseholdPresence(devices = emptyList(), everyoneAway = false)
+    }
+}
+
+/**
+ * The Settings list of the household's devices, split the way a person reads it: [primary] is
+ * the phones that decide away mode and are in use — this phone always among them, even as a
+ * debug build, since its switch is right above — counted ones first. [others] is what folds away
+ * behind "N other devices": debug installs, and anything not heard from in [STALE_AFTER_SECONDS],
+ * which is what a reinstalled app leaves behind. Those are listed counted first, then most
+ * recently seen first, so the long-dead ones sink to the bottom.
+ */
+data class HouseholdDeviceList(
+    val primary: List<PresenceDevice>,
+    val others: List<PresenceDevice>,
+) {
+    /**
+     * Folded-away devices that still count for away mode — an old install of a real phone. Each
+     * still says "home" (or "away") for nobody, so the fold says how many there are.
+     */
+    val countedOthers: Int get() = others.count { it.countsForAway }
+
+    companion object {
+        /** A week: a phone that's in use reads presence every minute it's open. */
+        const val STALE_AFTER_SECONDS = 7 * 24 * 60 * 60.0
+
+        fun of(devices: List<PresenceDevice>, nowEpochSeconds: Double): HouseholdDeviceList {
+            fun stale(device: PresenceDevice): Boolean =
+                device.lastSeenEpochSeconds?.let { nowEpochSeconds - it > STALE_AFTER_SECONDS } ?: false
+            val (primary, others) = devices.partition { it.isThisDevice || (it.countsForAway && !stale(it)) }
+            return HouseholdDeviceList(
+                primary = primary.sortedWith(compareBy({ !it.countsForAway }, { !it.isThisDevice })),
+                others = others.sortedWith(compareBy({ !it.countsForAway }, { -(it.lastSeenEpochSeconds ?: 0.0) })),
+            )
+        }
+    }
+}
+
+/**
+ * "seen just now" / "seen 12 min ago" / "seen 3 h ago" / "seen yesterday" / "seen 5 days ago" —
+ * how long since the relay heard from a device.
+ */
+fun formatLastSeen(lastSeenEpochSeconds: Double, nowEpochSeconds: Double): String {
+    val seconds = (nowEpochSeconds - lastSeenEpochSeconds).toLong().coerceAtLeast(0)
+    val days = seconds / 86_400
+    return when {
+        seconds < 120 -> "seen just now"
+        seconds < 3_600 -> "seen ${seconds / 60} min ago"
+        seconds < 86_400 -> "seen ${seconds / 3_600} h ago"
+        days == 1L -> "seen yesterday"
+        else -> "seen $days days ago"
     }
 }
