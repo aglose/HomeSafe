@@ -54,12 +54,21 @@ private const val KEY_UPDATE = "homesafe_update"
  * the tap that launches the app before `didFinishLaunching` returns, so this is installed from
  * `startIosApp` at launch, not when the notifier is first used.
  */
-internal object IosNotificationTaps : NSObject(), UNUserNotificationCenterDelegateProtocol {
+internal object IosNotificationTaps {
+    // A class held here rather than this object being the delegate: Kotlin/Native can't generate
+    // code for an `object` that subclasses NSObject. The reference also keeps it alive — the
+    // center's `delegate` is weak.
+    private val delegate = NotificationCenterDelegate()
+
     fun install() {
         val center = UNUserNotificationCenter.currentNotificationCenter()
-        if (center.delegate !== this) center.delegate = this
+        if (center.delegate !== delegate) center.delegate = delegate
     }
+}
 
+private class NotificationCenterDelegate :
+    NSObject(),
+    UNUserNotificationCenterDelegateProtocol {
     override fun userNotificationCenter(
         center: UNUserNotificationCenter,
         willPresentNotification: UNNotification,
