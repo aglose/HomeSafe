@@ -106,7 +106,7 @@ join work from a phone:
      webrtc:
        listen: ":8555"
        candidates:
-         - 192.168.68.64:8555     # LAN (wlo1)
+         - 192.168.68.66:8555     # LAN (wlo1)
          - 100.99.163.71:8555     # Tailscale (tailscale0)
        ice_servers: []            # host candidates only, no outbound STUN
    ```
