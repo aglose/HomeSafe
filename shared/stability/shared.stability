@@ -171,14 +171,37 @@ internal fun com.meticulouscreations.homesafe.ui.screens.AiFeaturesSection(overv
     - overview: RUNTIME (requires runtime check)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onPushNotifications: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>, onQuietFamiliar: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>, onSendTest: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.AlertPresetChips(offered: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.AlertPreset>, selected: com.meticulouscreations.homesafe.domain.model.AlertPreset?, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - offered: RUNTIME (requires runtime check)
+    - selected: STABLE (class with no mutable properties)
+    - onPreset: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.AlertRules(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>, onLoadVolume: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onPreset: STABLE (function type)
+    - onZoneCategory: STABLE (function type)
+    - onLoadVolume: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onPushNotifications: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>, onQuietHours: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.QuietHours, kotlin.Unit>, onOnlyWhenAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onQuietFamiliar: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onLoadVolume: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>, onSendTest: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onPushNotifications: STABLE (function type)
     - onZoneCategory: STABLE (function type)
+    - onPreset: STABLE (function type)
+    - onQuietHours: STABLE (function type)
+    - onOnlyWhenAway: STABLE (function type)
     - onQuietFamiliar: STABLE (function type)
+    - onLoadVolume: STABLE (function type)
     - onOpenSettings: STABLE (function type)
     - onSendTest: STABLE (function type)
 
@@ -282,12 +305,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.BottomNavItemView(route:
     - onClick: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CameraAlertZones(camera: com.meticulouscreations.homesafe.domain.model.CameraPipeline, alerts: com.meticulouscreations.homesafe.domain.model.AlertSettings, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CameraAlertZones(camera: com.meticulouscreations.homesafe.domain.model.CameraPipeline, alerts: com.meticulouscreations.homesafe.domain.model.AlertSettings, volume: com.meticulouscreations.homesafe.domain.model.AlertVolume?, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
   params:
     - camera: RUNTIME (requires runtime check)
     - alerts: RUNTIME (requires runtime check)
+    - volume: RUNTIME (requires runtime check)
     - onZoneCategory: STABLE (function type)
 
 @Composable
@@ -972,6 +996,16 @@ internal fun com.meticulouscreations.homesafe.ui.screens.QuickActionsRow(cameraN
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.QuietHoursRows(enabled: kotlin.Boolean, startMinute: kotlin.Int, endMinute: kotlin.Int, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.QuietHours, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - enabled: STABLE (primitive type)
+    - startMinute: STABLE (primitive type)
+    - endMinute: STABLE (primitive type)
+    - onChange: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.RecentMomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1040,7 +1074,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ServerSummaryRow(summar
     - onOpen: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.SettingsCaption(text: kotlin.String, error: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCaption(text: kotlin.String, error: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1066,7 +1100,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.SettingsLinkRow(icon: an
     - onClick: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.SettingsSection(title: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsSection(title: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1092,7 +1126,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabNav(backStack:
     - content: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title: kotlin.String, description: kotlin.String, checked: kotlin.Boolean, onCheckedChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, enabled: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title: kotlin.String, description: kotlin.String, checked: kotlin.Boolean, onCheckedChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, enabled: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1223,6 +1257,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.ZoneList(uiState: com.me
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
     - viewModel: RUNTIME (requires runtime check)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.alertChipColors(): androidx.compose.material3.SelectableChipColors
+  skippable: false
+  restartable: false
+  params:
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.bottomNavClearance(): androidx.compose.ui.unit.Dp
