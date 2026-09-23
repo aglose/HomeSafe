@@ -99,6 +99,9 @@ class MomentsRepositoryImpl(
 
     private val window = MutableStateFlow(Window())
 
+    /** Bumped after every write to the cache, so [observeLatestMoment] knows to read it again. */
+    private val cacheWrites = MutableStateFlow(0L)
+
     /** The server the feed reads: the [identity] its cache is filed under, and the [url] to ask right now. */
     private data class Server(val identity: String, val url: String)
 
@@ -274,6 +277,24 @@ class MomentsRepositoryImpl(
             }
         }
     }
+
+    /**
+     * Straight out of the cache, re-read whenever anything files a page there, rather than a poll
+     * of its own: every poll that is running — the feed's live head, the in-view strip's, a camera
+     * screen's recent moments — lands its answer in the cache, and the newest row across all of
+     * them is the freshest thing the device knows. On the home page, which is where this is read,
+     * the in-view strip's poll keeps it current. A page's worth is folded, not just the newest
+     * row, so a parked car's re-detections — which the feed folds away — aren't news here either.
+     * A disconnect keeps the last answer rather than saying nothing has happened.
+     */
+    override fun observeLatestMoment(): Flow<MomentEvent?> = channelFlow {
+        server.map { it?.identity }.distinctUntilChanged().collectLatest { identity ->
+            if (identity == null) return@collectLatest
+            cacheWrites.collect {
+                send(cachedPage(identity, before = null, camera = null, limit = PAGE_SIZE).mergeVehicleVisits().firstOrNull())
+            }
+        }
+    }.distinctUntilChanged()
 
     /**
      * The in-view strip out of the cache: this server's cached detections back to the lookback
@@ -484,6 +505,7 @@ class MomentsRepositoryImpl(
             )
             momentsDao.trimToNewest(identity, CACHE_LIMIT)
         }
+        cacheWrites.update { it + 1 }
     }
 
     /** The next page down out of the cache, when the server couldn't answer for it. True if it had one. */

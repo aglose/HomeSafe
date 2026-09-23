@@ -67,6 +67,15 @@ interface MomentsRepository {
      */
     fun observeStationaryObjects(): Flow<List<StationaryObject>>
 
+    /**
+     * The newest detection the device knows of on any camera, placed the way [observeMoments]
+     * places it; null when it knows of none. Unlike the feed it ignores where the Moments tab's
+     * window was left, so the home page can say what last happened whatever the feed is narrowed
+     * to. It reads what the polls already running have fetched rather than asking the server
+     * itself, so it is as fresh as the freshest of them.
+     */
+    fun observeLatestMoment(): Flow<MomentEvent?>
+
     suspend fun refresh()
 
     /** A playable stream for a detection's clip, authenticated for the current session. */
