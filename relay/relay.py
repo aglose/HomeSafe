@@ -10,7 +10,10 @@ Frigate's own authenticated port, so the relay holds no secrets of its own beyon
 
 Not every alert is pushed. A vehicle is only news when it has actually gone somewhere, so an alert
 whose only objects are vehicles that never moved is held while it's open (a car pulling in shows
-travel within seconds) and dropped once it ends still — see `motion_verdict`.
+travel within seconds) and dropped once it ends still — see `motion_verdict`. And not every phone
+gets every push: each registers its own quiet hours and "only when everyone's away" choice, and an
+ordinary alert skips a phone that is inside its quiet hours or only wants Away alerts — see
+`silenced`. Away alerts reach every phone regardless.
 """
 
 import json
@@ -21,7 +24,9 @@ import sqlite3
 from statistics import median
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 from fastapi import FastAPI, HTTPException, Request
@@ -93,7 +98,8 @@ def db() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS devices ("
         " device_id TEXT PRIMARY KEY, token TEXT UNIQUE, platform TEXT, name TEXT, created REAL, last_seen REAL,"
         " away INTEGER NOT NULL DEFAULT 0, away_updated REAL, quiet_familiar INTEGER NOT NULL DEFAULT 0,"
-        " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL)"
+        " build TEXT NOT NULL DEFAULT 'unknown', secret TEXT, away_pending_since REAL, away_pending_dwell REAL,"
+        " quiet_start INTEGER, quiet_end INTEGER, only_away INTEGER NOT NULL DEFAULT 0, tz TEXT, utc_offset INTEGER)"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS sent (review_id TEXT PRIMARY KEY, sent_at REAL, body TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT)")
@@ -124,6 +130,19 @@ def db() -> sqlite3.Connection:
         conn.execute("DROP TABLE devices")
         conn.execute("ALTER TABLE devices_v2 RENAME TO devices")
         log.info("migrated devices to device_id identity")
+    # Added after the device_id rebuild: each phone's quiet hours (minutes after its local
+    # midnight, NULL while off), its "only when everyone's away" choice, and the clock to read
+    # them by. Guarded like the ALTERs above so an existing relay.db picks them up on boot.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
+    for column, declaration in (
+        ("quiet_start", "INTEGER"),
+        ("quiet_end", "INTEGER"),
+        ("only_away", "INTEGER NOT NULL DEFAULT 0"),
+        ("tz", "TEXT"),
+        ("utc_offset", "INTEGER"),
+    ):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
     conn.commit()
     return conn
 
@@ -193,12 +212,67 @@ def send_push(token: str, title: str, body: str, data: dict[str, str], away: boo
     return False, f"{r.status_code} {code}".strip()
 
 
-def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, familiar: bool = False) -> dict[str, int]:
-    """Pushes to every phone — except, for a [familiar] person, the phones that asked for strangers only."""
-    rows = with_db(lambda c: c.execute("SELECT token, quiet_familiar FROM devices WHERE token IS NOT NULL").fetchall())
-    tokens = [token for token, quiet in rows if not (familiar and quiet)]
+def local_minute(now: float, tz: str | None, utc_offset: int | None) -> int | None:
+    """
+    Minutes since midnight on the phone's clock: by its IANA zone when this relay can resolve it,
+    else by the UTC offset it last reported (right until the next DST change, and the phone
+    re-registers on every connect), else None — nothing to read quiet hours by.
+    """
+    zone = None
+    if tz:
+        try:
+            zone = ZoneInfo(tz)
+        except Exception:
+            zone = None
+    if zone is None and utc_offset is not None:
+        zone = timezone(timedelta(minutes=utc_offset))
+    if zone is None:
+        return None
+    local = datetime.fromtimestamp(now, zone)
+    return local.hour * 60 + local.minute
+
+
+def in_quiet_hours(start: int | None, end: int | None, minute: int) -> bool:
+    """
+    Whether `minute` falls in the window from `start` up to (not including) `end`, which may wrap
+    midnight. A window that starts where it ends is empty; so is one that isn't set. Same rule as
+    the app's `QuietHours.contains`.
+    """
+    if start is None or end is None or start == end:
+        return False
+    if start < end:
+        return start <= minute < end
+    return minute >= start or minute < end
+
+
+def silenced(only_away: bool, quiet_start: int | None, quiet_end: int | None, tz: str | None, utc_offset: int | None, now: float) -> bool:
+    """Whether an ordinary (not Away) alert skips this phone right now: it only wants Away alerts, or it's in its quiet hours."""
+    if only_away:
+        return True
+    minute = local_minute(now, tz, utc_offset)
+    return minute is not None and in_quiet_hours(quiet_start, quiet_end, minute)
+
+
+def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, familiar: bool = False, test: bool = False) -> dict[str, int]:
+    """
+    Pushes to every phone — except, for a [familiar] person, the phones that asked for strangers
+    only, and, for an ordinary alert, the phones that are `silenced`. An [away] alert and a [test]
+    push go to every phone whatever it asked for.
+    """
+    rows = with_db(lambda c: c.execute(
+        "SELECT token, quiet_familiar, only_away, quiet_start, quiet_end, tz, utc_offset FROM devices WHERE token IS NOT NULL"
+    ).fetchall())
+    now = time.time()
+    tokens = []
+    skipped = quiet = 0
+    for token, quiet_familiar, only_away, quiet_start, quiet_end, tz, utc_offset in rows:
+        if familiar and quiet_familiar:
+            skipped += 1
+        elif not away and not test and silenced(bool(only_away), quiet_start, quiet_end, tz, utc_offset, now):
+            quiet += 1
+        else:
+            tokens.append(token)
     ok = dropped = failed = 0
-    skipped = len(rows) - len(tokens)
     for token in tokens:
         sent, err = send_push(token, title, body, data, away=away)
         if sent:
@@ -212,7 +286,7 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
         else:
             failed += 1
             log.warning("push failed: %s", err)
-    return {"sent": ok, "dropped": dropped, "failed": failed, "skipped_familiar": skipped}
+    return {"sent": ok, "dropped": dropped, "failed": failed, "skipped_familiar": skipped, "skipped_quiet": quiet}
 
 
 # ---------------------------------------------------------------- Frigate
@@ -541,6 +615,14 @@ class Device(BaseModel):
     quiet_familiar: bool = False
     # "release" or "debug" — decides whether this phone counts towards away mode (`counts_for_away`).
     build: str = "unknown"
+    # Quiet hours, minutes after the phone's local midnight; both absent while they're off.
+    quiet_start: int | None = None
+    quiet_end: int | None = None
+    # "Only when everyone's away": ordinary alerts skip this phone; Away alerts still reach it.
+    only_away: bool = False
+    # The phone's clock, for reading quiet hours: its IANA zone, and its UTC offset in minutes as a fallback.
+    tz: str | None = None
+    utc_offset: int | None = None
 
 
 class Presence(BaseModel):
@@ -644,20 +726,26 @@ def register(device: Device, request: Request) -> dict[str, Any]:
         c.execute(
             # Deliberately leaves `away`/`away_updated`/pending alone: re-registering (every connect,
             # every LAN/Tailscale flip) must not quietly mark a phone as back home.
-            "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret)"
-            " VALUES (?,?,?,?,?,?,?,?,?)"
+            "INSERT INTO devices (device_id, token, platform, name, created, last_seen, quiet_familiar, build, secret,"
+            " quiet_start, quiet_end, only_away, tz, utc_offset)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             " ON CONFLICT(device_id) DO UPDATE SET token=excluded.token, platform=excluded.platform, name=excluded.name,"
-            " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret",
-            (device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret),
+            " last_seen=excluded.last_seen, quiet_familiar=excluded.quiet_familiar, build=excluded.build, secret=excluded.secret,"
+            " quiet_start=excluded.quiet_start, quiet_end=excluded.quiet_end, only_away=excluded.only_away,"
+            " tz=excluded.tz, utc_offset=excluded.utc_offset",
+            (
+                device_id, device.token, device.platform, device.name, now, now, int(device.quiet_familiar), device.build, secret,
+                device.quiet_start, device.quiet_end, int(device.only_away), device.tz, device.utc_offset,
+            ),
         )
         c.commit()
         return secret
 
     secret = with_db(upsert)
     log.info(
-        "device registered by %s: %s (%s %s, push=%s, strangers only=%s, counts for away=%s)",
+        "device registered by %s: %s (%s %s, push=%s, strangers only=%s, quiet=%s-%s %s, only away=%s, counts for away=%s)",
         user, device.name or "unnamed", device.platform, device.build, device.token is not None, device.quiet_familiar,
-        counts_for_away(device.platform, device.build),
+        device.quiet_start, device.quiet_end, device.tz, device.only_away, counts_for_away(device.platform, device.build),
     )
     return {"ok": True, "device_id": device_id, "secret": secret}
 
@@ -762,6 +850,6 @@ def list_devices(request: Request) -> list[dict[str, Any]]:
 def test_push(request: Request) -> dict[str, Any]:
     """Sends a sample alert to every registered phone, so the whole path can be checked from the app."""
     user = require_frigate_session(request)
-    result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"})
+    result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"}, test=True)
     log.info("test push by %s: %s", user, result)
     return {"ok": True, **result}

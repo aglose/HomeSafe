@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -18,11 +20,16 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * Keeps the relay told who this install is and where to push. Re-registers whenever a server
- * becomes active (every sign-in, every LAN ↔ Tailscale flip), whenever the "only strangers"
- * preference changes, and whenever the push token rotates. Each registration hands back this
+ * becomes active (every sign-in, every LAN ↔ Tailscale flip), whenever a preference the relay
+ * filters pushes by changes ("only strangers", quiet hours, "only when everyone's away"), and
+ * whenever the push token rotates. Each registration hands back this
  * install's relay secret, which [DeviceIdentityStore] keeps for the background paths.
  *
  * Shared by every platform: what differs per platform is only what [DeviceInfo] says and whether
@@ -50,10 +57,10 @@ class DeviceRegistrar(
         job = appScope.launch {
             combine(
                 connectionRepository.currentServerUrl.filterNotNull(),
-                settingsRepository.observeSettings().map { it.quietFamiliarPeople }.distinctUntilChanged(),
+                settingsRepository.observeSettings().map { it.relayPreferences() }.distinctUntilChanged(),
                 rotatedToken,
-            ) { url, quiet, token -> Triple(url, quiet, token) }
-                .collect { (url, quiet, token) -> register(url, quiet, token) }
+            ) { url, preferences, token -> Triple(url, preferences, token) }
+                .collect { (url, preferences, token) -> register(url, preferences, token) }
         }
     }
 
@@ -67,19 +74,36 @@ class DeviceRegistrar(
         val url = connectionRepository.currentServerUrl.value
             ?: connectionRepository.mostRecentConnection.first()?.serverUrl
             ?: return Result.failure(IllegalStateException("No server to register with"))
-        return register(url, settingsRepository.observeSettings().first().quietFamiliarPeople, token)
+        return register(url, settingsRepository.observeSettings().first().relayPreferences(), token)
     }
 
-    private suspend fun register(serverUrl: String, quietFamiliar: Boolean, rotated: String?): Result<Unit> = runCatching {
+    @OptIn(ExperimentalTime::class)
+    private suspend fun register(serverUrl: String, preferences: RelayPreferences, rotated: String?): Result<Unit> = runCatching {
+        val timeZone = TimeZone.currentSystemDefault()
         val registration = DeviceRegistration(
             deviceId = identity.deviceId(),
             token = rotated ?: tokenProvider.token(),
             platform = deviceInfo.platform,
             name = deviceInfo.name,
-            quietFamiliar = quietFamiliar,
+            quietFamiliar = preferences.quietFamiliar,
             build = deviceInfo.build,
+            quietStart = preferences.quietHours?.startMinute,
+            quietEnd = preferences.quietHours?.endMinute,
+            onlyAway = preferences.onlyWhenAway,
+            tz = timeZone.id,
+            utcOffsetMinutes = timeZone.offsetAt(Clock.System.now()).totalSeconds / 60,
         )
         val credentials = relayApi.registerDevice(serverUrl, registration, secret = identity.secret()).getOrThrow()
         identity.saveSecret(credentials.secret)
     }
+
+    /**
+     * The alert preferences the relay applies to this phone's pushes — "only strangers", quiet
+     * hours (null while off) and "only when everyone's away" — so a change to any of them
+     * re-registers, and a change to anything else (a zone rule) doesn't.
+     */
+    private data class RelayPreferences(val quietFamiliar: Boolean, val quietHours: QuietHours?, val onlyWhenAway: Boolean)
+
+    private fun AlertSettings.relayPreferences() =
+        RelayPreferences(quietFamiliarPeople, quietHours.takeIf { it.enabled && it.startMinute != it.endMinute }, onlyWhenAway)
 }

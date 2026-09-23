@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -23,6 +24,9 @@ class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRep
                 zoneRules = rules.associate { it.toDomain() },
                 quietFamiliarPeople = entity?.quietFamiliarPeople ?: AlertSettings.DEFAULT.quietFamiliarPeople,
                 automaticPresence = entity?.automaticPresence ?: AlertSettings.DEFAULT.automaticPresence,
+                quietHours = entity?.let { QuietHours(it.quietHoursEnabled, it.quietHoursStartMinute, it.quietHoursEndMinute) }
+                    ?: AlertSettings.DEFAULT.quietHours,
+                onlyWhenAway = entity?.onlyWhenAway ?: AlertSettings.DEFAULT.onlyWhenAway,
             )
         }
 
@@ -32,6 +36,10 @@ class SettingsRepositoryImpl(private val settingsDao: SettingsDao) : SettingsRep
                 pushNotificationsEnabled = settings.pushNotificationsEnabled,
                 quietFamiliarPeople = settings.quietFamiliarPeople,
                 automaticPresence = settings.automaticPresence,
+                quietHoursEnabled = settings.quietHours.enabled,
+                quietHoursStartMinute = settings.quietHours.startMinute,
+                quietHoursEndMinute = settings.quietHours.endMinute,
+                onlyWhenAway = settings.onlyWhenAway,
             ),
         )
         settingsDao.upsertZoneRules(settings.zoneRules.map { (place, categories) -> place.toEntity(categories) })

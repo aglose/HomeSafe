@@ -98,4 +98,44 @@ class AlertSettingsTest {
         val mutedDriveway = strangersOnly.withCategory(AlertZone("front", "driveway"), MomentCategory.PEOPLE, false)
         assertFalse(mutedDriveway.notifies("front", listOf("driveway"), MomentCategory.PEOPLE, recognized = false), "zone rules still apply to strangers")
     }
+
+    @Test
+    fun quietHoursWrapMidnightAndEndJustBeforeTheirEndMinute() {
+        val night = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 7 * 60)
+        assertTrue(night.contains(22 * 60))
+        assertTrue(night.contains(23 * 60 + 59))
+        assertTrue(night.contains(0))
+        assertTrue(night.contains(6 * 60 + 59))
+        assertFalse(night.contains(7 * 60), "7:00 is the first minute alerts are back")
+        assertFalse(night.contains(21 * 60 + 59))
+        assertFalse(night.contains(12 * 60))
+    }
+
+    @Test
+    fun aDaytimeWindowIsAPlainRange() {
+        val nap = QuietHours(enabled = true, startMinute = 13 * 60, endMinute = 15 * 60)
+        assertTrue(nap.contains(13 * 60))
+        assertTrue(nap.contains(14 * 60 + 59))
+        assertFalse(nap.contains(15 * 60))
+        assertFalse(nap.contains(12 * 60 + 59))
+        assertFalse(nap.contains(23 * 60))
+    }
+
+    @Test
+    fun quietHoursThatAreOffOrEmptyNeverSilence() {
+        assertFalse(QuietHours.DEFAULT.contains(23 * 60), "off by default, though the 10 PM to 7 AM window is ready")
+        assertFalse(QuietHours(enabled = true, startMinute = 8 * 60, endMinute = 8 * 60).contains(8 * 60), "starts where it ends: empty, not all day")
+    }
+
+    @Test
+    fun ordinaryAlertsAreSilencedInQuietHoursAndAllDayWhenOnlyAwayIsWanted() {
+        val night = AlertSettings.DEFAULT.copy(quietHours = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 7 * 60))
+        assertTrue(night.ordinaryAlertsSilenced(23 * 60))
+        assertFalse(night.ordinaryAlertsSilenced(12 * 60))
+        assertFalse(AlertSettings.DEFAULT.ordinaryAlertsSilenced(23 * 60))
+        val onlyAway = AlertSettings.DEFAULT.copy(onlyWhenAway = true)
+        assertTrue(onlyAway.ordinaryAlertsSilenced(12 * 60))
+        assertTrue(onlyAway.ordinaryAlertsSilenced(23 * 60))
+        assertTrue(night.notifies("front", listOf("driveway"), MomentCategory.PEOPLE), "the rules themselves are untouched; the poller asks both")
+    }
 }

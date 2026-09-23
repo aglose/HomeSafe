@@ -132,6 +132,14 @@ data class DeviceRegistration(
     val name: String,
     @SerialName("quiet_familiar") val quietFamiliar: Boolean = false,
     val build: String = "unknown",
+    /** Quiet hours, in minutes after local midnight; both null when they're off. */
+    @SerialName("quiet_start") val quietStart: Int? = null,
+    @SerialName("quiet_end") val quietEnd: Int? = null,
+    /** "Only when everyone's away": the relay sends this phone Away alerts and nothing else. */
+    @SerialName("only_away") val onlyAway: Boolean = false,
+    /** Where the phone's quiet hours are read: its IANA zone, and its UTC offset now for a relay that can't resolve the zone. */
+    val tz: String? = null,
+    @SerialName("utc_offset") val utcOffsetMinutes: Int? = null,
 )
 
 /** What the relay knows this install as, and the secret that proves it. */

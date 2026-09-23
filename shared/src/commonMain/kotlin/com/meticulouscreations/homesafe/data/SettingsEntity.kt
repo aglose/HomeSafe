@@ -13,6 +13,15 @@ data class SettingsEntity(
     @ColumnInfo(defaultValue = "0") val quietFamiliarPeople: Boolean = false,
     /** Added in schema 9: automatic presence (geofence + LAN). Off until the user turns it on and grants location. */
     @ColumnInfo(defaultValue = "0") val automaticPresence: Boolean = false,
+    /**
+     * Added in schema 13: quiet hours (off, with the 10 PM to 7 AM window ready for when it's
+     * switched on) and "only when everyone's away" (off). The defaults change nothing for an
+     * existing install.
+     */
+    @ColumnInfo(defaultValue = "0") val quietHoursEnabled: Boolean = false,
+    @ColumnInfo(defaultValue = "1320") val quietHoursStartMinute: Int = 22 * 60,
+    @ColumnInfo(defaultValue = "420") val quietHoursEndMinute: Int = 7 * 60,
+    @ColumnInfo(defaultValue = "0") val onlyWhenAway: Boolean = false,
 )
 
 /**

@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -22,12 +20,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -45,12 +40,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.meticulouscreations.homesafe.domain.model.AlertSettings
-import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
-import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.formatMegabytes
@@ -58,7 +50,6 @@ import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
-import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
@@ -106,7 +97,11 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
             state = state,
             onPushNotifications = viewModel::setPushNotifications,
             onZoneCategory = viewModel::setZoneCategory,
+            onPreset = viewModel::applyAlertPreset,
+            onQuietHours = viewModel::setQuietHours,
+            onOnlyWhenAway = viewModel::setOnlyWhenAway,
             onQuietFamiliar = viewModel::setQuietFamiliarPeople,
+            onLoadVolume = viewModel::loadAlertVolume,
             onOpenSettings = viewModel::openNotificationSettings,
             onSendTest = viewModel::sendTestNotification,
         )
@@ -306,86 +301,6 @@ private fun CameraPipelineRows(
     }
 }
 
-@Composable
-private fun AlertsSection(
-    state: SettingsUiState,
-    onPushNotifications: (Boolean) -> Unit,
-    onZoneCategory: (AlertZone, MomentCategory, Boolean) -> Unit,
-    onQuietFamiliar: (Boolean) -> Unit,
-    onOpenSettings: () -> Unit,
-    onSendTest: () -> Unit,
-) {
-    SettingsSection(title = "Alerts", icon = Icons.Filled.Notifications) {
-        if (!state.notificationsSupported) {
-            SettingsToggleRow(
-                title = "Notifications",
-                description = "Not available on this platform. Use the Android or iOS app for alerts.",
-                checked = false,
-                enabled = false,
-                onCheckedChange = {},
-            )
-            return@SettingsSection
-        }
-        val blocked = state.notificationPermission == NotificationPermission.DENIED
-        SettingsToggleRow(
-            title = "Notifications",
-            description = when {
-                blocked -> "Blocked in system settings. Allow notifications for HomeSafe to turn this on."
-                state.pushNotificationsActive -> "On — a notification for each new detection while HomeSafe is running."
-                else -> "Get a notification when a camera sees something."
-            },
-            checked = state.pushNotificationsActive,
-            enabled = !blocked,
-            onCheckedChange = onPushNotifications,
-        )
-        if (blocked) {
-            OutlinedButton(onClick = onOpenSettings) { Text("Open notification settings") }
-        }
-        if (state.pushNotificationsActive) {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            SettingsCaption("Choose what to hear about, place by place. Zones come from each camera's detection zones.")
-            val cameras = state.overview?.cameras?.filter { it.enabled }
-            when {
-                cameras == null -> SettingsCaption("Loading cameras…")
-
-                cameras.isEmpty() -> SettingsCaption("No cameras on this server.")
-
-                else -> cameras.forEach { camera ->
-                    CameraAlertZones(camera = camera, alerts = state.alerts, onZoneCategory = onZoneCategory)
-                }
-            }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            val faces = state.overview?.faceRecognitionEnabled
-            SettingsToggleRow(
-                title = "Only strangers",
-                description = when (faces) {
-                    true -> if (state.alerts.quietFamiliarPeople) {
-                        "On — people Frigate recognises come and go quietly. Anyone it can't place still notifies."
-                    } else {
-                        "Skip the notification when Frigate recognises the person. Name faces under Recognition below."
-                    }
-
-                    false -> "Needs face recognition, which is off in Frigate's config."
-
-                    null -> "Needs face recognition on the server."
-                },
-                checked = faces == true && state.alerts.quietFamiliarPeople,
-                enabled = faces == true,
-                onCheckedChange = onQuietFamiliar,
-            )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onSendTest) { Text("Send test notification") }
-                if (state.testNotificationSent) SettingsCaption("Sent")
-            }
-            SettingsCaption(
-                "HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. " +
-                    "Frigate has no push service for phones, so nothing arrives once the system stops the app.",
-            )
-        }
-    }
-}
-
 /**
  * Away mode: this phone's "I'm away" switch, the household's phones, automatic presence, and
  * what happens once the last one leaves. The relay on the Frigate box keeps the answer, so both
@@ -534,7 +449,7 @@ private fun PresenceDeviceRow(device: PresenceDevice) {
 private data class InfoItem(val label: String, val value: String, val note: String? = null)
 
 @Composable
-private fun SettingsSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -558,7 +473,7 @@ private fun SettingsSection(title: String, icon: ImageVector, content: @Composab
 }
 
 @Composable
-private fun SettingsCaption(text: String, error: Boolean = false, modifier: Modifier = Modifier) {
+internal fun SettingsCaption(text: String, error: Boolean = false, modifier: Modifier = Modifier) {
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
@@ -662,7 +577,7 @@ private fun StorageUsageBar(label: String, usedFraction: Float, usedText: String
 }
 
 @Composable
-private fun SettingsToggleRow(
+internal fun SettingsToggleRow(
     title: String,
     description: String,
     checked: Boolean,
@@ -720,48 +635,3 @@ private fun Double.format1(): String {
     val scaled = (this * 10).roundToInt()
     return if (scaled % 10 == 0) "${scaled / 10}" else "${scaled / 10}.${scaled % 10}"
 }
-
-/**
- * One camera's places — each drawn zone, then "anywhere else" — with a chip per category that
- * alerts there. A chip reflects the effective choice, so a zone the user never touched shows
- * the defaults rather than nothing.
- */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun CameraAlertZones(
-    camera: CameraPipeline,
-    alerts: AlertSettings,
-    onZoneCategory: (AlertZone, MomentCategory, Boolean) -> Unit,
-) {
-    val places = camera.zones.map { AlertZone(camera.name, it.name) to it.displayName } +
-        (AlertZone(camera.name, null) to if (camera.zones.isEmpty()) "Anywhere" else "Anywhere else")
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = camera.displayName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-        places.forEach { (place, label) ->
-            val chosen = alerts.categoriesFor(place)
-            Column(modifier = Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ALERT_CATEGORIES.forEach { (category, name) ->
-                        val selected = category in chosen
-                        FilterChip(
-                            selected = selected,
-                            onClick = { onZoneCategory(place, category, !selected) },
-                            label = { Text(name) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                                selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            ),
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-private val ALERT_CATEGORIES = listOf(
-    MomentCategory.PEOPLE to "People",
-    MomentCategory.VEHICLES to "Vehicles",
-    MomentCategory.ANIMALS to "Animals",
-)

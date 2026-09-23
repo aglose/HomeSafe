@@ -4,15 +4,20 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.AlertPreset
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
+import com.meticulouscreations.homesafe.domain.model.AlertVolume
 import com.meticulouscreations.homesafe.domain.model.AlertZone
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.domain.model.withPreset
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.usecase.ClearHomeUseCase
+import com.meticulouscreations.homesafe.domain.usecase.EstimateAlertVolumeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetNotificationPermissionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
@@ -76,7 +81,18 @@ data class SettingsUiState(
     /** True while "Set home here" is getting a fix and telling the relay. */
     val homeBusy: Boolean = false,
     val homeError: String? = null,
+    /** How often each alert rule would have fired last week; null until read, and left null if the read fails. */
+    val alertVolume: AlertVolume? = null,
 ) {
+    /**
+     * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
+     * camera's zones, then its "anywhere else". What a preset is applied to and matched against.
+     */
+    val alertPlaces: List<AlertZone>
+        get() = overview?.cameras.orEmpty().filter { it.enabled }.flatMap { camera ->
+            camera.zones.map { AlertZone(camera.name, it.name) } + AlertZone(camera.name, null)
+        }
+
     /** The user's wish; see [automaticPresenceActive] for whether it can actually do anything. */
     val automaticPresence: Boolean get() = alerts.automaticPresence
 
@@ -103,6 +119,8 @@ private data class LocalState(
     val awayError: String? = null,
     val homeBusy: Boolean = false,
     val homeError: String? = null,
+    val alertVolume: AlertVolume? = null,
+    val alertVolumeRequested: Boolean = false,
 )
 
 @Inject
@@ -129,6 +147,7 @@ class SettingsViewModel(
     private val requestLocationAccessUseCase: RequestLocationAccessUseCase,
     private val setHomeHereUseCase: SetHomeHereUseCase,
     private val clearHomeUseCase: ClearHomeUseCase,
+    private val estimateAlertVolumeUseCase: EstimateAlertVolumeUseCase,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -165,6 +184,7 @@ class SettingsViewModel(
                 geofenceSupported = geofenceSupported,
                 homeBusy = local.homeBusy,
                 homeError = local.homeError,
+                alertVolume = local.alertVolume,
             )
         },
         presence,
@@ -214,6 +234,38 @@ class SettingsViewModel(
         if (category == MomentCategory.ALL) return
         val updated = settings.value.withCategory(place, category, enabled)
         viewModelScope.launch { updateSettingsUseCase(updated) }
+    }
+
+    /** Rewrites every place's rules to [preset]'s; the grid below stays free to tune from there. */
+    fun applyAlertPreset(preset: AlertPreset) {
+        val places = uiState.value.alertPlaces
+        if (places.isEmpty()) return
+        val updated = settings.value.withPreset(preset, places)
+        viewModelScope.launch { updateSettingsUseCase(updated) }
+    }
+
+    fun setQuietHours(quietHours: QuietHours) {
+        val updated = settings.value.copy(quietHours = quietHours)
+        viewModelScope.launch { updateSettingsUseCase(updated) }
+    }
+
+    fun setOnlyWhenAway(enabled: Boolean) {
+        val updated = settings.value.copy(onlyWhenAway = enabled)
+        viewModelScope.launch { updateSettingsUseCase(updated) }
+    }
+
+    /**
+     * Reads last week's detections once per visit to the rules, for the "~40/day" warnings. Once
+     * per view model: the numbers are a week's average, so a fresher read wouldn't say anything
+     * new, and a failure just leaves the warnings out.
+     */
+    fun loadAlertVolume() {
+        if (local.value.alertVolumeRequested) return
+        local.update { it.copy(alertVolumeRequested = true) }
+        viewModelScope.launch {
+            val volume = estimateAlertVolumeUseCase().getOrNull()
+            local.update { it.copy(alertVolume = volume) }
+        }
     }
 
     /** Familiar vs. stranger: skip notifications for people Frigate has put a name to. */
