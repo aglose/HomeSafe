@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe
 
+import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -13,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -35,6 +38,10 @@ class MainActivity : FragmentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
+        // Only on a fresh launch: a recreation (rotation) re-delivers the intent that started the
+        // Activity, and the moment it named was opened the first time round.
+        if (savedInstanceState == null) openMomentFrom(intent)
+
         appGraph = createAppGraph(platformContext = PlatformContext(this))
         // BuildConfig.TEST_USERNAME etc. are always empty in release builds (see
         // androidApp/build.gradle.kts), so this is null there. Gated on the value rather than
@@ -56,6 +63,30 @@ class MainActivity : FragmentActivity() {
                 App(appGraph, debugAutofillCredentials = debugAutofillCredentials)
             }
         }
+    }
+
+    /**
+     * A notification tapped while the app is already running. The Activity is `singleTask`, so
+     * the tap comes here rather than to a new instance's [onCreate].
+     */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        openMomentFrom(intent)
+    }
+
+    /**
+     * Hands a tapped notification's detection to the shell, which opens it full screen once it
+     * exists (after sign-in, on a cold start). Our own notifications carry it as a
+     * `homesafe://moment` URI; a push Android drew by itself (from a relay that still sends a
+     * notification block) carries the relay's data as extras on the launch intent instead.
+     */
+    private fun openMomentFrom(intent: Intent?) {
+        if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        val link = intent.dataString?.let(MomentDeepLink::fromUri)
+            ?: MomentDeepLink.from { key -> intent.getStringExtra(key) }
+            ?: return
+        MomentDeepLinks.open(link)
     }
 
     override fun onDestroy() {

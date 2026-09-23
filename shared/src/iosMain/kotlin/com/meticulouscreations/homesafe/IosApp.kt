@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe
 
+import com.meticulouscreations.homesafe.data.IosNotificationTaps
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.ui.components.IosWebRtc
@@ -18,6 +19,8 @@ object IosApp {
 /** Called once from Swift at launch — foreground or background. Idempotent. */
 @Suppress("unused")
 fun startIosApp() {
+    // First, so a notification tap that launched the app is heard (see IosNotificationTaps).
+    IosNotificationTaps.install()
     IosApp.graph.deviceRegistrar.start()
     IosApp.graph.presenceAutomation.start()
 }

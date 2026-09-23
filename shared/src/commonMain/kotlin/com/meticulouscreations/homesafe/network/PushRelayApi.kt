@@ -116,6 +116,20 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayPresence>().toDomain()
     }
 
+    /**
+     * One of a pushed alert's pictures — [name] is `thumbnail.jpg` or `preview.gif` — fetched
+     * through the relay, which proxies Frigate. The push may have woken the app with no Frigate
+     * session, so this is the install's own door: [deviceId] and its [secret].
+     */
+    suspend fun getEventMedia(serverUrl: String, eventId: String, name: String, deviceId: String, secret: String?): Result<ByteArray> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/events/$eventId/$name")) {
+            parameter("device", deviceId)
+            bearer(secret)
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<ByteArray>()
+    }
+
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")
     }

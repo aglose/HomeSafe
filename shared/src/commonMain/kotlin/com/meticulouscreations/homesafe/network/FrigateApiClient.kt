@@ -307,6 +307,16 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
         response.body<ByteArray>()
     }
 
+    /**
+     * Frigate's animated preview of a detection (320x180, ~26 frames at 9 fps, ~300 KB on the real
+     * server), for a notification's clip. 404 until the detection has recordings to build it from.
+     */
+    suspend fun getEventPreviewGif(serverUrl: String, eventId: String): Result<ByteArray> = runCatching {
+        val response = httpClient.get(frigateEventPreviewGifUrl(serverUrl, eventId))
+        check(response.status.isSuccess()) { "No preview: ${response.status}" }
+        response.body<ByteArray>()
+    }
+
     /** Recorded clips of [cameraName] overlapping [afterEpochSeconds]..[beforeEpochSeconds], oldest first. */
     suspend fun getRecordings(
         serverUrl: String,
