@@ -46,6 +46,7 @@ dependencies {
     // Push notifications from the HomeSafe relay on the Frigate box, via Firebase Cloud Messaging.
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.messaging)
+    implementation(libs.androidx.work.runtime)
 
     // Installs the shipped Baseline Profile into ART on first run (see androidApp/src/release/generated/baselineProfiles/).
     implementation(libs.androidx.profileinstaller)

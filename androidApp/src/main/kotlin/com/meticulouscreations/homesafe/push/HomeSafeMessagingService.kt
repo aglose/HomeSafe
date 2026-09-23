@@ -1,23 +1,19 @@
 package com.meticulouscreations.homesafe.push
 
-import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.media.AudioAttributes
-import android.media.RingtoneManager
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
-import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.data.AlertNotificationPoster
+import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import kotlinx.coroutines.runBlocking
 
 /**
- * Shows a push from the HomeSafe relay. When the app is in the background Android displays the
- * notification itself (the relay names the same "detections" channel the in-app alerts use); this
- * service handles the foreground case and token rotation.
+ * Shows a push from the HomeSafe relay, and hears about token rotation.
+ *
+ * The relay sends Android data-only messages (see `push_message` in relay/relay.py), so this runs
+ * for every push, foreground or background — Android never draws one itself. It posts the text
+ * at once, then leaves the picture and the clip to [AlertMediaWorker]: those take up to a minute
+ * to arrive, longer than this callback may run, and a process with nothing running is frozen.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
 
@@ -26,48 +22,23 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
     }
 
     override fun onMessageReceived(message: RemoteMessage) {
-        val title = message.notification?.title ?: message.data["title"] ?: return
-        val body = message.notification?.body ?: message.data["body"] ?: ""
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
-
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Detections", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Someone or something in a zone you asked about"
-            },
+        val title = message.data["title"] ?: message.notification?.title ?: return
+        val body = message.data["body"] ?: message.notification?.body ?: ""
+        val target = MomentDeepLink.from { message.data[it] }
+        val text = AlertNotification(
+            // The relay pushes review items; the review id is also what it tags the push with.
+            id = message.data["review_id"] ?: message.messageId ?: title,
+            title = title,
+            body = body,
+            target = target,
+            // The relay marks escalated pushes with away=1 (see docs/away-mode.md): nobody home, person seen.
+            urgent = message.data["away"] == "1",
         )
-        manager.createNotificationChannel(
-            NotificationChannel(AWAY_CHANNEL_ID, "Away alerts", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "A person on any camera while nobody is home"
-                setSound(
-                    RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
-                    AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
-                )
-                enableVibration(true)
-            },
-        )
-        // The relay marks escalated pushes with away=1 (see docs/away-mode.md): nobody home, person seen.
-        val channelId = if (message.data["away"] == "1") AWAY_CHANNEL_ID else CHANNEL_ID
-        val openApp = packageManager.getLaunchIntentForPackage(packageName)
-            ?.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            ?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) }
-        val built = NotificationCompat.Builder(this, channelId)
-            .setSmallIcon(R.drawable.ic_notification_detection)
-            .setContentTitle(title)
-            .setContentText(body)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
-            .setAutoCancel(true)
-            .setContentIntent(openApp)
-            .build()
-        val tag = message.data["review_id"] ?: message.messageId ?: title
-        manager.notify(tag.hashCode(), built)
-    }
+        AlertNotificationPoster.ensureChannels(this)
+        // Already off the main thread: Firebase calls this on its own worker.
+        runBlocking { AlertNotificationPoster.show(applicationContext, text) }
 
-    private companion object {
-        /** Shared with AlertNotifier.android.kt so the user sees one channel, not two. */
-        const val CHANNEL_ID = "detections"
-        /** Also in AlertNotifier.android.kt and the relay's send_push: the loud away-mode channel. */
-        const val AWAY_CHANNEL_ID = "away_alerts"
+        val eventId = message.data["event_id"]
+        if (target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, target.startEpochSeconds)
     }
 }
