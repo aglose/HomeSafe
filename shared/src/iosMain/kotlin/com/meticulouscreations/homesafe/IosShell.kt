@@ -9,6 +9,8 @@ import com.meticulouscreations.homesafe.ui.screens.LocalNativeTabBar
 import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellTab
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.UIKit.UIApplication
@@ -47,6 +49,9 @@ class IosShell {
     init {
         IosAppVisibility.install(IosApp.graph)
         startAppServices(IosApp.graph)
+        // What FrigateAppShell's LaunchedEffect does under the Compose nav: this host outlives
+        // its tabs' compositions, so it drains notification taps itself, for its whole life.
+        MainScope().launch { nav.openMomentsFromNotifications() }
     }
 
     /**

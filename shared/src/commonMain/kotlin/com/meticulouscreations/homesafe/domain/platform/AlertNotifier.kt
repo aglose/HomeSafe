@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.domain.platform
 
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+
 /** Where the OS stands on letting this app post notifications. */
 enum class NotificationPermission {
     /** The user has allowed notifications (or the OS grants them without asking). */
@@ -12,14 +14,29 @@ enum class NotificationPermission {
     NOT_DETERMINED,
 }
 
-/** One system notification about a detection: what was seen, where and when, and its thumbnail if there is one. */
+/**
+ * One system notification about a detection: what was seen, where and when, where a tap goes,
+ * and — once they've been fetched — its picture and its clip.
+ *
+ * Posted in stages under one [id]: text first, the moment the detection is judged worth a
+ * notification, then again with [thumbnail], then again with [animation] if Frigate has one.
+ * Each post replaces the last, so the alert is never held back waiting on a download.
+ */
 data class AlertNotification(
     /** Stable per detection, so a re-post updates the existing notification instead of stacking a duplicate. */
     val id: String,
     val title: String,
     val body: String,
-    /** JPEG bytes, or null for a text-only notification. */
+    /** What a tap opens: the detection full screen on its camera. Null opens the app as it was. */
+    val target: MomentDeepLink? = null,
+    /** JPEG bytes, or null while there's no picture yet. */
     val thumbnail: ByteArray? = null,
+    /**
+     * Frigate's `preview.gif` of the detection, or null. iOS attaches it as-is and plays it in the
+     * expanded notification; Android has no animated notification surface, so it flips through
+     * a handful of its frames once and settles on one (see AlertNotifier.android.kt).
+     */
+    val animation: ByteArray? = null,
     /** Away mode: nobody is home and a person was seen. Posted louder, on its own channel, so it can't be muted with the everyday ones. */
     val urgent: Boolean = false,
 )
@@ -46,6 +63,9 @@ interface AlertNotifier {
     /** Opens the OS's notification settings for this app, for when [NotificationPermission.DENIED] leaves no other way. */
     fun openSystemSettings()
 
-    /** Posts (or replaces, by [AlertNotification.id]) one notification. A no-op without permission. */
+    /**
+     * Posts (or replaces, by [AlertNotification.id]) one notification. A no-op without permission.
+     * A re-post of the same id is an update: it must not sound or buzz again.
+     */
     fun notify(notification: AlertNotification)
 }

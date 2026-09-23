@@ -245,15 +245,17 @@ fun CameraDetailScreen(
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
-                    if (recentMoments.isEmpty()) {
+                    val moments = recentMoments
+                    if (moments.isNullOrEmpty()) {
                         Text(
-                            text = "No detections on this camera yet.",
+                            // Null is a question still out to the server, not an answer.
+                            text = if (moments == null) "Looking for recent detections…" else "No detections on this camera yet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            recentMoments.forEach { item ->
+                            moments.forEach { item ->
                                 // Tapping a detection plays it in the player above, from its start.
                                 RecentMomentCard(
                                     item = item,
@@ -565,6 +567,7 @@ private fun TimelineSection(cameraName: String) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
+    val detections by viewModel.timelineDetections.collectAsStateWithLifecycle()
 
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(
@@ -595,6 +598,9 @@ private fun TimelineSection(cameraName: String) {
             onScrub = viewModel::onScrub,
             onScrubEnd = viewModel::onScrubEnd,
             onSeek = viewModel::seekTo,
+            detections = detections,
+            // A dot is a detection: play it from its start, as its Recent Activity card would.
+            onDetectionTap = viewModel::playMoment,
         )
 
         val hint = when {

@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateEvent
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,11 @@ import kotlin.time.Instant
  * without a word, and a moving vehicle seen again at a spot one was just posted from is remembered
  * as another sighting of that visit instead of being posted again. The push relay applies the
  * same rule (`motion_verdict` in relay/relay.py).
+ *
+ * Every notification is posted the moment its detection is judged, text only, and then
+ * updated in place (same id) as its media arrives: the thumbnail first, then Frigate's animated
+ * preview of the clip (see [addAlertMedia] for when that is asked for). Tapping any stage opens
+ * the detection full screen (see [MomentDeepLink]).
  */
 class DetectionAlertService(
     private val apiClient: FrigateApiClient,
@@ -77,6 +83,10 @@ class DetectionAlertService(
     private val pollIntervalMs: Long,
     /** Where quiet hours are read; asked on every detection so a phone that travels keeps local time. */
     private val timeZone: () -> TimeZone = { TimeZone.currentSystemDefault() },
+    /** How long after a detection starts its animated preview is complete (Frigate's 20 s, plus frames landing late). */
+    private val previewWindowSeconds: Double = PREVIEW_WINDOW_SECONDS,
+    /** Waits between asks for a preview that isn't there yet; its length is how many retries there are. */
+    private val previewRetryDelaysMs: List<Long> = PREVIEW_RETRY_DELAYS_MS,
 ) {
     private val settings: StateFlow<AlertSettings> =
         settingsRepository.observeSettings().stateIn(scope, SharingStarted.Eagerly, AlertSettings.DEFAULT)
@@ -255,15 +265,27 @@ class DetectionAlertService(
             append(presentation.timeLabel)
             moment.subLabel?.takeIf { it.isNotBlank() }?.let { append(" · ").append(subLabelDisplayName(it)) }
         }
-        notifier.notify(
-            AlertNotification(
-                id = moment.id,
-                title = if (urgent) "Away: ${presentation.title}" else presentation.title,
-                body = where,
-                thumbnail = apiClient.getEventThumbnail(url, moment.id).getOrNull(),
-                urgent = urgent,
-            ),
+        val text = AlertNotification(
+            id = moment.id,
+            title = if (urgent) "Away: ${presentation.title}" else presentation.title,
+            body = where,
+            target = MomentDeepLink(eventId = moment.id, cameraName = moment.cameraName, startEpochSeconds = moment.startEpochSeconds),
+            urgent = urgent,
         )
+        notifier.notify(text)
+        // Off the poll loop: the next detection mustn't wait on this one's downloads.
+        scope.launch {
+            addAlertMedia(
+                text = text,
+                startEpochSeconds = moment.startEpochSeconds,
+                clock = clock,
+                thumbnail = { apiClient.getEventThumbnail(url, moment.id) },
+                previewGif = { apiClient.getEventPreviewGif(url, moment.id) },
+                post = { notifier.notify(it) },
+                windowSeconds = previewWindowSeconds,
+                retryDelaysMs = previewRetryDelaysMs,
+            )
+        }
     }
 
     private companion object {

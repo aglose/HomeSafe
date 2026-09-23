@@ -34,7 +34,8 @@ class ShowMomentsFromCameraUseCase(private val momentsRepository: MomentsReposit
 /** See [MomentsRepository.observeRecentMoments]: one camera's newest moments, independent of the Moments feed's window. */
 @Inject
 class ObserveRecentCameraMomentsUseCase(private val momentsRepository: MomentsRepository) {
-    operator fun invoke(cameraName: String, limit: Int): Flow<List<MomentEvent>> = momentsRepository.observeRecentMoments(cameraName, limit)
+    operator fun invoke(cameraName: String, limit: Int, lookbackSeconds: Double = 0.0): Flow<List<MomentEvent>> =
+        momentsRepository.observeRecentMoments(cameraName, limit, lookbackSeconds)
 }
 
 /** See [MomentsRepository.observeStationaryObjects]: the vehicles parked in view of any camera right now. */

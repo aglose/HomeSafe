@@ -47,6 +47,8 @@ composeRules = "0.6.6"
 googleServices = "4.5.0"
 playServicesLocation = "21.3.0"
 firebaseBom = "34.18.0"
+# The push path's picture and clip outlive the messaging service's callback; see HomeSafeMessagingService.
+androidx-work = "2.11.2"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -104,6 +106,7 @@ androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstall
 
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
+androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }
 # Geofencing + fused location for automatic presence (GeofenceMonitor.android.kt).
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 
