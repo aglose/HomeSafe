@@ -11,7 +11,7 @@ import os
 import sys
 import xml.etree.ElementTree as ElementTree
 
-MAX_LINES = 150
+MAX_LINES = 400
 
 roots = sys.argv[1:] or ["."]
 failures = 0

@@ -12,10 +12,12 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
+import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.meticulouscreations.homesafe.MainActivity
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
@@ -67,6 +69,9 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
                 lastError = error
                 false
             } catch (error: IllegalStateException) {
+                // Only "nothing composed yet" is worth waiting out; anything else is a real failure
+                // (say, an exception thrown during layout) and swallowing it would hide the cause.
+                if (error.message?.contains("compose hierarch", ignoreCase = true) != true) throw error
                 lastError = error
                 false
             }
@@ -113,6 +118,13 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         awaitSingle(hasTestTag(SIGN_IN_SERVER_URL_TEST_TAG)).performTextReplacement(server.baseUrl)
         awaitSingle(hasTestTag(SIGN_IN_USERNAME_TEST_TAG)).performTextReplacement(user.username)
         awaitSingle(hasTestTag(SIGN_IN_PASSWORD_TEST_TAG)).performTextReplacement(user.password)
+        settle()
+        // With the keyboard up, MainActivity (adjustResize, imePadding) shrinks the form's scroll
+        // viewport and Connect sits below it, clipped: a tap there lands on the background. Do what
+        // a person would — put the keyboard away and bring the button into view — then tap.
+        Espresso.closeSoftKeyboard()
+        settle()
+        awaitSingle(hasTestTag(SIGN_IN_CONNECT_TEST_TAG)).performScrollTo()
         settle()
         tap(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
         awaitSignedIn()

@@ -88,6 +88,9 @@ internal class AppJourney(
                 lastError = error
                 false
             } catch (error: IllegalStateException) {
+                // Only "nothing composed yet" is worth waiting out; anything else is a real failure
+                // (say, an exception thrown during layout) and swallowing it would hide the cause.
+                if (error.message?.contains("compose hierarch", ignoreCase = true) != true) throw error
                 lastError = error
                 false
             }
