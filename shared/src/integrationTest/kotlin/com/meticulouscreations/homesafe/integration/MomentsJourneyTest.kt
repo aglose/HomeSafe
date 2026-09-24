@@ -176,7 +176,7 @@ class MomentsJourneyTest {
         tap(hasContentDescription("Back"), "the camera screen's back button")
         awaitGone(hasContentDescription("Back"), "the camera screen")
         awaitTag(HOME_FEED_TEST_TAG)
-        awaitText("Driveway")
+        shell.awaitCameraCard("driveway", "Driveway")
         shell.awaitSelected(TopLevelRoute.Home)
     }
 
