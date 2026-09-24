@@ -166,8 +166,15 @@ class DetectionZonesViewModel(
         }
     }
 
+    /**
+     * Applies an edit. One that changes nothing (a rename to the same name, say) leaves the state
+     * alone, so it can't clear the "Saved" confirmation or a save error it had nothing to do with.
+     */
     private inline fun edit(crossinline transform: (MaskEditorState) -> MaskEditorState) =
-        _uiState.update { it.copy(editor = transform(it.editor), justSaved = false, saveError = null) }
+        _uiState.update {
+            val edited = transform(it.editor)
+            if (edited == it.editor) it else it.copy(editor = edited, justSaved = false, saveError = null)
+        }
 
     private fun freshSnapshotUrl(): String? =
         serverUrl.value?.let { getCameraSnapshotUrlUseCase(it, cameraName, cacheBuster = clock.now().epochSeconds) }

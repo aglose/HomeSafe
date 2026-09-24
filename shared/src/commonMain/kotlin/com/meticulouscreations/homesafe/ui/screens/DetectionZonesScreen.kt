@@ -445,8 +445,11 @@ private fun ZoneDetailsEditor(
         OutlinedTextField(
             value = field,
             onValueChange = { value ->
+                // The IME also reports selection and composition changes through here; only a
+                // change to the text is a rename (and anything else would read as an edit).
+                val renamed = value.text != field.text
                 field = value
-                viewModel.renameSelectedZone(value.text)
+                if (renamed) viewModel.renameSelectedZone(value.text)
             },
             label = { Text("Name") },
             supportingText = { Text("Frigate key: $zoneName") },
