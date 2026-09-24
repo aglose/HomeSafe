@@ -13,7 +13,7 @@ being folded away with them. Five things were wrong, and this is what was done a
 | YOLOv9-t's boxes on a parked car flicker around the 0.7 threshold | YOLOv9-s (COCO mAP 38 -> 47) | Frigate config |
 | Nothing checks the classifier | A local vision model looks at driveway cars in the 4K recording and vetoes or corrects the name | Relay, car check + Ollama |
 
-The ceiling stays: nothing that goes by appearance can tell our white Model Y from a neighbour's.
+The ceiling stays: nothing that goes by appearance can tell our dark blue Model Y from a neighbour's.
 Where a car parks is the signal that can, which is why the app leans on the driveway zone.
 
 ## The app
@@ -39,9 +39,13 @@ the curb still shows, and so does any car in the driveway.
   (score below 1.0), is cut out of the 4K recording at its last path point. That cut, 640 px on
   the long edge, is sent to `qwen3-vl:4b-instruct` in Ollama with a closed JSON schema (colour,
   make, model, body, delivery company). The answer is matched against `HOUSEHOLD_CARS`. If it
-  contradicts the classifier's name, the name is swapped for the one household car that fits
-  (score 0.9) or cleared. The check never names a car the classifier left unnamed. It writes
-  what it saw as the event's description, e.g. "red tesla Model Y suv".
+  contradicts the classifier's name, the name is swapped for the one household car that fits,
+  but only when the model also read that car's make (score 0.9); otherwise the name is cleared.
+  The check never names a car the classifier left unnamed. It writes what it saw as the event's
+  description, e.g. "red tesla Model Y suv".
+  - The descriptions were checked against each class's training images on 2026-09-24:
+    Andrew's Tesla is dark blue (listed as blue or black, since it reads as black at dusk),
+    Sarah's is a red Tesla, and Yaya's is white or light silver with no make visible.
   - Infrared night footage answers colour `unknown`, which rules nothing out.
   - A car missing from `HOUSEHOLD_CARS` is never judged.
   - Plain `qwen3-vl:4b` is the Thinking build; keep the `-instruct` tag.

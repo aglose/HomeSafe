@@ -334,9 +334,10 @@ class CarCheckTest(unittest.TestCase):
     """The pure halves of the car check: which crops are passing street cars, and what the vision model's description does to a name."""
 
     CARS = {
-        "andrews_tesla": {"make": "tesla", "colour": "white"},
+        "andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]},
         "sarahs_car": {"make": "tesla", "colour": "red"},
         "in-laws_mercedes": {"make": "mercedes", "colour": "silver"},
+        "yayas_car": {"colour": ["white", "silver"]},
     }
 
     def street(self, **overrides):
@@ -372,35 +373,47 @@ class CarCheckTest(unittest.TestCase):
 
     def test_a_red_car_called_andrews_tesla_is_renamed_to_the_one_red_tesla(self):
         matches = relay.household_matches({"colour": "red", "make": "tesla", "body": "suv"}, self.CARS)
-        self.assertEqual(("relabel", "sarahs_car"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+        self.assertEqual(("relabel", "sarahs_car"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "tesla"))
+
+    def test_a_red_car_of_no_readable_make_only_loses_the_wrong_name(self):
+        matches = relay.household_matches({"colour": "red", "make": "unknown"}, self.CARS)
+        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "unknown"))
 
     def test_a_blue_toyota_called_andrews_tesla_loses_the_name(self):
         matches = relay.household_matches({"colour": "blue", "make": "toyota", "body": "sedan"}, self.CARS)
         self.assertEqual([], matches)
         self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
 
-    def test_a_white_tesla_called_andrews_tesla_keeps_it(self):
-        matches = relay.household_matches({"colour": "white", "make": "tesla"}, self.CARS)
+    def test_a_dark_blue_tesla_called_andrews_tesla_keeps_it_even_when_it_reads_as_black(self):
+        for colour in ("blue", "black"):
+            matches = relay.household_matches({"colour": colour, "make": "tesla"}, self.CARS)
+            self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS), colour)
+        matches = relay.household_matches({"colour": "blue", "make": "tesla"}, self.CARS)
         self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
 
     def test_infrared_rules_out_nothing_by_colour(self):
         matches = relay.household_matches({"colour": "unknown", "make": "tesla"}, self.CARS)
-        self.assertEqual(["andrews_tesla", "sarahs_car"], matches)
+        self.assertEqual(["andrews_tesla", "sarahs_car", "yayas_car"], matches)
         self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
 
     def test_silver_and_grey_are_one_colour(self):
-        self.assertEqual(["in-laws_mercedes"], relay.household_matches({"colour": "grey", "make": "mercedes"}, self.CARS))
+        self.assertEqual(["in-laws_mercedes", "yayas_car"], relay.household_matches({"colour": "grey", "make": "mercedes"}, self.CARS))
 
     def test_an_unknown_make_rules_out_nothing_by_make(self):
         self.assertEqual(["sarahs_car"], relay.household_matches({"colour": "red", "make": "unknown"}, self.CARS))
 
+    def test_a_white_toyota_called_andrews_tesla_is_not_handed_to_the_white_car_with_no_make_on_file(self):
+        matches = relay.household_matches({"colour": "white", "make": "toyota"}, self.CARS)
+        self.assertEqual(["yayas_car"], matches)
+        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "toyota"))
+
     def test_never_names_a_car_the_classifier_left_unnamed(self):
-        matches = relay.household_matches({"colour": "white", "make": "tesla"}, self.CARS)
+        matches = relay.household_matches({"colour": "blue", "make": "tesla"}, self.CARS)
         for unnamed in (None, "none"):
             self.assertEqual("keep", relay.second_opinion_verdict(unnamed, matches, self.CARS)[0])
 
     def test_a_name_with_no_description_is_left_alone(self):
-        self.assertEqual(("keep", "yayas_car"), relay.second_opinion_verdict("yayas_car", [], self.CARS))
+        self.assertEqual(("keep", "moms_car"), relay.second_opinion_verdict("moms_car", [], self.CARS))
 
     def test_a_persons_tag_is_final(self):
         tagged = {"label": "car", "zones": ["driveway"], "start_time": 0.0, "end_time": 5.0, "sub_label": "sarahs_car", "data": {"sub_label_score": 1.0}}

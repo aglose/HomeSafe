@@ -654,7 +654,7 @@ def poll_forever() -> None:
 #   household's cars look like (HOUSEHOLD_CARS). It only ever vetoes or corrects the classifier:
 #   a name that contradicts what the car looks like is replaced by the one household car that
 #   fits, or cleared; it never names a car the classifier left unnamed, and never touches a name a
-#   person gave (score 1.0, from the app's car tagging). No appearance can tell our white Model Y
+#   person gave (score 1.0, from the app's car tagging). No appearance can tell our dark blue Model Y
 #   from a neighbour's; this catches the red hatchback called "Andrew's Tesla".
 CAR_CLASSIFIER = os.environ.get("CAR_CLASSIFIER", "")
 STREET_NONE_MAX = int(os.environ.get("STREET_NONE_MAX", "600"))
@@ -672,8 +672,9 @@ RETRAIN_EVERY_SECONDS = 24 * 3600.0
 OLLAMA = os.environ.get("OLLAMA_URL", "").rstrip("/")
 # The Instruct build: plain `qwen3-vl:4b` is the Thinking one, which spends seconds reasoning first.
 VLM_MODEL = os.environ.get("VLM_MODEL", "qwen3-vl:4b-instruct")
-# {"andrews_tesla": {"make": "tesla", "colour": "white"}, ...}: how each household car looks,
-# keyed by the classifier's category. A car missing here is never judged.
+# {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}, ...}: how each household car
+# looks, keyed by the classifier's category. `colour` is one colour or a list of the ones a camera
+# might see it as (dark blue reads as black at dusk). A car missing here is never judged.
 HOUSEHOLD_CARS: dict[str, dict[str, str]] = json.loads(os.environ.get("HOUSEHOLD_CARS", "{}") or "{}")
 # Below a person's 1.0 (the app's tags), above nothing the classifier needs to beat.
 VLM_SCORE = 0.9
@@ -884,23 +885,27 @@ def household_matches(description: dict[str, str], cars: dict[str, dict[str, str
     for name, looks in cars.items():
         if looks.get("make") and make not in ("unknown", "other") and make != looks["make"]:
             continue
-        if looks.get("colour") and colour != "unknown" and group(colour) != group(looks["colour"]):
+        wanted = looks.get("colour") or []
+        wanted = [wanted] if isinstance(wanted, str) else wanted
+        if wanted and colour != "unknown" and group(colour) not in {group(c) for c in wanted}:
             continue
         fits.append(name)
     return fits
 
 
-def second_opinion_verdict(name: str | None, matches: list[str], cars: dict[str, dict[str, str]]) -> tuple[str, str | None]:
+def second_opinion_verdict(name: str | None, matches: list[str], cars: dict[str, dict[str, str]], make: str = "unknown") -> tuple[str, str | None]:
     """
     What to do with the classifier's name given the cars the picture fits: ("keep", name),
     ("relabel", other name) or ("clear", None). An unnamed car, or a name with no description to
-    check it against, is kept as it is — this only vetoes and corrects.
+    check it against, is kept as it is — this only vetoes and corrects. A wrong name is replaced
+    only by the one household car that fits *and* whose make the model read off the picture;
+    fitting on colour alone ("some white car") is not enough to call it anyone's.
     """
     if not name or name.lower() in ("none", "unknown") or name not in cars:
         return "keep", name
     if name in matches:
         return "keep", name
-    if len(matches) == 1:
+    if len(matches) == 1 and cars[matches[0]].get("make") == make:
         return "relabel", matches[0]
     return "clear", None
 
@@ -985,7 +990,7 @@ def second_opinions() -> None:
             description = describe_car(picture)
             name, score = sub_label_of(event)
             matches = household_matches(description, HOUSEHOLD_CARS)
-            action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS)
+            action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
             if action != "keep":
                 requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label",
                               json={"subLabel": new_name or "", "subLabelScore": VLM_SCORE if new_name else None}, timeout=10)

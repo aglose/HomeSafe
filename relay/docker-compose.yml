@@ -23,10 +23,12 @@ services:
       CAR_CLASSIFIER: known_cars
       OLLAMA_URL: http://127.0.0.1:11434
       VLM_MODEL: qwen3-vl:4b-instruct
-      # How each household car looks, by the classifier's category. A car missing here is never judged.
+      # How each household car looks, by the classifier's category, checked against its training
+      # images 2026-09-24. A colour list is every colour a camera may see it as. A car missing here is never judged.
       HOUSEHOLD_CARS: >-
-        {"andrews_tesla": {"make": "tesla", "colour": "white"},
+        {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]},
          "sarahs_car": {"make": "tesla", "colour": "red"},
+         "yayas_car": {"colour": ["white", "silver"]},
          "in-laws_mercedes": {"make": "mercedes", "colour": "silver"}}
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
