@@ -161,6 +161,11 @@ jobs:
           disable-animations: true
           script: ./gradlew :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest --continue --stacktrace
 
+      # Connected test tasks print only a count; put each failure (message and stack) in the log.
+      - name: Print instrumented test failures
+        if: failure()
+        run: python3 scripts/print-test-failures.py shared/build/outputs/androidTest-results androidApp/build/outputs/androidTest-results
+
       - uses: actions/upload-artifact@v7
         if: always()
         with:
