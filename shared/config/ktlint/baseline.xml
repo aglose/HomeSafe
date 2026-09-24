@@ -34,9 +34,9 @@
         <error line="126" column="64" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/DetectionZonesScreen.kt">
-        <error line="81" column="5" source="compose:modifier-missing-check" />
-        <error line="83" column="5" source="compose:lambda-param-in-effect" />
-        <error line="410" column="21" source="compose:vm-forwarding-check" />
+        <error line="82" column="5" source="compose:modifier-missing-check" />
+        <error line="84" column="5" source="compose:lambda-param-in-effect" />
+        <error line="411" column="21" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FaceLibraryScreen.kt">
         <error line="69" column="5" source="compose:modifier-missing-check" />

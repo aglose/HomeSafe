@@ -147,7 +147,8 @@ internal class AppJourney(
     fun revealInList(list: SemanticsMatcher, key: Any, item: SemanticsMatcher, description: String = item.description) {
         awaitUntil("$description, scrolled to in the list") {
             exists(item) || run {
-                ui.onNode(list).performScrollToKey(key)
+                // Throws while the list doesn't hold the key yet (still loading, say): try again next frame.
+                runCatching { ui.onNode(list).performScrollToKey(key) }
                 false
             }
         }

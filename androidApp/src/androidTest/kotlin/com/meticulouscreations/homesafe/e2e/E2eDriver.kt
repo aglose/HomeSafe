@@ -139,7 +139,8 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
     fun awaitCameraCard(cameraName: String, displayName: String) {
         awaitUntil("the $displayName card, scrolled to") {
             exists(hasText(displayName)) || run {
-                compose.onNode(hasTestTag(HOME_FEED_TEST_TAG)).performScrollToKey(cameraName)
+                // Throws while the list doesn't hold the key yet (still loading): try again next frame.
+                runCatching { compose.onNode(hasTestTag(HOME_FEED_TEST_TAG)).performScrollToKey(cameraName) }
                 false
             }
         }
