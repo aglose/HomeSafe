@@ -235,6 +235,15 @@ tasks.named<Test>("jvmTest") {
     doFirst { dataDir.get().asFile.deleteRecursively() }
 }
 
+// A CI run's console is often the only evidence of why a test failed (and the integration
+// journeys put the screen's semantics tree in their failure message), so print it in full.
+tasks.withType<AbstractTestTask>().configureEach {
+    testLogging {
+        events(org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED)
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
+}
+
 ktlint {
     // The plugin defaults to ktlint 1.5.0; pin it so everyone and CI agree on the rules.
     version.set(libs.versions.ktlint)
