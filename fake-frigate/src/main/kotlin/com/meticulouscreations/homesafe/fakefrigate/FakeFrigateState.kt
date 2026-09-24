@@ -173,11 +173,13 @@ class FakeFrigateState(
                 FakeEvent("${eventEpoch(now - 95_000)}-frnt03", "front_door", "person", now - 95_000),
             )
             val recordings = cameras.flatMap { camera ->
-                // Six hours of ten-minute segments, with motion around each of that camera's events.
-                (0 until 36).map { i ->
-                    val start = now - (36 - i) * 600.0
-                    val busy = events.any { it.camera == camera.name && it.startTime in start..(start + 600) }
-                    FakeRecording(camera.name, start, start + 600, motion = if (busy) 40 else 0, objects = if (busy) 2 else 0)
+                // Six hours of one-minute segments, with motion around each of that camera's events.
+                // Real Frigate segments are ~10 s; the app drops anything of ten minutes or more as
+                // unplayable (RecordingSegment.isPlayable), so keep these well short of that.
+                (0 until RECORDED_SEGMENTS).map { i ->
+                    val start = now - (RECORDED_SEGMENTS - i) * SEGMENT_SECONDS
+                    val busy = events.any { it.camera == camera.name && it.startTime in (start - SEGMENT_SECONDS)..(start + SEGMENT_SECONDS) }
+                    FakeRecording(camera.name, start, start + SEGMENT_SECONDS, motion = if (busy) 40 else 0, objects = if (busy) 2 else 0)
                 }
             }.toMutableList()
             val driveway = events.first { it.camera == "driveway" }
@@ -215,6 +217,9 @@ class FakeFrigateState(
             faces.clear()
             classifiers.clear()
         }
+
+        private const val SEGMENT_SECONDS = 60.0
+        private const val RECORDED_SEGMENTS = 6 * 60
 
         /** Frigate's event ids are `<epoch with 6 decimals>-<6 chars>`; the epoch part only has to parse. */
         private fun eventEpoch(seconds: Double): String = "%.6f".format(java.util.Locale.ROOT, seconds)

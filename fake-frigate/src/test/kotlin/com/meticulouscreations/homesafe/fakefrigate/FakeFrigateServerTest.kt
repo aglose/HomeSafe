@@ -108,6 +108,17 @@ class FakeFrigateServerTest {
     }
 
     @Test
+    fun recordingsAreShortEnoughForTheAppToPlay() {
+        // The app treats a segment of ten minutes or more as unplayable and leaves it off the timeline.
+        val longest = server.state.recordings.maxOf { it.endTime - it.startTime }
+        assertTrue(longest < 600.0, "segments are $longest s long")
+        val cookie = signIn()
+        val now = System.currentTimeMillis() / 1000.0
+        val body = call("GET", "/api/front_door/recordings?after=${now - 3 * 3600}&before=$now", cookie = cookie).body
+        assertTrue(body.split("start_time").size - 1 >= 170, "three hours of one-minute segments")
+    }
+
+    @Test
     fun injectedFailuresAnswerWithTheirStatus() {
         val cookie = signIn()
         server.state.edit { failures["/api/stats"] = 500 }
