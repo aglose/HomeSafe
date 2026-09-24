@@ -31,10 +31,16 @@ jobs:
         include:
           - name: Unit tests
             # --continue: still run the Android host tests when the JVM ones fail, so one
-            # run reports everything that is broken.
-            tasks: :shared:jvmTest :shared:testAndroidHostTest --continue
+            # run reports everything that is broken. :shared:jvmTest includes the Compose UI
+            # tests (src/uiTest) and the whole-app integration journeys (src/integrationTest)
+            # on the desktop runtime; :fake-frigate:test checks the fake server those journeys
+            # sign in to, so a broken fake fails on its own rather than as fifty journeys.
+            tasks: :fake-frigate:test :shared:jvmTest :shared:testAndroidHostTest --continue
             artifact: unit-test-reports
-            reports: shared/build/reports/tests/**
+            reports: |
+              shared/build/reports/tests/**
+              shared/build/test-results/**
+              fake-frigate/build/reports/tests/**
           - name: Android build, lint and stability gate
             # All three share :shared:compileAndroidMain, so they belong on one runner.
             tasks: :androidApp:assembleDebug :androidApp:lintDebug :shared:stabilityCheck

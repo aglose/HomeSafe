@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The integration journeys sign the real app graph in to a fake Frigate served over plain HTTP
+     on localhost from inside this test APK (see src/integrationTest). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application android:usesCleartextTraffic="true" />
+
+</manifest>

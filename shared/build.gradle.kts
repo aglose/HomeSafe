@@ -187,11 +187,20 @@ kotlin {
         // below), so it already inherits commonTest's dependencies including compose ui-test.
         getByName("androidDeviceTest").kotlin.srcDir("src/uiTest/kotlin")
 
+        // Whole-app journeys: App() on a real AppGraph, signed in over HTTP to the fake Frigate in
+        // :fake-frigate (a JVM server, hence JVM and Android only — no iOS). Each target supplies
+        // its own testPlatformContext() from src/jvmTest and src/androidDeviceTest.
+        jvmTest.get().kotlin.srcDir("src/integrationTest/kotlin")
+        getByName("androidDeviceTest").kotlin.srcDir("src/integrationTest/kotlin")
+
         getByName("androidDeviceTest").dependencies {
             // Merges an androidx.activity.ComponentActivity entry into the test APK's manifest.
             // Without it runComposeUiTest has no activity to host the composition and dies at
             // launch rather than at compile time.
             implementation(libs.compose.uiTestManifest)
+            implementation(project(":fake-frigate"))
+            // InstrumentationRegistry, for the context the journeys build the app graph with.
+            implementation(libs.androidx.testExt.junit)
         }
 
         jvmTest.dependencies {
@@ -199,6 +208,7 @@ kotlin {
             // so Compose UI tests fail with skiko's LibraryLoadException without this. Resolved
             // per host, which is what CI (linux-x64) and this Mac (macos-arm64) each need.
             implementation(compose.desktop.currentOs)
+            implementation(project(":fake-frigate"))
         }
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
@@ -218,6 +228,11 @@ kotlin {
 // display, so make the intent explicit rather than depending on the default.
 tasks.named<Test>("jvmTest") {
     systemProperty("java.awt.headless", "true")
+    // The integration journeys run the real desktop data layer; keep its database out of ~/.homesafe
+    // (see AppDatabase.jvm.kt) and start each run from an empty one.
+    val dataDir = layout.buildDirectory.dir("tmp/jvmTest/homesafe-data")
+    systemProperty("homesafe.dataDir", dataDir.get().asFile.absolutePath)
+    doFirst { dataDir.get().asFile.deleteRecursively() }
 }
 
 ktlint {
