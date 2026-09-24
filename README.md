@@ -221,6 +221,13 @@ Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
   - Wasm target: `./gradlew :shared:wasmJsTest`
   - JS target: `./gradlew :shared:jsTest`
 - iOS tests: `./gradlew :shared:iosSimulatorArm64Test`
+- On a device or emulator: `./gradlew :shared:connectedAndroidDeviceTest` (unit, Compose UI and
+  integration journeys) and `./gradlew :androidApp:connectedDebugAndroidTest` (end to end on the
+  real `MainActivity`)
+
+[docs/testing.md](docs/testing.md) describes the layers: screen-level Compose UI tests, whole-app
+integration journeys against a fake Frigate (`:fake-frigate`), end-to-end tests, and the Android
+CLI journeys.
 
 ### Releasing
 
