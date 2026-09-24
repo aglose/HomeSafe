@@ -11,7 +11,6 @@ import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextReplacement
@@ -101,11 +100,7 @@ internal class CameraRobot(private val journey: AppJourney) {
     fun back() = journey.tap(hasContentDescription("Back"), "the Back arrow")
 
     /** Brings the node matching [matcher] into view — the page scrolls, and a tap must land on screen. */
-    fun scrollTo(matcher: SemanticsMatcher, description: String) {
-        journey.awaitNode(matcher, description).performScrollTo()
-        // The scroll is animated, and the clock only moves when it is told to.
-        journey.settle()
-    }
+    fun scrollTo(matcher: SemanticsMatcher, description: String) = journey.scrollIntoView(matcher, description)
 
     /**
      * Scrolls to the control matching [matcher] and presses it. The shell's bottom nav floats over

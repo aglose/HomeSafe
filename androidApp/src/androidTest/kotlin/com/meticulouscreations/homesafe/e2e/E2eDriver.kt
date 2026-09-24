@@ -2,6 +2,10 @@ package com.meticulouscreations.homesafe.e2e
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.hasContentDescription
@@ -12,10 +16,10 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.printToString
+import androidx.compose.ui.unit.toSize
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,6 +36,8 @@ import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_PASSWORD_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_SERVER_URL_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_USERNAME_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
+import kotlin.math.abs
+import kotlin.math.sign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
@@ -111,6 +117,30 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         settle(500.milliseconds)
     }
 
+    /**
+     * Scrolls the nearest scrollable ancestor until the node matching [matcher] sits inside its
+     * viewport. Not `performScrollTo()`: that loops until the node is in view, but a semantic
+     * scroll is an animation, which a frozen clock never plays, so the loop spins forever (it hung
+     * the desktop job). This scrolls one step, lets the animation play out, and looks again.
+     */
+    fun scrollIntoView(matcher: SemanticsMatcher, description: String = matcher.description) {
+        awaitNode(matcher, description)
+        repeat(MAX_SCROLL_STEPS) {
+            val node = compose.onAllNodes(matcher).fetchSemanticsNodes().first()
+            val scroller = generateSequence(node.parent) { it.parent }
+                .firstOrNull { SemanticsActions.ScrollBy in it.config } ?: return
+            val viewport = scroller.boundsInRoot
+            val target = Rect(node.positionInRoot, node.size.toSize())
+            fun delta(start: Float, end: Float): Float = if (sign(start) == sign(end)) (if (abs(start) < abs(end)) start else end) else 0f
+            val dx = if (scroller.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null) delta(target.left - viewport.left, target.right - viewport.right) else 0f
+            val dy = if (scroller.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null) delta(target.top - viewport.top, target.bottom - viewport.bottom) else 0f
+            if (abs(dx) < 1f && abs(dy) < 1f) return
+            compose.runOnUiThread { scroller.config[SemanticsActions.ScrollBy].action?.invoke(dx, dy) }
+            settle(SCROLL_SETTLE)
+        }
+        throw AssertionError("Couldn't scroll $description into view.\n${diagnostics()}")
+    }
+
     fun awaitSignInForm() = awaitSingle(hasTestTag(SIGN_IN_CONNECT_TEST_TAG) and isEnabled(), "the enabled Connect button")
 
     fun signIn(user: FakeUser = FakeFrigateState.ADMIN) {
@@ -124,8 +154,7 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         // a person would — put the keyboard away and bring the button into view — then tap.
         Espresso.closeSoftKeyboard()
         settle()
-        awaitSingle(hasTestTag(SIGN_IN_CONNECT_TEST_TAG)).performScrollTo()
-        settle()
+        scrollIntoView(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
         tap(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
         awaitSignedIn()
     }
@@ -175,5 +204,7 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         val DEFAULT_WAIT: Duration = 30.seconds
         private val POLL: Duration = 10.milliseconds
         private const val FRAME_MILLIS = 16L
+        private const val MAX_SCROLL_STEPS = 12
+        private val SCROLL_SETTLE: Duration = 600.milliseconds
     }
 }

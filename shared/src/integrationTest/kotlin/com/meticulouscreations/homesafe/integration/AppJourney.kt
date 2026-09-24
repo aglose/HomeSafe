@@ -1,5 +1,12 @@
 package com.meticulouscreations.homesafe.integration
 
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.snapshots.Snapshot
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
@@ -12,11 +19,14 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.toSize
 import com.meticulouscreations.homesafe.App
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
+import kotlin.math.abs
+import kotlin.math.sign
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -45,11 +55,14 @@ internal fun runAppJourney(
     FakeFrigateServer(state).start().use { server ->
         val graph = createAppGraph(testPlatformContext())
         val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
+        val onScreen = mutableStateOf(true)
+        var stuck = false
         try {
             mainClock.autoAdvance = false
-            setContent { App(graph) }
+            setContent { if (onScreen.value) App(graph) }
             AppJourney(this, server, graph).block()
         } catch (interrupted: InterruptedException) {
+            stuck = true
             throw AssertionError(
                 "The journey was stuck for $JOURNEY_WATCHDOG and was interrupted. Every thread at that moment:\n${watchdog.threadDump}" +
                     "\n--- Last requests to the fake server ---\n  " + server.requests.takeLast(20).joinToString("\n  "),
@@ -59,9 +72,29 @@ internal fun runAppJourney(
             watchdog.cancel()
             // Each journey builds its own graph; don't leave this one's detection poller running beside the next.
             graph.detectionAlertService.stop()
+            if (!stuck) clearTheStage(onScreen)
         }
     }
 }
+
+/**
+ * Takes the app off screen and plays out the frames that follow, so no frame is left pending when
+ * the test environment tears down. Teardown runs a pending frame on the test thread, and on
+ * Android that frame's layout pass races the main thread drawing the same, still-visible
+ * Activity: "performMeasureAndLayout called during measure layout" on the main thread, which
+ * crashes the process and takes the rest of the suite with it. The app's frame loops (loading
+ * shimmers, pulsing dots) mean there is nearly always a frame pending while it is on screen.
+ */
+@OptIn(ExperimentalTestApi::class)
+private fun ComposeUiTest.clearTheStage(onScreen: MutableState<Boolean>) {
+    runOnUiThread {
+        onScreen.value = false
+        Snapshot.sendApplyNotifications()
+    }
+    repeat(CLEAR_STAGE_FRAMES) { mainClock.advanceTimeByFrame() }
+}
+
+private const val CLEAR_STAGE_FRAMES = 10
 
 /**
  * Interrupts [testThread] if the journey is still running after [limit], having first taken
@@ -202,6 +235,30 @@ internal class AppJourney(
         }
     }
 
+    /**
+     * Scrolls the nearest scrollable ancestor until the node matching [matcher] sits inside its
+     * viewport. Not `performScrollTo()`: that loops until the node is in view, but a semantic
+     * scroll is an animation, which a frozen clock never plays, so the loop spins forever (it hung
+     * the desktop job). This scrolls one step, lets the animation play out, and looks again.
+     */
+    fun scrollIntoView(matcher: SemanticsMatcher, description: String = matcher.description) {
+        awaitNode(matcher, description)
+        repeat(MAX_SCROLL_STEPS) {
+            val node = ui.onAllNodes(matcher).fetchSemanticsNodes().first()
+            val scroller = generateSequence(node.parent) { it.parent }
+                .firstOrNull { SemanticsActions.ScrollBy in it.config } ?: return
+            val viewport = scroller.boundsInRoot
+            val target = Rect(node.positionInRoot, node.size.toSize())
+            fun delta(start: Float, end: Float): Float = if (sign(start) == sign(end)) (if (abs(start) < abs(end)) start else end) else 0f
+            val dx = if (scroller.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null) delta(target.left - viewport.left, target.right - viewport.right) else 0f
+            val dy = if (scroller.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null) delta(target.top - viewport.top, target.bottom - viewport.bottom) else 0f
+            if (abs(dx) < 1f && abs(dy) < 1f) return
+            ui.runOnUiThread { scroller.config[SemanticsActions.ScrollBy].action?.invoke(dx, dy) }
+            settle(SCROLL_SETTLE)
+        }
+        throw AssertionError("Couldn't scroll $description into view.\n${diagnostics()}")
+    }
+
     /** Taps the one node matching [matcher] once the screen has settled on it, then lets the tap's effects start. */
     fun tap(matcher: SemanticsMatcher, description: String = matcher.description) {
         awaitSingle(matcher, description).performClick()
@@ -227,6 +284,8 @@ internal class AppJourney(
         private val TAP_SETTLE: Duration = 500.milliseconds
         private const val FRAME_MILLIS = 16L
         private const val DIAGNOSTIC_REQUESTS = 30
+        private const val MAX_SCROLL_STEPS = 12
+        private val SCROLL_SETTLE: Duration = 600.milliseconds
     }
 }
 
