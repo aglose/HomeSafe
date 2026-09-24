@@ -86,6 +86,13 @@ On the JVM, the journeys keep the desktop app's database in `shared/build/tmp/jv
 The end-to-end tests use the AndroidX Test Orchestrator with `clearPackageData`. Each test gets its own
 instrumentation and a wiped app, because sign-in history lives in Room and there's one app graph per process.
 
+The two device suites can't share an emulator at the same time, because each covers the other's Activities. The build
+orders the end-to-end suite after the shared module's when you run both.
+
+On CI, `scripts/run-instrumented-tests.sh` runs them with a time limit. If they're still running when it expires, the
+script dumps every thread of the app and test processes and the journey watchdog's output from logcat. Either way it
+prints the last tests the runner started, so a hang shows up in the job log.
+
 ## Android CLI journeys
 
 `androidApp/src/journeysTest/*.journey.xml` are journeys in the format documented for

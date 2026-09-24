@@ -116,14 +116,18 @@ private class JourneyWatchdog(testThread: Thread, limit: Duration) {
         threadDump = Thread.getAllStackTraces().entries.joinToString("\n") { (thread, frames) ->
             "\"${thread.name}\" ${thread.state}\n" + frames.take(40).joinToString("\n") { "    at $it" }
         }
-        // Straight to the process's own stderr as well, past the test runner's capture: if the
-        // UI thread is wedged, tearing the test down can hang too and the failure never be reported.
+        // Out through the process's stderr as well: if the UI thread is wedged, tearing the test
+        // down can hang too and the failure never be reported. The raw descriptor gets past the
+        // JVM test runner's capture; System.err is what Android sends to logcat, which CI prints
+        // when the device suite hangs (scripts/run-instrumented-tests.sh).
+        val report = "\n=== Stuck journey on ${testThread.name}; every thread:\n$threadDump\n===\n"
         runCatching {
             java.io.FileOutputStream(java.io.FileDescriptor.err).apply {
-                write("\n=== Stuck journey on ${testThread.name}; every thread:\n$threadDump\n===\n".toByteArray())
+                write(report.toByteArray())
                 flush()
             }
         }
+        System.err.println(report)
         testThread.interrupt()
     }, "journey-watchdog").apply {
         isDaemon = true
