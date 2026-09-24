@@ -276,6 +276,9 @@ class MomentCardsUiTest {
     fun anOpenCardOffersFullScreenForItsDetection() {
         var fullScreen: MomentEvent? = null
         runFeed(MomentsUiState(groups = today(card("a")), expandedEventId = "a"), onFullScreenClick = { fullScreen = it }) {
+            // An open card scrolls itself into view for a moment after it grows (KeepGrowingEntryInView);
+            // tap once that has finished, or the tap lands where the button used to be.
+            mainClock.advanceTimeBy(1_000)
             onNodeWithContentDescription("Play full screen").assertIsDisplayed().performClick()
             assertEquals("a", fullScreen?.id)
         }
@@ -295,6 +298,9 @@ class MomentCardsUiTest {
     fun fullScreenFromAVisitHandsOnTheClipPlayingRatherThanTheFirst() {
         var fullScreen: MomentEvent? = null
         runFeed(MomentsUiState(groups = today(visit), expandedEventId = "v2"), onFullScreenClick = { fullScreen = it }) {
+            // An open card scrolls itself into view for a moment after it grows (KeepGrowingEntryInView);
+            // tap once that has finished, or the tap lands where the button used to be.
+            mainClock.advanceTimeBy(1_000)
             onNodeWithContentDescription("Play full screen").assertIsDisplayed().performClick()
             assertEquals("v2", fullScreen?.id)
         }
@@ -359,6 +365,9 @@ class MomentCardsUiTest {
     fun aPlayingSightingOpensThePlayerBeneathTheRowWithTheWayToFullScreen() {
         var fullScreen: MomentEvent? = null
         runFeed(MomentsUiState(groups = today(routine), expandedEventId = "r2"), onFullScreenClick = { fullScreen = it }) {
+            // An open card scrolls itself into view for a moment after it grows (KeepGrowingEntryInView);
+            // tap once that has finished, or the tap lands where the button used to be.
+            mainClock.advanceTimeBy(1_000)
             onNodeWithContentDescription("Play full screen").assertIsDisplayed().performClick()
             assertEquals("r2", fullScreen?.id)
         }
