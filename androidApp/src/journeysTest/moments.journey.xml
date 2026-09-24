@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<journey name="Browse today's moments">
+    <description>
+        The Moments tab lists the server's detections, newest first, and can be narrowed to one camera.
+    </description>
+    <actions>
+        <action>Clear the server URL field and type http://10.0.2.2:8971, type admin as the username and correct-horse as the password, then tap "Connect"</action>
+        <action>Tap "Moments" in the bottom navigation</action>
+        <action>Verify that "Moments" is selected in the bottom navigation and a list of detections is shown, the first of them a person at the Front Door</action>
+        <action>Tap the camera filter chip (it reads "All cameras") and choose "Driveway"</action>
+        <action>Verify that only Driveway detections are listed and that a car is among them</action>
+    </actions>
+</journey>

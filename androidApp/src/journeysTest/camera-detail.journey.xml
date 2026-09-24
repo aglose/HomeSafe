@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<journey name="Open a camera and come back">
+    <description>
+        From the camera list into one camera's own screen and back again with the system back gesture.
+    </description>
+    <actions>
+        <action>Clear the server URL field and type http://10.0.2.2:8971, type admin as the username and correct-horse as the password, then tap "Connect"</action>
+        <action>Verify that the home screen lists the "Front Door" camera</action>
+        <action>Tap the "Front Door" camera card</action>
+        <action>Verify that the camera screen for "Front Door" is shown, with a back arrow at the top left and a "More options" menu at the top right</action>
+        <action>Press the system back button</action>
+        <action>Verify that the list of cameras is shown again, including "Driveway" and "Back Yard"</action>
+    </actions>
+</journey>
