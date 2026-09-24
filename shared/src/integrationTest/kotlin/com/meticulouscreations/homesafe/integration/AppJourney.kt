@@ -9,6 +9,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.App
@@ -136,6 +137,22 @@ internal class AppJourney(
 
     fun awaitTag(tag: String, timeout: Duration = DEFAULT_WAIT): SemanticsNodeInteraction = awaitNode(hasTestTag(tag), "tagged \"$tag\"", timeout)
 
+    /**
+     * Brings the item keyed [key] of the lazy list matching [list] on screen and waits for
+     * [item] in it. Lazy lists only compose what fits, and on a phone-sized window (the JVM
+     * test window is 1024x768) most of a list isn't there to be found until it is scrolled to.
+     * A jump by key rather than a scroll by pixels: a lazy list animates `ScrollBy`, which a
+     * frozen clock never finishes.
+     */
+    fun revealInList(list: SemanticsMatcher, key: Any, item: SemanticsMatcher, description: String = item.description) {
+        awaitUntil("$description, scrolled to in the list") {
+            exists(item) || run {
+                ui.onNode(list).performScrollToKey(key)
+                false
+            }
+        }
+    }
+
     /** Taps the one node matching [matcher] once the screen has settled on it, then lets the tap's effects start. */
     fun tap(matcher: SemanticsMatcher, description: String = matcher.description) {
         awaitSingle(matcher, description).performClick()
@@ -146,7 +163,7 @@ internal class AppJourney(
 
     /** The screen as the semantics tree sees it, plus the server's side of the story. */
     fun diagnostics(): String {
-        val tree = runCatching { ui.onAllNodes(isRoot()).printToString() }.getOrElse { "<no semantics tree: $it>" }
+        val tree = runCatching { ui.onAllNodes(isRoot()).printToString(maxDepth = Int.MAX_VALUE) }.getOrElse { "<no semantics tree: $it>" }
         val requests = server.requests.takeLast(DIAGNOSTIC_REQUESTS).joinToString("\n  ", prefix = "  ")
         val unhandled = server.unhandled.joinToString("\n  ", prefix = "  ")
         return "--- Semantics tree ---\n$tree\n--- Last requests to the fake server ---\n$requests\n--- Unhandled by the fake server ---\n$unhandled"

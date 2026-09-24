@@ -27,9 +27,9 @@ class SignInJourneyTest {
         signIn.signInAs()
 
         shell.awaitSelected(TopLevelRoute.Home)
-        awaitText("Front Door")
-        awaitText("Driveway")
-        awaitText("Back Yard")
+        shell.awaitCameraCard("back_yard", "Back Yard")
+        shell.awaitCameraCard("driveway", "Driveway")
+        shell.awaitCameraCard("front_door", "Front Door")
         val login = server.requests.single { it.path == "/api/login" }
         assertTrue("\"user\":\"admin\"" in login.body, "the typed username is what was sent: $login")
     }
@@ -85,14 +85,14 @@ class SignInJourneyTest {
         assertFalse(exists(hasText(ConnectionRoute.TAILSCALE.label)), "not signed in yet")
 
         shell.awaitSignedIn()
-        awaitText("Front Door")
+        shell.awaitCameraCard("back_yard", "Back Yard")
     }
 
     @Test
     fun aViewerAccountSignsInToo() = runAppJourney {
         signIn.signInAs(FakeFrigateState.VIEWER)
 
-        awaitText("Front Door")
+        shell.awaitCameraCard("back_yard", "Back Yard")
         val login = server.requests.single { it.path == "/api/login" }
         assertTrue("\"user\":\"viewer\"" in login.body, "$login")
     }
@@ -100,7 +100,7 @@ class SignInJourneyTest {
     @Test
     fun signingInSendsThePasswordExactlyOnce() = runAppJourney {
         signIn.signInAs()
-        awaitText("Front Door")
+        shell.awaitCameraCard("back_yard", "Back Yard")
 
         assertEquals(1, server.requests.count { it.path == "/api/login" }, "one login: ${server.requests}")
     }

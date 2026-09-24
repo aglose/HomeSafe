@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.FakeUser
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.screens.HOME_FEED_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_CONNECT_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_PASSWORD_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_SERVER_URL_TEST_TAG
@@ -72,5 +73,10 @@ internal class ShellRobot(private val journey: AppJourney) {
 
     fun awaitSelected(tab: TopLevelRoute) {
         journey.awaitNode(hasTestTag(bottomNavTestTag(tab)) and isSelected(), "the ${tab.label} tab, selected")
+    }
+
+    /** Scrolls Home's camera list to [cameraName]'s card (keyed by camera name) and waits for its [displayName]. */
+    fun awaitCameraCard(cameraName: String, displayName: String) {
+        journey.revealInList(hasTestTag(HOME_FEED_TEST_TAG), cameraName, hasText(displayName), "the $displayName card")
     }
 }

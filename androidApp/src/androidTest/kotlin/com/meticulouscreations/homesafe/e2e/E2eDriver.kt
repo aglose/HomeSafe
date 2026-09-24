@@ -12,6 +12,7 @@ import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.printToString
 import androidx.test.core.app.ActivityScenario
@@ -23,6 +24,7 @@ import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.FakeUser
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.screens.HOME_FEED_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_CONNECT_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_PASSWORD_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_SERVER_URL_TEST_TAG
@@ -129,6 +131,20 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
 
     fun awaitSelected(tab: TopLevelRoute) = awaitNode(hasTestTag(bottomNavTestTag(tab)) and isSelected(), "the ${tab.label} tab, selected")
 
+    /**
+     * Scrolls Home's camera list to [cameraName]'s card and waits for its [displayName]: a phone
+     * shows a card or two, and a lazy list composes nothing it isn't showing. A jump by key, not
+     * a pixel scroll, which a lazy list animates and a frozen clock never finishes.
+     */
+    fun awaitCameraCard(cameraName: String, displayName: String) {
+        awaitUntil("the $displayName card, scrolled to") {
+            exists(hasText(displayName)) || run {
+                compose.onNode(hasTestTag(HOME_FEED_TEST_TAG)).performScrollToKey(cameraName)
+                false
+            }
+        }
+    }
+
     /** A camera's own screen: its name between the Back button and the overflow menu. */
     fun awaitCameraScreen(displayName: String) {
         awaitNode(hasContentDescription("More options"), "the camera screen's overflow menu")
@@ -137,7 +153,7 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
     }
 
     fun diagnostics(): String {
-        val tree = runCatching { compose.onAllNodes(isRoot()).printToString() }.getOrElse { "<no semantics tree: $it>" }
+        val tree = runCatching { compose.onAllNodes(isRoot()).printToString(maxDepth = Int.MAX_VALUE) }.getOrElse { "<no semantics tree: $it>" }
         val requests = server.requests.takeLast(30).joinToString("\n  ", prefix = "  ")
         return "--- Semantics tree ---\n$tree\n--- Last requests to the fake server ---\n$requests\n--- Unhandled ---\n  ${server.unhandled}"
     }

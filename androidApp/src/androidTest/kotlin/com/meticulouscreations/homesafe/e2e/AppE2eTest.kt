@@ -70,9 +70,9 @@ class AppE2eTest {
             app.signIn()
 
             app.awaitSelected(TopLevelRoute.Home)
-            app.awaitText("Front Door")
-            app.awaitText("Driveway")
-            app.awaitText("Back Yard")
+            app.awaitCameraCard("back_yard", "Back Yard")
+            app.awaitCameraCard("driveway", "Driveway")
+            app.awaitCameraCard("front_door", "Front Door")
         }
     }
 
@@ -84,7 +84,7 @@ class AppE2eTest {
             app.openTab(TopLevelRoute.Moments)
             app.openTab(TopLevelRoute.Settings)
             app.openTab(TopLevelRoute.Home)
-            app.awaitText("Front Door")
+            app.awaitCameraCard("back_yard", "Back Yard")
         }
     }
 
@@ -92,13 +92,14 @@ class AppE2eTest {
     fun systemBackFromACameraReturnsToTheCameraList() {
         app.launch().use {
             app.signIn()
-            app.tap(hasText("Front Door"), "the Front Door card")
-            app.awaitCameraScreen("Front Door")
+            app.awaitCameraCard("back_yard", "Back Yard")
+            app.tap(hasText("Back Yard"), "the Back Yard card")
+            app.awaitCameraScreen("Back Yard")
 
             Espresso.pressBack()
 
             app.awaitGone(hasContentDescription("More options"), "the camera screen")
-            app.awaitText("Driveway")
+            app.awaitCameraCard("driveway", "Driveway")
             app.awaitSelected(TopLevelRoute.Home)
         }
     }
