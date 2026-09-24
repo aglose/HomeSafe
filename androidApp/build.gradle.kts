@@ -268,3 +268,11 @@ composeCompiler {
         metricsDestination = layout.buildDirectory.dir("compose_compiler")
     }
 }
+
+// One emulator can't run two instrumented suites at once: their Activities cover each other,
+// and a test waiting for its own to resume or draw waits for good. With the configuration cache
+// Gradle runs tasks of different projects in parallel, so order the E2E suite after the shared
+// module's device tests whenever both are asked for.
+tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach {
+    mustRunAfter(":shared:connectedAndroidDeviceTest")
+}

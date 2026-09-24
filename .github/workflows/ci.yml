@@ -150,6 +150,8 @@ jobs:
       # - :androidApp:connectedDebugAndroidTest — end-to-end tests on the real MainActivity
       #   (intents, system back, relaunch), one orchestrated instrumentation per test.
       # --continue so a failure in the first still reports the second.
+      # The script stops Gradle after 45 minutes and, if it had to, dumps the stuck processes'
+      # threads, so a hang shows up in this log rather than as a silent job timeout.
       - name: Instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -159,7 +161,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest --continue --stacktrace
+          script: scripts/run-instrumented-tests.sh 45 -- :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest --continue --stacktrace
 
       # Connected test tasks print only a count; put each failure (message and stack) in the log.
       - name: Print instrumented test failures
