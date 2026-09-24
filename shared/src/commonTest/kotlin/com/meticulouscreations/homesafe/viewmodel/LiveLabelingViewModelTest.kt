@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
@@ -24,6 +25,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * The camera screen's "On camera now" section: which cars in view get a card, that the server is
@@ -73,6 +75,9 @@ class LiveLabelingViewModelTest {
 
         override suspend fun discard(modelName: String, fileNames: List<String>) = Result.success(Unit)
         override suspend fun train(modelName: String) = Result.success(Unit)
+        override suspend fun getLatestFrame(cameraName: String): Result<ByteArray> = fail("unused")
+        override suspend fun addExample(modelName: String, category: String, frame: ByteArray, box: SeenBox): Result<Unit> = fail("unused")
+        override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> = fail("unused")
         override fun queueImageUrl(modelName: String, fileName: String) = "http://frigate/clips/$modelName/train/$fileName"
     }
 

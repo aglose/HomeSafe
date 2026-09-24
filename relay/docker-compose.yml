@@ -5,6 +5,10 @@ services:
     build: .
     container_name: homesafe-relay
     restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
     network_mode: host
     environment:
       FRIGATE_INTERNAL: http://127.0.0.1:5000
@@ -13,6 +17,10 @@ services:
       FCM_KEY: /secrets/fcm.json
       RELAY_DB: /data/relay.db
       POLL_SECONDS: "5"
+      CLIPS_DIR: /clips
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
       - ./data:/data
+      # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
+      # classifier's dataset; see add_classification_example.
+      - /mnt/surveillance/frigate/clips:/clips

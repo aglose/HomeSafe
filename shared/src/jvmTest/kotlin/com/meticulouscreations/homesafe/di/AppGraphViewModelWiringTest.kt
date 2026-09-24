@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.di
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
+import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
@@ -31,7 +32,13 @@ class AppGraphViewModelWiringTest {
             graph.viewModelProviders.keys,
         )
         assertEquals(
-            setOf(CameraDetailViewModel.Factory::class, DetectionZonesViewModel.Factory::class, ClassifierLabelingViewModel.Factory::class, LiveLabelingViewModel.Factory::class),
+            setOf(
+                CameraDetailViewModel.Factory::class,
+                DetectionZonesViewModel.Factory::class,
+                ClassifierLabelingViewModel.Factory::class,
+                LiveLabelingViewModel.Factory::class,
+                CarTaggingViewModel.Factory::class,
+            ),
             graph.manualAssistedFactoryProviders.keys,
         )
         assertIs<HomeSafeViewModelFactory>(graph.metroViewModelFactory)

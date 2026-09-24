@@ -43,7 +43,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -109,6 +111,7 @@ fun HomeTabContent(
     zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
     onOpenMoments: () -> Unit = {},
+    onTagCars: (cameraName: String) -> Unit = {},
 ) {
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
@@ -129,6 +132,8 @@ fun HomeTabContent(
         inView = inView,
         // A parked car's card opens the camera watching it — where its own card would have gone.
         onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
+        // The camera the strip's first car is on: the frame to check the strip against.
+        onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
         modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
     ) { tile ->
         CameraCard(
@@ -178,6 +183,7 @@ internal fun HomeFeed(
     onStatusClick: () -> Unit = {},
     inView: List<InViewItem> = emptyList(),
     onInViewClick: (InViewItem) -> Unit = {},
+    onInViewCheck: () -> Unit = {},
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -197,7 +203,7 @@ internal fun HomeFeed(
         item(key = "status") {
             Column {
                 HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick)
-                InViewNowReveal(items = inView, onClick = onInViewClick)
+                InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
             }
         }
 
@@ -280,7 +286,7 @@ internal fun HomeStatusHeader(headline: String?, details: String?, onClick: () -
  * strip folds away with its cards on it rather than going blank first.
  */
 @Composable
-private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Unit) {
+private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit) {
     var shown by remember { mutableStateOf(items) }
     if (items.isNotEmpty()) shown = items
     AnimatedVisibility(
@@ -291,7 +297,7 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
             fadeOut(tween(IN_VIEW_REVEAL_MS / 2)),
     ) {
         // The list's own 24dp gap, carried inside the reveal so an empty strip costs nothing.
-        InViewNowSection(items = shown, onClick = onClick, modifier = Modifier.padding(top = 24.dp))
+        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 24.dp))
     }
 }
 
@@ -300,16 +306,29 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
  * page. Usually one or two cars, which is why this is a plain [Row] that scrolls sideways rather
  * than a lazy one — there is never enough here for laziness to pay for itself, and a Row measures
  * its children in one pass.
+ *
+ * The info button beside the heading is [onCheck]: the camera's frame, to see whether the strip
+ * is right and put it right by tagging the cars actually there (see [CarTaggingScreen]).
  */
 @Composable
-private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, modifier: Modifier = Modifier) {
+private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
     val extraColors = LocalFrigateExtraColors.current
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(
-            text = "In view now",
-            style = MaterialTheme.typography.headlineSmall,
-            color = extraColors.textPrimary,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = "In view now",
+                style = MaterialTheme.typography.headlineSmall,
+                color = extraColors.textPrimary,
+                modifier = Modifier.weight(1f),
+            )
+            IconButton(onClick = onCheck, modifier = Modifier.testTag(IN_VIEW_CHECK_TEST_TAG)) {
+                Icon(
+                    imageVector = Icons.Outlined.Info,
+                    contentDescription = "Check and tag the cars in view",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -571,6 +590,9 @@ const val HOME_FEED_TEST_TAG = "home_feed"
 
 /** The summary at the top of the home feed, for tests to tap. */
 internal const val HOME_STATUS_TEST_TAG = "home_status"
+
+/** The "In view now" heading's info button, which opens the car-tagging screen. */
+internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"
 
 /** How long the in-view strip takes to open out or fold away: long enough to follow, short enough not to wait on. */
 private const val IN_VIEW_REVEAL_MS = 300

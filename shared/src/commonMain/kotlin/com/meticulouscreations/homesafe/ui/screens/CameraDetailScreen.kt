@@ -27,6 +27,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CropFree
+import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Videocam
@@ -102,6 +103,7 @@ fun CameraDetailScreen(
     sharedTransitionScope: SharedTransitionScope,
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
+    onTagCars: () -> Unit = {},
     openAtEpochSeconds: Double? = null,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
@@ -170,7 +172,7 @@ fun CameraDetailScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
-            CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones)
+            CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars)
         }
 
         Column(
@@ -636,12 +638,13 @@ private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit)
 }
 
 /**
- * This camera's less-used settings, kept out of the page itself: today the polygon editor —
- * what Google Home calls activity zones and Frigate calls masks — reached from the header
- * rather than a card competing with the timeline and recent activity for the eye.
+ * This camera's less-used settings, kept out of the page itself: the polygon editor — what
+ * Google Home calls activity zones and Frigate calls masks — and tagging the cars in view by
+ * hand, reached from the header rather than cards competing with the timeline and recent
+ * activity for the eye.
  */
 @Composable
-private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit) {
+private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
@@ -665,6 +668,16 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit) {
                 onClick = {
                     expanded = false
                     onEditDetectionZones()
+                },
+            )
+            // Also the way in when the home page's "In view now" strip is empty: a car it missed
+            // leaves no strip to open this from.
+            DropdownMenuItem(
+                text = { Text(text = "Tag cars in view", style = MaterialTheme.typography.labelLarge) },
+                leadingIcon = { Icon(imageVector = Icons.Filled.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = {
+                    expanded = false
+                    onTagCars()
                 },
             )
         }

@@ -41,6 +41,9 @@ PROJECT = os.environ["FCM_PROJECT"]
 KEY_FILE = os.environ.get("FCM_KEY", "/secrets/fcm.json")
 DB_PATH = os.environ.get("RELAY_DB", "/data/relay.db")
 POLL_SECONDS = float(os.environ.get("POLL_SECONDS", "5"))
+# Frigate's clips folder, mounted in so a car tagged in the app can join a classifier's dataset:
+# Frigate itself can only file the crops it queued, never a frame someone boxed by hand.
+CLIPS_DIR = os.environ.get("CLIPS_DIR", "/clips")
 CONFIG_REFRESH_SECONDS = 300
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -901,6 +904,92 @@ def event_media(event_id: str, name: str, request: Request, device: str | None =
         # Frigate 404s a preview until the event has frames for it; the app asks again.
         raise HTTPException(status_code=404, detail=f"Frigate answered {r.status_code}")
     return Response(content=r.content, media_type=EVENT_MEDIA[name], headers={"Cache-Control": "private, max-age=3600"})
+
+
+# A classifier or category name as Frigate keeps it on disk: one path segment, never `.` or `..`.
+# Hyphens are allowed because the dataset already has a category with one (`in-laws_mercedes`).
+DATASET_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}")
+# A full-resolution detect frame is well under a megabyte; this only stops a runaway upload.
+MAX_EXAMPLE_BYTES = 8 * 1024 * 1024
+
+
+def classification_crop(frame_w: int, frame_h: int, x: float, y: float, w: float, h: float) -> tuple[int, int, int, int] | None:
+    """
+    The part of a frame Frigate's object classifier would have looked at for a box at `x, y, w, h`
+    (fractions of the frame), as pixel `left, top, right, bottom`. It is Frigate's own
+    `calculate_region(..., model_size=longest edge, multiplier=1.0)`: a square as big as the box's
+    longer side, centred on the box and pushed back inside the frame, then cut off by the frame's
+    edge when the square is taller or wider than the frame. A hand-drawn example framed any other
+    way would teach the model a picture it never gets shown. None for a box with no area.
+    """
+    # Whole pixels, as Frigate's own boxes are: 180/720 of a frame must be 180 px, not 179.99.
+    left, top = round(x * frame_w), round(y * frame_h)
+    right, bottom = round((x + w) * frame_w), round((y + h) * frame_h)
+    if right - left < 1 or bottom - top < 1:
+        return None
+    size = int(max(right - left, bottom - top) // 4 * 4)
+    size = max(size, 4)
+    x_offset = int((right - left) / 2.0 + left - size / 2.0)
+    x_offset = 0 if x_offset < 0 else min(x_offset, max(0, frame_w - size))
+    y_offset = int((bottom - top) / 2.0 + top - size / 2.0)
+    y_offset = 0 if y_offset < 0 else min(y_offset, max(0, frame_h - size))
+    return x_offset, y_offset, min(frame_w, x_offset + size), min(frame_h, y_offset + size)
+
+
+def dataset_file_name(category: str, now: float) -> str:
+    """Named the way Frigate names a crop it files (`categorize`), so the two are indistinguishable."""
+    random_id = "".join(secrets.choice("abcdefghijklmnopqrstuvwxyz0123456789") for _ in range(6))
+    return f"{category}-{now}-{random_id}.png"
+
+
+def save_classification_example(model: str, category: str, jpeg: bytes, box: tuple[float, float, float, float]) -> str:
+    """Cuts [box] out of [jpeg] as Frigate would and writes it into the model's dataset; answers the file name."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    model_dir = os.path.join(CLIPS_DIR, model)
+    if not os.path.isdir(model_dir):
+        raise HTTPException(status_code=404, detail=f"No classifier folder for {model}")
+    try:
+        frame = Image.open(BytesIO(jpeg))
+        frame.load()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Body is not an image")
+    region = classification_crop(frame.width, frame.height, *box)
+    if region is None:
+        raise HTTPException(status_code=400, detail="Box has no area")
+    folder = os.path.join(model_dir, "dataset", category)
+    os.makedirs(folder, exist_ok=True)
+    name = dataset_file_name(category, time.time())
+    frame.convert("RGB").crop(region).save(os.path.join(folder, name), format="PNG")
+    return name
+
+
+@app.post("/classification/{model}/dataset/{category}")
+async def add_classification_example(
+    model: str, category: str, request: Request, x: float, y: float, w: float, h: float,
+) -> dict[str, Any]:
+    """
+    Adds one example to a classifier's dataset from a frame the app shows: the body is the JPEG
+    as the app received it from Frigate, and `x, y, w, h` the car's box on it as fractions — so the
+    crop is of exactly the frame the person boxed the car on, not whatever the camera sees by the
+    time the request lands. A user action, so the session cookie. Training is the app's call.
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    if not DATASET_NAME.fullmatch(model) or not DATASET_NAME.fullmatch(category):
+        raise HTTPException(status_code=400, detail="Bad model or category name")
+    if not (0 <= x <= 1 and 0 <= y <= 1 and 0 < w <= 1 and 0 < h <= 1):
+        raise HTTPException(status_code=400, detail="Box must be fractions of the frame")
+    jpeg = await request.body()
+    if not jpeg or len(jpeg) > MAX_EXAMPLE_BYTES:
+        raise HTTPException(status_code=400, detail="Missing or oversized image")
+    user = await run_in_threadpool(require_frigate_session, request)
+    name = await run_in_threadpool(save_classification_example, model, category, jpeg, (x, y, w, h))
+    log.info("classifier example by %s: %s/%s <- %s (box %.3f,%.3f %.3fx%.3f)", user, model, category, name, x, y, w, h)
+    return {"ok": True, "file": name}
+
 
 
 @app.post("/test")

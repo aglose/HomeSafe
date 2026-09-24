@@ -54,3 +54,9 @@ class TrainClassifierUseCase(private val repository: ClassifierRepository) {
 class GetClassifierQueueImageUrlUseCase(private val repository: ClassifierRepository) {
     operator fun invoke(modelName: String, fileName: String): String? = repository.queueImageUrl(modelName, fileName)
 }
+
+/** A camera's latest frame at detect resolution, as JPEG bytes, for boxing a car on. */
+@Inject
+class GetCameraFrameUseCase(private val repository: ClassifierRepository) {
+    suspend operator fun invoke(cameraName: String): Result<ByteArray> = repository.getLatestFrame(cameraName)
+}

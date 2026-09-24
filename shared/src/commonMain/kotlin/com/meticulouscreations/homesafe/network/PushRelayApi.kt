@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.network
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
+import com.meticulouscreations.homesafe.domain.model.SeenBox
 import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -129,6 +130,25 @@ class PushRelayApi(private val httpClient: HttpClient) {
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
         response.body<ByteArray>()
     }
+
+    /**
+     * Adds a car someone boxed on a camera frame to [modelName]'s dataset, under [category]. Frigate
+     * can only file the crops it queued itself, so the relay — which can reach the dataset folder on
+     * the same box — cuts the example out of [frame] (the JPEG exactly as Frigate served it) the way
+     * Frigate's classifier would frame [box]. A user action, so the session cookie.
+     */
+    suspend fun addClassifierExample(serverUrl: String, modelName: String, category: String, frame: ByteArray, box: SeenBox): Result<Unit> =
+        runCatching {
+            val response = httpClient.post(relayUrl(serverUrl, "/classification/$modelName/dataset/$category")) {
+                parameter("x", box.x)
+                parameter("y", box.y)
+                parameter("w", box.width)
+                parameter("h", box.height)
+                contentType(ContentType.Image.JPEG)
+                setBody(frame)
+            }
+            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        }
 
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")

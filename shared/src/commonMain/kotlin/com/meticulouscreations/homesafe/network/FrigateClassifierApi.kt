@@ -129,6 +129,24 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
     suspend fun deleteQueued(serverUrl: String, modelName: String, fileNames: List<String>): Result<Unit> =
         postExpectingSuccess("${serverUrl.trimEnd('/')}/api/classification/$modelName/train/delete", body = DeleteQueuedRequest(ids = fileNames))
 
+    /**
+     * Names a tracked object — [subLabel] null clears the name. Frigate updates the object it is
+     * still tracking as well as its event row, so the name shows everywhere the event does. [score]
+     * is what the name claims to be sure of; a person naming a car is sure.
+     */
+    suspend fun setSubLabel(serverUrl: String, eventId: String, subLabel: String?, score: Double?): Result<Unit> =
+        postExpectingSuccess(
+            "${serverUrl.trimEnd('/')}/api/events/$eventId/sub_label",
+            body = SubLabelRequest(subLabel = subLabel.orEmpty(), subLabelScore = score),
+        )
+
+    /** [cameraName]'s latest detect frame at full detect resolution, as Frigate encodes it: what a car gets boxed on. */
+    suspend fun getLatestFrame(serverUrl: String, cameraName: String): Result<ByteArray> = runCatching {
+        val response = httpClient.get(frigateSnapshotUrl(serverUrl, cameraName))
+        check(response.status.isSuccess()) { "Couldn't load the camera's frame: ${response.status}" }
+        response.body<ByteArray>()
+    }
+
     /** Starts training in the background on the server; Frigate hot-loads the result when done (about half a minute on the real box). */
     suspend fun train(serverUrl: String, modelName: String): Result<Unit> =
         postExpectingSuccess("${serverUrl.trimEnd('/')}/api/classification/$modelName/train", body = null)
@@ -245,6 +263,10 @@ internal data class CategorizeRequest(
     val category: String,
     @SerialName("training_file") val trainingFile: String,
 )
+
+/** Frigate reads an empty [subLabel] as "clear it". */
+@Serializable
+internal data class SubLabelRequest(val subLabel: String, val subLabelScore: Double? = null)
 
 @Serializable
 internal data class DeleteQueuedRequest(val ids: List<String>)

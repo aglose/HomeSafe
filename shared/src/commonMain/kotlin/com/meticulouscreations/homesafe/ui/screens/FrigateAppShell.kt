@@ -101,6 +101,9 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         else -> true
     }
 
+    /** Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which wants every pixel for the frame. */
+    fun showsBottomNav(tab: TopLevelRoute): Boolean = !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull() is CarTaggingRoute)
+
     fun selectTab(tab: TopLevelRoute) {
         topLevel.addTopLevel(tab)
         onTabSelected(tab)
@@ -155,6 +158,7 @@ fun FrigateAppShell() {
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
+        showBottomNav = nav.showsBottomNav(nav.selectedTab),
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
@@ -193,6 +197,7 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
+        showBottomNav = nav.showsBottomNav(tab),
         topBar = { FrigateTopBar(activeConnection = activeConnection) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
@@ -257,6 +262,7 @@ internal fun ShellScaffold(
     selectedTab: TopLevelRoute,
     onSelectTab: (TopLevelRoute) -> Unit,
     overlay: @Composable () -> Unit = {},
+    showBottomNav: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     Box(
@@ -278,7 +284,7 @@ internal fun ShellScaffold(
             topBar()
         }
 
-        if (!LocalNativeTabBar.current) {
+        if (!LocalNativeTabBar.current && showBottomNav) {
             BottomNavBar(
                 selected = selectedTab,
                 onSelect = onSelectTab,
@@ -388,6 +394,7 @@ private data class CameraDetailRoute(
     val openAtEpochSeconds: Double? = null,
 )
 private data class DetectionZonesRoute(val cameraName: String)
+private data class CarTaggingRoute(val cameraName: String)
 
 /**
  * The Home tab's own nested navigation: the camera list, and drilling into a camera's detail
@@ -421,6 +428,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                             backStack.add(CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl))
                         },
                         onOpenMoments = onOpenMoments,
+                        onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
                     )
                 }
                 entry<CameraDetailRoute>(
@@ -435,11 +443,18 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         sharedTransitionScope = this@SharedTransitionLayout,
                         onBack = { backStack.removeLastOrNull() },
                         onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
+                        onTagCars = { backStack.add(CarTaggingRoute(route.cameraName)) },
                         openAtEpochSeconds = route.openAtEpochSeconds,
                     )
                 }
                 entry<DetectionZonesRoute> { route ->
                     DetectionZonesScreen(
+                        cameraName = route.cameraName,
+                        onBack = { backStack.removeLastOrNull() },
+                    )
+                }
+                entry<CarTaggingRoute> { route ->
+                    CarTaggingScreen(
                         cameraName = route.cameraName,
                         onBack = { backStack.removeLastOrNull() },
                     )
