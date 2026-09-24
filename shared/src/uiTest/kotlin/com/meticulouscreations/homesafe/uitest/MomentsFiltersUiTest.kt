@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
@@ -107,6 +108,19 @@ class MomentsFiltersUiTest {
         block()
     }
 
+    /**
+     * Plays frames until nothing matches [matcher], for at most [maxFrames]. A menu leaving plays
+     * its exit out first; on Android it is a popup window of its own, and a single jump of the
+     * frozen clock was not always enough for it to go, where a frame at a time (each check also
+     * waits for the device's next real frame) is.
+     */
+    private fun ComposeUiTest.advanceUntilGone(matcher: SemanticsMatcher, maxFrames: Int = 120) {
+        repeat(maxFrames) {
+            if (onAllNodes(matcher).fetchSemanticsNodes().isEmpty()) return
+            mainClock.advanceTimeByFrame()
+        }
+    }
+
     @Test
     fun theTypeMenuTicksTheTypeInForceAndOnlyThatOne() = runFeed(MomentsUiState(selectedCategory = MomentCategory.VEHICLES)) {
         onNodeWithText("Vehicles").performClick()
@@ -156,7 +170,7 @@ class MomentsFiltersUiTest {
             onNodeWithText("All cameras").performClick()
             mainClock.advanceTimeBy(500)
             onNodeWithText("Backyard").performClick()
-            mainClock.advanceTimeBy(1_000)
+            advanceUntilGone(hasText("Backyard"))
             assertEquals("backyard", picked)
             // The chip still says "All cameras" (the state here never changes), so the menu is all that could show Backyard.
             onAllNodesWithText("Backyard").assertCountEquals(0)
