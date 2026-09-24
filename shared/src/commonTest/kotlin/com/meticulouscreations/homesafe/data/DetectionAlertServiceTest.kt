@@ -304,11 +304,12 @@ class DetectionAlertServiceTest {
         settle()
         assertEquals(listOf("lawn-car"), h.notifier.posted.map { it.id }, "an unrecognised object outside every zone is silent")
 
-        h.subLabelById["tesla"] = "sarahs_tesla"   // recognised: shows wherever it is, street included
-        h.pathById["tesla"] = listOf(0.5 to 0.2)
+        // A car's name doesn't buy it the street: the classifier misnames passing traffic (see inZones).
+        h.subLabelById["tesla"] = "andrews_tesla"
+        h.pathById["tesla"] = listOf(0.1 to 0.2, 0.3 to 0.2, 0.5 to 0.2, 0.7 to 0.2, 0.9 to 0.2)
         h.events += Triple("tesla", "car", 1_000_004.0)
-        eventually("the recognised car") { h.notifier.posted.map { it.id } == listOf("lawn-car", "tesla") }
-        assertEquals("Sarah's Tesla on the street", h.notifier.posted.last().title)
+        settle()
+        assertEquals(listOf("lawn-car"), h.notifier.posted.map { it.id }, "a named car driving down the street is silent too")
     }
 
     @Test

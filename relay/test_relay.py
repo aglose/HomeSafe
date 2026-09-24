@@ -330,5 +330,114 @@ class ClassificationCropTest(unittest.TestCase):
         self.assertRegex(name, r"^sarahs_car-1790131143\.25-[a-z0-9]{6}\.png$")
 
 
+class CarCheckTest(unittest.TestCase):
+    """The pure halves of the car check: which crops are passing street cars, and what the vision model's description does to a name."""
+
+    CARS = {
+        "andrews_tesla": {"make": "tesla", "colour": "white"},
+        "sarahs_car": {"make": "tesla", "colour": "red"},
+        "in-laws_mercedes": {"make": "mercedes", "colour": "silver"},
+    }
+
+    def street(self, **overrides):
+        e = {"id": "1790131143.2-abc", "label": "car", "camera": "hikvision_1", "start_time": 1.0, "end_time": 9.0, "zones": [],
+             "data": {"box": [0.6, 0.25, 0.14, 0.1], "path_data": [[[x, y], 0.0] for x, y in DRIVE_PATH]}}
+        e.update(overrides)
+        return e
+
+    def test_queued_crop_names_give_their_event(self):
+        self.assertEqual("1790227958.373915-3c1ue3", relay.train_crop_event("1790227958.373915-3c1ue3-1790227960.625516-andrews_tesla-1.0.webp"))
+        self.assertEqual("1790227958.373915-3c1ue3", relay.train_crop_event("1790227958.373915-3c1ue3-1790227960.6-none-0.97.webp"))
+        for other in ("example_003.jpg", "none-1790131143.25-abcdef.png", "../x-y-z-w-v.webp"):
+            self.assertIsNone(relay.train_crop_event(other), other)
+
+    def test_a_car_driving_past_is_street_traffic(self):
+        self.assertTrue(relay.is_passing_street_car(self.street(), ["driveway"]))
+
+    def test_a_car_that_entered_the_driveway_is_not(self):
+        self.assertFalse(relay.is_passing_street_car(self.street(zones=["driveway"]), ["driveway"]))
+
+    def test_a_parked_car_is_not(self):
+        self.assertFalse(relay.is_passing_street_car(self.street(data={"box": PARKED_BOX, "path_data": [[[x, y], 0.0] for x, y in PARKED_PATH]}), ["driveway"]))
+
+    def test_nothing_is_street_traffic_on_a_camera_with_no_car_zone(self):
+        self.assertFalse(relay.is_passing_street_car(self.street(), []))
+
+    def test_a_car_still_in_view_is_judged_later(self):
+        self.assertFalse(relay.is_passing_street_car(self.street(end_time=None), ["driveway"]))
+
+    def test_zones_that_want_a_car(self):
+        cam = {"zones": {"street": {"objects": ["bird"]}, "driveway": {"objects": ["person", "car", "dog"]}, "any": {"objects": []}, "lawn": {"objects": ["person"]}}}
+        self.assertEqual(["driveway", "any"], relay.zones_wanting(cam, "car"))
+
+    def test_a_red_car_called_andrews_tesla_is_renamed_to_the_one_red_tesla(self):
+        matches = relay.household_matches({"colour": "red", "make": "tesla", "body": "suv"}, self.CARS)
+        self.assertEqual(("relabel", "sarahs_car"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+
+    def test_a_blue_toyota_called_andrews_tesla_loses_the_name(self):
+        matches = relay.household_matches({"colour": "blue", "make": "toyota", "body": "sedan"}, self.CARS)
+        self.assertEqual([], matches)
+        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+
+    def test_a_white_tesla_called_andrews_tesla_keeps_it(self):
+        matches = relay.household_matches({"colour": "white", "make": "tesla"}, self.CARS)
+        self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+
+    def test_infrared_rules_out_nothing_by_colour(self):
+        matches = relay.household_matches({"colour": "unknown", "make": "tesla"}, self.CARS)
+        self.assertEqual(["andrews_tesla", "sarahs_car"], matches)
+        self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+
+    def test_silver_and_grey_are_one_colour(self):
+        self.assertEqual(["in-laws_mercedes"], relay.household_matches({"colour": "grey", "make": "mercedes"}, self.CARS))
+
+    def test_an_unknown_make_rules_out_nothing_by_make(self):
+        self.assertEqual(["sarahs_car"], relay.household_matches({"colour": "red", "make": "unknown"}, self.CARS))
+
+    def test_never_names_a_car_the_classifier_left_unnamed(self):
+        matches = relay.household_matches({"colour": "white", "make": "tesla"}, self.CARS)
+        for unnamed in (None, "none"):
+            self.assertEqual("keep", relay.second_opinion_verdict(unnamed, matches, self.CARS)[0])
+
+    def test_a_name_with_no_description_is_left_alone(self):
+        self.assertEqual(("keep", "yayas_car"), relay.second_opinion_verdict("yayas_car", [], self.CARS))
+
+    def test_a_persons_tag_is_final(self):
+        tagged = {"label": "car", "zones": ["driveway"], "start_time": 0.0, "end_time": 5.0, "sub_label": "sarahs_car", "data": {"sub_label_score": 1.0}}
+        self.assertFalse(relay.second_opinion_due(tagged, ["driveway"], 100.0))
+        tagged["data"]["sub_label_score"] = 0.98
+        self.assertTrue(relay.second_opinion_due(tagged, ["driveway"], 100.0))
+
+    def test_a_car_still_in_the_driveway_waits_to_settle(self):
+        car = {"label": "car", "zones": ["driveway"], "start_time": 100.0, "end_time": None, "sub_label": None, "data": {}}
+        self.assertFalse(relay.second_opinion_due(car, ["driveway"], 130.0))
+        self.assertTrue(relay.second_opinion_due(car, ["driveway"], 170.0))
+
+    def test_only_cars_in_a_car_zone_get_a_second_opinion(self):
+        car = {"label": "car", "zones": [], "start_time": 0.0, "end_time": 5.0, "sub_label": "andrews_tesla", "data": {}}
+        self.assertFalse(relay.second_opinion_due(car, ["driveway"], 100.0))
+
+    def test_sub_label_as_a_pair(self):
+        self.assertEqual(("andrews_tesla", 0.98), relay.sub_label_of({"sub_label": ["andrews_tesla", 0.98]}))
+        self.assertEqual(("andrews_tesla", 0.9), relay.sub_label_of({"sub_label": "andrews_tesla", "data": {"sub_label_score": 0.9}}))
+        self.assertEqual((None, None), relay.sub_label_of({"sub_label": None}))
+
+    def test_the_car_is_looked_for_where_its_path_ended(self):
+        e = {"start_time": 1.0, "data": {"box": [0.1, 0.2, 0.2, 0.1], "path_data": [[[0.5, 0.5], 10.0], [[0.3, 0.6], 12.5]]}}
+        t, (x, y, w, h) = relay.last_sighting(e)
+        self.assertEqual(12.5, t)
+        self.assertAlmostEqual(0.2, x)
+        self.assertAlmostEqual(0.5, y)
+        self.assertEqual((0.2, 0.1), (w, h))
+        self.assertIsNone(relay.last_sighting({"data": {}}))
+
+    def test_the_crop_has_room_to_spare_and_stays_in_frame(self):
+        x, y, w, h = relay.vlm_crop_box((0.9, 0.1, 0.2, 0.2))
+        self.assertAlmostEqual(0.85, x)
+        self.assertAlmostEqual(0.05, y)
+        self.assertAlmostEqual(1.0, x + w)
+        self.assertAlmostEqual(0.35, y + h)
+
+
 if __name__ == "__main__":
     unittest.main()

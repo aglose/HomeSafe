@@ -23,11 +23,20 @@ class ZoneInferenceTest {
     private val street = DetectionZone("street", "Street", poly(0.311, 0.113, 0.994, 0.33, 1.0, 0.607, 0.301, 0.287), listOf("bird"))
     private val frontYard = listOf(frontLawn, driveway, sidewalk, street)
 
-    private fun event(label: String, zones: List<String> = emptyList(), vararg path: Pair<Double, Double>, subLabel: String? = null) = MomentEvent(
+    private fun event(
+        label: String,
+        zones: List<String> = emptyList(),
+        vararg path: Pair<Double, Double>,
+        subLabel: String? = null,
+        box: DetectionBox? = null,
+    ) = MomentEvent(
         id = "1", cameraName = "hikvision_1", label = label, subLabel = subLabel,
         startEpochSeconds = 1788726566.0, endEpochSeconds = null, topScore = 0.8, hasClip = true, hasSnapshot = false,
-        zones = zones, pathPoints = path.map { (x, y) -> MaskPoint(x, y) },
+        zones = zones, pathPoints = path.map { (x, y) -> MaskPoint(x, y) }, box = box,
     )
+
+    /** A street car's box on the Front Yard's detect frame: about a tenth of it wide. */
+    private val carBox = DetectionBox(0.9, 0.35, 0.1, 0.12)
 
     private val today = LocalDate(2026, 9, 6)
 
@@ -75,13 +84,36 @@ class ZoneInferenceTest {
 
     @Test
     fun recognizedCarAtTheCurbIsKeptAndSaysWhereItIs() {
-        // Sarah's Model Y parked in the street: nothing there wants a car, but Frigate named it.
-        val tesla = event("car", listOf("sidewalk"), 0.959 to 0.411, 0.967 to 0.472, 0.983 to 0.597, subLabel = "sarahs_tesla")
+        // Sarah's Model Y parked in the street: nothing there wants a car, but Frigate named it and it sat still.
+        val tesla = event("car", listOf("sidewalk"), 0.959 to 0.411, 0.967 to 0.472, 0.983 to 0.597, subLabel = "sarahs_tesla", box = carBox)
         val placed = assertNotNull(tesla.inZones(frontYard))
         assertEquals(listOf("sidewalk", "street"), placed.zones)
         val p = placed.present(today)
         assertEquals("Sarah's Tesla on the street", p.title)
         assertEquals("Front Yard · Sidewalk, Street", p.locationLabel)
+    }
+
+    @Test
+    fun namedCarDrivingDownTheStreetIsDroppedLikeAnyOther() {
+        // The 2026-09-23 failure: the classifier called most passing cars "Andrew's Tesla".
+        val passing = event(
+            "car", emptyList(),
+            0.33 to 0.2, 0.42 to 0.23, 0.52 to 0.26, 0.62 to 0.29, 0.72 to 0.32, 0.82 to 0.36,
+            subLabel = "andrews_tesla", box = carBox,
+        )
+        assertNull(passing.inZones(frontYard))
+    }
+
+    @Test
+    fun namedCarPullingIntoTheDrivewayIsPlacedOnlyWhereCarsAreWanted() {
+        val arriving = event(
+            "car", listOf("driveway"),
+            0.72 to 0.32, 0.6 to 0.29, 0.48 to 0.3, 0.36 to 0.45, 0.3 to 0.55,
+            subLabel = "andrews_tesla", box = carBox,
+        )
+        val placed = assertNotNull(arriving.inZones(frontYard))
+        assertEquals(listOf("driveway"), placed.zones)
+        assertEquals("Andrew's Tesla in the driveway", placed.present(today).title)
     }
 
     @Test
