@@ -181,6 +181,8 @@ data class TrackedObject(
     val label: String,
     /** What Frigate has already named it, e.g. `sarahs_tesla`; null while nothing has. */
     val subLabel: String?,
+    /** Where it is on the detect frame: the event's best-frame box, which for a parked car is where it stands. */
+    val box: SeenBox? = null,
 )
 
 /**

@@ -72,6 +72,13 @@ interface MomentsRepository {
     fun observeStationaryObjects(): Flow<List<StationaryObject>>
 
     /**
+     * Asks [observeStationaryObjects]'s poll to run now rather than at its next turn — after a car
+     * was named by hand, say, so the strip shows it straight away. Nothing happens while nothing
+     * collects the strip; its next collection polls first thing anyway.
+     */
+    fun refreshStationaryObjects()
+
+    /**
      * The newest detection the device knows of on any camera, placed the way [observeMoments]
      * places it; null when it knows of none. Unlike the feed it ignores where the Moments tab's
      * window was left, so the home page can say what last happened whatever the feed is narrowed

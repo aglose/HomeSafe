@@ -13,6 +13,7 @@ import com.meticulouscreations.homesafe.network.FrigateDetectSize
 import com.meticulouscreations.homesafe.network.FrigateEvent
 import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.FrigateTimelineEntry
+import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.frigateClassifierQueueImageUrl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -24,6 +25,7 @@ import dev.zacsweers.metro.SingleIn
 @ContributesBinding(AppScope::class)
 class ClassifierRepositoryImpl(
     private val api: FrigateClassifierApi,
+    private val relayApi: PushRelayApi,
     private val connectionRepository: ConnectionRepository,
 ) : ClassifierRepository {
 
@@ -62,7 +64,9 @@ class ClassifierRepositoryImpl(
     override suspend fun getTrackedObjects(cameraName: String): Result<List<TrackedObject>> {
         val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
         return api.getInProgressEvents(serverUrl, cameraName)
-            .map { events -> events.map { TrackedObject(eventId = it.id, label = it.label, subLabel = it.subLabel) } }
+            .map { events ->
+                events.map { TrackedObject(eventId = it.id, label = it.label, subLabel = it.subLabel, box = it.data?.box?.seenBox(epochSeconds = null)) }
+            }
     }
 
     override suspend fun label(modelName: String, fileName: String, category: String): Result<Unit> =
@@ -73,6 +77,15 @@ class ClassifierRepositoryImpl(
 
     override suspend fun train(modelName: String): Result<Unit> =
         serverUrlOrFailure().fold({ api.train(it, modelName) }, { Result.failure(it) })
+
+    override suspend fun getLatestFrame(cameraName: String): Result<ByteArray> =
+        serverUrlOrFailure().fold({ api.getLatestFrame(it, cameraName) }, { Result.failure(it) })
+
+    override suspend fun addExample(modelName: String, category: String, frame: ByteArray, box: SeenBox): Result<Unit> =
+        serverUrlOrFailure().fold({ relayApi.addClassifierExample(it, modelName, category, frame, box) }, { Result.failure(it) })
+
+    override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> =
+        serverUrlOrFailure().fold({ api.setSubLabel(it, eventId, subLabel, score = subLabel?.let { MANUAL_NAME_SCORE }) }, { Result.failure(it) })
 
     override fun queueImageUrl(modelName: String, fileName: String): String? =
         connectionRepository.currentServerUrl.value?.let { frigateClassifierQueueImageUrl(it, modelName, fileName) }
@@ -101,4 +114,13 @@ class ClassifierRepositoryImpl(
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
             ?: Result.failure(FrigateResponseException("Not connected to a server"))
+
+    private companion object {
+        /**
+         * A person naming the car is as sure as a name gets. It also outranks every guess the
+         * classifier made about the same parked car, which is what lets the in-view strip take the
+         * person's word for it: a stay is named by its best-scored sighting.
+         */
+        const val MANUAL_NAME_SCORE = 1.0
+    }
 }

@@ -20,8 +20,10 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,12 +31,14 @@ import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -254,6 +258,9 @@ class MomentsRepositoryImpl(
         return placed to oldest
     }
 
+    /** [refreshStationaryObjects]'s signal: dropped when no poll is waiting, since the next one to start polls straight away. */
+    private val stationaryNudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
     /**
      * Its own poll, like [observeRecentMoments], and for the same reason: the Moments feed's
      * window may be narrowed to one camera or opened at an earlier day, and this has to be every
@@ -307,9 +314,14 @@ class MomentsRepositoryImpl(
                     .onFailure { send(cachedStationaryObjects(server.identity)) }
                     .isSuccess
                 failures = if (fetched) 0 else failures + 1
-                delay(nextPollDelayMs(failures))
+                // Waits out the interval, or less when someone asks for a poll now.
+                withTimeoutOrNull(nextPollDelayMs(failures)) { stationaryNudges.first() }
             }
         }
+    }
+
+    override fun refreshStationaryObjects() {
+        stationaryNudges.tryEmit(Unit)
     }
 
     /**

@@ -301,5 +301,34 @@ class EventMediaTest(unittest.TestCase):
             self.assertIsNone(relay.event_media_url(bad, "thumbnail.jpg"), bad)
 
 
+class ClassificationCropTest(unittest.TestCase):
+    """Mirrors Frigate's calculate_region(frame, *box, max(w, h), 1.0) on a 1280x720 detect frame."""
+
+    def test_square_on_the_longer_side_centred_on_the_box(self):
+        # A 200x100 px car at (400, 300): a 200 px square, centred vertically on it.
+        self.assertEqual((400, 250, 600, 450), relay.classification_crop(1280, 720, 400 / 1280, 300 / 720, 200 / 1280, 100 / 720))
+
+    def test_pushed_back_inside_the_frame(self):
+        # Hard against the right and bottom edges: the square slides in rather than being cut.
+        self.assertEqual((1100, 540, 1280, 720), relay.classification_crop(1280, 720, 1150 / 1280, 650 / 720, 130 / 1280, 180 / 720))
+
+    def test_cut_off_when_taller_than_the_frame(self):
+        # A car filling most of the width: its square is taller than the frame, so it's cut at the bottom.
+        self.assertEqual((140, 0, 1140, 720), relay.classification_crop(1280, 720, 140 / 1280, 300 / 720, 1000 / 1280, 300 / 720))
+
+    def test_a_box_with_no_area_is_refused(self):
+        self.assertIsNone(relay.classification_crop(1280, 720, 0.5, 0.5, 0.0, 0.2))
+
+    def test_names_cannot_leave_the_dataset(self):
+        for good in ("known_cars", "sarahs_car", "in-laws_mercedes", "none"):
+            self.assertIsNotNone(relay.DATASET_NAME.fullmatch(good), good)
+        for bad in ("..", ".", "../config", "a/b", "", "-x", "sarah's", "car\n"):
+            self.assertIsNone(relay.DATASET_NAME.fullmatch(bad), bad)
+
+    def test_file_named_like_frigates_own(self):
+        name = relay.dataset_file_name("sarahs_car", 1790131143.25)
+        self.assertRegex(name, r"^sarahs_car-1790131143\.25-[a-z0-9]{6}\.png$")
+
+
 if __name__ == "__main__":
     unittest.main()
