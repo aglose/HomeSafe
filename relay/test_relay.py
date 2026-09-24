@@ -355,6 +355,25 @@ class CarCheckTest(unittest.TestCase):
     def test_a_car_driving_past_is_street_traffic(self):
         self.assertTrue(relay.is_passing_street_car(self.street(), ["driveway"]))
 
+    DRIVEWAY = [(0.419, 0.458), (0.504, 0.5), (0.138, 0.676), (0.217, 0.504)]
+
+    def test_a_car_pulling_out_of_the_driveway_too_briskly_to_be_tagged_is_not(self):
+        # Andrew's Tesla, 2026-09-24 15:40: no zone tag, the path starts at the driveway's edge.
+        leaving = [(0.391, 0.547), (0.402, 0.56), (0.456, 0.526), (0.516, 0.499), (0.577, 0.467), (0.638, 0.451), (0.709, 0.44), (0.78, 0.444), (0.859, 0.461), (0.914, 0.482)]
+        event = self.street(data={"box": [0.308, 0.344, 0.24, 0.197], "path_data": [[[x, y], 0.0] for x, y in leaving]})
+        self.assertTrue(relay.is_passing_street_car(event, ["driveway"]), "without the outline it looks like street traffic")
+        self.assertFalse(relay.is_passing_street_car(event, ["driveway"], [self.DRIVEWAY]))
+
+    def test_a_car_on_the_far_side_of_the_street_stays_street_traffic_with_the_outline_known(self):
+        self.assertTrue(relay.is_passing_street_car(self.street(), ["driveway"], [self.DRIVEWAY]))
+
+    def test_distance_to_a_polygon(self):
+        square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)]
+        self.assertEqual(0.0, relay.distance_to_polygon((0.5, 0.5), square))
+        self.assertAlmostEqual(0.25, relay.distance_to_polygon((1.25, 0.5), square))
+        self.assertEqual([(0.1, 0.2), (0.3, 0.4), (0.5, 0.6)], relay.zone_polygon({"coordinates": "0.1,0.2,0.3,0.4,0.5,0.6"}))
+        self.assertEqual([], relay.zone_polygon({}))
+
     def test_a_car_that_entered_the_driveway_is_not(self):
         self.assertFalse(relay.is_passing_street_car(self.street(zones=["driveway"]), ["driveway"]))
 

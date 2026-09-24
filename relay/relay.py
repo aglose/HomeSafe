@@ -308,6 +308,7 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
 
 _required_zones: dict[str, list[str]] = {}
 _car_zones: dict[str, list[str]] = {}
+_car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
 _config_loaded_at = 0.0
 
 
@@ -316,14 +317,30 @@ def zones_wanting(cam: dict[str, Any], label: str) -> list[str]:
     return [name for name, zone in (cam.get("zones") or {}).items() if not (zone or {}).get("objects") or label in zone["objects"]]
 
 
+def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
+    """A zone's `coordinates` ("x1,y1,x2,y2,...", fractions of the frame) as points; empty when it has none."""
+    raw = (zone or {}).get("coordinates") or ""
+    if isinstance(raw, list):
+        raw = ",".join(str(v) for v in raw)
+    try:
+        values = [float(v) for v in str(raw).split(",") if v.strip()]
+    except ValueError:
+        return []
+    return list(zip(values[0::2], values[1::2]))
+
+
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
             cameras = cfg.get("cameras", {})
             _required_zones = {name: (cam.get("review", {}).get("alerts", {}).get("required_zones") or []) for name, cam in cameras.items()}
             _car_zones = {name: zones_wanting(cam, "car") for name, cam in cameras.items()}
+            _car_zone_polygons = {
+                name: [p for p in (zone_polygon((cam.get("zones") or {}).get(z)) for z in _car_zones[name]) if len(p) >= 3]
+                for name, cam in cameras.items()
+            }
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -339,6 +356,12 @@ def car_zones() -> dict[str, list[str]]:
     """Per camera, the zones a car counts as in — on the Front Yard, the driveway. Empty for a camera with none."""
     refresh_config()
     return _car_zones
+
+
+def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
+    """Per camera, the outlines of the zones in `car_zones`."""
+    refresh_config()
+    return _car_zone_polygons
 
 
 def recent_review(severity: str) -> list[dict[str, Any]]:
@@ -666,6 +689,8 @@ STREET_MIN_TRAVEL = 0.2
 # A household car the tracker lost on its way out of the driveway is still ours: nothing within
 # this long of a car in a car zone is filed.
 STREET_CLEAR_SECONDS = 180.0
+# Nor anything whose path came this close to a car zone's outline (frame fractions).
+STREET_ZONE_MARGIN = 0.05
 RETRAIN_AFTER = int(os.environ.get("RETRAIN_AFTER", "60"))
 RETRAIN_EVERY_SECONDS = 24 * 3600.0
 
@@ -730,10 +755,27 @@ def path_travel(event: dict[str, Any]) -> float:
     return max((((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 for ax, ay in points for bx, by in points), default=0.0)
 
 
-def is_passing_street_car(event: dict[str, Any], zones_for_car: list[str]) -> bool:
+def distance_to_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> float:
+    """0 inside the polygon, else the distance to its nearest edge, in frame fractions."""
+    x, y = point
+    inside = False
+    nearest = float("inf")
+    for (ax, ay), (bx, by) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (ay > y) != (by > y) and x < (bx - ax) * (y - ay) / (by - ay) + ax:
+            inside = not inside
+        dx, dy = bx - ax, by - ay
+        t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        nearest = min(nearest, ((x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2) ** 0.5)
+    return 0.0 if inside else nearest
+
+
+def is_passing_street_car(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]] = ()) -> bool:
     """
     A finished car event that is surely not one of ours: its camera has a zone for cars (so "in no
-    zone" means "not in the driveway"), it entered none, and it travelled across the frame.
+    zone" means "not in the driveway"), it entered none, it travelled across the frame, and no
+    point of its path came within STREET_ZONE_MARGIN of a car zone's outline. That last is not the
+    same as Frigate's tag: a zone only counts an object that stays in it for `inertia` frames, so a
+    car pulling briskly out of the driveway (Andrew's Tesla, 2026-09-24 15:40) never gets tagged.
     """
     return (
         event.get("label") == "car"
@@ -741,6 +783,7 @@ def is_passing_street_car(event: dict[str, Any], zones_for_car: list[str]) -> bo
         and bool(zones_for_car)
         and not any(z in zones_for_car for z in event.get("zones") or [])
         and path_travel(event) >= STREET_MIN_TRAVEL
+        and not any(distance_to_polygon(p, poly) <= STREET_ZONE_MARGIN for p in path_points(event) for poly in polygons)
     )
 
 
@@ -804,7 +847,7 @@ def file_street_crops() -> None:
         if event.get("end_time") is None:
             continue  # still going: look again later
         zones_for_car = zones.get(event.get("camera", ""), [])
-        if not is_passing_street_car(event, zones_for_car):
+        if not is_passing_street_car(event, zones_for_car, car_zone_polygons().get(event.get("camera", ""), [])):
             record_check(event_id, "street", "not-street")
             continue
         if car_zone_car_nearby(event, zones_for_car):
@@ -1004,8 +1047,13 @@ def second_opinions() -> None:
                      event_id, camera, name, score, summary_text, time.time() - started, action, new_name or "")
 
 
+# While Ollama is still downloading (hours on the box's Wi-Fi), ask again this often rather than every round.
+VLM_RETRY_SECONDS = 600.0
+
+
 def car_check_forever() -> None:
     vlm_ready = False
+    vlm_tried_at = 0.0
     while True:
         try:
             file_street_crops()
@@ -1014,7 +1062,9 @@ def car_check_forever() -> None:
             log.warning("street crops: %s", e)
         if OLLAMA and HOUSEHOLD_CARS:
             try:
-                vlm_ready = vlm_ready or ensure_vlm_model()
+                if not vlm_ready and time.time() - vlm_tried_at >= VLM_RETRY_SECONDS:
+                    vlm_tried_at = time.time()
+                    vlm_ready = ensure_vlm_model()
                 if vlm_ready:
                     second_opinions()
             except Exception as e:
