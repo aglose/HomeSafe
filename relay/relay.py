@@ -991,19 +991,34 @@ def car_picture(event: dict[str, Any]) -> bytes | None:
     return out.getvalue()
 
 
+_vlm_pulling = threading.Event()
+
+
+def pull_vlm_model() -> None:
+    """Downloads VLM_MODEL into Ollama. Hours over the box's Wi-Fi, so on a thread of its own; Ollama resumes a broken pull."""
+    try:
+        log.info("pulling %s into Ollama", VLM_MODEL)
+        r = requests.post(f"{OLLAMA}/api/pull", json={"model": VLM_MODEL, "stream": False}, timeout=None)
+        log.info("pull of %s: %s %s", VLM_MODEL, r.status_code, r.text[:200])
+    except Exception as e:
+        log.warning("pull of %s failed: %s", VLM_MODEL, e)
+    finally:
+        _vlm_pulling.clear()
+
+
 def ensure_vlm_model() -> bool:
-    """Pulls VLM_MODEL into Ollama the first time (about 3.3 GB); False while Ollama can't be reached."""
+    """True once Ollama has VLM_MODEL; until then starts one background pull at a time. False while Ollama can't be reached."""
     try:
         tags = requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models") or []
-        if any(m.get("name") == VLM_MODEL or m.get("model") == VLM_MODEL for m in tags):
-            return True
-        log.info("pulling %s into Ollama", VLM_MODEL)
-        r = requests.post(f"{OLLAMA}/api/pull", json={"model": VLM_MODEL, "stream": False}, timeout=3600)
-        log.info("pull of %s: %s %s", VLM_MODEL, r.status_code, r.text[:200])
-        return r.ok
     except Exception as e:
         log.warning("Ollama at %s unavailable: %s", OLLAMA, e)
         return False
+    if any(m.get("name") == VLM_MODEL or m.get("model") == VLM_MODEL for m in tags):
+        return True
+    if not _vlm_pulling.is_set():
+        _vlm_pulling.set()
+        threading.Thread(target=pull_vlm_model, name="vlm-pull", daemon=True).start()
+    return False
 
 
 def second_opinions() -> None:
