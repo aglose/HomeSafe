@@ -17,3 +17,19 @@ plugins {
     alias(libs.plugins.composeStabilityAnalyzer) apply false
     alias(libs.plugins.ktlint) apply false
 }
+
+// Kotlin/JS refuses to link a kotlin-test klib from a different compiler release, and some
+// dependency's JS variant still asks for the one from the previous Kotlin version. Nothing
+// else requests kotlin-test on that classpath, so Gradle would keep the stale one; pin every
+// kotlin-test artifact to the compiler's version instead.
+val kotlinVersion = libs.versions.kotlin.get()
+subprojects {
+    configurations.configureEach {
+        resolutionStrategy.eachDependency {
+            if (requested.group == "org.jetbrains.kotlin" && requested.name.startsWith("kotlin-test")) {
+                useVersion(kotlinVersion)
+                because("kotlin-test must match the Kotlin compiler version")
+            }
+        }
+    }
+}
