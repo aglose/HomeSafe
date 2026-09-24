@@ -49,9 +49,9 @@
         <error line="109" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
-        <error line="85" column="5" source="compose:modifier-missing-check" />
-        <error line="86" column="5" source="compose:lambda-param-in-effect" />
-        <error line="86" column="5" source="compose:parameter-naming" />
+        <error line="96" column="5" source="compose:modifier-missing-check" />
+        <error line="97" column="5" source="compose:lambda-param-in-effect" />
+        <error line="97" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
         <error line="83" column="5" source="compose:modifier-missing-check" />

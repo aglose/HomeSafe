@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -80,6 +81,16 @@ data class DebugAutofillCredentials(
     val username: String,
     val password: String,
 )
+
+/**
+ * Handles on the sign-in form for tests: Compose UI tests find the fields by these, and on Android
+ * (where MainActivity sets `testTagsAsResourceId`) UiAutomator and Android CLI journeys see them
+ * as resource ids. The URL field starts filled in, so it has no placeholder text to find it by.
+ */
+const val SIGN_IN_SERVER_URL_TEST_TAG = "sign_in_server_url"
+const val SIGN_IN_USERNAME_TEST_TAG = "sign_in_username"
+const val SIGN_IN_PASSWORD_TEST_TAG = "sign_in_password"
+const val SIGN_IN_CONNECT_TEST_TAG = "sign_in_connect"
 
 @Composable
 fun SecureConnectionScreen(
@@ -240,6 +251,7 @@ fun SecureConnectionScreen(
                             leadingIcon = Icons.Filled.Dns,
                             extraColors = extraColors,
                             enabled = !isConnecting,
+                            modifier = Modifier.testTag(SIGN_IN_SERVER_URL_TEST_TAG),
                         )
                         Text(
                             text = "Your NVR's Tailscale address — works from anywhere.",
@@ -257,6 +269,7 @@ fun SecureConnectionScreen(
                         leadingIcon = Icons.Filled.Person,
                         extraColors = extraColors,
                         enabled = !isConnecting,
+                        modifier = Modifier.testTag(SIGN_IN_USERNAME_TEST_TAG),
                     )
 
                     // Password input
@@ -267,6 +280,7 @@ fun SecureConnectionScreen(
                         leadingIcon = Icons.Filled.Lock,
                         extraColors = extraColors,
                         enabled = !isConnecting,
+                        modifier = Modifier.testTag(SIGN_IN_PASSWORD_TEST_TAG),
                         visualTransformation = PasswordVisualTransformation(),
                     )
 
@@ -320,6 +334,7 @@ fun SecureConnectionScreen(
                         onClick = { viewModel.connect(serverUrl, username, password) },
                         enabled = !isConnecting,
                         modifier = Modifier
+                            .testTag(SIGN_IN_CONNECT_TEST_TAG)
                             .fillMaxWidth()
                             .height(56.dp),
                         shape = RoundedCornerShape(12.dp),
@@ -434,12 +449,13 @@ private fun ConnectionTextField(
     leadingIcon: ImageVector,
     extraColors: FrigateExtraColors,
     enabled: Boolean,
+    modifier: Modifier = Modifier,
     visualTransformation: VisualTransformation = VisualTransformation.None,
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth(),
         enabled = enabled,
         placeholder = { Text(placeholder) },
         leadingIcon = {

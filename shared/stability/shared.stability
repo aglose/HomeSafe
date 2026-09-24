@@ -516,7 +516,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ConnectionRouteBadge(rou
     - route: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.ConnectionTextField(value: kotlin.String, onValueChange: kotlin.Function1<kotlin.String, kotlin.Unit>, placeholder: kotlin.String, leadingIcon: androidx.compose.ui.graphics.vector.ImageVector, extraColors: com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors, enabled: kotlin.Boolean, visualTransformation: androidx.compose.ui.text.input.VisualTransformation): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.ConnectionTextField(value: kotlin.String, onValueChange: kotlin.Function1<kotlin.String, kotlin.Unit>, placeholder: kotlin.String, leadingIcon: androidx.compose.ui.graphics.vector.ImageVector, extraColors: com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors, enabled: kotlin.Boolean, modifier: androidx.compose.ui.Modifier, visualTransformation: androidx.compose.ui.text.input.VisualTransformation): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -526,6 +526,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ConnectionTextField(valu
     - leadingIcon: STABLE (marked @Stable or @Immutable)
     - extraColors: STABLE (marked @Stable or @Immutable)
     - enabled: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
     - visualTransformation: STABLE (marked @Stable or @Immutable)
 
 @Composable

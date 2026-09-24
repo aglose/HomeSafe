@@ -48,6 +48,9 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -503,6 +506,9 @@ private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick
             .clip(CircleShape)
             .let { if (isSelected) it.background(MaterialTheme.colorScheme.primaryContainer) else it }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            // Which tab is up, for accessibility services and tests alike.
+            .semantics { selected = isSelected }
+            .testTag(bottomNavTestTag(route))
             .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -511,3 +517,9 @@ private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick
         Text(text = route.label, style = MaterialTheme.typography.labelMedium, color = contentColor)
     }
 }
+
+/**
+ * The bottom nav item for [route], for tests (and, on Android, UiAutomator as a resource id). Its
+ * label alone is ambiguous: "Home" and "Settings" also appear as text inside the tabs.
+ */
+fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_${route.label.lowercase()}"
