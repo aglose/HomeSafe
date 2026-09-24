@@ -57,8 +57,14 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
 - Wait for anything that follows an action with `awaitText`, `awaitNode`, `awaitGone` or `awaitUntil`, and tap with
   `tap(...)`. These helpers advance the clock a frame at a time while real network responses land. Don't assert
   straight after an action.
+- Bring an off-screen node into view with `scrollIntoView(...)`, or `revealInList(...)` for an item of a lazy list.
+  Don't use `performScrollTo()` or `performScrollToNode()`. Semantic scrolls are animated, a frozen clock never
+  plays the animation, and `performScrollTo()` keeps trying until the node is in view, so it never returns.
 - A wait that times out fails with the semantics tree and the fake server's request log. On CI that failure message
   is usually all you need.
+- `runAppJourney` takes the app off screen and plays out a few frames before it returns. On Android the test
+  environment runs any frame still pending at teardown on the test thread, where its layout pass races the main
+  thread's drawing and crashes the process.
 - Per-area steps live in robots (`SignInRobot`, `ShellRobot`, and the Home, Moments and Settings ones).
 
 On the JVM, the journeys keep the desktop app's database in `shared/build/tmp/jvmTest/homesafe-data`, not
