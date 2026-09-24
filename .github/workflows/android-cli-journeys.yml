@@ -1,0 +1,111 @@
+name: Android CLI journeys
+
+# The natural-language journeys in androidApp/src/journeysTest, run on an emulator by an agent
+# through the Android CLI (see scripts/run-android-cli-journeys.sh and docs/testing.md).
+#
+# Not part of ci-green: an agent evaluates each step from what is on screen, which costs model
+# tokens and is not deterministic, so this runs on demand and weekly rather than on every push.
+# The deterministic suites (Compose UI tests, integration journeys, MainActivity E2E) are in ci.yml.
+# Needs the ANTHROPIC_API_KEY repository secret; without it the job says so and stops.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 6 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-cli-journeys-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  journeys:
+    name: Android CLI journeys (emulator)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      API_LEVEL: 34
+    steps:
+      - name: Check for an agent API key
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::ANTHROPIC_API_KEY is not set; skipping the Android CLI journeys."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v7
+        if: steps.key.outputs.present == 'true'
+      - uses: actions/setup-java@v6
+        if: steps.key.outputs.present == 'true'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        if: steps.key.outputs.present == 'true'
+        with:
+          cache-read-only: true
+
+      - name: Build the debug app and the fake Frigate
+        if: steps.key.outputs.present == 'true'
+        run: ./gradlew :androidApp:assembleDebug :fake-frigate:installDist --stacktrace
+
+      # On the runner, where the emulator reaches it at 10.0.2.2 — the address the journeys type.
+      - name: Start the fake Frigate
+        if: steps.key.outputs.present == 'true'
+        run: |
+          mkdir -p build/journeys
+          nohup fake-frigate/build/install/fake-frigate/bin/fake-frigate --port 8971 --host 0.0.0.0 --advertise 10.0.2.2 \
+            > build/journeys/fake-frigate.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8971/api/version && exit 0
+            sleep 1
+          done
+          echo "::error::The fake Frigate did not start"; cat build/journeys/fake-frigate.log; exit 1
+
+      - name: Install the Android CLI and Claude Code
+        if: steps.key.outputs.present == 'true'
+        run: |
+          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install_root.sh | sudo bash
+          printf -- '--sdk=%s\n--no-metrics\n' "$ANDROID_HOME" > ~/.androidrc
+          android --version
+          npm install -g @anthropic-ai/claude-code
+          # Installs the android-cli skill (with its journeys reference) for the agents it finds.
+          android init
+          android skills add android-cli || true
+
+      - name: Enable KVM
+        if: steps.key.outputs.present == 'true'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run the journeys
+        if: steps.key.outputs.present == 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: |
+            adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
+            ./scripts/run-android-cli-journeys.sh
+
+      - uses: actions/upload-artifact@v7
+        if: always() && steps.key.outputs.present == 'true'
+        with:
+          name: android-cli-journeys
+          path: build/journeys/**
+          retention-days: 14
