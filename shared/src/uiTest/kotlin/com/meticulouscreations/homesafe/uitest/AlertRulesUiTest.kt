@@ -19,7 +19,6 @@ import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.AlertPreset
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
@@ -154,7 +153,7 @@ class AlertRulesUiTest {
 
     /** Scrolls [node] into view and lets the scroll finish, since the clock only moves by hand here. */
     private fun ComposeUiTest.reveal(node: SemanticsNodeInteraction): SemanticsNodeInteraction {
-        node.performScrollTo()
+        scrollIntoView(node)
         mainClock.advanceTimeBy(SETTLE_MS)
         return node
     }

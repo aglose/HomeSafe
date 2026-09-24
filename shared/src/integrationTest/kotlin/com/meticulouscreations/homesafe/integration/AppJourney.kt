@@ -3,10 +3,6 @@ package com.meticulouscreations.homesafe.integration
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.semantics.SemanticsActions
-import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
@@ -19,14 +15,12 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.printToString
 import androidx.compose.ui.test.v2.runComposeUiTest
-import androidx.compose.ui.unit.toSize
 import com.meticulouscreations.homesafe.App
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
-import kotlin.math.abs
-import kotlin.math.sign
+import com.meticulouscreations.homesafe.uitest.scrollIntoView
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -240,27 +234,17 @@ internal class AppJourney(
     }
 
     /**
-     * Scrolls the nearest scrollable ancestor until the node matching [matcher] sits inside its
-     * viewport. Not `performScrollTo()`: that loops until the node is in view, but a semantic
-     * scroll is an animation, which a frozen clock never plays, so the loop spins forever (it hung
-     * the desktop job). This scrolls one step, lets the animation play out, and looks again.
+     * Scrolls the node matching [matcher] into view, a step at a time (see the shared
+     * [com.meticulouscreations.homesafe.uitest.scrollIntoView]; not `performScrollTo()`, which
+     * never returns under the frozen clock).
      */
     fun scrollIntoView(matcher: SemanticsMatcher, description: String = matcher.description) {
         awaitNode(matcher, description)
-        repeat(MAX_SCROLL_STEPS) {
-            val node = ui.onAllNodes(matcher).fetchSemanticsNodes().first()
-            val scroller = generateSequence(node.parent) { it.parent }
-                .firstOrNull { SemanticsActions.ScrollBy in it.config } ?: return
-            val viewport = scroller.boundsInRoot
-            val target = Rect(node.positionInRoot, node.size.toSize())
-            fun delta(start: Float, end: Float): Float = if (sign(start) == sign(end)) (if (abs(start) < abs(end)) start else end) else 0f
-            val dx = if (scroller.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange) != null) delta(target.left - viewport.left, target.right - viewport.right) else 0f
-            val dy = if (scroller.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange) != null) delta(target.top - viewport.top, target.bottom - viewport.bottom) else 0f
-            if (abs(dx) < 1f && abs(dy) < 1f) return
-            ui.runOnUiThread { scroller.config[SemanticsActions.ScrollBy].action?.invoke(dx, dy) }
-            settle(SCROLL_SETTLE)
+        try {
+            ui.scrollIntoView(ui.onAllNodes(matcher).onFirst()) { settle(SCROLL_SETTLE) }
+        } catch (error: AssertionError) {
+            throw AssertionError("Couldn't scroll $description into view.\n${diagnostics()}", error)
         }
-        throw AssertionError("Couldn't scroll $description into view.\n${diagnostics()}")
     }
 
     /** Taps the one node matching [matcher] once the screen has settled on it, then lets the tap's effects start. */
@@ -288,7 +272,6 @@ internal class AppJourney(
         private val TAP_SETTLE: Duration = 500.milliseconds
         private const val FRAME_MILLIS = 16L
         private const val DIAGNOSTIC_REQUESTS = 30
-        private const val MAX_SCROLL_STEPS = 12
         private val SCROLL_SETTLE: Duration = 600.milliseconds
     }
 }
