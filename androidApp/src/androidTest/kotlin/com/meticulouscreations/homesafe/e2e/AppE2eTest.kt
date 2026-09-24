@@ -9,9 +9,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import com.meticulouscreations.homesafe.MainActivity
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -159,6 +162,12 @@ class AppE2eTest {
             app.signIn()
             app.openTab(TopLevelRoute.Settings)
             val event = server.state.events.first { it.camera == "back_yard" }
+            var running: MainActivity? = null
+            var launchIntent: Intent? = null
+            scenario.onActivity {
+                running = it
+                launchIntent = it.intent
+            }
 
             // singleTask: the tap reaches the running Activity's onNewIntent, not a second instance.
             val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -166,7 +175,22 @@ class AppE2eTest {
 
             app.awaitCameraScreen("Back Yard")
             app.awaitSelected(TopLevelRoute.Home)
-            app.awaitUntil("the same Activity to be back in front") { scenario.state == Lifecycle.State.RESUMED }
+            // Not scenario.state: ActivityScenario follows its Activity by the Intent that launched
+            // it, and onNewIntent's setIntent() swapped that out, so the scenario lost sight of it
+            // at the pause that came before the new intent.
+            app.awaitUntil("the one resumed MainActivity to be the instance that was already running") {
+                resumedActivities().let { it.size == 1 && it.single() === running }
+            }
+            // Hand the launch Intent back so the scenario sees the Activity finish when it closes.
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { running?.intent = launchIntent }
         }
+    }
+
+    private fun resumedActivities(): List<android.app.Activity> {
+        var resumed: List<android.app.Activity> = emptyList()
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            resumed = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList()
+        }
+        return resumed
     }
 }
