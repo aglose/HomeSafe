@@ -44,15 +44,60 @@ internal fun runAppJourney(
 ) = runComposeUiTest(testTimeout = JOURNEY_TIMEOUT) {
     FakeFrigateServer(state).start().use { server ->
         val graph = createAppGraph(testPlatformContext())
+        val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
         try {
             mainClock.autoAdvance = false
             setContent { App(graph) }
             AppJourney(this, server, graph).block()
+        } catch (interrupted: InterruptedException) {
+            throw AssertionError(
+                "The journey was stuck for $JOURNEY_WATCHDOG and was interrupted. Every thread at that moment:\n${watchdog.threadDump}" +
+                    "\n--- Last requests to the fake server ---\n  " + server.requests.takeLast(20).joinToString("\n  "),
+                interrupted,
+            )
         } finally {
+            watchdog.cancel()
             // Each journey builds its own graph; don't leave this one's detection poller running beside the next.
             graph.detectionAlertService.stop()
         }
     }
+}
+
+/**
+ * Interrupts [testThread] if the journey is still running after [limit], having first taken
+ * every thread's stack. A journey that blocks outright (a wait on the UI thread that never
+ * returns, say) would otherwise sit there until CI kills the whole job, with nothing in the log
+ * to say where; `runTest`'s own timeout can't fire while the test thread is blocked.
+ */
+private class JourneyWatchdog(testThread: Thread, limit: Duration) {
+    @Volatile
+    var threadDump: String = ""
+        private set
+
+    private val timer = Thread({
+        try {
+            Thread.sleep(limit.inWholeMilliseconds)
+        } catch (_: InterruptedException) {
+            return@Thread
+        }
+        threadDump = Thread.getAllStackTraces().entries.joinToString("\n") { (thread, frames) ->
+            "\"${thread.name}\" ${thread.state}\n" + frames.take(40).joinToString("\n") { "    at $it" }
+        }
+        // Straight to the process's own stderr as well, past the test runner's capture: if the
+        // UI thread is wedged, tearing the test down can hang too and the failure never be reported.
+        runCatching {
+            java.io.FileOutputStream(java.io.FileDescriptor.err).apply {
+                write("\n=== Stuck journey on ${testThread.name}; every thread:\n$threadDump\n===\n".toByteArray())
+                flush()
+            }
+        }
+        testThread.interrupt()
+    }, "journey-watchdog").apply {
+        isDaemon = true
+        start()
+    }
+
+    fun cancel() = timer.interrupt()
 }
 
 /**
@@ -187,3 +232,6 @@ internal class AppJourney(
 
 /** A whole journey, sign-in included; well past the sum of its steps so a slow emulator fails on a step, not on this. */
 private val JOURNEY_TIMEOUT: Duration = 5.minutes
+
+/** How long a journey may run before it is presumed stuck and interrupted with a thread dump. */
+private val JOURNEY_WATCHDOG: Duration = 4.minutes
