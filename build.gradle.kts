@@ -22,7 +22,8 @@ plugins {
 // dependency's JS variant still asks for the one from the previous Kotlin version. Nothing
 // else requests kotlin-test on that classpath, so Gradle would keep the stale one; pin every
 // kotlin-test artifact to the compiler's version instead.
-val kotlinVersion = libs.versions.kotlin.get()
+// asProvider(): "kotlin" is also the prefix of "kotlin-wrappers", so the bare accessor is a group.
+val kotlinVersion = libs.versions.kotlin.asProvider().get()
 subprojects {
     configurations.configureEach {
         resolutionStrategy.eachDependency {
