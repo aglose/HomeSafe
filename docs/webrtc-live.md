@@ -106,7 +106,7 @@ join work from a phone:
      webrtc:
        listen: ":8555"
        candidates:
-         - 192.168.68.66:8555     # LAN (wlo1)
+         - 192.168.68.65:8555     # LAN (eno2, wired via the camera switch)
          - 100.99.163.71:8555     # Tailscale (tailscale0)
        ice_servers: []            # host candidates only, no outbound STUN
    ```
@@ -119,8 +119,8 @@ join work from a phone:
 
    ```bash
    sudo ufw allow in on tailscale0 proto udp to any port 8555 comment 'go2rtc WebRTC ICE/UDP via Tailscale'
-   sudo ufw allow in on wlo1 from 192.168.68.0/22 proto udp to any port 8555 comment 'go2rtc WebRTC ICE/UDP from LAN'
-   sudo ufw allow in on wlo1 from 192.168.68.0/22 proto tcp to any port 8555 comment 'go2rtc WebRTC ICE/TCP from LAN'
+   sudo ufw allow in on eno2 from 192.168.68.0/22 proto udp to any port 8555 comment 'go2rtc WebRTC ICE/UDP from LAN'
+   sudo ufw allow in on eno2 from 192.168.68.0/22 proto tcp to any port 8555 comment 'go2rtc WebRTC ICE/TCP from LAN'
    ```
 
 Smoke test before blaming the app: open Frigate's own web UI on the phone, switch a camera's live
