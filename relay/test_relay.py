@@ -470,6 +470,185 @@ class CarCheckTest(unittest.TestCase):
         self.assertAlmostEqual(1.0, x + w)
         self.assertAlmostEqual(0.35, y + h)
 
+    def test_a_car_arriving_in_or_leaving_the_driveway_is_near_one_parked_throughout_is_not(self):
+        street = self.street(start_time=10_000.0, end_time=10_030.0)
+        def visit(start, end, zones=("driveway",)):
+            return [{"id": "v", "zones": list(zones), "start_time": start, "end_time": end}]
+        self.assertTrue(relay.car_zone_came_or_went(street, ["driveway"], visit(10_100.0, 10_400.0)), "arrived just after")
+        self.assertTrue(relay.car_zone_came_or_went(street, ["driveway"], visit(10_000.0 - 5 * 3600, 9_900.0)), "left after five hours parked")
+        self.assertTrue(relay.car_zone_came_or_went(street, ["driveway"], visit(10_050.0, None)), "arrived and still there")
+        self.assertFalse(relay.car_zone_came_or_went(street, ["driveway"], visit(5_000.0, None)), "parked right through")
+        self.assertFalse(relay.car_zone_came_or_went(street, ["driveway"], visit(5_000.0, 20_000.0)), "parked right through")
+        self.assertFalse(relay.car_zone_came_or_went(street, ["driveway"], visit(9_000.0, 9_500.0)), "left well before")
+        self.assertFalse(relay.car_zone_came_or_went(street, ["driveway"], visit(10_000.0, 10_030.0, zones=["front_lawn"])))
+        self.assertFalse(relay.car_zone_came_or_went(street, ["driveway"], [dict(street, zones=["driveway"])]), "not itself")
+
+
+class _Response:
+    def __init__(self, status=200, body=None):
+        self.status_code, self._body, self.ok = status, body, status < 400
+        self.text = repr(body)
+
+    def json(self):
+        return self._body
+
+    def raise_for_status(self):
+        if not self.ok:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+
+class CarCheckAgainstFrigate(unittest.TestCase):
+    """The car check's rounds against a fake Frigate: what it files, writes off, retries and leaves alone."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in (
+            "DB_PATH", "CONN", "CLIPS_DIR", "CAR_CLASSIFIER", "STREET_NONE_MAX", "RETRAIN_AFTER", "HOUSEHOLD_CARS",
+            "car_zones", "car_zone_polygons", "describe_car", "car_picture")}
+        self._requests = (relay.requests.get, relay.requests.post)
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.CLIPS_DIR = self._dir.name
+        relay.CAR_CLASSIFIER = "known_cars"
+        relay.car_zones = lambda: {"hikvision_1": ["driveway"]}
+        relay.car_zone_polygons = lambda: {}
+        relay.requests.get, relay.requests.post = self.get, self.post
+        self.events = {}  # id -> the event, or the status Frigate answers for it
+        self.visits = []  # what /api/events lists
+        self.posts = []
+        self.refuse = set()
+        self.now = time.time()
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        relay.requests.get, relay.requests.post = self._requests
+        self._dir.cleanup()
+
+    def get(self, url, params=None, timeout=None):
+        if url.endswith("/api/events"):
+            p = params or {}
+            return _Response(200, [
+                v for v in self.visits
+                if p.get("after", float("-inf")) < v["start_time"] < p.get("before", float("inf"))
+                and ("min_length" not in p or (v["end_time"] is not None and v["end_time"] - v["start_time"] >= p["min_length"]))
+            ])
+        found = self.events.get(url.rsplit("/", 1)[1], 404)
+        return _Response(found) if isinstance(found, int) else _Response(200, found)
+
+    def post(self, url, json=None, timeout=None):
+        self.posts.append((url, json))
+        return _Response(400 if any(part in url for part in self.refuse) else 200, {})
+
+    def street_car(self, age=600.0, crops=2):
+        start = self.now - age
+        event_id = f"{start:.6f}-abc{len(self.events)}"
+        self.events[event_id] = {"id": event_id, "label": "car", "camera": "hikvision_1", "start_time": start, "end_time": start + 20, "zones": [],
+                                 "data": {"box": [0.6, 0.25, 0.14, 0.1], "path_data": [[[x, y], 0.0] for x, y in DRIVE_PATH]}}
+        train = os.path.join(self._dir.name, "known_cars", "train")
+        os.makedirs(train, exist_ok=True)
+        for i in range(crops):
+            open(os.path.join(train, f"{event_id}-{start + i:.6f}-andrews_tesla-0.98.webp"), "wb").close()
+        return event_id
+
+    def verdict(self, event_id, kind="street"):
+        row = relay.with_db(lambda c: c.execute("SELECT verdict FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone())
+        return row and row[0]
+
+    def categorized(self):
+        return [body["training_file"] for url, body in self.posts if url.endswith("/categorize")]
+
+    def test_the_none_cap_counts_every_crop_it_moves(self):
+        none = os.path.join(self._dir.name, "known_cars", "dataset", "none")
+        os.makedirs(none)
+        for i in range(2):
+            open(os.path.join(none, f"{i}.webp"), "wb").close()
+        relay.STREET_NONE_MAX = 3
+        self.street_car(age=900.0)
+        self.street_car(age=600.0)
+        relay.file_street_crops()
+        self.assertEqual(1, len(self.categorized()))
+
+    def test_a_car_frigate_hasnt_written_yet_is_looked_at_again(self):
+        young = self.street_car(age=60.0)
+        self.events[young] = 404
+        broken = self.street_car(age=7200.0)
+        self.events[broken] = 503
+        old = self.street_car(age=7200.0 + 1)
+        self.events[old] = 404
+        relay.file_street_crops()
+        self.assertIsNone(self.verdict(young))
+        self.assertIsNone(self.verdict(broken))
+        self.assertEqual("gone", self.verdict(old))
+
+    def test_a_car_that_left_after_hours_in_the_driveway_keeps_a_street_car_out(self):
+        passing = self.street_car()
+        start = self.events[passing]["start_time"]
+        self.visits = [{"id": "parked", "zones": ["driveway"], "start_time": start - 5 * 3600, "end_time": start + 10}]
+        relay.file_street_crops()
+        self.assertEqual("near-car-zone", self.verdict(passing))
+        self.assertEqual([], self.categorized())
+
+    def test_a_car_parked_right_through_doesnt_keep_a_street_car_out(self):
+        passing = self.street_car()
+        start = self.events[passing]["start_time"]
+        self.visits = [{"id": "parked", "zones": ["driveway"], "start_time": start - 5 * 3600, "end_time": None},
+                       {"id": "earlier", "zones": ["driveway"], "start_time": start - 4 * 3600, "end_time": start - 3 * 3600}]
+        relay.file_street_crops()
+        self.assertEqual("filed", self.verdict(passing))
+        self.assertEqual(2, len(self.categorized()))
+
+    def test_a_retrain_frigate_refuses_is_asked_for_again_an_hour_later(self):
+        relay.RETRAIN_AFTER = 2
+        for i in range(2):
+            relay.record_check(f"e{i}", "street", "filed")
+        self.refuse.add("/train")
+        relay.maybe_retrain()
+        self.assertIsNone(relay.state_get("car_retrain_at"))
+        relay.maybe_retrain()
+        self.assertEqual(1, len(self.posts), "not every round")
+        relay.state_set("car_retrain_tried_at", self.now - relay.RETRAIN_RETRY_SECONDS - 1)
+        self.refuse.clear()
+        relay.maybe_retrain()
+        self.assertEqual(2, len(self.posts))
+        self.assertIsNotNone(relay.state_get("car_retrain_at"))
+
+    def driveway_car(self):
+        car = {"id": f"{self.now - 300:.6f}-drv1", "label": "car", "camera": "hikvision_1", "zones": ["driveway"],
+               "start_time": self.now - 300, "end_time": self.now - 200, "sub_label": "andrews_tesla", "data": {"sub_label_score": 0.98, "box": [0.3, 0.4, 0.2, 0.2]}}
+        self.events[car["id"]] = car
+        self.visits = [car]
+        relay.HOUSEHOLD_CARS = CarCheckTest.CARS
+        relay.car_picture = lambda event: b"jpeg"
+        relay.describe_car = lambda jpeg: {"colour": "red", "make": "tesla", "model": "", "body": "suv", "delivery": "none"}
+        return car
+
+    def sub_labels(self):
+        return [body for url, body in self.posts if url.endswith("/sub_label")]
+
+    def test_a_person_tagging_the_car_while_the_model_looks_is_left_alone(self):
+        car = self.driveway_car()
+        def tagged_meanwhile(jpeg):
+            self.events[car["id"]] = dict(car, data={"sub_label_score": 1.0})
+            return {"colour": "red", "make": "tesla", "model": "", "body": "suv", "delivery": "none"}
+        relay.describe_car = tagged_meanwhile
+        relay.second_opinions()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual("person", self.verdict(car["id"], "vlm"))
+
+    def test_a_verdict_frigate_refuses_is_tried_again(self):
+        car = self.driveway_car()
+        self.refuse.add("/sub_label")
+        relay.second_opinions()
+        self.assertIsNone(self.verdict(car["id"], "vlm"))
+        self.refuse.clear()
+        relay.second_opinions()
+        self.assertEqual([{"subLabel": "sarahs_car", "subLabelScore": relay.VLM_SCORE}] * 2, self.sub_labels())
+        self.assertEqual("relabel", self.verdict(car["id"], "vlm"))
+
 
 class BootReportTest(unittest.TestCase):
     HEALTHY = {"frigate": True, "cameras": {"hikvision_1": 5.0, "hikvision_2": 5.0, "amcrest_1": 5.1}, "recording_mb": 3_700_000, "vlm": True}
