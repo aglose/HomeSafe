@@ -545,11 +545,19 @@ MOVED_MIN_POINTS = 4
 MOTION_WAIT_CAP_SECONDS = 600.0
 
 
+def fetch_event(event_id: str) -> dict[str, Any] | None:
+    """One tracked object from `/api/events/{id}`, with its box and path; None if Frigate has no such event, raises if it couldn't say."""
+    r = requests.get(f"{FRIGATE}/api/events/{event_id}", timeout=5)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json()
+
+
 def event_detail(event_id: str) -> dict[str, Any] | None:
-    """One tracked object from `/api/events/{id}`, with its box and path; None if Frigate can't say."""
+    """`fetch_event`, but None whenever Frigate can't say."""
     try:
-        r = requests.get(f"{FRIGATE}/api/events/{event_id}", timeout=5)
-        return r.json() if r.ok else None
+        return fetch_event(event_id)
     except Exception as e:
         log.warning("event %s lookup failed: %s", event_id, e)
         return None
@@ -691,8 +699,21 @@ STREET_MIN_TRAVEL = 0.2
 STREET_CLEAR_SECONDS = 180.0
 # Nor anything whose path came this close to a car zone's outline (frame fractions).
 STREET_ZONE_MARGIN = 0.05
+# Frigate's `/api/events` filters on start time alone, so a visit that ends in that window is
+# found in two looks: every visit that began up to this long before it, and, among the visits of
+# at least this length, those that began up to CAR_ZONE_LONGEST_VISIT before it. A parked car is
+# re-registered every so often; the longest visit in the week to 2026-09-25 was 2.8 h.
+CAR_ZONE_RECENT_SECONDS = 1800.0
+CAR_ZONE_LONGEST_VISIT_SECONDS = 24 * 3600.0
+# Past a full page of either, the relay can't say. The driveway sees ~650 car visits a day.
+CAR_ZONE_PAGE = 200
+# Frigate answers 404 for a car it is still tracking (the row is written later), so a crop's event
+# is only given up on once it began this long ago.
+STREET_GONE_AFTER_SECONDS = 3600.0
 RETRAIN_AFTER = int(os.environ.get("RETRAIN_AFTER", "60"))
 RETRAIN_EVERY_SECONDS = 24 * 3600.0
+# A retrain Frigate refused (or never answered) is asked for again after this long, not every round.
+RETRAIN_RETRY_SECONDS = 3600.0
 
 OLLAMA = os.environ.get("OLLAMA_URL", "").rstrip("/")
 # The Instruct build: plain `qwen3-vl:4b` is the Thinking one, which spends seconds reasoning first.
@@ -787,20 +808,47 @@ def is_passing_street_car(event: dict[str, Any], zones_for_car: list[str], polyg
     )
 
 
+def clear_window(event: dict[str, Any]) -> tuple[float, float]:
+    """The stretch around a street car in which a car-zone car arriving or leaving makes it possibly ours."""
+    return event["start_time"] - STREET_CLEAR_SECONDS, (event.get("end_time") or event["start_time"]) + STREET_CLEAR_SECONDS
+
+
+def car_zone_came_or_went(event: dict[str, Any], zones_for_car: list[str], others: list[dict[str, Any]]) -> bool:
+    """
+    Did any of `others` arrive in or leave a car zone within the street car's `clear_window`? A car
+    parked right through it did neither, so a driveway that is never empty still lets crops in.
+    """
+    start, end = clear_window(event)
+    return any(
+        e.get("id") != event.get("id")
+        and set(e.get("zones") or []) & set(zones_for_car)
+        and any(t is not None and start <= float(t) <= end for t in (e.get("start_time"), e.get("end_time")))
+        for e in others
+    )
+
+
 def car_zone_car_nearby(event: dict[str, Any], zones_for_car: list[str]) -> bool:
-    """Was any car in a car zone on the same camera within STREET_CLEAR_SECONDS of this one? True when Frigate can't say."""
+    """Did a car arrive in or leave a car zone on the same camera within STREET_CLEAR_SECONDS of this one? True when Frigate can't say."""
+    start, end = clear_window(event)
+    base = {"camera": event["camera"], "label": "car", "zones": ",".join(zones_for_car), "limit": CAR_ZONE_PAGE}
+    looks = [
+        {"after": start - CAR_ZONE_RECENT_SECONDS, "before": end},
+        {"after": start - CAR_ZONE_LONGEST_VISIT_SECONDS, "before": start - CAR_ZONE_RECENT_SECONDS, "min_length": CAR_ZONE_RECENT_SECONDS},
+    ]
+    others = []
     try:
-        r = requests.get(f"{FRIGATE}/api/events", params={
-            "camera": event["camera"], "label": "car", "zones": ",".join(zones_for_car),
-            "after": event["start_time"] - STREET_CLEAR_SECONDS,
-            "before": (event.get("end_time") or event["start_time"]) + STREET_CLEAR_SECONDS,
-            "limit": 5,
-        }, timeout=10)
-        r.raise_for_status()
-        return any(e.get("id") != event.get("id") and set(e.get("zones") or []) & set(zones_for_car) for e in r.json())
+        for params in looks:
+            r = requests.get(f"{FRIGATE}/api/events", params={**base, **params}, timeout=10)
+            r.raise_for_status()
+            page = r.json()
+            if len(page) >= CAR_ZONE_PAGE:
+                log.warning("car-zone lookup for %s: a full page, can't say", event.get("id"))
+                return True
+            others += page
     except Exception as e:
         log.warning("car-zone lookup for %s failed: %s", event.get("id"), e)
         return True
+    return car_zone_came_or_went(event, zones_for_car, others)
 
 
 def dataset_count(model: str, category: str) -> int:
@@ -823,10 +871,9 @@ def checked(event_id: str, kind: str) -> bool:
 def file_street_crops() -> None:
     """Moves queued crops of passing street cars into `none`, within the hourly and total caps."""
     model = CAR_CLASSIFIER
-    if dataset_count(model, "none") >= STREET_NONE_MAX:
-        return
+    room = STREET_NONE_MAX - dataset_count(model, "none")
     budget = STREET_NONE_PER_HOUR - filed_since("street", time.time() - 3600)
-    if budget <= 0:
+    if room <= 0 or budget <= 0:
         return
     train = os.path.join(CLIPS_DIR, model, "train")
     by_event: dict[str, list[str]] = {}
@@ -835,14 +882,20 @@ def file_street_crops() -> None:
         if event_id and name.endswith(".webp"):
             by_event.setdefault(event_id, []).append(name)
     zones = car_zones()
+    unreachable = 0
     for event_id, files in by_event.items():
-        if budget <= 0:
+        if budget <= 0 or room <= 0:
             break
         if checked(event_id, "street"):
             continue
-        event = event_detail(event_id)
+        try:
+            event = fetch_event(event_id)
+        except Exception:
+            unreachable += 1  # look again next round
+            continue
         if event is None:
-            record_check(event_id, "street", "gone")  # Frigate never kept it
+            if time.time() - float(event_id.split("-")[0]) >= STREET_GONE_AFTER_SECONDS:
+                record_check(event_id, "street", "gone")  # Frigate never kept it
             continue
         if event.get("end_time") is None:
             continue  # still going: look again later
@@ -854,22 +907,32 @@ def file_street_crops() -> None:
             record_check(event_id, "street", "near-car-zone")
             continue
         moved = 0
-        for name in files[:STREET_CROPS_PER_EVENT]:
+        for name in files[:min(STREET_CROPS_PER_EVENT, room)]:
             r = requests.post(f"{FRIGATE}/api/classification/{model}/dataset/categorize",
                               json={"category": "none", "training_file": name}, timeout=10)
             moved += r.ok
         record_check(event_id, "street", "filed" if moved else "failed", str(moved))
         budget -= 1
+        room -= moved
         log.info("street car %s: %d crop(s) filed as %s/none (named %s)", event_id, moved, model, event.get("sub_label"))
+    if unreachable:
+        log.warning("street crops: %d event(s) couldn't be looked up, trying again next round", unreachable)
 
 
 def maybe_retrain() -> None:
     """Retrains the classifier once a day, when at least RETRAIN_AFTER street crops went in since the last one."""
+    now = time.time()
     last = state_get("car_retrain_at") or 0.0
-    if time.time() - last < RETRAIN_EVERY_SECONDS or filed_since("street", last) < RETRAIN_AFTER:
+    if now - last < RETRAIN_EVERY_SECONDS or filed_since("street", last) < RETRAIN_AFTER:
         return
+    if now - (state_get("car_retrain_tried_at") or 0.0) < RETRAIN_RETRY_SECONDS:
+        return
+    state_set("car_retrain_tried_at", now)
     r = requests.post(f"{FRIGATE}/api/classification/{CAR_CLASSIFIER}/train", timeout=30)
-    state_set("car_retrain_at", time.time())
+    if not r.ok:
+        log.warning("retrain of %s refused, trying again in %.0f min: %s %s", CAR_CLASSIFIER, RETRAIN_RETRY_SECONDS / 60, r.status_code, r.text[:200])
+        return
+    state_set("car_retrain_at", now)
     log.info("retrain of %s requested after %d new street crops: %s %s", CAR_CLASSIFIER, filed_since("street", last), r.status_code, r.text[:200])
 
 
@@ -1046,17 +1109,33 @@ def second_opinions() -> None:
                 continue  # the recording isn't on disk yet; next round
             started = time.time()
             description = describe_car(picture)
+            # The model can take a minute or two: judge the name the event has now, so a person's tag
+            # given meanwhile is left alone. Frigate has no conditional update, so milliseconds remain.
+            try:
+                event = fetch_event(event_id)
+            except Exception as e:
+                log.warning("car %s: lookup after the model failed, trying again next round: %s", event_id, e)
+                continue
+            if event is None:
+                continue  # deleted meanwhile
             name, score = sub_label_of(event)
+            if score is not None and score >= 1.0:
+                record_check(event_id, "vlm", "person", json.dumps({"was": name, "score": score, "saw": description}))
+                continue
             matches = household_matches(description, HOUSEHOLD_CARS)
             action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
-            if action != "keep":
-                requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label",
-                              json={"subLabel": new_name or "", "subLabelScore": VLM_SCORE if new_name else None}, timeout=10)
             summary_text = " ".join(v for v in (description.get("colour"), description.get("make"), description.get("model"), description.get("body")) if v and v not in ("unknown", "other"))
             if description.get("delivery") not in (None, "none"):
                 summary_text += f" ({description['delivery']})"
-            if summary_text.strip():
-                requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10)
+            try:
+                if action != "keep":
+                    requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label",
+                                  json={"subLabel": new_name or "", "subLabelScore": VLM_SCORE if new_name else None}, timeout=10).raise_for_status()
+                if summary_text.strip():
+                    requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10).raise_for_status()
+            except Exception as e:
+                log.warning("car %s: Frigate didn't take the verdict (%s %s), trying again next round: %s", event_id, action, new_name or "", e)
+                continue
             record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description}))
             log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s",
                      event_id, camera, name, score, summary_text, time.time() - started, action, new_name or "")
