@@ -328,16 +328,16 @@ class MomentsRepositoryImplTest {
                 list.isNotEmpty()
             }
 
-            // The drive-through is its own card; the arrival and the two curb sightings are one, still in progress.
-            assertEquals(listOf("drive", "first"), list.map { it.id })
-            val parked = list[1]
+            // The arrival and the two curb sightings are one card, still in progress. The drive-through
+            // is gone: a name doesn't keep a car that only drove down the birds-only street, because
+            // passing traffic is what the classifier misnames (see inZones).
+            assertEquals(listOf("first"), list.map { it.id })
+            val parked = list.single()
             assertEquals(3, parked.sightings)
             assertEquals(true, parked.isInProgress, "the latest sighting hadn't ended")
             assertEquals("sarahs_tesla", parked.subLabel, "the surest name across the sightings")
             assertEquals(0.997, parked.subLabelScore!!, 0.0001)
             assertEquals(0.75, parked.box!!.x, 0.001)
-            assertEquals(1, list[0].sightings)
-            assertEquals(0.91, list[0].subLabelScore!!, 0.001)
         } finally {
             Harness.config = null
         }

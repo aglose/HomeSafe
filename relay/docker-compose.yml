@@ -18,9 +18,52 @@ services:
       RELAY_DB: /data/relay.db
       POLL_SECONDS: "5"
       CLIPS_DIR: /clips
+      # The car check (relay.py, "car check"): files passing street cars' crops into the
+      # classifier's `none` class, and asks the vision model below about cars in the driveway.
+      CAR_CLASSIFIER: known_cars
+      OLLAMA_URL: http://127.0.0.1:11434
+      VLM_MODEL: qwen3-vl:4b-instruct
+      # How each household car looks, by the classifier's category, checked against its training
+      # images 2026-09-24. A colour list is every colour a camera may see it as. A car missing here is never judged.
+      HOUSEHOLD_CARS: >-
+        {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]},
+         "sarahs_car": {"make": "tesla", "colour": "red"},
+         "yayas_car": {"colour": ["white", "silver"]},
+         "in-laws_mercedes": {"make": "mercedes", "colour": "silver"}}
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
       - ./data:/data
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.
       - /mnt/surveillance/frigate/clips:/clips
+
+  # Local vision model for the car check's second opinion. The relay pulls qwen3-vl:4b-instruct
+  # (3.3 GB, ~4.5 GB of VRAM with its context) the first time it runs. One model, one request at a
+  # time: the GPU is shared with Frigate's detector and decoders.
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    logging:
+      driver: journald
+      options:
+        tag: "{{.Name}}"
+    ports:
+      - "127.0.0.1:11434:11434"
+    environment:
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes:
+      - ollama:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  ollama:

@@ -107,6 +107,9 @@ def db() -> sqlite3.Connection:
     )
     conn.execute("CREATE TABLE IF NOT EXISTS sent (review_id TEXT PRIMARY KEY, sent_at REAL, body TEXT)")
     conn.execute("CREATE TABLE IF NOT EXISTS state (key TEXT PRIMARY KEY, value TEXT)")
+    # What the car check (see `car_check_forever`) made of each event, so it looks at each once:
+    # kind "street" (was it a passing car to file under `none`) or "vlm" (the second opinion).
+    conn.execute("CREATE TABLE IF NOT EXISTS car_checks (event_id TEXT, kind TEXT, at REAL, verdict TEXT, detail TEXT, PRIMARY KEY (event_id, kind))")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -304,20 +307,61 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
 # ---------------------------------------------------------------- Frigate
 
 _required_zones: dict[str, list[str]] = {}
+_car_zones: dict[str, list[str]] = {}
+_car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
 _config_loaded_at = 0.0
 
 
-def required_zones() -> dict[str, list[str]]:
-    global _required_zones, _config_loaded_at
+def zones_wanting(cam: dict[str, Any], label: str) -> list[str]:
+    """The camera's zones that count `label` as inside: Frigate tags a zone only when its `objects` is empty or names the label."""
+    return [name for name, zone in (cam.get("zones") or {}).items() if not (zone or {}).get("objects") or label in zone["objects"]]
+
+
+def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
+    """A zone's `coordinates` ("x1,y1,x2,y2,...", fractions of the frame) as points; empty when it has none."""
+    raw = (zone or {}).get("coordinates") or ""
+    if isinstance(raw, list):
+        raw = ",".join(str(v) for v in raw)
+    try:
+        values = [float(v) for v in str(raw).split(",") if v.strip()]
+    except ValueError:
+        return []
+    return list(zip(values[0::2], values[1::2]))
+
+
+def refresh_config() -> None:
+    global _required_zones, _car_zones, _car_zone_polygons, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
-            _required_zones = {name: (cam.get("review", {}).get("alerts", {}).get("required_zones") or []) for name, cam in cfg.get("cameras", {}).items()}
+            cameras = cfg.get("cameras", {})
+            _required_zones = {name: (cam.get("review", {}).get("alerts", {}).get("required_zones") or []) for name, cam in cameras.items()}
+            _car_zones = {name: zones_wanting(cam, "car") for name, cam in cameras.items()}
+            _car_zone_polygons = {
+                name: [p for p in (zone_polygon((cam.get("zones") or {}).get(z)) for z in _car_zones[name]) if len(p) >= 3]
+                for name, cam in cameras.items()
+            }
             _config_loaded_at = time.time()
-        except Exception as e:  # keep the last known map
+        except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
             _config_loaded_at = time.time() - CONFIG_REFRESH_SECONDS + 30
+
+
+def required_zones() -> dict[str, list[str]]:
+    refresh_config()
     return _required_zones
+
+
+def car_zones() -> dict[str, list[str]]:
+    """Per camera, the zones a car counts as in — on the Front Yard, the driveway. Empty for a camera with none."""
+    refresh_config()
+    return _car_zones
+
+
+def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
+    """Per camera, the outlines of the zones in `car_zones`."""
+    refresh_config()
+    return _car_zone_polygons
 
 
 def recent_review(severity: str) -> list[dict[str, Any]]:
@@ -614,6 +658,435 @@ def poll_forever() -> None:
         time.sleep(POLL_SECONDS)
 
 
+# ---------------------------------------------------------------- car check
+
+# Measured on the Front Yard 2026-09-23: Frigate's car classifier (`known_cars`) named 45-89% of
+# the cars driving past as one of the household's, almost always "andrews_tesla" at ~0.98. It
+# judges a 55-124 px crop of the detect frame, and its only picture of "every other car in the
+# world" is the `none` class. Two jobs here chip at that, both off unless configured:
+#
+# - Street crops into `none`. Frigate queues a crop of every car it tries to classify
+#   (`clips/<model>/train/`), keeps only the newest 200, and a passing car on the street is,
+#   by construction, not one of ours. So crops of cars that entered no car zone, travelled across
+#   the frame, and had no car in a car zone near them in time are filed into `none`, a few an
+#   hour so the class spans day, dusk and infrared night — and the model is retrained once a day
+#   when enough have been added.
+# - A second opinion on cars in a car zone (the driveway), from a local vision model through
+#   Ollama. It looks at the car in the 4K recording rather than the detect frame (~6x the pixels),
+#   and answers a closed set — colour, make, body — which is then matched against what the
+#   household's cars look like (HOUSEHOLD_CARS). It only ever vetoes or corrects the classifier:
+#   a name that contradicts what the car looks like is replaced by the one household car that
+#   fits, or cleared; it never names a car the classifier left unnamed, and never touches a name a
+#   person gave (score 1.0, from the app's car tagging). No appearance can tell our dark blue Model Y
+#   from a neighbour's; this catches the red hatchback called "Andrew's Tesla".
+CAR_CLASSIFIER = os.environ.get("CAR_CLASSIFIER", "")
+STREET_NONE_MAX = int(os.environ.get("STREET_NONE_MAX", "600"))
+STREET_NONE_PER_HOUR = int(os.environ.get("STREET_NONE_PER_HOUR", "12"))
+# Crops of one car are near-duplicates; two is variety enough.
+STREET_CROPS_PER_EVENT = 2
+# A car must cross this much of the frame (bottom-centre path, fractions) to count as passing.
+STREET_MIN_TRAVEL = 0.2
+# A household car the tracker lost on its way out of the driveway is still ours: nothing within
+# this long of a car in a car zone is filed.
+STREET_CLEAR_SECONDS = 180.0
+# Nor anything whose path came this close to a car zone's outline (frame fractions).
+STREET_ZONE_MARGIN = 0.05
+RETRAIN_AFTER = int(os.environ.get("RETRAIN_AFTER", "60"))
+RETRAIN_EVERY_SECONDS = 24 * 3600.0
+
+OLLAMA = os.environ.get("OLLAMA_URL", "").rstrip("/")
+# The Instruct build: plain `qwen3-vl:4b` is the Thinking one, which spends seconds reasoning first.
+VLM_MODEL = os.environ.get("VLM_MODEL", "qwen3-vl:4b-instruct")
+# {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}, ...}: how each household car
+# looks, keyed by the classifier's category. `colour` is one colour or a list of the ones a camera
+# might see it as (dark blue reads as black at dusk). A car missing here is never judged.
+HOUSEHOLD_CARS: dict[str, dict[str, str]] = json.loads(os.environ.get("HOUSEHOLD_CARS", "{}") or "{}")
+# Below a person's 1.0 (the app's tags), above nothing the classifier needs to beat.
+VLM_SCORE = 0.9
+# A car still in view is judged once it has been tracked this long: the classifier's attempts
+# are over within seconds, and a parked car's event can stay open for hours.
+VLM_SETTLE_SECONDS = 60.0
+# Recordings reach disk a segment behind; past this age an event with no frame is given up on.
+VLM_GIVE_UP_SECONDS = 15 * 60.0
+VLM_CROP_EDGE = 640
+CAR_CHECK_SECONDS = 30.0
+
+COLOURS = ["white", "black", "grey", "silver", "red", "blue", "green", "brown", "beige", "gold", "yellow", "orange", "purple", "unknown"]
+MAKES = [
+    "tesla", "toyota", "honda", "ford", "chevrolet", "nissan", "hyundai", "kia", "subaru", "mazda", "volkswagen",
+    "bmw", "mercedes", "audi", "lexus", "jeep", "ram", "gmc", "dodge", "rivian", "volvo", "porsche", "mini", "other", "unknown",
+]
+BODIES = ["sedan", "suv", "hatchback", "pickup", "van", "minivan", "coupe", "wagon", "convertible", "motorcycle", "truck", "other"]
+DELIVERY = ["none", "amazon", "ups", "fedex", "usps", "dhl", "other"]
+# Grey and silver are one colour to a camera at dusk.
+COLOUR_GROUPS = {"silver": "grey"}
+
+VLM_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "colour": {"type": "string", "enum": COLOURS},
+        "make": {"type": "string", "enum": MAKES},
+        "model": {"type": "string"},
+        "body": {"type": "string", "enum": BODIES},
+        "delivery": {"type": "string", "enum": DELIVERY},
+    },
+    "required": ["colour", "make", "model", "body", "delivery"],
+}
+VLM_PROMPT = (
+    "This is a crop from a home security camera. Describe the vehicle in the centre of the picture. "
+    "If the picture is black-and-white infrared night footage, answer colour \"unknown\". "
+    "Answer make \"unknown\" unless a badge or an unmistakable shape shows it. "
+    "model is the model name if you can tell (\"Model Y\", \"Camry\"), else an empty string. "
+    "delivery is the company if it is a marked delivery vehicle, else \"none\"."
+)
+
+
+def train_crop_event(file_name: str) -> str | None:
+    """The event a queued crop belongs to: Frigate names them `<event id>-<frame time>-<label>-<score>.webp`."""
+    parts = file_name.split("-")
+    if len(parts) < 5 or not EVENT_ID.fullmatch(f"{parts[0]}-{parts[1]}"):
+        return None
+    return f"{parts[0]}-{parts[1]}"
+
+
+def path_travel(event: dict[str, Any]) -> float:
+    """How far apart the two most distant points of the object's path are, in frame fractions."""
+    points = path_points(event)
+    return max((((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 for ax, ay in points for bx, by in points), default=0.0)
+
+
+def distance_to_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> float:
+    """0 inside the polygon, else the distance to its nearest edge, in frame fractions."""
+    x, y = point
+    inside = False
+    nearest = float("inf")
+    for (ax, ay), (bx, by) in zip(polygon, polygon[1:] + polygon[:1]):
+        if (ay > y) != (by > y) and x < (bx - ax) * (y - ay) / (by - ay) + ax:
+            inside = not inside
+        dx, dy = bx - ax, by - ay
+        t = 0.0 if dx == dy == 0 else max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)))
+        nearest = min(nearest, ((x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2) ** 0.5)
+    return 0.0 if inside else nearest
+
+
+def is_passing_street_car(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]] = ()) -> bool:
+    """
+    A finished car event that is surely not one of ours: its camera has a zone for cars (so "in no
+    zone" means "not in the driveway"), it entered none, it travelled across the frame, and no
+    point of its path came within STREET_ZONE_MARGIN of a car zone's outline. That last is not the
+    same as Frigate's tag: a zone only counts an object that stays in it for `inertia` frames, so a
+    car pulling briskly out of the driveway (Andrew's Tesla, 2026-09-24 15:40) never gets tagged.
+    """
+    return (
+        event.get("label") == "car"
+        and event.get("end_time") is not None
+        and bool(zones_for_car)
+        and not any(z in zones_for_car for z in event.get("zones") or [])
+        and path_travel(event) >= STREET_MIN_TRAVEL
+        and not any(distance_to_polygon(p, poly) <= STREET_ZONE_MARGIN for p in path_points(event) for poly in polygons)
+    )
+
+
+def car_zone_car_nearby(event: dict[str, Any], zones_for_car: list[str]) -> bool:
+    """Was any car in a car zone on the same camera within STREET_CLEAR_SECONDS of this one? True when Frigate can't say."""
+    try:
+        r = requests.get(f"{FRIGATE}/api/events", params={
+            "camera": event["camera"], "label": "car", "zones": ",".join(zones_for_car),
+            "after": event["start_time"] - STREET_CLEAR_SECONDS,
+            "before": (event.get("end_time") or event["start_time"]) + STREET_CLEAR_SECONDS,
+            "limit": 5,
+        }, timeout=10)
+        r.raise_for_status()
+        return any(e.get("id") != event.get("id") and set(e.get("zones") or []) & set(zones_for_car) for e in r.json())
+    except Exception as e:
+        log.warning("car-zone lookup for %s failed: %s", event.get("id"), e)
+        return True
+
+
+def dataset_count(model: str, category: str) -> int:
+    folder = os.path.join(CLIPS_DIR, model, "dataset", category)
+    return len(os.listdir(folder)) if os.path.isdir(folder) else 0
+
+
+def filed_since(kind: str, since: float) -> int:
+    return with_db(lambda c: c.execute("SELECT COUNT(*) FROM car_checks WHERE kind=? AND verdict='filed' AND at>=?", (kind, since)).fetchone()[0])
+
+
+def record_check(event_id: str, kind: str, verdict: str, detail: str = "") -> None:
+    with_db(lambda c: (c.execute("INSERT OR REPLACE INTO car_checks VALUES (?,?,?,?,?)", (event_id, kind, time.time(), verdict, detail)), c.commit()))
+
+
+def checked(event_id: str, kind: str) -> bool:
+    return with_db(lambda c: c.execute("SELECT 1 FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone()) is not None
+
+
+def file_street_crops() -> None:
+    """Moves queued crops of passing street cars into `none`, within the hourly and total caps."""
+    model = CAR_CLASSIFIER
+    if dataset_count(model, "none") >= STREET_NONE_MAX:
+        return
+    budget = STREET_NONE_PER_HOUR - filed_since("street", time.time() - 3600)
+    if budget <= 0:
+        return
+    train = os.path.join(CLIPS_DIR, model, "train")
+    by_event: dict[str, list[str]] = {}
+    for name in sorted(os.listdir(train)) if os.path.isdir(train) else []:
+        event_id = train_crop_event(name)
+        if event_id and name.endswith(".webp"):
+            by_event.setdefault(event_id, []).append(name)
+    zones = car_zones()
+    for event_id, files in by_event.items():
+        if budget <= 0:
+            break
+        if checked(event_id, "street"):
+            continue
+        event = event_detail(event_id)
+        if event is None:
+            record_check(event_id, "street", "gone")  # Frigate never kept it
+            continue
+        if event.get("end_time") is None:
+            continue  # still going: look again later
+        zones_for_car = zones.get(event.get("camera", ""), [])
+        if not is_passing_street_car(event, zones_for_car, car_zone_polygons().get(event.get("camera", ""), [])):
+            record_check(event_id, "street", "not-street")
+            continue
+        if car_zone_car_nearby(event, zones_for_car):
+            record_check(event_id, "street", "near-car-zone")
+            continue
+        moved = 0
+        for name in files[:STREET_CROPS_PER_EVENT]:
+            r = requests.post(f"{FRIGATE}/api/classification/{model}/dataset/categorize",
+                              json={"category": "none", "training_file": name}, timeout=10)
+            moved += r.ok
+        record_check(event_id, "street", "filed" if moved else "failed", str(moved))
+        budget -= 1
+        log.info("street car %s: %d crop(s) filed as %s/none (named %s)", event_id, moved, model, event.get("sub_label"))
+
+
+def maybe_retrain() -> None:
+    """Retrains the classifier once a day, when at least RETRAIN_AFTER street crops went in since the last one."""
+    last = state_get("car_retrain_at") or 0.0
+    if time.time() - last < RETRAIN_EVERY_SECONDS or filed_since("street", last) < RETRAIN_AFTER:
+        return
+    r = requests.post(f"{FRIGATE}/api/classification/{CAR_CLASSIFIER}/train", timeout=30)
+    state_set("car_retrain_at", time.time())
+    log.info("retrain of %s requested after %d new street crops: %s %s", CAR_CLASSIFIER, filed_since("street", last), r.status_code, r.text[:200])
+
+
+def sub_label_of(event: dict[str, Any]) -> tuple[str | None, float | None]:
+    """The event's name and how sure its giver was; Frigate has sent `sub_label` both as a string and as `[name, score]`."""
+    sub = event.get("sub_label")
+    score = (event.get("data") or {}).get("sub_label_score")
+    if isinstance(sub, list):
+        sub, score = (sub + [None, None])[:2]
+    return (sub or None), (float(score) if score is not None else None)
+
+
+def second_opinion_due(event: dict[str, Any], zones_for_car: list[str], now: float) -> bool:
+    """A car in a car zone, done or settled, whose name no person gave."""
+    _, score = sub_label_of(event)
+    return (
+        event.get("label") == "car"
+        and any(z in zones_for_car for z in event.get("zones") or [])
+        and (event.get("end_time") is not None or now - float(event.get("start_time") or now) >= VLM_SETTLE_SECONDS)
+        and (score is None or score < 1.0)
+    )
+
+
+def last_sighting(event: dict[str, Any]) -> tuple[float, tuple[float, float, float, float]] | None:
+    """
+    When and where to look at the car: the time of its last path point, and its box moved so its
+    bottom centre sits on that point (the path is where it ended up; the box, from its best frame,
+    is how big it is). None without a box.
+    """
+    box = (event.get("data") or {}).get("box")
+    if not box or len(box) < 4 or box[2] <= 0 or box[3] <= 0:
+        return None
+    w, h = float(box[2]), float(box[3])
+    samples = [s for s in (event.get("data") or {}).get("path_data") or [] if isinstance(s, list) and len(s) >= 2]
+    if samples:
+        (fx, fy), t = samples[-1][0], float(samples[-1][1])
+    else:
+        fx, fy, t = float(box[0]) + w / 2, float(box[1]) + h, float(event.get("start_time") or 0)
+    return t, (fx - w / 2, fy - h, w, h)
+
+
+def vlm_crop_box(box: tuple[float, float, float, float], margin: float = 0.25) -> tuple[float, float, float, float]:
+    """The box grown by `margin` of its size on every side and kept inside the frame: room for a box from another frame."""
+    x, y, w, h = box
+    left, top = max(0.0, x - w * margin), max(0.0, y - h * margin)
+    right, bottom = min(1.0, x + w * (1 + margin)), min(1.0, y + h * (1 + margin))
+    return left, top, right - left, bottom - top
+
+
+def household_matches(description: dict[str, str], cars: dict[str, dict[str, str]]) -> list[str]:
+    """The household cars the description fits. Unknown colour or make (infrared, no badge) rules nothing out."""
+    def group(colour: str) -> str:
+        return COLOUR_GROUPS.get(colour, colour)
+    colour, make = description.get("colour", "unknown"), description.get("make", "unknown")
+    fits = []
+    for name, looks in cars.items():
+        if looks.get("make") and make not in ("unknown", "other") and make != looks["make"]:
+            continue
+        wanted = looks.get("colour") or []
+        wanted = [wanted] if isinstance(wanted, str) else wanted
+        if wanted and colour != "unknown" and group(colour) not in {group(c) for c in wanted}:
+            continue
+        fits.append(name)
+    return fits
+
+
+def second_opinion_verdict(name: str | None, matches: list[str], cars: dict[str, dict[str, str]], make: str = "unknown") -> tuple[str, str | None]:
+    """
+    What to do with the classifier's name given the cars the picture fits: ("keep", name),
+    ("relabel", other name) or ("clear", None). An unnamed car, or a name with no description to
+    check it against, is kept as it is — this only vetoes and corrects. A wrong name is replaced
+    only by the one household car that fits *and* whose make the model read off the picture;
+    fitting on colour alone ("some white car") is not enough to call it anyone's.
+    """
+    if not name or name.lower() in ("none", "unknown") or name not in cars:
+        return "keep", name
+    if name in matches:
+        return "keep", name
+    if len(matches) == 1 and cars[matches[0]].get("make") == make:
+        return "relabel", matches[0]
+    return "clear", None
+
+
+def describe_car(jpeg: bytes) -> dict[str, str]:
+    import base64
+
+    r = requests.post(f"{OLLAMA}/api/chat", json={
+        "model": VLM_MODEL,
+        "messages": [{"role": "user", "content": VLM_PROMPT, "images": [base64.b64encode(jpeg).decode()]}],
+        "format": VLM_SCHEMA,
+        "stream": False,
+        "keep_alive": "24h",
+        "options": {"temperature": 0, "num_ctx": 4096},
+    }, timeout=120)
+    r.raise_for_status()
+    return json.loads(r.json()["message"]["content"])
+
+
+def car_picture(event: dict[str, Any]) -> bytes | None:
+    """The car cut out of the camera's full-resolution recording at its last sighting, long edge VLM_CROP_EDGE, as JPEG."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    sighting = last_sighting(event)
+    if sighting is None:
+        return None
+    t, box = sighting
+    r = requests.get(f"{FRIGATE}/api/{event['camera']}/recordings/{t:.1f}/snapshot.jpg", timeout=30)
+    if not r.ok:
+        return None
+    frame = Image.open(BytesIO(r.content)).convert("RGB")
+    x, y, w, h = vlm_crop_box(box)
+    crop = frame.crop((round(x * frame.width), round(y * frame.height), round((x + w) * frame.width), round((y + h) * frame.height)))
+    scale = VLM_CROP_EDGE / max(crop.width, crop.height)
+    crop = crop.resize((max(1, round(crop.width * scale)), max(1, round(crop.height * scale))), Image.LANCZOS)
+    out = BytesIO()
+    crop.save(out, format="JPEG", quality=92)
+    return out.getvalue()
+
+
+_vlm_pulling = threading.Event()
+
+
+def pull_vlm_model() -> None:
+    """Downloads VLM_MODEL into Ollama. Hours over the box's Wi-Fi, so on a thread of its own; Ollama resumes a broken pull."""
+    try:
+        log.info("pulling %s into Ollama", VLM_MODEL)
+        r = requests.post(f"{OLLAMA}/api/pull", json={"model": VLM_MODEL, "stream": False}, timeout=None)
+        log.info("pull of %s: %s %s", VLM_MODEL, r.status_code, r.text[:200])
+    except Exception as e:
+        log.warning("pull of %s failed: %s", VLM_MODEL, e)
+    finally:
+        _vlm_pulling.clear()
+
+
+def ensure_vlm_model() -> bool:
+    """True once Ollama has VLM_MODEL; until then starts one background pull at a time. False while Ollama can't be reached."""
+    try:
+        tags = requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models") or []
+    except Exception as e:
+        log.warning("Ollama at %s unavailable: %s", OLLAMA, e)
+        return False
+    if any(m.get("name") == VLM_MODEL or m.get("model") == VLM_MODEL for m in tags):
+        return True
+    if not _vlm_pulling.is_set():
+        _vlm_pulling.set()
+        threading.Thread(target=pull_vlm_model, name="vlm-pull", daemon=True).start()
+    return False
+
+
+def second_opinions() -> None:
+    """Looks again at each settled car in a car zone from the last hour, once."""
+    now = time.time()
+    zones = car_zones()
+    for camera, zones_for_car in zones.items():
+        if not zones_for_car:
+            continue
+        r = requests.get(f"{FRIGATE}/api/events", params={
+            "camera": camera, "label": "car", "zones": ",".join(zones_for_car), "after": now - 3600, "limit": 50,
+        }, timeout=10)
+        r.raise_for_status()
+        for summary in r.json():
+            event_id = summary.get("id", "")
+            if checked(event_id, "vlm"):
+                continue
+            event = event_detail(event_id) or summary
+            if not second_opinion_due(event, zones_for_car, now):
+                continue
+            picture = car_picture(event)
+            if picture is None:
+                if now - float(event.get("start_time") or now) > VLM_GIVE_UP_SECONDS:
+                    record_check(event_id, "vlm", "no-frame")
+                continue  # the recording isn't on disk yet; next round
+            started = time.time()
+            description = describe_car(picture)
+            name, score = sub_label_of(event)
+            matches = household_matches(description, HOUSEHOLD_CARS)
+            action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
+            if action != "keep":
+                requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label",
+                              json={"subLabel": new_name or "", "subLabelScore": VLM_SCORE if new_name else None}, timeout=10)
+            summary_text = " ".join(v for v in (description.get("colour"), description.get("make"), description.get("model"), description.get("body")) if v and v not in ("unknown", "other"))
+            if description.get("delivery") not in (None, "none"):
+                summary_text += f" ({description['delivery']})"
+            if summary_text.strip():
+                requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10)
+            record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description}))
+            log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s",
+                     event_id, camera, name, score, summary_text, time.time() - started, action, new_name or "")
+
+
+# While Ollama is still downloading (hours on the box's Wi-Fi), ask again this often rather than every round.
+VLM_RETRY_SECONDS = 600.0
+
+
+def car_check_forever() -> None:
+    vlm_ready = False
+    vlm_tried_at = 0.0
+    while True:
+        try:
+            file_street_crops()
+            maybe_retrain()
+        except Exception as e:
+            log.warning("street crops: %s", e)
+        if OLLAMA and HOUSEHOLD_CARS:
+            try:
+                if not vlm_ready and time.time() - vlm_tried_at >= VLM_RETRY_SECONDS:
+                    vlm_tried_at = time.time()
+                    vlm_ready = ensure_vlm_model()
+                if vlm_ready:
+                    second_opinions()
+            except Exception as e:
+                log.warning("second opinion: %s", e)
+        time.sleep(CAR_CHECK_SECONDS)
+
+
 # ---------------------------------------------------------------- HTTP API
 
 app = FastAPI(title="HomeSafe relay")
@@ -707,6 +1180,8 @@ def startup() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     CONN = db()
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
+    if CAR_CLASSIFIER:
+        threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
