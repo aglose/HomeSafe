@@ -1,0 +1,8 @@
+[Unit]
+Description=HomeSafe uplink watchdog: get the box back onto the home network when the router stops answering
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/homesafe-uplink-watchdog.sh
+TimeoutStartSec=90

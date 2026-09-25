@@ -709,6 +709,8 @@ VLM_SETTLE_SECONDS = 60.0
 # Recordings reach disk a segment behind; past this age an event with no frame is given up on.
 VLM_GIVE_UP_SECONDS = 15 * 60.0
 VLM_CROP_EDGE = 640
+# A car takes ~1.5 s on the GPU; past this, something is wrong with where the model runs.
+VLM_SLOW_SECONDS = 10.0
 CAR_CHECK_SECONDS = 30.0
 
 COLOURS = ["white", "black", "grey", "silver", "red", "blue", "green", "brown", "beige", "gold", "yellow", "orange", "purple", "unknown"]
@@ -962,7 +964,10 @@ def describe_car(jpeg: bytes) -> dict[str, str]:
         "format": VLM_SCHEMA,
         "stream": False,
         "keep_alive": "24h",
-        "options": {"temperature": 0, "num_ctx": 4096},
+        # num_gpu 99: every layer on the GPU. On 2026-09-25 Ollama's first load put the whole model
+        # on the CPU with 6.9 GB of VRAM free (37 s a car instead of 1.5 s); this makes that a
+        # loud failure rather than a quiet slowdown.
+        "options": {"temperature": 0, "num_ctx": 4096, "num_gpu": 99},
     }, timeout=120)
     r.raise_for_status()
     return json.loads(r.json()["message"]["content"])
@@ -1058,8 +1063,11 @@ def second_opinions() -> None:
             if summary_text.strip():
                 requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10)
             record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description}))
+            took = time.time() - started
             log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s",
-                     event_id, camera, name, score, summary_text, time.time() - started, action, new_name or "")
+                     event_id, camera, name, score, summary_text, took, action, new_name or "")
+            if took > VLM_SLOW_SECONDS:
+                log.warning("vision model took %.0fs for one car: is Ollama running on the CPU? (docker logs ollama | grep load_tensors)", took)
 
 
 # While Ollama is still downloading (hours on the box's Wi-Fi), ask again this often rather than every round.
@@ -1085,6 +1093,105 @@ def car_check_forever() -> None:
             except Exception as e:
                 log.warning("second opinion: %s", e)
         time.sleep(CAR_CHECK_SECONDS)
+
+
+# ---------------------------------------------------------------- boot report
+
+# The box restarts now and then (a power cut, a kernel update, someone at the console), and until
+# 2026-09-25 the only way to learn how it came back was to notice the app had gone quiet. So once
+# per boot the relay looks around a few minutes in, when everything that is going to start has,
+# and pushes one line: all back, or what isn't. `/proc/uptime` in a container is the host's, so a
+# relay restart on its own (a deploy) is told apart from a reboot, and the boot is remembered in
+# `state` so a relay restarted later in the same boot doesn't report it twice.
+BOOT_REPORT_AFTER_SECONDS = 180.0
+# A relay that comes up later than this into a boot was restarted by itself, not by the boot.
+BOOT_REPORT_WINDOW_SECONDS = 900.0
+# The recording drive is 3.7 TB; the boot disk Frigate would fall back to writing on is 441 GB.
+RECORDING_DRIVE_MIN_MB = 1_000_000
+
+
+def household_zone() -> ZoneInfo | None:
+    """The time zone most registered phones say they are in; None when none says."""
+    zones = with_db(lambda c: [r[0] for r in c.execute("SELECT tz FROM devices WHERE tz IS NOT NULL AND tz != ''")])
+    for name in sorted(set(zones), key=zones.count, reverse=True):
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            continue
+    return None
+
+
+def clock_text(epoch: float, zone: ZoneInfo | None = None) -> str:
+    """ "5:33 PM" in [zone] (UTC when unknown, and then says so). """
+    moment = datetime.fromtimestamp(epoch, zone or timezone.utc)
+    text = moment.strftime("%I:%M %p").lstrip("0")
+    return text if zone else text + " UTC"
+
+
+def host_uptime() -> float:
+    with open("/proc/uptime") as f:
+        return float(f.read().split()[0])
+
+
+def boot_health() -> dict[str, Any]:
+    """What came back: Frigate's cameras and detector, where recordings are going, and the vision model."""
+    health: dict[str, Any] = {"frigate": False, "cameras": {}, "recording_mb": None, "vlm": None}
+    try:
+        stats = requests.get(f"{FRIGATE}/api/stats", timeout=10).json()
+        health["frigate"] = True
+        health["cameras"] = {name: float(cam.get("camera_fps") or 0) for name, cam in (stats.get("cameras") or {}).items()}
+        storage = (stats.get("service") or {}).get("storage") or {}
+        recordings = storage.get("/media/frigate/recordings") or {}
+        health["recording_mb"] = recordings.get("total")
+    except Exception as e:
+        log.warning("boot report: Frigate stats unavailable: %s", e)
+    if OLLAMA:
+        try:
+            tags = requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models") or []
+            health["vlm"] = any(m.get("name") == VLM_MODEL or m.get("model") == VLM_MODEL for m in tags)
+        except Exception:
+            health["vlm"] = False
+    return health
+
+
+def boot_report_text(health: dict[str, Any], booted_at: str) -> tuple[str, str]:
+    """("Server restarted", "Back since 5:33 PM · all 3 cameras · recording drive OK") — or the problems, first."""
+    problems = []
+    if not health.get("frigate"):
+        problems.append("Frigate isn't answering")
+    cameras = health.get("cameras") or {}
+    down = sorted(camera_name(name) for name, fps in cameras.items() if fps <= 0)
+    if down:
+        problems.append(f"no video from {', '.join(down)}")
+    total = health.get("recording_mb")
+    if health.get("frigate") and (total is None or total < RECORDING_DRIVE_MIN_MB):
+        problems.append("recordings aren't on the 4 TB drive")
+    if health.get("vlm") is False:
+        problems.append("vision model not loaded")
+    if problems:
+        return "Server restarted with problems", f"Back since {booted_at}: " + "; ".join(problems)
+    parts = [f"Back since {booted_at}", f"all {len(cameras)} cameras" if cameras else "no cameras configured", "recording drive OK"]
+    return "Server restarted", " · ".join(parts)
+
+
+def boot_report() -> None:
+    """Waits until BOOT_REPORT_AFTER_SECONDS into the boot, then pushes the report once per boot."""
+    try:
+        uptime = host_uptime()
+    except Exception as e:
+        log.warning("boot report: no uptime: %s", e)
+        return
+    booted = time.time() - uptime
+    if uptime > BOOT_REPORT_WINDOW_SECONDS:
+        return  # the relay restarted on its own; the box has been up a while
+    last = state_get("boot_reported")
+    if last is not None and abs(float(last) - booted) < 120:
+        return
+    time.sleep(max(0.0, BOOT_REPORT_AFTER_SECONDS - uptime))
+    title, body = boot_report_text(boot_health(), clock_text(booted, household_zone()))
+    result = broadcast(title, body, {"review_id": f"boot-{int(booted)}", "system": "boot"})
+    state_set("boot_reported", booted)
+    log.info("boot report: %s | %s | %s", title, body, result)
 
 
 # ---------------------------------------------------------------- HTTP API
@@ -1182,6 +1289,7 @@ def startup() -> None:
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
     if CAR_CLASSIFIER:
         threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
+    threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 

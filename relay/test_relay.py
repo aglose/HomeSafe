@@ -471,5 +471,32 @@ class CarCheckTest(unittest.TestCase):
         self.assertAlmostEqual(0.35, y + h)
 
 
+class BootReportTest(unittest.TestCase):
+    HEALTHY = {"frigate": True, "cameras": {"hikvision_1": 5.0, "hikvision_2": 5.0, "amcrest_1": 5.1}, "recording_mb": 3_700_000, "vlm": True}
+
+    def test_all_back(self):
+        self.assertEqual(("Server restarted", "Back since 5:33 PM · all 3 cameras · recording drive OK"),
+                         relay.boot_report_text(self.HEALTHY, "5:33 PM"))
+
+    def test_a_dead_camera_and_the_boot_disk_are_named(self):
+        health = dict(self.HEALTHY, cameras={"hikvision_1": 5.0, "amcrest_1": 0.0}, recording_mb=420_000)
+        title, body = relay.boot_report_text(health, "5:33 PM")
+        self.assertEqual("Server restarted with problems", title)
+        self.assertEqual("Back since 5:33 PM: no video from Front Door; recordings aren't on the 4 TB drive", body)
+
+    def test_frigate_down(self):
+        title, body = relay.boot_report_text({"frigate": False, "cameras": {}, "recording_mb": None, "vlm": None}, "5:33 PM")
+        self.assertEqual("Back since 5:33 PM: Frigate isn't answering", body)
+
+    def test_vision_model_missing_is_a_problem_only_when_ollama_is_configured(self):
+        self.assertIn("vision model not loaded", relay.boot_report_text(dict(self.HEALTHY, vlm=False), "5:33 PM")[1])
+        self.assertEqual("Server restarted", relay.boot_report_text(dict(self.HEALTHY, vlm=None), "5:33 PM")[0])
+
+    def test_clock_text(self):
+        from zoneinfo import ZoneInfo
+        self.assertEqual("5:33 PM", relay.clock_text(1790296380.0, ZoneInfo("America/Los_Angeles")))
+        self.assertEqual("12:33 AM UTC", relay.clock_text(1790296380.0))
+
+
 if __name__ == "__main__":
     unittest.main()
