@@ -109,10 +109,23 @@ join work from a phone:
          - 192.168.68.65:8555     # LAN (eno2, wired via the camera switch)
          - 100.99.163.71:8555     # Tailscale (tailscale0)
        ice_servers: []            # host candidates only, no outbound STUN
+       filters:
+         networks: [udp4, tcp4]   # IPv4 only; see below
    ```
 
-   Then `docker compose restart frigate`. Check the merged config at
-   `http://100.99.163.71:1984/api/config`.
+   Then `docker compose restart frigate`.
+
+   Keep the IPv4 filter. go2rtc binds UDP 8555 on every address one by one, and a single failed
+   bind aborts the whole WebRTC module: no `/api/webrtc` (404) and no UDP listener, so every
+   join falls back to HLS. On 2026-09-25 that happened on every boot, because Frigate starts
+   before the Docker bridge's IPv6 link-local address is ready (`listen udp
+   [fe80::…%br-…]:8555: bind: cannot assign requested address` in go2rtc's log). IPv4 addresses
+   are usable as soon as they exist, and one that doesn't exist yet is skipped rather than fatal.
+
+   Check that it came up: `ss -lunp | grep 8555` on the box should list a UDP socket per IPv4
+   address, and `docker exec frigate grep webrtc /dev/shm/logs/go2rtc/current` should show
+   `[webrtc] listen addr=:8555` and no `ERR`. Don't paste `:1984/api/config` or
+   `:1984/api/streams` output anywhere: both include the cameras' RTSP passwords.
 
 2. **Firewall.** ufw allowed 8555/tcp on Tailscale only. ICE prefers UDP and only falls back to
    TCP, so without the UDP rule a join "works" but with head-of-line blocking:
@@ -124,7 +137,11 @@ join work from a phone:
    ```
 
 Smoke test before blaming the app: open Frigate's own web UI on the phone, switch a camera's live
-view to WebRTC, and confirm it plays over both the LAN and Tailscale.
+view to WebRTC, and confirm it plays over both the LAN and Tailscale. From a computer on the
+LAN, `http://192.168.68.65:1984/` serves go2rtc's own pages. On one of them, a
+`RTCPeerConnection` with `iceServers: []` that POSTs its offer to
+`/api/webrtc?src=hikvision_1_sub` does the same join as the app. On 2026-09-25 that connected
+over UDP to 192.168.68.65:8555 with a 4 ms round trip and decoded 640x360 at 25 fps.
 
 The floor on first-frame time after ICE connects is the camera's keyframe interval: go2rtc starts
 a new consumer at the next keyframe, and these cameras send one every 2 s. Setting the I-frame
