@@ -4,7 +4,9 @@ services:
   homesafe-relay:
     build: .
     container_name: homesafe-relay
-    restart: unless-stopped
+    # always, not unless-stopped: a container someone once `docker stop`ped stays down across a
+    # reboot under unless-stopped (both containers did on 2026-09-09).
+    restart: always
     logging:
       driver: journald
       options:
@@ -43,7 +45,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
-    restart: unless-stopped
+    restart: always
     logging:
       driver: journald
       options:
