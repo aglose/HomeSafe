@@ -6,8 +6,15 @@ import com.meticulouscreations.homesafe.PlatformContext
 import kotlinx.coroutines.Dispatchers
 import java.io.File
 
+/**
+ * `~/.homesafe`, unless the `homesafe.dataDir` system property names somewhere else — which the
+ * JVM test task does, so the integration tests never touch a developer's real sign-in history.
+ */
+private fun appDataDir(): File =
+    System.getProperty("homesafe.dataDir")?.let(::File) ?: File(System.getProperty("user.home"), ".homesafe")
+
 private fun buildAppDatabase(): AppDatabase {
-    val appDataDir = File(System.getProperty("user.home"), ".homesafe").apply { mkdirs() }
+    val appDataDir = appDataDir().apply { mkdirs() }
     val dbFile = File(appDataDir, "homesafe.db")
     return Room.databaseBuilder<AppDatabase>(name = dbFile.absolutePath)
         .setDriver(BundledSQLiteDriver())

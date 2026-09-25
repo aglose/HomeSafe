@@ -51,6 +51,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -281,7 +282,7 @@ private fun EditorCanvas(uiState: DetectionZonesUiState, viewModel: DetectionZon
             onMoveVertex = viewModel::moveVertex,
             onMoveDraftVertex = viewModel::moveDraftVertex,
             labelStyle = MaterialTheme.typography.labelSmall,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().testTag(DETECTION_ZONES_CANVAS_TEST_TAG),
         )
         IconButton(onClick = viewModel::refreshSnapshot, modifier = Modifier.align(Alignment.TopEnd).padding(4.dp)) {
             Icon(Icons.Filled.Refresh, contentDescription = "Refresh frame", tint = Color.White.copy(alpha = 0.85f))
@@ -444,8 +445,11 @@ private fun ZoneDetailsEditor(
         OutlinedTextField(
             value = field,
             onValueChange = { value ->
+                // The IME also reports selection and composition changes through here; only a
+                // change to the text is a rename (and anything else would read as an edit).
+                val renamed = value.text != field.text
                 field = value
-                viewModel.renameSelectedZone(value.text)
+                if (renamed) viewModel.renameSelectedZone(value.text)
             },
             label = { Text("Name") },
             supportingText = { Text("Frigate key: $zoneName") },
@@ -503,3 +507,6 @@ private val ZONE_PALETTE = listOf(
 )
 
 private fun zoneColor(index: Int): Color = ZONE_PALETTE[index.mod(ZONE_PALETTE.size)]
+
+/** The editor's drawing surface over the camera frame, for tests to place corners on. */
+internal const val DETECTION_ZONES_CANVAS_TEST_TAG = "detection_zones_canvas"

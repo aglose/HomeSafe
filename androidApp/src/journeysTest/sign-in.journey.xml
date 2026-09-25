@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<journey name="Sign in and see the cameras">
+    <description>
+        A first sign-in to the household Frigate server. The server is the fake Frigate
+        (./gradlew :fake-frigate:run) on the host machine, which the emulator reaches at 10.0.2.2.
+    </description>
+    <actions>
+        <action>Verify that the sign-in screen is shown, with the title "PERCYSAFE" and a "Connect" button</action>
+        <action>Clear the server URL field (it starts filled in) and type http://10.0.2.2:8971</action>
+        <action>Tap the "Username" field and type admin</action>
+        <action>Tap the "Password" field and type correct-horse</action>
+        <action>Tap "Connect"</action>
+        <action>Verify that the home screen is shown, with a "Tailscale" badge at the top right and "Home" selected in the bottom navigation</action>
+        <action>Verify that there are camera cards named "Front Door", "Driveway" and "Back Yard" (scroll down if needed)</action>
+    </actions>
+</journey>

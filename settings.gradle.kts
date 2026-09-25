@@ -34,5 +34,6 @@ plugins {
 include(":androidApp")
 include(":baselineprofile")
 include(":desktopApp")
+include(":fake-frigate")
 include(":shared")
 include(":webApp")

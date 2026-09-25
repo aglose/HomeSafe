@@ -51,6 +51,16 @@ dependencies {
     // Installs the shipped Baseline Profile into ART on first run (see androidApp/src/release/generated/baselineProfiles/).
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
+
+    // End-to-end tests on the real MainActivity (src/androidTest), signed in to the fake Frigate
+    // that runs inside the instrumented process. See docs/testing.md.
+    androidTestImplementation(project(":fake-frigate"))
+    androidTestImplementation(libs.compose.uiTestJunit4)
+    androidTestImplementation(libs.androidx.testExt.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.androidx.test.uiautomator)
+    androidTestUtil(libs.androidx.test.orchestrator)
 }
 
 // Local, gitignored test credentials for the debug-only "Autofill test credentials" button
@@ -107,10 +117,22 @@ android {
         // locally is uploaded.
         versionCode = providers.gradleProperty("versionCode").map(String::toInt).getOrElse(1)
         versionName = "1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // With the orchestrator below, each E2E test runs in its own instrumentation and the app's
+        // data is wiped first: sign-in history lives in Room and the app graph is per process, so
+        // a test must never inherit the previous one's server.
+        testInstrumentationRunnerArguments["clearPackageData"] = "true"
+    }
+    testOptions {
+        execution = "ANDROIDX_TEST_ORCHESTRATOR"
     }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // Duplicated by the Ktor server jars the E2E test APK carries (:fake-frigate).
+            excludes += "/META-INF/INDEX.LIST"
+            excludes += "/META-INF/io.netty.versions.properties"
         }
     }
     signingConfigs {
@@ -245,4 +267,12 @@ composeCompiler {
         reportsDestination = layout.buildDirectory.dir("compose_compiler")
         metricsDestination = layout.buildDirectory.dir("compose_compiler")
     }
+}
+
+// One emulator can't run two instrumented suites at once: their Activities cover each other,
+// and a test waiting for its own to resume or draw waits for good. With the configuration cache
+// Gradle runs tasks of different projects in parallel, so order the E2E suite after the shared
+// module's device tests whenever both are asked for.
+tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach {
+    mustRunAfter(":shared:connectedAndroidDeviceTest")
 }

@@ -31,10 +31,16 @@ jobs:
         include:
           - name: Unit tests
             # --continue: still run the Android host tests when the JVM ones fail, so one
-            # run reports everything that is broken.
-            tasks: :shared:jvmTest :shared:testAndroidHostTest --continue
+            # run reports everything that is broken. :shared:jvmTest includes the Compose UI
+            # tests (src/uiTest) and the whole-app integration journeys (src/integrationTest)
+            # on the desktop runtime; :fake-frigate:test checks the fake server those journeys
+            # sign in to, so a broken fake fails on its own rather than as fifty journeys.
+            tasks: :fake-frigate:test :shared:jvmTest :shared:testAndroidHostTest --continue
             artifact: unit-test-reports
-            reports: shared/build/reports/tests/**
+            reports: |
+              shared/build/reports/tests/**
+              shared/build/test-results/**
+              fake-frigate/build/reports/tests/**
           - name: Android build, lint and stability gate
             # All three share :shared:compileAndroidMain, so they belong on one runner.
             tasks: :androidApp:assembleDebug :androidApp:lintDebug :shared:stabilityCheck
@@ -93,7 +99,7 @@ jobs:
   android-ui:
     name: Android UI tests (emulator)
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 60
     env:
       API_LEVEL: 34
     steps:
@@ -137,9 +143,15 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
-      # Runs the whole commonTest suite on-device, plus src/uiTest/kotlin — so the Compose
-      # UI tests execute on a real Android runtime here, on the iOS simulator in the ios job,
-      # and on the JVM in the unit tests job. Verified locally: 182 tests, 5 of them HomeFeedUiTest.
+      # Two suites on one booted emulator:
+      # - :shared:connectedAndroidDeviceTest — the whole commonTest suite on-device, plus
+      #   src/uiTest (Compose UI tests, also run on the iOS simulator and the JVM) and
+      #   src/integrationTest (whole-app journeys against the fake Frigate, also run on the JVM).
+      # - :androidApp:connectedDebugAndroidTest — end-to-end tests on the real MainActivity
+      #   (intents, system back, relaunch), one orchestrated instrumentation per test.
+      # --continue so a failure in the first still reports the second.
+      # The script stops Gradle after 45 minutes and, if it had to, dumps the stuck processes'
+      # threads, so a hang shows up in this log rather than as a silent job timeout.
       - name: Instrumented tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -149,13 +161,22 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: ./gradlew :shared:connectedAndroidDeviceTest --stacktrace
+          script: scripts/run-instrumented-tests.sh 45 -- :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest --continue --stacktrace
+
+      # Connected test tasks print only a count; put each failure (message and stack) in the log.
+      - name: Print instrumented test failures
+        if: failure()
+        run: python3 scripts/print-test-failures.py shared/build/outputs/androidTest-results androidApp/build/outputs/androidTest-results
 
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: android-ui-reports
-          path: shared/build/reports/**
+          path: |
+            shared/build/reports/**
+            shared/build/outputs/androidTest-results/**
+            androidApp/build/reports/**
+            androidApp/build/outputs/androidTest-results/**
           retention-days: 7
 
   ios:
