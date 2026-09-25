@@ -709,6 +709,8 @@ VLM_SETTLE_SECONDS = 60.0
 # Recordings reach disk a segment behind; past this age an event with no frame is given up on.
 VLM_GIVE_UP_SECONDS = 15 * 60.0
 VLM_CROP_EDGE = 640
+# A car takes ~1.5 s on the GPU; past this, something is wrong with where the model runs.
+VLM_SLOW_SECONDS = 10.0
 CAR_CHECK_SECONDS = 30.0
 
 COLOURS = ["white", "black", "grey", "silver", "red", "blue", "green", "brown", "beige", "gold", "yellow", "orange", "purple", "unknown"]
@@ -962,7 +964,10 @@ def describe_car(jpeg: bytes) -> dict[str, str]:
         "format": VLM_SCHEMA,
         "stream": False,
         "keep_alive": "24h",
-        "options": {"temperature": 0, "num_ctx": 4096},
+        # num_gpu 99: every layer on the GPU. On 2026-09-25 Ollama's first load put the whole model
+        # on the CPU with 6.9 GB of VRAM free (37 s a car instead of 1.5 s); this makes that a
+        # loud failure rather than a quiet slowdown.
+        "options": {"temperature": 0, "num_ctx": 4096, "num_gpu": 99},
     }, timeout=120)
     r.raise_for_status()
     return json.loads(r.json()["message"]["content"])
@@ -1058,8 +1063,11 @@ def second_opinions() -> None:
             if summary_text.strip():
                 requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10)
             record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description}))
+            took = time.time() - started
             log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s",
-                     event_id, camera, name, score, summary_text, time.time() - started, action, new_name or "")
+                     event_id, camera, name, score, summary_text, took, action, new_name or "")
+            if took > VLM_SLOW_SECONDS:
+                log.warning("vision model took %.0fs for one car: is Ollama running on the CPU? (docker logs ollama | grep load_tensors)", took)
 
 
 # While Ollama is still downloading (hours on the box's Wi-Fi), ask again this often rather than every round.
