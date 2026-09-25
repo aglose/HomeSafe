@@ -1108,6 +1108,21 @@ BOOT_REPORT_AFTER_SECONDS = 180.0
 BOOT_REPORT_WINDOW_SECONDS = 900.0
 # The recording drive is 3.7 TB; the boot disk Frigate would fall back to writing on is 441 GB.
 RECORDING_DRIVE_MIN_MB = 1_000_000
+# go2rtc's WebRTC port. After the 2026-09-25 13:23 reboot its WebRTC module never started (one
+# address it tried to bind wasn't ready, and that aborts the lot), so the app fell back to HLS for
+# three hours while every other check was green. The relay shares the host's network, so the
+# host's UDP sockets are in its /proc/net. Empty turns the check off.
+WEBRTC_UDP_PORT = os.environ.get("WEBRTC_UDP_PORT", "8555")
+
+
+def udp_port_listening(proc_net_udp: str, port: int) -> bool:
+    """Whether a /proc/net/udp (or udp6) table has a socket bound to [port]: local address "ADDR:PORT", port in hex."""
+    wanted = f"{port:04X}"
+    for line in proc_net_udp.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) > 1 and fields[1].rsplit(":", 1)[-1].upper() == wanted:
+            return True
+    return False
 
 
 def household_zone() -> ZoneInfo | None:
@@ -1135,7 +1150,7 @@ def host_uptime() -> float:
 
 def boot_health() -> dict[str, Any]:
     """What came back: Frigate's cameras and detector, where recordings are going, and the vision model."""
-    health: dict[str, Any] = {"frigate": False, "cameras": {}, "recording_mb": None, "vlm": None}
+    health: dict[str, Any] = {"frigate": False, "cameras": {}, "recording_mb": None, "vlm": None, "webrtc": None}
     try:
         stats = requests.get(f"{FRIGATE}/api/stats", timeout=10).json()
         health["frigate"] = True
@@ -1145,6 +1160,15 @@ def boot_health() -> dict[str, Any]:
         health["recording_mb"] = recordings.get("total")
     except Exception as e:
         log.warning("boot report: Frigate stats unavailable: %s", e)
+    if WEBRTC_UDP_PORT:
+        tables = ""
+        for path in ("/proc/net/udp", "/proc/net/udp6"):
+            try:
+                with open(path) as f:
+                    tables += f.read()
+            except OSError:
+                pass
+        health["webrtc"] = udp_port_listening(tables, int(WEBRTC_UDP_PORT))
     if OLLAMA:
         try:
             tags = requests.get(f"{OLLAMA}/api/tags", timeout=10).json().get("models") or []
@@ -1166,6 +1190,8 @@ def boot_report_text(health: dict[str, Any], booted_at: str) -> tuple[str, str]:
     total = health.get("recording_mb")
     if health.get("frigate") and (total is None or total < RECORDING_DRIVE_MIN_MB):
         problems.append("recordings aren't on the 4 TB drive")
+    if health.get("frigate") and health.get("webrtc") is False:
+        problems.append("live video is on the slower HLS fallback (WebRTC didn't start)")
     if health.get("vlm") is False:
         problems.append("vision model not loaded")
     if problems:
