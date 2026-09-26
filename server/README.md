@@ -31,3 +31,13 @@ ssh frigate 'cd ~/surveillance/uplink-watchdog && sudo install -m 755 homesafe-u
 ```bash
 ssh frigate 'sudo journalctl -t homesafe-uplink-watchdog -b; sudo journalctl -t homesafe-relay -b | grep "boot report"'
 ```
+
+If the boot report says live video is on the HLS fallback, go2rtc's WebRTC module failed to
+start. Usually one address it tried to listen on wasn't ready; its error line names that address:
+
+```bash
+ssh frigate 'docker exec frigate grep -i "webrtc\|8555" /dev/shm/logs/go2rtc/current | tail -5'
+```
+
+Since 2026-09-25 the go2rtc `webrtc:` block has `filters: networks: [udp4, tcp4]`, which keeps it off
+the Docker bridge's IPv6 link-local address that tripped it after that day's reboot.
