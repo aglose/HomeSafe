@@ -397,6 +397,13 @@ class VisitsTest(unittest.TestCase):
         self.judge(review("b", self.T + 1200, ["car"], end=self.T + 1230))  # the same car, not named yet: a new visit
         self.assertEqual(("b", False), self.judge(review("c", self.T + 1260, ["car-verified"], ["andrews_tesla"])))
 
+    def test_a_household_car_in_view_for_most_of_an_hour_was_seen_until_it_left(self):
+        first = review("a", self.T, ["car-verified"], ["andrews_tesla"])
+        self.judge(first)
+        self.visits.observe([dict(first, end_time=self.T + 3000)], self.T + 3000)  # sat in view fifty minutes
+        # It drives off and is picked up again twenty minutes later: well within the hour of last being seen.
+        self.assertEqual(("c", False), self.judge(review("c", self.T + 4200, ["car-verified"], ["andrews_tesla"])))
+
     def test_a_person_with_a_household_car_still_sounds(self):
         self.judge(review("a", self.T, ["car-verified"], ["andrews_tesla"], end=self.T + 30))
         self.assertEqual(("b", True), self.judge(review("b", self.T + 1200, ["car-verified", "person"], ["andrews_tesla"])))
@@ -404,6 +411,58 @@ class VisitsTest(unittest.TestCase):
     def test_a_backlog_is_quiet(self):
         self.assertEqual(("a", False), self.judge(review("a", self.T, ["person"], end=self.T + 30), now=self.T + 600))
         self.assertEqual(("a", False), self.judge(review("b", self.T + 60, ["car"], end=self.T + 90), now=self.T + 700))
+
+
+class ReviewBacklogTest(unittest.TestCase):
+    """A backlog longer than one page is read to its end, back to the last alert already handled."""
+
+    class Response:
+        def __init__(self, body):
+            self.body = body
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.body
+
+    def setUp(self):
+        self.page, relay.REVIEW_PAGE = relay.REVIEW_PAGE, 3
+        self.get = relay.requests.get
+        # Frigate's newest first; `before` is strict on start_time, as the real API is.
+        self.reviews = [review(f"r{i}", 1000.0 - i, ["person"]) for i in range(10)]
+        self.asked = []
+
+        def get(url, params=None, timeout=None):
+            self.asked.append(params.get("before"))
+            older = [r for r in self.reviews if params.get("before") is None or r["start_time"] < params["before"]]
+            return self.Response(older[: params["limit"]])
+
+        relay.requests.get = get
+
+    def tearDown(self):
+        relay.REVIEW_PAGE = self.page
+        relay.requests.get = self.get
+
+    def test_pages_back_until_it_reaches_an_alert_it_has_handled(self):
+        handled = {"r7", "r8", "r9"}
+        ids = [r["id"] for r in relay.recent_review("alert", known=lambda rid: rid in handled)]
+        self.assertEqual([f"r{i}" for i in range(9)], ids, "every unhandled one, however far back")
+        self.assertEqual(4, len(self.asked), "pages overlap by one, so an alert sharing the oldest start isn't skipped")
+
+    def test_one_page_when_nothing_is_behind(self):
+        self.assertEqual(["r0", "r1", "r2"], [r["id"] for r in relay.recent_review("alert", known=lambda rid: rid == "r1")])
+        self.assertEqual([None], self.asked)
+
+    def test_without_known_it_reads_one_page(self):
+        self.assertEqual(3, len(relay.recent_review("detection")))
+
+    def test_stops_at_the_page_cap(self):
+        pages, relay.REVIEW_MAX_PAGES = relay.REVIEW_MAX_PAGES, 2
+        try:
+            self.assertEqual(5, len(relay.recent_review("alert", known=lambda rid: False)), "two pages, overlapping by one")
+        finally:
+            relay.REVIEW_MAX_PAGES = pages
 
 
 class EventMediaTest(unittest.TestCase):

@@ -36,6 +36,7 @@ import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -74,10 +75,14 @@ class DeviceRegistrarTest {
     private class Harness(scope: TestScope, connection: ConnectionRepository, token: String? = "fcm-1", info: DeviceInfo = FakeInfo("android", "Google Pixel", "release")) {
         val posts = mutableListOf<String>()
         val authorizations = mutableListOf<String?>()
+
+        /** False while the relay is down: every registration fails. */
+        var relayUp = true
         private val engine = MockEngine { req ->
             check(req.url.encodedPath == "/devices") { req.url.encodedPath }
             posts += (req.body as TextContent).text
             authorizations += req.headers[HttpHeaders.Authorization]
+            if (!relayUp) return@MockEngine respond("", HttpStatusCode.BadGateway)
             respond("""{"ok":true,"device_id":"ignored","secret":"secret-${posts.size}"}""", HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
         }
         private val client = HttpClient(engine) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
@@ -175,6 +180,28 @@ class DeviceRegistrarTest {
         val body = h.posts.single()
         assertTrue(""""token":null""" in body, body)
         assertTrue(""""platform":"ios"""" in body, body)
+        assertFalse(h.registrar.pushRegistered.value, "registered, but with nothing to push to")
+    }
+
+    @Test
+    fun pushIsOnlyRegisteredOnceTheRelayHasTakenTheToken() = runTest {
+        val connection = FakeConnection("http://192.168.68.55:8971")
+        val h = Harness(this, connection)
+        h.relayUp = false
+        h.registrar.start()
+        settle()
+        assertEquals(1, h.posts.size)
+        assertFalse(h.registrar.pushRegistered.value, "the relay never took it, so no push will come")
+
+        h.relayUp = true
+        connection.currentServerUrl.value = "http://100.99.163.71:8971"
+        settle()
+        assertTrue(h.registrar.pushRegistered.value)
+
+        h.relayUp = false
+        connection.currentServerUrl.value = "http://192.168.68.55:8971"
+        settle()
+        assertTrue(h.registrar.pushRegistered.value, "a failed re-registration: the relay still has the token")
     }
 
     @Test

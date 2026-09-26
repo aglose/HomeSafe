@@ -14,6 +14,8 @@ import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -50,6 +52,16 @@ class DeviceRegistrar(
 
     /** A token the platform pushed at us (Android's `onNewToken`); null means ask [tokenProvider]. */
     private val rotatedToken = MutableStateFlow<String?>(null)
+
+    private val registeredForPush = MutableStateFlow(false)
+
+    /**
+     * True once the relay has accepted this install *with a push token*: from then on it pushes
+     * every alert here, so the in-app poller ([DetectionAlertService]) stands down. False on an
+     * install without push (iOS for now) and until the first registration succeeds. A later
+     * failed re-registration leaves it as it was — the relay still has the token it last took.
+     */
+    val pushRegistered: StateFlow<Boolean> = registeredForPush.asStateFlow()
 
     /** Idempotent: follows the connection for the life of the app. */
     fun start() {
@@ -95,6 +107,7 @@ class DeviceRegistrar(
         )
         val credentials = relayApi.registerDevice(serverUrl, registration, secret = identity.secret()).getOrThrow()
         identity.saveSecret(credentials.secret)
+        registeredForPush.value = registration.token != null
     }
 
     /**

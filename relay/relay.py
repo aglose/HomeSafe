@@ -31,7 +31,7 @@ from statistics import median
 import threading
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 import requests
@@ -435,19 +435,45 @@ def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
     return _car_zone_polygons
 
 
-REVIEW_PAGE = 100
+REVIEW_PAGE = 50
+# How far back `recent_review` pages for a backlog: 500 alerts is days of this household's worth.
+REVIEW_MAX_PAGES = 10
 
 
-def recent_review(severity: str) -> list[dict[str, Any]]:
-    # Deep enough that a backlog (Frigate or the network back after an outage) is all still on the
-    # page when the relay next looks; at 20, a burst longer than that was never pushed at all.
-    r = requests.get(f"{FRIGATE}/api/review", params={"severity": severity, "limit": REVIEW_PAGE}, timeout=10)
-    r.raise_for_status()
-    return r.json()
+def recent_review(severity: str, known: Callable[[str], bool] | None = None) -> list[dict[str, Any]]:
+    """
+    Frigate's newest review items, newest first. With `known` (has this id been handled?), keeps
+    paging back until a page reaches one it knows, so a backlog longer than a page — Frigate or
+    the network back after an outage — is read in full rather than falling off the end; a page
+    held only 20 once, and a longer burst was never pushed at all.
+    """
+    items: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    before = None
+    for _ in range(REVIEW_MAX_PAGES):
+        params: dict[str, Any] = {"severity": severity, "limit": REVIEW_PAGE}
+        if before is not None:
+            params["before"] = before
+        r = requests.get(f"{FRIGATE}/api/review", params=params, timeout=10)
+        r.raise_for_status()
+        page = r.json()
+        fresh = [item for item in page if item["id"] not in ids]
+        items += fresh
+        ids |= {item["id"] for item in fresh}
+        if known is None or len(page) < REVIEW_PAGE or not fresh or any(known(item["id"]) for item in page):
+            return items
+        # `before` is strict on start_time: nudge it so an item sharing the oldest start isn't skipped.
+        before = float(page[-1].get("start_time") or 0) + 0.001
+    log.warning("review backlog deeper than %d pages; the oldest of it is not pushed", REVIEW_MAX_PAGES)
+    return items
+
+
+def was_sent(review_id: str) -> bool:
+    return bool(with_db(lambda c: c.execute("SELECT 1 FROM sent WHERE review_id=?", (review_id,)).fetchone()))
 
 
 def recent_alerts() -> list[dict[str, Any]]:
-    return recent_review("alert")
+    return recent_review("alert", known=was_sent)
 
 
 # ---------------------------------------------------------------- away mode
@@ -776,11 +802,22 @@ class Visits:
         self.car_seen: dict[str, float] = {}
 
     def observe(self, items: list[dict[str, Any]], now: float) -> None:
-        """Stretches each visit to its alerts' latest ends, so a long alert keeps its visit open while it lasts."""
+        """
+        Stretches each visit to its alerts' latest ends, so a long alert keeps its visit open while
+        it lasts, and likewise when its household cars were last seen: a car sat in view for most of
+        an hour was seen just now, not when its alert was first pushed.
+        """
         for item in items:
             visit = self.by_camera.get(item.get("camera", ""))
             if visit is not None and item["id"] in visit.review_ids:
                 visit.see(item, now)
+                self.see_cars(item, now)
+
+    def see_cars(self, item: dict[str, Any], now: float) -> None:
+        end = item.get("end_time")
+        seen = float(end) if end is not None else now
+        for car in (k for k in review_kinds(item) if k.startswith("car:")):
+            self.car_seen[car] = max(self.car_seen.get(car, float("-inf")), seen)
 
     def judge(self, item: dict[str, Any], now: float) -> tuple[Visit, bool]:
         """Files this alert under its camera's visit (a new one if the last has gone quiet) and says whether it should sound."""
@@ -795,9 +832,7 @@ class Visits:
         routine = {k for k in kinds if k.startswith("car:") and start - self.car_seen.get(k, float("-inf")) <= ROUTINE_GAP_SECONDS}
         news = (not visit.kinds and not kinds) or bool(kinds - visit.kinds - routine)
         visit.add(item, now)
-        end = item.get("end_time")
-        for car in (k for k in kinds if k.startswith("car:")):
-            self.car_seen[car] = max(self.car_seen.get(car, float("-inf")), float(end) if end is not None else now)
+        self.see_cars(item, now)
         backlog = now - start >= BACKLOG_SECONDS
         return visit, news and not backlog
 
@@ -820,7 +855,7 @@ def poll_forever() -> None:
             since = away_since()
             if since is not None:
                 for item in away_items(since):
-                    if with_db(lambda c: c.execute("SELECT 1 FROM sent WHERE review_id=?", (item["id"],)).fetchone()):
+                    if was_sent(item["id"]):
                         continue
                     push_away_review(item, zones)
             # ---- end away mode ----
@@ -828,7 +863,7 @@ def poll_forever() -> None:
             visits.observe(alerts, time.time())
             for item in reversed(alerts):  # oldest first, so pushes arrive in order
                 rid = item["id"]
-                if with_db(lambda c: c.execute("SELECT 1 FROM sent WHERE review_id=?", (rid,)).fetchone()):
+                if was_sent(rid):
                     continue
                 if awaiting_recognition(item):
                     continue  # not marked sent: judged again next poll, once Frigate has had time to name the face
