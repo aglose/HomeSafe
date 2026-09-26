@@ -24,14 +24,21 @@ import androidx.compose.ui.unit.dp
  * recomposing anything. The glyphs and the rain need a clock that doesn't loop every lap, so the
  * shader also gets the uptime — read in the same draw, which [phase] already invalidates every
  * frame; with a fixed [phase] (a test, a preview) the frame simply holds.
+ *
+ * Where the shader can't be compiled (Android Studio's preview renderer among them) the card
+ * gets the plain [outlineRunner] in [color] instead of failing to draw.
  */
 internal actual fun Modifier.loadingRunner(
     phase: () -> Float,
     phaseOffset: Float,
     cornerRadius: Dp,
     color: Color,
-): Modifier = drawWithCache {
-    val shader = matrixSnakeShader
+): Modifier {
+    val shader = matrixSnakeShader ?: return outlineRunner(phase = phase, phaseOffset = phaseOffset, cornerRadius = cornerRadius, color = color)
+    return matrixSnake(shader, phase, phaseOffset, cornerRadius)
+}
+
+private fun Modifier.matrixSnake(shader: RuntimeShader, phase: () -> Float, phaseOffset: Float, cornerRadius: Dp): Modifier = drawWithCache {
     val brush = ShaderBrush(shader)
     val bleed = SNAKE_BLEED.toPx()
     val area = Size(size.width + 2 * bleed, size.height + 2 * bleed)
@@ -59,8 +66,13 @@ private val SNAKE_BLEED = 16.dp
  */
 private const val SNAKE_CLOCK_WRAP_MS = 600_000L
 
-/** Compiled once, on first use, and shared (see [loadingRunner]). */
-private val matrixSnakeShader: RuntimeShader by lazy(LazyThreadSafetyMode.NONE) { RuntimeShader(MATRIX_SNAKE_AGSL) }
+/**
+ * Compiled once, on first use, and shared (see [loadingRunner]); null where it can't be compiled.
+ * A device test (MatrixSnakeShaderTest) keeps the fallback from hiding a broken shader.
+ */
+private val matrixSnakeShader: RuntimeShader? by lazy(LazyThreadSafetyMode.NONE) {
+    runCatching { RuntimeShader(MATRIX_SNAKE_AGSL) }.getOrNull()
+}
 
 /**
  * The snake, in the card's own coordinates (fragCoord (0, 0) is its top-left corner):
@@ -90,7 +102,7 @@ private val matrixSnakeShader: RuntimeShader by lazy(LazyThreadSafetyMode.NONE) 
  *
  * Distances are in pixels, scaled by `density` so the snake is the same size on every screen.
  */
-private const val MATRIX_SNAKE_AGSL = """
+internal const val MATRIX_SNAKE_AGSL = """
 uniform float2 size;
 uniform float corner;
 uniform float head;
