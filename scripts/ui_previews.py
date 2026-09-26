@@ -33,6 +33,11 @@ SETS = [
     ("android", "Android", "Layoutlib, through Compose Preview Screenshot Testing (`:androidApp`'s `@PreviewTest`s)"),
     ("desktop", "Desktop", "the JVM, through `:shared:renderPreviews` (every `@Preview` in `:shared`)"),
 ]
+# Gallery only: not compared with the merge base and not in the pull request. The journeys run the
+# real app over real HTTP, so a frame can differ from run to run with timing alone.
+EXTRA_SETS = [
+    ("journeys", "Journeys", "the JVM integration journeys with `-PjourneyScreens`: the whole app after each tap"),
+]
 START = "<!-- ui-previews:start -->"
 END = "<!-- ui-previews:end -->"
 MAX_ROWS = 30
@@ -82,6 +87,14 @@ def build(head_dir, base_dir, gallery):
             shutil.copy(os.path.join(base_dir, key, name), os.path.join(gallery, "base", key, name))
         summary[key] = {"compared": compared, **changes}
 
+    for key, _, _ in EXTRA_SETS:
+        head = pngs(os.path.join(head_dir, key))
+        if head:
+            os.makedirs(os.path.join(gallery, key))
+            for name in head:
+                shutil.copy(os.path.join(head_dir, key, name), os.path.join(gallery, key, name))
+        summary[key] = {"screens": list(head)}
+
     meta = {name: os.environ.get(variable, "") for name, variable in [
         ("repo", "GITHUB_REPOSITORY"), ("branch", "PREVIEW_BRANCH"), ("head", "PREVIEW_HEAD_SHA"),
         ("base", "PREVIEW_BASE_SHA"), ("base_ref", "PREVIEW_BASE_REF"), ("run", "PREVIEW_RUN_URL"),
@@ -128,6 +141,19 @@ def readme(summary):
                     lines += [f"<img src=\"{key}/{name}\" width=\"320\">", ""]
         for name in changes["removed"]:
             lines += [f"### {display_name(name)} (removed)", "", f"<img src=\"base/{key}/{name}\" width=\"320\">", ""]
+    for key, title, how in EXTRA_SETS:
+        screens = summary[key]["screens"]
+        if not screens:
+            continue
+        lines += [f"## {title}", "", f"Drawn by {how}. {len(screens)} screens.", ""]
+        journey = None
+        for name in screens:
+            this_journey, _, step = name[: -len(".png")].partition("__")
+            if this_journey != journey:
+                journey = this_journey
+                lines += [f"### {journey}", ""]
+            lines += [f"<img src=\"{key}/{name}\" width=\"320\" title=\"{step}\"> "]
+        lines.append("")
     return "\n".join(lines)
 
 

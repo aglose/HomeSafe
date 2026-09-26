@@ -90,9 +90,12 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Branch $BRANCH, pull request ${pr:-none}, merge base with $base_ref: $base"
 
+      # The branch also runs the JVM journeys for their screenshots (gallery only; see the script).
       - name: Draw the branch
         id: head
         continue-on-error: true
+        env:
+          UI_PREVIEWS_JOURNEYS: 1
         run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace
 
       # With this branch's script: the base's copy may predate it. A base that predates the

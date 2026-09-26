@@ -7,6 +7,7 @@
 #   scripts/fetch-ui-previews.sh other-branch
 #
 # The images land in build/ui-previews/<branch>/: android/ (Layoutlib), desktop/ (the JVM),
+# journeys/ (the whole app after each tap of each integration journey, <journey>__<step>.png),
 # base/ (the merge base's copy of anything that changed), README.md (the gallery, what changed
 # first) and summary.json. See docs/ui-previews.md.
 set -euo pipefail
@@ -16,7 +17,7 @@ branch=
 for arg in "$@"; do
   case "$arg" in
     --wait) wait=true ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
     *) branch=$arg ;;
   esac
 done

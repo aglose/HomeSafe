@@ -10,7 +10,7 @@ different place: your own machine, CI, or an agent's sandbox with no Android too
 | **Journey screenshots** (JVM) | `./gradlew :shared:jvmTest -PjourneyScreens --tests '*HomeJourneyTest*'` | The whole app against the fake Frigate, after each tap, at the end and on failure | `shared/build/journey-screens/<journey>/*.png` |
 
 `scripts/render-ui-previews.sh OUT_DIR` runs the first two and collects their PNGs in `OUT_DIR/desktop` and
-`OUT_DIR/android`.
+`OUT_DIR/android`. With `UI_PREVIEWS_JOURNEYS=1` it runs the journeys too, into `OUT_DIR/journeys`.
 
 ## Previews are the catalogue
 
@@ -67,10 +67,13 @@ It isn't part of `ci-green`.
 
 1. It draws the branch with `scripts/render-ui-previews.sh`, then the merge base with the same script.
 2. `scripts/ui_previews.py` compares the two runs file by file and lays out a gallery.
-3. The gallery goes to `refs/previews/<branch>` as one parentless commit, force-pushed each time. It's outside
+3. The branch run also plays the JVM integration journeys with `-PjourneyScreens`. Their flipbooks go into the
+   gallery as a Journeys section, and nowhere else: they drive the real app over real HTTP, so a frame can differ
+   between runs by timing alone.
+4. The gallery goes to `refs/previews/<branch>` as one parentless commit, force-pushed each time. It's outside
    `refs/heads`, so a normal clone never downloads it. Its `README.md` is the gallery on GitHub, and the run's
    summary links it.
-4. If the branch has an open pull request, a before/after table goes into the description between
+5. If the branch has an open pull request, a before/after table goes into the description between
    `<!-- ui-previews:start -->` and `<!-- ui-previews:end -->`. The Layoutlib renders come first; the JVM ones are
    folded underneath. The table shows only what changed, what's new and what was removed.
 
@@ -91,7 +94,7 @@ for.
 **In a sandbox that can't build** (for example a Claude Code cloud environment whose network policy blocks
 `dl.google.com`): push the branch, then run `scripts/fetch-ui-previews.sh --wait`. It waits until the workflow has
 drawn the pushed commit, then unpacks the gallery into `build/ui-previews/<branch>/`. Start from its `README.md`,
-which lists what changed first. It takes one CI run, a few minutes per round.
+which lists what changed first. `journeys/` has the whole app, screen by screen, for every integration journey. It takes one CI run, a few minutes per round.
 
 ### Letting a Claude Code cloud environment build
 

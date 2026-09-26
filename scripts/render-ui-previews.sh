@@ -5,6 +5,7 @@
 #                      @PreviewTest functions (src/screenshotTest), as Android draws them.
 #   OUT_DIR/desktop/   the JVM, through :shared:renderPreviews: every @Preview in :shared,
 #                      drawn by Skia on the desktop runtime.
+#   OUT_DIR/journeys/  with UI_PREVIEWS_JOURNEYS=1: the integration journeys' screenshots.
 #
 # Run from the root of a checkout (the "UI previews" workflow also runs it inside a worktree of
 # the merge base, to have something to compare with). Exits non-zero if either renderer failed,
@@ -41,5 +42,22 @@ else
 fi
 rm -f "$since" "$since.list"
 
-echo "Gathered $(find "$out/android" -name '*.png' | wc -l) Android and $(find "$out/desktop" -name '*.png' | wc -l) desktop previews in $out"
+# UI_PREVIEWS_JOURNEYS=1: also run the JVM integration journeys with -PjourneyScreens, and gather
+# their flipbooks (what the whole app showed after each tap) in OUT_DIR/journeys, one file per
+# screen as <journey>__<step>.png. A journey that fails leaves its "failed" screen and is
+# reported, but doesn't fail this script: that is CI's job, not the gallery's.
+if [ "${UI_PREVIEWS_JOURNEYS:-}" = 1 ]; then
+  mkdir -p "$out/journeys"
+  ./gradlew :shared:jvmTest --tests 'com.meticulouscreations.homesafe.integration.*' -PjourneyScreens "$@" \
+    || echo "Some journeys failed; their last screen is saved as <journey>__NN-failed.png"
+  for dir in shared/build/journey-screens/*/; do
+    [ -d "$dir" ] || continue
+    for png in "$dir"*.png; do
+      [ -f "$png" ] && cp "$png" "$out/journeys/$(basename "$dir")__$(basename "$png")"
+    done
+  done
+fi
+
+echo "Gathered $(find "$out/android" -name '*.png' | wc -l) Android and $(find "$out/desktop" -name '*.png' | wc -l) desktop previews" \
+  "and $(find "$out/journeys" -name '*.png' 2>/dev/null | wc -l) journey screens in $out"
 exit "$status"
