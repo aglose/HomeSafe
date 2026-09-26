@@ -82,7 +82,7 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
                 cameras = cameras,
                 onAwayBack = {},
                 statusHeadline = if (cameras == null) null else "Person at Backyard",
-                statusDetails = if (cameras == null) null else "3 min ago · ${cameras.size} cameras on · Everyone home",
+                statusDetails = cameras?.let { previewStatusDetails(camerasOn = it.count { tile -> tile.camera.enabled }, everyoneAway = everyoneAway) },
                 inView = inView,
             ) { tile ->
                 CameraCard(
@@ -94,6 +94,11 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
             }
         }
     }
+}
+
+private fun previewStatusDetails(camerasOn: Int, everyoneAway: Boolean): String {
+    val cameras = if (camerasOn == 1) "1 camera on" else "$camerasOn cameras on"
+    return "3 min ago · $cameras · ${if (everyoneAway) "Everyone away" else "Everyone home"}"
 }
 
 /** A Pixel-sized phone in portrait, in dp. */
