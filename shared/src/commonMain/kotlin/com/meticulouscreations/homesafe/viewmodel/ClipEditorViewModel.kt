@@ -11,11 +11,13 @@ import com.meticulouscreations.homesafe.domain.model.clipRangeForMoment
 import com.meticulouscreations.homesafe.domain.model.initialClipRange
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.model.withLength
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraMomentsBetweenUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RecordingClipSave
 import com.meticulouscreations.homesafe.domain.usecase.SaveRecordingClipUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
@@ -34,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -51,7 +54,13 @@ enum class TrimHandle { START, END }
 @Immutable
 sealed interface ClipSaveState {
     data object Idle : ClipSaveState
-    data object Saving : ClipSaveState
+
+    /**
+     * Running in the background (it carries on if the editor closes): [progress] says whether
+     * Frigate is still cutting the clip or how much of it has come down.
+     */
+    data class Saving(val progress: ClipDownloadProgress = ClipDownloadProgress.Preparing) : ClipSaveState
+
     data object Saved : ClipSaveState
     data class Failed(val message: String) : ClipSaveState
 }
@@ -458,7 +467,7 @@ class ClipEditorViewModel(
     }
 
     /** A different selection is a different clip: "Saved" (or a failure) was about the last one. A save in flight carries on. */
-    private fun ClipSaveState.afterEdit(): ClipSaveState = if (this == ClipSaveState.Saving) this else ClipSaveState.Idle
+    private fun ClipSaveState.afterEdit(): ClipSaveState = if (this is ClipSaveState.Saving) this else ClipSaveState.Idle
 
     // --- Filmstrip --------------------------------------------------------------------------
 
@@ -489,23 +498,34 @@ class ClipEditorViewModel(
 
     // --- Saving -----------------------------------------------------------------------------
 
+    /**
+     * Starts saving the selection. The save itself belongs to the app, not this editor, so
+     * closing the editor only stops the editor following it; the clip still lands.
+     */
     fun save() {
         val state = _uiState.value
         val range = state.range ?: return
         val server = serverUrl.value
-        if (state.save == ClipSaveState.Saving) return
+        if (state.save is ClipSaveState.Saving) return
         if (server == null) {
             _uiState.update { it.copy(save = ClipSaveState.Failed("Not connected to the server")) }
             return
         }
         saveJob?.cancel()
-        _uiState.update { it.copy(save = ClipSaveState.Saving) }
+        _uiState.update { it.copy(save = ClipSaveState.Saving()) }
+        val save = saveRecordingClipUseCase(server, cameraName, range)
         saveJob = viewModelScope.launch {
-            val result = saveRecordingClipUseCase(server, cameraName, range)
-            _uiState.update {
-                it.copy(save = result.fold(onSuccess = { ClipSaveState.Saved }, onFailure = { error -> ClipSaveState.Failed(error.message ?: "Couldn't save the clip") }))
-            }
+            save.transformWhile { step ->
+                emit(step)
+                step is RecordingClipSave.Running
+            }.collect { step -> _uiState.update { it.copy(save = step.toSaveState()) } }
         }
+    }
+
+    private fun RecordingClipSave.toSaveState(): ClipSaveState = when (this) {
+        is RecordingClipSave.Running -> ClipSaveState.Saving(progress)
+        RecordingClipSave.Saved -> ClipSaveState.Saved
+        is RecordingClipSave.Failed -> ClipSaveState.Failed(message)
     }
 
     /** The failure line was read (or the selection changed since): back to a plain Save button. */
