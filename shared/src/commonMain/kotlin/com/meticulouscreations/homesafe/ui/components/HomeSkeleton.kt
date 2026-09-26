@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
  * the sign-in, and again for the beat between landing on Home and the camera cache answering.
  * The home feed itself lays them out (see HomeFeed), in the real page's own layout, so the
  * real page fades in *onto* the skeleton rather than replacing a spinner. Progress is shown by
- * a bright head-and-tail running round each card outline, staggered card to card.
+ * something running round each card outline, staggered card to card (see [loadingRunner]).
  */
 
 /** One lap of the outline runner. */
@@ -81,7 +81,7 @@ fun SkeletonCameraCard(
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
             // The runner is drawn outside the clip so its glow can straddle the edge.
-            .outlineRunner(
+            .loadingRunner(
                 phase = phase,
                 phaseOffset = phaseOffset,
                 cornerRadius = SkeletonCardCornerRadius,
@@ -92,6 +92,23 @@ fun SkeletonCameraCard(
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape),
     )
 }
+
+/**
+ * The progress cue that runs round a skeleton card's rounded outline, once per [phase] lap,
+ * [phaseOffset] of a lap ahead. Drawn over the content, and past this layout's bounds so a glow
+ * can straddle the edge.
+ *
+ * Android draws a Matrix-style snake with an AGSL runtime shader: a trail of glyphs in phosphor
+ * green, white-hot at the head, slithering along the outline over faint digital rain inside the
+ * card. Its palette is the Matrix's own, so [color] goes unused there. The other platforms draw
+ * [outlineRunner] in [color].
+ */
+internal expect fun Modifier.loadingRunner(
+    phase: () -> Float,
+    phaseOffset: Float,
+    cornerRadius: Dp,
+    color: Color,
+): Modifier
 
 /** How much of the perimeter the runner covers, head to the end of its tail. */
 private const val RUNNER_FRACTION = 0.28f
