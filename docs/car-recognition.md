@@ -30,9 +30,11 @@ the curb still shows, and so does any car in the driveway.
 - **Street crops into `none`.** Frigate queues a crop for each classification attempt in
   `clips/known_cars/train/` and keeps only the newest 200. A crop is filed into `none` (through
   Frigate's own `categorize` route) when its event is a finished car that entered no car zone,
-  travelled at least 0.2 of the frame, and had no car in a car zone within 3 minutes either side.
-  That last check stops a household car the tracker lost on its way out from being filed as a
-  stranger. The caps are 2 crops per car, `STREET_NONE_PER_HOUR` cars an hour (12) and
+  travelled at least 0.2 of the frame, and no car arrived in or left a car zone within 3 minutes
+  either side. That last check stops a household car the tracker lost on its way out from being
+  filed as a stranger, including one that had been parked for hours. A car parked right through
+  doesn't count, so an occupied driveway doesn't block the filing. Frigate answers 404 for a car
+  it is still tracking, so an event is only written off as `gone` once it began an hour ago. The caps are 2 crops per car, `STREET_NONE_PER_HOUR` cars an hour (12) and
   `STREET_NONE_MAX` images in `none` (600), and there is one retrain a day once `RETRAIN_AFTER`
   (60) new cars have gone in. Every decision is kept in the `car_checks` table.
 - **Second opinion.** A car in a car zone, finished or in view for 60 s, whose name no person gave
@@ -67,12 +69,33 @@ switch to YOLOv9-s. The model was exported with Frigate's documented Docker reci
 (`MODEL_SIZE=s`, `IMG_SIZE=320`) into `~/surveillance/yolo-export/`, and copied to
 `config/model_cache/yolov9-s-320.onnx`. `yolo.onnx` (the old `t` model) is still there.
 
-```bash
-ssh frigate 'curl -s -X PUT -H "Content-Type: application/json" "http://127.0.0.1:5000/api/config/set?cameras.hikvision_1.ffmpeg.inputs.0.path=rtsp://127.0.0.1:8554/hikvision_1&cameras.hikvision_1.ffmpeg.inputs.0.input_args=preset-rtsp-restream&model.path=/config/model_cache/yolov9-s-320.onnx" -d "{\"requires_restart\":1}"'
-```
+The model and the detect size go through `config/set`:
 
 ```bash
-ssh frigate 'curl -s -X PUT -H "Content-Type: application/json" "http://127.0.0.1:5000/api/config/set" -d "{\"requires_restart\":1,\"config_data\":{\"cameras\":{\"hikvision_1\":{\"detect\":{\"width\":1280,\"height\":720}}}}}"'
+ssh frigate 'curl -s -X PUT -H "Content-Type: application/json" "http://127.0.0.1:5000/api/config/set" -d "{\"requires_restart\":1,\"config_data\":{\"model\":{\"path\":\"/config/model_cache/yolov9-s-320.onnx\"},\"cameras\":{\"hikvision_1\":{\"detect\":{\"width\":1280,\"height\":720}}}}}"'
+```
+
+The detect input can't. Frigate 0.17.2's `config/set` can't change a field of a list element
+(`cameras.hikvision_1.ffmpeg.inputs.0.path` fails with "list index out of range"), so it is edited
+in `config.yml` by hand. Back the file up first:
+
+```bash
+ssh frigate 'cd ~/surveillance/frigate && cp config/config.yml config/config.yml.bak-$(date +%Y%m%d)-restream'
+```
+
+Then, in `~/surveillance/frigate/config/config.yml`, change the Front Yard's first input (the one
+with the `detect` role, which was the camera's own `Channels/102` sub stream) to go2rtc's copy of
+the main stream. Leave the `record` input alone:
+
+```yaml
+cameras:
+  hikvision_1:
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/hikvision_1
+          input_args: preset-rtsp-restream
+          roles:
+            - detect
 ```
 
 ```bash
