@@ -16,30 +16,32 @@ set -uo pipefail
 
 out=${1:?usage: scripts/render-ui-previews.sh OUT_DIR [gradle flags]}
 shift
+# This run's images only: a preview or journey removed since the last run into OUT_DIR must not linger.
+rm -rf "$out/android" "$out/desktop" "$out/journeys"
 mkdir -p "$out/android" "$out/desktop"
 
-reference=androidApp/src/screenshotTestDebug/reference
+reference=androidApp/src/screenshotTestDefaultDebug/reference
 # The update task leaves an image alone when the new one is close enough, and never deletes one
 # whose preview is gone; start clean so the folder is exactly what this code draws.
 rm -rf "$reference"
 since="${TMPDIR:-/tmp}/render-ui-previews.$$"
 touch "$since"
 
-./gradlew :shared:renderPreviews :androidApp:updateDebugScreenshotTest --continue "$@"
+./gradlew :shared:renderPreviews :androidApp:updateScreenshotTestDefaultDebugTestSuite --continue "$@"
 status=$?
 
 cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop/" 2>/dev/null
 # The tool nests its images by package: <reference>/com/…/screenshots/SharedPreviewScreenshotsKt/.
-# It writes the same ones under build/outputs/screenshotTest-results/…/rendered/ too; that is the
-# fallback, taking only images from this run. File names hold spaces and commas (the preview's name).
+# It writes the same ones under build/outputs/…/rendered/ too; that is the fallback, taking only
+# images from this run. File names hold spaces and commas (the preview's name).
 find "$reference" -name '*.png' 2>/dev/null | sort > "$since.list"
-[ -s "$since.list" ] || find androidApp/build/outputs/screenshotTest-results -path '*rendered*' -name '*.png' -newer "$since" 2>/dev/null | sort > "$since.list"
+[ -s "$since.list" ] || find androidApp/build/outputs -path '*rendered*' -name '*.png' -newer "$since" 2>/dev/null | sort > "$since.list"
 if [ -s "$since.list" ]; then
   echo "Layoutlib images from: $(dirname "$(head -n1 "$since.list")")"
   while IFS= read -r png; do cp "$png" "$out/android/"; done < "$since.list"
 else
   echo "Layoutlib drew nothing. Test results:"
-  find androidApp/build -ipath '*test-results*screenshot*' -name '*.xml' -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5
+  find androidApp/build -ipath '*test-results*creenshot*' -name '*.xml' -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5
 fi
 rm -f "$since" "$since.list"
 

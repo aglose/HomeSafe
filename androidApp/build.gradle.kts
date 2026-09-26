@@ -10,9 +10,6 @@ plugins {
     // Adds the nonMinifiedRelease / benchmarkRelease build types and `generateBaselineProfile`;
     // the :baselineprofile module drives both.
     alias(libs.plugins.baselineprofile)
-    // Compose Preview Screenshot Testing: the @PreviewTest functions in src/screenshotTest, drawn
-    // by Layoutlib on the host. See docs/ui-previews.md.
-    alias(libs.plugins.screenshot)
 }
 
 kotlin {
@@ -54,10 +51,6 @@ dependencies {
     // Installs the shipped Baseline Profile into ART on first run (see androidApp/src/release/generated/baselineProfiles/).
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
-
-    // Screenshot tests (src/screenshotTest): the shared module's previews, drawn by Layoutlib.
-    screenshotTestImplementation(libs.screenshot.validation.api)
-    screenshotTestImplementation(libs.compose.uiTooling)
 
     // End-to-end tests on the real MainActivity (src/androidTest), signed in to the fake Frigate
     // that runs inside the instrumented process. See docs/testing.md.
@@ -137,6 +130,19 @@ android {
     }
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
+        // Compose Preview Screenshot Testing, as an AGP test suite (android.experimental.testSuiteSupport
+        // in gradle.properties): the @PreviewTest functions in src/screenshotTest — the shared
+        // module's previews — drawn by Layoutlib on the host. See docs/ui-previews.md.
+        //   ./gradlew :androidApp:updateScreenshotTestDefaultDebugTestSuite  draws them under src/screenshotTestDefaultDebug/reference/
+        //   ./gradlew :androidApp:testScreenshotTestDefaultDebugTestSuite    compares against those; report in build/reports/tests/
+        screenshotTests.create("screenshotTest") {
+            engineVersion = libs.versions.screenshot.get()
+            targetVariants.add("debug")
+            dependencies {
+                implementation(libs.compose.uiTooling)
+                implementation(libs.screenshot.validation.api)
+            }
+        }
     }
     packaging {
         resources {
@@ -212,11 +218,6 @@ android {
         compose = true
         buildConfig = true
     }
-    // The screenshotTest source set (with android.experimental.enableScreenshotTest in
-    // gradle.properties). `./gradlew :androidApp:updateDebugScreenshotTest` draws every
-    // @PreviewTest to src/screenshotTestDebug/reference/; validateDebugScreenshotTest compares
-    // against those and writes an HTML report to build/reports/screenshotTest/.
-    experimentalProperties["android.experimental.enableScreenshotTest"] = true
 }
 
 androidComponents {

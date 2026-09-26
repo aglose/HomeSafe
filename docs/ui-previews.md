@@ -6,7 +6,7 @@ different place: your own machine, CI, or an agent's sandbox with no Android too
 | What | Command | Draws | Output |
 |---|---|---|---|
 | **Preview renders** (JVM) | `./gradlew :shared:renderPreviews [-Ppreview=Home]` | Every `@Preview` in `:shared`, on the desktop runtime | `shared/build/previews/*.png`, `previews.json` |
-| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTest` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDebug/reference/**/*.png` |
+| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateScreenshotTestDefaultDebugTestSuite` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDefaultDebug/reference/**/*.png` |
 | **Journey screenshots** (JVM) | `./gradlew :shared:jvmTest -PjourneyScreens --tests '*HomeJourneyTest*'` | The whole app against the fake Frigate, after each tap, at the end and on failure | `shared/build/journey-screens/<journey>/*.png` |
 
 `scripts/render-ui-previews.sh OUT_DIR` runs the first two and collects their PNGs in `OUT_DIR/desktop` and
@@ -52,13 +52,15 @@ draws through Layoutlib, the renderer behind Android Studio's preview pane, so i
 - It only looks at `@PreviewTest` functions in an Android module's `screenshotTest` source set. It doesn't
   support Kotlin Multiplatform common code, hence the wrappers in `:androidApp`.
 - It needs the Android SDK.
-- This repository uses the standalone plugin (`com.android.compose.screenshot`, `0.0.1-alpha16`). Google now
-  recommends AGP test suites instead, which need AGP 9.5; this project is on 9.4.
-- `validateDebugScreenshotTest` compares against the reference images and writes an HTML diff report to
-  `androidApp/build/reports/screenshotTest/`.
+- It runs as an [AGP test suite](https://developer.android.com/studio/preview/compose-screenshot-testing-with-testsuites):
+  `testOptions.screenshotTests` in `androidApp/build.gradle.kts`, with engine `0.0.1-alpha16`. That needs AGP 9.5
+  (still a preview release) and the experimental `android.experimental.testSuiteSupport` flag. It replaces the
+  deprecated standalone `com.android.compose.screenshot` plugin.
+- `testScreenshotTestDefaultDebugTestSuite` compares against the reference images and writes an HTML diff report
+  to `androidApp/build/reports/tests/`.
 - The reference images aren't committed yet (they're gitignored). To gate merges on them, have CI generate them on
-  Linux, commit those, and add `validateDebugScreenshotTest` to `ci.yml`. References made on a Mac won't match
-  Linux exactly.
+  Linux, commit those, and add `testScreenshotTestDefaultDebugTestSuite` to `ci.yml`. References made on a Mac
+  won't match Linux exactly.
 
 ## In pull requests
 
@@ -70,7 +72,7 @@ It isn't part of `ci-green`.
 3. The branch run also plays the JVM integration journeys with `-PjourneyScreens`. Their flipbooks go into the
    gallery as a Journeys section, and nowhere else: they drive the real app over real HTTP, so a frame can differ
    between runs by timing alone.
-4. The gallery goes to `refs/previews/<branch>` as one parentless commit, force-pushed each time. It's outside
+4. The gallery goes to `refs/previews/<branch>-<digest of its name>` as one parentless commit, force-pushed each time. It's outside
    `refs/heads`, so a normal clone never downloads it. Its `README.md` is the gallery on GitHub, and the run's
    summary links it.
 5. If the branch has an open pull request, a before/after table goes into the description between

@@ -1,5 +1,7 @@
 [versions]
-agp = "9.4.0"
+# 9.5 is still an alpha: it's what runs Compose Preview Screenshot Testing as an AGP test suite
+# (androidApp/build.gradle.kts), which replaced the deprecated standalone screenshot plugin.
+agp = "9.5.0-alpha07"
 android-compileSdk = "37"
 android-minSdk = "33"
 android-targetSdk = "37"
@@ -47,7 +49,8 @@ ktlintGradle = "14.2.0"
 composeRules = "0.6.6"
 # Finds the @Preview functions :shared:renderPreviews draws (binary-retention annotations, so not reflection).
 classgraph = "4.8.196"
-# Compose Preview Screenshot Testing: renders :androidApp's @PreviewTest previews through Layoutlib.
+# Compose Preview Screenshot Testing's engine: renders :androidApp's @PreviewTest previews through
+# Layoutlib, as the AGP test suite in androidApp/build.gradle.kts.
 screenshot = "0.0.1-alpha16"
 
 googleServices = "4.5.0"
@@ -145,4 +148,3 @@ androidTest = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }
 composeStabilityAnalyzer = { id = "com.github.skydoves.compose.stability.analyzer", version.ref = "composeStabilityAnalyzer" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle" }
-screenshot = { id = "com.android.compose.screenshot", version.ref = "screenshot" }

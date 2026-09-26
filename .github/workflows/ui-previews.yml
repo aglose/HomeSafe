@@ -66,15 +66,6 @@ jobs:
       - name: Install skiko native dependencies
         run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
 
-      # TEMPORARY (remove before merge): which AGP and screenshot-engine versions Google Maven has,
-      # since the machine choosing the AGP upgrade can't reach it.
-      - name: Published AGP and screenshot versions
-        continue-on-error: true
-        run: |
-          for path in com/android/tools/build/gradle com/android/tools/screenshot/screenshot-validation-api com/android/compose/screenshot/com.android.compose.screenshot.gradle.plugin; do
-            echo "== $path: $(curl -sSf "https://dl.google.com/dl/android/maven2/$path/maven-metadata.xml" | grep -oE '<version>[^<]+' | sed 's/<version>//' | grep -E '^(9\.[4-9]|0\.0\.1)' | tr '\n' ' ')"
-          done
-
       - name: Find the pull request and the merge base
         run: |
           pr=${{ github.event.pull_request.number || '' }}
@@ -94,8 +85,10 @@ jobs:
             echo "PREVIEW_BASE_REF=$base_ref"
             echo "PREVIEW_BASE_SHA=$base"
             echo "PREVIEW_RUN_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
-            # refs/previews/claude--some-feature: one level, so no branch name can clash with another's path.
-            echo "PREVIEW_REF=refs/previews/$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9._-' '-')"
+            # refs/previews/claude-some-feature-1a2b3c4d: one level, so no branch's ref can sit under
+            # another's, and the digest of the exact name keeps feature/foo and feature-foo apart.
+            # scripts/fetch-ui-previews.sh derives the same key.
+            echo "PREVIEW_REF=refs/previews/$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9._-' '-')-$(printf '%s' "$BRANCH" | git hash-object --stdin | cut -c1-8)"
           } >> "$GITHUB_ENV"
           echo "Branch $BRANCH, pull request ${pr:-none}, merge base with $base_ref: $base"
 
@@ -165,7 +158,7 @@ jobs:
           name: ui-previews
           path: |
             ${{ runner.temp }}/gallery/**
-            androidApp/build/reports/screenshotTest/**
+            androidApp/build/reports/tests/*ScreenshotTest*/**
             shared/build/reports/tests/renderPreviews/**
           retention-days: 7
 
