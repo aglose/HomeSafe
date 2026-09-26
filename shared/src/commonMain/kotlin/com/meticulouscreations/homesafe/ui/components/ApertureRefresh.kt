@@ -32,6 +32,14 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -55,6 +63,11 @@ import kotlin.math.min
  * elsewhere); where no shader can be compiled, [plainAperture] draws a ring and a sweeping arc.
  * The pull itself is Material's [pullToRefresh], so it takes over from [content]'s own scrolling
  * exactly when the standard indicator would: at the top of the list, pulling down.
+ *
+ * A drag is no use to a screen reader, so the box also offers a "Refresh" accessibility action
+ * (a screen reader only offers actions on the node it is on, so a caller whose content has
+ * better-placed nodes, such as headings, should offer [onRefresh] there too), and while
+ * [isRefreshing] the band is announced as an indeterminate "Refreshing" progress.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -89,13 +102,24 @@ fun ApertureRefreshBox(
     Box(
         modifier = modifier
             .clipToBounds()
-            .pullToRefresh(isRefreshing = isRefreshing, state = state, threshold = APERTURE_THRESHOLD, onRefresh = onRefresh),
+            .pullToRefresh(isRefreshing = isRefreshing, state = state, threshold = APERTURE_THRESHOLD, onRefresh = onRefresh)
+            .semantics {
+                customActions = listOf(
+                    CustomAccessibilityAction("Refresh") {
+                        onRefresh()
+                        true
+                    },
+                )
+            },
     ) {
         ApertureScan(
             opening = opening,
             scanning = { scanning.value },
             time = { time.floatValue },
-            modifier = Modifier.fillMaxWidth().height(APERTURE_THRESHOLD * (1f + MAX_OVERSHOOT)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(APERTURE_THRESHOLD * (1f + MAX_OVERSHOOT))
+                .then(if (isRefreshing) Modifier.refreshingSemantics() else Modifier),
         )
         Box(
             modifier = Modifier
@@ -105,6 +129,13 @@ fun ApertureRefreshBox(
             content()
         }
     }
+}
+
+/** The band while it scans, to a screen reader: a progress of no known length, announced as it starts. */
+private fun Modifier.refreshingSemantics(): Modifier = semantics {
+    contentDescription = "Refreshing"
+    progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
+    liveRegion = LiveRegionMode.Polite
 }
 
 /**

@@ -1154,12 +1154,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentClipList(item: com
     - onTagCar: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.MomentDateHeader(dateGroup: kotlin.String, dateSubLabel: kotlin.String): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.MomentDateHeader(dateGroup: kotlin.String, dateSubLabel: kotlin.String, onRefresh: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - dateGroup: STABLE (String is immutable)
     - dateSubLabel: STABLE (String is immutable)
+    - onRefresh: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentDayPicker(initialDayUtcMillis: kotlin.Long?, onPick: kotlin.Function1<kotlinx.datetime.LocalDate, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit

@@ -80,7 +80,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -323,7 +327,7 @@ internal fun MomentsFeed(
                 ) {
                     state.groups.forEach { group ->
                         item(key = group.headerKey, contentType = "date-header") {
-                            MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel)
+                            MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel, onRefresh = onRefresh)
                         }
                         items(group.items, key = { it.key }, contentType = { if (it.kind == VisitKind.ROUTINE) "routine-row" else "moment-card" }) { item ->
                             // The clip open in this entry, if the one playing is any of its detections.
@@ -758,9 +762,19 @@ private fun FilterMenuItem(label: String, icon: ImageVector?, checked: Boolean, 
 }
 
 @Composable
-private fun MomentDateHeader(dateGroup: String, dateSubLabel: String) {
+private fun MomentDateHeader(dateGroup: String, dateSubLabel: String, onRefresh: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        // A heading, so a screen reader can jump between days; and where it offers the refresh the
+        // pull gives everyone else, since a screen reader only offers the actions of the node it's on.
+        modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            heading()
+            customActions = listOf(
+                CustomAccessibilityAction("Refresh moments") {
+                    onRefresh()
+                    true
+                },
+            )
+        },
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

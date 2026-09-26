@@ -3,7 +3,12 @@ package com.meticulouscreations.homesafe.uitest
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -65,6 +70,7 @@ class MomentsFeedUiTest {
         onSelectCategory: (MomentCategory) -> Unit = {},
         onUnfamiliarOnlyChange: (Boolean) -> Unit = {},
         onSelectCamera: (String?) -> Unit = {},
+        onRefresh: () -> Unit = {},
         block: androidx.compose.ui.test.ComposeUiTest.() -> Unit,
     ) =
         runComposeUiTest {
@@ -84,6 +90,7 @@ class MomentsFeedUiTest {
                         onClipError = {},
                         onDownloadClick = {},
                         onFullScreenClick = {},
+                        onRefresh = onRefresh,
                     )
                 }
             }
@@ -135,6 +142,28 @@ class MomentsFeedUiTest {
         mainClock.advanceTimeByFrame()
         mainClock.advanceTimeByFrame()
         onNodeWithText("Today").assertIsDisplayed()
+    }
+
+    @Test
+    fun aRefreshInProgressIsAnIndeterminateProgressToAScreenReader() = runFeed(MomentsUiState(groups = aDay, refreshing = true)) {
+        onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate))
+            .assertCountEquals(1)
+        onNodeWithContentDescription("Refreshing").assertExists()
+    }
+
+    @Test
+    fun aScreenReaderRefreshesFromADayHeading() {
+        var refreshed = 0
+        runFeed(MomentsUiState(groups = aDay), onRefresh = { refreshed++ }) {
+            val heading = onNode(hasCustomAction("Refresh moments")).fetchSemanticsNode()
+            assertEquals(true, SemanticsProperties.Heading in heading.config)
+            runOnUiThread { heading.config[SemanticsActions.CustomActions].single { it.label == "Refresh moments" }.action() }
+            assertEquals(1, refreshed)
+        }
+    }
+
+    private fun hasCustomAction(label: String) = SemanticsMatcher("has the custom action \"$label\"") { node ->
+        node.config.getOrNull(SemanticsActions.CustomActions).orEmpty().any { it.label == label }
     }
 
     @Test
