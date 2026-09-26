@@ -130,6 +130,22 @@ android {
     }
     testOptions {
         execution = "ANDROIDX_TEST_ORCHESTRATOR"
+        // Compose Preview Screenshot Testing, as an AGP test suite (android.experimental.testSuiteSupport
+        // in gradle.properties): the @PreviewTest functions in src/screenshotTest — the shared
+        // module's previews — drawn by Layoutlib on the host. See docs/ui-previews.md.
+        //   ./gradlew :androidApp:updateDebugScreenshotTestDefaultTestSuite  draws them under src/screenshotTestDefaultDebug/reference/
+        //   ./gradlew :androidApp:testDebugScreenshotTestDefaultTestSuite    compares against those; report in build/reports/tests/
+        // Layoutlib resolves layout XML and theme attributes from compiled resources; without them
+        // AGP won't create the suite's tasks at all ("Compose Preview requires compiled Android resources").
+        unitTests.isIncludeAndroidResources = true
+        screenshotTests.create("screenshotTest") {
+            engineVersion = libs.versions.screenshot.get()
+            targetVariants.add("debug")
+            dependencies {
+                implementation(libs.compose.uiTooling)
+                implementation(libs.screenshot.validation.api)
+            }
+        }
     }
     packaging {
         resources {

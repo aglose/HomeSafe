@@ -1,5 +1,7 @@
 [versions]
-agp = "9.4.0"
+# 9.5 is still an alpha: it's what runs Compose Preview Screenshot Testing as an AGP test suite
+# (androidApp/build.gradle.kts), which replaced the deprecated standalone screenshot plugin.
+agp = "9.5.0-alpha07"
 android-compileSdk = "37"
 android-minSdk = "33"
 android-targetSdk = "37"
@@ -45,6 +47,11 @@ composeStabilityAnalyzer = "0.13.0"
 ktlint = "1.8.0"
 ktlintGradle = "14.2.0"
 composeRules = "0.6.6"
+# Finds the @Preview functions :shared:renderPreviews draws (binary-retention annotations, so not reflection).
+classgraph = "4.8.196"
+# Compose Preview Screenshot Testing's engine: renders :androidApp's @PreviewTest previews through
+# Layoutlib, as the AGP test suite in androidApp/build.gradle.kts.
+screenshot = "0.0.1-alpha16"
 
 googleServices = "4.5.0"
 playServicesLocation = "21.3.0"
@@ -118,6 +125,9 @@ firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }
 # Geofencing + fused location for automatic presence (GeofenceMonitor.android.kt).
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
+
+classgraph = { module = "io.github.classgraph:classgraph", version.ref = "classgraph" }
+screenshot-validation-api = { module = "com.android.tools.screenshot:screenshot-validation-api", version.ref = "screenshot" }
 
 # Compose-specific ktlint rules (mrmans0n/compose-rules), loaded via the ktlintRuleset configuration.
 composeRules-ktlint = { module = "io.nlopez.compose.rules:ktlint", version.ref = "composeRules" }

@@ -217,6 +217,8 @@ kotlin {
             // per host, which is what CI (linux-x64) and this Mac (macos-arm64) each need.
             implementation(compose.desktop.currentOs)
             implementation(project(":fake-frigate"))
+            // RenderPreviews (the renderPreviews task below) finds the @Preview functions with it.
+            implementation(libs.classgraph)
         }
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
@@ -241,6 +243,36 @@ tasks.named<Test>("jvmTest") {
     val dataDir = layout.buildDirectory.dir("tmp/jvmTest/homesafe-data")
     systemProperty("homesafe.dataDir", dataDir.get().asFile.absolutePath)
     doFirst { dataDir.get().asFile.deleteRecursively() }
+    // -PjourneyScreens: every integration journey saves what is on screen after each tap, at its
+    // end and when it fails, to build/journey-screens/<journey>/ (see docs/ui-previews.md).
+    if (providers.gradleProperty("journeyScreens").isPresent) {
+        val screensDir = layout.buildDirectory.dir("journey-screens")
+        systemProperty("homesafe.journeyScreens", screensDir.get().asFile.absolutePath)
+        doFirst { screensDir.get().asFile.deleteRecursively() }
+    }
+}
+
+// `./gradlew :shared:renderPreviews` draws every @Preview in this module to build/previews/<id>.png,
+// on the desktop runtime: seconds, no emulator, no Android SDK work. `-Ppreview=Home` draws only
+// the previews whose id contains "Home". It is jvmTest's RenderPreviews, which does nothing unless
+// this task hands it an output directory. See docs/ui-previews.md.
+val jvmTestTask = tasks.named<Test>("jvmTest")
+tasks.register<Test>("renderPreviews") {
+    group = "verification"
+    description = "Renders every @Preview in :shared to build/previews/*.png on the JVM (see docs/ui-previews.md)."
+    testClassesDirs = jvmTestTask.get().testClassesDirs
+    classpath = jvmTestTask.get().classpath
+    useJUnit()
+    filter.includeTestsMatching("com.meticulouscreations.homesafe.previews.RenderPreviews")
+    val previewsDir = layout.buildDirectory.dir("previews")
+    systemProperty("java.awt.headless", "true")
+    systemProperty("homesafe.previews.out", previewsDir.get().asFile.absolutePath)
+    providers.gradleProperty("preview").orNull?.let { systemProperty("homesafe.previews.filter", it) }
+    outputs.dir(previewsDir)
+    // Always draw: the point is to look at what the code does now, and it takes seconds.
+    outputs.upToDateWhen { false }
+    // The list of what was drawn, and where, is the useful part of the output.
+    testLogging.showStandardStreams = true
 }
 
 // A CI run's console is often the only evidence of why a test failed (and the integration

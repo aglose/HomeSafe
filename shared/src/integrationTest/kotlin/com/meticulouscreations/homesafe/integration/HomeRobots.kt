@@ -112,6 +112,7 @@ internal class CameraRobot(private val journey: AppJourney) {
         scrollTo(matcher, description)
         journey.awaitSingle(matcher, description).performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after press on $description")
     }
 
     fun openDetectionZones() {
@@ -151,6 +152,7 @@ internal class ZonesRobot(private val journey: AppJourney) {
         corners.forEach { (x, y) ->
             journey.awaitTag(DETECTION_ZONES_CANVAS_TEST_TAG).performTouchInput { click(percentOffset(x, y)) }
             journey.settle(CORNER_SETTLE)
+            journey.snapshot("after tap on the frame at $x $y")
         }
         press(hasText("Done") and isEnabled(), "the enabled Done button")
     }
@@ -166,6 +168,7 @@ internal class ZonesRobot(private val journey: AppJourney) {
         journey.awaitNode(hasText("Save") and hasClickAction() and isEnabled(), "an enabled Save button")
             .performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after press on Save")
     }
 
     fun back() = journey.tap(hasContentDescription("Back"), "the Back arrow")
@@ -177,6 +180,7 @@ internal class ZonesRobot(private val journey: AppJourney) {
     private fun press(matcher: SemanticsMatcher, description: String) {
         journey.awaitSingle(matcher, description).performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after press on $description")
     }
 
     private companion object {
