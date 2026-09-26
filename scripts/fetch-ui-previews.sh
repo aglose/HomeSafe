@@ -22,7 +22,9 @@ for arg in "$@"; do
   esac
 done
 branch=${branch:-$(git branch --show-current)}
-key=$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-')
+# The workflow's key: the name made ref-safe, plus a digest of the exact name so two branches that
+# flatten alike (feature/foo, feature-foo) keep separate galleries.
+key="$(printf '%s' "$branch" | tr -c 'A-Za-z0-9._-' '-')-$(printf '%s' "$branch" | git hash-object --stdin | cut -c1-8)"
 ref="refs/previews/$key"
 dest="build/ui-previews/$key"
 

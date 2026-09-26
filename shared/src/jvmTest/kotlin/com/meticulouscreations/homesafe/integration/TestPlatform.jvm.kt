@@ -18,8 +18,9 @@ private val journeyScreensDir: File? = System.getProperty("homesafe.journeyScree
 
 /**
  * Writes the app's window as `<journey>/<step>.png` under the journey-screenshot directory, if
- * the run has one (see [AppJourney.snapshot]). The first root is the app itself; a dialog or
- * popup open over it is a root of its own and isn't in the picture.
+ * the run has one (see [AppJourney.snapshot]). The first root is the app itself, which fills the
+ * window. On the desktop, capturing a node redraws the whole scene and crops it to that node's
+ * bounds, so a dialog or menu open over the app (a root of its own) is in the picture too.
  */
 @OptIn(ExperimentalTestApi::class)
 internal fun saveJourneyScreen(ui: ComposeUiTest, journey: String, step: String) {

@@ -90,6 +90,7 @@ internal class SettingsRobot(private val journey: AppJourney) {
     fun press(matcher: SemanticsMatcher, description: String = matcher.description) {
         journey.awaitSingle(matcher, description).performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after press on $description")
     }
 
     /** As [press], for a control repeated on every card of a list: clicks the first (topmost) of them. */
@@ -97,6 +98,7 @@ internal class SettingsRobot(private val journey: AppJourney) {
         journey.awaitUntil("at least one node that is $description") { journey.count(matcher) > 0 }
         journey.ui.onAllNodes(matcher)[0].performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after press on the first $description")
     }
 
     /** Replaces the text in the page's one text field. */
@@ -163,6 +165,7 @@ internal class SettingsRobot(private val journey: AppJourney) {
         }
         journey.ui.onNode(SemanticsMatcher(what) { it.id == id }).performSemanticsAction(SemanticsActions.OnClick)
         journey.settle(PRESS_SETTLE)
+        journey.snapshot("after flipping $what")
     }
 
     /**

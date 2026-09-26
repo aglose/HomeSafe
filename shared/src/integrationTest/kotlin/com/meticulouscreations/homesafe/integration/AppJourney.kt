@@ -63,8 +63,9 @@ private fun runJourney(name: String, state: FakeFrigateState, block: AppJourney.
             val journey = AppJourney(this, server, graph, name)
             try {
                 journey.block()
-            } catch (failure: AssertionError) {
-                journey.snapshot("failed")
+            } catch (failure: Throwable) {
+                // Any failure but a stuck journey, whose UI thread may not answer a capture.
+                if (failure !is InterruptedException) journey.snapshot("failed")
                 throw failure
             }
             journey.snapshot("end")
@@ -281,9 +282,9 @@ internal class AppJourney(
     /**
      * Saves what is on screen as `<journey>/<nn>-<step>.png`, when the run asked for journey
      * screenshots (`-PjourneyScreens` on the JVM; see docs/ui-previews.md) and does nothing
-     * otherwise. Every tap takes one, and so do the end of a journey and a failed wait, so a run
-     * leaves a flipbook of the journey an agent or a reviewer can page through. Best effort: a
-     * capture that fails never fails the journey.
+     * otherwise. Every tap takes one (the robots' presses through a click action too), and so do
+     * the end of a journey and a failure, so a run leaves a flipbook of the journey an agent or a
+     * reviewer can page through. Best effort: a capture that fails never fails the journey.
      */
     fun snapshot(step: String) {
         val file = (++snapshots).toString().padStart(2, '0') + "-" +
