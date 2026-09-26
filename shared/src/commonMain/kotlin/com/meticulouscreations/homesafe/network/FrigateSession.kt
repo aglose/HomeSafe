@@ -48,6 +48,22 @@ fun frigateRecordingStreamUrl(
         "/index.m3u8"
 
 /**
+ * A stretch of [cameraName]'s continuous recording as one downloadable MP4, cut by Frigate on
+ * request (it remuxes the covering segments with ffmpeg, so the file starts on a keyframe at or
+ * just before [startEpochSeconds]). What the clip editor saves; authenticated like the playlists.
+ */
+fun frigateRecordingClipDownloadUrl(
+    serverUrl: String,
+    cameraName: String,
+    startEpochSeconds: Double,
+    endEpochSeconds: Double,
+): String =
+    "${serverUrl.trimEnd('/')}/api/$cameraName" +
+        "/start/${formatEpochSeconds(startEpochSeconds)}" +
+        "/end/${formatEpochSeconds(endEpochSeconds)}" +
+        "/clip.mp4"
+
+/**
  * Renders epoch seconds for a Frigate URL with millisecond precision. `Double.toString()` is not
  * usable here: on the JVM it prints anything ≥ 1e7 in scientific notation ("1.7E9"), which
  * Frigate rejects. Truncates rather than rounds so a rendered start never lands *after* the clip

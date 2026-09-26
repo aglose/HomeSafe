@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.frigateRecordingClipDownloadUrl
 import com.meticulouscreations.homesafe.network.frigateRecordingStreamUrl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -47,6 +48,16 @@ class RecordingsRepositoryImpl(private val apiClient: FrigateApiClient) : Record
         playlist: RecordingPlaylist,
     ): RecordingStream = RecordingStream(
         url = frigateRecordingStreamUrl(serverUrl, cameraName, playlist.startEpochSeconds, playlist.endEpochSeconds),
+        headers = apiClient.sessionCookieHeader(serverUrl)?.let { mapOf("Cookie" to it) }.orEmpty(),
+    )
+
+    override suspend fun getRecordingClipDownload(
+        serverUrl: String,
+        cameraName: String,
+        startEpochSeconds: Double,
+        endEpochSeconds: Double,
+    ): RecordingStream = RecordingStream(
+        url = frigateRecordingClipDownloadUrl(serverUrl, cameraName, startEpochSeconds, endEpochSeconds),
         headers = apiClient.sessionCookieHeader(serverUrl)?.let { mapOf("Cookie" to it) }.orEmpty(),
     )
 }

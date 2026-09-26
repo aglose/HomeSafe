@@ -64,6 +64,35 @@ internal val SharedElementPop: ContentTransform = ContentTransform(
     initialContentExit = fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
 )
 
+/** How long the clip editor's splash takes to cover the screen from the scissors. */
+internal const val SPLASH_IN_MS = 760
+
+/** ...and to drain back into them on the way out: leaving is quicker than arriving. */
+internal const val SPLASH_OUT_MS = 460
+
+/**
+ * For a screen that splashes in over its parent (the clip editor; see `splashReveal`): nothing
+ * fades or moves at the level of the screens. The parent holds, fully opaque, underneath for the
+ * length of the splash — a fade *to* alpha 1, the same trick as [RootCrossfade], keeps it composed
+ * exactly that long — and the new screen reveals itself with a splash it drives from this same
+ * transition (its entry's `LocalNavAnimatedContentScope`). Navigation 3 stacks a pushed screen
+ * above its parent, so the water lands on top.
+ */
+internal val SplashPush: ContentTransform = ContentTransform(
+    targetContentEnter = fadeIn(tween(SPLASH_IN_MS, easing = LinearEasing), initialAlpha = 1f),
+    initialContentExit = fadeOut(tween(SPLASH_IN_MS, easing = LinearEasing), targetAlpha = 1f),
+)
+
+/**
+ * The reverse: the parent is simply there underneath (Navigation 3 keeps a popped screen above
+ * the one it returns to), and the splash drains back to where it landed. With predictive back
+ * the finger scrubs the drain, so a half-swipe shows the camera page through a shrinking pool.
+ */
+internal val SplashPop: ContentTransform = ContentTransform(
+    targetContentEnter = fadeIn(tween(SPLASH_OUT_MS, easing = LinearEasing), initialAlpha = 1f),
+    initialContentExit = fadeOut(tween(SPLASH_OUT_MS, easing = LinearEasing), targetAlpha = 1f),
+)
+
 /**
  * The root switch between sign-in and the app shell: the new screen fades in over the old
  * one, which stays fully opaque until the beat is over. A symmetric cross-fade would leave

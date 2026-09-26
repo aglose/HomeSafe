@@ -9,6 +9,8 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -48,6 +50,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -104,8 +107,12 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         else -> true
     }
 
-    /** Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which wants every pixel for the frame. */
-    fun showsBottomNav(tab: TopLevelRoute): Boolean = !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull() is CarTaggingRoute)
+    /**
+     * Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which
+     * wants every pixel for the frame, nor the clip editor, which is full screen.
+     */
+    fun showsBottomNav(tab: TopLevelRoute): Boolean =
+        !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
 
     fun selectTab(tab: TopLevelRoute) {
         topLevel.addTopLevel(tab)
@@ -287,15 +294,20 @@ internal fun ShellScaffold(
             topBar()
         }
 
-        if (!LocalNativeTabBar.current && showBottomNav) {
-            BottomNavBar(
-                selected = selectedTab,
-                onSelect = onSelectTab,
+        // Slips away rather than vanishing when a full-screen page (the clip editor, car
+        // tagging) takes over, so the tap that opened it isn't answered by a blink.
+        if (!LocalNativeTabBar.current) {
+            AnimatedVisibility(
+                visible = showBottomNav,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
                     .padding(bottom = 16.dp),
-            )
+                enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) + slideInVertically(tween(NAV_TRANSITION_MS, easing = NavEnterEasing)) { it / 2 },
+                exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutVertically(tween(NAV_TRANSITION_MS / 2)) { it / 2 },
+            ) {
+                BottomNavBar(selected = selectedTab, onSelect = onSelectTab)
+            }
         }
 
         overlay()
@@ -400,13 +412,26 @@ private data class DetectionZonesRoute(val cameraName: String)
 private data class CarTaggingRoute(val cameraName: String)
 
 /**
+ * The full-screen clip editor for [cameraName], around [anchorEpochSeconds] (what the camera
+ * page was showing, or "now" at the live edge). [originX] / [originY] are where the scissors
+ * were, as fractions of the window: where the splash that opens it lands, and where it drains
+ * back to. Floats rather than an Offset so the route stays a plain, saveable value.
+ */
+private data class ClipEditorRoute(
+    val cameraName: String,
+    val anchorEpochSeconds: Double,
+    val originX: Float,
+    val originY: Float,
+)
+
+/**
  * The Home tab's own nested navigation: the camera list, and drilling into a camera's detail
  * screen. The [SharedTransitionLayout] lets the tapped camera's video animate from its grid
  * card into the detail screen's player (and back), keyed by camera name on both sides.
  *
  * The detail screen's own transition is fade-only ([SharedElementPush] / [SharedElementPop]),
- * so the video is the one thing that moves; the zone editor beyond it uses the ordinary
- * shared-axis slide. Navigation 3 takes the specs from the entry nearer the top of the stack,
+ * so the video is the one thing that moves; the clip editor splashes in over it
+ * ([SplashPush] / [SplashPop]); the zone editor beyond it uses the ordinary shared-axis slide. Navigation 3 takes the specs from the entry nearer the top of the stack,
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
@@ -447,7 +472,27 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         onBack = { backStack.removeLastOrNull() },
                         onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
                         onTagCars = { backStack.add(CarTaggingRoute(route.cameraName)) },
+                        onClip = { anchor, origin ->
+                            // A second tap while the splash is still landing is the same editor.
+                            if (backStack.lastOrNull() !is ClipEditorRoute) {
+                                backStack.add(ClipEditorRoute(route.cameraName, anchor, origin.x, origin.y))
+                            }
+                        },
                         openAtEpochSeconds = route.openAtEpochSeconds,
+                    )
+                }
+                // Splashes in from the scissors rather than sliding: see SplashPush / SplashPop,
+                // and ClipEditorScreen for the water itself.
+                entry<ClipEditorRoute>(
+                    metadata = NavDisplay.transitionSpec { SplashPush } +
+                        NavDisplay.popTransitionSpec { SplashPop } +
+                        NavDisplay.predictivePopTransitionSpec { SplashPop },
+                ) { route ->
+                    ClipEditorScreen(
+                        cameraName = route.cameraName,
+                        anchorEpochSeconds = route.anchorEpochSeconds,
+                        splashOrigin = Offset(route.originX, route.originY),
+                        onClose = { backStack.removeLastOrNull() },
                     )
                 }
                 entry<DetectionZonesRoute> { route ->

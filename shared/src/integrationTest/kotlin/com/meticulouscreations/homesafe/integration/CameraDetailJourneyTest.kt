@@ -5,8 +5,6 @@ import androidx.compose.ui.test.hasText
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.RecordedRequest
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.runBlocking
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -119,38 +117,26 @@ class CameraDetailJourneyTest {
     }
 
     @Test
-    fun theBellSilencesThisCameraAndSaysSoThenBringsItBack() = runAppJourney {
-        // Alert choices live in this device's settings store, which outlasts a journey: start
-        // from "on" whatever an earlier one left, and leave it that way.
-        val settings = graph.settingsRepository
-        val alertsOn = runBlocking { settings.observeSettings().first() }.withAlertsOn("back_yard", emptyList(), enabled = true)
-        runBlocking { settings.updateSettings(alertsOn) }
-        try {
-            val home = HomeRobot(this)
-            val camera = CameraRobot(this)
-            signIn.signInAs()
-            // The back yard has no zones, so the bell covers the whole camera from the first frame.
-            home.openCamera("back_yard", "Back Yard")
-            awaitText("Alerts on")
+    fun theScissorsOpenTheClipEditorAndCloseBackToTheCamera() = runAppJourney {
+        val home = HomeRobot(this)
+        val camera = CameraRobot(this)
+        signIn.signInAs()
+        home.openCamera("back_yard", "Back Yard")
 
-            camera.press(hasContentDescription("Turn off alerts for Back Yard"), "the bell")
+        camera.press(hasContentDescription("Clip a video from Back Yard"), "the scissors")
 
-            awaitText("Alerts off for Back Yard")
-            awaitText("Alerts off")
-            awaitUntil("the settings store to have the back yard silenced") {
-                runBlocking { !settings.observeSettings().first().alertsEnabledOn("back_yard", emptyList()) }
-            }
-
-            camera.press(hasContentDescription("Turn on alerts for Back Yard"), "the bell")
-
-            awaitText("Alerts on for Back Yard", substring = true)
-            awaitText("Alerts on")
-            awaitUntil("the settings store to have the back yard alerting again") {
-                runBlocking { settings.observeSettings().first().alertsEnabledOn("back_yard", emptyList()) }
-            }
-        } finally {
-            runBlocking { settings.updateSettings(settings.observeSettings().first().withAlertsOn("back_yard", emptyList(), enabled = true)) }
+        // The editor takes the whole screen: the camera page's own sections are gone.
+        awaitNode(hasContentDescription(CLOSE_EDITOR), "the clip editor's close button")
+        awaitGone(hasText(RECENT_ACTIVITY), "the camera page, under the editor")
+        // It asks the server for the quarter hour behind live — the camera page itself only
+        // ever asks for an hour or more, so a window this narrow is the editor's.
+        server.awaitRequest(description = "the clip editor's recordings read") {
+            it.isRecordingsOf("back_yard") && it.window() < CLIP_REACH_UPPER_BOUND
         }
+
+        tap(hasContentDescription(CLOSE_EDITOR), "the clip editor's close button")
+
+        camera.awaitOpen("Back Yard")
     }
 
     private fun RecordedRequest.isRecordingsOf(camera: String): Boolean = method == "GET" && path == "/api/$camera/recordings"
@@ -164,6 +150,11 @@ class CameraDetailJourneyTest {
 
     private companion object {
         const val LIVE = "LIVE"
+        const val CLOSE_EDITOR = "Close clip editor"
+
+        /** The editor opened at live reads ~16 minutes back (its 15-minute reach plus a minute's padding). */
+        const val CLIP_REACH_UPPER_BOUND = 3_000.0
+        const val RECENT_ACTIVITY = "Recent Activity"
         const val NO_RECORDINGS = "No recordings in this window yet"
         const val DAY_SECONDS = 86_400.0
 
