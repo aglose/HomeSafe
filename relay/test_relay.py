@@ -472,7 +472,7 @@ class CarCheckTest(unittest.TestCase):
 
 
 class BootReportTest(unittest.TestCase):
-    HEALTHY = {"frigate": True, "cameras": {"hikvision_1": 5.0, "hikvision_2": 5.0, "amcrest_1": 5.1}, "recording_mb": 3_700_000, "vlm": True}
+    HEALTHY = {"frigate": True, "cameras": {"hikvision_1": 5.0, "hikvision_2": 5.0, "amcrest_1": 5.1}, "recording_mb": 3_700_000, "vlm": True, "webrtc": True}
 
     def test_all_back(self):
         self.assertEqual(("Server restarted", "Back since 5:33 PM · all 3 cameras · recording drive OK"),
@@ -491,6 +491,24 @@ class BootReportTest(unittest.TestCase):
     def test_vision_model_missing_is_a_problem_only_when_ollama_is_configured(self):
         self.assertIn("vision model not loaded", relay.boot_report_text(dict(self.HEALTHY, vlm=False), "5:33 PM")[1])
         self.assertEqual("Server restarted", relay.boot_report_text(dict(self.HEALTHY, vlm=None), "5:33 PM")[0])
+
+    def test_webrtc_that_never_started_is_a_problem(self):
+        title, body = relay.boot_report_text(dict(self.HEALTHY, webrtc=False), "1:23 PM")
+        self.assertEqual("Server restarted with problems", title)
+        self.assertIn("HLS fallback", body)
+        self.assertEqual("Server restarted", relay.boot_report_text(dict(self.HEALTHY, webrtc=None), "1:23 PM")[0])
+
+    def test_udp_port_listening(self):
+        # Shape of /proc/net/udp: go2rtc on 192.168.68.65:8555 (0x216B), and something else on 53.
+        table = (
+            "   sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops\n"
+            "  103: 4144A8C0:216B 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 45121 2 0000000000000000 0\n"
+            "  201: 3500007F:0035 00000000:0000 07 00000000:00000000 00:00000000 00000000   101        0 17005 2 0000000000000000 0\n"
+        )
+        self.assertTrue(relay.udp_port_listening(table, 8555))
+        self.assertTrue(relay.udp_port_listening(table, 53))
+        self.assertFalse(relay.udp_port_listening(table, 1984))
+        self.assertFalse(relay.udp_port_listening(table.splitlines()[0], 8555))
 
     def test_clock_text(self):
         from zoneinfo import ZoneInfo
