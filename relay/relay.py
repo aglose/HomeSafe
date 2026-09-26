@@ -21,6 +21,8 @@ only its first alert, or one that brings something new to it, sounds; the rest u
 A household car doing its rounds, and a backlog found late, are quiet too — see `Visits`.
 """
 
+import hashlib
+import html
 import json
 import logging
 import os
@@ -32,6 +34,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
+from urllib.parse import parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
 import requests
@@ -168,6 +171,9 @@ def db() -> sqlite3.Connection:
     # What the car check (see `car_check_forever`) made of each event, so it looks at each once:
     # kind "street" (was it a passing car to file under `none`) or "vlm" (the second opinion).
     conn.execute("CREATE TABLE IF NOT EXISTS car_checks (event_id TEXT, kind TEXT, at REAL, verdict TEXT, detail TEXT, PRIMARY KEY (event_id, kind))")
+    # Google Home's account link and stream tokens (see "Google Home"), by hash: kind is "code",
+    # "access", "refresh" or "stream"; subject the Frigate user, or for "stream" the camera.
+    conn.execute("CREATE TABLE IF NOT EXISTS google_tokens (hash TEXT PRIMARY KEY, kind TEXT, subject TEXT, expires REAL)")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -380,6 +386,7 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
 _required_zones: dict[str, list[str]] = {}
 _car_zones: dict[str, list[str]] = {}
 _car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
+_live_streams: dict[str, list[str]] = {}
 _config_loaded_at = 0.0
 
 
@@ -401,7 +408,7 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _live_streams, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
@@ -412,6 +419,7 @@ def refresh_config() -> None:
                 name: [p for p in (zone_polygon((cam.get("zones") or {}).get(z)) for z in _car_zones[name]) if len(p) >= 3]
                 for name, cam in cameras.items()
             }
+            _live_streams = {name: list(((cam.get("live") or {}).get("streams") or {}).values()) for name, cam in cameras.items()}
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -433,6 +441,12 @@ def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
     """Per camera, the outlines of the zones in `car_zones`."""
     refresh_config()
     return _car_zone_polygons
+
+
+def live_streams() -> dict[str, list[str]]:
+    """Per camera, the go2rtc streams its live view may use (Frigate's `live.streams`), main first."""
+    refresh_config()
+    return _live_streams
 
 
 REVIEW_PAGE = 50
@@ -1938,3 +1952,352 @@ def test_push(request: Request) -> dict[str, Any]:
     result = broadcast("Front Yard", "Test: Sarah's Tesla in the driveway", {"review_id": f"test-{int(time.time())}", "camera": "hikvision_1", "test": "1"}, test=True)
     log.info("test push by %s: %s", user, result)
     return {"ok": True, **result}
+
+
+# ---------------------------------------------------------------- Google Home
+
+# The cameras on a Nest Hub or a Chromecast with Google TV ("Hey Google, show the Front Door"),
+# through a cloud-to-cloud smart-home integration of our own: a project in the Google Home
+# Developer Console, linked in the Google Home app and never certified. Google's cloud reaches
+# the relay over Tailscale Funnel, which publishes /google/* and nothing else. Linking the
+# account signs in with a Frigate account, so there's no new password. When a display asks for a
+# camera it posts a WebRTC offer to /google/signal, which hands it to Frigate's go2rtc and returns
+# go2rtc's answer; the video then goes straight from go2rtc to the display over the LAN, since
+# go2rtc advertises its LAN address. Off unless GOOGLE_CLIENT_ID is set (google-home.env on the box).
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+# The Developer Console project: names the one address Google may send an account link back to.
+GOOGLE_PROJECT_ID = os.environ.get("GOOGLE_PROJECT_ID", "")
+# Where Funnel publishes the relay, for the signaling address handed to a display.
+GOOGLE_PUBLIC_URL = os.environ.get("GOOGLE_PUBLIC_URL", "").rstrip("/")
+GO2RTC = os.environ.get("GO2RTC_URL", "http://127.0.0.1:1984").rstrip("/")
+# Per camera, the go2rtc stream to show, overriding the pick in `google_stream`. Google wants
+# 480p to 1080p; here the main streams are 4K and the Hikvision subs 360p.
+GOOGLE_STREAMS: dict[str, str] = json.loads(os.environ.get("GOOGLE_STREAMS") or "{}")
+GOOGLE_AGENT_USER = "homesafe"  # one household, one Google link
+GOOGLE_CODE_SECONDS = 600
+GOOGLE_ACCESS_SECONDS = 3600
+# How long a display has, after asking for a camera, to post its offer.
+GOOGLE_STREAM_SECONDS = 120
+# The page on a display that plays the stream is served from here, and posts the offer from it.
+GOOGLE_SIGNAL_ORIGIN = "https://www.gstatic.com"
+GOOGLE_ICE_SERVERS = json.dumps([{"urls": "stun:stun.l.google.com:19302"}])
+GET_CAMERA_STREAM = "action.devices.commands.GetCameraStream"
+# The link page is on the internet: after this many wrong passwords in the window, it refuses
+# every sign-in until the window passes. Frigate itself doesn't limit them.
+GOOGLE_LOGIN_LIMIT = 5
+GOOGLE_LOGIN_WINDOW_SECONDS = 900
+_google_login_failures: list[float] = []
+
+
+def token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def google_issue(kind: str, subject: str, ttl: float | None, now: float | None = None) -> str:
+    """A new token of `kind` for `subject`, good for `ttl` seconds (None: until unlinked). Only its hash is kept."""
+    token = secrets.token_urlsafe(32)
+    expires = None if ttl is None else (now or time.time()) + ttl
+    with_db(lambda c: (c.execute("INSERT INTO google_tokens VALUES (?,?,?,?)", (token_hash(token), kind, subject, expires)), c.commit()))
+    return token
+
+
+def google_check(token: str, kind: str, consume: bool = False, now: float | None = None) -> str | None:
+    """The subject a live token of `kind` was issued for, or None. `consume` spends it (a code is good once)."""
+    now = now or time.time()
+    digest = token_hash(token)
+
+    def look(c: sqlite3.Connection):
+        row = c.execute("SELECT subject, expires FROM google_tokens WHERE hash=? AND kind=?", (digest, kind)).fetchone()
+        if row is not None and consume:
+            c.execute("DELETE FROM google_tokens WHERE hash=?", (digest,))
+        c.execute("DELETE FROM google_tokens WHERE expires IS NOT NULL AND expires < ?", (now,))
+        c.commit()
+        return row
+
+    row = with_db(look) if token else None
+    if row is None or (row[1] is not None and row[1] < now):
+        return None
+    return row[0]
+
+
+def google_unlink() -> None:
+    with_db(lambda c: (c.execute("DELETE FROM google_tokens"), c.commit()))
+
+
+def google_redirect_ok(uri: str, project: str) -> bool:
+    """Only Google's account-linking redirect may receive a code, and only for our project once it's known."""
+    for host in ("oauth-redirect.googleusercontent.com", "oauth-redirect-sandbox.googleusercontent.com"):
+        prefix = f"https://{host}/r/"
+        if uri.startswith(prefix):
+            rest = uri[len(prefix):]
+            return rest == project if project else re.fullmatch(r"[a-z0-9-]+", rest) is not None
+    return False
+
+
+def login_locked(failures: list[float], now: float) -> bool:
+    failures[:] = [t for t in failures if now - t < GOOGLE_LOGIN_WINDOW_SECONDS]
+    return len(failures) >= GOOGLE_LOGIN_LIMIT
+
+
+def google_stream(camera: str, streams: list[str], overrides: dict[str, str]) -> str | None:
+    """The go2rtc stream a display gets for `camera`: the override, else its sub stream, else its first live stream."""
+    if camera in overrides:
+        return overrides[camera]
+    return next((s for s in streams if s.endswith("_sub")), streams[0] if streams else None)
+
+
+def google_cameras() -> dict[str, str]:
+    """Each camera Google may show, with its stream."""
+    streams = live_streams()
+    picks = {camera: google_stream(camera, s, GOOGLE_STREAMS) for camera, s in streams.items()}
+    return {camera: stream for camera, stream in picks.items() if stream}
+
+
+def google_sync(request_id: str, cameras: dict[str, str]) -> dict[str, Any]:
+    return {"requestId": request_id, "payload": {"agentUserId": GOOGLE_AGENT_USER, "devices": [
+        {
+            "id": camera,
+            "type": "action.devices.types.CAMERA",
+            "traits": ["action.devices.traits.CameraStream"],
+            "name": {"name": camera_name(camera)},
+            "willReportState": False,
+            "attributes": {"cameraStreamSupportedProtocols": ["webrtc"], "cameraStreamNeedAuthToken": True},
+            "deviceInfo": {"manufacturer": "HomeSafe", "model": "Frigate camera"},
+        }
+        for camera in cameras
+    ]}}
+
+
+def google_query(request_id: str, payload: dict[str, Any], cameras: dict[str, str]) -> dict[str, Any]:
+    ids = [d.get("id") for d in payload.get("devices") or []]
+    return {"requestId": request_id, "payload": {"devices": {
+        i: {"online": True, "status": "SUCCESS"} if i in cameras else {"online": False, "status": "ERROR", "errorCode": "deviceNotFound"}
+        for i in ids
+    }}}
+
+
+def google_execute(request_id: str, payload: dict[str, Any], cameras: dict[str, str], issue: Callable[[str], str]) -> dict[str, Any]:
+    """
+    Answers "show the Front Door": for each camera asked for, a signaling address and a short-lived
+    token to post the offer with (`issue(camera)` makes it). The token rides in the address too,
+    as in Google's sample, in case a display leaves the header off.
+    """
+    results = []
+    for command in payload.get("commands") or []:
+        for device in command.get("devices") or []:
+            camera = device.get("id")
+            for execution in command.get("execution") or []:
+                protocols = (execution.get("params") or {}).get("SupportedStreamProtocols") or ["webrtc"]
+                if execution.get("command") != GET_CAMERA_STREAM:
+                    results.append({"ids": [camera], "status": "ERROR", "errorCode": "functionNotSupported"})
+                elif camera not in cameras:
+                    results.append({"ids": [camera], "status": "ERROR", "errorCode": "deviceNotFound"})
+                elif "webrtc" not in protocols:
+                    results.append({"ids": [camera], "status": "ERROR", "errorCode": "notSupported"})
+                else:
+                    token = issue(camera)
+                    results.append({"ids": [camera], "status": "SUCCESS", "states": {
+                        "cameraStreamProtocol": "webrtc",
+                        "cameraStreamSignalingUrl": f"{GOOGLE_PUBLIC_URL}/google/signal/{camera}?{urlencode({'token': token})}",
+                        "cameraStreamAuthToken": token,
+                        "cameraStreamIceServers": GOOGLE_ICE_SERVERS,
+                    }})
+    return {"requestId": request_id, "payload": {"commands": results}}
+
+
+def go2rtc_answer(stream: str, offer_sdp: str) -> str:
+    """go2rtc's WebRTC answer to a display's offer for `stream`."""
+    r = requests.post(f"{GO2RTC}/api/webrtc", params={"src": stream}, json={"type": "offer", "sdp": offer_sdp}, timeout=15)
+    r.raise_for_status()
+    return r.json()["sdp"]
+
+
+def bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+
+
+def form_fields(raw: bytes) -> dict[str, str]:
+    return {k: v[0] for k, v in parse_qs(raw.decode(errors="replace")).items()}
+
+
+def json_response(body: dict[str, Any], status: int = 200, headers: dict[str, str] | None = None) -> Response:
+    return Response(content=json.dumps(body), status_code=status, media_type="application/json", headers=headers)
+
+
+def require_google() -> None:
+    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_PUBLIC_URL):
+        raise HTTPException(status_code=404, detail="Google Home is not set up")
+
+
+LINK_PAGE = """<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Link HomeSafe</title><style>body{{font-family:system-ui,sans-serif;max-width:22rem;margin:3rem auto;padding:0 1rem}}
+input,button{{display:block;width:100%;box-sizing:border-box;margin:.5rem 0;padding:.7rem;font-size:1rem}}.e{{color:#b3261e}}</style></head>
+<body><h2>Link HomeSafe to Google Home</h2><p>Sign in with your Frigate account.</p>{error}
+<form method="post"><input type="hidden" name="client_id" value="{client_id}"><input type="hidden" name="redirect_uri" value="{redirect_uri}">
+<input type="hidden" name="state" value="{state}"><input name="user" placeholder="Username" autocomplete="username" required>
+<input name="password" type="password" placeholder="Password" autocomplete="current-password" required><button>Link</button></form></body></html>"""
+
+
+def link_page(fields: dict[str, str], error: str = "") -> Response:
+    values = {k: html.escape(fields.get(k, "")) for k in ("client_id", "redirect_uri", "state")}
+    return Response(content=LINK_PAGE.format(error=f'<p class="e">{html.escape(error)}</p>' if error else "", **values), media_type="text/html")
+
+
+def check_link_request(fields: dict[str, str]) -> None:
+    if fields.get("client_id") != GOOGLE_CLIENT_ID or not google_redirect_ok(fields.get("redirect_uri", ""), GOOGLE_PROJECT_ID):
+        raise HTTPException(status_code=400, detail="Unknown client or redirect")
+
+
+@app.get("/google/oauth/authorize")
+def google_authorize_page(request: Request) -> Response:
+    """Where the Google Home app sends someone linking HomeSafe: a sign-in form."""
+    require_google()
+    fields = dict(request.query_params)
+    check_link_request(fields)
+    return link_page(fields)
+
+
+@app.post("/google/oauth/authorize")
+async def google_authorize(request: Request) -> Response:
+    """Checks the Frigate account, then sends the browser back to Google with a one-time code."""
+    from fastapi.concurrency import run_in_threadpool
+
+    require_google()
+    fields = form_fields(await request.body())
+    check_link_request(fields)
+    if login_locked(_google_login_failures, time.time()):
+        log.warning("google link: sign-in refused, too many failures")
+        return link_page(fields, "Too many attempts. Try again in a few minutes.")
+    user = fields.get("user", "")
+    try:
+        r = await run_in_threadpool(lambda: requests.post(
+            f"{FRIGATE_AUTH}/api/login", json={"user": user, "password": fields.get("password", "")}, timeout=10
+        ))
+        ok = r.status_code == 200
+    except Exception as e:
+        log.warning("google link: frigate unreachable: %s", e)
+        return link_page(fields, "Frigate is unreachable.")
+    if not ok:
+        _google_login_failures.append(time.time())
+        log.warning("google link: wrong password for %r", user)
+        return link_page(fields, "Wrong username or password.")
+    code = await run_in_threadpool(google_issue, "code", user, GOOGLE_CODE_SECONDS)
+    log.info("google link: %s signed in", user)
+    return Response(status_code=302, headers={"Location": f"{fields['redirect_uri']}?{urlencode({'code': code, 'state': fields.get('state', '')})}"})
+
+
+@app.post("/google/oauth/token")
+async def google_token(request: Request) -> Response:
+    """Google trades the code for tokens here, and later its refresh token for fresh access tokens."""
+    from fastapi.concurrency import run_in_threadpool
+
+    require_google()
+    fields = form_fields(await request.body())
+    client_id, client_secret = fields.get("client_id", ""), fields.get("client_secret", "")
+    auth = request.headers.get("authorization", "")
+    if auth.lower().startswith("basic "):
+        import base64
+
+        client_id, _, client_secret = base64.b64decode(auth[6:].strip()).decode(errors="replace").partition(":")
+    if client_id != GOOGLE_CLIENT_ID or not secrets.compare_digest(client_secret, GOOGLE_CLIENT_SECRET):
+        return json_response({"error": "invalid_client"}, 401)
+    grant = fields.get("grant_type")
+    if grant == "authorization_code":
+        user = await run_in_threadpool(google_check, fields.get("code", ""), "code", True)
+        if user is None:
+            return json_response({"error": "invalid_grant"}, 400)
+        access = await run_in_threadpool(google_issue, "access", user, GOOGLE_ACCESS_SECONDS)
+        refresh = await run_in_threadpool(google_issue, "refresh", user, None)
+        log.info("google link: tokens issued for %s", user)
+        return json_response({"token_type": "Bearer", "access_token": access, "refresh_token": refresh, "expires_in": GOOGLE_ACCESS_SECONDS})
+    if grant == "refresh_token":
+        user = await run_in_threadpool(google_check, fields.get("refresh_token", ""), "refresh")
+        if user is None:
+            return json_response({"error": "invalid_grant"}, 400)
+        access = await run_in_threadpool(google_issue, "access", user, GOOGLE_ACCESS_SECONDS)
+        return json_response({"token_type": "Bearer", "access_token": access, "expires_in": GOOGLE_ACCESS_SECONDS})
+    return json_response({"error": "unsupported_grant_type"}, 400)
+
+
+@app.post("/google/fulfillment")
+async def google_fulfillment(request: Request) -> Response:
+    """Google's smart-home intents: SYNC lists the cameras, QUERY says they're up, EXECUTE starts a stream."""
+    from fastapi.concurrency import run_in_threadpool
+
+    require_google()
+    user = await run_in_threadpool(google_check, bearer(request), "access")
+    if user is None:
+        return json_response({"error": "invalid_token"}, 401)
+    body = json.loads(await request.body() or b"{}")
+    request_id = body.get("requestId", "")
+    for item in body.get("inputs") or []:
+        intent, payload = item.get("intent"), item.get("payload") or {}
+        if intent == "action.devices.SYNC":
+            cameras = await run_in_threadpool(google_cameras)
+            log.info("google sync by %s: %s", user, cameras)
+            return json_response(google_sync(request_id, cameras))
+        if intent == "action.devices.QUERY":
+            cameras = await run_in_threadpool(google_cameras)
+            return json_response(google_query(request_id, payload, cameras))
+        if intent == "action.devices.EXECUTE":
+            cameras = await run_in_threadpool(google_cameras)
+            answer = await run_in_threadpool(
+                google_execute, request_id, payload, cameras, lambda camera: google_issue("stream", camera, GOOGLE_STREAM_SECONDS)
+            )
+            log.info("google execute by %s: %s", user, [c.get("ids") for c in answer["payload"]["commands"]])
+            return json_response(answer)
+        if intent == "action.devices.DISCONNECT":
+            await run_in_threadpool(google_unlink)
+            log.info("google link: unlinked by %s", user)
+            return json_response({})
+    return json_response({"requestId": request_id, "payload": {"errorCode": "notSupported"}})
+
+
+def signal_cors(request: Request) -> dict[str, str]:
+    if request.headers.get("origin") != GOOGLE_SIGNAL_ORIGIN:
+        return {}
+    return {
+        "Access-Control-Allow-Origin": GOOGLE_SIGNAL_ORIGIN,
+        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Vary": "Origin",
+    }
+
+
+@app.options("/google/signal/{camera}")
+def google_signal_preflight(camera: str, request: Request) -> Response:
+    return Response(status_code=204, headers=signal_cors(request))
+
+
+@app.post("/google/signal/{camera}")
+async def google_signal(camera: str, request: Request) -> Response:
+    """
+    The display's side of the WebRTC handshake: `{"action": "offer", "sdp": ...}` gets go2rtc's
+    `{"action": "answer", "sdp": ...}`; `{"action": "end"}` needs nothing (go2rtc drops the peer itself).
+    """
+    from fastapi.concurrency import run_in_threadpool
+
+    require_google()
+    cors = signal_cors(request)
+    body = json.loads(await request.body() or b"{}")
+    action = body.get("action")
+    if action == "end":
+        return json_response({}, headers=cors)
+    token = bearer(request) or request.query_params.get("token", "")
+    if await run_in_threadpool(google_check, token, "stream") != camera:
+        return json_response({"error": "invalid_token"}, 401, cors)
+    if action != "offer" or not body.get("sdp"):
+        return json_response({"error": f"unsupported action {action!r}"}, 400, cors)
+    stream = (await run_in_threadpool(google_cameras)).get(camera)
+    if stream is None:
+        return json_response({"error": "unknown camera"}, 404, cors)
+    try:
+        sdp = await run_in_threadpool(go2rtc_answer, stream, body["sdp"])
+    except Exception as e:
+        log.warning("google signal: go2rtc refused %s: %s", stream, e)
+        return json_response({"error": "stream unavailable"}, 502, cors)
+    log.info("google signal: %s streaming %s", camera, stream)
+    return json_response({"action": "answer", "sdp": sdp}, headers=cors)

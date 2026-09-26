@@ -32,6 +32,15 @@ services:
          "sarahs_car": {"make": "tesla", "colour": "red"},
          "yayas_car": {"colour": ["white", "silver"]},
          "in-laws_mercedes": {"make": "mercedes", "colour": "silver"}}
+      # Google Home (relay.py, "Google Home"): where Tailscale Funnel publishes /google/*, and the
+      # go2rtc a display's stream comes from.
+      GOOGLE_PUBLIC_URL: https://debian-surveillance.tail4c441a.ts.net
+      GO2RTC_URL: http://127.0.0.1:1984
+    # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID, only on the box. Without it the
+    # Google Home endpoints answer 404.
+    env_file:
+      - path: google-home.env
+        required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
       - ./data:/data
