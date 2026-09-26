@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.ui.components
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.asComposeShader
 import org.jetbrains.skia.RuntimeEffect
 import org.jetbrains.skia.RuntimeShaderBuilder
 
@@ -26,5 +27,5 @@ private class SkiaApertureScanShader(effect: RuntimeEffect) : ApertureScanShader
     override fun setUniform(name: String, color: Color) = builder.uniform(name, color.red, color.green, color.blue)
 
     // The shader copies the uniforms as they are now, so it is made afresh for each frame's draw.
-    override fun brush(): Brush = ShaderBrush(builder.makeShader())
+    override fun brush(): Brush = ShaderBrush(builder.makeShader().asComposeShader())
 }
