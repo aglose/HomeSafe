@@ -511,11 +511,12 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ConfidentCropsRow(count
     - onClear: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.ConnectionRouteBadge(route: com.meticulouscreations.homesafe.domain.model.ConnectionRoute): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.ConnectionRouteBadge(route: com.meticulouscreations.homesafe.domain.model.ConnectionRoute, appVersion: kotlin.String): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - route: STABLE (class with no mutable properties)
+    - appVersion: STABLE (String is immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ConnectionTextField(value: kotlin.String, onValueChange: kotlin.Function1<kotlin.String, kotlin.Unit>, placeholder: kotlin.String, leadingIcon: androidx.compose.ui.graphics.vector.ImageVector, extraColors: com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors, enabled: kotlin.Boolean, modifier: androidx.compose.ui.Modifier, visualTransformation: androidx.compose.ui.text.input.VisualTransformation): kotlin.Unit
@@ -674,11 +675,12 @@ public fun com.meticulouscreations.homesafe.ui.screens.FrigateAppShell(): kotlin
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.FrigateTopBar(activeConnection: com.meticulouscreations.homesafe.domain.model.ActiveConnection?, appVersion: kotlin.String): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - activeConnection: STABLE (class with no mutable properties)
+    - appVersion: STABLE (String is immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FullScreenButton(onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit

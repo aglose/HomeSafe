@@ -43,7 +43,7 @@
         <error line="115" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="156" column="5" source="compose:modifier-missing-check" />
+        <error line="163" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
         <error line="109" column="5" source="compose:modifier-missing-check" />
