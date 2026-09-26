@@ -447,7 +447,7 @@ class CameraDetailViewModel(
         val liveUrl = found?.streamUrl ?: return null
         val gridUrl = found.gridStreamUrl ?: liveUrl
         val plan = planLiveJoin(gridUrl, liveUrl, current.quality)
-        if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl, found) else qualityUpgradeJob?.cancel()
+        if (plan.upgradeToUrl != null) scheduleQualityUpgrade(plan.upgradeToUrl) else qualityUpgradeJob?.cancel()
         val source = VideoSource.Live(plan.joinUrl, found.posterUrl, found.webRtcEndpointFor(plan.joinUrl))
         return PlayerRequest(source, playWhenReady = playWhenReady, muted = current.isMuted)
     }
@@ -473,15 +473,19 @@ class CameraDetailViewModel(
     }
 
     /** Steps up to full quality once the grid-quality join is showing video; see [awaitQualityUpgrade]. */
-    private fun scheduleQualityUpgrade(liveUrl: String, found: CameraDetailUiState.Found) {
+    private fun scheduleQualityUpgrade(liveUrl: String) {
         qualityUpgradeJob?.cancel()
         qualityUpgradeJob = viewModelScope.launch {
             awaitQualityUpgrade(streamStatus, minDelayMs = QUALITY_UPGRADE_DELAY_MS, maxWaitMs = QUALITY_UPGRADE_MAX_WAIT_MS)
+            // The camera as it is now, not as it was at the join: it may have gone offline or been
+            // disabled during the wait (the live URL gone, and the request with it), and upgrading
+            // from a stale copy would restart a stream that is no longer there.
+            val found = uiState.value as? CameraDetailUiState.Found
             _playback.update { current ->
                 // Carry forward current.isPlaying, not PlayerRequest's own default(true): the user
                 // may have paused during the few seconds the grid-quality join was standing in, and
                 // this swap must not silently resume playback out from under a paused viewer.
-                if (current.isLive && current.quality == StreamQuality.AUTO) {
+                if (current.isLive && current.quality == StreamQuality.AUTO && current.playerRequest != null && found != null && found.streamUrl == liveUrl) {
                     val source = VideoSource.Live(liveUrl, found.posterUrl, found.webRtcEndpointFor(liveUrl))
                     current.copy(playerRequest = PlayerRequest(source, playWhenReady = current.isPlaying, muted = current.isMuted))
                 } else {

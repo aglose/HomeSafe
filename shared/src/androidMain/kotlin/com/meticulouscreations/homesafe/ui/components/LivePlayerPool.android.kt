@@ -534,8 +534,15 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         // generation puts the poster over both until HLS draws, and the binders clear the renderers.
         if (peer != null && !needsColdStart) coldStartGeneration++
         // A peer can only be on screen here for a different source than [toLoad] (one that serves
-        // it would have been adopted instead). Kept for a step back to live; not for a recording.
-        if (toLoad is VideoSource.Live) parkPeer() else dropPeer()
+        // it would have been adopted instead). Kept for a step back to live; a recording closes it,
+        // and the standby too — the grid peer is parked there after a full-quality fallback, with
+        // no expiry, and would otherwise keep decoding for as long as the recording plays.
+        if (toLoad is VideoSource.Live) {
+            parkPeer()
+        } else {
+            dropPeer()
+            dropStandby()
+        }
         transport = LiveTransport.HLS
         val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))

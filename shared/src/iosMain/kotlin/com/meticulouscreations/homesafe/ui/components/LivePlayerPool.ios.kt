@@ -463,8 +463,14 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         // Either way a fresh generation puts the poster over the gap until HLS draws.
         val pictureOnScreen = peer != null || (transport == LiveTransport.HLS && player.currentItem != null)
         if (pictureOnScreen && !needsColdStart) coldStartGeneration++
-        // Only a peer for another source can be on screen here; kept for a step back to live (see the Android holder).
-        if (toLoad is VideoSource.Live) parkPeer() else dropPeer()
+        // Only a peer for another source can be on screen here; kept for a step back to live, while
+        // a recording closes it and the standby both (see the Android holder).
+        if (toLoad is VideoSource.Live) {
+            parkPeer()
+        } else {
+            dropPeer()
+            dropStandby()
+        }
         transport = LiveTransport.HLS
         // Each start registers a fresh set of observers on the new item; without this the previous
         // item's observer tokens would sit in NotificationCenter forever.
