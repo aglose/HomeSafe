@@ -1,49 +1,28 @@
 package com.meticulouscreations.homesafe.navigation
 
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 
 /**
- * Maintains a separate back stack per top-level destination (tab), and exposes a single
- * flattened back stack for [androidx.navigation3.ui.NavDisplay] to render.
+ * The top-level destinations (tabs) as the single back stack [androidx.navigation3.ui.NavDisplay]
+ * renders, following Material's bottom navigation behaviour on Android: [startKey] is a fixed
+ * start destination at the bottom, and any other tab sits alone above it. Switching tabs replaces
+ * that one rather than stacking a history of every tab visited, so Back from any tab returns to
+ * the start destination, and Back from there leaves the app.
  */
-class TopLevelBackStack<T : Any>(startKey: T) {
-    private var topLevelStacks: LinkedHashMap<T, SnapshotStateList<T>> = linkedMapOf(
-        startKey to mutableStateListOf(startKey),
-    )
-
-    var topLevelKey by mutableStateOf(startKey)
-        private set
-
+class TopLevelBackStack<T : Any>(private val startKey: T) {
     val backStack = mutableStateListOf(startKey)
 
-    private fun updateBackStack() = backStack.apply {
-        clear()
-        addAll(topLevelStacks.flatMap { it.value })
+    val topLevelKey: T get() = backStack.last()
+
+    /** Brings [key] up above the start destination, in place of whichever tab was there. */
+    fun switchTo(key: T) {
+        if (key == topLevelKey) return
+        while (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
+        if (key != startKey) backStack.add(key)
     }
 
-    fun addTopLevel(key: T) {
-        if (topLevelStacks[key] == null) {
-            topLevelStacks[key] = mutableStateListOf(key)
-        } else {
-            topLevelStacks.remove(key)?.let { topLevelStacks[key] = it }
-        }
-        topLevelKey = key
-        updateBackStack()
-    }
-
-    fun add(key: T) {
-        topLevelStacks[topLevelKey]?.add(key)
-        updateBackStack()
-    }
-
+    /** Back from a tab other than the start destination: to the start destination. */
     fun removeLast() {
-        val removedKey = topLevelStacks[topLevelKey]?.removeLastOrNull()
-        topLevelStacks.remove(removedKey)
-        topLevelKey = topLevelStacks.keys.last()
-        updateBackStack()
+        if (backStack.size > 1) backStack.removeAt(backStack.lastIndex)
     }
 }

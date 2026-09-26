@@ -256,7 +256,7 @@ class SettingsJourneyTest {
     }
 
     @Test
-    fun leavingTheTabAndComingBackKeepsTheServerPageOpenAndTheSwitchAsTheServerHasIt() = runAppJourney {
+    fun leavingTheTabAndComingBackLandsOnTheSettingsPageWithTheSwitchAsTheServerHasIt() = runAppJourney {
         val settings = SettingsRobot(this)
         signIn.signInAs()
         settings.open()
@@ -269,10 +269,10 @@ class SettingsJourneyTest {
         awaitGone(hasText(SettingsRobot.SERVER_PAGE_SUBTITLE), "the Server page")
         shell.openTab(TopLevelRoute.Settings)
 
-        awaitText(SettingsRobot.SERVER_PAGE_SUBTITLE)
-        settings.awaitValueUnder("VERSION", "0.17.2-test")
-        settings.backFromServer()
+        // The bottom nav opens a tab at its root (Material's bottom navigation behaviour), so
+        // the Server page drilled into before is gone.
         settings.awaitDetection("Back Yard", on = false, enabled = true)
+        assertFalse(exists(hasText(SettingsRobot.SERVER_PAGE_SUBTITLE)), "the Server page was left behind")
         settings.awaitDetection("Front Door", on = true, enabled = true)
         assertFalse(state.camera("back_yard")!!.detectEnabled, "still off at the server")
     }

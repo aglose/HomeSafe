@@ -45,6 +45,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -121,16 +122,49 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     fun showsBottomNav(tab: TopLevelRoute): Boolean =
         !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
 
+    /**
+     * A tap on [tab] in the bottom nav, which follows Material's bottom navigation behaviour on
+     * Android: the tab comes up at its root screen, with whatever had been drilled into there
+     * cleared away. On the tab that is already up, the tap pops its nested stack back to the root.
+     *
+     * A tab being left keeps its nested stack while it slides away, so it shows what was on it
+     * rather than snapping to its root first; it is cleared when the tab next comes up (Home, which
+     * stays under the other tabs, as soon as it is off screen — see [FrigateAppShell]).
+     */
     fun selectTab(tab: TopLevelRoute) {
-        topLevel.addTopLevel(tab)
+        popToRoot(tab)
+        showTab(tab)
+    }
+
+    /**
+     * Back from the root of a tab other than Home: to Home, at its root, as a tap on Home would
+     * land. Home is the fixed start destination (see [TopLevelBackStack]), so Back from there
+     * leaves the app.
+     */
+    fun back() {
+        topLevel.removeLast()
+        popToRoot(selectedTab)
+    }
+
+    private fun showTab(tab: TopLevelRoute) {
+        topLevel.switchTo(tab)
         onTabSelected(tab)
+    }
+
+    fun popToRoot(tab: TopLevelRoute) {
+        val stack = when (tab) {
+            TopLevelRoute.Home -> homeBackStack
+            TopLevelRoute.Settings -> settingsBackStack
+            TopLevelRoute.Moments -> return
+        }
+        while (stack.size > 1) stack.removeAt(stack.lastIndex)
     }
 
     /**
      * Full screen for a detection is the Home tab's camera screen, opened at that instant: one
-     * full-width player for the camera, not a second one on the Moments tab. It lands on the
-     * Home stack, so Back returns to the camera list — and the Moments tab is one tap away,
-     * still where it was left.
+     * full-width player for the camera, not a second one on the Moments tab. It lands directly
+     * above the camera list, whatever Home had open before, so Back returns to the list — and
+     * the Moments tab is one tap away.
      */
     fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds, event.id, tagCar = false)
 
@@ -148,8 +182,11 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
             tagCarOnOpen = tagCar,
         )
         // A second tap on the same notification (or a relaunch re-delivering it) is already up.
-        if (homeBackStack.lastOrNull() != route) homeBackStack.add(route)
-        selectTab(TopLevelRoute.Home)
+        if (homeBackStack.lastOrNull() != route) {
+            popToRoot(TopLevelRoute.Home)
+            homeBackStack.add(route)
+        }
+        showTab(TopLevelRoute.Home)
     }
 
     /**
@@ -187,12 +224,18 @@ fun FrigateAppShell() {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
             backStack = nav.topLevel.backStack,
-            onBack = { nav.topLevel.removeLast() },
+            onBack = nav::back,
             transitionSpec = { tabHandOver() },
             popTransitionSpec = { tabHandOver() },
             predictivePopTransitionSpec = { tabHandOver() },
             entryProvider = entryProvider {
-                entry<TopLevelRoute.Home> { TabContent(TopLevelRoute.Home, nav, cardZoom) }
+                entry<TopLevelRoute.Home> {
+                    // Home stays under the other tabs as the start destination, and Back reveals
+                    // it. Clearing what it had drilled into once another tab has fully taken
+                    // over means a predictive Back previews the camera list it will land on.
+                    DisposableEffect(nav) { onDispose { nav.popToRoot(TopLevelRoute.Home) } }
+                    TabContent(TopLevelRoute.Home, nav, cardZoom)
+                }
                 entry<TopLevelRoute.Moments> { TabContent(TopLevelRoute.Moments, nav, cardZoom) }
                 entry<TopLevelRoute.Settings> { TabContent(TopLevelRoute.Settings, nav, cardZoom) }
             },

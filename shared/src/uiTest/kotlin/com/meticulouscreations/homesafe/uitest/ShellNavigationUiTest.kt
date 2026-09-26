@@ -69,7 +69,7 @@ class ShellNavigationUiTest {
     }
 
     @Test
-    fun goingBackToATabMovesItToTheTopRatherThanStackingItTwice() = runComposeUiTest {
+    fun switchingTabsReplacesTheOneAboveHomeRatherThanStackingAHistory() = runComposeUiTest {
         val nav = ShellNavigation()
         setUpShell(nav)
 
@@ -78,25 +78,37 @@ class ShellNavigationUiTest {
         onNodeWithText("Moments").performClick()
 
         onNodeWithText("Showing Moments").assertIsDisplayed()
-        assertEquals(
-            listOf(TopLevelRoute.Home, TopLevelRoute.Settings, TopLevelRoute.Moments),
-            nav.topLevel.backStack.toList(),
-        )
+        assertEquals(listOf(TopLevelRoute.Home, TopLevelRoute.Moments), nav.topLevel.backStack.toList())
+
+        onNodeWithText("Home").performClick()
+        assertEquals(listOf(TopLevelRoute.Home), nav.topLevel.backStack.toList())
     }
 
     @Test
-    fun backReturnsToTheTabVisitedBefore() = runComposeUiTest {
+    fun backFromAnyTabReturnsToHome() = runComposeUiTest {
         val nav = ShellNavigation()
         setUpShell(nav)
         onNodeWithText("Moments").performClick()
         onNodeWithText("Settings").performClick()
 
-        runOnIdle { nav.topLevel.removeLast() }
-        onNodeWithText("Showing Moments").assertIsDisplayed()
+        runOnIdle { nav.back() }
 
-        runOnIdle { nav.topLevel.removeLast() }
         onNodeWithText("Showing Home").assertIsDisplayed()
         assertEquals(listOf(TopLevelRoute.Home), nav.topLevel.backStack.toList())
+    }
+
+    @Test
+    fun backToHomeLandsOnTheCameraListNotTheCameraItWasLeftIn() = runComposeUiTest {
+        val nav = ShellNavigation()
+        setUpShell(nav)
+        runOnIdle { nav.homeBackStack.add("front_door") }
+        onNodeWithText("Moments").performClick()
+
+        runOnIdle { nav.back() }
+
+        onNodeWithText("Showing Home").assertIsDisplayed()
+        onNodeWithText("Top bar").assertIsDisplayed()
+        assertEquals(1, nav.homeBackStack.size)
     }
 
     @Test
@@ -125,10 +137,45 @@ class ShellNavigationUiTest {
         onNodeWithText("Moments").performClick()
         onNodeWithText("Top bar").assertIsDisplayed()
 
-        // ...and Home is still inside the camera it was left in.
+        // ...and Home comes back at its root: the bottom nav clears what was drilled into.
         onNodeWithText("Home").performClick()
         onNodeWithText("Showing Home").assertIsDisplayed()
+        onNodeWithText("Top bar").assertIsDisplayed()
+        assertEquals(1, nav.homeBackStack.size)
+    }
+
+    @Test
+    fun tappingTheTabThatIsUpPopsItBackToItsRoot() = runComposeUiTest {
+        val nav = ShellNavigation()
+        setUpShell(nav)
+        onNodeWithText("Settings").performClick()
+        runOnIdle {
+            nav.settingsBackStack.add("classifier")
+            nav.settingsBackStack.add("faces")
+        }
         onNodeWithText("Top bar").assertDoesNotExist()
+
+        onNodeWithText("Settings").performClick()
+
+        onNodeWithText("Showing Settings").assertIsDisplayed()
+        onNodeWithText("Top bar").assertIsDisplayed()
+        assertEquals(1, nav.settingsBackStack.size)
+    }
+
+    @Test
+    fun aDetectionOpensDirectlyAboveTheCameraListWhateverHomeHadOpen() = runComposeUiTest {
+        val nav = ShellNavigation()
+        setUpShell(nav)
+        runOnIdle {
+            nav.homeBackStack.add("back_yard")
+            nav.homeBackStack.add("zones")
+        }
+        onNodeWithText("Moments").performClick()
+
+        runOnIdle { nav.openDetection(detection) }
+
+        onNodeWithText("Showing Home").assertIsDisplayed()
+        assertEquals(2, nav.homeBackStack.size, "Back from the moment goes straight to the camera list")
     }
 
     @Test
