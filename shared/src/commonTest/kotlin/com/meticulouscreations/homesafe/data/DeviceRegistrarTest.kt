@@ -70,7 +70,9 @@ class DeviceRegistrarTest {
         override suspend fun token() = value
     }
 
-    private class FakeInfo(override val platform: String, override val name: String, override val build: String) : DeviceInfo
+    private class FakeInfo(override val platform: String, override val name: String, override val build: String) : DeviceInfo {
+        override val appVersion = "1.0 (1)"
+    }
 
     private class Harness(scope: TestScope, connection: ConnectionRepository, token: String? = "fcm-1", info: DeviceInfo = FakeInfo("android", "Google Pixel", "release")) {
         val posts = mutableListOf<String>()

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
+import platform.Foundation.NSBundle
 import platform.UIKit.UIDevice
 import kotlin.experimental.ExperimentalNativeApi
 
@@ -17,6 +18,12 @@ private class IosDeviceInfo : DeviceInfo {
      */
     @OptIn(ExperimentalNativeApi::class)
     override val build = if (kotlin.native.Platform.isDebugBinary) "debug" else "release"
+
+    /** MARKETING_VERSION and CURRENT_PROJECT_VERSION from `iosApp/Configuration/Config.xcconfig`. */
+    override val appVersion = run {
+        val info = NSBundle.mainBundle
+        "${info.objectForInfoDictionaryKey("CFBundleShortVersionString")} (${info.objectForInfoDictionaryKey("CFBundleVersion")})"
+    }
 }
 
 actual fun createDeviceInfo(platformContext: PlatformContext): DeviceInfo = IosDeviceInfo()

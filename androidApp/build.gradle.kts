@@ -116,7 +116,11 @@ android {
         // publish-internal job in .github/workflows/ci.yml). A local build keeps 1; nothing built
         // locally is uploaded.
         versionCode = providers.gradleProperty("versionCode").map(String::toInt).getOrElse(1)
-        versionName = "1.0"
+        // "1.0.62" for the release shipped by PR #62 (-PreleasePr=62, set by the same publish job),
+        // so the version the app shows names the pull request it came from. See appVersionBase
+        // in gradle.properties.
+        val appVersionBase = providers.gradleProperty("appVersionBase").get()
+        versionName = providers.gradleProperty("releasePr").map { "$appVersionBase.$it" }.getOrElse(appVersionBase)
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // With the orchestrator below, each E2E test runs in its own instrumentation and the app's
