@@ -44,8 +44,10 @@ import kotlin.time.ExperimentalTime
 
 /**
  * The feed is a window (see [MomentsPaging]), optionally narrowed to one camera, held as two raw lists: [head], the window's first
- * page, which the poll replaces wholesale, and [tail], the older pages [loadOlder] appends one at
- * a time, each contiguous with the last. Zones and vehicle-visit folding run over the two joined,
+ * page, which the poll re-reads, and [tail], the older pages [loadOlder] appends one at a time,
+ * each contiguous with the last. The two must meet, and a re-read head moves up as detections
+ * arrive, so the poll keeps whatever slid out of the head's bottom and, when the head has moved
+ * further than a page, reads the stretch between (see [fetchHead]). Zones and vehicle-visit folding run over the two joined,
  * so a parked car whose sightings straddle a page boundary still folds into one card. Paging
  * cursors come from the raw lists, never the folded feed: the oldest *detection* fetched is
  * where the next page starts, whatever the feed made of it.
@@ -124,6 +126,14 @@ class MomentsRepositoryImpl(
 
     /** Which (server identity, window) the lists belong to, so a page that lands after the window moved is dropped rather than mixed in. */
     private var loadedFor: Pair<String, Window>? = null
+
+    /**
+     * [head] came out of the cache, not from the server, since the window opened. The cache is
+     * filled by several polls — the in-view strip's, each camera's recent moments — so its newest
+     * rows needn't be contiguous across every camera, and nothing below the first fetched page may
+     * be kept on the strength of them.
+     */
+    private var headFromCache = false
 
     /** How many pages [fillShortFeed] has fetched for [loadedFor]; a newly opened window starts again at zero. */
     private var autoFilledPages = 0
@@ -428,7 +438,7 @@ class MomentsRepositoryImpl(
     private suspend fun appendOlderPage(): Boolean {
         val server = currentServer() ?: return false
         // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
-        val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
+        val (target, oldest) = stateLock.withLock { loadedFor to loadedBottom() }
         if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return false
         _paging.update { it.copy(loadingOlder = true) }
         try {
@@ -436,8 +446,10 @@ class MomentsRepositoryImpl(
                 .onSuccess { events ->
                     val page = events.map { it.toDomain() }
                     val placed: List<MomentEvent>? = stateLock.withLock {
-                        // Only if the window hasn't moved while the page was in flight.
-                        if (loadedFor != target) {
+                        // Only if the window hasn't moved while the page was in flight, and the page
+                        // still starts where the loaded lists end: a head re-read meanwhile may have let
+                        // the older pages go (see fetchHead), and this page belongs below them.
+                        if (loadedFor != target || loadedBottom() != oldest) {
                             null
                         } else {
                             tail = tail + page
@@ -535,6 +547,7 @@ class MomentsRepositoryImpl(
             loadedFor = identity to window
             autoFilledPages = 0
             head = cached
+            headFromCache = true
             tail = emptyList()
             _paging.value = MomentsPaging(beforeEpochSeconds = window.before)
             // A full page off the device may have more below it; a short one is all the device has,
@@ -543,30 +556,106 @@ class MomentsRepositoryImpl(
         }
     }
 
-    /** Replaces the head with the server's newest page. False when the server didn't answer (the feed keeps what it has). */
+    /**
+     * Re-reads the window's newest page, and joins it to what is loaded below. False when the
+     * server didn't answer (the feed keeps what it has).
+     *
+     * **The head must still meet the tail** (2026-09-26): the head is the newest page, so every
+     * detection that arrives pushes one off its bottom — and the tail, loaded below the head as it
+     * was, doesn't have it. Replacing the head wholesale lost every detection that slid out: on a
+     * busy street the newest hundred span minutes, and a feed left open at noon and looked at again
+     * at 1:15 went straight from 1:05 PM to last night, the whole morning gone. So what was loaded
+     * below the fresh page is kept rather than thrown away, and when the fresh page doesn't reach
+     * down to it (a full page, all of it newer than anything loaded), the stretch between is read a
+     * page at a time, up to [BRIDGE_MAX_PAGES]. If even that doesn't close the gap, the older pages
+     * are let go instead, and paging down starts again from the bottom of what was read: the feed
+     * is never allowed to show two stretches as if nothing happened between them.
+     *
+     * Whatever was loaded in the fresh pages' range but isn't in them is gone from the server (or
+     * the zones), and goes from the feed too.
+     */
     private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean): Boolean = headInFlight.withLock {
         loadZones(server.url, force = includeZones)
-        apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
-            .onSuccess { events ->
-                val page = events.map { it.toDomain() }
-                val placed: List<MomentEvent>? = stateLock.withLock {
-                    if (loadedFor != server.identity to window) {
-                        null
-                    } else {
-                        head = page
-                        // With older pages already below, the last page loaded is still the last one
-                        // down; a fresh head short of a page is the whole of what the server has.
-                        publish(lastPageFull = if (tail.isEmpty()) events.size >= PAGE_SIZE else _paging.value.hasOlder)
-                        page.inZones(zonesByCamera)
-                    }
-                }
-                _error.value = null
-                if (placed != null) {
-                    cache(server.identity, window.camera, placed, from = events.minOfOrNull { it.startTime }, to = window.before)
-                }
+        val target = server.identity to window
+        val events = apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
+            .getOrElse {
+                _error.value = it.message ?: "Couldn't load detections"
+                return@withLock false
             }
-            .onFailure { _error.value = it.message ?: "Couldn't load detections" }
-            .isSuccess
+        _error.value = null
+        var fresh = events.map { it.toDomain() }
+        val lastPageFull = events.size >= PAGE_SIZE
+        // Where the fresh page has to reach down to: the newest detection loaded below it, if any.
+        val loadedNewest = stateLock.withLock {
+            if (loadedFor != target || headFromCache) null else (head + tail).maxOfOrNull { it.startEpochSeconds }
+        }
+        var reachesLoaded = true
+        var bridgeFailure: Throwable? = null
+        if (lastPageFull && loadedNewest != null) {
+            val bridge = bridgeDown(server.url, window, from = fresh.minOf { it.startEpochSeconds }, to = loadedNewest)
+            fresh = fresh + bridge.events
+            reachesLoaded = bridge.closed
+            bridgeFailure = bridge.failure
+        }
+        val freshOldest = fresh.minOfOrNull { it.startEpochSeconds }
+        val placed: List<MomentEvent>? = stateLock.withLock {
+            if (loadedFor != target) {
+                null
+            } else {
+                val below = if (headFromCache) emptyList() else head + tail
+                head = fresh
+                headFromCache = false
+                tail = when {
+                    // A short head page is the bottom of what the server has: nothing below it is real.
+                    !lastPageFull || freshOldest == null -> emptyList()
+
+                    // Couldn't reach what was loaded: start the pages below over from here.
+                    !reachesLoaded -> emptyList()
+
+                    // Anything starting at the fresh pages' oldest instant stays too; publish() drops the repeats.
+                    else -> below.filter { it.startEpochSeconds <= freshOldest }
+                }
+                // With older pages still below, the last page loaded is still the last one down.
+                publish(lastPageFull = if (tail.isEmpty()) lastPageFull else _paging.value.hasOlder)
+                // What the cache is squared against includes the tail's rows at that same instant: the
+                // prune below runs from it inclusive, and they are in the feed.
+                val freshIds = fresh.mapTo(HashSet()) { it.id }
+                val boundary = tail.filter { it.startEpochSeconds == freshOldest && it.id !in freshIds }
+                (fresh + boundary).inZones(zonesByCamera)
+            }
+        }
+        if (placed != null) {
+            cache(server.identity, window.camera, placed, from = freshOldest, to = window.before)
+        }
+        // What was read is on screen; a gap that couldn't be read is still a fetch that failed, and asks again soon.
+        if (bridgeFailure != null) {
+            _error.value = bridgeFailure.message ?: "Couldn't load detections"
+            return@withLock false
+        }
+        true
+    }
+
+    /** What [bridgeDown] read, newest first; whether it reached down to what was loaded; and why it stopped, if the server stopped answering. */
+    private class Bridge(val events: List<MomentEvent>, val closed: Boolean, val failure: Throwable? = null)
+
+    /**
+     * The detections between a fresh head page's oldest, [from], and the newest already loaded,
+     * [to]: read down a page at a time until a page comes back short (nothing more between) or
+     * reaches [to], or [BRIDGE_MAX_PAGES] have been read, or the server stops answering.
+     */
+    private suspend fun bridgeDown(url: String, window: Window, from: Double, to: Double): Bridge {
+        var bridged = emptyList<MomentEvent>()
+        var cursor = from
+        repeat(BRIDGE_MAX_PAGES) {
+            if (cursor <= to) return Bridge(bridged, closed = true)
+            val events = apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = to, beforeEpochSeconds = cursor, cameras = window.cameras)
+                .getOrElse { return Bridge(bridged, closed = false, failure = it) }
+            bridged = bridged + events.map { it.toDomain() }
+            // Short: nothing else lies between. Bounded below by [to], so it says nothing about the bottom of the server.
+            if (events.size < PAGE_SIZE) return Bridge(bridged, closed = true)
+            cursor = events.minOf { it.startTime }
+        }
+        return Bridge(bridged, closed = cursor <= to)
     }
 
     /**
@@ -618,12 +707,15 @@ class MomentsRepositoryImpl(
         val cached = cachedPage(target.first, before = oldest, camera = target.second.camera, limit = PAGE_SIZE)
         if (cached.isEmpty()) return false
         stateLock.withLock {
-            if (loadedFor != target) return false
+            if (loadedFor != target || loadedBottom() != oldest) return false
             tail = tail + cached
             publish(lastPageFull = cached.size >= PAGE_SIZE)
         }
         return true
     }
+
+    /** Under [stateLock]. Where the loaded lists end: the oldest raw detection, which is where the next page down starts. */
+    private fun loadedBottom(): Double? = (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds
 
     /**
      * Under [stateLock]. Joins the head and the tail (dropping a detection the tail repeats
@@ -650,6 +742,13 @@ class MomentsRepositoryImpl(
         const val RETRY_MAX_DOUBLINGS = 3
         const val ZONES_EVERY_N_POLLS = 4
         const val PAGE_SIZE = 100
+
+        /**
+         * The most pages [fetchHead] reads to join a fresh head to the pages already loaded below
+         * it. Past that the gap is a busy afternoon's worth of detections, and paging down from the
+         * new head is cheaper than closing it.
+         */
+        const val BRIDGE_MAX_PAGES = 5
 
         /** Fewer moments than this after the zones is a feed [fillShortFeed] pages down for: about two screens of cards. */
         const val AUTO_FILL_MIN_MOMENTS = 10
