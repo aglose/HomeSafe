@@ -6,7 +6,7 @@ different place: your own machine, CI, or an agent's sandbox with no Android too
 | What | Command | Draws | Output |
 |---|---|---|---|
 | **Preview renders** (JVM) | `./gradlew :shared:renderPreviews [-Ppreview=Home]` | Every `@Preview` in `:shared`, on the desktop runtime | `shared/build/previews/*.png`, `previews.json` |
-| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateScreenshotTestDefaultDebugTestSuite` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDefaultDebug/reference/**/*.png` |
+| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTestDefaultTestSuite` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDefaultDebug/reference/**/*.png` |
 | **Journey screenshots** (JVM) | `./gradlew :shared:jvmTest -PjourneyScreens --tests '*HomeJourneyTest*'` | The whole app against the fake Frigate, after each tap, at the end and on failure | `shared/build/journey-screens/<journey>/*.png` |
 
 `scripts/render-ui-previews.sh OUT_DIR` runs the first two and collects their PNGs in `OUT_DIR/desktop` and
@@ -56,10 +56,10 @@ draws through Layoutlib, the renderer behind Android Studio's preview pane, so i
   `testOptions.screenshotTests` in `androidApp/build.gradle.kts`, with engine `0.0.1-alpha16`. That needs AGP 9.5
   (still a preview release) and the experimental `android.experimental.testSuiteSupport` flag. It replaces the
   deprecated standalone `com.android.compose.screenshot` plugin.
-- `testScreenshotTestDefaultDebugTestSuite` compares against the reference images and writes an HTML diff report
+- `testDebugScreenshotTestDefaultTestSuite` compares against the reference images and writes an HTML diff report
   to `androidApp/build/reports/tests/`.
 - The reference images aren't committed yet (they're gitignored). To gate merges on them, have CI generate them on
-  Linux, commit those, and add `testScreenshotTestDefaultDebugTestSuite` to `ci.yml`. References made on a Mac
+  Linux, commit those, and add `testDebugScreenshotTestDefaultTestSuite` to `ci.yml`. References made on a Mac
   won't match Linux exactly.
 
 ## In pull requests

@@ -31,9 +31,10 @@ touch "$since"
 status=$?
 cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop/" 2>/dev/null
 
-# The screenshot tool's update task: its name is derived from the suite, target and variant
-# (update<Suite><Target><Variant>TestSuite), or updateDebugScreenshotTest with the older standalone
-# plugin, which a merge base may still use. Ask Gradle rather than hard-code either.
+# The screenshot tool's update task: its name is derived from the variant, suite and target
+# (update<Variant><Suite><Target>TestSuite: updateDebugScreenshotTestDefaultTestSuite here), or
+# updateDebugScreenshotTest with the older standalone plugin, which a merge base may still use.
+# Ask Gradle rather than hard-code either.
 # Names only: `tasks --all` would create every task, and AGP 9.5-alpha's test suite registers a
 # preview task for release too, which fails when created (release has no unit-test component).
 tasks_out="$since.tasks"

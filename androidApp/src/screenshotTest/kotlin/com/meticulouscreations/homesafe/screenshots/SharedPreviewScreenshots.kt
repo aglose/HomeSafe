@@ -14,8 +14,8 @@ import com.meticulouscreations.homesafe.ui.screens.StatusBadgePreview
  * Studio's preview pane uses — through Compose Preview Screenshot Testing, as an AGP test suite
  * (screenshotTests in androidApp/build.gradle.kts):
  *
- *     ./gradlew :androidApp:updateScreenshotTestDefaultDebugTestSuite  # draw them under src/screenshotTestDefaultDebug/reference/
- *     ./gradlew :androidApp:testScreenshotTestDefaultDebugTestSuite    # compare against those, HTML report in build/reports/tests
+ *     ./gradlew :androidApp:updateDebugScreenshotTestDefaultTestSuite  # draw them under src/screenshotTestDefaultDebug/reference/
+ *     ./gradlew :androidApp:testDebugScreenshotTestDefaultTestSuite    # compare against those, HTML report in build/reports/tests
  *
  * The tool only looks for @PreviewTest functions in an Android module's screenshotTest source
  * set, and it doesn't reach into a Kotlin Multiplatform module's common code, so each preview in
