@@ -66,6 +66,15 @@ jobs:
       - name: Install skiko native dependencies
         run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
 
+      # TEMPORARY (remove before merge): which AGP and screenshot-engine versions Google Maven has,
+      # since the machine choosing the AGP upgrade can't reach it.
+      - name: Published AGP and screenshot versions
+        continue-on-error: true
+        run: |
+          for path in com/android/tools/build/gradle com/android/tools/screenshot/screenshot-validation-api com/android/compose/screenshot/com.android.compose.screenshot.gradle.plugin; do
+            echo "== $path: $(curl -sSf "https://dl.google.com/dl/android/maven2/$path/maven-metadata.xml" | grep -oE '<version>[^<]+' | sed 's/<version>//' | grep -E '^(9\.[4-9]|0\.0\.1)' | tr '\n' ' ')"
+          done
+
       - name: Find the pull request and the merge base
         run: |
           pr=${{ github.event.pull_request.number || '' }}
