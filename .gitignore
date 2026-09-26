@@ -31,3 +31,8 @@ androidApp/keystore/
 # Where AGP drops the signed bundle and its mapping file after a release build. CI keeps these
 # as a workflow artifact instead (see docs/release-to-play.md); locally they are ~80 MB of output.
 androidApp/release/
+
+# Compose Preview Screenshot Testing's reference images. Not committed yet: Layoutlib's output
+# must come from one machine (CI) to be comparable, and the "UI previews" workflow renders them
+# fresh for every pull request instead (see docs/ui-previews.md).
+androidApp/src/screenshotTest*/reference/

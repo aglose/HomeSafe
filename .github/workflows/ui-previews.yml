@@ -1,0 +1,164 @@
+name: UI previews
+
+# Draws every UI preview on a branch, and on its merge base, and shows what changed:
+#
+# - The images go to refs/previews/<branch> as a single commit, force-pushed each time. It's a
+#   ref outside refs/heads and refs/tags, so no clone fetches it unless asked. That commit's
+#   README.md is a gallery on GitHub, and it's what scripts/fetch-ui-previews.sh pulls down,
+#   which is how an agent in a sandbox with no Android toolchain gets to look at its own change.
+# - When the branch has an open pull request, a before/after table of the previews that changed
+#   goes into its description, between <!-- ui-previews:start/end --> markers, kept current on
+#   every push. The "App version" workflow's line at the top of the description isn't touched.
+#
+# Two renderers (scripts/render-ui-previews.sh): Compose Preview Screenshot Testing draws
+# :androidApp's @PreviewTest functions through Layoutlib, exactly as Android does, and
+# :shared:renderPreviews draws every @Preview in :shared on the JVM. See docs/ui-previews.md.
+#
+# Not part of ci-green: a picture of a change is for reviewers to look at, not something to
+# gate on. Nothing is compared against committed reference images, so nothing here can go red
+# because a preview looks different; it goes red only when a preview can't be drawn at all.
+
+on:
+  # Every push to a branch, with or without a pull request: a PR's own pushes arrive here, so
+  # there's no `synchronize` trigger to run a second time.
+  push:
+    branches-ignore: [main]
+  # Only for the push that came before the PR existed.
+  pull_request:
+    types: [opened, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: ui-previews-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # push refs/previews/<branch>
+  pull-requests: write # the gallery in the description
+
+jobs:
+  previews:
+    name: Draw the UI previews
+    # A fork's pull request gets a read-only token: it could neither push the images nor edit
+    # its description. (A fork's pushes don't run workflows here at all.)
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BRANCH: ${{ github.head_ref || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The branch's own head, not the pull_request event's merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          # The merge base is drawn too, so the history back to it is needed.
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # The JVM renderer draws through skiko, which links libGL and fontconfig.
+      - name: Install skiko native dependencies
+        run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
+
+      - name: Find the pull request and the merge base
+        run: |
+          pr=${{ github.event.pull_request.number || '' }}
+          if [ -z "$pr" ]; then
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls?head=${GITHUB_REPOSITORY_OWNER}:${BRANCH}&state=open" --jq '.[0].number // empty')
+          fi
+          base_ref=main
+          if [ -n "$pr" ]; then
+            base_ref=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq .base.ref)
+          fi
+          git fetch --quiet origin "$base_ref"
+          base=$(git merge-base HEAD "origin/$base_ref")
+          {
+            echo "PR=$pr"
+            echo "PREVIEW_BRANCH=$BRANCH"
+            echo "PREVIEW_HEAD_SHA=$(git rev-parse HEAD)"
+            echo "PREVIEW_BASE_REF=$base_ref"
+            echo "PREVIEW_BASE_SHA=$base"
+            echo "PREVIEW_RUN_URL=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            # refs/previews/claude--some-feature: one level, so no branch name can clash with another's path.
+            echo "PREVIEW_REF=refs/previews/$(printf '%s' "$BRANCH" | tr -c 'A-Za-z0-9._-' '-')"
+          } >> "$GITHUB_ENV"
+          echo "Branch $BRANCH, pull request ${pr:-none}, merge base with $base_ref: $base"
+
+      - name: Draw the branch
+        id: head
+        continue-on-error: true
+        run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace
+
+      # With this branch's script: the base's copy may predate it. A base that predates the
+      # renderers themselves draws nothing, and every preview counts as new.
+      - name: Draw the merge base
+        if: env.PREVIEW_BASE_SHA != env.PREVIEW_HEAD_SHA
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/base" "$PREVIEW_BASE_SHA"
+          cd "$RUNNER_TEMP/base"
+          "$GITHUB_WORKSPACE/scripts/render-ui-previews.sh" "$RUNNER_TEMP/previews/base" \
+            || echo "::notice::The merge base didn't draw everything; what it didn't draw counts as new."
+
+      - name: Lay out the gallery
+        env:
+          PREVIEW_HEAD_FAILED: ${{ steps.head.outcome == 'failure' }}
+        run: python3 scripts/ui_previews.py build "$RUNNER_TEMP/previews/head" "$RUNNER_TEMP/previews/base" "$RUNNER_TEMP/gallery"
+
+      # A commit of the gallery alone (no parent, nothing from the branch), made with a
+      # throwaway index so the checkout is left as it was, and pushed with checkout's token.
+      - name: Publish the gallery to ${{ env.PREVIEW_REF }}
+        env:
+          GIT_INDEX_FILE: ${{ runner.temp }}/gallery.index
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          git -C "$RUNNER_TEMP/gallery" --git-dir="$GITHUB_WORKSPACE/.git" --work-tree=. add -A
+          tree=$(git write-tree)
+          commit=$(git commit-tree "$tree" -m "UI previews of $BRANCH at $PREVIEW_HEAD_SHA" -m "Merge base $PREVIEW_BASE_SHA ($PREVIEW_BASE_REF). Run $PREVIEW_RUN_URL")
+          git push --force origin "$commit:$PREVIEW_REF"
+          echo "GALLERY_COMMIT=$commit" >> "$GITHUB_ENV"
+          echo "Gallery: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$commit"
+
+      - name: Write the section
+        run: |
+          python3 scripts/ui_previews.py section "$RUNNER_TEMP/gallery" \
+            "https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$GALLERY_COMMIT" > "$RUNNER_TEMP/section.md"
+          cat "$RUNNER_TEMP/section.md" >> "$GITHUB_STEP_SUMMARY"
+
+      # Edits made with this workflow's token don't trigger workflows, so this can't set off
+      # the "App version" workflow's `edited` run, or this one.
+      - name: Put the gallery in the pull request's description
+        if: env.PR != ''
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
+          python3 scripts/ui_previews.py splice "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/section.md" > "$RUNNER_TEMP/new-body.md"
+          if cmp -s "$RUNNER_TEMP/body.md" "$RUNNER_TEMP/new-body.md"; then
+            echo "#$PR already shows these previews"
+          else
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -F "body=@$RUNNER_TEMP/new-body.md" --silent
+            echo "#$PR's description now shows the previews"
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ui-previews
+          path: |
+            ${{ runner.temp }}/gallery/**
+            androidApp/build/reports/screenshotTest/**
+            shared/build/reports/tests/renderPreviews/**
+          retention-days: 7
+
+      - name: Fail if the branch's previews couldn't all be drawn
+        if: steps.head.outcome == 'failure'
+        run: |
+          echo "::error::A renderer failed on this branch; the gallery shows what was drawn. See 'Draw the branch' above."
+          exit 1

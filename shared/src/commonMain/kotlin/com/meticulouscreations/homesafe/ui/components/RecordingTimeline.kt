@@ -305,7 +305,7 @@ private fun timelineTicks(windowStart: Double, windowEnd: Double, intervalSecond
 
 @Preview
 @Composable
-private fun RecordingTimelineLivePreview() {
+fun RecordingTimelineLivePreview() {
     FrigatePreview {
         RecordingTimeline(
             segments = previewRecordingSegments,
@@ -326,7 +326,7 @@ private fun RecordingTimelineLivePreview() {
 
 @Preview
 @Composable
-private fun RecordingTimelineScrubbingPreview() {
+fun RecordingTimelineScrubbingPreview() {
     FrigatePreview {
         RecordingTimeline(
             segments = previewRecordingSegments,

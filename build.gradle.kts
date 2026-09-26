@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.baselineprofile) apply false
     alias(libs.plugins.composeStabilityAnalyzer) apply false
     alias(libs.plugins.ktlint) apply false
+    alias(libs.plugins.screenshot) apply false
 }
 
 // Kotlin/JS refuses to link a kotlin-test klib from a different compiler release, and some

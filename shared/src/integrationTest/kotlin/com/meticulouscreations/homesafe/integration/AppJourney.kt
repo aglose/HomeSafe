@@ -40,12 +40,18 @@ import kotlin.time.TimeSource
  * The clock is frozen (`autoAdvance = false`) for the whole journey: the app has never-ending
  * frame loops (loading shimmers, live pills) that would keep an auto-advancing clock from ever
  * going idle. Every wait here therefore drives frames itself — see [awaitUntil].
+ *
+ * The journey takes the name of the test method that calls this — it is on the stack only here —
+ * for its screenshots (see [AppJourney.snapshot]).
  */
 @OptIn(ExperimentalTestApi::class)
 internal fun runAppJourney(
     state: FakeFrigateState = FakeFrigateState.household(),
     block: AppJourney.() -> Unit,
-) = runComposeUiTest(testTimeout = JOURNEY_TIMEOUT) {
+) = runJourney(callingJourneyName(), state, block)
+
+@OptIn(ExperimentalTestApi::class)
+private fun runJourney(name: String, state: FakeFrigateState, block: AppJourney.() -> Unit) = runComposeUiTest(testTimeout = JOURNEY_TIMEOUT) {
     FakeFrigateServer(state).start().use { server ->
         val graph = createAppGraph(testPlatformContext())
         val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
@@ -54,7 +60,14 @@ internal fun runAppJourney(
         try {
             mainClock.autoAdvance = false
             setContent { if (onScreen.value) App(graph) }
-            AppJourney(this, server, graph).block()
+            val journey = AppJourney(this, server, graph, name)
+            try {
+                journey.block()
+            } catch (failure: AssertionError) {
+                journey.snapshot("failed")
+                throw failure
+            }
+            journey.snapshot("end")
         } catch (interrupted: InterruptedException) {
             stuck = true
             throw AssertionError(
@@ -89,6 +102,13 @@ private fun ComposeUiTest.clearTheStage(onScreen: MutableState<Boolean>) {
 }
 
 private const val CLEAR_STAGE_FRAMES = 10
+
+/** "HomeJourneyTest.showsEveryCamera": the journey test class and method on the call stack. */
+private fun callingJourneyName(): String =
+    Throwable().stackTrace
+        .firstOrNull { it.className.substringAfterLast('.').endsWith("JourneyTest") }
+        ?.let { "${it.className.substringAfterLast('.')}.${it.methodName}" }
+        ?: "journey"
 
 /**
  * Interrupts [testThread] if the journey is still running after [limit], having first taken
@@ -141,7 +161,11 @@ internal class AppJourney(
     val ui: ComposeUiTest,
     val server: FakeFrigateServer,
     val graph: AppGraph,
+    /** Names this journey's screenshots; see [snapshot]. */
+    val name: String = "journey",
 ) {
+    private var snapshots = 0
+
     val state: FakeFrigateState get() = server.state
 
     val signIn = SignInRobot(this)
@@ -251,6 +275,21 @@ internal class AppJourney(
     fun tap(matcher: SemanticsMatcher, description: String = matcher.description) {
         awaitSingle(matcher, description).performClick()
         settle(TAP_SETTLE)
+        snapshot("after tap on $description")
+    }
+
+    /**
+     * Saves what is on screen as `<journey>/<nn>-<step>.png`, when the run asked for journey
+     * screenshots (`-PjourneyScreens` on the JVM; see docs/ui-previews.md) and does nothing
+     * otherwise. Every tap takes one, and so do the end of a journey and a failed wait, so a run
+     * leaves a flipbook of the journey an agent or a reviewer can page through. Best effort: a
+     * capture that fails never fails the journey.
+     */
+    fun snapshot(step: String) {
+        val file = (++snapshots).toString().padStart(2, '0') + "-" +
+            step.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(MAX_STEP_NAME)
+        runCatching { saveJourneyScreen(ui, name, file) }
+            .onFailure { println("Couldn't save the $name screenshot \"$file\": $it") }
     }
 
     fun tapText(text: String, substring: Boolean = false) = tap(hasText(text, substring = substring), "text \"$text\"")
@@ -273,6 +312,7 @@ internal class AppJourney(
         private const val FRAME_MILLIS = 16L
         private const val DIAGNOSTIC_REQUESTS = 30
         private val SCROLL_SETTLE: Duration = 600.milliseconds
+        private const val MAX_STEP_NAME = 60
     }
 }
 
