@@ -79,14 +79,7 @@ internal class LiquidLensState(private val shader: LiquidLensShader?, initialPos
         val halfWidth = (lerp(REST_HALF_WIDTH, HELD_HALF_WIDTH, swell) * density * stretch).coerceAtLeast(MIN_HALF * density)
         val halfHeight = (lerp(REST_HALF_HEIGHT, HELD_HALF_HEIGHT, swell) * density / sqrt(stretch)).coerceAtLeast(MIN_HALF * density)
         val focusX = playhead * width
-        // The glass keeps inside the card where it can, but the playhead line never leaves it:
-        // however far the spring lags or overshoots, and at either end of the timeline (where it
-        // hangs a little off the card's edge rather than let go of the line).
-        val inset = EDGE_INSET * density
-        val reach = halfWidth * PLAYHEAD_REACH
-        val centerX = (position.value * width)
-            .coerceIn(halfWidth + inset, (width - halfWidth - inset).coerceAtLeast(halfWidth + inset))
-            .coerceIn(focusX - reach, focusX + reach)
+        val centerX = lensCenterX(position.value * width, focusX, halfWidth, EDGE_INSET * density, width)
         val centerY = lerp(REST_CENTER_Y, HELD_CENTER_Y, swell) * density
         val ripple = (swell.coerceIn(0f, 1f) * HELD_RIPPLE + (speed / RIPPLE_SPEED).coerceAtMost(1f) * MOVING_RIPPLE) * density
 
@@ -101,6 +94,21 @@ internal class LiquidLensState(private val shader: LiquidLensShader?, initialPos
         shader.setUniform("swell", swell.coerceIn(0f, 1f))
         return shader.renderEffect()
     }
+}
+
+/**
+ * Where the glass's centre goes across a layer [width] px wide, given where its spring has it,
+ * [sprungX], and where the playhead is, [playheadX]. It keeps [inset] inside the card's edges
+ * where it can, but never drifts more than [PLAYHEAD_REACH] of its [halfWidth] from the
+ * playhead, however far the spring lags or overshoots: the playhead line never leaves it. At
+ * either end of the timeline, where the two disagree, the playhead wins and the glass hangs a
+ * little off the card.
+ */
+internal fun lensCenterX(sprungX: Float, playheadX: Float, halfWidth: Float, inset: Float, width: Float): Float {
+    val reach = halfWidth * PLAYHEAD_REACH
+    return sprungX
+        .coerceIn(halfWidth + inset, (width - halfWidth - inset).coerceAtLeast(halfWidth + inset))
+        .coerceIn(playheadX - reach, playheadX + reach)
 }
 
 /** Draws [lens] over everything this layer draws, the card's background included. */
@@ -157,7 +165,7 @@ private const val EDGE_INSET = 3f
  * How far off-centre the glass may drift from the playhead, as a fraction of its half-width: the
  * line stays in the clear middle of the lens, away from the rim where the glass bends it.
  */
-private const val PLAYHEAD_REACH = 0.45f
+internal const val PLAYHEAD_REACH = 0.45f
 
 private const val STRETCH_SPEED = 1_600f
 private const val MAX_STRETCH = 0.45f
