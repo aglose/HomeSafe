@@ -124,7 +124,7 @@ private const val REST_ZOOM = 1.35f
 private const val REST_ZOOM_Y = 1.1f
 
 /**
- * The height magnification is about: the middle of the bars. The zoom is mostly across, since
+ * Magnification is centred vertically on the middle of the bars. The zoom is mostly across, since
  * across is time — held, the bubble spreads a few minutes over its width but only lifts the bars
  * and dots a little, so they stay in it.
  */
