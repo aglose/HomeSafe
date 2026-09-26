@@ -147,6 +147,17 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
         response.body<ByteArray>()
     }
 
+    /**
+     * A frame of [cameraName]'s recording at [epochSeconds], scaled to [height] pixels tall (null
+     * keeps the recorded size): the picture a finished detection's car is cut from once Frigate's
+     * own crops of it are gone.
+     */
+    suspend fun getRecordingFrame(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int?): Result<ByteArray> = runCatching {
+        val response = httpClient.get(frigateRecordingSnapshotUrl(serverUrl, cameraName, epochSeconds, height))
+        check(response.status.isSuccess()) { "Couldn't load the recording: ${response.status}" }
+        response.body<ByteArray>()
+    }
+
     /** Starts training in the background on the server; Frigate hot-loads the result when done (about half a minute on the real box). */
     suspend fun train(serverUrl: String, modelName: String): Result<Unit> =
         postExpectingSuccess("${serverUrl.trimEnd('/')}/api/classification/$modelName/train", body = null)

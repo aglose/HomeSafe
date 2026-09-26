@@ -15,6 +15,9 @@ data class ClassifierModel(
     val displayName: String get() = subLabelDisplayName(name)
 }
 
+/** The classifier a car tag teaches: the server's first enabled one that runs on cars. */
+fun List<ClassifierModel>.carClassifier(): ClassifierModel? = firstOrNull { it.enabled && CarTagging.CAR_LABEL in it.objects }
+
 /** A crop Frigate saved from a live detection, waiting for a person to say what it is. */
 data class UnlabeledCrop(
     val fileName: String,
@@ -227,6 +230,9 @@ data class ClassifierDataset(
     val categories: List<String>
         get() = (categoryCounts.keys + NONE_CATEGORY + queue.mapNotNull { it.guessedCategory }.filter { isNameable(it) })
             .sortedWith(compareBy({ it == NONE_CATEGORY }, { it }))
+
+    /** [categories] that name a car: everything but `none`, which is "not ours". */
+    val knownCars: List<String> get() = categories.filter { it != NONE_CATEGORY }
 
     /** Frigate needs two classes; `none` counts as one. */
     val canTrain: Boolean get() = categoryCounts.count { it.value > 0 } >= 2

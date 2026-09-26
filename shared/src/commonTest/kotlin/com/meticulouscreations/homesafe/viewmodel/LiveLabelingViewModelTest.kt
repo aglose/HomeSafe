@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.EventFrame
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
@@ -79,6 +81,9 @@ class LiveLabelingViewModelTest {
         override suspend fun addExample(modelName: String, category: String, frame: ByteArray, box: SeenBox): Result<Unit> = fail("unused")
         override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> = fail("unused")
         override fun queueImageUrl(modelName: String, fileName: String) = "http://frigate/clips/$modelName/train/$fileName"
+        override suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>> = fail("unused")
+        override suspend fun getDetection(eventId: String): Result<MomentEvent?> = fail("unused")
+        override suspend fun getEventFrame(eventId: String): Result<EventFrame> = fail("unused")
     }
 
     private val arriving = TrackedObject("1788832130.376381-6wpol8", "car", subLabel = null)

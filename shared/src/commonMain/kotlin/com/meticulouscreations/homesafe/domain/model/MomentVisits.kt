@@ -42,6 +42,13 @@ val MomentEvent.isFamiliar: Boolean
 /** One of the household's cars: a vehicle the classifier put a name to. */
 val MomentEvent.isHouseholdCar: Boolean get() = category == MomentCategory.VEHICLES && isFamiliar
 
+/**
+ * A car the classifier left unnamed, which the feed calls plain "Car": the same [isFamiliar] rule
+ * that makes a named one household, on the one label the known-cars model runs on. What can be
+ * tagged as one of the household's cars (see [CarTagging]).
+ */
+val MomentEvent.isGenericCar: Boolean get() = label.equals(CarTagging.CAR_LABEL, ignoreCase = true) && !isFamiliar
+
 enum class VisitKind {
     /** One detection, drawn as the ordinary card. */
     SINGLE,

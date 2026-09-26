@@ -316,6 +316,22 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun aCarNamedByHandReadsAsThatCarBeforeTheServerSaysSo() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        var feed = emptyList<MomentEvent>()
+        backgroundScope.launch { h.repo.observeMoments().collect { feed = it } }
+        eventually("events to load") { feed.size == 2 }
+
+        h.repo.nameCar("1788401800.1-abc", "sarahs_car")
+        eventually("the name to show") { feed.firstOrNull { it.id == "1788401800.1-abc" }?.subLabel == "sarahs_car" }
+
+        val car = feed.first { it.id == "1788401800.1-abc" }
+        assertEquals(1.0, car.subLabelScore, "as sure as a person naming it")
+        assertEquals("test", feed.first { it.id == "1788401732.596325-eaak48" }.subLabel, "nobody else renamed")
+    }
+
+    @Test
     fun stillRedetectionsOfARecognisedCarFoldIntoOneCard() = runTest {
         Harness.events = parkedCarJson
         Harness.config = configJson

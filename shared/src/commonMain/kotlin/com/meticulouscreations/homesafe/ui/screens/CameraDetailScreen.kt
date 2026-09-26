@@ -80,9 +80,11 @@ import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
+import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -93,6 +95,10 @@ import kotlin.math.roundToInt
  * [openAtEpochSeconds] is set when the screen was opened from a detection rather than from the
  * camera grid — the Moments tab's full-screen button — and the player starts at that instant in
  * the recording instead of live.
+ *
+ * [openedEventId] is that detection, when known. If its car is one the classifier didn't name,
+ * the screen offers to tag it, and with [tagCarOnOpen] (a notification's "Tag car" button) opens
+ * the picker straight away.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -105,8 +111,12 @@ fun CameraDetailScreen(
     onEditDetectionZones: () -> Unit,
     onTagCars: () -> Unit = {},
     openAtEpochSeconds: Double? = null,
+    openedEventId: String? = null,
+    tagCarOnOpen: Boolean = false,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
+    val tagViewModel: MomentCarTagViewModel = metroViewModel()
+    val tagState by tagViewModel.uiState.collectAsStateWithLifecycle()
     // Deliberately *not* collected here: `viewModel.playback`, which changes four times a
     // second while a recording plays (position polls) and on every pixel of a timeline drag.
     // Each piece of UI that needs it collects it itself (PlayerSurface, QuickActionsRow,
@@ -145,6 +155,17 @@ fun CameraDetailScreen(
     LaunchedEffect(openAtEpochSeconds) {
         openAtEpochSeconds?.let(viewModel::playMoment)
     }
+    LaunchedEffect(openedEventId) {
+        openedEventId?.let { tagViewModel.lookUp(it, openPicker = tagCarOnOpen) }
+    }
+    TagCarDialog(
+        state = tagState,
+        onTag = tagViewModel::tag,
+        onNewCarDraftChange = tagViewModel::setNewCarDraft,
+        onTagAsNewCar = tagViewModel::tagAsNewCar,
+        onRetry = tagViewModel::retry,
+        onDismiss = tagViewModel::dismiss,
+    )
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         // This header replaces the shell's top bar (the shell hides it while a nested screen is
@@ -235,6 +256,11 @@ fun CameraDetailScreen(
                     )
                 }
 
+                // The detection this screen was opened on, when its car went unrecognised.
+                tagState.landed?.let { landed ->
+                    TagCarPrompt(summary = landed.summary, taggedAs = tagState.tagged[landed.eventId], onTag = tagViewModel::openLanded)
+                }
+
                 // Cars in view that a classifier still wants a name for. Polls and recomposes on
                 // its own, and takes no room when there's nothing to ask about.
                 LiveLabelingSection(cameraName = cameraName)
@@ -265,6 +291,7 @@ fun CameraDetailScreen(
                                         viewModel.playMoment(item.event.startEpochSeconds)
                                         scope.launch { scrollState.animateScrollTo(0) }
                                     },
+                                    onTagCar = { tagViewModel.open(item.event) },
                                 )
                             }
                         }
@@ -685,7 +712,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
 }
 
 @Composable
-private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit) {
+private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit, onTagCar: () -> Unit) {
     val p = item.presentation
     Row(
         modifier = Modifier
@@ -724,6 +751,7 @@ private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
+            if (item.canTagCar) TagCarButton(onClick = onTagCar, modifier = Modifier.padding(top = 4.dp))
         }
     }
 }

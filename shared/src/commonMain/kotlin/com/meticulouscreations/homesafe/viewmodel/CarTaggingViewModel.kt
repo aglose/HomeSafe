@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
+import com.meticulouscreations.homesafe.domain.model.carClassifier
 import com.meticulouscreations.homesafe.domain.model.contains
 import com.meticulouscreations.homesafe.domain.model.isTaggable
 import com.meticulouscreations.homesafe.domain.model.jpegSize
@@ -105,7 +106,7 @@ class CarTaggingViewModel(
         loadJob = viewModelScope.launch {
             val model = model ?: run {
                 val models = getClassifierModelsUseCase().getOrElse { e -> return@launch fail("Couldn't load the classifiers: ${e.message}") }
-                models.firstOrNull { it.enabled && CAR_LABEL in it.objects }
+                models.carClassifier()
                     ?: return@launch fail("This server has no classifier that runs on cars.")
             }
             this@CarTaggingViewModel.model = model
@@ -205,7 +206,6 @@ class CarTaggingViewModel(
         if (category == NONE) "not ours" else subLabelDisplayName(category)
 
     private companion object {
-        const val CAR_LABEL = "car"
         const val NONE = ClassifierDataset.NONE_CATEGORY
     }
 }

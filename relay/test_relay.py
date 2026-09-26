@@ -338,6 +338,13 @@ class SubjectTest(unittest.TestCase):
         self.assertEqual({"person:sarah", "car"}, relay.review_kinds(review("r", 0, ["car", "person"], ["sarah"])))
         self.assertEqual({"dog"}, relay.review_kinds(review("r", 0, ["dog"])))
 
+    def test_only_a_review_of_unnamed_cars_offers_a_car_tag(self):
+        self.assertTrue(relay.is_unnamed_car(review("r", 0, ["car", "car-verified"])))
+        self.assertTrue(relay.is_unnamed_car(review("r", 0, ["car"], ["none"])), "the none class is not a name")
+        self.assertFalse(relay.is_unnamed_car(review("r", 0, ["car"], ["andrews_tesla"])), "already named")
+        self.assertFalse(relay.is_unnamed_car(review("r", 0, ["car", "person"])), "its first detection may be the person")
+        self.assertFalse(relay.is_unnamed_car(review("r", 0, ["truck"])), "the classifier only runs on cars")
+
 
 class VisitsTest(unittest.TestCase):
     """How a run of alerts on one camera becomes one notification, and which of its pushes sound."""

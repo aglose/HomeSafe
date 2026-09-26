@@ -125,6 +125,7 @@ class HomeViewModelTest {
     private class FakeMoments(private val inView: List<StationaryObject>, private val latest: Flow<MomentEvent?>) : MomentsRepository {
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = MutableStateFlow(inView)
         override fun refreshStationaryObjects() = Unit
+        override fun nameCar(eventId: String, subLabel: String) = Unit
         override fun observeLatestMoment(): Flow<MomentEvent?> = latest
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
         override fun observeError(): Flow<String?> = fail("unused")

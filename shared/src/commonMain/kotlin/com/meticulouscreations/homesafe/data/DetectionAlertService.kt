@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.domain.model.atSameSpotAs
 import com.meticulouscreations.homesafe.domain.model.categoryForLabel
 import com.meticulouscreations.homesafe.domain.model.foldedInto
 import com.meticulouscreations.homesafe.domain.model.inZones
+import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.isStill
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
@@ -283,6 +284,7 @@ class DetectionAlertService(
             body = where,
             target = MomentDeepLink(eventId = moment.id, cameraName = moment.cameraName, startEpochSeconds = moment.startEpochSeconds),
             urgent = urgent,
+            offerCarTag = moment.isGenericCar,
         )
         notifier.notify(text)
         // Off the poll loop: the next detection mustn't wait on this one's downloads.

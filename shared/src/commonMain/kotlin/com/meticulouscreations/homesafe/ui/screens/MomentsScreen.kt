@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Sell
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
@@ -90,6 +91,7 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
+import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
@@ -148,7 +150,17 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+    val tagViewModel: MomentCarTagViewModel = metroViewModel()
+    val tagState by tagViewModel.uiState.collectAsStateWithLifecycle()
 
+    TagCarDialog(
+        state = tagState,
+        onTag = tagViewModel::tag,
+        onNewCarDraftChange = tagViewModel::setNewCarDraft,
+        onTagAsNewCar = tagViewModel::tagAsNewCar,
+        onRetry = tagViewModel::retry,
+        onDismiss = tagViewModel::dismiss,
+    )
     MomentsFeed(
         state = state,
         downloadState = downloadState,
@@ -168,6 +180,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
             onOpenFullScreen(event)
         },
         modifier = modifier,
+        onTagCar = tagViewModel::open,
     )
 }
 
@@ -193,6 +206,7 @@ internal fun MomentsFeed(
     onDownloadClick: (MomentEvent) -> Unit,
     onFullScreenClick: (MomentEvent) -> Unit,
     modifier: Modifier = Modifier,
+    onTagCar: (MomentEvent) -> Unit = {},
 ) {
     var pickingDay by remember { mutableStateOf(false) }
     // Keyed by MomentItem.key, which holds while a visit grows newer clips.
@@ -312,6 +326,7 @@ internal fun MomentsFeed(
                                 onClipBuffering = onClipBuffering,
                                 onClipError = onClipError,
                                 onFullScreenClick = { playing?.let(onFullScreenClick) },
+                                onTagCar = onTagCar,
                             )
                         } else {
                             val isDownloading = downloadState.downloadingEventId == item.event.id
@@ -330,6 +345,7 @@ internal fun MomentsFeed(
                                 onClipError = onClipError,
                                 onDownloadClick = { onDownloadClick(item.event) },
                                 onFullScreenClick = { playing?.let(onFullScreenClick) },
+                                onTagCar = onTagCar,
                             )
                         }
                     }
@@ -758,6 +774,7 @@ private fun MomentCard(
     onClipError: () -> Unit,
     onDownloadClick: () -> Unit,
     onFullScreenClick: () -> Unit,
+    onTagCar: (MomentEvent) -> Unit,
 ) {
     val extraColors = LocalFrigateExtraColors.current
     val event = item.event
@@ -870,21 +887,25 @@ private fun MomentCard(
                 }
                 // The badge and the clip's download share the card's bottom line, at opposite
                 // ends, where the download has room of its own instead of crowding the thumbnail.
+                // An unnamed car's tag follows the badge that calls it just "car".
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            text = p.badgeLabel.uppercase(),
-                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                text = p.badgeLabel.uppercase(),
+                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        if (item.canTagCar) TagCarButton(onClick = { onTagCar(event) })
                     }
                     if (event.hasClip) {
                         DownloadButton(
@@ -900,7 +921,7 @@ private fun MomentCard(
 
         if (item.clips.isNotEmpty()) {
             AnimatedVisibility(visible = clipsOpen) {
-                MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay)
+                MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay, onTagCar = onTagCar)
             }
         }
 
@@ -926,6 +947,7 @@ private fun RoutineRow(
     onClipBuffering: (Boolean) -> Unit,
     onClipError: () -> Unit,
     onFullScreenClick: () -> Unit,
+    onTagCar: (MomentEvent) -> Unit,
 ) {
     val p = item.presentation
     Column(
@@ -977,7 +999,7 @@ private fun RoutineRow(
             )
         }
         AnimatedVisibility(visible = clipsOpen) {
-            MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay)
+            MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay, onTagCar = onTagCar)
         }
         AnimatedVisibility(visible = player.playingEventId != null) {
             InlineClipPlayer(player = player, onClipBuffering = onClipBuffering, onClipError = onClipError, onFullScreenClick = onFullScreenClick)
@@ -1006,9 +1028,12 @@ private fun ClipsToggle(label: String, open: Boolean, onClick: () -> Unit) {
     }
 }
 
-/** A folded entry's detections, oldest first, one row each; a tap plays that one, the one playing is marked. */
+/**
+ * A folded entry's detections, oldest first, one row each; a tap plays that one, the one playing is
+ * marked. A clip of a car nobody named can be tagged from its row: a visit can hold several cars.
+ */
 @Composable
-private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (MomentEvent) -> Unit) {
+private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (MomentEvent) -> Unit, onTagCar: (MomentEvent) -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         item.clips.forEach { clip ->
             val playing = clip.event.id == playingEventId
@@ -1041,6 +1066,18 @@ private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (M
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (clip.canTagCar) {
+                    Icon(
+                        imageVector = Icons.Filled.Sell,
+                        contentDescription = "Tag this car",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .clickable { onTagCar(clip.event) }
+                            .padding(4.dp)
+                            .size(16.dp),
+                    )
+                }
             }
         }
     }

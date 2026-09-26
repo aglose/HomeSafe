@@ -175,7 +175,7 @@ class MomentsRepositoryImpl(
      * fetch — e.g. while disconnected, so the UI sees an empty list rather than nothing.
      */
     override fun observeMoments(): Flow<List<MomentEvent>> =
-        combine(_moments, poller.onStart { emit(Unit) }) { list, _ -> list }
+        combine(_moments, namedByHand, poller.onStart { emit(Unit) }) { list, named, _ -> list.withNames(named) }
 
     override fun observeError(): Flow<String?> = _error.asStateFlow()
 
@@ -234,7 +234,7 @@ class MomentsRepositoryImpl(
                 delay(nextPollDelayMs(failures))
             }
         }
-    }
+    }.combine(namedByHand) { moments, named -> moments.withNames(named) }
 
     /**
      * The pages behind [observeRecentMoments]: [cameraName]'s detections from now, placed by the
@@ -257,6 +257,9 @@ class MomentsRepositoryImpl(
         }
         return placed to oldest
     }
+
+    /** Cars a person named in this run of the app, by event id (see [nameCar]). */
+    private val namedByHand = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** [refreshStationaryObjects]'s signal: dropped when no poll is waiting, since the next one to start polls straight away. */
     private val stationaryNudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -323,6 +326,19 @@ class MomentsRepositoryImpl(
     override fun refreshStationaryObjects() {
         stationaryNudges.tryEmit(Unit)
     }
+
+    override fun nameCar(eventId: String, subLabel: String) {
+        namedByHand.update { it + (eventId to subLabel) }
+        refreshStationaryObjects()
+    }
+
+    /**
+     * [namedByHand] over what the server said. Once the server says so too this changes nothing;
+     * until then it is the difference between a card that reads "Car" after it was just named and
+     * one that reads the name.
+     */
+    private fun List<MomentEvent>.withNames(named: Map<String, String>): List<MomentEvent> =
+        if (named.isEmpty()) this else map { event -> named[event.id]?.let { event.copy(subLabel = it, subLabelScore = MANUAL_NAME_SCORE) } ?: event }
 
     /**
      * Straight out of the cache, re-read whenever anything files a page there, rather than a poll
@@ -580,6 +596,9 @@ class MomentsRepositoryImpl(
 
     private companion object {
         const val POLL_INTERVAL_MS = 30_000L
+
+        /** What the server records for a name a person gave (see ClassifierRepositoryImpl), so a hand-named card matches it. */
+        const val MANUAL_NAME_SCORE = 1.0
 
         /** The first retry after a fetch the server didn't answer; see [nextPollDelayMs]. */
         const val RETRY_INTERVAL_MS = 5_000L
