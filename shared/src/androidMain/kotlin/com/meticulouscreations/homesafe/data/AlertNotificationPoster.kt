@@ -158,6 +158,7 @@ object AlertNotificationPoster {
             .setAutoCancel(true)
             .setContentIntent(openIntent(context, notification))
             .apply {
+                tagCarIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, "Tag car", it) }
                 if (largeIcon != null) setLargeIcon(largeIcon)
                 if (picture != null) {
                     setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?))
@@ -177,6 +178,18 @@ object AlertNotificationPoster {
             Intent(Intent.ACTION_VIEW, target.toUri().toUri()).setComponent(launch.component)
         } ?: launch
         return PendingIntent.getActivity(context, notification.id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+    }
+
+    /**
+     * The "Tag car" button's destination: the same detection, with the car picker opened on
+     * arrival. Null unless the notification offers it. A request code of its own, so it can't
+     * replace the tap's PendingIntent (both carry the same activity and flags).
+     */
+    private fun tagCarIntent(context: Context, notification: AlertNotification): PendingIntent? {
+        val target = notification.target?.takeIf { notification.offerCarTag } ?: return null
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+        val intent = Intent(Intent.ACTION_VIEW, target.copy(tagCar = true).toUri().toUri()).setComponent(launch.component)
+        return PendingIntent.getActivity(context, "${notification.id}:tag-car".hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     /** Tagged by the detection's id, so each detection has its own notification and every stage replaces the last. */

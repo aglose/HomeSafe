@@ -175,7 +175,7 @@ class MomentsRepositoryImpl(
      * fetch — e.g. while disconnected, so the UI sees an empty list rather than nothing.
      */
     override fun observeMoments(): Flow<List<MomentEvent>> =
-        combine(_moments, poller.onStart { emit(Unit) }) { list, _ -> list }
+        combine(_moments, namedByHand, poller.onStart { emit(Unit) }) { list, named, _ -> list.withNames(named) }
 
     override fun observeError(): Flow<String?> = _error.asStateFlow()
 
@@ -234,7 +234,7 @@ class MomentsRepositoryImpl(
                 delay(nextPollDelayMs(failures))
             }
         }
-    }
+    }.combine(namedByHand) { moments, named -> moments.withNames(named) }
 
     /**
      * The pages behind [observeRecentMoments]: [cameraName]'s detections from now, placed by the
@@ -257,6 +257,43 @@ class MomentsRepositoryImpl(
         }
         return placed to oldest
     }
+
+    /**
+     * Pages [cameraName]'s detections down from [before] to [after], newest first, until a page
+     * comes back short or [RANGE_MAX_PAGES] have been read. Placed by the zones and folded once
+     * the whole interval is in, so a visit straddling a page boundary is one moment.
+     */
+    override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = channelFlow {
+        server.collectLatest { server ->
+            if (server == null) return@collectLatest
+            var failures = 0
+            while (true) {
+                loadZones(server.url, force = false)
+                val placed = fetchRangePages(server.url, cameraName, afterEpochSeconds, beforeEpochSeconds)
+                if (placed != null) send(placed.mergeVehicleVisits().sortedBy { it.startEpochSeconds })
+                failures = if (placed != null) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
+            }
+        }
+    }.combine(namedByHand) { moments, named -> moments.withNames(named) }
+
+    /** The pages behind [observeMomentsBetween], or null if the server didn't answer the first one. */
+    private suspend fun fetchRangePages(url: String, cameraName: String, after: Double, before: Double): List<MomentEvent>? {
+        var placed = emptyList<MomentEvent>()
+        var cursor = before
+        for (page in 0 until RANGE_MAX_PAGES) {
+            val events = apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = after, beforeEpochSeconds = cursor, cameras = listOf(cameraName))
+                .getOrElse { return if (page == 0) null else placed }
+            val zones = stateLock.withLock { zonesByCamera }
+            placed = placed + events.map { it.toDomain() }.inZones(zones)
+            cursor = events.minOfOrNull { it.startTime } ?: break
+            if (events.size < PAGE_SIZE) break
+        }
+        return placed
+    }
+
+    /** Cars a person named in this run of the app, by event id (see [nameCar]). */
+    private val namedByHand = MutableStateFlow<Map<String, String>>(emptyMap())
 
     /** [refreshStationaryObjects]'s signal: dropped when no poll is waiting, since the next one to start polls straight away. */
     private val stationaryNudges = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
@@ -323,6 +360,19 @@ class MomentsRepositoryImpl(
     override fun refreshStationaryObjects() {
         stationaryNudges.tryEmit(Unit)
     }
+
+    override fun nameCar(eventId: String, subLabel: String) {
+        namedByHand.update { it + (eventId to subLabel) }
+        refreshStationaryObjects()
+    }
+
+    /**
+     * [namedByHand] over what the server said. Once the server says so too this changes nothing;
+     * until then it is the difference between a card that reads "Car" after it was just named and
+     * one that reads the name.
+     */
+    private fun List<MomentEvent>.withNames(named: Map<String, String>): List<MomentEvent> =
+        if (named.isEmpty()) this else map { event -> named[event.id]?.let { event.copy(subLabel = it, subLabelScore = MANUAL_NAME_SCORE) } ?: event }
 
     /**
      * Straight out of the cache, re-read whenever anything files a page there, rather than a poll
@@ -581,6 +631,9 @@ class MomentsRepositoryImpl(
     private companion object {
         const val POLL_INTERVAL_MS = 30_000L
 
+        /** What the server records for a name a person gave (see ClassifierRepositoryImpl), so a hand-named card matches it. */
+        const val MANUAL_NAME_SCORE = 1.0
+
         /** The first retry after a fetch the server didn't answer; see [nextPollDelayMs]. */
         const val RETRY_INTERVAL_MS = 5_000L
 
@@ -608,6 +661,12 @@ class MomentsRepositoryImpl(
          * without walking the server's whole history every thirty seconds.
          */
         const val RECENT_MAX_PAGES = 5
+
+        /**
+         * The most pages [observeMomentsBetween] reads per poll. The clip editor asks for half an
+         * hour, which even a busy camera fills with far fewer than a thousand detections.
+         */
+        const val RANGE_MAX_PAGES = 10
 
         /**
          * How far back the in-view strip looks for the vehicles standing in the yard. Long enough

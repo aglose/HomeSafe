@@ -316,6 +316,22 @@ class MomentsRepositoryImplTest {
     }
 
     @Test
+    fun aCarNamedByHandReadsAsThatCarBeforeTheServerSaysSo() = runTest {
+        Harness.events = eventsJson
+        val h = Harness(this)
+        var feed = emptyList<MomentEvent>()
+        backgroundScope.launch { h.repo.observeMoments().collect { feed = it } }
+        eventually("events to load") { feed.size == 2 }
+
+        h.repo.nameCar("1788401800.1-abc", "sarahs_car")
+        eventually("the name to show") { feed.firstOrNull { it.id == "1788401800.1-abc" }?.subLabel == "sarahs_car" }
+
+        val car = feed.first { it.id == "1788401800.1-abc" }
+        assertEquals(1.0, car.subLabelScore, "as sure as a person naming it")
+        assertEquals("test", feed.first { it.id == "1788401732.596325-eaak48" }.subLabel, "nobody else renamed")
+    }
+
+    @Test
     fun stillRedetectionsOfARecognisedCarFoldIntoOneCard() = runTest {
         Harness.events = parkedCarJson
         Harness.config = configJson
@@ -530,6 +546,36 @@ class MomentsRepositoryImplTest {
                 listOf("limit=100&cameras=hikvision_1", "limit=100&before=1901.000&cameras=hikvision_1"),
                 h.eventQueries.distinct(),
                 "one page down, and no further once three moments survived",
+            )
+        } finally {
+            Harness.eventsFor = null
+        }
+    }
+
+    @Test
+    fun momentsBetweenAskForTheIntervalAndPageWithinIt() = runTest {
+        // A full page at the top of the interval, then the rest of it: an old window reached directly, not from now down.
+        Harness.eventsFor = { before ->
+            when (before) {
+                1500.0 -> personsJson(1499, 100)
+                1400.0 -> personsJson((1399L downTo 1390L).toList())
+                else -> fail("unexpected before=$before")
+            }
+        }
+        try {
+            val h = Harness(this)
+            var moments: List<MomentEvent>? = null
+            backgroundScope.launch { h.repo.observeMomentsBetween("hikvision_1", afterEpochSeconds = 1000.0, beforeEpochSeconds = 1500.0).collect { moments = it } }
+            eventually("the interval's moments") { !moments.isNullOrEmpty() }
+
+            assertEquals(110, moments!!.size)
+            assertEquals("e1390", moments!!.first().id, "oldest first")
+            assertEquals(
+                listOf(
+                    "limit=100&after=1000.000&before=1500.000&cameras=hikvision_1",
+                    "limit=100&after=1000.000&before=1400.000&cameras=hikvision_1",
+                ),
+                h.eventQueries.distinct(),
             )
         } finally {
             Harness.eventsFor = null

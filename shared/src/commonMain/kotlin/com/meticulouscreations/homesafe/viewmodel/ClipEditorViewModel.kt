@@ -14,8 +14,8 @@ import com.meticulouscreations.homesafe.domain.model.withLength
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraMomentsBetweenUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveRecentCameraMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveRecordingClipUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
@@ -137,7 +137,7 @@ class ClipEditorViewModel(
     private val getRecordingStreamUseCase: GetRecordingStreamUseCase,
     private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
     private val saveRecordingClipUseCase: SaveRecordingClipUseCase,
-    private val observeRecentCameraMomentsUseCase: ObserveRecentCameraMomentsUseCase,
+    private val observeCameraMomentsBetweenUseCase: ObserveCameraMomentsBetweenUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -239,15 +239,16 @@ class ClipEditorViewModel(
 
     /**
      * This camera's detections inside [earliest]..[latest], kept current (one still in progress
-     * grows its end as the server reports it). The same feed, titles and categories as the
-     * Moments tab, so a chip here reads exactly like the card there.
+     * grows its end as the server reports it). The same titles and categories as the Moments
+     * tab, so a chip here reads exactly like the card there. Asked for by interval, not paged
+     * down from now, so an editor opened on an old recording of a busy camera still gets them.
      */
     private fun watchMoments(earliest: Double, latest: Double) {
         momentsJob?.cancel()
         momentsJob = viewModelScope.launch {
             val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-            val lookback = now() - earliest + SEGMENT_PADDING_SECONDS
-            observeRecentCameraMomentsUseCase(cameraName, limit = MOMENTS_LIMIT, lookbackSeconds = lookback)
+            // A little before [earliest], so a detection already under way when the reach begins still shows.
+            observeCameraMomentsBetweenUseCase(cameraName, afterEpochSeconds = earliest - SEGMENT_PADDING_SECONDS, beforeEpochSeconds = latest)
                 // Marks are a nicety: a feed that fails leaves the editor fully usable without them.
                 .catch { emit(emptyList()) }
                 .collect { events ->
@@ -539,8 +540,5 @@ class ClipEditorViewModel(
 
         /** The preview is full-width 16:9, like the camera screen's player. */
         const val PREVIEW_SNAPSHOT_HEIGHT = 720
-
-        /** Half an hour of a busy camera's detections, with room to spare. */
-        const val MOMENTS_LIMIT = 200
     }
 }

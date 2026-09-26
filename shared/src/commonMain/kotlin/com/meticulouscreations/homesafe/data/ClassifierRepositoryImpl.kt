@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.CropSubject
+import com.meticulouscreations.homesafe.domain.model.EventFrame
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
@@ -86,6 +88,37 @@ class ClassifierRepositoryImpl(
 
     override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> =
         serverUrlOrFailure().fold({ api.setSubLabel(it, eventId, subLabel, score = subLabel?.let { MANUAL_NAME_SCORE }) }, { Result.failure(it) })
+
+    override suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>> =
+        serverUrlOrFailure().fold({ url -> api.getQueue(url, modelName).map { names -> names.map { UnlabeledCrop.fromFileName(it) } } }, { Result.failure(it) })
+
+    override suspend fun getDetection(eventId: String): Result<MomentEvent?> =
+        serverUrlOrFailure().fold(
+            { url -> api.getEvents(url, listOf(eventId)).map { events -> events.firstOrNull { it.id == eventId }?.toDomain() } },
+            { Result.failure(it) },
+        )
+
+    /**
+     * The biggest box because it has the most car in it: the classifier gets a few dozen pixels of
+     * a car at the far kerb, and the example should be the best look there was. A timeline box, not
+     * the event's own, because only those say when they were seen, which is what picks the frame
+     * out of the recording. Scaled to the detect height, so the crop is about the size of the ones
+     * Frigate cuts rather than a 4K close-up of a car the model only ever sees small.
+     */
+    override suspend fun getEventFrame(eventId: String): Result<EventFrame> {
+        val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
+        val event = api.getEvents(serverUrl, listOf(eventId)).getOrElse { return Result.failure(it) }.firstOrNull { it.id == eventId }
+            ?: return Result.failure(FrigateResponseException("Frigate no longer has this detection"))
+        val seen = api.getTimeline(serverUrl, listOf(eventId)).getOrElse { return Result.failure(it) }
+            .mapNotNull { entry -> entry.data?.box?.seenBox(entry.timestamp) }
+            .filter { it.width > 0 && it.height > 0 }
+            .maxWithOrNull(compareBy<SeenBox>({ it.width * it.height }, { it.epochSeconds ?: 0.0 }))
+            ?: return Result.failure(FrigateResponseException("Frigate kept no box for this car"))
+        val height = api.getConfig(serverUrl).getOrNull()?.detectSizes?.get(event.camera)?.height
+        val jpeg = api.getRecordingFrame(serverUrl, event.camera, seen.epochSeconds ?: event.startTime, height)
+            .getOrElse { return Result.failure(it) }
+        return Result.success(EventFrame(jpeg, seen))
+    }
 
     override fun queueImageUrl(modelName: String, fileName: String): String? =
         connectionRepository.currentServerUrl.value?.let { frigateClassifierQueueImageUrl(it, modelName, fileName) }

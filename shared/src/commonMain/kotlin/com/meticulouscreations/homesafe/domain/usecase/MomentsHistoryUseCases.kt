@@ -38,6 +38,13 @@ class ObserveRecentCameraMomentsUseCase(private val momentsRepository: MomentsRe
         momentsRepository.observeRecentMoments(cameraName, limit, lookbackSeconds)
 }
 
+/** See [MomentsRepository.observeMomentsBetween]: one camera's moments inside a fixed interval, wherever it is in its history. */
+@Inject
+class ObserveCameraMomentsBetweenUseCase(private val momentsRepository: MomentsRepository) {
+    operator fun invoke(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> =
+        momentsRepository.observeMomentsBetween(cameraName, afterEpochSeconds, beforeEpochSeconds)
+}
+
 /** See [MomentsRepository.observeStationaryObjects]: the vehicles parked in view of any camera right now. */
 @Inject
 class ObserveStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {

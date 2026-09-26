@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
+import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -265,7 +266,7 @@ class CameraDetailViewModel(
         val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         events
             ?.take(RECENT_MOMENTS)
-            ?.map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }) }
+            ?.map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }, canTagCar = it.isGenericCar) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The same moments as dots on the timeline, so the two never disagree about what happened when. */
@@ -544,10 +545,6 @@ class CameraDetailViewModel(
     }
 
     /**
-     * Frigate's recording snapshot for [epochSeconds] on this camera, sized for the player
-     * surface; null while disconnected. What the scrub preview and seek poster show.
-     */
-    /**
      * Where a clip cut from this screen should be centred: the frame under a scrubbing finger,
      * else the frame on screen, else — at the live edge — now (the editor slides that back to
      * what Frigate has finished filing).
@@ -557,6 +554,10 @@ class CameraDetailViewModel(
         return playback.scrubEpochSeconds ?: playback.playheadEpochSeconds ?: now()
     }
 
+    /**
+     * Frigate's recording snapshot for [epochSeconds] on this camera, sized for the player
+     * surface; null while disconnected. What the scrub preview and seek poster show.
+     */
     fun recordingSnapshotUrl(epochSeconds: Double): String? =
         serverUrl.value?.let {
             getRecordingSnapshotUrlUseCase(it, cameraName, snapshotEpochSeconds(epochSeconds), height = SNAPSHOT_HEIGHT)

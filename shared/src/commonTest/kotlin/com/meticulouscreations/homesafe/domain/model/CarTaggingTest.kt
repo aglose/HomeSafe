@@ -100,4 +100,42 @@ class CarTaggingTest {
     }
 
     private fun bytes(vararg values: Int) = ByteArray(values.size) { values[it].toByte() }
+
+    @Test
+    fun aNewKnownCarIsFiledUnderTheKeyItsNameReadsBackFrom() {
+        assertEquals("grandmas_van", CarTagging.knownCarKey("  Grandma's Van "))
+        assertEquals("Grandma's Van", subLabelDisplayName(CarTagging.knownCarKey("Grandma's Van")!!))
+        assertEquals("ron_and_judys_mercedes", CarTagging.knownCarKey("Ron and Judy's Mercedes"))
+        assertEquals("in-laws_mercedes", CarTagging.knownCarKey("-In-laws Mercedes!"), "no leading dash, which the relay refuses")
+        assertEquals(64, CarTagging.knownCarKey("a".repeat(100))?.length)
+    }
+
+    @Test
+    fun aPlaceholderOrNothingIsNotANewCar() {
+        assertNull(CarTagging.knownCarKey("   "))
+        assertNull(CarTagging.knownCarKey("!!!"), "the slug would make up a name")
+        assertNull(CarTagging.knownCarKey("None"), "`none` is \"not ours\"")
+        assertNull(CarTagging.knownCarKey("Not ours"))
+    }
+
+    @Test
+    fun aGenericCarIsACarTheClassifierLeftUnnamed() {
+        fun moment(label: String, subLabel: String?) = MomentEvent(
+            id = "e",
+            cameraName = "hikvision_1",
+            label = label,
+            subLabel = subLabel,
+            startEpochSeconds = 1.0,
+            endEpochSeconds = 2.0,
+            topScore = 0.9,
+            hasClip = true,
+            hasSnapshot = false,
+        )
+        assertTrue(moment("car", null).isGenericCar)
+        assertTrue(moment("car", "none").isGenericCar, "the none class is not a name")
+        assertTrue(moment("Car", "").isGenericCar)
+        assertFalse(moment("car", "andrews_tesla").isGenericCar)
+        assertFalse(moment("truck", null).isGenericCar, "the classifier only runs on cars")
+        assertFalse(moment("person", null).isGenericCar)
+    }
 }

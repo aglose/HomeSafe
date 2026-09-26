@@ -79,9 +79,11 @@ class MomentsViewModelTest {
             camera.value = cameraName
         }
         override fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
+        override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = fail("unused")
         override fun observeLatestMoment(): Flow<MomentEvent?> = fail("unused")
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
         override fun refreshStationaryObjects() = Unit
+        override fun nameCar(eventId: String, subLabel: String) = Unit
         override suspend fun refresh() = Unit
         override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
         override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")
@@ -257,6 +259,15 @@ class MomentsViewModelTest {
         assertEquals("5 clips", visit.presentation.clipCountLabel)
         assertEquals("http://frigate.test:8971/thumb/p0", visit.thumbnailUrl)
         assertEquals("Andrew's Tesla came and went 3×", items[1].presentation.title)
+    }
+
+    @Test
+    fun onlyAnUnnamedCarCanBeTaggedAsAKnownCar() = runTest(dispatcher) {
+        val items = state(Harness(events = evening).viewModel).groups.flatMap { it.items }.associateBy { it.key }
+        assertEquals(true, items.getValue("stranger").canTagCar)
+        assertEquals(false, items.getValue("t0").canTagCar, "Andrew's Tesla is already named")
+        assertEquals(listOf(false, false, false), items.getValue("t0").clips.map { it.canTagCar })
+        assertEquals(false, items.getValue("p0").canTagCar, "a person")
     }
 
     @Test

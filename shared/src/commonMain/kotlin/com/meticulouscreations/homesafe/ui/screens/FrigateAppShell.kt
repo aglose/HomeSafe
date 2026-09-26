@@ -14,6 +14,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,22 +37,28 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Wifi
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -125,17 +132,20 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
      * Home stack, so Back returns to the camera list — and the Moments tab is one tap away,
      * still where it was left.
      */
-    fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds)
+    fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds, event.id, tagCar = false)
 
     /** The same destination for a notification tap: see [MomentDeepLinks]. */
-    fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds)
+    fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds, link.eventId, link.tagCar)
 
-    private fun openDetection(cameraName: String, startEpochSeconds: Double) {
+    private fun openDetection(cameraName: String, startEpochSeconds: Double, eventId: String, tagCar: Boolean) {
         val route = CameraDetailRoute(
             cameraName = cameraName,
             warmStreamUrl = null,
             warmPosterUrl = null,
             openAtEpochSeconds = startEpochSeconds,
+            // An older relay's push carries no event id; the screen then just plays the moment.
+            openedEventId = eventId.takeIf { it.isNotBlank() },
+            tagCarOnOpen = tagCar,
         )
         // A second tap on the same notification (or a relaunch re-delivering it) is already up.
         if (homeBackStack.lastOrNull() != route) homeBackStack.add(route)
@@ -169,7 +179,7 @@ fun FrigateAppShell() {
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
         showBottomNav = nav.showsBottomNav(nav.selectedTab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
         overlay = { CardZoomOverlay(nav, cardZoom) },
@@ -208,7 +218,7 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
         showBottomNav = nav.showsBottomNav(tab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
         overlay = { CardZoomOverlay(nav, cardZoom) },
@@ -323,7 +333,7 @@ internal fun ShellScaffold(
 internal fun ShellSkeleton() {
     ShellScaffold(
         showTopBar = true,
-        topBar = { FrigateTopBar(activeConnection = null) },
+        topBar = { FrigateTopBar(activeConnection = null, appVersion = "") },
         selectedTab = TopLevelRoute.Home,
         onSelectTab = {},
     ) {
@@ -333,8 +343,9 @@ internal fun ShellSkeleton() {
     }
 }
 
+/** [appVersion] is what the route badge shows when tapped; unused until there is a route to badge. */
 @Composable
-private fun FrigateTopBar(activeConnection: ActiveConnection?) {
+internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String) {
     // A Box, not a Row: the title is centred on the screen regardless of what sits at the ends,
     // so it doesn't shift when the status icon becomes the (wider) route badge — which is also
     // the moment the sign-in skeleton's bar dissolves into the real one.
@@ -361,32 +372,60 @@ private fun FrigateTopBar(activeConnection: ActiveConnection?) {
                 Icon(Icons.Filled.Sensors, contentDescription = "Status", tint = MaterialTheme.colorScheme.primary)
             }
         } else {
-            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route) }
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion) }
         }
     }
 }
 
-/** "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. */
+/**
+ * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. A tap
+ * drops down the app's version, which is how to tell which release is on the phone.
+ */
 @Composable
-private fun ConnectionRouteBadge(route: ConnectionRoute) {
+private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
     val tint = when (route) {
         ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
         ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
     }
-    Row(
+    var showVersion by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    // The pill is ~28dp tall, so the tap lands on a box grown to the 48dp minimum around it; the
+    // ripple still draws on the pill alone.
+    Box(
         modifier = Modifier
-            .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "Show the app version",
+            ) { showVersion = true }
+            .minimumInteractiveComponentSize(),
     ) {
-        if (route == ConnectionRoute.LOCAL_NETWORK) {
-            Icon(Icons.Filled.Wifi, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
-        } else {
-            PulsingDot(color = tint, size = 6.dp, pulsing = false)
+        Row(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
+                .indication(interactionSource, ripple())
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            if (route == ConnectionRoute.LOCAL_NETWORK) {
+                Icon(Icons.Filled.Wifi, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+            } else {
+                PulsingDot(color = tint, size = 6.dp, pulsing = false)
+            }
+            Text(text = route.label, style = MaterialTheme.typography.labelSmall, color = tint)
         }
-        Text(text = route.label, style = MaterialTheme.typography.labelSmall, color = tint)
+        DropdownMenu(expanded = showVersion, onDismissRequest = { showVersion = false }) {
+            Text(
+                text = "Version $appVersion",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
     }
 }
 
@@ -401,12 +440,17 @@ private data object CameraListRoute
  * full-screen button, or a notification tap), and opens the screen on the recording at that instant rather than live.
  * It is part of the route's identity, so opening a second detection on the same camera is a new
  * destination rather than a no-op on the one already up.
+ *
+ * [openedEventId] is that detection, so the screen can offer to tag its car when the classifier
+ * didn't name it, and [tagCarOnOpen] opens the picker at once (a notification's "Tag car" button).
  */
 private data class CameraDetailRoute(
     val cameraName: String,
     val warmStreamUrl: String?,
     val warmPosterUrl: String?,
     val openAtEpochSeconds: Double? = null,
+    val openedEventId: String? = null,
+    val tagCarOnOpen: Boolean = false,
 )
 private data class DetectionZonesRoute(val cameraName: String)
 private data class CarTaggingRoute(val cameraName: String)
@@ -479,6 +523,8 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                             }
                         },
                         openAtEpochSeconds = route.openAtEpochSeconds,
+                        openedEventId = route.openedEventId,
+                        tagCarOnOpen = route.tagCarOnOpen,
                     )
                 }
                 // Splashes in from the scissors rather than sliding: see SplashPush / SplashPop,

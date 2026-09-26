@@ -10,6 +10,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -52,6 +53,11 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -94,6 +100,11 @@ import kotlin.math.roundToInt
  * [moments] — what was detected in reach — run as coloured spans in a lane under the strip, and a
  * held grip is magnetic to their edges: dragged within a few pixels of where someone walked in or
  * out of frame, it clicks onto that instant with a tick, so a clip can start exactly on the event.
+ *
+ * None of that is reachable without a finger, so the strip is also one focusable accessibility
+ * node that reads out the selection and offers every gesture as an action (see
+ * [clipTrimmerSemantics]): each grip a second either way, the playhead a second either way, and
+ * the strip zoomed or scrolled. That's what a screen reader, Switch Access or a keyboard uses.
  */
 @Composable
 fun ClipTrimmer(
@@ -185,6 +196,20 @@ fun ClipTrimmer(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(STRIP_HEIGHT)
+                .clipTrimmerSemantics(
+                    window = window,
+                    range = range,
+                    playheadEpochSeconds = playheadEpochSeconds,
+                    onTrimStart = onTrimStart,
+                    onTrim = onTrim,
+                    onTrimEnd = onTrimEnd,
+                    onScrubStart = onScrubStart,
+                    onScrub = onScrub,
+                    onScrubEnd = onScrubEnd,
+                    onPan = onPan,
+                    onZoom = onZoom,
+                )
+                .focusable()
                 .pointerInput(Unit) {
                     val hitSlop = HANDLE_HIT_SLOP.toPx()
                     val edgeZone = EDGE_ZONE.toPx()
@@ -578,6 +603,78 @@ internal fun filmstripSlotSeconds(windowSeconds: Double, framesAcross: Float): D
     val raw = windowSeconds / framesAcross.toDouble().coerceAtLeast(1.0)
     return FILMSTRIP_STEPS.firstOrNull { it >= raw } ?: FILMSTRIP_STEPS.last()
 }
+
+/**
+ * The trimmer as one accessibility node: what is selected, read as clock times and a length,
+ * and the gestures as custom actions that run through the same callbacks a finger does, so a
+ * nudge from a screen reader is bounded and previewed exactly like a drag.
+ */
+private fun Modifier.clipTrimmerSemantics(
+    window: ClipWindow,
+    range: ClipRange,
+    playheadEpochSeconds: Double?,
+    onTrimStart: (TrimHandle) -> Unit,
+    onTrim: (TrimHandle, Double) -> Boolean,
+    onTrimEnd: () -> Unit,
+    onScrubStart: () -> Unit,
+    onScrub: (Double) -> Unit,
+    onScrubEnd: () -> Unit,
+    onPan: (Double) -> Unit,
+    onZoom: (factor: Double, focusEpochSeconds: Double) -> Unit,
+): Modifier = semantics {
+    val start = formatClockTime(range.startEpochSeconds, withSeconds = true)
+    val end = formatClockTime(range.endEpochSeconds, withSeconds = true)
+    contentDescription = "Clip trimmer"
+    stateDescription = "From $start to $end, ${range.durationSeconds.roundToInt()} seconds"
+
+    fun nudge(handle: TrimHandle, by: Double): Boolean {
+        val from = if (handle == TrimHandle.START) range.startEpochSeconds else range.endEpochSeconds
+        onTrimStart(handle)
+        onTrim(handle, from + by)
+        onTrimEnd()
+        return true
+    }
+
+    fun scrub(by: Double): Boolean {
+        val from = playheadEpochSeconds ?: range.startEpochSeconds
+        onScrubStart()
+        onScrub((from + by).coerceIn(range.startEpochSeconds, range.endEpochSeconds))
+        onScrubEnd()
+        return true
+    }
+
+    val centre = (range.startEpochSeconds + range.endEpochSeconds) / 2
+    customActions = listOf(
+        CustomAccessibilityAction("Start 1 second earlier") { nudge(TrimHandle.START, -ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("Start 1 second later") { nudge(TrimHandle.START, ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("End 1 second earlier") { nudge(TrimHandle.END, -ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("End 1 second later") { nudge(TrimHandle.END, ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("Playhead back 1 second") { scrub(-ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("Playhead forward 1 second") { scrub(ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction("Zoom in") {
+            onZoom(ACCESSIBLE_ZOOM_FACTOR, centre)
+            true
+        },
+        CustomAccessibilityAction("Zoom out") {
+            onZoom(1 / ACCESSIBLE_ZOOM_FACTOR, centre)
+            true
+        },
+        CustomAccessibilityAction("Scroll earlier") {
+            onPan(-window.durationSeconds / 2)
+            true
+        },
+        CustomAccessibilityAction("Scroll later") {
+            onPan(window.durationSeconds / 2)
+            true
+        },
+    )
+}
+
+/** How far one accessibility action moves a grip or the playhead. */
+private const val ACCESSIBLE_STEP_SECONDS = 1.0
+
+/** How much one accessibility zoom action changes the strip's scale (a pinch's worth). */
+private const val ACCESSIBLE_ZOOM_FACTOR = 2.0
 
 /** Multiples of the recording snapshot's 2 s quantum, so every frame is a distinct snapshot. */
 private val FILMSTRIP_STEPS = listOf(2.0, 4.0, 6.0, 8.0, 10.0, 16.0, 20.0, 30.0, 40.0, 60.0, 90.0, 120.0, 180.0, 240.0, 300.0, 600.0)

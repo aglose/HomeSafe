@@ -176,7 +176,7 @@ internal fun CameraQuickActions(
             label = CLIP_LABEL,
             contentDescription = "Clip a video from $displayName",
             onClick = { onClip(clipOrigin.fraction()) },
-            circleModifier = Modifier.onGloballyPositioned { clipOrigin.coordinates = it },
+            onCirclePosition = { clipOrigin.coordinates = it },
         )
     }
 }
@@ -232,6 +232,8 @@ private fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (S
  * The caption is part of the button — one tap target, read out together with the icon's
  * description — and every button sits in the same fixed-width slot, so a caption changing
  * length ("Muted" to "Sound on") never nudges its neighbours.
+ *
+ * [onCirclePosition] reports where the circle itself is (not the whole slot): the button a finger sees.
  */
 @Composable
 private fun QuickActionButton(
@@ -239,11 +241,12 @@ private fun QuickActionButton(
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     active: Boolean? = null,
     available: Boolean = true,
     size: Dp = QUICK_ACTION_SIZE,
     iconSize: Dp = QUICK_ACTION_ICON_SIZE,
-    circleModifier: Modifier = Modifier,
+    onCirclePosition: ((LayoutCoordinates) -> Unit)? = null,
 ) {
     val on = active == true
     val background = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
@@ -255,7 +258,7 @@ private fun QuickActionButton(
     // The press ripples on the circle, though the whole slot (caption included) takes the tap.
     val interactionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(QUICK_ACTION_SLOT_WIDTH)
             .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
             .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick),
@@ -266,7 +269,8 @@ private fun QuickActionButton(
         // through their middles and the captions share a baseline.
         Box(modifier = Modifier.size(PRIMARY_QUICK_ACTION_SIZE), contentAlignment = Alignment.Center) {
             Box(
-                modifier = circleModifier
+                modifier = Modifier
+                    .then(if (onCirclePosition != null) Modifier.onGloballyPositioned(onCirclePosition) else Modifier)
                     .size(size)
                     .clip(CircleShape)
                     .background(background, CircleShape)

@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.window.ComposeUIViewController
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -10,6 +11,7 @@ import com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellTab
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
@@ -38,10 +40,26 @@ import platform.UIKit.UIViewController
  *
  * Sign-in is a fourth Compose view controller ([SignInViewController]) shown before the tabs
  * exist. Swift swaps it for the `TabView` when it reports `onConnected`.
+ *
+ * The screens that want the whole display — the clip editor, car tagging — hide the Compose nav
+ * through [ShellNavigation.showsBottomNav]; here the bar is SwiftUI's, so the same answer goes
+ * to Swift through [onTabBarVisibilityChange] and the `TabView` hides its bar.
  */
 class IosShell {
     /** Set by Swift: called on the main thread when Compose wants [IosTab] up — the SwiftUI selection follows. */
     var onSelectTab: ((IosTab) -> Unit)? = null
+
+    /**
+     * Set by Swift: called on the main thread with whether the native tab bar belongs on screen,
+     * and straight away with the current answer. Only Home drills into a full-screen screen, and
+     * the bar can't be used to leave Home while it is hidden, so Home's stack decides.
+     */
+    var onTabBarVisibilityChange: ((Boolean) -> Unit)? = null
+        set(value) {
+            field = value
+            value?.invoke(tabBarVisible)
+        }
+    private var tabBarVisible = true
 
     private val nav = ShellNavigation(onTabSelected = { route -> onSelectTab?.invoke(IosTab.of(route)) })
     private val controllers = HashMap<IosTab, UIViewController>()
@@ -52,6 +70,14 @@ class IosShell {
         // What FrigateAppShell's LaunchedEffect does under the Compose nav: this host outlives
         // its tabs' compositions, so it drains notification taps itself, for its whole life.
         MainScope().launch { nav.openMomentsFromNotifications() }
+        MainScope().launch {
+            snapshotFlow { nav.showsBottomNav(TopLevelRoute.Home) }
+                .distinctUntilChanged()
+                .collect { visible ->
+                    tabBarVisible = visible
+                    onTabBarVisibilityChange?.invoke(visible)
+                }
+        }
     }
 
     /**

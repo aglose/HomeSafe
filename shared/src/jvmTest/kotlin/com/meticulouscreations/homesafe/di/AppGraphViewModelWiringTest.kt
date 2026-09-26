@@ -5,10 +5,12 @@ import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
+import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
+import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
@@ -28,7 +30,15 @@ class AppGraphViewModelWiringTest {
         val graph = createAppGraph(PlatformContext())
 
         assertEquals(
-            setOf(HomeViewModel::class, MomentsViewModel::class, SettingsViewModel::class, SecureConnectionViewModel::class, AppShellViewModel::class, FaceLibraryViewModel::class),
+            setOf(
+                HomeViewModel::class,
+                MomentsViewModel::class,
+                SettingsViewModel::class,
+                SecureConnectionViewModel::class,
+                AppShellViewModel::class,
+                FaceLibraryViewModel::class,
+                MomentCarTagViewModel::class,
+            ),
             graph.viewModelProviders.keys,
         )
         assertEquals(
@@ -38,6 +48,7 @@ class AppGraphViewModelWiringTest {
                 ClassifierLabelingViewModel.Factory::class,
                 LiveLabelingViewModel.Factory::class,
                 CarTaggingViewModel.Factory::class,
+                ClipEditorViewModel.Factory::class,
             ),
             graph.manualAssistedFactoryProviders.keys,
         )

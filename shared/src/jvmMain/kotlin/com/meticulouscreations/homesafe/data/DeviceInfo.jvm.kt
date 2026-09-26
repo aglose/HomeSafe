@@ -9,6 +9,9 @@ private class DesktopDeviceInfo : DeviceInfo {
 
     /** Never a phone in anyone's pocket, so never one that decides the house is empty. */
     override val build = "debug"
+
+    /** Only ever run from a local build, which has no release number to show. */
+    override val appVersion = "development build"
 }
 
 actual fun createDeviceInfo(platformContext: PlatformContext): DeviceInfo = DesktopDeviceInfo()
