@@ -18,6 +18,8 @@ captures
 !*.xcworkspace/contents.xcworkspacedata
 **/xcshareddata/WorkspaceSettings.xcsettings
 node_modules/
+__pycache__/
+*.pyc
 google-services.json*
 GoogleService-Info.plist*
 .codex/
