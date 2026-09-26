@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
+import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
@@ -47,6 +48,7 @@ class AppGraphViewModelWiringTest {
                 ClassifierLabelingViewModel.Factory::class,
                 LiveLabelingViewModel.Factory::class,
                 CarTaggingViewModel.Factory::class,
+                ClipEditorViewModel.Factory::class,
             ),
             graph.manualAssistedFactoryProviders.keys,
         )

@@ -61,6 +61,16 @@ interface MomentsRepository {
     fun observeRecentMoments(cameraName: String, limit: Int, lookbackSeconds: Double = 0.0): Flow<List<MomentEvent>>
 
     /**
+     * [cameraName]'s moments that started inside [afterEpochSeconds]..[beforeEpochSeconds],
+     * placed and folded the way [observeMoments] does it, oldest first. Asks the server for
+     * exactly that interval (paged within it, up to a bound) rather than reading down from now,
+     * so a window hours or days in the past on a busy camera is reached in one question. Polls
+     * while collected, so one still in progress grows its end; emits nothing until the server
+     * first answers.
+     */
+    fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>>
+
+    /**
      * The household's cars parked in view of any camera right now — only the ones the classifier
      * has named — folded and placed the way [observeMoments] folds a visit but kept even when the
      * app never saw them arrive — see [com.meticulouscreations.homesafe.domain.model.stationaryObjects].

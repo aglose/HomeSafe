@@ -35,8 +35,7 @@ class CameraQuickActionsLabelTest {
     }
 
     @Test
-    fun alertsSayWhetherTheyAreOnOrOff() {
-        assertEquals("Alerts on", alertsLabel(enabled = true))
-        assertEquals("Alerts off", alertsLabel(enabled = false))
+    fun theScissorsSayWhatTheyDo() {
+        assertEquals("Clip", CLIP_LABEL)
     }
 }

@@ -545,6 +545,16 @@ class CameraDetailViewModel(
     }
 
     /**
+     * Where a clip cut from this screen should be centred: the frame under a scrubbing finger,
+     * else the frame on screen, else — at the live edge — now (the editor slides that back to
+     * what Frigate has finished filing).
+     */
+    fun clipAnchorEpochSeconds(): Double {
+        val playback = _playback.value
+        return playback.scrubEpochSeconds ?: playback.playheadEpochSeconds ?: now()
+    }
+
+    /**
      * Frigate's recording snapshot for [epochSeconds] on this camera, sized for the player
      * surface; null while disconnected. What the scrub preview and seek poster show.
      */

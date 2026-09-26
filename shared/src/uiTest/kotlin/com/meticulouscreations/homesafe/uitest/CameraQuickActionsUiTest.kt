@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -11,6 +12,7 @@ import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.CameraQuickActions
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -31,19 +33,45 @@ class CameraQuickActionsUiTest {
                     hasQualityChoice = true,
                     isMuted = true,
                     hasAudio = true,
-                    alertsEnabled = false,
                     onQualitySelect = {},
                     onQualityUnavailable = {},
                     onToggleSound = {},
-                    onToggleAlerts = {},
+                    onClip = {},
                 )
             }
         }
 
         onNodeWithText("Auto").assertIsDisplayed()
         onNodeWithText("Muted").assertIsDisplayed()
-        onNodeWithText("Alerts off").assertIsDisplayed()
-        onNodeWithContentDescription("Turn on alerts for Front Yard", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("Clip").assertIsDisplayed()
+        onNodeWithContentDescription("Clip a video from Front Yard", useUnmergedTree = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun theScissorsOpenTheClipEditorFromWhereTheyAre() = runComposeUiTest {
+        var origin: Offset? = null
+        setContent {
+            FrigatePreview {
+                CameraQuickActions(
+                    displayName = "Front Yard",
+                    quality = StreamQuality.AUTO,
+                    hasQualityChoice = true,
+                    isMuted = true,
+                    hasAudio = true,
+                    onQualitySelect = {},
+                    onQualityUnavailable = {},
+                    onToggleSound = {},
+                    onClip = { origin = it },
+                )
+            }
+        }
+
+        onNodeWithText("Clip").performClick()
+
+        // The splash lands on the button: right of centre (the third slot), inside the window.
+        val landed = assertNotNull(origin)
+        assertTrue(landed.x in 0.5f..1f, "the clip button is the right-hand slot, got $landed")
+        assertTrue(landed.y in 0f..1f, "the origin is a fraction of the window, got $landed")
     }
 
     @Test
@@ -57,11 +85,10 @@ class CameraQuickActionsUiTest {
                     hasQualityChoice = true,
                     isMuted = true,
                     hasAudio = true,
-                    alertsEnabled = true,
                     onQualitySelect = { picked = it },
                     onQualityUnavailable = {},
                     onToggleSound = {},
-                    onToggleAlerts = {},
+                    onClip = {},
                 )
             }
         }
@@ -84,11 +111,10 @@ class CameraQuickActionsUiTest {
                     hasQualityChoice = false,
                     isMuted = true,
                     hasAudio = true,
-                    alertsEnabled = true,
                     onQualitySelect = {},
                     onQualityUnavailable = { explained = true },
                     onToggleSound = {},
-                    onToggleAlerts = {},
+                    onClip = {},
                 )
             }
         }

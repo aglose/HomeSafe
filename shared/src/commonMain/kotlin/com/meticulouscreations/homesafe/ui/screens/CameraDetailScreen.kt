@@ -53,6 +53,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -99,6 +100,9 @@ import kotlin.math.roundToInt
  * [openedEventId] is that detection, when known. If its car is one the classifier didn't name,
  * the screen offers to tag it, and with [tagCarOnOpen] (a notification's "Tag car" button) opens
  * the picker straight away.
+ *
+ * [onClip] opens the clip editor around [anchorEpochSeconds] — the frame on screen, or "now" at
+ * the live edge — with its splash landing at [originFraction] of the window (the scissors).
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -110,6 +114,7 @@ fun CameraDetailScreen(
     onBack: () -> Unit,
     onEditDetectionZones: () -> Unit,
     onTagCars: () -> Unit = {},
+    onClip: (anchorEpochSeconds: Double, originFraction: Offset) -> Unit = { _, _ -> },
     openAtEpochSeconds: Double? = null,
     openedEventId: String? = null,
     tagCarOnOpen: Boolean = false,
@@ -235,6 +240,7 @@ fun CameraDetailScreen(
                 hasQualityChoice = hasQualityChoice,
                 cameraName = cameraName,
                 showHint = showHint,
+                onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
                 // The row straddles the player's bottom edge, so while the player has the
                 // viewport its tops would peek out under the nav bar: fade it with the takeover.
                 modifier = Modifier.graphicsLayer { alpha = 1f - zoomTakeover.value },

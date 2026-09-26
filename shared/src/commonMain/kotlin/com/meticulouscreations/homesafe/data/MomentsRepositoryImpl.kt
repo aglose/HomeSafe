@@ -258,6 +258,40 @@ class MomentsRepositoryImpl(
         return placed to oldest
     }
 
+    /**
+     * Pages [cameraName]'s detections down from [before] to [after], newest first, until a page
+     * comes back short or [RANGE_MAX_PAGES] have been read. Placed by the zones and folded once
+     * the whole interval is in, so a visit straddling a page boundary is one moment.
+     */
+    override fun observeMomentsBetween(cameraName: String, afterEpochSeconds: Double, beforeEpochSeconds: Double): Flow<List<MomentEvent>> = channelFlow {
+        server.collectLatest { server ->
+            if (server == null) return@collectLatest
+            var failures = 0
+            while (true) {
+                loadZones(server.url, force = false)
+                val placed = fetchRangePages(server.url, cameraName, afterEpochSeconds, beforeEpochSeconds)
+                if (placed != null) send(placed.mergeVehicleVisits().sortedBy { it.startEpochSeconds })
+                failures = if (placed != null) 0 else failures + 1
+                delay(nextPollDelayMs(failures))
+            }
+        }
+    }.combine(namedByHand) { moments, named -> moments.withNames(named) }
+
+    /** The pages behind [observeMomentsBetween], or null if the server didn't answer the first one. */
+    private suspend fun fetchRangePages(url: String, cameraName: String, after: Double, before: Double): List<MomentEvent>? {
+        var placed = emptyList<MomentEvent>()
+        var cursor = before
+        for (page in 0 until RANGE_MAX_PAGES) {
+            val events = apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = after, beforeEpochSeconds = cursor, cameras = listOf(cameraName))
+                .getOrElse { return if (page == 0) null else placed }
+            val zones = stateLock.withLock { zonesByCamera }
+            placed = placed + events.map { it.toDomain() }.inZones(zones)
+            cursor = events.minOfOrNull { it.startTime } ?: break
+            if (events.size < PAGE_SIZE) break
+        }
+        return placed
+    }
+
     /** Cars a person named in this run of the app, by event id (see [nameCar]). */
     private val namedByHand = MutableStateFlow<Map<String, String>>(emptyMap())
 
@@ -627,6 +661,12 @@ class MomentsRepositoryImpl(
          * without walking the server's whole history every thirty seconds.
          */
         const val RECENT_MAX_PAGES = 5
+
+        /**
+         * The most pages [observeMomentsBetween] reads per poll. The clip editor asks for half an
+         * hour, which even a busy camera fills with far fewer than a thousand detections.
+         */
+        const val RANGE_MAX_PAGES = 10
 
         /**
          * How far back the in-view strip looks for the vehicles standing in the yard. Long enough

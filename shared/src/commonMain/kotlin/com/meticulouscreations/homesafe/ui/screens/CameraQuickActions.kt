@@ -22,8 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.NotificationsActive
-import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.ContentCut
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -40,7 +39,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.findRootCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,32 +55,35 @@ import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 
 /**
- * Quality, speaker and alerts under the player. The speaker takes the prominent centre slot
+ * Quality, speaker and clip under the player. The speaker takes the prominent centre slot
  * (none of the cameras have a microphone, so there is no two-way talk button). Quality and
- * sound are saved preferences shared by every camera. Collects `playback` and `alerts` itself
- * so the position polls that update `playback` while a recording plays recompose only this row.
+ * sound are saved preferences shared by every camera. Collects `playback` itself so the position
+ * polls that update it while a recording plays recompose only this row.
+ *
+ * Alerts used to have the third slot; they are edited place by place on the Settings tab, and
+ * cutting a clip of what's on screen is the thing people reach for here.
  *
  * @param hasQualityChoice whether this camera has a second, lighter stream to switch to; without
  *   one the quality button still shows the saved choice but explains itself when tapped.
+ * @param onClip opens the clip editor; given where the button sits, as a fraction of the window,
+ *   which is where the editor's splash lands.
  */
 @Composable
 internal fun QuickActionsRow(
     cameraName: String,
     hasQualityChoice: Boolean,
     showHint: (String) -> Unit,
+    onClip: (originFraction: Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
-    val alerts by viewModel.alerts.collectAsStateWithLifecycle()
-    val displayName = cameraDisplayName(cameraName)
     CameraQuickActions(
-        displayName = displayName,
+        displayName = cameraDisplayName(cameraName),
         quality = playback.quality,
         hasQualityChoice = hasQualityChoice,
         isMuted = playback.isMuted,
         hasAudio = playback.hasAudio,
-        alertsEnabled = alerts.enabled,
         onQualitySelect = viewModel::setQuality,
         onQualityUnavailable = { showHint("This camera has a single stream quality") },
         onToggleSound = {
@@ -90,27 +97,17 @@ internal fun QuickActionsRow(
                 },
             )
         },
-        onToggleAlerts = {
-            val enabled = !alerts.enabled
-            viewModel.setAlertsEnabled(enabled)
-            showHint(
-                when {
-                    !enabled -> "Alerts off for $displayName"
-                    !alerts.pushNotificationsEnabled -> "Alerts on for $displayName. Notifications are off in Settings."
-                    else -> "Alerts on for $displayName"
-                },
-            )
-        },
+        onClip = onClip,
         modifier = modifier,
     )
 }
 
 /**
  * The row itself, stateless: three round buttons, each captioned with the state it is in, so the
- * row reads at a glance without long-pressing anything. The two toggles share one visual language
- * — filled in the accent when on, a quiet outline with a struck-through icon when off — and the
- * quality button, which is a choice rather than a toggle, opens a menu that says what each option
- * does.
+ * row reads at a glance without long-pressing anything. The speaker is a toggle — filled in the
+ * accent when on, a quiet outline with a struck-through icon when off; the quality button, a
+ * choice rather than a toggle, opens a menu that says what each option does; and the scissors
+ * are an action, keeping the accent tint without the fill.
  *
  * The circles straddle the player's bottom edge (the row is pulled up over it) while the
  * captions fall below the video, clear of the "behind live" readout in the player's corner.
@@ -122,11 +119,10 @@ internal fun CameraQuickActions(
     hasQualityChoice: Boolean,
     isMuted: Boolean,
     hasAudio: Boolean,
-    alertsEnabled: Boolean,
     onQualitySelect: (StreamQuality) -> Unit,
     onQualityUnavailable: () -> Unit,
     onToggleSound: () -> Unit,
-    onToggleAlerts: () -> Unit,
+    onClip: (originFraction: Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -172,13 +168,15 @@ internal fun CameraQuickActions(
             iconSize = PRIMARY_QUICK_ACTION_ICON_SIZE,
             onClick = onToggleSound,
         )
-        // Bell: this camera's alerts, the same rules the Settings tab edits place by place.
+        // Scissors: cut a clip from what's playing (or just behind live). The circle remembers
+        // where it is so the editor's splash can land exactly under the finger.
+        val clipOrigin = remember { OriginProbe() }
         QuickActionButton(
-            icon = if (alertsEnabled) Icons.Filled.NotificationsActive else Icons.Filled.NotificationsOff,
-            label = alertsLabel(alertsEnabled),
-            contentDescription = if (alertsEnabled) "Turn off alerts for $displayName" else "Turn on alerts for $displayName",
-            active = alertsEnabled,
-            onClick = onToggleAlerts,
+            icon = Icons.Filled.ContentCut,
+            label = CLIP_LABEL,
+            contentDescription = "Clip a video from $displayName",
+            onClick = { onClip(clipOrigin.fraction()) },
+            onCirclePosition = { clipOrigin.coordinates = it },
         )
     }
 }
@@ -233,7 +231,9 @@ private fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (S
  *
  * The caption is part of the button — one tap target, read out together with the icon's
  * description — and every button sits in the same fixed-width slot, so a caption changing
- * length ("Alerts on" to "Alerts off") never nudges its neighbours.
+ * length ("Muted" to "Sound on") never nudges its neighbours.
+ *
+ * [onCirclePosition] reports where the circle itself is (not the whole slot): the button a finger sees.
  */
 @Composable
 private fun QuickActionButton(
@@ -241,10 +241,12 @@ private fun QuickActionButton(
     label: String,
     contentDescription: String,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
     active: Boolean? = null,
     available: Boolean = true,
     size: Dp = QUICK_ACTION_SIZE,
     iconSize: Dp = QUICK_ACTION_ICON_SIZE,
+    onCirclePosition: ((LayoutCoordinates) -> Unit)? = null,
 ) {
     val on = active == true
     val background = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
@@ -256,7 +258,7 @@ private fun QuickActionButton(
     // The press ripples on the circle, though the whole slot (caption included) takes the tap.
     val interactionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(QUICK_ACTION_SLOT_WIDTH)
             .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
             .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick),
@@ -268,6 +270,7 @@ private fun QuickActionButton(
         Box(modifier = Modifier.size(PRIMARY_QUICK_ACTION_SIZE), contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
+                    .then(if (onCirclePosition != null) Modifier.onGloballyPositioned(onCirclePosition) else Modifier)
                     .size(size)
                     .clip(CircleShape)
                     .background(background, CircleShape)
@@ -311,7 +314,25 @@ internal fun qualityDescription(quality: StreamQuality): String = when (quality)
 /** The speaker's caption. The saved preference, not whether the current stream has audio — the dimming says that. */
 internal fun soundLabel(isMuted: Boolean): String = if (isMuted) "Muted" else "Sound on"
 
-internal fun alertsLabel(enabled: Boolean): String = if (enabled) "Alerts on" else "Alerts off"
+/** The scissors' caption. An action, not a state, so it never changes. */
+internal const val CLIP_LABEL = "Clip"
+
+/**
+ * Where a quick action's circle sits, captured on placement and read on tap: the centre of the
+ * circle as a fraction of the window, (0.5, 0.5) until it has been placed. A plain holder, not
+ * state — nothing redraws when it moves; only the next tap reads it.
+ */
+private class OriginProbe {
+    var coordinates: LayoutCoordinates? = null
+
+    fun fraction(): Offset {
+        val placed = coordinates?.takeIf { it.isAttached } ?: return Offset(0.5f, 0.5f)
+        val window = placed.findRootCoordinates().size
+        if (window.width <= 0 || window.height <= 0) return Offset(0.5f, 0.5f)
+        val centre = placed.boundsInRoot().center
+        return Offset(centre.x / window.width, centre.y / window.height)
+    }
+}
 
 /** How far the row is pulled up over the player, so the circles straddle its bottom edge. */
 private val QUICK_ACTION_OVERLAP = 32.dp

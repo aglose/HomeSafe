@@ -91,11 +91,17 @@ final class ShellCoordinator {
     }
 
     var selection: Selection = .home
+    /// Whether the tab bar is out of the way: the shared module says so for the screens that
+    /// want the whole display (the clip editor, car tagging).
+    var tabBarHidden = false
     let shell = IosShell()
 
     init() {
         shell.onSelectTab = { [weak self] tab in
             self?.selection = Selection(tab)
+        }
+        shell.onTabBarVisibilityChange = { [weak self] visible in
+            self?.tabBarHidden = !visible.boolValue
         }
     }
 }
@@ -109,6 +115,7 @@ struct ShellTabView: View {
             Tab("Home", systemImage: "house.fill", value: ShellCoordinator.Selection.home) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.home))
                     .ignoresSafeArea()
+                    .toolbar(coordinator.tabBarHidden ? .hidden : .visible, for: .tabBar)
             }
             Tab("Moments", systemImage: "film.stack.fill", value: ShellCoordinator.Selection.moments) {
                 ComposeTabView(controller: coordinator.shell.viewController(tab: IosTab.moments))

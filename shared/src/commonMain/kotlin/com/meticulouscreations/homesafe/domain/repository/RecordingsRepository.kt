@@ -21,4 +21,15 @@ interface RecordingsRepository {
         cameraName: String,
         playlist: RecordingPlaylist,
     ): RecordingStream
+
+    /**
+     * [startEpochSeconds]..[endEpochSeconds] of [cameraName]'s recording as a single MP4 file a
+     * platform download API can save, authenticated for the current session.
+     */
+    suspend fun getRecordingClipDownload(
+        serverUrl: String,
+        cameraName: String,
+        startEpochSeconds: Double,
+        endEpochSeconds: Double,
+    ): RecordingStream
 }
