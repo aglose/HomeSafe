@@ -29,13 +29,14 @@ touch "$since"
 status=$?
 
 cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop/" 2>/dev/null
-# Where the tool writes reference images has moved between its releases, so take every image the
-# screenshot tasks wrote during this run, from wherever they went, and say where that was.
-find androidApp/src androidApp/build/outputs -ipath '*screenshot*' -name '*.png' -newer "$since" \
-  -not -ipath '*/diff*' -not -ipath '*/actual*' 2>/dev/null | sort > "$since.list"
+# The tool nests its images by package: <reference>/com/…/screenshots/SharedPreviewScreenshotsKt/.
+# It writes the same ones under build/outputs/screenshotTest-results/…/rendered/ too; that is the
+# fallback, taking only images from this run. File names hold spaces and commas (the preview's name).
+find "$reference" -name '*.png' 2>/dev/null | sort > "$since.list"
+[ -s "$since.list" ] || find androidApp/build/outputs/screenshotTest-results -path '*rendered*' -name '*.png' -newer "$since" 2>/dev/null | sort > "$since.list"
 if [ -s "$since.list" ]; then
-  echo "Layoutlib images from: $(xargs -n1 dirname < "$since.list" | sort -u | tr '\n' ' ')"
-  xargs -I{} cp {} "$out/android/" < "$since.list"
+  echo "Layoutlib images from: $(dirname "$(head -n1 "$since.list")")"
+  while IFS= read -r png; do cp "$png" "$out/android/"; done < "$since.list"
 else
   echo "Layoutlib drew nothing. Test results:"
   find androidApp/build -ipath '*test-results*screenshot*' -name '*.xml' -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5

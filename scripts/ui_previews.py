@@ -28,6 +28,7 @@ import os
 import re
 import shutil
 import sys
+from urllib.parse import quote
 
 SETS = [
     ("android", "Android", "Layoutlib, through Compose Preview Screenshot Testing (`:androidApp`'s `@PreviewTest`s)"),
@@ -55,11 +56,14 @@ def pngs(directory):
 
 
 def display_name(file_name):
-    """HomeFeed from Layoutlib's com.….SharedPreviewScreenshotsKt.HomeFeed_1a2b3c4d_5e6f7a8b_0.png."""
+    """"HomeFeed · Home" from Layoutlib's HomeFeed_Home_1a2b3c4d_0.png (or com.….SharedPreviewScreenshotsKt.HomeFeed_…)."""
     name = file_name[: -len(".png")]
     if "Kt." in name:
         name = name.split("Kt.", 1)[1]
-    return re.sub(r"(_[0-9a-f]{8})+_\d+$", "", name)
+    name = re.sub(r"(_[0-9a-f]{8})+_\d+$", "", name)
+    # "HomeFeed_Home, loading" (function, then the @Preview's name) reads better as "HomeFeed · Home, loading".
+    function, _, preview = name.partition("_")
+    return f"{function} · {preview}" if preview else function
 
 
 def build(head_dir, base_dir, gallery):
@@ -136,11 +140,11 @@ def readme(summary):
                 lines += [f"### {display_name(name)}{tag}", ""]
                 if bucket == "changed":
                     lines += [f"| Before | After |", "|---|---|",
-                              f"| <img src=\"base/{key}/{name}\" width=\"320\"> | <img src=\"{key}/{name}\" width=\"320\"> |", ""]
+                              f"| <img src=\"{quote(f'base/{key}/{name}')}\" width=\"320\"> | <img src=\"{quote(f'{key}/{name}')}\" width=\"320\"> |", ""]
                 else:
-                    lines += [f"<img src=\"{key}/{name}\" width=\"320\">", ""]
+                    lines += [f"<img src=\"{quote(f'{key}/{name}')}\" width=\"320\">", ""]
         for name in changes["removed"]:
-            lines += [f"### {display_name(name)} (removed)", "", f"<img src=\"base/{key}/{name}\" width=\"320\">", ""]
+            lines += [f"### {display_name(name)} (removed)", "", f"<img src=\"{quote(f'base/{key}/{name}')}\" width=\"320\">", ""]
     for key, title, how in EXTRA_SETS:
         screens = summary[key]["screens"]
         if not screens:
@@ -152,7 +156,7 @@ def readme(summary):
             if this_journey != journey:
                 journey = this_journey
                 lines += [f"### {journey}", ""]
-            lines += [f"<img src=\"{key}/{name}\" width=\"320\" title=\"{step}\"> "]
+            lines += [f"<img src=\"{quote(f'{key}/{name}')}\" width=\"320\" title=\"{step}\"> "]
         lines.append("")
     return "\n".join(lines)
 
@@ -160,7 +164,7 @@ def readme(summary):
 def section(gallery, image_url_base):
     summary = json.load(open(os.path.join(gallery, "summary.json")))
     meta = summary["meta"]
-    url = lambda path: f"{image_url_base.rstrip('/')}/{path}"
+    url = lambda path: f"{image_url_base.rstrip('/')}/{quote(path)}"
     img = lambda path: f"<img src=\"{url(path)}\" width=\"{THUMB_WIDTH}\">"
     tree = image_url_base.replace("https://raw.githubusercontent.com/", "https://github.com/").rstrip("/")
     # raw.githubusercontent.com/<owner>/<repo>/<commit> -> github.com/<owner>/<repo>/tree/<commit>

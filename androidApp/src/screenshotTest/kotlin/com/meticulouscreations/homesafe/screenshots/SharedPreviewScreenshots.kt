@@ -13,7 +13,7 @@ import com.meticulouscreations.homesafe.ui.screens.StatusBadgePreview
  * The shared module's previews, drawn by Layoutlib — Android's own renderer, the one Android
  * Studio's preview pane uses — through Compose Preview Screenshot Testing:
  *
- *     ./gradlew :androidApp:updateDebugScreenshotTest    # draw them to src/screenshotTestDebug/reference/
+ *     ./gradlew :androidApp:updateDebugScreenshotTest    # draw them under src/screenshotTestDebug/reference/
  *     ./gradlew :androidApp:validateDebugScreenshotTest  # compare against those, HTML report in build/reports
  *
  * The tool only looks for @PreviewTest functions in an Android module's screenshotTest source

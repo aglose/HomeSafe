@@ -6,7 +6,7 @@ different place: your own machine, CI, or an agent's sandbox with no Android too
 | What | Command | Draws | Output |
 |---|---|---|---|
 | **Preview renders** (JVM) | `./gradlew :shared:renderPreviews [-Ppreview=Home]` | Every `@Preview` in `:shared`, on the desktop runtime | `shared/build/previews/*.png`, `previews.json` |
-| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTest` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDebug/reference/*.png` |
+| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTest` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDebug/reference/**/*.png` |
 | **Journey screenshots** (JVM) | `./gradlew :shared:jvmTest -PjourneyScreens --tests '*HomeJourneyTest*'` | The whole app against the fake Frigate, after each tap, at the end and on failure | `shared/build/journey-screens/<journey>/*.png` |
 
 `scripts/render-ui-previews.sh OUT_DIR` runs the first two and collects their PNGs in `OUT_DIR/desktop` and
