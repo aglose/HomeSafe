@@ -24,6 +24,13 @@ import java.util.concurrent.CountDownLatch
  * synchronously, since the texture is gone the moment the callback returns — when it's
  * destroyed. [release] tears the renderer down; the view is dead after that.
  *
+ * The surface has an alpha channel ([EglBase.CONFIG_RGBA]), and that is what makes [clear]
+ * work. libwebrtc's default config asks for red, green and blue only, and many GPUs then hand
+ * back an RGBX surface: clearing that to "transparent" paints it opaque black. Since this view
+ * sits over the HLS surface, a holder falling back to HLS — typically a full-quality upgrade
+ * whose WebRTC join failed — played its video, and its sound, under a black rectangle for as long
+ * as it stayed on HLS. Video frames are unaffected: both of libwebrtc's shaders write alpha 1.
+ *
  * [onFrameRendered] fires on the main thread each time the surface has taken a new frame —
  * `onSurfaceTextureUpdated`, i.e. after the render thread has actually swapped it in, not when a
  * frame was merely handed to the renderer. Callers that only care about the first one keep
@@ -42,7 +49,7 @@ internal class WebRtcTextureRenderer(
 
     init {
         isOpaque = false
-        renderer.init(sharedContext, EglBase.CONFIG_PLAIN, GlRectDrawer())
+        renderer.init(sharedContext, EglBase.CONFIG_RGBA, GlRectDrawer())
         surfaceTextureListener = object : SurfaceTextureListener {
             override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
                 renderer.createEglSurface(surface)
