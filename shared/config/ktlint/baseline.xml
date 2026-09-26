@@ -27,7 +27,7 @@
         <error line="344" column="5" source="compose:state-param-check" />
         <error line="347" column="5" source="compose:lambda-param-in-effect" />
         <error line="347" column="5" source="compose:parameter-naming" />
-        <error line="499" column="47" source="compose:lambda-param-in-effect" />
+        <error line="500" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="75" column="5" source="compose:modifier-missing-check" />
