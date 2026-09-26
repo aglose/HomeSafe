@@ -117,10 +117,12 @@ join work from a phone:
 
    Keep the IPv4 filter. go2rtc binds UDP 8555 on every address one by one, and a single failed
    bind aborts the whole WebRTC module: no `/api/webrtc` (404) and no UDP listener, so every
-   join falls back to HLS. On 2026-09-25 that happened on every boot, because Frigate starts
-   before the Docker bridge's IPv6 link-local address is ready (`listen udp
-   [fe80::…%br-…]:8555: bind: cannot assign requested address` in go2rtc's log). IPv4 addresses
-   are usable as soon as they exist, and one that doesn't exist yet is skipped rather than fatal.
+   join falls back to HLS. That happened after the 2026-09-25 reboot: Frigate had started before
+   the Docker bridge's IPv6 link-local address was ready (`listen udp
+   [fe80::…%br-…]:8555: bind: cannot assign requested address` in go2rtc's log). It's a timing
+   race, so it may not happen on every boot, and a reboot with the filter in place hasn't been
+   tested yet. IPv4 addresses are usable as soon as they exist, and one that doesn't exist yet
+   is skipped rather than fatal.
 
    Check that it came up: `ss -lunp | grep 8555` on the box should list a UDP socket per IPv4
    address, and `docker exec frigate grep webrtc /dev/shm/logs/go2rtc/current` should show
@@ -137,11 +139,39 @@ join work from a phone:
    ```
 
 Smoke test before blaming the app: open Frigate's own web UI on the phone, switch a camera's live
-view to WebRTC, and confirm it plays over both the LAN and Tailscale. From a computer on the
-LAN, `http://192.168.68.65:1984/` serves go2rtc's own pages. On one of them, a
-`RTCPeerConnection` with `iceServers: []` that POSTs its offer to
-`/api/webrtc?src=hikvision_1_sub` does the same join as the app. On 2026-09-25 that connected
-over UDP to 192.168.68.65:8555 with a 4 ms round trip and decoded 640x360 at 25 fps.
+view to WebRTC, and confirm it plays over both the LAN and Tailscale.
+
+To repeat the app's own join from a computer on the LAN:
+
+1. Open `http://192.168.68.65:1984/webrtc.html` in a browser. Any page served from port 1984
+   will do; this one is only there so the request below is same-origin. Don't use its built-in
+   player: it configures a public STUN server, and the app sends host candidates only.
+2. Paste this into the browser's developer console:
+
+   ```js
+   const pc = new RTCPeerConnection({ iceServers: [] });
+   pc.addTransceiver('video', { direction: 'recvonly' });
+   await pc.setLocalDescription(await pc.createOffer());
+   await new Promise(r => setTimeout(r, 1500)); // let host candidates gather
+   const res = await fetch('/api/webrtc?src=hikvision_1_sub', {
+     method: 'POST', headers: { 'Content-Type': 'application/sdp' }, body: pc.localDescription.sdp,
+   });
+   await pc.setRemoteDescription({ type: 'answer', sdp: await res.text() });
+   await new Promise(r => setTimeout(r, 5000));
+   const stats = [...(await pc.getStats()).values()];
+   const pair = stats.find(s => s.type === 'candidate-pair' && s.nominated && s.state === 'succeeded');
+   const inbound = stats.find(s => s.type === 'inbound-rtp' && s.kind === 'video');
+   console.log(res.status, pc.iceConnectionState, pair && stats.find(s => s.id === pair.remoteCandidateId),
+     inbound && inbound.framesDecoded);
+   pc.close();
+   ```
+
+   A healthy server prints `201 connected`, a remote candidate on 192.168.68.65:8555 over UDP,
+   and a frame count above zero. A 404 means go2rtc's WebRTC module didn't start (see the IPv4
+   filter above).
+
+That was run once, on 2026-09-25 after the filter went in. It connected over UDP to
+192.168.68.65:8555 with a 4 ms round trip and decoded 640x360 at 25 fps.
 
 The floor on first-frame time after ICE connects is the camera's keyframe interval: go2rtc starts
 a new consumer at the next keyframe, and these cameras send one every 2 s. Setting the I-frame
