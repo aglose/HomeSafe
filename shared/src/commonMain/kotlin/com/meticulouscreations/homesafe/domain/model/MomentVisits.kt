@@ -33,11 +33,19 @@ object MomentVisits {
      * in the labelling screen), the key that name would slug to, and Frigate's unknown-face marker.
      */
     internal val NOT_A_NAME = setOf(ClassifierDataset.NONE_CATEGORY, "not_ours", FaceLibrary.UNKNOWN_GUESS)
+
+    /**
+     * Whether [name] — a sub-label, or a classifier category that would become one — is one of the
+     * [NOT_A_NAME] placeholders, in any case. The one test for it: what the feed calls unnamed and
+     * what the tag picker won't offer as a known car have to agree, or a car tagged with a
+     * placeholder would go on reading "Car".
+     */
+    fun isPlaceholderName(name: String): Boolean = name.lowercase() in NOT_A_NAME
 }
 
 /** Frigate put a name to it — a registered face, a classified car, a known plate — and not one of the placeholders in [MomentVisits.NOT_A_NAME]. */
 val MomentEvent.isFamiliar: Boolean
-    get() = !subLabel.isNullOrBlank() && subLabel.lowercase() !in MomentVisits.NOT_A_NAME
+    get() = !subLabel.isNullOrBlank() && !MomentVisits.isPlaceholderName(subLabel)
 
 /** One of the household's cars: a vehicle the classifier put a name to. */
 val MomentEvent.isHouseholdCar: Boolean get() = category == MomentCategory.VEHICLES && isFamiliar

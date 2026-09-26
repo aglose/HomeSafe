@@ -10,8 +10,10 @@ import com.meticulouscreations.homesafe.domain.usecase.TagMomentCarUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlin.test.AfterTest
@@ -210,6 +212,43 @@ class MomentCarTagViewModelTest {
         vm.dismiss()
         vm.openLanded()
         assertNull(vm.uiState.value.target, "already tagged: the prompt says so instead")
+    }
+
+    @Test
+    fun aLookupThatFailsIsAskedAgainUntilTheServerAnswers() = runTest(dispatcher) {
+        val classifiers = FakeCarTagClassifiers(detections = mapOf(car.id to car)).apply { detectionFailures = 2 }
+        val vm = viewModel(classifiers)
+
+        vm.lookUp(car.id, openPicker = true)
+        runCurrent()
+        assertNull(vm.uiState.value.landed, "nothing to offer yet")
+        assertEquals(1, classifiers.detectionReads)
+
+        // The screen asking again while the retries run doesn't start a second round.
+        vm.lookUp(car.id, openPicker = true)
+        advanceTimeBy(5_001)
+        assertEquals(2, classifiers.detectionReads)
+        assertNull(vm.uiState.value.landed)
+
+        advanceUntilIdle()
+        assertEquals(3, classifiers.detectionReads, "backed off, then answered")
+        assertEquals(car.id, vm.uiState.value.landed?.eventId)
+        assertEquals(car.id, vm.uiState.value.target?.eventId, "the notification's Tag car still opens the picker")
+    }
+
+    @Test
+    fun anAnswerSettlesTheLookupEvenWhenFrigateNoLongerHasTheDetection() = runTest(dispatcher) {
+        val classifiers = FakeCarTagClassifiers()
+        val vm = viewModel(classifiers)
+
+        vm.lookUp(car.id, openPicker = false)
+        advanceUntilIdle()
+        classifiers.detections = mapOf(car.id to car)
+        vm.lookUp(car.id, openPicker = false)
+        advanceUntilIdle()
+
+        assertEquals(1, classifiers.detectionReads)
+        assertNull(vm.uiState.value.landed)
     }
 
     @Test

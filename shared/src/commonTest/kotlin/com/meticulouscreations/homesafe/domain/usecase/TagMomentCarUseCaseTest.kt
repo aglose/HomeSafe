@@ -37,6 +37,10 @@ internal class FakeCarTagClassifiers(
     var nameFails = false
     var trainFails = false
     var datasetReads = 0
+
+    /** How many asks for a detection fail before the server answers them. */
+    var detectionFailures = 0
+    var detectionReads = 0
     val labelled = mutableListOf<Pair<String, String>>()
     val examples = mutableListOf<Pair<String, SeenBox>>()
     val names = mutableListOf<Pair<String, String?>>()
@@ -52,7 +56,14 @@ internal class FakeCarTagClassifiers(
     }
 
     override suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>> = Result.success(queue)
-    override suspend fun getDetection(eventId: String): Result<MomentEvent?> = Result.success(detections[eventId])
+    override suspend fun getDetection(eventId: String): Result<MomentEvent?> {
+        detectionReads++
+        if (detectionFailures > 0) {
+            detectionFailures--
+            return Result.failure(IllegalStateException("server restarting"))
+        }
+        return Result.success(detections[eventId])
+    }
     override suspend fun label(modelName: String, fileName: String, category: String): Result<Unit> {
         if (labelFails) return Result.failure(IllegalStateException("crop gone"))
         labelled += fileName to category

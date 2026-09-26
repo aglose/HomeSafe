@@ -6,9 +6,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -16,6 +18,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.VisitKind
@@ -136,7 +139,11 @@ class MomentCarTagUiTest {
         onAllNodesWithText("Tag car").assertCountEquals(0)
         onNodeWithText("2 clips").performClick()
         mainClock.advanceTimeBy(1_000)
-        onNodeWithContentDescription("Tag this car").performClick()
+        // A 16dp glyph, but a full-size touch target around it.
+        onNodeWithContentDescription("Tag this car")
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .performClick()
         assertEquals(listOf("v1"), tapped)
     }
 

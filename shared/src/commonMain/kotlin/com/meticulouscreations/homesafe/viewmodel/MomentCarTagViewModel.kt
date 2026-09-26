@@ -20,6 +20,7 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,7 +87,10 @@ class MomentCarTagViewModel(
 
     private var model: ClassifierModel? = null
     private var loadJob: Job? = null
-    private var lookedUp: String? = null
+
+    /** The detection [lookUp] is asking about or has had its answer for; see there. */
+    private var lookingUp: String? = null
+    private var lookUpJob: Job? = null
 
     /** Opens the picker for [event]; anything but an unnamed car is ignored, and so is a tap while a tag is saving. */
     fun open(event: MomentEvent) {
@@ -104,14 +108,28 @@ class MomentCarTagViewModel(
     /**
      * Looks up the detection [eventId] this screen was opened on, and offers to tag it when it's
      * an unnamed car — straight away, with [openPicker], which is a notification's "Tag car"
-     * button. Once per detection: a recomposition asking again changes nothing.
+     * button.
+     *
+     * Only an answer settles it, "Frigate no longer has it" included. A failed ask — the phone
+     * coming back online after a notification woke it, the server restarting — is asked again,
+     * [LOOKUP_RETRY_FIRST_MS] later and backing off to [LOOKUP_RETRY_MAX_MS], for as long as the
+     * screen is open: the screen asks once, on the way in, and giving up on the first error would
+     * lose the prompt and the notification's tag for the whole visit. Asking again about the same
+     * detection meanwhile, as a recomposition does, changes nothing.
      */
     fun lookUp(eventId: String, openPicker: Boolean) {
-        if (eventId.isBlank() || eventId == lookedUp) return
-        lookedUp = eventId
-        viewModelScope.launch {
-            val event = getDetectionUseCase(eventId).getOrNull() ?: return@launch
-            if (!event.isGenericCar) return@launch
+        if (eventId.isBlank() || eventId == lookingUp) return
+        lookingUp = eventId
+        lookUpJob?.cancel()
+        lookUpJob = viewModelScope.launch {
+            var wait = LOOKUP_RETRY_FIRST_MS
+            var answer = getDetectionUseCase(eventId)
+            while (answer.isFailure) {
+                delay(wait)
+                wait = (wait * 2).coerceAtMost(LOOKUP_RETRY_MAX_MS)
+                answer = getDetectionUseCase(eventId)
+            }
+            val event = answer.getOrNull()?.takeIf { it.isGenericCar } ?: return@launch
             val target = event.toTarget()
             _uiState.update { it.copy(landed = target) }
             if (openPicker) openFor(target)
@@ -196,5 +214,10 @@ class MomentCarTagViewModel(
     private fun MomentEvent.toTarget(): CarTagTarget {
         val presentation = present(clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
         return CarTagTarget(eventId = id, summary = "${presentation.title} · ${presentation.timeLabel}")
+    }
+
+    private companion object {
+        const val LOOKUP_RETRY_FIRST_MS = 5_000L
+        const val LOOKUP_RETRY_MAX_MS = 60_000L
     }
 }

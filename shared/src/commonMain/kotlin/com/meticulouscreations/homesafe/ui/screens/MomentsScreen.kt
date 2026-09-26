@@ -15,12 +15,14 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -61,6 +63,7 @@ import androidx.compose.material3.SelectableDates
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -76,6 +79,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -118,6 +122,9 @@ private const val REVEAL_WINDOW_MS = 700L
  */
 private val THUMBNAIL_WIDTH = 128.dp
 private val THUMBNAIL_MIN_HEIGHT = 120.dp
+
+/** A folded entry's clip row: a touch target's height, which is what the tag button in some of them needs. */
+private val CLIP_ROW_MIN_HEIGHT = 48.dp
 
 private val MomentCategory.label: String
     get() = when (this) {
@@ -1031,9 +1038,14 @@ private fun ClipsToggle(label: String, open: Boolean, onClick: () -> Unit) {
 /**
  * A folded entry's detections, oldest first, one row each; a tap plays that one, the one playing is
  * marked. A clip of a car nobody named can be tagged from its row: a visit can hold several cars.
+ *
+ * Every row is the 48dp of a touch target tall, rather than sized by its padding, so a row with
+ * the tag's button in it is no taller than the rest; and when any row has one, the others keep its
+ * space, so the durations still line up.
  */
 @Composable
 private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (MomentEvent) -> Unit, onTagCar: (MomentEvent) -> Unit) {
+    val anyTaggable = item.clips.any { it.canTagCar }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         item.clips.forEach { clip ->
             val playing = clip.event.id == playingEventId
@@ -1042,7 +1054,8 @@ private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (M
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
                     .clickable(enabled = clip.event.hasClip, onClickLabel = if (playing) "Close clip" else "Play clip") { onPlay(clip.event) }
-                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                    .heightIn(min = CLIP_ROW_MIN_HEIGHT)
+                    .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1067,16 +1080,28 @@ private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (M
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (clip.canTagCar) {
-                    Icon(
-                        imageVector = Icons.Filled.Sell,
-                        contentDescription = "Tag this car",
-                        tint = MaterialTheme.colorScheme.primary,
+                    // A full-size touch target around a glyph the row's size: the icon stays 16dp,
+                    // and the ripple is an icon button's 40dp circle, inside the row.
+                    Box(
                         modifier = Modifier
-                            .clip(CircleShape)
-                            .clickable { onTagCar(clip.event) }
-                            .padding(4.dp)
-                            .size(16.dp),
-                    )
+                            .size(CLIP_ROW_MIN_HEIGHT)
+                            .clickable(
+                                interactionSource = null,
+                                indication = ripple(bounded = false, radius = 20.dp),
+                                role = Role.Button,
+                                onClick = { onTagCar(clip.event) },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Sell,
+                            contentDescription = "Tag this car",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else if (anyTaggable) {
+                    Spacer(modifier = Modifier.size(CLIP_ROW_MIN_HEIGHT))
                 }
             }
         }

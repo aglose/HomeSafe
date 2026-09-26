@@ -231,8 +231,11 @@ data class ClassifierDataset(
         get() = (categoryCounts.keys + NONE_CATEGORY + queue.mapNotNull { it.guessedCategory }.filter { isNameable(it) })
             .sortedWith(compareBy({ it == NONE_CATEGORY }, { it }))
 
-    /** [categories] that name a car: everything but `none`, which is "not ours". */
-    val knownCars: List<String> get() = categories.filter { it != NONE_CATEGORY }
+    /**
+     * [categories] that name a car: everything but the placeholders ([MomentVisits.isPlaceholderName]) —
+     * `none`, which is "not ours", and any `not_ours` or `unknown` folder — none of which a car can be named.
+     */
+    val knownCars: List<String> get() = categories.filterNot { MomentVisits.isPlaceholderName(it) }
 
     /** Frigate needs two classes; `none` counts as one. */
     val canTrain: Boolean get() = categoryCounts.count { it.value > 0 } >= 2

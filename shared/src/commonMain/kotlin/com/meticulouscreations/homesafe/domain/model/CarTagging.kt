@@ -42,7 +42,7 @@ object CarTagging {
     fun knownCarKey(name: String): String? {
         if (name.none { it.isLetterOrDigit() }) return null
         val key = DetectionZone.slug(name).trim('_', '-').take(MAX_KEY_LENGTH).trimEnd('_', '-')
-        return key.takeIf { it.isNotEmpty() && it !in MomentVisits.NOT_A_NAME }
+        return key.takeIf { it.isNotEmpty() && !MomentVisits.isPlaceholderName(it) }
     }
 }
 
