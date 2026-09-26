@@ -434,14 +434,25 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     }
 
     private fun dropPeer() {
+        detachPeer()?.close()
+    }
+
+    /** Moves the peer on screen to standby for an HLS start of another live source; see the Android holder's `parkPeer`. */
+    private fun parkPeer() {
+        val endpoint = peerEndpoint
+        detachPeer()?.let { park(it, endpoint) }
+    }
+
+    /** Stops treating [peer] as the picture and hands it back, or null if there was none. */
+    private fun detachPeer(): IosWebRtcPeerAdapter? {
         peerWatchJob?.cancel()
         peerWatchJob = null
-        val dropped = peer ?: return
+        val detached = peer ?: return null
         peer = null
         peerEndpoint = null
-        dropped.close()
         webRtcStalled = false
         webRtcHasAudio = false
+        return detached
     }
 
     private fun startHls(toLoad: VideoSource) {
@@ -452,7 +463,8 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         // Either way a fresh generation puts the poster over the gap until HLS draws.
         val pictureOnScreen = peer != null || (transport == LiveTransport.HLS && player.currentItem != null)
         if (pictureOnScreen && !needsColdStart) coldStartGeneration++
-        dropPeer()
+        // Only a peer for another source can be on screen here; kept for a step back to live (see the Android holder).
+        if (toLoad is VideoSource.Live) parkPeer() else dropPeer()
         transport = LiveTransport.HLS
         // Each start registers a fresh set of observers on the new item; without this the previous
         // item's observer tokens would sit in NotificationCenter forever.

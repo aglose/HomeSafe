@@ -28,7 +28,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseC
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
-import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.TimelineDetection
@@ -45,6 +45,7 @@ import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -52,12 +53,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
@@ -101,6 +104,20 @@ sealed interface CameraDetailUiState {
  * on a single-stream camera the two are the same stream.
  */
 internal data class LiveJoinPlan(val joinUrl: String, val upgradeToUrl: String?)
+
+/**
+ * Suspends until a fast live join's upgrade to full quality should happen: at least [minDelayMs]
+ * after the join, and not before the grid-quality stream is [LiveStreamStatus.Live] — so a slow
+ * first connect isn't cancelled by the upgrade before it has shown anything (the holder abandons
+ * an in-flight join when the source changes), and a stalled stream isn't swapped mid-stall. The
+ * minimum also outlasts a status left over from what was playing before the join, which the
+ * player reports only when it changes. If the stream still isn't live after [maxWaitMs], the
+ * upgrade goes ahead anyway: the full-quality stream may well work where the grid one doesn't.
+ */
+internal suspend fun awaitQualityUpgrade(status: Flow<LiveStreamStatus>, minDelayMs: Long, maxWaitMs: Long) {
+    delay(minDelayMs)
+    withTimeoutOrNull((maxWaitMs - minDelayMs).coerceAtLeast(0L)) { status.first { it == LiveStreamStatus.Live } }
+}
 
 internal fun planLiveJoin(gridStreamUrl: String, liveStreamUrl: String, quality: StreamQuality = StreamQuality.AUTO): LiveJoinPlan =
     when (quality) {
@@ -303,6 +320,9 @@ class CameraDetailViewModel(
     private var seekSequence = 0L
     private var playlistLoadJob: Job? = null
     private var qualityUpgradeJob: Job? = null
+
+    /** What the player last reported for the live source; gates the quality upgrade ([awaitQualityUpgrade]). */
+    private val streamStatus = MutableStateFlow(LiveStreamStatus.Connecting)
     private var momentJob: Job? = null
 
     init {
@@ -452,16 +472,11 @@ class CameraDetailViewModel(
         return if (alreadyPlaying) updated else updated.copy(playerRequest = request)
     }
 
-    /**
-     * Waits for the grid-quality join to settle before stepping up to full quality, rather than
-     * reacting to the player's own first-frame event: that event isn't part of [CameraStreamPlayer]'s
-     * cross-platform callback surface today, and a short fixed delay is enough to avoid upgrading
-     * mid-stall without adding a fourth platform-specific signal just for this one swap.
-     */
+    /** Steps up to full quality once the grid-quality join is showing video; see [awaitQualityUpgrade]. */
     private fun scheduleQualityUpgrade(liveUrl: String, found: CameraDetailUiState.Found) {
         qualityUpgradeJob?.cancel()
         qualityUpgradeJob = viewModelScope.launch {
-            delay(QUALITY_UPGRADE_DELAY_MS)
+            awaitQualityUpgrade(streamStatus, minDelayMs = QUALITY_UPGRADE_DELAY_MS, maxWaitMs = QUALITY_UPGRADE_MAX_WAIT_MS)
             _playback.update { current ->
                 // Carry forward current.isPlaying, not PlayerRequest's own default(true): the user
                 // may have paused during the few seconds the grid-quality join was standing in, and
@@ -565,6 +580,10 @@ class CameraDetailViewModel(
 
     fun onBufferingChanged(isBuffering: Boolean) {
         _playback.update { it.copy(isBuffering = isBuffering) }
+    }
+
+    fun onStreamStatusChanged(status: LiveStreamStatus) {
+        streamStatus.value = status
     }
 
     /**
@@ -672,8 +691,14 @@ class CameraDetailViewModel(
 
         const val RECENT_MOMENTS = 3
 
-        /** How long a fast live join plays the grid-quality stream before stepping up to full quality. */
+        /** How long a fast live join plays the grid-quality stream, at least, before stepping up to full quality. */
         const val QUALITY_UPGRADE_DELAY_MS = 3_000L
+
+        /**
+         * How long the upgrade waits for the grid-quality stream to go live before stepping up
+         * regardless: past a failed WebRTC join's whole budget (3 s + 5 s) and an HLS start.
+         */
+        const val QUALITY_UPGRADE_MAX_WAIT_MS = 12_000L
 
         /** Playback within this of a seek's target counts as having arrived, and the preview snapshot comes down. */
         const val SEEK_PREVIEW_TOLERANCE_SECONDS = 3.0

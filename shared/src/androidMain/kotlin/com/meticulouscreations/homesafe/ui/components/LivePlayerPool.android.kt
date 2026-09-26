@@ -504,21 +504,38 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     }
 
     private fun dropPeer() {
+        detachPeer()?.close()
+    }
+
+    /**
+     * Moves the peer on screen to standby ([park]), for an HLS start of another live source: the
+     * grid peer outlives a full-quality upgrade that fell back to HLS, so stepping back to the
+     * grid is a promotion rather than a fresh join. [park] closes it instead if it isn't healthy.
+     */
+    private fun parkPeer() {
+        val endpoint = peerEndpoint
+        detachPeer()?.let { park(it, endpoint) }
+    }
+
+    /** Stops treating [peer] as the picture and hands it back, or null if there was none. */
+    private fun detachPeer(): AndroidWebRtcPeer? {
         peerWatchJob?.cancel()
         peerWatchJob = null
-        val dropped = peer ?: return
+        val detached = peer ?: return null
         peer = null
         peerEndpoint = null
-        dropped.close()
         webRtcStalled = false
         webRtcHasAudio = false
+        return detached
     }
 
     private fun startHls(toLoad: VideoSource) {
         // A working peer's last frame is on the renderers on top of the HLS surface; a fresh
         // generation puts the poster over both until HLS draws, and the binders clear the renderers.
         if (peer != null && !needsColdStart) coldStartGeneration++
-        dropPeer()
+        // A peer can only be on screen here for a different source than [toLoad] (one that serves
+        // it would have been adopted instead). Kept for a step back to live; not for a recording.
+        if (toLoad is VideoSource.Live) parkPeer() else dropPeer()
         transport = LiveTransport.HLS
         val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))
