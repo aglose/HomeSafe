@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -63,9 +64,9 @@ import kotlin.math.roundToLong
  *
  * A drop of liquid glass rides the playhead and magnifies the bars under it a little (see
  * [LiquidLensState]). Press and hold anywhere and it swells into a bubble there that magnifies
- * [HELD_ZOOM]x across, and scrubs as it is dragged — [HELD_ZOOM] times finer than a plain drag,
- * so the picture in the bubble moves under the finger at the speed the finger does, and a
- * single moment in a busy stretch can be picked out. Letting go ends the scrub, as a drag does.
+ * [HELD_ZOOM]x across, and scrubs as it is dragged — [HELD_SCRUB_GEAR] times finer than a plain
+ * drag, fine enough to pick a single moment out of a busy stretch but quick enough to travel
+ * along the timeline without lifting. Letting go ends the scrub, as a drag does.
  */
 @Composable
 fun RecordingTimeline(
@@ -111,6 +112,8 @@ fun RecordingTimeline(
 
     val indicatorFraction = ((indicatorEpoch - windowStart) / span.seconds).toFloat().coerceIn(0f, 1f)
     val lens = remember { LiquidLensState(liquidLensShaderOrNull(), indicatorFraction) }
+    // Applied before this frame draws, so the lens magnifies about the playhead the Canvas draws.
+    SideEffect { lens.playhead = indicatorFraction }
     LaunchedEffect(lens, indicatorFraction) { lens.follow(indicatorFraction) }
     LaunchedEffect(lens, lens.held) { lens.inflate(if (lens.held) 1f else 0f) }
     LaunchedEffect(lens, lens.rippling) { if (lens.rippling) lens.runRippleClock() }
@@ -246,9 +249,9 @@ private data class TimelineFrame(val windowStartEpochSeconds: Double, val spanSe
     fun epochAt(x: Float, width: Int): Double =
         windowStartEpochSeconds + (x / width.coerceAtLeast(1)).coerceIn(0f, 1f) * spanSeconds
 
-    /** Where a held drag [dx] pixels from where it started, at [anchorEpochSeconds], has scrubbed to: [HELD_ZOOM] times finer than [epochAt]. */
+    /** Where a held drag [dx] pixels from where it started, at [anchorEpochSeconds], has scrubbed to: [HELD_SCRUB_GEAR] times finer than [epochAt]. */
     fun fineEpochFrom(anchorEpochSeconds: Double, dx: Float, width: Int): Double =
-        (anchorEpochSeconds + dx / width.coerceAtLeast(1) * spanSeconds / HELD_ZOOM)
+        (anchorEpochSeconds + dx / width.coerceAtLeast(1) * spanSeconds / HELD_SCRUB_GEAR)
             .coerceIn(windowStartEpochSeconds, windowStartEpochSeconds + spanSeconds)
 
     /** The dots for [detections] in this frame: the same call draws them and resolves a tap on them, so the two always agree. */
@@ -299,6 +302,13 @@ private fun FrigateExtraColors.forCategory(category: MomentCategory, fallback: C
 }
 
 private val TIMELINE_HEIGHT = 108.dp
+
+/**
+ * How much finer a held drag scrubs than a plain one. Less than [HELD_ZOOM]: matching the zoom
+ * made the bubble's picture track the finger exactly but crawl along the timeline, so a held
+ * drag trades a little of that precision for getting somewhere.
+ */
+internal const val HELD_SCRUB_GEAR = 1.6f
 
 /** Where the detection dots sit: between the tick labels and the top of the bars. */
 private val MARKER_LANE_CENTER = 38.dp

@@ -25,11 +25,18 @@ import kotlin.math.sqrt
  * it catches up, stretches along the way it is moving and thins as it does, swells past its size
  * and settles, and its surface ripples while it is held.
  *
+ * Only the glass is sprung, never what it shows: it always magnifies about the exact [playhead],
+ * so the playhead line sits in the lens where it really is, under its time label, and the glass
+ * may lag or overshoot only so far that the line stays inside it.
+ *
  * Drawn by [LIQUID_LENS_SHADER] over the timeline's own layer (see [liquidLens]).
  */
 @Stable
 internal class LiquidLensState(private val shader: LiquidLensShader?, initialPosition: Float) {
-    /** Where the lens is, as a fraction of the way across the timeline: it chases the playhead. */
+    /** Where the playhead is, as a fraction of the way across the timeline: what the lens magnifies about. */
+    var playhead by mutableFloatStateOf(initialPosition)
+
+    /** Where the glass is, as the same fraction: it chases [playhead] on a spring. */
     val position = Animatable(initialPosition)
 
     /** 0 at rest, 1 fully swollen; overshoots both ways, which is the bubble's wobble. */
@@ -71,11 +78,8 @@ internal class LiquidLensState(private val shader: LiquidLensShader?, initialPos
         val stretch = 1f + (speed / STRETCH_SPEED).coerceAtMost(MAX_STRETCH)
         val halfWidth = (lerp(REST_HALF_WIDTH, HELD_HALF_WIDTH, swell) * density * stretch).coerceAtLeast(MIN_HALF * density)
         val halfHeight = (lerp(REST_HALF_HEIGHT, HELD_HALF_HEIGHT, swell) * density / sqrt(stretch)).coerceAtLeast(MIN_HALF * density)
-        val focusX = position.value * width
-        // The lens stays whole inside the card, but magnifies about the playhead itself, so at the
-        // live edge it sits just inside and still enlarges the last few minutes.
-        val inset = EDGE_INSET * density
-        val centerX = focusX.coerceIn(halfWidth + inset, (width - halfWidth - inset).coerceAtLeast(halfWidth + inset))
+        val focusX = playhead * width
+        val centerX = lensCenterX(position.value * width, focusX, halfWidth, EDGE_INSET * density, width)
         val centerY = lerp(REST_CENTER_Y, HELD_CENTER_Y, swell) * density
         val ripple = (swell.coerceIn(0f, 1f) * HELD_RIPPLE + (speed / RIPPLE_SPEED).coerceAtMost(1f) * MOVING_RIPPLE) * density
 
@@ -90,6 +94,21 @@ internal class LiquidLensState(private val shader: LiquidLensShader?, initialPos
         shader.setUniform("swell", swell.coerceIn(0f, 1f))
         return shader.renderEffect()
     }
+}
+
+/**
+ * Where the glass's centre goes across a layer [width] px wide, given where its spring has it,
+ * [sprungX], and where the playhead is, [playheadX]. It keeps [inset] inside the card's edges
+ * where it can, but never drifts more than [PLAYHEAD_REACH] of its [halfWidth] from the
+ * playhead, however far the spring lags or overshoots: the playhead line never leaves it. At
+ * either end of the timeline, where the two disagree, the playhead wins and the glass hangs a
+ * little off the card.
+ */
+internal fun lensCenterX(sprungX: Float, playheadX: Float, halfWidth: Float, inset: Float, width: Float): Float {
+    val reach = halfWidth * PLAYHEAD_REACH
+    return sprungX
+        .coerceIn(halfWidth + inset, (width - halfWidth - inset).coerceAtLeast(halfWidth + inset))
+        .coerceIn(playheadX - reach, playheadX + reach)
 }
 
 /** Draws [lens] over everything this layer draws, the card's background included. */
@@ -135,12 +154,19 @@ private const val HELD_HALF_WIDTH = 58f
 private const val HELD_HALF_HEIGHT = 36f
 private const val HELD_CENTER_Y = 65f
 
-/** How much the held bubble magnifies time; a held drag scrubs this much finer to match (see RecordingTimeline). */
+/** How much the held bubble magnifies time. */
 internal const val HELD_ZOOM = 2.6f
 private const val HELD_ZOOM_Y = 1.15f
 
 private const val MIN_HALF = 4f
 private const val EDGE_INSET = 3f
+
+/**
+ * How far off-centre the glass may drift from the playhead, as a fraction of its half-width: the
+ * line stays in the clear middle of the lens, away from the rim where the glass bends it.
+ */
+internal const val PLAYHEAD_REACH = 0.45f
+
 private const val STRETCH_SPEED = 1_600f
 private const val MAX_STRETCH = 0.45f
 private const val RIPPLE_SPEED = 1_800f

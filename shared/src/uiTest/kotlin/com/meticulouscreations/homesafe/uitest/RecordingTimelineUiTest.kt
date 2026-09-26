@@ -15,7 +15,7 @@ import androidx.compose.ui.test.swipe
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
-import com.meticulouscreations.homesafe.ui.components.HELD_ZOOM
+import com.meticulouscreations.homesafe.ui.components.HELD_SCRUB_GEAR
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
 import com.meticulouscreations.homesafe.ui.components.TimelineDetection
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -38,7 +38,7 @@ import kotlin.test.assertTrue
  * caller has no separate handler — while a tap above them away from any dot, or on the bars
  * under one, is still a seek; and a drag is a scrub, bracketed by exactly one start and one end.
  * A press held still past the long-press timeout is a scrub too, from where it was pressed, and
- * then moves [HELD_ZOOM] times finer than a plain drag, as the bubble it swells magnifies.
+ * then moves [HELD_SCRUB_GEAR] times finer than a plain drag, for picking out a single moment.
  *
  * Wrapped in a [Box] so the strip keeps its own height rather than being stretched by
  * [FrigatePreview]'s Surface. The glass lens's springs settle on their own, so the clock is left to run.
@@ -260,7 +260,7 @@ class RecordingTimelineUiTest {
         assertEquals(1, ends, "the scrub must be ended, or the player stays paused on it")
         assertEquals(at(0.5), scrubs.first(), slack, "a hold starts the scrub where it was pressed")
         // A plain drag this far would have scrubbed to at(0.8).
-        assertEquals(at(0.5 + across / HELD_ZOOM), scrubs.last(), slack)
+        assertEquals(at(0.5 + across / HELD_SCRUB_GEAR), scrubs.last(), slack)
         assertTrue(seeks.isEmpty(), "a hold is not a tap, but seeked to $seeks")
     }
 
