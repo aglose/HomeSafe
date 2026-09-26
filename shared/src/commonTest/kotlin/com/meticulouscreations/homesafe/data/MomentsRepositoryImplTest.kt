@@ -129,7 +129,10 @@ class MomentsRepositoryImplTest {
                 offline -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
-                    val body = eventsFor?.invoke(req.url.parameters["before"]?.toDouble()) ?: events
+                    val before = req.url.parameters["before"]?.toDouble()
+                    val body = server?.page(before, req.url.parameters["after"]?.toDouble())
+                        ?: eventsFor?.invoke(before)
+                        ?: events
                     respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
@@ -153,7 +156,33 @@ class MomentsRepositoryImplTest {
 
             /** When set, answers `/api/events` by its `before` (null for none) instead of with [events]. */
             var eventsFor: ((before: Double?) -> String)? = null
+
+            /** When set, answers `/api/events` the way Frigate does, out of what it holds; see [PersonsServer]. */
+            var server: PersonsServer? = null
         }
+    }
+
+    /**
+     * A Frigate holding one-person detections at [starts], answering a page as the real one does:
+     * newest first, only those starting before `before` and after `after`, a hundred at most. A
+     * test adds to [starts] to have detections arrive.
+     */
+    private class PersonsServer(starts: List<Long>) {
+        // Read on the engine's thread while the test writes it, so a snapshot rather than a plain var.
+        private val held = MutableStateFlow(starts)
+        var starts: List<Long>
+            get() = held.value
+            set(value) {
+                held.value = value
+            }
+
+        fun page(before: Double?, after: Double?): String = starts.sortedDescending()
+            .filter { (before == null || it < before) && (after == null || it > after) }
+            .take(100)
+            .joinToString(",", "[", "]") { start ->
+                """{"id":"e$start","label":"person","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
+                    "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+            }
     }
 
     /** [count] one-person detections, one a second, newest first from [newestStart] — the shape of a full page. */
@@ -909,6 +938,80 @@ class MomentsRepositoryImplTest {
             cached.size == 2
         }
         assertEquals(listOf("e2000", "e1998"), cached, "a purged detection can't sit on the device waiting for the next launch")
+    }
+
+    /**
+     * The head is re-read from the top, and every detection that arrives pushes one off its bottom
+     * — which the tail, loaded below the head as it was, never had (2026-09-26). The feed went from
+     * 1:05 PM straight to last night, the morning between lost. What slid out stays in the feed.
+     */
+    @Test
+    fun detectionsThatSlideOutOfTheHeadStayInTheFeed() = runTest {
+        val server = PersonsServer((2000L downTo 1801L).toList())
+        Harness.server = server
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+            h.repo.loadOlder()
+            assertEquals(200, h.repo.observeMoments().first().size)
+
+            // Three more walk past; the newest hundred now stop at 1904, three above where the head used to.
+            server.starts = listOf(2003L, 2002L, 2001L) + server.starts
+            h.repo.refresh()
+
+            assertEquals((2003L downTo 1801L).map { "e$it" }, h.repo.observeMoments().first().map { it.id }, "not one missing")
+        } finally {
+            Harness.server = null
+        }
+    }
+
+    @Test
+    fun aHeadThatMovedMoreThanAPageReadsTheStretchBetween() = runTest {
+        val server = PersonsServer((2000L downTo 1801L).toList())
+        Harness.server = server
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+            h.repo.loadOlder()
+
+            // A busy lunchtime: 150 while nobody was looking, so the newest page doesn't reach anything loaded.
+            server.starts = (2150L downTo 2001L).toList() + server.starts
+            h.repo.refresh()
+
+            assertEquals((2150L downTo 1801L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+            assertEquals(true, h.eventQueries.any { "before=2051.000" in it && "after=2000.000" in it }, "the stretch between was asked for")
+            assertEquals(true, h.repo.paging().hasOlder, "the pages below are still the pages below")
+        } finally {
+            Harness.server = null
+        }
+    }
+
+    @Test
+    fun aGapTooWideToCloseLetsTheOlderPagesGoRatherThanHideIt() = runTest {
+        val server = PersonsServer((2000L downTo 1801L).toList())
+        Harness.server = server
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+            h.repo.loadOlder()
+
+            // More than the head and every bridging page together: the gap can't be closed this time.
+            server.starts = (3000L downTo 2001L).toList() + server.starts
+            h.repo.refresh()
+
+            val ids = h.repo.observeMoments().first().map { it.id }
+            assertEquals((3000L downTo 2401L).map { "e$it" }, ids, "the newest six pages, and nothing below them yet")
+            assertEquals(true, h.repo.paging().hasOlder)
+
+            // Paging down carries on from there, with nothing skipped.
+            h.repo.loadOlder()
+            assertEquals((3000L downTo 2301L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+        } finally {
+            Harness.server = null
+        }
     }
 
     @Test
