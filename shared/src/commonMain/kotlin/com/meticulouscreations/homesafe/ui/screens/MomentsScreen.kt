@@ -67,6 +67,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,6 +90,7 @@ import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.model.shortLabel
+import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -96,6 +98,7 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
+import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
@@ -148,6 +151,8 @@ private val MomentCategory.icon: ImageVector?
  * The feed pages: it opens at now (or at the end of a day picked from the calendar chip) and
  * fetches the next page down as the list nears its end, so every day Frigate still holds is
  * reachable by scrolling — and an old one directly, without scrolling through everything since.
+ * The top re-reads itself every half minute; pulling the list down asks for it now (see
+ * [ApertureRefreshBox]).
  *
  * [onOpenFullScreen] hands a detection off to its camera's detail screen, which plays the
  * recording from that instant on the full-width player — the way out of the card-sized one.
@@ -176,6 +181,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         onSelectCamera = viewModel::selectCamera,
         onShowDay = viewModel::showDay,
         onLoadOlder = viewModel::loadOlder,
+        onRefresh = viewModel::refresh,
         onCardClick = viewModel::toggleExpanded,
         onClipBuffering = viewModel::onClipBuffering,
         onClipError = viewModel::onClipPlaybackError,
@@ -213,6 +219,7 @@ internal fun MomentsFeed(
     onDownloadClick: (MomentEvent) -> Unit,
     onFullScreenClick: (MomentEvent) -> Unit,
     modifier: Modifier = Modifier,
+    onRefresh: () -> Unit = {},
     onTagCar: (MomentEvent) -> Unit = {},
 ) {
     var pickingDay by remember { mutableStateOf(false) }
@@ -279,90 +286,135 @@ internal fun MomentsFeed(
             )
         }
 
-        if (state.groups.isEmpty()) {
-            EmptyMoments(
-                category = state.selectedCategory,
-                unfamiliarOnly = state.unfamiliarOnly,
-                cameraLabel = state.selectedCamera?.displayName,
-                historyDayLabel = state.historyDay?.shortLabel(),
-                hasError = state.error != null,
-                hasOlder = state.hasOlder,
-                loadingOlder = state.loadingOlder,
-                onLoadOlder = onLoadOlder,
-            )
-        } else {
-            val listState = rememberLazyListState()
-            LoadOlderWhenNearTheEnd(listState, hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
-            // Whichever entry just grew — a clip opened, or a visit's clips listed — is scrolled
-            // up out from under the floating nav, rather than growing where nobody can see it.
-            val playingEntry = state.expandedEventId?.let { id -> state.groups.firstNotNullOfOrNull { g -> g.items.firstOrNull { it.plays(id) }?.key } }
-            KeepGrowingEntryInView(listState, trigger = state.expandedEventId, entryKey = playingEntry)
-            KeepGrowingEntryInView(listState, trigger = justOpenedEntry, entryKey = justOpenedEntry)
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = bottomNavClearance()),
-                verticalArrangement = Arrangement.spacedBy(24.dp),
-            ) {
-                state.groups.forEach { group ->
-                    item(key = "header-${group.dateGroup}-${group.dateSubLabel}", contentType = "date-header") {
-                        MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel)
-                    }
-                    items(group.items, key = { it.key }, contentType = { if (it.kind == VisitKind.ROUTINE) "routine-row" else "moment-card" }) { item ->
-                        // The clip open in this entry, if the one playing is any of its detections.
-                        val playing = state.expandedEventId?.let { id -> item.eventFor(id) }
-                        val clipsOpen = item.key in openEntries
-                        val onToggleClips = {
-                            openEntries = if (clipsOpen) openEntries - item.key else openEntries + item.key
-                            justOpenedEntry = if (clipsOpen) null else item.key
-                        }
-                        val player = ClipPlayerState(
-                            playingEventId = playing?.id,
-                            request = if (playing != null) state.clipRequest else null,
-                            posterUrl = if (playing != null) state.clipPosterUrl else null,
-                            error = if (playing != null) state.clipError else null,
-                            buffering = playing != null && state.clipBuffering,
+        // The pull is only for the feed: the filter chips above stay where they are.
+        ApertureRefreshBox(isRefreshing = state.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
+            if (state.groups.isEmpty()) {
+                // A list of one screen-filling item rather than the message alone: the pull needs
+                // something to drag, and an empty feed is exactly when someone reaches for it.
+                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    item(key = "empty", contentType = "empty") {
+                        EmptyMoments(
+                            category = state.selectedCategory,
+                            unfamiliarOnly = state.unfamiliarOnly,
+                            cameraLabel = state.selectedCamera?.displayName,
+                            historyDayLabel = state.historyDay?.shortLabel(),
+                            hasError = state.error != null,
+                            hasOlder = state.hasOlder,
+                            loadingOlder = state.loadingOlder,
+                            onLoadOlder = onLoadOlder,
+                            modifier = Modifier.fillParentMaxSize(),
                         )
-                        if (item.kind == VisitKind.ROUTINE) {
-                            RoutineRow(
-                                item = item,
-                                clipsOpen = clipsOpen,
-                                player = player,
-                                onToggleClips = onToggleClips,
-                                onPlay = onCardClick,
-                                onClipBuffering = onClipBuffering,
-                                onClipError = onClipError,
-                                onFullScreenClick = { playing?.let(onFullScreenClick) },
-                                onTagCar = onTagCar,
-                            )
-                        } else {
-                            val isDownloading = downloadState.downloadingEventId == item.event.id
-                            val downloadSucceeded = downloadState.resultEventId == item.event.id && downloadState.resultError == null
-                            val downloadErrorMessage = downloadState.resultError.takeIf { downloadState.resultEventId == item.event.id }
-                            MomentCard(
-                                item = item,
-                                clipsOpen = clipsOpen,
-                                player = player,
-                                isDownloading = isDownloading,
-                                downloadSucceeded = downloadSucceeded,
-                                downloadErrorMessage = downloadErrorMessage,
-                                onPlay = onCardClick,
-                                onToggleClips = onToggleClips,
-                                onClipBuffering = onClipBuffering,
-                                onClipError = onClipError,
-                                onDownloadClick = { onDownloadClick(item.event) },
-                                onFullScreenClick = { playing?.let(onFullScreenClick) },
-                                onTagCar = onTagCar,
-                            )
-                        }
                     }
                 }
-                item(key = "feed-end", contentType = "feed-end") {
-                    FeedEnd(hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
+            } else {
+                val listState = rememberLazyListState()
+                LoadOlderWhenNearTheEnd(listState, hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
+                // Whichever entry just grew — a clip opened, or a visit's clips listed — is scrolled
+                // up out from under the floating nav, rather than growing where nobody can see it.
+                val playingEntry = state.expandedEventId?.let { id -> state.groups.firstNotNullOfOrNull { g -> g.items.firstOrNull { it.plays(id) }?.key } }
+                KeepGrowingEntryInView(listState, trigger = state.expandedEventId, entryKey = playingEntry)
+                KeepGrowingEntryInView(listState, trigger = justOpenedEntry, entryKey = justOpenedEntry)
+                StayAtTheTopForNewerMoments(listState, topKey = state.groups.first().headerKey)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = bottomNavClearance()),
+                    verticalArrangement = Arrangement.spacedBy(24.dp),
+                ) {
+                    state.groups.forEach { group ->
+                        item(key = group.headerKey, contentType = "date-header") {
+                            MomentDateHeader(dateGroup = group.dateGroup, dateSubLabel = group.dateSubLabel)
+                        }
+                        items(group.items, key = { it.key }, contentType = { if (it.kind == VisitKind.ROUTINE) "routine-row" else "moment-card" }) { item ->
+                            // The clip open in this entry, if the one playing is any of its detections.
+                            val playing = state.expandedEventId?.let { id -> item.eventFor(id) }
+                            val clipsOpen = item.key in openEntries
+                            val onToggleClips = {
+                                openEntries = if (clipsOpen) openEntries - item.key else openEntries + item.key
+                                justOpenedEntry = if (clipsOpen) null else item.key
+                            }
+                            val player = ClipPlayerState(
+                                playingEventId = playing?.id,
+                                request = if (playing != null) state.clipRequest else null,
+                                posterUrl = if (playing != null) state.clipPosterUrl else null,
+                                error = if (playing != null) state.clipError else null,
+                                buffering = playing != null && state.clipBuffering,
+                            )
+                            if (item.kind == VisitKind.ROUTINE) {
+                                RoutineRow(
+                                    item = item,
+                                    clipsOpen = clipsOpen,
+                                    player = player,
+                                    onToggleClips = onToggleClips,
+                                    onPlay = onCardClick,
+                                    onClipBuffering = onClipBuffering,
+                                    onClipError = onClipError,
+                                    onFullScreenClick = { playing?.let(onFullScreenClick) },
+                                    onTagCar = onTagCar,
+                                )
+                            } else {
+                                val isDownloading = downloadState.downloadingEventId == item.event.id
+                                val downloadSucceeded = downloadState.resultEventId == item.event.id && downloadState.resultError == null
+                                val downloadErrorMessage = downloadState.resultError.takeIf { downloadState.resultEventId == item.event.id }
+                                MomentCard(
+                                    item = item,
+                                    clipsOpen = clipsOpen,
+                                    player = player,
+                                    isDownloading = isDownloading,
+                                    downloadSucceeded = downloadSucceeded,
+                                    downloadErrorMessage = downloadErrorMessage,
+                                    onPlay = onCardClick,
+                                    onToggleClips = onToggleClips,
+                                    onClipBuffering = onClipBuffering,
+                                    onClipError = onClipError,
+                                    onDownloadClick = { onDownloadClick(item.event) },
+                                    onFullScreenClick = { playing?.let(onFullScreenClick) },
+                                    onTagCar = onTagCar,
+                                )
+                            }
+                        }
+                    }
+                    item(key = "feed-end", contentType = "feed-end") {
+                        FeedEnd(hasOlder = state.hasOlder, loadingOlder = state.loadingOlder, onLoadOlder = onLoadOlder)
+                    }
                 }
             }
         }
     }
+}
+
+/** What the list keys a day's header on. */
+private val MomentGroup.headerKey: String get() = "header-$dateGroup-$dateSubLabel"
+
+/**
+ * Keeps a reader who is at the very top of the feed at the very top when newer moments land
+ * above what was its first entry.
+ *
+ * A lazy list holds its place by the key of the first item on screen, wherever that item moves
+ * to, and so without this whatever lands above the top entry lands above the screen. That is
+ * exactly what opening the tab did (2026-09-26): the feed opens on the device's cache — last
+ * night's moments, under "Yesterday" — the first fetch brings this morning's in above them, and
+ * the list kept "Yesterday" pinned under the chips with every new moment scrolled out of sight,
+ * reading as a feed that had stopped loading. Someone who has scrolled down keeps their place.
+ *
+ * [topKey] is the key of the list's first item. The check runs as a side effect, after the new
+ * items are composed but before the list measures them, so the position it reads is still the
+ * one the reader was looking at; the request then wins over the list's own key lookup.
+ */
+@Composable
+private fun StayAtTheTopForNewerMoments(listState: LazyListState, topKey: String) {
+    val shown = remember { ShownTopKey() }
+    SideEffect {
+        val previous = shown.key
+        shown.key = topKey
+        val atTheTop = listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+        if (previous != null && previous != topKey && atTheTop) listState.requestScrollToItem(0)
+    }
+}
+
+/** The top key [StayAtTheTopForNewerMoments] last saw; a plain holder, since changing it must not recompose anything. */
+private class ShownTopKey {
+    var key: String? = null
 }
 
 /**
@@ -417,6 +469,7 @@ private fun EmptyMoments(
     hasOlder: Boolean,
     loadingOlder: Boolean,
     onLoadOlder: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
     // happened in a zone whose movement list includes it, or when Frigate recognised who or
@@ -438,7 +491,7 @@ private fun EmptyMoments(
 
         else -> "Nothing to show yet. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
     }
-    Box(modifier = Modifier.fillMaxSize().padding(bottom = bottomNavClearance()), contentAlignment = Alignment.Center) {
+    Box(modifier = modifier.padding(bottom = bottomNavClearance()), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 text = message,

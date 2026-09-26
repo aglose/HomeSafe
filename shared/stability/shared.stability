@@ -21,6 +21,34 @@ internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulous
     - content: STABLE (composable function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox(isRefreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - isRefreshing: STABLE (primitive type)
+    - onRefresh: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.components.ApertureScan(opening: kotlin.Function0<kotlin.Float>, scanning: kotlin.Function0<kotlin.Float>, time: kotlin.Function0<kotlin.Float>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - opening: STABLE (function type)
+    - scanning: STABLE (function type)
+    - time: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.components.ApertureScanPreview(opening: kotlin.Float, scanning: kotlin.Float): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - opening: STABLE (primitive type)
+    - scanning: STABLE (primitive type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.BufferingDots(color: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, dotSize: androidx.compose.ui.unit.Dp): kotlin.Unit
   skippable: true
   restartable: true
@@ -719,7 +747,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.EditorTopBar(title: kotl
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, unfamiliarOnly: kotlin.Boolean, cameraLabel: kotlin.String?, historyDayLabel: kotlin.String?, hasError: kotlin.Boolean, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: com.meticulouscreations.homesafe.domain.model.MomentCategory, unfamiliarOnly: kotlin.Boolean, cameraLabel: kotlin.String?, historyDayLabel: kotlin.String?, hasError: kotlin.Boolean, hasOlder: kotlin.Boolean, loadingOlder: kotlin.Boolean, onLoadOlder: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -731,6 +759,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.EmptyMoments(category: c
     - hasOlder: STABLE (primitive type)
     - loadingOlder: STABLE (primitive type)
     - onLoadOlder: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ErrorPanel(message: kotlin.String, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -1149,7 +1178,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kot
     - url: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onUnfamiliarOnlyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onSelectCamera: kotlin.Function1<kotlin.String?, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onUnfamiliarOnlyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onSelectCamera: kotlin.Function1<kotlin.String?, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onRefresh: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1166,6 +1195,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.
     - onDownloadClick: STABLE (function type)
     - onFullScreenClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onRefresh: STABLE (function type)
     - onTagCar: STABLE (function type)
 
 @Composable
@@ -1536,6 +1566,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.StatusLine(uiState: com.
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.StayAtTheTopForNewerMoments(listState: androidx.compose.foundation.lazy.LazyListState, topKey: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - listState: STABLE (marked @Stable or @Immutable)
+    - topKey: STABLE (String is immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.StorageSection(overview: com.meticulouscreations.homesafe.domain.model.ServerOverview?): kotlin.Unit

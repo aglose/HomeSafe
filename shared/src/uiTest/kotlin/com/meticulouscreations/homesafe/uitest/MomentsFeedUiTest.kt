@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -96,6 +99,42 @@ class MomentsFeedUiTest {
             // Two cards and the footer all fit, so the lookahead asked once on its own; the tap asked again.
             assertEquals(2, asked)
         }
+    }
+
+    /**
+     * The feed opens on the device's cache and the first fetch lands on top of it (2026-09-26):
+     * last night's moments were on screen, this morning's arrived above them, and the list held
+     * its place on "Yesterday" with every new moment scrolled out of sight above it.
+     */
+    @Test
+    fun newerMomentsLandingAboveTheTopOfTheFeedAreShownRatherThanScrolledPast() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var state by mutableStateOf(MomentsUiState(groups = aDay))
+        setContent {
+            FrigatePreview {
+                MomentsFeed(
+                    state = state,
+                    downloadState = DownloadUiState(),
+                    onSelectCategory = {},
+                    onUnfamiliarOnlyChange = {},
+                    onSelectCamera = {},
+                    onShowDay = {},
+                    onLoadOlder = {},
+                    onCardClick = {},
+                    onClipBuffering = {},
+                    onClipError = {},
+                    onDownloadClick = {},
+                    onFullScreenClick = {},
+                )
+            }
+        }
+        mainClock.advanceTimeByFrame()
+        onNodeWithText("Sep 10").assertIsDisplayed()
+
+        state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 14", listOf(item("new", 1_789_300_000.0)))) + aDay)
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeByFrame()
+        onNodeWithText("Today").assertIsDisplayed()
     }
 
     @Test

@@ -25,8 +25,10 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -69,11 +71,18 @@ class MomentsViewModelTest {
     private class FakeMoments(private val events: List<MomentEvent>) : MomentsRepository {
         val camera = MutableStateFlow<String?>("left over from an earlier feed")
         val cameraCalls = mutableListOf<String?>()
+        val beforeCalls = mutableListOf<Double?>()
+        var refreshCalls = 0
+
+        /** While set, a refresh waits on it: the server still thinking. */
+        var refreshAnswer: CompletableDeferred<Unit>? = null
         override fun observeMoments(): Flow<List<MomentEvent>> = camera.map { c -> events.filter { c == null || it.cameraName == c } }
         override fun observeError(): Flow<String?> = flowOf(null)
         override fun observePaging(): Flow<MomentsPaging> = flowOf(MomentsPaging())
         override suspend fun loadOlder() = Unit
-        override fun showBefore(epochSeconds: Double?) = Unit
+        override fun showBefore(epochSeconds: Double?) {
+            beforeCalls += epochSeconds
+        }
         override fun showCamera(cameraName: String?) {
             cameraCalls += cameraName
             camera.value = cameraName
@@ -84,7 +93,10 @@ class MomentsViewModelTest {
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = fail("unused")
         override fun refreshStationaryObjects() = Unit
         override fun nameCar(eventId: String, subLabel: String) = Unit
-        override suspend fun refresh() = Unit
+        override suspend fun refresh() {
+            refreshCalls++
+            refreshAnswer?.await()
+        }
         override suspend fun getClipStream(eventId: String): RecordingStream = fail("unused")
         override suspend fun getClipDownloadUrl(eventId: String): RecordingStream = fail("unused")
     }
@@ -151,6 +163,7 @@ class MomentsViewModelTest {
             loadOlderMomentsUseCase = LoadOlderMomentsUseCase(moments),
             showMomentsBeforeUseCase = ShowMomentsBeforeUseCase(moments),
             showMomentsFromCameraUseCase = ShowMomentsFromCameraUseCase(moments),
+            refreshMomentsUseCase = RefreshMomentsUseCase(moments),
             getMomentClipStreamUseCase = GetMomentClipStreamUseCase(moments),
             downloadMomentClipUseCase = DownloadMomentClipUseCase(moments, NoDownloads),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
@@ -184,6 +197,46 @@ class MomentsViewModelTest {
         state(harness.viewModel)
         assertEquals(listOf<String?>(null), harness.moments.cameraCalls)
         assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
+    }
+
+    @Test
+    fun aNewFeedOpensLiveWhateverDayAnEarlierOneLeftOnTheRepository() = runTest(dispatcher) {
+        val harness = Harness()
+        val state = state(harness.viewModel)
+        assertNull(state.historyDay)
+        assertEquals(listOf<Double?>(null), harness.moments.beforeCalls, "the repository is told the feed is live, as the chip says")
+    }
+
+    @Test
+    fun aPullToRefreshAsksTheServerAndShowsUntilItAnswers() = runTest(dispatcher) {
+        val harness = Harness()
+        val answer = CompletableDeferred<Unit>()
+        harness.moments.refreshAnswer = answer
+        state(harness.viewModel)
+
+        harness.viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(true, harness.viewModel.uiState.value.refreshing)
+        harness.viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(1, harness.moments.refreshCalls, "a second pull while one is running is the same refresh")
+
+        answer.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(false, harness.viewModel.uiState.value.refreshing)
+    }
+
+    @Test
+    fun aFastAnswerStillShowsTheRefreshForAMoment() = runTest(dispatcher) {
+        val harness = Harness()
+        state(harness.viewModel)
+        harness.viewModel.refresh()
+        testScheduler.advanceTimeBy(100)
+        testScheduler.runCurrent()
+        assertEquals(1, harness.moments.refreshCalls)
+        assertEquals(true, harness.viewModel.uiState.value.refreshing, "the server answered at once, but the scan runs its sweep")
+        advanceUntilIdle()
+        assertEquals(false, harness.viewModel.uiState.value.refreshing)
     }
 
     @Test

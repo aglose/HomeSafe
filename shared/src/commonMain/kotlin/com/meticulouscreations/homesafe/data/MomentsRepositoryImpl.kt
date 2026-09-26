@@ -482,7 +482,9 @@ class MomentsRepositoryImpl(
     }
 
     override suspend fun refresh() {
-        currentServer()?.let { fetchHead(it, window.value, includeZones = true) }
+        val server = currentServer() ?: return
+        val window = window.value
+        if (fetchHead(server, window, includeZones = true)) fillShortFeed(server.identity, window)
     }
 
     override suspend fun getClipStream(eventId: String): RecordingStream {
