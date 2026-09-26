@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +40,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -370,13 +373,25 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
         ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
     }
     var showVersion by remember { mutableStateOf(false) }
-    Box {
+    val interactionSource = remember { MutableInteractionSource() }
+    // The pill is ~28dp tall, so the tap lands on a box grown to the 48dp minimum around it; the
+    // ripple still draws on the pill alone.
+    Box(
+        modifier = Modifier
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                role = Role.Button,
+                onClickLabel = "Show the app version",
+            ) { showVersion = true }
+            .minimumInteractiveComponentSize(),
+    ) {
         Row(
             modifier = Modifier
                 .clip(CircleShape)
                 .background(LocalFrigateExtraColors.current.glassFill, CircleShape)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
-                .clickable(role = Role.Button, onClickLabel = "Show the app version") { showVersion = true }
+                .indication(interactionSource, ripple())
                 .padding(horizontal = 12.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),

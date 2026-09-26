@@ -128,7 +128,8 @@ Because the PR number is known before the merge, the **App version** workflow
 ([`.github/workflows/pr-app-version.yml`](../.github/workflows/pr-app-version.yml)) writes it into
 the top of every PR's description, so each PR says which version it will put on the phone. The
 line carries an `<!-- app-version -->` marker; the workflow replaces it on every push or edit, and
-puts it back if an edit removed it.
+puts it back if an edit removed it. A change to `appVersionBase` on `main` reruns it for every open
+PR, whose heads haven't moved but which will now merge as the new base.
 
 The app shows the installed version when the route badge ("Tailscale" / "Local network") at the
 top right is tapped, as `1.0.62 (431)`: the `versionName`, then the `versionCode`. The release

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
@@ -15,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -175,6 +177,8 @@ class ShellChromeUiTest {
             }
         }
         onNodeWithText("Version 1.0.62 (431)").assertDoesNotExist()
+        // The pill itself is smaller; what it answers to is the 48dp minimum touch target.
+        onNodeWithText("Tailscale").assertHeightIsAtLeast(48.dp)
 
         onNodeWithText("Tailscale").performClick()
 

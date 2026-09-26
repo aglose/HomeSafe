@@ -8,13 +8,20 @@ name: App version
 #
 # A workflow of its own, not a job in ci.yml: it has to run when a description is edited (to put
 # the line back if an edit dropped it), and that must not rerun the whole of CI.
+#
+# The push trigger covers a change to appVersionBase on main. The open PRs' heads haven't moved,
+# so nothing else would rerun for them, yet each will now merge as the new base; that run
+# rewrites every open PR's line from main's gradle.properties.
 
 on:
   pull_request:
     types: [opened, reopened, edited, synchronize]
+  push:
+    branches: [main]
+    paths: [gradle.properties]
 
 concurrency:
-  group: pr-app-version-${{ github.event.pull_request.number }}
+  group: pr-app-version-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -25,7 +32,9 @@ jobs:
   describe:
     name: Write the app version into the description
     # A fork's PR gets a read-only token, so it could not edit the description anyway.
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main'
+    if: >-
+      github.event_name == 'push' ||
+      (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main')
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -34,7 +43,7 @@ jobs:
           sparse-checkout: gradle.properties
           sparse-checkout-cone-mode: false
 
-      # Edits made with this workflow's token don't trigger workflows, so rewriting the
+      # Edits made with this workflow's token don't trigger workflows, so rewriting a
       # description here can't set off another `edited` run.
       - name: Put the version line at the top of the description
         env:
@@ -43,14 +52,27 @@ jobs:
         run: |
           base=$(sed -n 's/^appVersionBase=//p' gradle.properties)
           marker='<!-- app-version -->'
-          line="**App version:** merging this ships HomeSafe \`$base.$PR\` to Play internal testing. $marker"
-          body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""')
-          # Drop any earlier version line and the blank lines that led the rest.
-          rest=$(printf '%s\n' "$body" | grep -vF -- "$marker" | sed '/[^[:space:]]/,$!d')
-          updated=$(printf '%s\n\n%s' "$line" "$rest")
-          if [ "$updated" = "$body" ]; then
-            echo "Already says $base.$PR"
-            exit 0
+
+          describe() {
+            local pr=$1 line body rest updated
+            line="**App version:** merging this ships HomeSafe \`$base.$pr\` to Play internal testing. $marker"
+            body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$pr" --jq '.body // ""')
+            # Drop any earlier version line and the blank lines that led the rest. grep exits 1
+            # when that line was all there was, which pipefail would turn into a failed job.
+            rest=$(printf '%s\n' "$body" | { grep -vF -- "$marker" || true; } | sed '/[^[:space:]]/,$!d')
+            updated=$(printf '%s\n\n%s' "$line" "$rest")
+            if [ "$updated" = "$body" ]; then
+              echo "#$pr already says $base.$pr"
+              return
+            fi
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$pr" -f body="$updated" --silent
+            echo "#$pr now says $base.$pr"
+          }
+
+          if [ -n "$PR" ]; then
+            describe "$PR"
+          else
+            for pr in $(gh pr list --repo "$GITHUB_REPOSITORY" --base main --state open --limit 200 --json number --jq '.[].number'); do
+              describe "$pr"
+            done
           fi
-          gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -f body="$updated" --silent
-          echo "Wrote $base.$PR"
