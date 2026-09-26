@@ -34,15 +34,25 @@ cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop
 # The screenshot tool's update task: its name is derived from the suite, target and variant
 # (update<Suite><Target><Variant>TestSuite), or updateDebugScreenshotTest with the older standalone
 # plugin, which a merge base may still use. Ask Gradle rather than hard-code either.
+# Names only: `tasks --all` would create every task, and AGP 9.5-alpha's test suite registers a
+# preview task for release too, which fails when created (release has no unit-test component).
 tasks_out="$since.tasks"
-if ! ./gradlew -q :androidApp:tasks --all --no-configuration-cache > "$tasks_out" 2>&1; then
+cat > "$since.gradle" <<'GRADLE'
+gradle.projectsEvaluated {
+    def app = gradle.rootProject.findProject(':androidApp')
+    app?.tasks?.names?.findAll { it =~ /(?i)screenshot|testsuite/ }?.each { println "TASK $it" }
+}
+GRADLE
+if ! ./gradlew -q help --init-script "$since.gradle" --no-configuration-cache > "$tasks_out" 2>&1; then
   echo "Couldn't list :androidApp's tasks:"
   tail -n 30 "$tasks_out"
 fi
 echo "Screenshot and test-suite tasks in :androidApp:"
-grep -iE '^[a-z][A-Za-z0-9]*(screenshot|suite)[A-Za-z0-9]*( |$)' "$tasks_out" | sed 's/^/  /'
-android_task=$(grep -oE '^update[A-Za-z0-9]*' "$tasks_out" | grep -i screenshot | grep -i debug | head -n1)
-rm -f "$tasks_out"
+sed -n 's/^TASK /  /p' "$tasks_out"
+updates=$(sed -n 's/^TASK //p' "$tasks_out" | grep -E '^update' | grep -i screenshot)
+android_task=$(printf '%s\n' "$updates" | grep -i debug | head -n1)
+[ -n "$android_task" ] || android_task=$(printf '%s\n' "$updates" | head -n1)
+rm -f "$tasks_out" "$since.gradle"
 if [ -n "$android_task" ]; then
   echo "Layoutlib: :androidApp:$android_task"
   ./gradlew ":androidApp:$android_task" "$@" || status=$?
