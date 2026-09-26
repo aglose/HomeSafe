@@ -397,6 +397,7 @@ private fun PlayerSurface(
                         playerKey = playerKey,
                         onPositionChanged = viewModel::onPlayerPositionChanged,
                         onBufferingChanged = viewModel::onBufferingChanged,
+                        onStreamStatusChanged = viewModel::onStreamStatusChanged,
                         onPlaybackEnded = viewModel::onPlaybackEnded,
                         onPlaybackError = viewModel::onPlaybackError,
                         onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,

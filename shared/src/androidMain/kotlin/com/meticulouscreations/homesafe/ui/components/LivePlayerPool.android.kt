@@ -193,6 +193,13 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     /** True while the player holds no usable session for [source]: never loaded, stopped when idle, or failed. */
     private var needsColdStart = true
 
+    /**
+     * The URL the HLS session was last prepared with, until it is stopped. Not always [source]'s:
+     * a proven stream's join runs without an HLS shadow, so while the detail screen's
+     * full-quality join is in flight, HLS may still be playing the grid stream it came from.
+     */
+    private var hlsUrl: String? = null
+
     /** Where a recording was when its player was stopped for idleness, so a cold restart resumes there instead of at the clip's start. */
     private var resumePositionMs: Long? = null
     private var consecutiveFailures = 0
@@ -312,6 +319,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             dropPeer()
             dropStandby()
             player.stop()
+            hlsUrl = null
             needsColdStart = true
         }
     }
@@ -399,8 +407,11 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
                 is WebRtcConnectResult.Failed -> {
                     Log.w(LOG_TAG, "$key: webrtc join failed after ${elapsed}ms (${result.reason}); playing HLS")
                     // Unless HLS is already carrying this very source (a join started from the
-                    // fast path above), in which case there is nothing to start.
-                    if (transport != LiveTransport.HLS || player.playbackState == Player.STATE_IDLE) startHls(toLoad)
+                    // fast path above, or shadowed by HLS), in which case there is nothing to
+                    // start. Being on HLS isn't enough: a full-quality upgrade from a grid stream
+                    // HLS was playing would otherwise leave the grid stream up for good.
+                    val hlsCarrying = transport == LiveTransport.HLS && hlsUrl == toLoad.url && player.playbackState != Player.STATE_IDLE
+                    if (!hlsCarrying) startHls(toLoad)
                 }
             }
         }
@@ -428,6 +439,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         if (previous != null) park(previous, previousEndpoint)
         // The HLS session, if one was carrying this camera, has nothing left to show.
         if (player.playbackState != Player.STATE_IDLE) player.stop()
+        hlsUrl = null
         watch(newPeer)
     }
 
@@ -492,21 +504,45 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     }
 
     private fun dropPeer() {
+        detachPeer()?.close()
+    }
+
+    /**
+     * Moves the peer on screen to standby ([park]), for an HLS start of another live source: the
+     * grid peer outlives a full-quality upgrade that fell back to HLS, so stepping back to the
+     * grid is a promotion rather than a fresh join. [park] closes it instead if it isn't healthy.
+     */
+    private fun parkPeer() {
+        val endpoint = peerEndpoint
+        detachPeer()?.let { park(it, endpoint) }
+    }
+
+    /** Stops treating [peer] as the picture and hands it back, or null if there was none. */
+    private fun detachPeer(): AndroidWebRtcPeer? {
         peerWatchJob?.cancel()
         peerWatchJob = null
-        val dropped = peer ?: return
+        val detached = peer ?: return null
         peer = null
         peerEndpoint = null
-        dropped.close()
         webRtcStalled = false
         webRtcHasAudio = false
+        return detached
     }
 
     private fun startHls(toLoad: VideoSource) {
         // A working peer's last frame is on the renderers on top of the HLS surface; a fresh
         // generation puts the poster over both until HLS draws, and the binders clear the renderers.
         if (peer != null && !needsColdStart) coldStartGeneration++
-        dropPeer()
+        // A peer can only be on screen here for a different source than [toLoad] (one that serves
+        // it would have been adopted instead). Kept for a step back to live; a recording closes it,
+        // and the standby too — the grid peer is parked there after a full-quality fallback, with
+        // no expiry, and would otherwise keep decoding for as long as the recording plays.
+        if (toLoad is VideoSource.Live) {
+            parkPeer()
+        } else {
+            dropPeer()
+            dropStandby()
+        }
         transport = LiveTransport.HLS
         val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))
@@ -516,6 +552,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         }
         resumePositionMs = null
         player.prepare()
+        hlsUrl = toLoad.url
         applyPlayWhenReady()
     }
 

@@ -120,6 +120,9 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     private var muted = true
     private var activeBinders = 0
     private var needsColdStart = true
+
+    /** The URL of the player's current item, until it is cleared; see the Android holder's `hlsUrl`. */
+    private var hlsUrl: String? = null
     private var resumePositionMs: Long? = null
     private var consecutiveFailures = 0
     private var retryJob: Job? = null
@@ -276,6 +279,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
             dropStandby()
             clearObservers()
             player.replaceCurrentItemWithPlayerItem(null)
+            hlsUrl = null
             needsColdStart = true
         }
     }
@@ -342,7 +346,9 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
 
                 is WebRtcConnectResult.Failed -> {
                     NSLog("HomeSafeLive: %s webrtc join failed after %d ms (%s); playing HLS", key ?: "-", elapsedMs, result.reason.toString())
-                    if (transport != LiveTransport.HLS || player.currentItem == null) startHls(toLoad)
+                    // Unless HLS is already carrying this very source; being on HLS isn't enough (see the Android holder).
+                    val hlsCarrying = transport == LiveTransport.HLS && hlsUrl == toLoad.url && player.currentItem != null
+                    if (!hlsCarrying) startHls(toLoad)
                 }
             }
         }
@@ -367,6 +373,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         clearObservers()
         player.pause()
         player.replaceCurrentItemWithPlayerItem(null)
+        hlsUrl = null
         watch(newPeer)
     }
 
@@ -427,21 +434,43 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     }
 
     private fun dropPeer() {
+        detachPeer()?.close()
+    }
+
+    /** Moves the peer on screen to standby for an HLS start of another live source; see the Android holder's `parkPeer`. */
+    private fun parkPeer() {
+        val endpoint = peerEndpoint
+        detachPeer()?.let { park(it, endpoint) }
+    }
+
+    /** Stops treating [peer] as the picture and hands it back, or null if there was none. */
+    private fun detachPeer(): IosWebRtcPeerAdapter? {
         peerWatchJob?.cancel()
         peerWatchJob = null
-        val dropped = peer ?: return
+        val detached = peer ?: return null
         peer = null
         peerEndpoint = null
-        dropped.close()
         webRtcStalled = false
         webRtcHasAudio = false
+        return detached
     }
 
     private fun startHls(toLoad: VideoSource) {
-        // A working peer's last frame is on the containers over the player layer; a fresh
-        // generation puts the poster over both until HLS draws, and the binders hide the containers.
-        if (peer != null && !needsColdStart) coldStartGeneration++
-        dropPeer()
+        // A working peer's last frame is on the containers over the player layer, and the binders
+        // hide the containers; an item already on the layer goes blank the moment it is replaced
+        // (AVPlayerLayer keeps no last frame across items, unlike ExoPlayer's surface), which on a
+        // warm HLS quality step left the box empty until the new stream's first segment played.
+        // Either way a fresh generation puts the poster over the gap until HLS draws.
+        val pictureOnScreen = peer != null || (transport == LiveTransport.HLS && player.currentItem != null)
+        if (pictureOnScreen && !needsColdStart) coldStartGeneration++
+        // Only a peer for another source can be on screen here; kept for a step back to live, while
+        // a recording closes it and the standby both (see the Android holder).
+        if (toLoad is VideoSource.Live) {
+            parkPeer()
+        } else {
+            dropPeer()
+            dropStandby()
+        }
         transport = LiveTransport.HLS
         // Each start registers a fresh set of observers on the new item; without this the previous
         // item's observer tokens would sit in NotificationCenter forever.
@@ -450,6 +479,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         val asset = AVURLAsset(uRL = NSURL(string = toLoad.url), options = options)
         val item = AVPlayerItem(asset = asset).apply { preferredForwardBufferDuration = PREFERRED_FORWARD_BUFFER_SECONDS }
         player.replaceCurrentItemWithPlayerItem(item)
+        hlsUrl = toLoad.url
         if (toLoad is VideoSource.Recording) {
             val startMs = resumePositionMs ?: toLoad.startPositionMs
             player.seekToTime(

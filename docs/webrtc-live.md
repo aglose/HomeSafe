@@ -72,7 +72,9 @@ libwebrtc decodes Opus natively, which is what the cameras publish, so nothing i
   `WebRtcRuntime` initialises libwebrtc once per process with one shared EGL context;
   `AndroidWebRtcPeer` wraps a `PeerConnection`; `WebRtcTextureRenderer` is a `TextureView` drawn
   by libwebrtc's `EglRenderer`, stacked over the HLS `TextureView` and cleared whenever the
-  holder goes back to HLS. `LivePlayerHolder.transport` says which engine is showing the picture;
+  holder goes back to HLS. Its EGL surface has an alpha channel (`CONFIG_RGBA`) so that the
+  clear is transparent: on the default RGB-only config it is opaque black, and HLS video after a
+  failed or lost join played underneath a black box. `LivePlayerHolder.transport` says which engine is showing the picture;
   everything else about the holder (binders, idle stop, cold generations, retries) is the same for
   both. Media3 still plays HLS and every recording. The audio module is built with media
   attributes so sound follows the speaker/headphones route, not the earpiece.
