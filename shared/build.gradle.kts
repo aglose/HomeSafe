@@ -174,6 +174,14 @@ kotlin {
                 implementation(nativesFor(libs.ffmpeg, platform))
             }
         }
+        // Code that draws with Skia directly (the timeline's liquid-glass lens) is shared by every
+        // target but Android, which has AGSL instead. The default hierarchy has no source set for
+        // exactly those, and adding one with dependsOn switches it off (see below), so the one
+        // directory is compiled into each of them instead.
+        listOf("jvmMain", "iosArm64Main", "iosSimulatorArm64Main", "jsMain", "wasmJsMain").forEach { name ->
+            getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
+        }
+
         // Compose UI tests cannot live in commonTest: commonTest feeds androidHostTest, and
         // runComposeUiTest needs a real Android instrumentation host, so those tests fail there
         // with a NullPointerException. src/uiTest/kotlin is compiled into the targets that can
