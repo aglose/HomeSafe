@@ -1,3 +1,6 @@
+// Public on purpose: :androidApp's screenshot tests call these from another module (see below).
+@file:Suppress("ktlint:compose:preview-public-check")
+
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -23,7 +26,8 @@ import com.meticulouscreations.homesafe.viewmodel.InViewItem
  * The Home tab, drawn from fixtures. These are the previews every renderer shares: Android
  * Studio draws them in the editor, `./gradlew :shared:renderPreviews` draws them on the JVM, and
  * :androidApp's screenshot tests draw them through Layoutlib (see docs/ui-previews.md). They are
- * public for that last one: its @PreviewTest functions live in another module.
+ * public for that last one, its @PreviewTest functions living in another module; a preview only
+ * the JVM renderer and Studio need stays private, as compose-rules prefers.
  *
  * No tile has a stream, so no player is composed; the cards show their placeholder and the
  * badge says what it says before a player has reported anything.

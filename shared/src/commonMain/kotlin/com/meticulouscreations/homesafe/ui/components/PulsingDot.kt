@@ -125,7 +125,7 @@ private const val BUFFERING_DIM_ALPHA = 0.25f
 
 @Preview
 @Composable
-fun PulsingDotPreview() {
+private fun PulsingDotPreview() {
     FrigatePreview {
         Row(
             modifier = Modifier.padding(24.dp),

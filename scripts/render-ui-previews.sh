@@ -27,5 +27,11 @@ status=$?
 
 cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop/" 2>/dev/null
 cp "$reference"/*.png "$out/android/" 2>/dev/null
+if [ -z "$(find "$out/android" -name '*.png' -print -quit)" ] && [ -d androidApp/build ]; then
+  # Gradle can succeed with nothing drawn (no @PreviewTest found, say); show where the tool's output went.
+  echo "No Android previews in $reference. What the screenshot tasks left behind:"
+  find androidApp/build androidApp/src -ipath '*screenshot*' -not -path '*/intermediates/*' -not -path '*/tmp/*' 2>/dev/null | head -40
+  find androidApp/build -ipath '*test-results*screenshot*' -name '*.xml' -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5
+fi
 echo "Gathered $(find "$out/android" -name '*.png' | wc -l) Android and $(find "$out/desktop" -name '*.png' | wc -l) desktop previews in $out"
 exit "$status"

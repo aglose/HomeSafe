@@ -242,7 +242,9 @@ private fun previewAnnotations(annotations: List<AnnotationInfo>, scan: ScanResu
     annotations.flatMap { annotation ->
         when (annotation.name) {
             PREVIEW -> listOf(annotation)
+
             PREVIEW_CONTAINER -> (annotation.parameterValues.getValue("value") as? Array<*>).orEmpty().filterIsInstance<AnnotationInfo>()
+
             else -> {
                 // A multipreview: an annotation class that is itself annotated with @Preview.
                 val annotationClass = scan.getClassInfo(annotation.name)

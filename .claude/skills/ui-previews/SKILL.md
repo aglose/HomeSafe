@@ -15,8 +15,10 @@ no-argument `@Preview` composables that draw the stateless composable from fixtu
 
 - Screens get `@Preview(name = "...", widthDp = 412, heightDp = 915)`.
 - Components get no size, and are wrapped in `FrigateTheme`, not `FrigatePreview`.
-- If you add a preview that reviewers should see as Android draws it, make it public. Then add a one-line
-  `@PreviewTest` wrapper to `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`.
+- Keep previews private, as compose-rules requires. The exception is a preview reviewers should see as
+  Android draws it: make it public in a file that suppresses `compose:preview-public-check`, like
+  `HomePreviews.kt`. Then add a one-line `@PreviewTest` wrapper to
+  `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`.
 
 ## 2. Render and look
 

@@ -20,8 +20,9 @@ draws a stateless composable from fixtures, as the screen UI tests do. See `ui/s
 - Android Studio draws it in the editor.
 - `:shared:renderPreviews` finds it without being told about it and draws it.
 - For Layoutlib too, add a one-line `@PreviewTest` wrapper in
-  `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`. The preview must be public for that, and
-  compose-rules allows public previews that take no parameters.
+  `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`. The wrapper is in another module, so the
+  preview must be public. compose-rules wants previews private, so put shared previews in a file that suppresses
+  `compose:preview-public-check` and says why, like `HomePreviews.kt`. Keep every other preview private.
 
 Give screen previews a phone's size, `@Preview(widthDp = 412, heightDp = 915)`. Without a size, a preview is drawn
 as big as its content, and on the JVM it's measured on a 412×915 dp canvas. Wrap component previews in

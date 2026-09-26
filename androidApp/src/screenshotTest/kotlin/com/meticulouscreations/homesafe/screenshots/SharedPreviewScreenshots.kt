@@ -3,9 +3,6 @@ package com.meticulouscreations.homesafe.screenshots
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
-import com.meticulouscreations.homesafe.ui.components.PulsingDotPreview
-import com.meticulouscreations.homesafe.ui.components.RecordingTimelineLivePreview
-import com.meticulouscreations.homesafe.ui.components.RecordingTimelineScrubbingPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedLoadingPreview
@@ -23,7 +20,8 @@ import com.meticulouscreations.homesafe.ui.screens.StatusBadgePreview
  * set, and it doesn't reach into a Kotlin Multiplatform module's common code, so each preview in
  * :shared that should be drawn here gets a one-line wrapper: the same @Preview size, and a call
  * to the shared preview. `:shared:renderPreviews` draws every shared preview on the JVM with no
- * list at all; this list is the ones worth Android's exact rendering. See docs/ui-previews.md.
+ * list at all; this list is the ones worth Android's exact rendering, and they must be public
+ * (compose-rules would have them private, so HomePreviews.kt says why not). See docs/ui-previews.md.
  */
 
 private const val PHONE_WIDTH_DP = 412
@@ -53,18 +51,3 @@ fun HomeFeedEmpty() = HomeFeedEmptyPreview()
 @Preview(name = "Status badges")
 @Composable
 fun StatusBadges() = StatusBadgePreview()
-
-@PreviewTest
-@Preview(name = "Pulsing dots")
-@Composable
-fun PulsingDots() = PulsingDotPreview()
-
-@PreviewTest
-@Preview(name = "Recording timeline, live")
-@Composable
-fun RecordingTimelineLive() = RecordingTimelineLivePreview()
-
-@PreviewTest
-@Preview(name = "Recording timeline, scrubbing")
-@Composable
-fun RecordingTimelineScrubbing() = RecordingTimelineScrubbingPreview()
