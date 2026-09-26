@@ -20,28 +20,41 @@ shift
 rm -rf "$out/android" "$out/desktop" "$out/journeys"
 mkdir -p "$out/android" "$out/desktop"
 
-reference=androidApp/src/screenshotTestDefaultDebug/reference
 # The update task leaves an image alone when the new one is close enough, and never deletes one
-# whose preview is gone; start clean so the folder is exactly what this code draws.
-rm -rf "$reference"
+# whose preview is gone; start clean so the folders are exactly what this code draws. Where they
+# are depends on the tool's setup (src/screenshotTest<Target><Variant>/reference for a test suite).
+rm -rf androidApp/src/screenshotTest*/reference
 since="${TMPDIR:-/tmp}/render-ui-previews.$$"
 touch "$since"
 
-./gradlew :shared:renderPreviews :androidApp:updateScreenshotTestDefaultDebugTestSuite --continue "$@"
+./gradlew :shared:renderPreviews "$@"
 status=$?
-
 cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop/" 2>/dev/null
+
+# The screenshot tool's update task: its name is derived from the suite, target and variant
+# (update<Suite><Target><Variant>TestSuite), or updateDebugScreenshotTest with the older standalone
+# plugin, which a merge base may still use. Ask Gradle rather than hard-code either.
+android_task=$(./gradlew -q :androidApp:tasks --all --no-configuration-cache 2>/dev/null \
+  | grep -oE '^update[A-Za-z0-9]*(TestSuite|ScreenshotTest)\b' | grep -i screenshot | grep -i debug | head -n1)
+if [ -n "$android_task" ]; then
+  echo "Layoutlib: :androidApp:$android_task"
+  ./gradlew ":androidApp:$android_task" "$@" || status=$?
+else
+  echo "Layoutlib: :androidApp has no screenshot update task"
+  status=1
+fi
+
 # The tool nests its images by package: <reference>/com/…/screenshots/SharedPreviewScreenshotsKt/.
 # It writes the same ones under build/outputs/…/rendered/ too; that is the fallback, taking only
 # images from this run. File names hold spaces and commas (the preview's name).
-find "$reference" -name '*.png' 2>/dev/null | sort > "$since.list"
+find androidApp/src -path '*/screenshotTest*/reference/*' -name '*.png' 2>/dev/null | sort > "$since.list"
 [ -s "$since.list" ] || find androidApp/build/outputs -path '*rendered*' -name '*.png' -newer "$since" 2>/dev/null | sort > "$since.list"
 if [ -s "$since.list" ]; then
   echo "Layoutlib images from: $(dirname "$(head -n1 "$since.list")")"
   while IFS= read -r png; do cp "$png" "$out/android/"; done < "$since.list"
 else
   echo "Layoutlib drew nothing. Test results:"
-  find androidApp/build -ipath '*test-results*creenshot*' -name '*.xml' -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5
+  find androidApp/build -ipath '*test-results*' -name '*.xml' -newer "$since" -exec grep -h -m1 '<testsuite' {} + 2>/dev/null | head -5
 fi
 rm -f "$since" "$since.list"
 
