@@ -438,7 +438,7 @@ class MomentsRepositoryImpl(
     private suspend fun appendOlderPage(): Boolean {
         val server = currentServer() ?: return false
         // The cursor is the oldest raw detection, tail first: the tail is always older than the head.
-        val (target, oldest) = stateLock.withLock { loadedFor to (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds }
+        val (target, oldest) = stateLock.withLock { loadedFor to loadedBottom() }
         if (target == null || oldest == null || target.first != server.identity || !_paging.value.hasOlder) return false
         _paging.update { it.copy(loadingOlder = true) }
         try {
@@ -446,8 +446,10 @@ class MomentsRepositoryImpl(
                 .onSuccess { events ->
                     val page = events.map { it.toDomain() }
                     val placed: List<MomentEvent>? = stateLock.withLock {
-                        // Only if the window hasn't moved while the page was in flight.
-                        if (loadedFor != target) {
+                        // Only if the window hasn't moved while the page was in flight, and the page
+                        // still starts where the loaded lists end: a head re-read meanwhile may have let
+                        // the older pages go (see fetchHead), and this page belongs below them.
+                        if (loadedFor != target || loadedBottom() != oldest) {
                             null
                         } else {
                             tail = tail + page
@@ -588,10 +590,12 @@ class MomentsRepositoryImpl(
             if (loadedFor != target || headFromCache) null else (head + tail).maxOfOrNull { it.startEpochSeconds }
         }
         var reachesLoaded = true
+        var bridgeFailure: Throwable? = null
         if (lastPageFull && loadedNewest != null) {
             val bridge = bridgeDown(server.url, window, from = fresh.minOf { it.startEpochSeconds }, to = loadedNewest)
             fresh = fresh + bridge.events
             reachesLoaded = bridge.closed
+            bridgeFailure = bridge.failure
         }
         val freshOldest = fresh.minOfOrNull { it.startEpochSeconds }
         val placed: List<MomentEvent>? = stateLock.withLock {
@@ -613,17 +617,26 @@ class MomentsRepositoryImpl(
                 }
                 // With older pages still below, the last page loaded is still the last one down.
                 publish(lastPageFull = if (tail.isEmpty()) lastPageFull else _paging.value.hasOlder)
-                fresh.inZones(zonesByCamera)
+                // What the cache is squared against includes the tail's rows at that same instant: the
+                // prune below runs from it inclusive, and they are in the feed.
+                val freshIds = fresh.mapTo(HashSet()) { it.id }
+                val boundary = tail.filter { it.startEpochSeconds == freshOldest && it.id !in freshIds }
+                (fresh + boundary).inZones(zonesByCamera)
             }
         }
         if (placed != null) {
             cache(server.identity, window.camera, placed, from = freshOldest, to = window.before)
         }
+        // What was read is on screen; a gap that couldn't be read is still a fetch that failed, and asks again soon.
+        if (bridgeFailure != null) {
+            _error.value = bridgeFailure.message ?: "Couldn't load detections"
+            return@withLock false
+        }
         true
     }
 
-    /** What [bridgeDown] read, newest first, and whether it reached down to what was loaded. */
-    private class Bridge(val events: List<MomentEvent>, val closed: Boolean)
+    /** What [bridgeDown] read, newest first; whether it reached down to what was loaded; and why it stopped, if the server stopped answering. */
+    private class Bridge(val events: List<MomentEvent>, val closed: Boolean, val failure: Throwable? = null)
 
     /**
      * The detections between a fresh head page's oldest, [from], and the newest already loaded,
@@ -636,7 +649,7 @@ class MomentsRepositoryImpl(
         repeat(BRIDGE_MAX_PAGES) {
             if (cursor <= to) return Bridge(bridged, closed = true)
             val events = apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = to, beforeEpochSeconds = cursor, cameras = window.cameras)
-                .getOrElse { return Bridge(bridged, closed = false) }
+                .getOrElse { return Bridge(bridged, closed = false, failure = it) }
             bridged = bridged + events.map { it.toDomain() }
             // Short: nothing else lies between. Bounded below by [to], so it says nothing about the bottom of the server.
             if (events.size < PAGE_SIZE) return Bridge(bridged, closed = true)
@@ -694,12 +707,15 @@ class MomentsRepositoryImpl(
         val cached = cachedPage(target.first, before = oldest, camera = target.second.camera, limit = PAGE_SIZE)
         if (cached.isEmpty()) return false
         stateLock.withLock {
-            if (loadedFor != target) return false
+            if (loadedFor != target || loadedBottom() != oldest) return false
             tail = tail + cached
             publish(lastPageFull = cached.size >= PAGE_SIZE)
         }
         return true
     }
+
+    /** Under [stateLock]. Where the loaded lists end: the oldest raw detection, which is where the next page down starts. */
+    private fun loadedBottom(): Double? = (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds
 
     /**
      * Under [stateLock]. Joins the head and the tail (dropping a detection the tail repeats

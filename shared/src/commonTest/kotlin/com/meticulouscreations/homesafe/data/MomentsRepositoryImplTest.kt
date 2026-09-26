@@ -125,8 +125,11 @@ class MomentsRepositoryImplTest {
             _hosts.update { it + req.url.host }
             // Recorded whether or not the server answers: an ask is an ask.
             if (req.url.encodedPath.endsWith("/api/events")) _eventQueries.update { it + req.url.encodedQuery }
+            val server = server
+            if (req.url.encodedPath.endsWith("/api/events")) server?.hold(req.url.parameters["before"]?.toDouble())?.await()
+            val gapReadFails = server?.failGapReads == true && req.url.encodedPath.endsWith("/api/events") && req.url.parameters["after"] != null
             when {
-                offline -> respond("boom", HttpStatusCode.InternalServerError)
+                offline || gapReadFails -> respond("boom", HttpStatusCode.InternalServerError)
 
                 req.url.encodedPath.endsWith("/api/events") -> {
                     val before = req.url.parameters["before"]?.toDouble()
@@ -175,6 +178,22 @@ class MomentsRepositoryImplTest {
             set(value) {
                 held.value = value
             }
+
+        private val failingGapReads = MutableStateFlow(false)
+
+        /** Fails every `/api/events` request with an `after`: a server that stops answering partway through reading a gap. */
+        var failGapReads: Boolean
+            get() = failingGapReads.value
+            set(value) {
+                failingGapReads.value = value
+            }
+
+        private val holds = MutableStateFlow<Map<Double, CompletableDeferred<Unit>>>(emptyMap())
+
+        /** Keeps the page asked for with `before` = [before] waiting until the returned deferred completes: a slow request. */
+        fun holdPageBefore(before: Double): CompletableDeferred<Unit> = CompletableDeferred<Unit>().also { gate -> holds.update { it + (before to gate) } }
+
+        fun hold(before: Double?): CompletableDeferred<Unit>? = before?.let { holds.value[it] }
 
         fun page(before: Double?, after: Double?): String = starts.sortedDescending()
             .filter { (before == null || it < before) && (after == null || it > after) }
@@ -1009,6 +1028,72 @@ class MomentsRepositoryImplTest {
             // Paging down carries on from there, with nothing skipped.
             h.repo.loadOlder()
             assertEquals((3000L downTo 2301L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+        } finally {
+            Harness.server = null
+        }
+    }
+
+    /**
+     * A page down already on its way when a re-read head lets the older pages go belongs below
+     * pages that are gone: appended to the new bottom, it would hide the stretch between.
+     */
+    @Test
+    fun aPageDownThatLandsAfterTheOlderPagesWereLetGoIsDropped() = runTest {
+        val server = PersonsServer((2000L downTo 1601L).toList())
+        Harness.server = server
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+
+            // The next page down is slow to come back...
+            val slowPage = server.holdPageBefore(1901.0)
+            val paging = launch { h.repo.loadOlder() }
+            eventually("the page down to be asked for") { h.pageQueries.any { it == "limit=100&before=1901.000" } }
+
+            // ...and meanwhile a thousand arrive, too many to read the gap, so the head starts over.
+            server.starts = (3000L downTo 2001L).toList() + server.starts
+            h.repo.refresh()
+            assertEquals((3000L downTo 2401L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+
+            slowPage.complete(Unit)
+            paging.join()
+            assertEquals((3000L downTo 2401L).map { "e$it" }, h.repo.observeMoments().first().map { it.id }, "1900 and below stay out: 2400 to 2001 aren't loaded")
+
+            h.repo.loadOlder()
+            assertEquals((3000L downTo 2301L).map { "e$it" }, h.repo.observeMoments().first().map { it.id }, "paging down carries on from the new bottom")
+        } finally {
+            Harness.server = null
+        }
+    }
+
+    @Test
+    fun aGapTheServerStopsAnsweringForIsReportedAndAskedForAgain() = runTest {
+        val server = PersonsServer((2000L downTo 1801L).toList())
+        Harness.server = server
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the first page") { h.repo.observeMoments().first().size == 100 }
+            h.repo.loadOlder()
+            // Watched throughout: the next poll finds nothing new and rightly clears it again.
+            val reported = MutableStateFlow<String?>(null)
+            backgroundScope.launch { h.repo.observeError().collect { e -> if (e != null) reported.value = e } }
+
+            server.starts = (2150L downTo 2001L).toList() + server.starts
+            server.failGapReads = true
+            h.repo.refresh()
+
+            // What was read is shown, with nothing claimed below it, and the failure said out loud.
+            assertEquals((2150L downTo 2051L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+            eventually("the failed gap read to be reported") { reported.value != null }
+            assertEquals(true, h.repo.paging().hasOlder)
+
+            server.failGapReads = false
+            h.repo.refresh()
+            assertNull(h.repo.observeError().first())
+            h.repo.loadOlder()
+            assertEquals((2150L downTo 1951L).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
         } finally {
             Harness.server = null
         }
