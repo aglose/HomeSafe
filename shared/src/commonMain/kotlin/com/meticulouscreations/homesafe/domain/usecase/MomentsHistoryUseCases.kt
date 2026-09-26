@@ -19,6 +19,12 @@ class LoadOlderMomentsUseCase(private val momentsRepository: MomentsRepository) 
     suspend operator fun invoke() = momentsRepository.loadOlder()
 }
 
+/** See [MomentsRepository.refresh]: asks the server for the feed's newest page now, rather than at the next poll. */
+@Inject
+class RefreshMomentsUseCase(private val momentsRepository: MomentsRepository) {
+    suspend operator fun invoke() = momentsRepository.refresh()
+}
+
 /** See [MomentsRepository.showBefore]: opens the feed at an earlier instant, or back at now with null. */
 @Inject
 class ShowMomentsBeforeUseCase(private val momentsRepository: MomentsRepository) {

@@ -132,6 +132,13 @@ class MomentsRepositoryImpl(
     private val olderInFlight = Mutex()
 
     /**
+     * One newest-page fetch at a time, the poll's and [refresh]'s, so they land in the order they
+     * were asked. Otherwise a poll already on its way when the reader pulls to refresh could land
+     * after the refresh's answer and put its older page back on top.
+     */
+    private val headInFlight = Mutex()
+
+    /**
      * A StateFlow only emits on change, so a route flip re-fetches on the new address and nothing
      * else re-fetches. Both halves matter: the identity decides what the feed and its cache are
      * for, the URL is merely where to ask.
@@ -482,7 +489,9 @@ class MomentsRepositoryImpl(
     }
 
     override suspend fun refresh() {
-        currentServer()?.let { fetchHead(it, window.value, includeZones = true) }
+        val server = currentServer() ?: return
+        val window = window.value
+        if (fetchHead(server, window, includeZones = true)) fillShortFeed(server.identity, window)
     }
 
     override suspend fun getClipStream(eventId: String): RecordingStream {
@@ -535,9 +544,9 @@ class MomentsRepositoryImpl(
     }
 
     /** Replaces the head with the server's newest page. False when the server didn't answer (the feed keeps what it has). */
-    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean): Boolean {
+    private suspend fun fetchHead(server: Server, window: Window, includeZones: Boolean): Boolean = headInFlight.withLock {
         loadZones(server.url, force = includeZones)
-        return apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
+        apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .onSuccess { events ->
                 val page = events.map { it.toDomain() }
                 val placed: List<MomentEvent>? = stateLock.withLock {

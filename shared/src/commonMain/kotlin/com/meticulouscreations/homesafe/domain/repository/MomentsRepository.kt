@@ -105,6 +105,11 @@ interface MomentsRepository {
      */
     fun observeLatestMoment(): Flow<MomentEvent?>
 
+    /**
+     * Re-reads the feed's newest page (and the zones) now, rather than at the next poll: the
+     * Moments tab's pull to refresh. Returns once that answer has landed or failed; a failure is
+     * reported through [observeError] like any poll's, and the feed keeps what it has.
+     */
     suspend fun refresh()
 
     /** A playable stream for a detection's clip, authenticated for the current session. */

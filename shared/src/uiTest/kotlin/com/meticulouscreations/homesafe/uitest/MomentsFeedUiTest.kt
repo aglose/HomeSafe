@@ -1,6 +1,14 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithContentDescription
@@ -62,6 +70,7 @@ class MomentsFeedUiTest {
         onSelectCategory: (MomentCategory) -> Unit = {},
         onUnfamiliarOnlyChange: (Boolean) -> Unit = {},
         onSelectCamera: (String?) -> Unit = {},
+        onRefresh: () -> Unit = {},
         block: androidx.compose.ui.test.ComposeUiTest.() -> Unit,
     ) =
         runComposeUiTest {
@@ -81,6 +90,7 @@ class MomentsFeedUiTest {
                         onClipError = {},
                         onDownloadClick = {},
                         onFullScreenClick = {},
+                        onRefresh = onRefresh,
                     )
                 }
             }
@@ -96,6 +106,64 @@ class MomentsFeedUiTest {
             // Two cards and the footer all fit, so the lookahead asked once on its own; the tap asked again.
             assertEquals(2, asked)
         }
+    }
+
+    /**
+     * The feed opens on the device's cache and the first fetch lands on top of it (2026-09-26):
+     * last night's moments were on screen, this morning's arrived above them, and the list held
+     * its place on "Yesterday" with every new moment scrolled out of sight above it.
+     */
+    @Test
+    fun newerMomentsLandingAboveTheTopOfTheFeedAreShownRatherThanScrolledPast() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var state by mutableStateOf(MomentsUiState(groups = aDay))
+        setContent {
+            FrigatePreview {
+                MomentsFeed(
+                    state = state,
+                    downloadState = DownloadUiState(),
+                    onSelectCategory = {},
+                    onUnfamiliarOnlyChange = {},
+                    onSelectCamera = {},
+                    onShowDay = {},
+                    onLoadOlder = {},
+                    onCardClick = {},
+                    onClipBuffering = {},
+                    onClipError = {},
+                    onDownloadClick = {},
+                    onFullScreenClick = {},
+                )
+            }
+        }
+        mainClock.advanceTimeByFrame()
+        onNodeWithText("Sep 10").assertIsDisplayed()
+
+        state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 14", listOf(item("new", 1_789_300_000.0)))) + aDay)
+        mainClock.advanceTimeByFrame()
+        mainClock.advanceTimeByFrame()
+        onNodeWithText("Today").assertIsDisplayed()
+    }
+
+    @Test
+    fun aRefreshInProgressIsAnIndeterminateProgressToAScreenReader() = runFeed(MomentsUiState(groups = aDay, refreshing = true)) {
+        onAllNodes(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo.Indeterminate))
+            .assertCountEquals(1)
+        onNodeWithContentDescription("Refreshing").assertExists()
+    }
+
+    @Test
+    fun aScreenReaderRefreshesFromADayHeading() {
+        var refreshed = 0
+        runFeed(MomentsUiState(groups = aDay), onRefresh = { refreshed++ }) {
+            val heading = onNode(hasCustomAction("Refresh moments")).fetchSemanticsNode()
+            assertEquals(true, SemanticsProperties.Heading in heading.config)
+            runOnUiThread { heading.config[SemanticsActions.CustomActions].single { it.label == "Refresh moments" }.action() }
+            assertEquals(1, refreshed)
+        }
+    }
+
+    private fun hasCustomAction(label: String) = SemanticsMatcher("has the custom action \"$label\"") { node ->
+        node.config.getOrNull(SemanticsActions.CustomActions).orEmpty().any { it.label == label }
     }
 
     @Test

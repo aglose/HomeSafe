@@ -23,6 +23,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshMomentsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
@@ -32,6 +33,7 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -117,6 +119,8 @@ data class MomentsUiState(
     val hasOlder: Boolean = false,
     /** The next page down is on its way. */
     val loadingOlder: Boolean = false,
+    /** A pull to refresh is asking the server for the newest page. */
+    val refreshing: Boolean = false,
     /** The card currently opened to play its clip, if any. */
     val expandedEventId: String? = null,
     /** The clip player request for [expandedEventId]; null while it's being resolved. */
@@ -150,6 +154,7 @@ class MomentsViewModel(
     private val loadOlderMomentsUseCase: LoadOlderMomentsUseCase,
     private val showMomentsBeforeUseCase: ShowMomentsBeforeUseCase,
     private val showMomentsFromCameraUseCase: ShowMomentsFromCameraUseCase,
+    private val refreshMomentsUseCase: RefreshMomentsUseCase,
     private val getMomentClipStreamUseCase: GetMomentClipStreamUseCase,
     private val downloadMomentClipUseCase: DownloadMomentClipUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
@@ -163,6 +168,7 @@ class MomentsViewModel(
     private val _unfamiliarOnly = MutableStateFlow(false)
     private val _selectedCameraName = MutableStateFlow<String?>(null)
     private val _historyDay = MutableStateFlow<LocalDate?>(null)
+    private val _refreshing = MutableStateFlow(false)
     private val _clip = MutableStateFlow(ClipState())
     private var clipJob: Job? = null
 
@@ -189,6 +195,11 @@ class MomentsViewModel(
     }.stateIn(viewModelScope, SharingStarted.Eagerly, Filters(MomentCategory.ALL, false, emptyList(), null))
 
     init {
+        // The repository outlives this view model, and with it the day a previous feed was opened
+        // at: an app closed on "Sep 25" and reopened in the same process would otherwise show that
+        // day's moments — and stop polling, since a day in the past doesn't change — under a
+        // calendar chip that says the feed is live. This one starts live, so the repository does too.
+        showMomentsBeforeUseCase(null)
         // The server does the narrowing (a quiet camera's moments would otherwise be pages deep
         // beneath a busy one's), so the repository follows the camera in force for as long as
         // this view model lives — including when a vanished camera falls back to every camera,
@@ -261,9 +272,10 @@ class MomentsViewModel(
         )
     }
 
-    val uiState: StateFlow<MomentsUiState> = combine(feed, _historyDay, _clip) { feed, historyDay, clip ->
+    val uiState: StateFlow<MomentsUiState> = combine(feed, _historyDay, _refreshing, _clip) { feed, historyDay, refreshing, clip ->
         feed.copy(
             historyDay = historyDay,
+            refreshing = refreshing,
             expandedEventId = clip.eventId,
             clipRequest = clip.request,
             clipPosterUrl = clip.posterUrl,
@@ -296,6 +308,25 @@ class MomentsViewModel(
         collapse()
         _historyDay.value = day
         showMomentsBeforeUseCase(day?.endOfDayEpochSeconds(TimeZone.currentSystemDefault()))
+    }
+
+    /**
+     * Pull to refresh: asks the server for the newest page now. The indicator stays up for at
+     * least [MIN_REFRESH_MS] — one sweep of its scan — so a fast answer reads as one rather than
+     * a flicker. A pull while one is running is the same refresh.
+     */
+    fun refresh() {
+        if (!_refreshing.compareAndSet(expect = false, update = true)) return
+        viewModelScope.launch {
+            try {
+                coroutineScope {
+                    launch { delay(MIN_REFRESH_MS) }
+                    refreshMomentsUseCase()
+                }
+            } finally {
+                _refreshing.value = false
+            }
+        }
     }
 
     /** Asks for the next page down. Safe to call freely: the repository ignores it while one is in flight or nothing is left. */
@@ -380,6 +411,9 @@ class MomentsViewModel(
 
     private companion object {
         const val RESULT_FLASH_MS = 2_500L
+
+        /** The shortest a pull to refresh shows its scan for, however quickly the server answers. */
+        const val MIN_REFRESH_MS = 900L
 
         /** The clip box is full-width 16:9; a 480-tall frame is sharp enough and ~30 KB. */
         const val CLIP_POSTER_HEIGHT = 480
