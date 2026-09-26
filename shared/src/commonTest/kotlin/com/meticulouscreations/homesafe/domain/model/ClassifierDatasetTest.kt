@@ -128,4 +128,20 @@ class ClassifierDatasetTest {
         val car = TrackedObject("1788832091.745689-e2bxi0", "car", subLabel = null)
         assertTrue(dataset(queue = listOf(UnlabeledCrop.fromFileName("example_001.jpg"))).liveCandidates(listOf(car)).isEmpty())
     }
+
+    @Test
+    fun noPlaceholderIsOfferedAsAKnownCar() {
+        // Folders a hand-made or older dataset can hold: each would name a car with something the
+        // feed still reads as unnamed, so the card would stay "Car" after a "successful" tag.
+        val data = dataset(
+            categoryCounts = mapOf("none" to 20, "not_ours" to 3, "Unknown" to 1, "andrews_tesla" to 12, "sarahs_car" to 6),
+            queue = listOf(crop("unknown"), crop("yayas_car")),
+        )
+        assertEquals(listOf("andrews_tesla", "sarahs_car", "yayas_car"), data.knownCars)
+        data.knownCars.forEach { assertFalse(MomentVisits.isPlaceholderName(it), it) }
+        listOf("none", "not_ours", "Unknown").forEach { placeholder ->
+            val tagged = MomentEvent("e", "hikvision_1", "car", placeholder, 1.0, 2.0, 0.9, hasClip = true, hasSnapshot = false)
+            assertTrue(tagged.isGenericCar, "$placeholder is what the picker leaves out, and what the feed calls unnamed")
+        }
+    }
 }

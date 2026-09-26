@@ -2,12 +2,14 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.EventFrame
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
+import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraFrameUseCase
@@ -100,6 +102,9 @@ class CarTaggingViewModelTest {
         override suspend fun label(modelName: String, fileName: String, category: String) = fail("unused")
         override suspend fun discard(modelName: String, fileNames: List<String>) = fail("unused")
         override fun queueImageUrl(modelName: String, fileName: String): String? = null
+        override suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>> = fail("unused")
+        override suspend fun getDetection(eventId: String): Result<MomentEvent?> = fail("unused")
+        override suspend fun getEventFrame(eventId: String): Result<EventFrame> = fail("unused")
     }
 
     private class FakeMoments : MomentsRepository {
@@ -107,6 +112,7 @@ class CarTaggingViewModelTest {
         override fun refreshStationaryObjects() {
             nudges++
         }
+        override fun nameCar(eventId: String, subLabel: String) = fail("unused")
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
         override fun observeError(): Flow<String?> = fail("unused")
         override fun observePaging(): Flow<MomentsPaging> = fail("unused")

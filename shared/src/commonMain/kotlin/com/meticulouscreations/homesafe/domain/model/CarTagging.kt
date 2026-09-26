@@ -26,7 +26,31 @@ object CarTagging {
 
     /** Smaller than this, as a fraction of the frame on either side, is a stray tap rather than a car. */
     const val MIN_BOX_FRACTION = 0.02
+
+    /** The object label the known-cars classifier runs on. */
+    const val CAR_LABEL = "car"
+
+    /** The longest category key the relay files into (its `DATASET_NAME`), which is also a sane folder name. */
+    private const val MAX_KEY_LENGTH = 64
+
+    /**
+     * "Grandma's Van" -> `grandmas_van`: the category a new known car is filed under, slugged the
+     * way the labelling screen slugs one (see [DetectionZone.slug]), so [subLabelDisplayName] puts
+     * the apostrophe back. Null when there is no name in it, or it is one of the placeholders that
+     * never count as a name ([MomentVisits.NOT_A_NAME]) — `none` is "not ours", not a car.
+     */
+    fun knownCarKey(name: String): String? {
+        if (name.none { it.isLetterOrDigit() }) return null
+        val key = DetectionZone.slug(name).trim('_', '-').take(MAX_KEY_LENGTH).trimEnd('_', '-')
+        return key.takeIf { it.isNotEmpty() && !MomentVisits.isPlaceholderName(it) }
+    }
 }
+
+/**
+ * A still of a detection's car, for a tag that can't file Frigate's own crop of it: [jpeg] is a
+ * frame from the recording and [box] where the car was on it, as fractions.
+ */
+class EventFrame(val jpeg: ByteArray, val box: SeenBox)
 
 /**
  * The tracked object [box] is about, if any: the one it overlaps most, as long as it overlaps

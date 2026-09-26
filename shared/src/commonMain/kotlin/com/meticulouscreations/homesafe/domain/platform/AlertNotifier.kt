@@ -45,6 +45,12 @@ data class AlertNotification(
      * already showing — the visit brought something new.
      */
     val silent: Boolean = false,
+    /**
+     * The detection is a car the classifier didn't name, so the notification offers to tag it
+     * (see [MomentDeepLink.tagCar]). Android adds a "Tag car" button; elsewhere a tap already
+     * lands one tap from the tag.
+     */
+    val offerCarTag: Boolean = false,
 )
 
 /**

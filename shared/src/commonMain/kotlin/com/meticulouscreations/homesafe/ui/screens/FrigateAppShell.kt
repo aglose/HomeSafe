@@ -125,17 +125,20 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
      * Home stack, so Back returns to the camera list — and the Moments tab is one tap away,
      * still where it was left.
      */
-    fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds)
+    fun openDetection(event: MomentEvent) = openDetection(event.cameraName, event.startEpochSeconds, event.id, tagCar = false)
 
     /** The same destination for a notification tap: see [MomentDeepLinks]. */
-    fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds)
+    fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds, link.eventId, link.tagCar)
 
-    private fun openDetection(cameraName: String, startEpochSeconds: Double) {
+    private fun openDetection(cameraName: String, startEpochSeconds: Double, eventId: String, tagCar: Boolean) {
         val route = CameraDetailRoute(
             cameraName = cameraName,
             warmStreamUrl = null,
             warmPosterUrl = null,
             openAtEpochSeconds = startEpochSeconds,
+            // An older relay's push carries no event id; the screen then just plays the moment.
+            openedEventId = eventId.takeIf { it.isNotBlank() },
+            tagCarOnOpen = tagCar,
         )
         // A second tap on the same notification (or a relaunch re-delivering it) is already up.
         if (homeBackStack.lastOrNull() != route) homeBackStack.add(route)
@@ -425,12 +428,17 @@ private data object CameraListRoute
  * full-screen button, or a notification tap), and opens the screen on the recording at that instant rather than live.
  * It is part of the route's identity, so opening a second detection on the same camera is a new
  * destination rather than a no-op on the one already up.
+ *
+ * [openedEventId] is that detection, so the screen can offer to tag its car when the classifier
+ * didn't name it, and [tagCarOnOpen] opens the picker at once (a notification's "Tag car" button).
  */
 private data class CameraDetailRoute(
     val cameraName: String,
     val warmStreamUrl: String?,
     val warmPosterUrl: String?,
     val openAtEpochSeconds: Double? = null,
+    val openedEventId: String? = null,
+    val tagCarOnOpen: Boolean = false,
 )
 private data class DetectionZonesRoute(val cameraName: String)
 private data class CarTaggingRoute(val cameraName: String)
@@ -484,6 +492,8 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         onEditDetectionZones = { backStack.add(DetectionZonesRoute(route.cameraName)) },
                         onTagCars = { backStack.add(CarTaggingRoute(route.cameraName)) },
                         openAtEpochSeconds = route.openAtEpochSeconds,
+                        openedEventId = route.openedEventId,
+                        tagCarOnOpen = route.tagCarOnOpen,
                     )
                 }
                 entry<DetectionZonesRoute> { route ->

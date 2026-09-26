@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
 import com.meticulouscreations.homesafe.domain.model.endOfDayEpochSeconds
 import com.meticulouscreations.homesafe.domain.model.groupIntoVisits
+import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -67,6 +68,8 @@ data class MomentItem(
     val key: String = event.id,
     val kind: VisitKind = VisitKind.SINGLE,
     val clips: List<MomentClip> = emptyList(),
+    /** [event] is a car the classifier left unnamed, and nothing else in the entry was named: it can be tagged as a known car. */
+    val canTagCar: Boolean = false,
 )
 
 /** One detection inside a folded entry, as its row in the opened list reads. */
@@ -79,6 +82,8 @@ data class MomentClip(
     val title: String,
     /** "0:12", or null while still in progress. */
     val durationLabel: String?,
+    /** A car the classifier left unnamed, which can be tagged as a known car. */
+    val canTagCar: Boolean = false,
 )
 
 /** A date header and the cards beneath it, in feed order. */
@@ -233,10 +238,12 @@ class MomentsViewModel(
                 } else {
                     visit.events.map { event ->
                         val p = event.present(day)
-                        MomentClip(event, p.timeLabel, p.title, p.durationLabel)
+                        MomentClip(event, p.timeLabel, p.title, p.durationLabel, canTagCar = event.isGenericCar)
                     }
                 }
-                MomentItem(lead, visit.present(day), thumb, key = visit.key, kind = visit.kind, clips = clips)
+                // A household car's routine is named by definition; a visit with a name in it reads as that name.
+                val canTagCar = visit.kind != VisitKind.ROUTINE && !visit.isFamiliar && lead.isGenericCar
+                MomentItem(lead, visit.present(day), thumb, key = visit.key, kind = visit.kind, clips = clips, canTagCar = canTagCar)
             }
         // groupBy preserves encounter order, and the feed arrives newest-first, so "Today" leads.
         val groups = items

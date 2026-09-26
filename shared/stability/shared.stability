@@ -334,7 +334,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CameraCardZoomOverlay(s
     - onOpenCamera: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(cameraName: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, openAtEpochSeconds: kotlin.Double?): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(cameraName: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, openAtEpochSeconds: kotlin.Double?, openedEventId: kotlin.String?, tagCarOnOpen: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -346,6 +346,8 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(camera
     - onEditDetectionZones: STABLE (function type)
     - onTagCars: STABLE (function type)
     - openAtEpochSeconds: STABLE (class with no mutable properties)
+    - openedEventId: STABLE (class with no mutable properties)
+    - tagCarOnOpen: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MomentCameraOption>, selectedCameraName: kotlin.String?, selectedCameraLabel: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
@@ -848,6 +850,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.KeepGrowingEntryInView(l
     - entryKey: STABLE (class with no mutable properties)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.KnownCarChip(label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.LayerPicker(editor: com.meticulouscreations.homesafe.viewmodel.MaskEditorState, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MaskLayer, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -907,7 +917,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.LoadingRow(text: kotlin.
     - text: STABLE (String is immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: kotlin.String?, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onToggleClips: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, isDownloading: kotlin.Boolean, downloadSucceeded: kotlin.Boolean, downloadErrorMessage: kotlin.String?, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onToggleClips: kotlin.Function0<kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -923,15 +933,17 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.met
     - onClipError: STABLE (function type)
     - onDownloadClick: STABLE (function type)
     - onFullScreenClick: STABLE (function type)
+    - onTagCar: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.MomentClipList(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, playingEventId: kotlin.String?, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.MomentClipList(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, playingEventId: kotlin.String?, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - item: STABLE (marked @Stable or @Immutable)
     - playingEventId: STABLE (class with no mutable properties)
     - onPlay: STABLE (function type)
+    - onTagCar: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentDateHeader(dateGroup: kotlin.String, dateSubLabel: kotlin.String): kotlin.Unit
@@ -958,7 +970,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentThumbnail(url: kot
     - url: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onUnfamiliarOnlyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onSelectCamera: kotlin.Function1<kotlin.String?, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.meticulouscreations.homesafe.viewmodel.MomentsUiState, downloadState: com.meticulouscreations.homesafe.viewmodel.DownloadUiState, onSelectCategory: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onUnfamiliarOnlyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onSelectCamera: kotlin.Function1<kotlin.String?, kotlin.Unit>, onShowDay: kotlin.Function1<kotlinx.datetime.LocalDate?, kotlin.Unit>, onLoadOlder: kotlin.Function0<kotlin.Unit>, onCardClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onDownloadClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onFullScreenClick: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -975,6 +987,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.MomentsFeed(state: com.
     - onDownloadClick: STABLE (function type)
     - onFullScreenClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onTagCar: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.MomentsTabContent(onOpenFullScreen: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -1092,12 +1105,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.QuietHoursRows(enabled: 
     - onChange: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.RecentMomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.RecentMomentCard(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, onClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - item: STABLE (marked @Stable or @Immutable)
     - onClick: STABLE (function type)
+    - onTagCar: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.RecognitionSection(models: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.ClassifierModel>, faceRecognitionEnabled: kotlin.Boolean?, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -1110,7 +1124,7 @@ public fun com.meticulouscreations.homesafe.ui.screens.RecognitionSection(models
     - onOpenFaces: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.RoutineRow(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, onToggleClips: kotlin.Function0<kotlin.Unit>, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.RoutineRow(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, onToggleClips: kotlin.Function0<kotlin.Unit>, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1122,6 +1136,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.RoutineRow(item: com.met
     - onClipBuffering: STABLE (function type)
     - onClipError: STABLE (function type)
     - onFullScreenClick: STABLE (function type)
+    - onTagCar: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.SaveBar(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, onSave: kotlin.Function0<kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -1314,6 +1329,36 @@ private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meti
     - tab: STABLE (class with no mutable properties)
     - nav: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.TagCarButton(onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.TagCarDialog(state: com.meticulouscreations.homesafe.viewmodel.MomentCarTagUiState, onTag: kotlin.Function1<kotlin.String, kotlin.Unit>, onNewCarDraftChange: kotlin.Function1<kotlin.String, kotlin.Unit>, onTagAsNewCar: kotlin.Function0<kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onTag: STABLE (function type)
+    - onNewCarDraftChange: STABLE (function type)
+    - onTagAsNewCar: STABLE (function type)
+    - onRetry: STABLE (function type)
+    - onDismiss: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.TagCarPrompt(summary: kotlin.String, taggedAs: kotlin.String?, onTag: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - summary: STABLE (String is immutable)
+    - taggedAs: STABLE (class with no mutable properties)
+    - onTag: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.TagPanel(uiState: com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState, onTag: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancel: kotlin.Function0<kotlin.Unit>): kotlin.Unit

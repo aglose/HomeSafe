@@ -23,6 +23,22 @@ it is parked (`isStill`). A named car that drove down the birds-only street is d
 unnamed one, from the feed, the "In view now" strip and the in-app alerts. A named car parked at
 the curb still shows, and so does any car in the driveway.
 
+### Tagging an unnamed car
+
+A moment whose car the classifier left unnamed (label `car`, no sub-label but a placeholder,
+`MomentEvent.isGenericCar`) has a "Tag car" pill: on its Moments card, on a visit's clip row, on
+a camera's Recent Activity, and on the camera screen a notification or the full-screen button
+opened. The picker offers the known cars (the dataset's categories minus `none`) or a new name,
+slugged the way the labelling screen slugs one ("Grandma's Van" -> `grandmas_van`).
+`TagMomentCarUseCase` then files Frigate's own queued crop of that event through `categorize` if
+one is still in `train/`, and otherwise cuts the car out of the recording at its biggest timeline
+box, scaled to the detect height, through the relay's `/classification/{model}/dataset/{category}`.
+Both routes create a new category's folder with its first image, so no separate `create` call is
+made. The event is named at score 1.0 (which the car check leaves alone) and the model retrains.
+
+On Android a relay push with `car_unnamed=1` (only cars in the review, none named) gets a "Tag
+car" button that opens the picker on arrival; the in-app alerts set the same flag themselves.
+
 ## The relay's car check
 
 `car_check_forever` in `relay/relay.py` runs every 30 s once `CAR_CLASSIFIER` is set.

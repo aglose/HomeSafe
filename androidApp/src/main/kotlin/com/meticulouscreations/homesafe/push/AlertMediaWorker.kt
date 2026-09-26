@@ -37,6 +37,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             target = MomentDeepLink(eventId, input.getString(KEY_CAMERA).orEmpty(), input.getDouble(KEY_TARGET_START, start)),
             urgent = input.getBoolean(KEY_URGENT, false),
             silent = input.getBoolean(KEY_SILENT, false),
+            offerCarTag = input.getBoolean(KEY_OFFER_CAR_TAG, false),
         )
         BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
             AlertNotificationPoster.show(applicationContext, stage)
@@ -55,6 +56,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val KEY_START = "start"
         private const val KEY_URGENT = "urgent"
         private const val KEY_SILENT = "silent"
+        private const val KEY_OFFER_CAR_TAG = "offer_car_tag"
 
         /** Where a tap opens: the visit's start, which may be well before this alert's own ([KEY_START]). */
         private const val KEY_TARGET_START = "target_start"
@@ -69,6 +71,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 KEY_START to startEpochSeconds,
                 KEY_URGENT to text.urgent,
                 KEY_SILENT to text.silent,
+                KEY_OFFER_CAR_TAG to text.offerCarTag,
                 KEY_TARGET_START to (text.target?.startEpochSeconds ?: startEpochSeconds),
             )
             val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.domain.usecase
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import dev.zacsweers.metro.Inject
@@ -53,6 +54,12 @@ class TrainClassifierUseCase(private val repository: ClassifierRepository) {
 @Inject
 class GetClassifierQueueImageUrlUseCase(private val repository: ClassifierRepository) {
     operator fun invoke(modelName: String, fileName: String): String? = repository.queueImageUrl(modelName, fileName)
+}
+
+/** One detection as Frigate has it now, e.g. the one a notification opened; null once Frigate has let it go. */
+@Inject
+class GetDetectionUseCase(private val repository: ClassifierRepository) {
+    suspend operator fun invoke(eventId: String): Result<MomentEvent?> = repository.getDetection(eventId)
 }
 
 /** A camera's latest frame at detect resolution, as JPEG bytes, for boxing a car on. */

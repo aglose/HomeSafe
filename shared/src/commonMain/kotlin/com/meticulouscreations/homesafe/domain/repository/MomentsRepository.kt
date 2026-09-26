@@ -79,6 +79,14 @@ interface MomentsRepository {
     fun refreshStationaryObjects()
 
     /**
+     * Shows the detection [eventId] as the car [subLabel] from now on, in [observeMoments] and
+     * [observeRecentMoments], and looks for it in view ([refreshStationaryObjects]): a person has
+     * just named it (see `TagMomentCarUseCase`), and a detection older than the pages the polls
+     * re-read would otherwise go on reading "Car" until the app next starts.
+     */
+    fun nameCar(eventId: String, subLabel: String)
+
+    /**
      * The newest detection the device knows of on any camera, placed the way [observeMoments]
      * places it; null when it knows of none. Unlike the feed it ignores where the Moments tab's
      * window was left, so the home page can say what last happened whatever the feed is narrowed

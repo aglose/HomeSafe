@@ -615,6 +615,15 @@ def is_recognised_person(item: dict[str, Any]) -> bool:
     return has_person(item) and any(n not in car_names(labels, names) for n in names)
 
 
+def is_unnamed_car(item: dict[str, Any]) -> bool:
+    """
+    Nothing but cars in it, and none of them named: its `event_id` (the first detection) is a car
+    the classifier didn't know, so the app offers a "Tag car" button on the notification. A review
+    with a person in it isn't, since its first detection may be the person.
+    """
+    return review_labels(item) == ["car"] and not review_names(item)
+
+
 def awaiting_recognition(item: dict[str, Any]) -> bool:
     """Still in progress, a person in it, no name yet, and young enough that a name may still come."""
     if not has_person(item) or is_recognised_person(item) or item.get("end_time") is not None:
@@ -898,6 +907,8 @@ def poll_forever() -> None:
                 }
                 if not sound:
                     data["silent"] = "1"
+                if is_unnamed_car(item):
+                    data["car_unnamed"] = "1"
                 result = broadcast(title, body, data, familiar=is_recognised_person(item))
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)

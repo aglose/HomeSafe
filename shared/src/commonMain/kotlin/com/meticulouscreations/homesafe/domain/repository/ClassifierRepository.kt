@@ -2,8 +2,11 @@ package com.meticulouscreations.homesafe.domain.repository
 
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.domain.model.EventFrame
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
+import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 
 /**
  * Frigate's custom classifiers (e.g. the known-cars model) and the human-in-the-loop labelling
@@ -30,6 +33,21 @@ interface ClassifierRepository {
 
     /** Names a tracked object (its event) as a person would: fully sure. Null clears the name. */
     suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit>
+
+    /**
+     * The crops waiting for a label, as [getDataset] lists them but without looking up each one's
+     * event: cheap enough to ask for just to find one detection's crops.
+     */
+    suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>>
+
+    /** One detection as Frigate has it now, name included; null when Frigate no longer has it. */
+    suspend fun getDetection(eventId: String): Result<MomentEvent?>
+
+    /**
+     * A still of [eventId]'s object and its box on it: the recording at the moment Frigate kept its
+     * biggest box, at the camera's detect resolution. Fails when there's no box or no recording.
+     */
+    suspend fun getEventFrame(eventId: String): Result<EventFrame>
 
     /** Where a queued crop's image lives, for the current server; null when disconnected. */
     fun queueImageUrl(modelName: String, fileName: String): String?

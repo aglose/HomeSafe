@@ -19,13 +19,20 @@ data class MomentDeepLink(
     val eventId: String,
     val cameraName: String,
     val startEpochSeconds: Double,
+    /**
+     * Open the car picker on arrival: the link behind a notification's "Tag car" button, for a
+     * detection whose car the classifier didn't name. Only ever written when true, so every other
+     * link reads as it always has.
+     */
+    val tagCar: Boolean = false,
 ) {
     /** As string pairs, for Android intent extras, iOS `userInfo` and a push's data. */
-    fun toMap(): Map<String, String> = mapOf(
-        KEY_EVENT_ID to eventId,
-        KEY_CAMERA to cameraName,
-        KEY_START_TIME to startEpochSeconds.toString(),
-    )
+    fun toMap(): Map<String, String> = buildMap {
+        put(KEY_EVENT_ID, eventId)
+        put(KEY_CAMERA, cameraName)
+        put(KEY_START_TIME, startEpochSeconds.toString())
+        if (tagCar) put(KEY_TAG_CAR, TAG_CAR_YES)
+    }
 
     /** `homesafe://moment?event_id=…&camera=…&start_time=…`, which the Android manifest routes to the app. */
     fun toUri(): String = "$SCHEME://$HOST?" + toMap().entries.joinToString("&") { (k, v) -> "$k=${v.encodeURLParameter()}" }
@@ -36,6 +43,8 @@ data class MomentDeepLink(
         const val KEY_EVENT_ID = "event_id"
         const val KEY_CAMERA = "camera"
         const val KEY_START_TIME = "start_time"
+        const val KEY_TAG_CAR = "tag_car"
+        private const val TAG_CAR_YES = "1"
 
         /**
          * From string pairs, or null when any part is missing. A push from an older relay may
@@ -45,7 +54,12 @@ data class MomentDeepLink(
         fun from(values: (String) -> String?): MomentDeepLink? {
             val camera = values(KEY_CAMERA)?.takeIf { it.isNotBlank() } ?: return null
             val start = values(KEY_START_TIME)?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
-            return MomentDeepLink(eventId = values(KEY_EVENT_ID).orEmpty(), cameraName = camera, startEpochSeconds = start)
+            return MomentDeepLink(
+                eventId = values(KEY_EVENT_ID).orEmpty(),
+                cameraName = camera,
+                startEpochSeconds = start,
+                tagCar = values(KEY_TAG_CAR) == TAG_CAR_YES,
+            )
         }
 
         /** From a `homesafe://moment?…` URI; null for anything else. */

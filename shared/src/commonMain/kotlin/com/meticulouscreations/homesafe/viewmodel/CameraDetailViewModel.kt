@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.RecordingHistory
 import com.meticulouscreations.homesafe.domain.model.RecordingPlaylist
 import com.meticulouscreations.homesafe.domain.model.RecordingSegment
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
+import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -265,7 +266,7 @@ class CameraDetailViewModel(
         val today = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
         events
             ?.take(RECENT_MOMENTS)
-            ?.map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }) }
+            ?.map { MomentItem(it, it.present(today), serverUrl?.let { url -> getEventThumbnailUrlUseCase(url, it.id) }, canTagCar = it.isGenericCar) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /** The same moments as dots on the timeline, so the two never disagree about what happened when. */
