@@ -3,14 +3,17 @@ package com.meticulouscreations.homesafe.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -22,7 +25,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
+import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -38,6 +47,7 @@ import com.meticulouscreations.homesafe.ui.preview.previewRecordingSegments
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.roundToLong
 
@@ -50,6 +60,12 @@ import kotlin.math.roundToLong
  * the bars say *when* something moved and the dots say *what*. Dots too close to tell apart merge
  * (see [timelineMarkers]); a tap on or near one — anywhere above the bars — goes to
  * [onDetectionTap] with where it started, and a tap anywhere else seeks there as before.
+ *
+ * A drop of liquid glass rides the playhead and magnifies the bars under it a little (see
+ * [LiquidLensState]). Press and hold anywhere and it swells into a bubble there that magnifies
+ * [HELD_ZOOM]x across, and scrubs as it is dragged — [HELD_ZOOM] times finer than a plain drag,
+ * so the picture in the bubble moves under the finger at the speed the finger does, and a
+ * single moment in a busy stretch can be picked out. Letting go ends the scrub, as a drag does.
  */
 @Composable
 fun RecordingTimeline(
@@ -75,6 +91,7 @@ fun RecordingTimeline(
     val currentOnScrubEnd by rememberUpdatedState(onScrubEnd)
     val currentOnSeek by rememberUpdatedState(onSeek)
     val currentOnDetectionTap by rememberUpdatedState(onDetectionTap)
+    val haptics by rememberUpdatedState(LocalHapticFeedback.current)
     val markerColors = LocalFrigateExtraColors.current
 
     val textMeasurer = rememberTextMeasurer()
@@ -92,35 +109,69 @@ fun RecordingTimeline(
     }
     val maxMotion = remember(segments) { segments.maxOfOrNull { it.motion }?.coerceAtLeast(1) ?: 1 }
 
+    val indicatorFraction = ((indicatorEpoch - windowStart) / span.seconds).toFloat().coerceIn(0f, 1f)
+    val lens = remember { LiquidLensState(liquidLensShaderOrNull(), indicatorFraction) }
+    LaunchedEffect(lens, indicatorFraction) { lens.follow(indicatorFraction) }
+    LaunchedEffect(lens, lens.held) { lens.inflate(if (lens.held) 1f else 0f) }
+    LaunchedEffect(lens, lens.rippling) { if (lens.rippling) lens.runRippleClock() }
+
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(TIMELINE_HEIGHT)
             .clip(shape)
+            .liquidLens(lens)
             .background(colorScheme.surface)
             .border(1.dp, colorScheme.outlineVariant.copy(alpha = 0.1f), shape)
             .pointerInput(Unit) {
-                detectTapGestures { offset ->
-                    // Above the bars a tap is aimed at a dot, and the dots are small: the nearest within reach takes it.
-                    val marker = if (offset.y < TRACK_TOP.toPx()) {
-                        frame.markers(currentDetections, size.width.toFloat(), MARKER_MERGE.toPx()).markerNear(offset.x, MARKER_TAP_REACH.toPx())
-                    } else {
-                        null
+                awaitEachGesture {
+                    val down = awaitFirstDown().also { it.consume() }
+                    // Still pressed and not yet a drag when the long-press timeout runs out: a hold.
+                    val press = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) { awaitPress(down, viewConfiguration.touchSlop) }
+                    when (press) {
+                        is Press.Tap -> {
+                            val offset = press.position
+                            // Above the bars a tap is aimed at a dot, and the dots are small: the nearest within reach takes it.
+                            val marker = if (offset.y < TRACK_TOP.toPx()) {
+                                frame.markers(currentDetections, size.width.toFloat(), MARKER_MERGE.toPx()).markerNear(offset.x, MARKER_TAP_REACH.toPx())
+                            } else {
+                                null
+                            }
+                            if (marker != null) currentOnDetectionTap(marker.epochSeconds) else currentOnSeek(frame.epochAt(offset.x, size.width))
+                        }
+
+                        is Press.Drag -> {
+                            currentOnScrubStart()
+                            currentOnScrub(frame.epochAt(press.change.position.x, size.width))
+                            try {
+                                horizontalDrag(down.id) { change ->
+                                    change.consume()
+                                    currentOnScrub(frame.epochAt(change.position.x, size.width))
+                                }
+                            } finally {
+                                currentOnScrubEnd()
+                            }
+                        }
+
+                        Press.Cancelled -> Unit
+
+                        null -> {
+                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val anchor = frame.epochAt(down.position.x, size.width)
+                            lens.held = true
+                            currentOnScrubStart()
+                            currentOnScrub(anchor)
+                            try {
+                                drag(down.id) { change ->
+                                    change.consume()
+                                    currentOnScrub(frame.fineEpochFrom(anchor, change.position.x - down.position.x, size.width))
+                                }
+                            } finally {
+                                lens.held = false
+                                currentOnScrubEnd()
+                            }
+                        }
                     }
-                    if (marker != null) currentOnDetectionTap(marker.epochSeconds) else currentOnSeek(frame.epochAt(offset.x, size.width))
-                }
-            }
-            .pointerInput(Unit) {
-                detectHorizontalDragGestures(
-                    onDragStart = { offset ->
-                        currentOnScrubStart()
-                        currentOnScrub(frame.epochAt(offset.x, size.width))
-                    },
-                    onDragEnd = { currentOnScrubEnd() },
-                    onDragCancel = { currentOnScrubEnd() },
-                ) { change, _ ->
-                    change.consume()
-                    currentOnScrub(frame.epochAt(change.position.x, size.width))
                 }
             },
     ) {
@@ -195,9 +246,49 @@ private data class TimelineFrame(val windowStartEpochSeconds: Double, val spanSe
     fun epochAt(x: Float, width: Int): Double =
         windowStartEpochSeconds + (x / width.coerceAtLeast(1)).coerceIn(0f, 1f) * spanSeconds
 
+    /** Where a held drag [dx] pixels from where it started, at [anchorEpochSeconds], has scrubbed to: [HELD_ZOOM] times finer than [epochAt]. */
+    fun fineEpochFrom(anchorEpochSeconds: Double, dx: Float, width: Int): Double =
+        (anchorEpochSeconds + dx / width.coerceAtLeast(1) * spanSeconds / HELD_ZOOM)
+            .coerceIn(windowStartEpochSeconds, windowStartEpochSeconds + spanSeconds)
+
     /** The dots for [detections] in this frame: the same call draws them and resolves a tap on them, so the two always agree. */
     fun markers(detections: List<TimelineDetection>, width: Float, mergeWithin: Float): List<TimelineMarker> =
         timelineMarkers(detections, windowStartEpochSeconds, spanSeconds, width, mergeWithin)
+}
+
+/** How a press on the timeline turned out, short of a hold (which [awaitPress] leaves to its caller's timeout). */
+private sealed interface Press {
+    class Tap(val position: Offset) : Press
+
+    /** Moved further across than the touch slop: [change] is where it crossed. */
+    class Drag(val change: PointerInputChange) : Press
+
+    /** Someone else's gesture: a scrolling parent took it, or the pointer went away. */
+    data object Cancelled : Press
+}
+
+/**
+ * Follows the press that started with [down] until it lifts (a tap), moves more than
+ * [touchSlop] across (a drag), or is taken by someone else. A finger held still keeps it
+ * waiting, which is what lets the caller's timeout call it a hold. Like the tap and drag
+ * detectors this replaces, only movement across counts: a press that wanders up or down is
+ * still a tap, unless a scrolling parent claims it first.
+ */
+private suspend fun AwaitPointerEventScope.awaitPress(down: PointerInputChange, touchSlop: Float): Press {
+    while (true) {
+        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return Press.Cancelled
+        if (change.isConsumed) return Press.Cancelled
+        if (change.changedToUp()) {
+            change.consume()
+            return Press.Tap(change.position)
+        }
+        if (abs(change.position.x - down.position.x) > touchSlop) {
+            change.consume()
+            return Press.Drag(change)
+        }
+        // A scrolling parent claims the gesture in the final pass: let it have it.
+        if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) return Press.Cancelled
+    }
 }
 
 private fun FrigateExtraColors.forCategory(category: MomentCategory, fallback: Color): Color = when (category) {
