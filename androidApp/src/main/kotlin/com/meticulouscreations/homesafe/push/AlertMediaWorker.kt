@@ -34,8 +34,9 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             id = input.getString(KEY_ID) ?: return Result.failure(),
             title = input.getString(KEY_TITLE).orEmpty(),
             body = input.getString(KEY_BODY).orEmpty(),
-            target = MomentDeepLink(eventId, input.getString(KEY_CAMERA).orEmpty(), start),
+            target = MomentDeepLink(eventId, input.getString(KEY_CAMERA).orEmpty(), input.getDouble(KEY_TARGET_START, start)),
             urgent = input.getBoolean(KEY_URGENT, false),
+            silent = input.getBoolean(KEY_SILENT, false),
         )
         BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
             AlertNotificationPoster.show(applicationContext, stage)
@@ -53,6 +54,10 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val KEY_EVENT_ID = "event_id"
         private const val KEY_START = "start"
         private const val KEY_URGENT = "urgent"
+        private const val KEY_SILENT = "silent"
+
+        /** Where a tap opens: the visit's start, which may be well before this alert's own ([KEY_START]). */
+        private const val KEY_TARGET_START = "target_start"
 
         fun enqueue(context: Context, text: AlertNotification, eventId: String, startEpochSeconds: Double) {
             val input: Data = workDataOf(
@@ -63,13 +68,15 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 KEY_EVENT_ID to eventId,
                 KEY_START to startEpochSeconds,
                 KEY_URGENT to text.urgent,
+                KEY_SILENT to text.silent,
+                KEY_TARGET_START to (text.target?.startEpochSeconds ?: startEpochSeconds),
             )
             val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()
                 .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
                 .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .setInputData(input)
                 .build()
-            // A repeat push of the same alert restarts its media rather than running it twice.
+            // A later alert of the same visit (or a repeat push) restarts its media with the newest picture rather than running twice.
             WorkManager.getInstance(context).enqueueUniqueWork("alert-media-${text.id}", ExistingWorkPolicy.REPLACE, request)
         }
     }

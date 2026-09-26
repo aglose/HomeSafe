@@ -168,6 +168,9 @@ class DetectionAlertServiceTest {
         val settingsRepo = FakeSettings(settings)
         val presenceRepo = FakePresence()
         val notifier = FakeNotifier(supported)
+
+        /** Whether the relay has this phone's push token (`DeviceRegistrar.pushRegistered`). */
+        val pushRegistered = MutableStateFlow(false)
         var clockNow = now
         val service = DetectionAlertService(
             apiClient = FrigateApiClient(client),
@@ -175,6 +178,7 @@ class DetectionAlertServiceTest {
             settingsRepository = settingsRepo,
             presenceRepository = presenceRepo,
             notifier = notifier,
+            pushRegistered = pushRegistered,
             scope = scope.backgroundScope,
             clock = { clockNow },
             pollIntervalMs = 100,
@@ -203,6 +207,35 @@ class DetectionAlertServiceTest {
 
     private val on = AlertSettings(pushNotificationsEnabled = true)
     private val anywhere = AlertZone("amcrest_1", null)
+
+    @Test
+    fun aPhoneTheRelayPushesToDoesNotPollToo() = runTest {
+        val h = Harness(this, on)
+        h.pushRegistered.value = true
+        h.service.start()
+        h.events += Triple("new", "person", 1_000_010.0)
+        h.clockNow = 1_000_020.0
+        settle()
+        assertTrue(h.afters.isEmpty(), "Frigate is never asked: the relay's push covers every alert")
+        assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun itPollsUntilTheRelayHasThePhonesTokenAndThenStops() = runTest {
+        val h = Harness(this, on)
+        h.service.start()
+        eventually("first poll") { h.afters.isNotEmpty() }
+        h.events += Triple("before", "person", 1_000_010.0)
+        h.clockNow = 1_000_020.0
+        eventually("the detection before registration") { h.notifier.posted.any { it.id == "before" } }
+
+        h.pushRegistered.value = true
+        settle()
+        h.events += Triple("after", "person", 1_000_030.0)
+        h.clockNow = 1_000_040.0
+        settle()
+        assertTrue(h.notifier.posted.none { it.id == "after" }, "pushed by the relay now; posting it here too would be a duplicate")
+    }
 
     @Test
     fun onlyDetectionsAfterSwitchingOnNotifyAndEachOnlyOnce() = runTest {

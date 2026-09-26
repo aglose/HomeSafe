@@ -162,7 +162,9 @@ the moment the last person left (so flipping the switch never replays the aftern
 - title `Away: Person in the driveway` (via `sentence()`), body `Front Yard · nobody home`;
 - data `away="1"` plus the usual `review_id`, `camera`, `event_id`, `zones`, `start_time`;
 - Android `channel_id: "away_alerts"`, `priority: high`; APNs `sound: default`,
-  `interruption-level: time-sensitive`.
+  `interruption-level: time-sensitive`;
+- never folded into a visit: no `notif_id`, never `silent` (ordinary alerts are, see `Visits` in
+  relay.py), so each one sounds on its own notification.
 
 Items go into the same `sent` table as ordinary alerts, so a person alert while away is sent once,
 escalated, and the normal pass then skips it. Non-person alerts while away, and everything while
@@ -201,7 +203,8 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   `@Serializable` DTOs, `Authorization: Bearer` when a secret is known. `DeviceInfo.build` is read off the installed app (`FLAG_DEBUGGABLE` on Android,
   `Platform.isDebugBinary` on iOS); `PresenceDevice.countsForAway` / `pendingAway` carry the
   relay's verdict back (defaulting to true / false, so an older relay behaves as it did).
-- `DetectionAlertService` (the in-app 15 s poller) collects presence while polling; when
+- `DetectionAlertService` (the in-app 15 s poller; paused while the relay has this phone's push
+  token, since it hears the relay's escalated pushes instead) collects presence while polling; when
   `everyoneAway` and the event is `PEOPLE`, it notifies regardless of zone rules with
   `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
   urgent ones on the new `away_alerts` channel (IMPORTANCE_HIGH, alarm sound, `CATEGORY_ALARM`);

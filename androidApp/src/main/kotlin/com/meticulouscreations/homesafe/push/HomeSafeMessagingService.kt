@@ -26,19 +26,24 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         val body = message.data["body"] ?: message.notification?.body ?: ""
         val target = MomentDeepLink.from { message.data[it] }
         val text = AlertNotification(
-            // The relay pushes review items; the review id is also what it tags the push with.
-            id = message.data["review_id"] ?: message.messageId ?: title,
+            // The relay pushes review items folded into visits: every alert of one visit carries the
+            // visit's notif_id, so they share one notification. An older relay sends only review_id.
+            id = message.data["notif_id"] ?: message.data["review_id"] ?: message.messageId ?: title,
             title = title,
             body = body,
             target = target,
             // The relay marks escalated pushes with away=1 (see docs/away-mode.md): nobody home, person seen.
             urgent = message.data["away"] == "1",
+            // More of the same visit: update its notification without a sound (see Visits in relay.py).
+            silent = message.data["silent"] == "1",
         )
         AlertNotificationPoster.ensureChannels(this)
         // Already off the main thread: Firebase calls this on its own worker.
         runBlocking { AlertNotificationPoster.show(applicationContext, text) }
 
+        // start_time is the visit's, for the tap; the clip's timing is this alert's own.
         val eventId = message.data["event_id"]
-        if (target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, target.startEpochSeconds)
+        val eventStart = message.data["event_start"]?.toDoubleOrNull()
+        if (target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, eventStart ?: target.startEpochSeconds)
     }
 }

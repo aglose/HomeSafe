@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -44,9 +45,10 @@ import kotlin.time.Instant
  * and hands each one the user wants (per [AlertSettings]) to the [AlertNotifier].
  *
  * Why polling from the app: Frigate's own notifications are Web Push to a browser service
- * worker, which a native app can't subscribe to, and this app has no cloud relay of its own.
- * So notifications arrive while HomeSafe is running — foreground or recently backgrounded —
- * and stop when the OS ends the process. The Settings tab says as much.
+ * worker, which a native app can't subscribe to. So notifications arrive while HomeSafe is
+ * running — foreground or recently backgrounded — and stop when the OS ends the process. The
+ * Settings tab says as much. A phone the HomeSafe relay (relay/relay.py) pushes to gets its
+ * alerts from there instead, and this poller stays off (see [start]).
  *
  * The baseline is "now" when polling starts, so switching the feature on never replays the
  * day's history as a burst of notifications.
@@ -77,6 +79,8 @@ class DetectionAlertService(
     settingsRepository: SettingsRepository,
     private val presenceRepository: PresenceRepository,
     private val notifier: AlertNotifier,
+    /** True while the relay has this phone's push token, so it hears every alert as a push (see [start]); `DeviceRegistrar.pushRegistered`. */
+    private val pushRegistered: Flow<Boolean>,
     private val scope: CoroutineScope,
     /** Epoch seconds; injectable so tests control the baseline. */
     private val clock: () -> Double,
@@ -93,11 +97,19 @@ class DetectionAlertService(
 
     private var job: Job? = null
 
-    /** Idempotent; the app calls it once at startup. Does nothing on platforms without notifications. */
+    /**
+     * Idempotent; the app calls it once at startup. Does nothing on platforms without
+     * notifications, and pauses while the relay has this phone's push token: that phone hears
+     * every alert (and every Away escalation) as a push, folded into one notification per visit,
+     * and this poller's notifications, tagged by Frigate event rather than by visit, would come on
+     * top of each one. Until the relay has taken the token, or on a phone with no push, it polls.
+     */
     fun start() {
         if (job?.isActive == true || !notifier.isSupported) return
         job = scope.launch {
-            combine(settings, connectionRepository.currentServerUrl) { prefs, url -> url.takeIf { prefs.pushNotificationsEnabled } }
+            combine(settings, connectionRepository.currentServerUrl, pushRegistered) { prefs, url, pushed ->
+                url.takeIf { prefs.pushNotificationsEnabled && !pushed }
+            }
                 // Zone rules must not restart the loop (and reset its baseline); only on/off and the server do.
                 .distinctUntilChanged()
                 .collectLatest { url -> if (url != null) poll(url) }

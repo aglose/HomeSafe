@@ -179,6 +179,7 @@ interface AppGraph : ViewModelGraph {
         settingsRepository: SettingsRepository,
         presenceRepository: PresenceRepository,
         alertNotifier: AlertNotifier,
+        deviceRegistrar: DeviceRegistrar,
         appScope: CoroutineScope,
         clock: Clock,
     ): DetectionAlertService = DetectionAlertService(
@@ -187,6 +188,7 @@ interface AppGraph : ViewModelGraph {
         settingsRepository = settingsRepository,
         presenceRepository = presenceRepository,
         notifier = alertNotifier,
+        pushRegistered = deviceRegistrar.pushRegistered,
         scope = appScope,
         clock = { clock.now().toEpochMilliseconds() / 1000.0 },
         pollIntervalMs = DETECTION_POLL_INTERVAL_MS,
