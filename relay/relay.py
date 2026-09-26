@@ -14,6 +14,11 @@ travel within seconds) and dropped once it ends still — see `motion_verdict`. 
 gets every push: each registers its own quiet hours and "only when everyone's away" choice, and an
 ordinary alert skips a phone that is inside its quiet hours or only wants Away alerts — see
 `silenced`. Away alerts reach every phone regardless.
+
+Nor does every push make a sound. Frigate cuts one person or car in view into a new alert every
+minute or so, so alerts on one camera close together are one *visit* with one notification, and
+only its first alert, or one that brings something new to it, sounds; the rest update it quietly.
+A household car doing its rounds, and a backlog found late, are quiet too — see `Visits`.
 """
 
 import json
@@ -64,12 +69,64 @@ def camera_name(key: str) -> str:
     return CAMERA_NAMES.get(key, humanize(key))
 
 
+# Sub-labels that are not a name: the classifier's reserved "none" class (and the key "Not ours"
+# would slug to) and Frigate's unknown-face marker. Mirrors the app's MomentVisits.NOT_A_NAME.
+NOT_A_NAME = {"none", "not_ours", "unknown"}
+
+
+def unique(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
+
+
+def review_labels(item: dict[str, Any]) -> list[str]:
+    """The review's labels in order, once each; a classified object's "car-verified" counts as "car"."""
+    return unique([str(o).removesuffix("-verified") for o in ((item.get("data") or {}).get("objects") or []) if o])
+
+
+def review_names(item: dict[str, Any]) -> list[str]:
+    """The names Frigate put to things in the review (faces, classified cars), in order, placeholders dropped."""
+    return unique([s for s in ((item.get("data") or {}).get("sub_labels") or []) if s and s.lower() not in NOT_A_NAME])
+
+
+def car_names(labels: list[str], names: list[str]) -> list[str]:
+    """
+    Which of a review's names are cars. A review's sub-labels don't say which object each belongs
+    to, so: with no person in it every name is a car's; with a person, only the household's
+    configured cars (HOUSEHOLD_CARS) are, and the rest are faces.
+    """
+    if "car" not in labels:  # the car classifier only names cars
+        return []
+    if "person" not in labels:
+        return names
+    return [n for n in names if n.lower() in HOUSEHOLD_CARS]
+
+
+def display_name(key: str) -> str:
+    return SUB_LABEL_NAMES.get(key.lower(), humanize(key))
+
+
 def subject_for(objects: list[str], sub_labels: list[str]) -> str:
-    if sub_labels:
-        key = sub_labels[0]
-        return SUB_LABEL_NAMES.get(key.lower(), humanize(key))
-    nouns = [o.capitalize() for o in objects] or ["Something"]
-    return nouns[0] if len(nouns) == 1 else ", ".join(nouns[:-1]) + " and " + nouns[-1].lower()
+    """
+    "Person and Andrews Tesla", "Car and person", "Sarah": people first, each by name where
+    Frigate gave one, then everything else, a named car in place of its bare label. People lead so
+    a stranger walking past a parked household car is never announced as just the car.
+    """
+    labels = unique([str(o).removesuffix("-verified") for o in objects if o])
+    names = unique([s for s in sub_labels if s and s.lower() not in NOT_A_NAME])
+    cars = car_names(labels, names)
+    faces = [n for n in names if n not in cars]
+    people: list[tuple[str, bool]] = []
+    things: list[tuple[str, bool]] = []
+    for label in labels:
+        if label == "person":
+            people += [(display_name(n), True) for n in faces] or [("person", False)]
+        elif label == "car" and cars:
+            things += [(display_name(n), True) for n in cars]
+        else:
+            things.append((label, False))
+    parts = list(dict.fromkeys(people + things)) or [("something", False)]
+    words = [text if named or i else text.capitalize() for i, (text, named) in enumerate(parts)]
+    return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
 
 
 def zone_phrase(zone: str) -> str:
@@ -78,14 +135,15 @@ def zone_phrase(zone: str) -> str:
     return f"{prep} the {name}"
 
 
+def alert_zone(zones: list[str], required_zones: list[str]) -> str | None:
+    """The zone that made this an alert wins; otherwise the last one the object reached."""
+    return next((z for z in required_zones if z in zones), zones[-1] if zones else None)
+
+
 def sentence(item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]:
     data = item.get("data") or {}
-    objects = data.get("objects") or []
-    sub_labels = data.get("sub_labels") or []
-    zones = data.get("zones") or []
-    # The zone that made this an alert wins; otherwise the last one the object reached.
-    zone = next((z for z in required_zones if z in zones), zones[-1] if zones else None)
-    subject = subject_for(objects, sub_labels)
+    zone = alert_zone(data.get("zones") or [], required_zones)
+    subject = subject_for(data.get("objects") or [], data.get("sub_labels") or [])
     body = f"{subject} {zone_phrase(zone)}" if zone else f"{subject} detected"
     return camera_name(item.get("camera", "")), body
 
@@ -199,16 +257,29 @@ def push_message(token: str, title: str, body: str, data: dict[str, str], away: 
     one to post it (text at once, then its picture and clip; see HomeSafeMessagingService.kt).
     The title and body travel in the data for that. iOS draws its own banner from `aps.alert`.
     `away` escalates it: the app's loud "away_alerts" channel on Android, time-sensitive on iOS.
+
+    A push that is one more alert in a visit already on the phone (see `Visits`) carries the
+    visit's `notif_id` and `silent: "1"`: Android replaces that visit's notification without a
+    sound, and iOS collapses it onto the same banner (`apns-collapse-id`), quietly.
     """
-    aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "sound": "default", "thread-id": data.get("camera", "")}
+    silent = data.get("silent") == "1"
+    aps: dict[str, Any] = {"alert": {"title": title, "body": body}, "thread-id": data.get("camera", "")}
+    if not silent:
+        aps["sound"] = "default"
     if away:
         aps["interruption-level"] = "time-sensitive"
+    elif silent:
+        aps["interruption-level"] = "passive"
+    headers = {"apns-priority": "10"}
+    collapse_id = data.get("notif_id") or data.get("review_id")
+    if collapse_id:
+        headers["apns-collapse-id"] = collapse_id[:64]
     return {
         "message": {
             "token": token,
             "data": {**data, "title": title, "body": body},
             "android": {"priority": "high"},
-            "apns": {"headers": {"apns-priority": "10"}, "payload": {"aps": aps}},
+            "apns": {"headers": headers, "payload": {"aps": aps}},
         }
     }
 
@@ -364,8 +435,13 @@ def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
     return _car_zone_polygons
 
 
+REVIEW_PAGE = 100
+
+
 def recent_review(severity: str) -> list[dict[str, Any]]:
-    r = requests.get(f"{FRIGATE}/api/review", params={"severity": severity, "limit": 20}, timeout=10)
+    # Deep enough that a backlog (Frigate or the network back after an outage) is all still on the
+    # page when the relay next looks; at 20, a burst longer than that was never pushed at all.
+    r = requests.get(f"{FRIGATE}/api/review", params={"severity": severity, "limit": REVIEW_PAGE}, timeout=10)
     r.raise_for_status()
     return r.json()
 
@@ -507,9 +583,10 @@ def has_person(item: dict[str, Any]) -> bool:
 
 
 def is_recognised_person(item: dict[str, Any]) -> bool:
-    """A person Frigate put a name to — the review item carries the face as a sub_label."""
-    sub_labels = [s for s in ((item.get("data") or {}).get("sub_labels") or []) if s and s.lower() != "unknown"]
-    return has_person(item) and bool(sub_labels)
+    """A person Frigate put a name to — the review item carries the face as a sub_label (a household car's name doesn't count)."""
+    labels = review_labels(item)
+    names = review_names(item)
+    return has_person(item) and any(n not in car_names(labels, names) for n in names)
 
 
 def awaiting_recognition(item: dict[str, Any]) -> bool:
@@ -608,7 +685,125 @@ def motion_verdict(item: dict[str, Any]) -> str:
     return "skip"
 
 
+# ---------------------------------------------------------------- visits
+
+# Frigate ends a review item whenever it loses its objects for a moment and opens a new one when
+# they reappear, so one person pottering in the yard or one car being washed in the driveway comes
+# out as a review every 40-60 s. Pushed one by one, the week to 2026-09-25 was 454 sounding
+# notifications, about 65 a day, most of them the same thing happening again: 114 of Front Yard's
+# 251 came within five minutes of the one before. The Moments feed already folds these into
+# visits (MomentVisits.kt); a notification now does the same.
+#
+# Every alert is still pushed, so nothing is lost; what changes is how. Alerts on one camera that
+# follow each other within VISIT_GAP_SECONDS are a *visit* and share one notification (`notif_id`,
+# the visit's first review id), which each alert replaces with the visit so far. Only the visit's
+# first alert, and one that brings something new to it (a person where there were only cars), makes
+# a sound; the rest update it silently. Two more things are always quiet:
+# - a household car's comings and goings: an alert with nothing in it but the family's named cars,
+#   each seen within ROUTINE_GAP_SECONDS (the feed's "routine" stretch), on any camera;
+# - a backlog: an alert that began BACKLOG_SECONDS or more ago, found late because Frigate or the
+#   network was down, is history by now, however loud it would have been.
+# Away alerts are never folded: nobody home and a person seen always sounds, on its own.
+VISIT_GAP_SECONDS = 300.0
+ROUTINE_GAP_SECONDS = 3600.0
+BACKLOG_SECONDS = 600.0
+
+
+def review_kinds(item: dict[str, Any]) -> set[str]:
+    """
+    What a review brings, for telling a visit's news from more of the same: a recognised person
+    as "person:<name>" and anyone else as "person" (so a stranger after the family still sounds),
+    each named car as "car:<name>", an unnamed car as "car", and any other label (dog, bicycle)
+    as itself.
+    """
+    labels = review_labels(item)
+    names = review_names(item)
+    cars = car_names(labels, names)
+    kinds = {label for label in labels if label not in ("car", "person")}
+    if "person" in labels:
+        kinds |= {f"person:{n.lower()}" for n in names if n not in cars} or {"person"}
+    if "car" in labels:
+        kinds |= {f"car:{n.lower()}" for n in cars} or {"car"}
+    return kinds
+
+
+class Visit:
+    """One camera's run of alerts close together, and what they've shown so far."""
+
+    def __init__(self, item: dict[str, Any]):
+        self.id: str = item["id"]
+        self.camera: str = item.get("camera", "")
+        self.first_start = float(item.get("start_time") or 0)
+        self.last_seen = self.first_start
+        self.review_ids: set[str] = set()
+        self.kinds: set[str] = set()
+        self.objects: list[str] = []
+        self.sub_labels: list[str] = []
+        self.zones: list[str] = []
+
+    @property
+    def count(self) -> int:
+        return len(self.review_ids)
+
+    def add(self, item: dict[str, Any], now: float) -> None:
+        data = item.get("data") or {}
+        self.review_ids.add(item["id"])
+        self.kinds |= review_kinds(item)
+        self.objects = unique(self.objects + list(data.get("objects") or []))
+        self.sub_labels = unique(self.sub_labels + list(data.get("sub_labels") or []))
+        self.zones = list(data.get("zones") or []) or self.zones  # where it is now, not where it started
+        self.see(item, now)
+
+    def see(self, item: dict[str, Any], now: float) -> None:
+        """An alert of this visit is still going (seen now) or has ended; the visit lasts until then."""
+        end = item.get("end_time")
+        self.last_seen = max(self.last_seen, float(end) if end is not None else now)
+
+    def sentence(self, required_zones: list[str]) -> tuple[str, str]:
+        zone = alert_zone(self.zones, required_zones)
+        subject = subject_for(self.objects, self.sub_labels)
+        body = f"{subject} {zone_phrase(zone)}" if zone else f"{subject} detected"
+        if self.count > 1:
+            body += f" · {self.count} alerts"
+        return camera_name(self.camera), body
+
+
+class Visits:
+    """Each camera's current visit, and when each household car was last seen, for `judge`."""
+
+    def __init__(self) -> None:
+        self.by_camera: dict[str, Visit] = {}
+        self.car_seen: dict[str, float] = {}
+
+    def observe(self, items: list[dict[str, Any]], now: float) -> None:
+        """Stretches each visit to its alerts' latest ends, so a long alert keeps its visit open while it lasts."""
+        for item in items:
+            visit = self.by_camera.get(item.get("camera", ""))
+            if visit is not None and item["id"] in visit.review_ids:
+                visit.see(item, now)
+
+    def judge(self, item: dict[str, Any], now: float) -> tuple[Visit, bool]:
+        """Files this alert under its camera's visit (a new one if the last has gone quiet) and says whether it should sound."""
+        camera = item.get("camera", "")
+        start = float(item.get("start_time") or 0)
+        kinds = review_kinds(item)
+        visit = self.by_camera.get(camera)
+        if visit is None or start - visit.last_seen > VISIT_GAP_SECONDS:
+            visit = self.by_camera[camera] = Visit(item)
+        # A household car seen within the hour is no news, whether it's the whole alert or has just
+        # been named in a visit that so far only had "a car".
+        routine = {k for k in kinds if k.startswith("car:") and start - self.car_seen.get(k, float("-inf")) <= ROUTINE_GAP_SECONDS}
+        news = (not visit.kinds and not kinds) or bool(kinds - visit.kinds - routine)
+        visit.add(item, now)
+        end = item.get("end_time")
+        for car in (k for k in kinds if k.startswith("car:")):
+            self.car_seen[car] = max(self.car_seen.get(car, float("-inf")), float(end) if end is not None else now)
+        backlog = now - start >= BACKLOG_SECONDS
+        return visit, news and not backlog
+
+
 def poll_forever() -> None:
+    visits = Visits()
     # Everything that already exists at boot is history, not news.
     try:
         for item in recent_alerts():
@@ -629,7 +824,9 @@ def poll_forever() -> None:
                         continue
                     push_away_review(item, zones)
             # ---- end away mode ----
-            for item in reversed(recent_alerts()):  # oldest first, so pushes arrive in order
+            alerts = recent_alerts()
+            visits.observe(alerts, time.time())
+            for item in reversed(alerts):  # oldest first, so pushes arrive in order
                 rid = item["id"]
                 if with_db(lambda c: c.execute("SELECT 1 FROM sent WHERE review_id=?", (rid,)).fetchone()):
                     continue
@@ -642,17 +839,25 @@ def poll_forever() -> None:
                     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), "(stationary)")), c.commit()))
                     log.info("alert %s skipped: nothing in it moved (%s)", rid, ", ".join((item.get("data") or {}).get("objects") or []))
                     continue
-                title, body = sentence(item, zones.get(item.get("camera", ""), []))
+                visit, sound = visits.judge(item, time.time())
+                title, body = visit.sentence(zones.get(item.get("camera", ""), []))
                 data = {
                     "review_id": rid,
+                    "notif_id": visit.id,
                     "camera": item.get("camera", ""),
+                    # This alert's own object and start, so the picture and clip show what just
+                    # happened (the clip is asked for once its preview window from `event_start` is over) ...
                     "event_id": (item.get("data", {}).get("detections") or [""])[0],
-                    "zones": ",".join(item.get("data", {}).get("zones") or []),
-                    "start_time": str(item.get("start_time", "")),
+                    "event_start": str(item.get("start_time", "")),
+                    "zones": ",".join(visit.zones),
+                    # ... and the visit's start, so a tap opens it from the beginning.
+                    "start_time": str(visit.first_start),
                 }
+                if not sound:
+                    data["silent"] = "1"
                 result = broadcast(title, body, data, familiar=is_recognised_person(item))
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
-                log.info("alert %s -> %s: %s | %s", rid, title, body, result)
+                log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
         except Exception as e:
             log.warning("poll error: %s", e)
         time.sleep(POLL_SECONDS)

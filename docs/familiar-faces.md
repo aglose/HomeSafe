@@ -56,7 +56,8 @@ the server reports face recognition off.
 
 `PushRegistrar` re-registers the device (`POST /devices`, field `quiet_familiar`) whenever the
 switch flips or the server address changes. In `relay/relay.py`, `broadcast(..., familiar=True)`
-skips phones with that flag when the review item's `sub_labels` name the person, and
+skips phones with that flag when the review item's `sub_labels` name the person (a household
+car's name, per `HOUSEHOLD_CARS`, doesn't count), and
 `awaiting_recognition()` holds a still-anonymous, still-present person for the same 20 s grace
 (only while at least one phone has the flag, so nobody else's push is delayed). Away-mode pushes
 ignore the flag: with nobody home, every person is news.
@@ -65,5 +66,5 @@ ignore the flag: with nobody home, every person is news.
 
 - Renaming a person is in the API client but has no UI.
 - iOS has no push registration yet, so the relay-side rule only applies to Android phones; the
-  in-app poller applies it on every platform.
+  in-app poller applies it on iOS (it stays off on a phone the relay pushes to).
 - Registering a face from an event snapshot (rather than from Frigate's attempts) is not offered.

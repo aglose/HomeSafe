@@ -39,6 +39,12 @@ data class AlertNotification(
     val animation: ByteArray? = null,
     /** Away mode: nobody is home and a person was seen. Posted louder, on its own channel, so it can't be muted with the everyday ones. */
     val urgent: Boolean = false,
+    /**
+     * More of a visit already notified (the relay's `silent` push): posted, or re-posted after
+     * being swiped away, without a sound. A post that isn't silent makes one even over an [id]
+     * already showing — the visit brought something new.
+     */
+    val silent: Boolean = false,
 )
 
 /**

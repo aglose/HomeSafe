@@ -101,6 +101,11 @@ object AlertNotificationPoster {
      * first — so if its notification isn't in the shade any more (swiped away, or tapped) it does
      * nothing: a picture arriving late mustn't bring it back. That's read from the shade itself,
      * because a push's media is added by a worker that may be in a fresh process.
+     *
+     * A text post is a new alert, possibly one more of a visit whose notification has [AlertNotification.id]
+     * already. A [AlertNotification.silent] one replaces it (or puts it back, if swiped away)
+     * without a sound; one that isn't silent brought something new to the visit, so the old
+     * notification is taken down first and the new one sounds like a first post.
      */
     suspend fun show(context: Context, notification: AlertNotification): Unit = withContext(Dispatchers.Default) {
         if (!canPost(context)) return@withContext
@@ -118,6 +123,7 @@ object AlertNotificationPoster {
             }
         }
         synchronized(firstPosted) { firstPosted[notification.id] = postedAt }
+        if (!isUpdate && !notification.silent && active(context, notification.id) != null) cancel(context, notification.id)
 
         val thumbnail = notification.thumbnail?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
         val frames = notification.animation?.let { gifFrames(it) }.orEmpty()
@@ -146,6 +152,7 @@ object AlertNotificationPoster {
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             // Every stage after the first is an update: no second sound, no second buzz.
             .setOnlyAlertOnce(true)
+            .setSilent(notification.silent)
             .setWhen(postedAt)
             .setShowWhen(true)
             .setAutoCancel(true)
@@ -175,6 +182,10 @@ object AlertNotificationPoster {
     /** Tagged by the detection's id, so each detection has its own notification and every stage replaces the last. */
     private fun notify(context: Context, id: String, notification: Notification) {
         context.getSystemService(NotificationManager::class.java).notify(id, NOTIFICATION_ID, notification)
+    }
+
+    private fun cancel(context: Context, id: String) {
+        context.getSystemService(NotificationManager::class.java).cancel(id, NOTIFICATION_ID)
     }
 
     private fun active(context: Context, id: String): StatusBarNotification? =

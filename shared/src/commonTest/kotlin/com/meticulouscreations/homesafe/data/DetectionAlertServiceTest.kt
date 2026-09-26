@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
@@ -104,8 +105,13 @@ class DetectionAlertServiceTest {
         }
     }
 
+    private class FakeTokens(private val value: String?) : PushTokenProvider {
+        override val isSupported = value != null
+        override suspend fun token() = value
+    }
+
     /** A fake Frigate whose `/api/events` honours `after` the way the real one does (start_time strictly after). */
-    private class Harness(scope: TestScope, settings: AlertSettings, now: Double = 1_000_000.0, supported: Boolean = true) {
+    private class Harness(scope: TestScope, settings: AlertSettings, now: Double = 1_000_000.0, supported: Boolean = true, pushToken: String? = null) {
         val events = mutableListOf<Triple<String, String, Double>>() // id, label, start
 
         /** Zones an event passed through, by id; absent means none. */
@@ -175,6 +181,7 @@ class DetectionAlertServiceTest {
             settingsRepository = settingsRepo,
             presenceRepository = presenceRepo,
             notifier = notifier,
+            pushTokenProvider = FakeTokens(pushToken),
             scope = scope.backgroundScope,
             clock = { clockNow },
             pollIntervalMs = 100,
@@ -203,6 +210,17 @@ class DetectionAlertServiceTest {
 
     private val on = AlertSettings(pushNotificationsEnabled = true)
     private val anywhere = AlertZone("amcrest_1", null)
+
+    @Test
+    fun aPhoneTheRelayPushesToDoesNotPollToo() = runTest {
+        val h = Harness(this, on, pushToken = "fcm-1")
+        h.service.start()
+        h.events += Triple("new", "person", 1_000_010.0)
+        h.clockNow = 1_000_020.0
+        settle()
+        assertTrue(h.afters.isEmpty(), "Frigate is never asked: the relay's push covers every alert")
+        assertTrue(h.notifier.posted.isEmpty())
+    }
 
     @Test
     fun onlyDetectionsAfterSwitchingOnNotifyAndEachOnlyOnce() = runTest {
