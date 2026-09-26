@@ -14,13 +14,14 @@ itself needs some one-time setup that its API cannot do for you.
    back to the debug key, and a missing `google-services.json` would ship an app that cannot
    register for push — both silent).
 2. Decodes the upload keystore and the Firebase config onto the runner.
-3. `./gradlew :androidApp:bundleRelease -PversionCode=<run number> -PrequireReleaseSigning=true`.
+3. `./gradlew :androidApp:bundleRelease -PversionCode=<run number> -PreleasePr=<merged PR> -PrequireReleaseSigning=true`.
 4. Uploads the `.aab` to the internal track with `status: completed`, along with `mapping.txt`
    so Play can deobfuscate R8-minified crash reports.
 5. Keeps the bundle and its mapping file as a workflow artifact for 90 days. The mapping is the
    only way to read a stack trace from that build once R8 has renamed everything, so keep it.
 
-The release notes shown to testers are the commit subject plus the short SHA.
+The release notes shown to testers are the commit subject, then the version (see
+[versionName](#versionname)) and the short SHA.
 
 ## One-time Play Console setup
 
@@ -116,8 +117,26 @@ uploaded. If the manual first upload used a code at or above the current run num
 repository variable `VERSION_CODE_OFFSET` (Settings → Secrets and variables → Actions →
 *Variables*) to a number that lifts the run number past it. Only ever raise it.
 
-`versionName` stays `1.0` for every internal build; the `versionCode` is what distinguishes them
-in the Play Console.
+## versionName
+
+A release's `versionName` is `appVersionBase` (in `gradle.properties`, `1.0` today) plus the
+number of the pull request its commit merged: PR #62 ships as `1.0.62`. The publish job looks the
+PR up from the commit and passes `-PreleasePr`; a push to `main` that came from no PR ships as the
+plain base, with a warning on the run. Local builds are the plain base too (debug adds `-debug`).
+
+Because the PR number is known before the merge, the **App version** workflow
+([`.github/workflows/pr-app-version.yml`](../.github/workflows/pr-app-version.yml)) writes it into
+the top of every PR's description, so each PR says which version it will put on the phone. The
+line carries an `<!-- app-version -->` marker; the workflow replaces it on every push or edit, and
+puts it back if an edit removed it.
+
+The app shows the installed version when the route badge ("Tailscale" / "Local network") at the
+top right is tapped, as `1.0.62 (431)`: the `versionName`, then the `versionCode`. The release
+notes Play shows testers end with the same pair.
+
+Version names are labels, not an order: PRs can merge out of number order, and two PRs merged
+back to back ship only the second (see below), which then contains both. The `versionCode` is the
+one that only goes up.
 
 ## Things worth knowing
 

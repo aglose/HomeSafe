@@ -5,7 +5,7 @@ import android.os.Build
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 
-private class AndroidDeviceInfo(debuggable: Boolean) : DeviceInfo {
+private class AndroidDeviceInfo(debuggable: Boolean, override val appVersion: String) : DeviceInfo {
     override val platform = "android"
     override val name = "${Build.MANUFACTURER} ${Build.MODEL}".trim()
 
@@ -19,6 +19,11 @@ private class AndroidDeviceInfo(debuggable: Boolean) : DeviceInfo {
 }
 
 actual fun createDeviceInfo(platformContext: PlatformContext): DeviceInfo {
-    val flags = platformContext.context.applicationInfo.flags
-    return AndroidDeviceInfo(debuggable = flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
+    val context = platformContext.context
+    val flags = context.applicationInfo.flags
+    val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+    return AndroidDeviceInfo(
+        debuggable = flags and ApplicationInfo.FLAG_DEBUGGABLE != 0,
+        appVersion = "${packageInfo.versionName} (${packageInfo.longVersionCode})",
+    )
 }

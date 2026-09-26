@@ -15,9 +15,12 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.screens.FrigateTopBar
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.ShellSkeleton
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
@@ -159,5 +162,22 @@ class ShellChromeUiTest {
 
         // The skeleton is Home with its cameras still on the way, never Home with none.
         onAllNodesWithText("No cameras found on this server.").assertCountEquals(0)
+    }
+
+    @Test
+    fun tappingTheRouteBadgeShowsTheAppVersion() = runComposeUiTest {
+        setContent {
+            FrigatePreview {
+                FrigateTopBar(
+                    activeConnection = ActiveConnection(serverUrl = "http://100.64.0.1:5000", localUrl = null, route = ConnectionRoute.TAILSCALE),
+                    appVersion = "1.0.62 (431)",
+                )
+            }
+        }
+        onNodeWithText("Version 1.0.62 (431)").assertDoesNotExist()
+
+        onNodeWithText("Tailscale").performClick()
+
+        onNodeWithText("Version 1.0.62 (431)").assertIsDisplayed()
     }
 }

@@ -1,0 +1,56 @@
+name: App version
+
+# Writes the version a PR will ship as into the top of its description, e.g. "1.0.62": merging
+# it to main publishes that versionName to Play internal testing (the publish-internal job in
+# ci.yml builds "<appVersionBase>.<PR number>"), and the app shows it when its route badge is
+# tapped. The build number beside it in the app is the CI run number, which isn't known until
+# the merge runs, so it isn't written here.
+#
+# A workflow of its own, not a job in ci.yml: it has to run when a description is edited (to put
+# the line back if an edit dropped it), and that must not rerun the whole of CI.
+
+on:
+  pull_request:
+    types: [opened, reopened, edited, synchronize]
+
+concurrency:
+  group: pr-app-version-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  describe:
+    name: Write the app version into the description
+    # A fork's PR gets a read-only token, so it could not edit the description anyway.
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: gradle.properties
+          sparse-checkout-cone-mode: false
+
+      # Edits made with this workflow's token don't trigger workflows, so rewriting the
+      # description here can't set off another `edited` run.
+      - name: Put the version line at the top of the description
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          base=$(sed -n 's/^appVersionBase=//p' gradle.properties)
+          marker='<!-- app-version -->'
+          line="**App version:** merging this ships HomeSafe \`$base.$PR\` to Play internal testing. $marker"
+          body=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.body // ""')
+          # Drop any earlier version line and the blank lines that led the rest.
+          rest=$(printf '%s\n' "$body" | grep -vF -- "$marker" | sed '/[^[:space:]]/,$!d')
+          updated=$(printf '%s\n\n%s' "$line" "$rest")
+          if [ "$updated" = "$body" ]; then
+            echo "Already says $base.$PR"
+            exit 0
+          fi
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR" -f body="$updated" --silent
+          echo "Wrote $base.$PR"
