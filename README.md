@@ -229,6 +229,10 @@ Use the run button in your IDE's editor gutter, or run tests using Gradle tasks:
 integration journeys against a fake Frigate (`:fake-frigate`), end-to-end tests, and the Android
 CLI journeys.
 
+To see a UI change rather than test it, `./gradlew :shared:renderPreviews` draws every `@Preview`
+to PNGs on the JVM, and every branch's pull request gets a before/after gallery of the previews it
+changed; see [docs/ui-previews.md](docs/ui-previews.md).
+
 ### Releasing
 
 Every push to `main` with a green CI publishes a signed bundle to Play internal testing. The

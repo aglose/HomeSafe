@@ -12,6 +12,10 @@ actions, with `testTag` only where text or content descriptions can't pick a nod
 | End to end | `androidApp/src/androidTest` | The installed app's real `MainActivity`: intents, system back, relaunch | Emulator |
 | Android CLI journeys | `androidApp/src/journeysTest` | Natural-language journeys an agent runs on a device through the Android CLI | Emulator (opt-in) |
 
+Alongside these, previews and screenshots show what a change looks like rather than asserting on it:
+`:shared:renderPreviews`, the Layoutlib screenshot tests in `:androidApp`, journey screenshots
+(`-PjourneyScreens`), and the before/after gallery in each pull request. See [ui-previews.md](ui-previews.md).
+
 ## The fake Frigate (`:fake-frigate`)
 
 The integration journeys, the end-to-end tests and the Android CLI journeys all sign in to
