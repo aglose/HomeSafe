@@ -34,8 +34,15 @@ cp shared/build/previews/*.png shared/build/previews/previews.json "$out/desktop
 # The screenshot tool's update task: its name is derived from the suite, target and variant
 # (update<Suite><Target><Variant>TestSuite), or updateDebugScreenshotTest with the older standalone
 # plugin, which a merge base may still use. Ask Gradle rather than hard-code either.
-android_task=$(./gradlew -q :androidApp:tasks --all --no-configuration-cache 2>/dev/null \
-  | grep -oE '^update[A-Za-z0-9]*(TestSuite|ScreenshotTest)\b' | grep -i screenshot | grep -i debug | head -n1)
+tasks_out="$since.tasks"
+if ! ./gradlew -q :androidApp:tasks --all --no-configuration-cache > "$tasks_out" 2>&1; then
+  echo "Couldn't list :androidApp's tasks:"
+  tail -n 30 "$tasks_out"
+fi
+echo "Screenshot and test-suite tasks in :androidApp:"
+grep -iE '^[a-z][A-Za-z0-9]*(screenshot|suite)[A-Za-z0-9]*( |$)' "$tasks_out" | sed 's/^/  /'
+android_task=$(grep -oE '^update[A-Za-z0-9]*' "$tasks_out" | grep -i screenshot | grep -i debug | head -n1)
+rm -f "$tasks_out"
 if [ -n "$android_task" ]; then
   echo "Layoutlib: :androidApp:$android_task"
   ./gradlew ":androidApp:$android_task" "$@" || status=$?
