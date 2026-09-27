@@ -316,6 +316,26 @@ class MomentsViewModelTest {
     }
 
     @Test
+    fun overlappingDetectionsAreOneCardAndAVisitListsOneRowPerTake() = runTest(dispatcher) {
+        val t0 = 1_789_480_000.0
+        fun person(id: String, start: Double, end: Double) =
+            MomentEvent(id, "front_yard", "person", null, t0 + start, t0 + end, 0.9, hasClip = true, hasSnapshot = false)
+        // Two people crossing together, one of them re-found: the same 22 seconds of footage three times.
+        val together = listOf(person("a", 0.0, 22.0), person("b", 4.0, 17.0), person("c", 10.0, 17.0))
+        val alone = state(Harness(events = together).viewModel).groups.flatMap { it.items }.single()
+        assertEquals(VisitKind.SINGLE, alone.kind)
+        assertEquals("a", alone.event.id)
+        assertEquals(emptyList(), alone.clips)
+        assertNull(alone.presentation.clipCountLabel)
+
+        val withLater = together + person("d", 60.0, 65.0) + person("e", 62.0, 90.0)
+        val visit = state(Harness(events = withLater).viewModel).groups.flatMap { it.items }.single()
+        assertEquals(VisitKind.VISIT, visit.kind)
+        assertEquals(listOf("a", "e"), visit.clips.map { it.event.id }, "one row per stretch of footage, playing the clip that covers it")
+        assertEquals("2 clips", visit.presentation.clipCountLabel)
+    }
+
+    @Test
     fun onlyAnUnnamedCarCanBeTaggedAsAKnownCar() = runTest(dispatcher) {
         val items = state(Harness(events = evening).viewModel).groups.flatMap { it.items }.associateBy { it.key }
         assertEquals(true, items.getValue("stranger").canTagCar)

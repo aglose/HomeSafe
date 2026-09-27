@@ -20,6 +20,12 @@ import kotlinx.datetime.TimeZone
  * - A **routine** stretch is a household car's comings and goings: every sighting of one named car
  *   ([isHouseholdCar]), on any camera, within [ROUTINE_GAP_SECONDS] of the one before. Long,
  *   because the point is to get the family's cars out of the way, not to account for them.
+ * - A **take** is detections within a visit whose spans overlap: one stretch of the camera's
+ *   footage. Frigate tracks each object on its own, so two people crossing the lawn together, or
+ *   one it lost and re-found while still tracking the first sighting, are several events whose
+ *   clips all show the same seconds of video. Seen on the Front Yard, 2026-09-26: a card opened
+ *   onto "3 clips" at 7:55 PM (0:22, 0:13 and 0:07) that played the same two people three times.
+ *   A visit lists its takes, not its detections, and a visit of one take is an ordinary card.
  */
 object MomentVisits {
     /** A detection starting this soon after the last one of its kind on its camera ended continues that visit. */
@@ -58,10 +64,10 @@ val MomentEvent.isHouseholdCar: Boolean get() = category == MomentCategory.VEHIC
 val MomentEvent.isGenericCar: Boolean get() = label.equals(CarTagging.CAR_LABEL, ignoreCase = true) && !isFamiliar
 
 enum class VisitKind {
-    /** One detection, drawn as the ordinary card. */
+    /** One detection, or several that overlap into one [MomentTake]: drawn as the ordinary card. */
     SINGLE,
 
-    /** Several detections of one kind on one camera close together: one card that can open onto its clips. */
+    /** Several takes of one kind on one camera close together: one card that can open onto its clips. */
     VISIT,
 
     /** A household car's comings and goings: a quiet row that can open onto its sightings. */
@@ -77,14 +83,20 @@ data class MomentVisit(val kind: VisitKind, val events: List<MomentEvent>) {
         require(events.isNotEmpty()) { "a visit needs at least one detection" }
     }
 
+    /**
+     * The visit's stretches of footage, oldest first: what its card opens onto. A routine's
+     * sightings are on several cameras, so each is a take of its own.
+     */
+    val takes: List<MomentTake> = if (kind == VisitKind.ROUTINE) events.map { MomentTake(listOf(it)) } else events.intoTakes()
+
     /** Stable while the visit grows newer clips: the first detection's id. What the feed keys the entry on. */
     val key: String get() = events.first().id
 
     /**
-     * What a tap plays and whose thumbnail stands for the entry: the first detection with a clip,
-     * since how a visit started — someone arriving, a car pulling in — is what the card is about.
+     * What a tap plays and whose thumbnail stands for the entry: the first take's clip that can
+     * play, since how a visit started — someone arriving, a car pulling in — is what the card is about.
      */
-    val lead: MomentEvent get() = events.firstOrNull { it.hasClip } ?: events.first()
+    val lead: MomentEvent get() = takes.map { it.lead }.firstOrNull { it.hasClip } ?: events.first()
 
     val startEpochSeconds: Double get() = events.first().startEpochSeconds
 
@@ -100,6 +112,37 @@ data class MomentVisit(val kind: VisitKind, val events: List<MomentEvent>) {
 
     /** The best-scored name among its detections, when any has one. */
     val subLabel: String? get() = events.filter { it.isFamiliar }.maxByOrNull { it.subLabelScore ?: 0.0 }?.subLabel
+}
+
+/**
+ * Detections of one visit whose spans overlap: the same seconds of one camera's footage, which
+ * every one of their clips shows. [events] are oldest first. Never empty.
+ */
+data class MomentTake(val events: List<MomentEvent>) {
+    init {
+        require(events.isNotEmpty()) { "a take needs at least one detection" }
+    }
+
+    /**
+     * The clip that plays for the take: the one covering the most of it — one still in progress,
+     * else the longest, the earliest on a tie — among those with a clip.
+     */
+    val lead: MomentEvent
+        get() = events.filter { it.hasClip }.maxByOrNull { it.durationSeconds ?: Double.POSITIVE_INFINITY } ?: events.first()
+}
+
+/**
+ * Splits one visit's detections — one camera, one label — into takes: walking oldest first, a
+ * detection starting before the take so far has ended (or while any of it is still in progress)
+ * is more of the same footage.
+ */
+internal fun List<MomentEvent>.intoTakes(): List<MomentTake> {
+    val takes = ArrayList<MutableList<MomentEvent>>()
+    for (event in sortedBy { it.startEpochSeconds }) {
+        val open = takes.lastOrNull()
+        if (open != null && event.follows(open, gapSeconds = 0.0)) open += event else takes += mutableListOf(event)
+    }
+    return takes.map { MomentTake(it) }
 }
 
 /**
@@ -137,7 +180,7 @@ fun List<MomentEvent>.groupIntoVisits(): List<MomentVisit> {
     }
     return (
         routines.map { MomentVisit(if (it.size > 1) VisitKind.ROUTINE else VisitKind.SINGLE, it) } +
-            visits.map { MomentVisit(if (it.size > 1) VisitKind.VISIT else VisitKind.SINGLE, it) }
+            visits.map { MomentVisit(if (it.intoTakes().size > 1) VisitKind.VISIT else VisitKind.SINGLE, it) }
         ).sortedByDescending { it.latestStartEpochSeconds }
 }
 
@@ -155,14 +198,15 @@ private fun MomentEvent.namedAlike(run: List<MomentEvent>): Boolean {
 }
 
 /**
- * How a folded entry reads. A [VisitKind.SINGLE] reads exactly as its detection does. A visit is
+ * How a folded entry reads. A single detection reads exactly as it does on its own. A visit is
  * titled like its best-named detection, placed where it ended up, and timed as a range
- * ("6:55–6:56 PM") with a count of its clips. A routine stretch says what the car did rather than
- * where: "Andrew's Tesla came and went 6×".
+ * ("6:55–6:56 PM") with a count of its clips — its takes. A [VisitKind.SINGLE] of several
+ * overlapping detections reads the same way with no count, since there is only the one to play.
+ * A routine stretch says what the car did rather than where: "Andrew's Tesla came and went 6×".
  */
 fun MomentVisit.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentSystemDefault()): MomentPresentation {
     val leadPresentation = lead.present(today, timeZone)
-    if (kind == VisitKind.SINGLE) return leadPresentation
+    if (events.size == 1) return leadPresentation
 
     val name = subLabel
     val range = clockRangeLabel(startEpochSeconds, endEpochSeconds, timeZone)
@@ -189,7 +233,7 @@ fun MomentVisit.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
                 timeLabel = range,
                 locationLabel = if (places.isEmpty()) lead.cameraDisplayName else "${lead.cameraDisplayName} · $places",
                 sightingsLabel = null,
-                clipCountLabel = "${events.size} clips",
+                clipCountLabel = if (kind == VisitKind.VISIT) "${takes.size} clips" else null,
             )
         }
     }
