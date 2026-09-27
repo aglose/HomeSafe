@@ -49,6 +49,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,6 +75,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -307,7 +309,8 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
     ) {
         // The gap to the summary, carried inside the reveal so an empty strip costs nothing. Tighter
         // than the list's 24dp between sections: this is the summary's second half, not a section.
-        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 16.dp))
+        // Most of it is the caption's own 48dp touch target, which is taller than its line of text.
+        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -323,12 +326,14 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
  */
 @Composable
 private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier = modifier) {
+        // A 48dp target, as the IconButton it replaced was, with the caption centred in it: the
+        // space above and below the text is the gap to the summary and to the cards.
         Row(
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(onClickLabel = "Check and tag the cars in view", onClick = onCheck)
-                .padding(vertical = 2.dp)
+                .clickable(onClickLabel = "Check and tag the cars in view", role = Role.Button, onClick = onCheck)
                 .testTag(IN_VIEW_CHECK_TEST_TAG),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
