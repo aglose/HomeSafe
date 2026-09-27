@@ -261,6 +261,9 @@ def db() -> sqlite3.Connection:
     # Google Home's account link and stream tokens (see "Google Home"), by hash: kind is "code",
     # "access", "refresh" or "stream"; subject the Frigate user, or for "stream" the camera.
     conn.execute("CREATE TABLE IF NOT EXISTS google_tokens (hash TEXT PRIMARY KEY, kind TEXT, subject TEXT, expires REAL)")
+    # The names people gave events through the relay (see "person tags"), and since when it keeps them.
+    conn.execute("CREATE TABLE IF NOT EXISTS person_tags (event_id TEXT PRIMARY KEY, name TEXT, by TEXT, at REAL)")
+    conn.execute("INSERT OR IGNORE INTO state VALUES ('person_tags_since', ?)", (json.dumps(time.time()),))
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -1398,14 +1401,48 @@ def sub_label_of(event: dict[str, Any]) -> tuple[str | None, float | None]:
     return (sub or None), (float(score) if score is not None else None)
 
 
+# ---------------------------------------------------------------- person tags
+#
+# Frigate keeps one name per event, a sub_label with a score, whoever gave it. The app tags a car at
+# 1.0, and the relay took a 1.0 to mean a person had: it leaves such a name alone and may keep a
+# picture of the car as its reference. Since the retrain of 2026-09-27 the known_cars classifier
+# scores some of its own guesses 1.0 too, among them the parked Tesla's event that carried on as a
+# car on the street, filed as the Tesla leaving.
+#
+# So the app tags through the relay (POST /events/{id}/sub_label), which passes the tag on to
+# Frigate as that person (their session cookie, so Frigate's own permission check applies) and
+# keeps a row per tag in `person_tags`. A name is a person's when that row has it. Events that
+# began before the table existed keep the old rule, so tags given before are still trusted.
+def person_tags_since() -> float:
+    return float(state_get("person_tags_since") or 0.0)
+
+
+def by_a_person(event: dict[str, Any]) -> bool:
+    """Whether the event's name is one a person gave (see "person tags")."""
+    name, score = sub_label_of(event)
+    if not name:
+        return False
+    row = with_db(lambda c: c.execute("SELECT name FROM person_tags WHERE event_id=?", (event.get("id"),)).fetchone())
+    if row:
+        return row[0] == name
+    return score is not None and score >= 1.0 and float(event.get("start_time") or 0.0) < person_tags_since()
+
+
+def record_person_tag(event_id: str, name: str | None, by: str) -> None:
+    """Keeps (or, for a name taken away, forgets) the name a person gave an event."""
+    if name:
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO person_tags VALUES (?,?,?,?)", (event_id, name, by, time.time())), c.commit()))
+    else:
+        with_db(lambda c: (c.execute("DELETE FROM person_tags WHERE event_id=?", (event_id,)), c.commit()))
+
+
 def second_opinion_due(event: dict[str, Any], zones_for_car: list[str], now: float) -> bool:
     """A car in a car zone, done or settled, whose name no person gave."""
-    _, score = sub_label_of(event)
     return (
         event.get("label") == "car"
         and any(z in zones_for_car for z in event.get("zones") or [])
         and (event.get("end_time") is not None or now - float(event.get("start_time") or now) >= VLM_SETTLE_SECONDS)
-        and (score is None or score < 1.0)
+        and not by_a_person(event)
     )
 
 
@@ -1542,9 +1579,9 @@ def ensure_vlm_model() -> bool:
 
 def worth_learning(event: dict[str, Any], zones_for_car: list[str], now: float) -> bool:
     """A car a person tagged, in a car zone and settled, whose camera has no reference picture of it yet (see "vehicle memory")."""
-    name, score = frigate_name(event)
+    name, _ = frigate_name(event)
     return (
-        name is not None and score is not None and score >= 1.0
+        name is not None and by_a_person(event)
         and event.get("label") == "car"
         and any(z in zones_for_car for z in event.get("zones") or [])
         and (event.get("end_time") is not None or now - float(event.get("start_time") or now) >= VLM_SETTLE_SECONDS)
@@ -1603,7 +1640,7 @@ def second_opinions() -> None:
             if description.get("delivery") not in (None, "none"):
                 summary_text += f" ({description['delivery']})"
             summary_text = summary_text.strip()
-            if score is not None and score >= 1.0:
+            if by_a_person(event):
                 # A person's name: nothing to judge, but the best picture there is of that car.
                 learned = learn_vehicle(camera, name, description, picture, tagged=True)
                 record_check(event_id, "learn", "kept" if learned else "night", json.dumps({"name": name, "saw": description}))
@@ -1953,14 +1990,14 @@ def observe_car(event: dict[str, Any], now: float | None = None) -> dict[str, An
         return None
     event_id = event["id"]
     prev = sighting(event_id) or {}
-    name, score = frigate_name(event)
+    name, _ = frigate_name(event)
     movement = movement_of(event, polygons)
     start = float(event.get("start_time") or now)
     came = came_in_at(event, polygons) if movement == "arrived" else None
     late = came is not None and came - start > LATE_ARRIVAL_SECONDS
     if late:
-        name, score, start = None, None, came  # the event's name is the car the tracker followed before this one
-    how = ("tagged" if score is not None and score >= 1.0 else "classifier") if name else None
+        name, start = None, came  # the event's name is the car the tracker followed before this one
+    how = ("tagged" if by_a_person(event) else "classifier") if name else None
     if name and prev.get("how") == "looked" and prev.get("name") == name:
         how = "looked"  # the name the vision model gave it, back from Frigate
     end = event.get("end_time")
@@ -2805,6 +2842,30 @@ async def add_classification_example(
     log.info("classifier example by %s: %s/%s <- %s (box %.3f,%.3f %.3fx%.3f)", user, model, category, name, x, y, w, h)
     return {"ok": True, "file": name}
 
+
+
+@app.post("/events/{event_id}/sub_label")
+def tag_event(event_id: str, body: dict[str, Any], request: Request) -> Response:
+    """
+    A person naming an event (see "person tags"): the body is Frigate's own sub_label body, passed
+    on to Frigate with the caller's session cookie so Frigate decides whether they may. What Frigate
+    took is kept as that person's; an empty name takes the tag away. Answers Frigate's answer.
+    """
+    cookie = request.headers.get("cookie")
+    if not cookie:
+        raise HTTPException(status_code=401, detail="Frigate session cookie required")
+    name = body.get("subLabel") or None
+    if name is not None and not isinstance(name, str):
+        raise HTTPException(status_code=400, detail="subLabel must be a string")
+    try:
+        r = requests.post(f"{FRIGATE_AUTH}/api/events/{event_id}/sub_label", json=body, headers={"Cookie": cookie}, timeout=10)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Frigate unreachable: {e}")
+    if r.ok:
+        user = require_frigate_session(request)
+        record_person_tag(event_id, name, user)
+        log.info("person tag by %s: %s <- %s", user, event_id, name or "(cleared)")
+    return Response(content=r.content, status_code=r.status_code, media_type=r.headers.get("content-type", "application/json"))
 
 
 @app.get("/vehicles")
