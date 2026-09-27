@@ -88,7 +88,8 @@ private class AndroidClipDownloader(context: Context) : ClipDownloader {
         in 400..599 -> "Frigate answered $reason for the clip"
         DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Not enough space on the phone"
         DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "A file with this name is already in Downloads"
-        DownloadManager.ERROR_HTTP_DATA_ERROR, DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "Lost the connection to the server"
+        DownloadManager.ERROR_HTTP_DATA_ERROR -> "Lost the connection to the server"
+        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "The server redirected the download too many times"
         else -> "Download failed ($reason)"
     }
 

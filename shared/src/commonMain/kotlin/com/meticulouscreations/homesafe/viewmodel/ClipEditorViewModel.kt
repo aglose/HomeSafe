@@ -518,7 +518,14 @@ class ClipEditorViewModel(
             save.transformWhile { step ->
                 emit(step)
                 step is RecordingClipSave.Running
-            }.collect { step -> _uiState.update { it.copy(save = step.toSaveState()) } }
+            }.collect { step ->
+                _uiState.update {
+                    // Trimmed while this was saving: how it ended is about the old selection, not
+                    // this one, which is ready to save in its own right.
+                    val outcomeIsStale = step !is RecordingClipSave.Running && it.range != range
+                    it.copy(save = if (outcomeIsStale) ClipSaveState.Idle else step.toSaveState())
+                }
+            }
         }
     }
 
