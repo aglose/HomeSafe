@@ -59,7 +59,8 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   make, model, body, delivery company). The answer is matched against `HOUSEHOLD_CARS`. If it
   contradicts the classifier's name, the name is swapped for the one household car that fits,
   but only when the model also read that car's make (score 0.9); otherwise the name is cleared.
-  The check never names a car the classifier left unnamed. It writes what it saw as the event's
+  The check never names a car the classifier left unnamed on looks alone (the vehicle memory, below,
+  can, from where it is parked). It writes what it saw as the event's
   description, e.g. "red tesla Model Y suv".
   - The descriptions were checked against each class's training images on 2026-09-24:
     Andrew's Tesla is dark blue (listed as blue or black, since it reads as black at dusk),
@@ -67,6 +68,54 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   - Infrared night footage answers colour `unknown`, which rules nothing out.
   - A car missing from `HOUSEHOLD_CARS` is never judged.
   - Plain `qwen3-vl:4b` is the Thinking build; keep the `-instruct` tag.
+
+## The vehicle memory
+
+Tagging a car names one Frigate event. Frigate re-registers a parked car as a new object all day,
+though, and each of those is unnamed unless the classifier gets a look in the seconds it lives.
+So Andrew's Tesla, tagged in the driveway, kept coming through as "Car in the driveway". The relay
+now remembers the household's cars itself, in `relay.db` (`vehicle_memory_round`,
+`observe_car` and the section "vehicle memory" in `relay/relay.py`).
+
+- **Where each car is parked.** `vehicles` holds each named car per camera: whether it is parked
+  there now, where (the bottom centre and size of its box) and since when. A car a person tagged,
+  or one the classifier or vision model named, is remembered where it ends up.
+- **What each car did.** Every car event in a car zone gets a `vehicle_sightings` row. Its
+  movement comes from where its path began and ended against the zone outline:
+  - `arrived`: from outside to inside;
+  - `left`: from inside to outside;
+  - `moved`: across the zone by more than its own size;
+  - `parked`: it stayed put.
+- **Naming by spot.** An unnamed car whose path begins within half a box of a remembered car's
+  spot is that car (`how = parked`). An arrival is never named this way. Leaving forgets the
+  spot, and so does an unnamed car pulling into it once the remembered car is no longer seen. An
+  old event seen late never undoes a newer one.
+- **Notifications.** An alert's cars carry the memory's names, so the push says "Andrew's Tesla
+  left the driveway" or "Car arrived in the driveway", and a household car doing its rounds stays
+  quiet. An alert with nothing in it but remembered cars that stayed parked is dropped, like the
+  motion gate drops still cars. A visit with a car in it is told again, silently, for 20 minutes
+  after its last push (`Followups`) whenever the words change. That covers a name the vision
+  model finds a minute later, or a car that has now left rather than moved.
+- **Frigate.** The story is written as the event's description, e.g. "Andrew's Tesla left the
+  driveway · blue tesla Model Y suv".
+
+The vision model keeps the memory honest when it runs:
+
+- It looks once at a car a person tagged, if that camera has no picture of it yet. In daylight,
+  that crop becomes the car's reference picture, `data/vehicles/<camera>--<name>.jpg` next to
+  `relay.db`, and what it saw becomes the car's `looks`.
+- A car named only by its spot is shown to the model next to the reference picture ("the same
+  car?").
+  - If it's the same car, and its looks fit `HOUSEHOLD_CARS`, the name goes to Frigate at 0.9
+    (`how = looked`).
+  - If it's a different car, or a make or colour that car never is, the name is withdrawn
+    (`how = not`) and the car is forgotten from that spot.
+  - Without a reference picture, reading the car's own make off it is enough to confirm.
+- An unnamed arrival is compared with each remembered car that is away and has a picture. It is
+  named when exactly one is the same car.
+
+`GET /vehicles` (session cookie or device secret) answers what the memory knows: each car, whether
+it is here and since when, and the last day's arrivals, departures and moves.
 
 Check it with:
 
@@ -76,6 +125,14 @@ ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep -E "s
 
 ```bash
 ssh frigate 'docker exec homesafe-relay python -c "import sqlite3; print(sqlite3.connect(\"/data/relay.db\").execute(\"select kind, verdict, count(*) from car_checks group by 1,2\").fetchall())"'
+```
+
+```bash
+ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep -E "vehicle memory|stayed parked|told again|memory:"'
+```
+
+```bash
+ssh frigate 'docker exec homesafe-relay python -c "import sqlite3; print(sqlite3.connect(\"/data/relay.db\").execute(\"select camera, name, here, since, last_seen, looks from vehicles\").fetchall())"'
 ```
 
 ## Deploying

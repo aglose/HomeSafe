@@ -19,6 +19,12 @@ Nor does every push make a sound. Frigate cuts one person or car in view into a 
 minute or so, so alerts on one camera close together are one *visit* with one notification, and
 only its first alert, or one that brings something new to it, sounds; the rest update it quietly.
 A household car doing its rounds, and a backlog found late, are quiet too — see `Visits`.
+
+Cars are told by what they did. The relay remembers where each named car is parked (relay.db), so
+a car Frigate re-detected without a name where Andrew's Tesla is parked is Andrew's Tesla, one
+that stayed put is dropped like any still car, and one that went is "Andrew's Tesla left the
+driveway" — see "vehicle memory". The local vision model checks those names against a picture
+of each car kept on the box.
 """
 
 import hashlib
@@ -104,8 +110,59 @@ def car_names(labels: list[str], names: list[str]) -> list[str]:
     return [n for n in names if n.lower() in HOUSEHOLD_CARS]
 
 
+# The app's DetectionNames.kt rules for putting back the apostrophe a category key lost:
+# `andrews_tesla` is "Andrew's Tesla", as the Moments feed says, not "Andrews Tesla".
+VEHICLE_WORDS = {
+    "car", "truck", "van", "minivan", "suv", "jeep", "pickup", "sedan", "wagon", "coupe", "hatchback", "convertible",
+    "bike", "motorcycle", "scooter", "rv", "camper", "trailer", "boat", "model",
+    "tesla", "mercedes", "benz", "bmw", "audi", "honda", "toyota", "ford", "chevy", "chevrolet", "subaru", "lexus",
+    "acura", "nissan", "mazda", "hyundai", "kia", "volvo", "volkswagen", "vw", "porsche", "rivian", "polestar", "lucid",
+    "prius", "civic", "camry", "corolla", "accord", "outback", "highlander", "tacoma", "cybertruck", "mini", "dodge",
+    "ram", "gmc", "buick", "cadillac", "lincoln", "infiniti", "genesis", "jaguar", "range", "fiat", "mitsubishi",
+}
+UPPERCASE_WORDS = {"bmw", "suv", "vw", "gmc", "rv"}
+NAMES_ENDING_IN_S = {
+    "agnes", "alexis", "amos", "andreas", "carlos", "charles", "chris", "curtis", "cyrus", "dennis", "doris", "douglas",
+    "elias", "ellis", "frances", "francis", "giles", "gladys", "gus", "hans", "iris", "james", "janis", "jess", "jesus",
+    "jonas", "jules", "julius", "klaus", "les", "lewis", "lois", "louis", "lucas", "marcus", "markus", "mathias",
+    "matthias", "miles", "morris", "moses", "myles", "niklas", "nicholas", "nicolas", "otis", "phyllis", "rhys", "ross",
+    "russ", "silas", "thomas", "tobias", "travis", "wes", "willis",
+}
+PLURAL_OWNERS = {"parents", "grandparents", "kids", "neighbors", "neighbours", "inlaws"}
+
+
+def possessive(owner: str) -> str | None:
+    """"andrews" -> "Andrew's", "james" -> "James's", "parents" -> "Parents'"; None when it can't tell."""
+    lower = owner.lower()
+    if len(lower) < 3 or not lower.endswith("s"):
+        return None
+    capitalised = owner[:1].upper() + owner[1:]
+    if lower in PLURAL_OWNERS:
+        return f"{capitalised}'"
+    if lower in NAMES_ENDING_IN_S:
+        return f"{capitalised}'s"
+    if lower[:-1] in NAMES_ENDING_IN_S:
+        return f"{capitalised[:-1]}'s"
+    if lower.endswith("ss"):
+        return None
+    return f"{capitalised[:-1]}'s"
+
+
 def display_name(key: str) -> str:
-    return SUB_LABEL_NAMES.get(key.lower(), humanize(key))
+    """"andrews_tesla" -> "Andrew's Tesla", "in-laws_mercedes" -> "In-Laws' Mercedes": the app's `subLabelDisplayName`."""
+    known = SUB_LABEL_NAMES.get(key.lower())
+    if known:
+        return known
+    words = [w for w in re.split(r"[_-]", key) if w]
+    vehicle_at = next((i for i, w in enumerate(words) if w.lower() in VEHICLE_WORDS), -1)
+    if vehicle_at >= 1:
+        owner_at = vehicle_at - 1
+        if words[owner_at].lower() == "laws" and owner_at >= 1 and words[owner_at - 1].lower() == "in":
+            del words[owner_at]
+            words[owner_at - 1] = "In-Laws'"
+        else:
+            words[owner_at] = possessive(words[owner_at]) or words[owner_at]
+    return " ".join(w.upper() if w.lower() in UPPERCASE_WORDS else w[:1].upper() + w[1:] for w in words)
 
 
 def subject_for(objects: list[str], sub_labels: list[str]) -> str:
@@ -132,10 +189,29 @@ def subject_for(objects: list[str], sub_labels: list[str]) -> str:
     return words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
 
 
+def zone_words(zone: str) -> str:
+    return " ".join(w for w in zone.replace("-", "_").split("_") if w).lower()
+
+
 def zone_phrase(zone: str) -> str:
-    name = " ".join(w for w in zone.replace("-", "_").split("_") if w).lower()
+    name = zone_words(zone)
     prep = "in" if any(e in name for e in ENCLOSED) else "on"
     return f"{prep} the {name}"
+
+
+def told(subject: str, zone: str | None, movement: str | None = None) -> str:
+    """
+    "Andrew's Tesla left the driveway", "Car arrived in the driveway", "Person in the driveway":
+    what a car did (see "vehicle memory"), or where the subject is when that isn't known.
+    """
+    where = zone_phrase(zone) if zone else ""
+    if movement == "arrived":
+        return f"{subject} arrived {where}".strip()
+    if movement == "left":
+        return f"{subject} left the {zone_words(zone)}" if zone else f"{subject} left"
+    if movement == "moved":
+        return f"{subject} moved {where}".strip()
+    return f"{subject} {where}" if zone else f"{subject} detected"
 
 
 def alert_zone(zones: list[str], required_zones: list[str]) -> str | None:
@@ -147,8 +223,7 @@ def sentence(item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]
     data = item.get("data") or {}
     zone = alert_zone(data.get("zones") or [], required_zones)
     subject = subject_for(data.get("objects") or [], data.get("sub_labels") or [])
-    body = f"{subject} {zone_phrase(zone)}" if zone else f"{subject} detected"
-    return camera_name(item.get("camera", "")), body
+    return camera_name(item.get("camera", "")), told(subject, zone)
 
 
 # ---------------------------------------------------------------- storage
@@ -171,6 +246,18 @@ def db() -> sqlite3.Connection:
     # What the car check (see `car_check_forever`) made of each event, so it looks at each once:
     # kind "street" (was it a passing car to file under `none`) or "vlm" (the second opinion).
     conn.execute("CREATE TABLE IF NOT EXISTS car_checks (event_id TEXT, kind TEXT, at REAL, verdict TEXT, detail TEXT, PRIMARY KEY (event_id, kind))")
+    # The vehicle memory (see "vehicle memory"). `vehicles`: each named car per camera, whether it
+    # is parked there now (`here`), where (`spot`: its box's bottom centre and size) and since
+    # when, and what it looks like to the vision model (`looks`). `vehicle_sightings`: each car
+    # event in a car zone, the name it was given and how, and what it did.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS vehicles (camera TEXT, name TEXT, here INTEGER NOT NULL DEFAULT 0, spot TEXT,"
+        " since REAL, last_seen REAL, event_id TEXT, looks TEXT, PRIMARY KEY (camera, name))"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS vehicle_sightings (event_id TEXT PRIMARY KEY, camera TEXT, name TEXT, how TEXT,"
+        " movement TEXT, zone TEXT, start REAL, end REAL, final INTEGER NOT NULL DEFAULT 0, saw TEXT, noted TEXT, at REAL)"
+    )
     # Google Home's account link and stream tokens (see "Google Home"), by hash: kind is "code",
     # "access", "refresh" or "stream"; subject the Frigate user, or for "stream" the camera.
     conn.execute("CREATE TABLE IF NOT EXISTS google_tokens (hash TEXT PRIMARY KEY, kind TEXT, subject TEXT, expires REAL)")
@@ -792,34 +879,57 @@ class Visit:
         self.camera: str = item.get("camera", "")
         self.first_start = float(item.get("start_time") or 0)
         self.last_seen = self.first_start
-        self.review_ids: set[str] = set()
+        # Each alert as last told (with what the vehicle memory made of its cars), in order.
+        self.items: dict[str, dict[str, Any]] = {}
         self.kinds: set[str] = set()
-        self.objects: list[str] = []
-        self.sub_labels: list[str] = []
-        self.zones: list[str] = []
 
     @property
     def count(self) -> int:
-        return len(self.review_ids)
+        return len(self.items)
+
+    @property
+    def objects(self) -> list[str]:
+        return unique([o for item in self.items.values() for o in ((item.get("data") or {}).get("objects") or [])])
+
+    @property
+    def sub_labels(self) -> list[str]:
+        return unique([s for item in self.items.values() for s in ((item.get("data") or {}).get("sub_labels") or [])])
+
+    @property
+    def zones(self) -> list[str]:
+        """Where it is now, not where it started."""
+        return next((list(z) for item in reversed(self.items.values()) if (z := (item.get("data") or {}).get("zones"))), [])
 
     def add(self, item: dict[str, Any], now: float) -> None:
-        data = item.get("data") or {}
-        self.review_ids.add(item["id"])
+        self.items[item["id"]] = item
         self.kinds |= review_kinds(item)
-        self.objects = unique(self.objects + list(data.get("objects") or []))
-        self.sub_labels = unique(self.sub_labels + list(data.get("sub_labels") or []))
-        self.zones = list(data.get("zones") or []) or self.zones  # where it is now, not where it started
         self.see(item, now)
+
+    def retell(self, item: dict[str, Any]) -> None:
+        """One of its alerts again, now that more is known about its cars; what it brought to the visit stays as judged."""
+        if item["id"] in self.items:
+            self.items[item["id"]] = item
 
     def see(self, item: dict[str, Any], now: float) -> None:
         """An alert of this visit is still going (seen now) or has ended; the visit lasts until then."""
         end = item.get("end_time")
         self.last_seen = max(self.last_seen, float(end) if end is not None else now)
 
+    def movement(self) -> str | None:
+        """
+        What the visit's car did, when it is only ever the one car (by name, or never named): its
+        latest arrival, departure or move. Anything else in view, or two cars, and it isn't told.
+        """
+        labels = unique([str(o).removesuffix("-verified") for o in self.objects])
+        stories = [s for item in self.items.values() for s in ((item.get("data") or {}).get("vehicles") or [])]
+        if labels != ["car"] or not stories or len({s.get("name") for s in stories}) != 1:
+            return None
+        moves = [s["movement"] for s in stories if s.get("movement") in ("arrived", "left", "moved")]
+        return moves[-1] if moves else None
+
     def sentence(self, required_zones: list[str]) -> tuple[str, str]:
         zone = alert_zone(self.zones, required_zones)
-        subject = subject_for(self.objects, self.sub_labels)
-        body = f"{subject} {zone_phrase(zone)}" if zone else f"{subject} detected"
+        body = told(subject_for(self.objects, self.sub_labels), zone, self.movement())
         if self.count > 1:
             body += f" · {self.count} alerts"
         return camera_name(self.camera), body
@@ -840,7 +950,7 @@ class Visits:
         """
         for item in items:
             visit = self.by_camera.get(item.get("camera", ""))
-            if visit is not None and item["id"] in visit.review_ids:
+            if visit is not None and item["id"] in visit.items:
                 visit.see(item, now)
                 self.see_cars(item, now)
 
@@ -868,8 +978,60 @@ class Visits:
         return visit, news and not backlog
 
 
+# A car's name can come after its alert has been pushed (the vision model looks a minute in), and
+# whether it left or only moved is only plain once it is out of the driveway. So a visit with a car
+# in it is told again for FOLLOWUP_SECONDS after its last push, quietly and only when the words
+# change: "Car in the driveway" becomes "Andrew's Tesla left the driveway".
+FOLLOWUP_SECONDS = 20 * 60.0
+FOLLOWUP_EVERY_SECONDS = 30.0
+FOLLOWUP_MAX_UPDATES = 4
+
+
+class Followups:
+    """The visits with cars pushed lately, what each one's notification says, and when to look at it again."""
+
+    def __init__(self) -> None:
+        self.by_visit: dict[str, dict[str, Any]] = {}
+
+    def track(self, visit: Visit, body: str, data: dict[str, str], now: float) -> None:
+        if "car" not in {str(o).removesuffix("-verified") for o in visit.objects}:
+            self.by_visit.pop(visit.id, None)
+            return
+        self.by_visit[visit.id] = {"visit": visit, "body": body, "data": data, "until": now + FOLLOWUP_SECONDS,
+                                   "next": now + FOLLOWUP_EVERY_SECONDS, "updates": 0}
+
+    def run(self, alerts: list[dict[str, Any]], zones: dict[str, list[str]], now: float,
+            push: Callable[..., dict[str, int]] | None = None) -> None:
+        """Tells each due visit again from what is known now, and pushes it quietly when that reads differently."""
+        push = push or broadcast
+        fresh = {item["id"]: item for item in alerts}
+        for visit_id, f in list(self.by_visit.items()):
+            if now > f["until"] or f["updates"] >= FOLLOWUP_MAX_UPDATES:
+                del self.by_visit[visit_id]
+                continue
+            if now < f["next"]:
+                continue
+            f["next"] = now + FOLLOWUP_EVERY_SECONDS
+            visit: Visit = f["visit"]
+            for rid, item in list(visit.items.items()):
+                visit.retell(with_vehicle_memory(fresh.get(rid, item)))
+            title, body = visit.sentence(zones.get(visit.camera, []))
+            if body == f["body"]:
+                continue
+            last = list(visit.items.values())[-1]
+            data = {k: v for k, v in f["data"].items() if k != "car_unnamed"}
+            data["silent"] = "1"
+            if is_unnamed_car(last):
+                data["car_unnamed"] = "1"
+            result = push(title, body, data, familiar=is_recognised_person(last))
+            f["body"], f["data"] = body, data
+            f["updates"] += 1
+            log.info("visit %s told again -> %s: %s | %s", visit.id, title, body, result)
+
+
 def poll_forever() -> None:
     visits = Visits()
+    followups = Followups()
     # Everything that already exists at boot is history, not news.
     try:
         for item in recent_alerts():
@@ -905,6 +1067,15 @@ def poll_forever() -> None:
                     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), "(stationary)")), c.commit()))
                     log.info("alert %s skipped: nothing in it moved (%s)", rid, ", ".join((item.get("data") or {}).get("objects") or []))
                     continue
+                # Names the cars the vehicle memory knows, and says what they did.
+                item = with_vehicle_memory(item)
+                parked = parked_verdict(item)
+                if parked == "wait":
+                    continue
+                if parked == "skip":
+                    with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), "(parked)")), c.commit()))
+                    log.info("alert %s skipped: %s stayed parked", rid, ", ".join(s["name"] for s in item["data"]["vehicles"]))
+                    continue
                 visit, sound = visits.judge(item, time.time())
                 title, body = visit.sentence(zones.get(item.get("camera", ""), []))
                 data = {
@@ -926,6 +1097,8 @@ def poll_forever() -> None:
                 result = broadcast(title, body, data, familiar=is_recognised_person(item))
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
+                followups.track(visit, body, data, time.time())
+            followups.run(alerts, zones, time.time())
         except Exception as e:
             log.warning("poll error: %s", e)
         time.sleep(POLL_SECONDS)
@@ -1354,6 +1527,18 @@ def ensure_vlm_model() -> bool:
     return False
 
 
+def worth_learning(event: dict[str, Any], zones_for_car: list[str], now: float) -> bool:
+    """A car a person tagged, in a car zone and settled, whose camera has no reference picture of it yet (see "vehicle memory")."""
+    name, score = frigate_name(event)
+    return (
+        name is not None and score is not None and score >= 1.0
+        and event.get("label") == "car"
+        and any(z in zones_for_car for z in event.get("zones") or [])
+        and (event.get("end_time") is not None or now - float(event.get("start_time") or now) >= VLM_SETTLE_SECONDS)
+        and reference_picture(event.get("camera", ""), name) is None
+    )
+
+
 def second_opinions() -> None:
     """Looks again at each settled car in a car zone from the last hour, once."""
     now = time.time()
@@ -1370,7 +1555,7 @@ def second_opinions() -> None:
             if checked(event_id, "vlm"):
                 continue
             event = event_detail(event_id) or summary
-            if not second_opinion_due(event, zones_for_car, now):
+            if not (second_opinion_due(event, zones_for_car, now) or worth_learning(event, zones_for_car, now)):
                 continue
             picture = car_picture(event)
             if picture is None:
@@ -1389,27 +1574,54 @@ def second_opinions() -> None:
             if event is None:
                 continue  # deleted meanwhile
             name, score = sub_label_of(event)
+            summary_text = " ".join(v for v in (description.get("colour"), description.get("make"), description.get("model"), description.get("body")) if v and v not in ("unknown", "other"))
+            if description.get("delivery") not in (None, "none"):
+                summary_text += f" ({description['delivery']})"
+            summary_text = summary_text.strip()
             if score is not None and score >= 1.0:
+                # A person's name: nothing to judge, but the best picture there is of that car.
+                learn_vehicle(camera, name, description, picture, tagged=True)
                 record_check(event_id, "vlm", "person", json.dumps({"was": name, "score": score, "saw": description}))
                 continue
             matches = household_matches(description, HOUSEHOLD_CARS)
             action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
-            summary_text = " ".join(v for v in (description.get("colour"), description.get("make"), description.get("model"), description.get("body")) if v and v not in ("unknown", "other"))
-            if description.get("delivery") not in (None, "none"):
-                summary_text += f" ({description['delivery']})"
+            story = observe_car(event) or {}
+            recognised, remembered = None, ""
+            if action == "keep" and frigate_name(event)[0] is None:
+                if story.get("how") == "looked" and story.get("name"):
+                    recognised, remembered = story["name"], "confirm"  # confirmed before, Frigate didn't take it: again
+                else:
+                    recognised, remembered = recognise_from_memory(camera, story, description, picture)
+                if remembered == "confirm":
+                    action, new_name = "name", recognised
             try:
                 if action != "keep":
                     requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label",
                                   json={"subLabel": new_name or "", "subLabelScore": VLM_SCORE if new_name else None}, timeout=10).raise_for_status()
-                if summary_text.strip():
-                    requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text.strip()}, timeout=10).raise_for_status()
+                if story:
+                    if remembered == "confirm":
+                        story.update(name=recognised, how="looked")
+                    elif remembered == "reject":
+                        # Not the car remembered there: nor, then, is that car there any more.
+                        with_db(lambda c: (c.execute("UPDATE vehicles SET here=0 WHERE camera=? AND name=? AND here=1", (camera, story["name"])), c.commit()))
+                        log.info("vehicle memory: car %s is not %s, so %s is forgotten from that spot", event_id, story["name"], story["name"])
+                        story.update(name=None, how="not")
+                    story["saw"] = summary_text or story.get("saw")
+                    save_sighting(story)
+                    if remembered in ("confirm", "reject"):
+                        story = observe_car(event) or story  # tells the memory the car is (or isn't) here
+                    note_event(story)
+                elif summary_text:
+                    requests.post(f"{FRIGATE}/api/events/{event_id}/description", json={"description": summary_text}, timeout=10).raise_for_status()
             except Exception as e:
                 log.warning("car %s: Frigate didn't take the verdict (%s %s), trying again next round: %s", event_id, action, new_name or "", e)
                 continue
-            record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description}))
+            if action == "keep" and name and name in matches:
+                learn_vehicle(camera, name, description, picture, tagged=False)
+            record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description, "memory": remembered or None}))
             took = time.time() - started
-            log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s",
-                     event_id, camera, name, score, summary_text, took, action, new_name or "")
+            log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s%s",
+                     event_id, camera, name, score, summary_text, took, action, new_name or "", f" (memory: {remembered})" if remembered else "")
             if took > VLM_SLOW_SECONDS:
                 log.warning("vision model took %.0fs for one car: is Ollama running on the CPU? (docker logs ollama | grep load_tensors)", took)
 
@@ -1422,11 +1634,16 @@ def car_check_forever() -> None:
     vlm_ready = False
     vlm_tried_at = 0.0
     while True:
+        if CAR_CLASSIFIER:
+            try:
+                file_street_crops()
+                maybe_retrain()
+            except Exception as e:
+                log.warning("street crops: %s", e)
         try:
-            file_street_crops()
-            maybe_retrain()
+            vehicle_memory_round()
         except Exception as e:
-            log.warning("street crops: %s", e)
+            log.warning("vehicle memory: %s", e)
         if OLLAMA and HOUSEHOLD_CARS:
             try:
                 if not vlm_ready and time.time() - vlm_tried_at >= VLM_RETRY_SECONDS:
@@ -1437,6 +1654,500 @@ def car_check_forever() -> None:
             except Exception as e:
                 log.warning("second opinion: %s", e)
         time.sleep(CAR_CHECK_SECONDS)
+
+
+# ---------------------------------------------------------------- vehicle memory
+
+# Tagging a car names one Frigate event, and the classifier names some of the rest, but Frigate
+# re-registers a parked car as a brand-new object all day (see "motion gate"), each one unnamed
+# unless the classifier gets a look in the seconds it lives, which it mostly doesn't. So Andrew's
+# Tesla, tagged in the driveway, still came through as "Car in the driveway" (2026-09-27).
+#
+# So the relay remembers, in relay.db, where each named car is parked on each camera, and tells
+# what each car in a car zone did:
+# - *arrived*: its path began outside the zone and ends inside it (or on its edge);
+# - *left*: began inside (or on the edge), ends outside;
+# - *moved*: stayed inside but went further than its own size;
+# - *parked*: stayed where it was (the flicker re-detections).
+# A car whose path begins where a remembered car is parked, and that didn't arrive, is that car:
+# nothing else can be standing in its spot. A car that leaves is forgotten from its spot, and so is
+# one whose spot an unnamed car pulled into. Every car event in a car zone gets a row in
+# `vehicle_sightings` with the name it was given, how ("tagged" by a person, "classifier",
+# "parked" where a remembered car stands, "looked" at by the vision model, or "not" when the model
+# said it isn't the car the memory thought), and what it did, and the story goes into the event's
+# description in Frigate ("Andrew's Tesla left the driveway · blue tesla Model Y suv").
+#
+# The vision model (see "car check") keeps the memory honest, when it runs:
+# - The first daylight look it has at a car a person tagged becomes that car's reference picture,
+#   kept on the box next to relay.db (`vehicles/<camera>--<name>.jpg`), and what it saw (make,
+#   colours) the car's `looks`.
+# - A car named only by where it is parked is compared with that car's reference picture. The same
+#   car, and the name goes to Frigate at VLM_SCORE; a different one, or a make or colour the car
+#   never has, and the name is withdrawn and the car forgotten from that spot.
+# - A car that arrived unnamed is compared with each remembered car that is away and has a
+#   reference picture, and named when exactly one is the same car and its looks fit.
+SPOT_MATCH = 0.5  # a path starting within this share of the remembered box's longer side of its spot
+VEHICLE_STALE_SECONDS = 24 * 3600.0  # a spot nothing has been seen at for this long is not trusted
+VEHICLE_LOOKBACK_SECONDS = 3600.0
+LOOKS_COLOURS_MAX = 4
+MOVEMENTS = ("arrived", "left", "moved", "parked")
+SAME_CAR_SCHEMA = {"type": "object", "properties": {"same": {"type": "string", "enum": ["yes", "no", "unsure"]}}, "required": ["same"]}
+
+_SIGHTING_COLUMNS = ("event_id", "camera", "name", "how", "movement", "zone", "start", "end", "final", "saw", "noted", "at")
+_VEHICLE_COLUMNS = ("camera", "name", "here", "spot", "since", "last_seen", "event_id", "looks")
+
+
+def sighting(event_id: str) -> dict[str, Any] | None:
+    row = with_db(lambda c: c.execute(f"SELECT {', '.join(_SIGHTING_COLUMNS)} FROM vehicle_sightings WHERE event_id=?", (event_id,)).fetchone())
+    return dict(zip(_SIGHTING_COLUMNS, row)) if row else None
+
+
+def save_sighting(row: dict[str, Any]) -> None:
+    values = tuple(row.get(k) for k in _SIGHTING_COLUMNS)
+    with_db(lambda c: (c.execute(f"INSERT OR REPLACE INTO vehicle_sightings VALUES ({', '.join('?' * len(values))})", values), c.commit()))
+
+
+def vehicle(camera: str, name: str) -> dict[str, Any] | None:
+    row = with_db(lambda c: c.execute(f"SELECT {', '.join(_VEHICLE_COLUMNS)} FROM vehicles WHERE camera=? AND name=?", (camera, name)).fetchone())
+    if not row:
+        return None
+    found = dict(zip(_VEHICLE_COLUMNS, row))
+    found["spot"] = json.loads(found["spot"]) if found["spot"] else None
+    found["looks"] = json.loads(found["looks"]) if found["looks"] else {}
+    return found
+
+
+def vehicles_on(camera: str) -> list[dict[str, Any]]:
+    names = with_db(lambda c: [r[0] for r in c.execute("SELECT name FROM vehicles WHERE camera=? ORDER BY name", (camera,))])
+    return [v for v in (vehicle(camera, n) for n in names) if v]
+
+
+def save_vehicle(row: dict[str, Any]) -> None:
+    values = tuple(json.dumps(row.get(k)) if k in ("spot", "looks") and row.get(k) is not None else row.get(k) for k in _VEHICLE_COLUMNS)
+    with_db(lambda c: (c.execute(f"INSERT OR REPLACE INTO vehicles VALUES ({', '.join('?' * len(values))})", values), c.commit()))
+
+
+def event_points(event: dict[str, Any]) -> list[tuple[float, float]]:
+    """The path's bottom-centre points, or the box's bottom centre for an event with no path yet."""
+    points = path_points(event)
+    box = (event.get("data") or {}).get("box")
+    if not points and box and len(box) >= 4:
+        points = [(float(box[0]) + float(box[2]) / 2, float(box[1]) + float(box[3]))]
+    return points
+
+
+def zone_side(point: tuple[float, float], polygons: list[list[tuple[float, float]]]) -> str:
+    """"in" a car zone, clearly "out" of all of them (past STREET_ZONE_MARGIN), or on the "edge"."""
+    distances = [distance_to_polygon(point, poly) for poly in polygons]
+    if any(d == 0.0 for d in distances):
+        return "in"
+    return "out" if all(d > STREET_ZONE_MARGIN for d in distances) else "edge"
+
+
+def movement_of(event: dict[str, Any], polygons: list[list[tuple[float, float]]]) -> str | None:
+    """
+    What a car did in the car zones (see MOVEMENTS) by where its path began and ends; None when it
+    can't be told (no box, or no zone outlines and it moved) or it only went by outside.
+    """
+    box = (event.get("data") or {}).get("box")
+    points = event_points(event)
+    if not box or len(box) < 4 or box[2] <= 0 or box[3] <= 0 or not points:
+        return None
+    still = len(points) < 2 or is_still(event)
+    if not polygons:
+        return "parked" if still else None
+    first, last = zone_side(points[0], polygons), zone_side(points[-1], polygons)
+    if first == "out" and last != "out":
+        return "arrived"
+    if first != "out" and last == "out":
+        return "left"
+    if first == "out" and last == "out":
+        return None
+    if still:
+        return "parked"
+    (ax, ay), (bx, by) = points[0], points[-1]
+    return "moved" if ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 >= max(float(box[2]), float(box[3])) else "parked"
+
+
+def spot_of(event: dict[str, Any]) -> dict[str, float] | None:
+    """Where the car ended up: its last bottom-centre point, and its box's size."""
+    box = (event.get("data") or {}).get("box")
+    points = event_points(event)
+    if not box or len(box) < 4 or not points:
+        return None
+    return {"x": points[-1][0], "y": points[-1][1], "w": float(box[2]), "h": float(box[3])}
+
+
+def near_spot(point: tuple[float, float], spot: dict[str, float] | None) -> float | None:
+    """How far `point` is from `spot`, in the spot's box sizes; None past SPOT_MATCH."""
+    if not spot:
+        return None
+    size = max(spot.get("w") or 0.0, spot.get("h") or 0.0)
+    if size <= 0:
+        return None
+    d = ((point[0] - spot["x"]) ** 2 + (point[1] - spot["y"]) ** 2) ** 0.5 / size
+    return d if d <= SPOT_MATCH else None
+
+
+def parked_at(camera: str, point: tuple[float, float], at: float) -> str | None:
+    """The remembered car parked at `point` on this camera at time `at`, the nearest if two are close."""
+    fits = [
+        (d, v["name"]) for v in vehicles_on(camera)
+        if v["here"] and (v["last_seen"] or 0) >= at - VEHICLE_STALE_SECONDS and (d := near_spot(point, v["spot"])) is not None
+    ]
+    return min(fits)[1] if fits else None
+
+
+def remember(camera: str, name: str | None, movement: str | None, event: dict[str, Any], start: float, seen: float) -> None:
+    """What this event says about where the camera's cars are. Events are seen out of order, so an old one never undoes a newer one."""
+    event_id = event.get("id")
+    spot = spot_of(event)
+    if name is None:
+        if movement == "arrived" and spot:
+            # Someone else pulled into a remembered car's spot, and that car hasn't been seen since it
+            # began: it isn't there.
+            for v in vehicles_on(camera):
+                if v["here"] and (v["last_seen"] or 0) < start and near_spot((spot["x"], spot["y"]), v["spot"]) is not None:
+                    save_vehicle(dict(v, here=0))
+                    log.info("vehicle memory: %s's spot on %s taken by car %s", v["name"], camera, event_id)
+        return
+    if movement not in MOVEMENTS:
+        return
+    row = vehicle(camera, name)
+    if row is not None and row["event_id"] != event_id:
+        if movement == "left" and row["here"] and (row["since"] or 0) > seen:
+            return  # it has come back since
+        if movement == "arrived" and not row["here"] and (row["last_seen"] or 0) > seen:
+            return  # it has left again since
+        if movement in ("parked", "moved") and not row["here"] and (row["last_seen"] or 0) > start:
+            return  # it left after this began
+    row = row or {"camera": camera, "name": name, "here": 0, "since": None, "last_seen": None, "looks": {}}
+    if movement == "left":
+        save_vehicle(dict(row, here=0, last_seen=max(row["last_seen"] or 0, seen), event_id=event_id))
+        return
+    since = start if movement == "arrived" or not row["here"] or row["since"] is None else row["since"]
+    save_vehicle(dict(row, here=1, spot=spot or row.get("spot"), since=since, last_seen=max(row["last_seen"] or 0, seen), event_id=event_id))
+
+
+def in_car_zone(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]]) -> bool:
+    if any(z in zones_for_car for z in event.get("zones") or []):
+        return True
+    return any(zone_side(p, polygons) == "in" for p in event_points(event)) if polygons else False
+
+
+def frigate_name(event: dict[str, Any]) -> tuple[str | None, float | None]:
+    name, score = sub_label_of(event)
+    return (None, None) if not name or name.lower() in NOT_A_NAME else (name, score)
+
+
+def observe_car(event: dict[str, Any], now: float | None = None) -> dict[str, Any] | None:
+    """
+    Files one car event in the vehicle memory: its name (Frigate's, else the remembered car parked
+    where it began), how it got it, and what it did. Answers its sighting; None for anything that
+    isn't a car in a car zone.
+    """
+    now = time.time() if now is None else now
+    camera = event.get("camera", "")
+    zones_for_car = car_zones().get(camera, [])
+    polygons = car_zone_polygons().get(camera, [])
+    if event.get("label") != "car" or not event.get("id") or not zones_for_car or not in_car_zone(event, zones_for_car, polygons):
+        return None
+    event_id = event["id"]
+    prev = sighting(event_id) or {}
+    name, score = frigate_name(event)
+    how = ("tagged" if score is not None and score >= 1.0 else "classifier") if name else None
+    if name and prev.get("how") == "looked" and prev.get("name") == name:
+        how = "looked"  # the name the vision model gave it, back from Frigate
+    movement = movement_of(event, polygons)
+    start = float(event.get("start_time") or now)
+    end = event.get("end_time")
+    seen = float(end) if end is not None else now
+    if name is None:
+        if prev.get("how") in ("parked", "looked", "not"):
+            name, how = prev.get("name"), prev["how"]  # decided already: kept, confirmed, or turned down
+        elif prev.get("how") in ("tagged", "classifier"):
+            how = "not"  # Frigate's name was taken away (the second opinion cleared it): not that car, nor to be guessed at
+        elif movement in ("parked", "moved", "left"):
+            guess = parked_at(camera, event_points(event)[0], start)
+            if guess:
+                name, how = guess, "parked"
+    if prev.get("name") and prev["name"] != name:
+        # Its name was taken back (the second opinion cleared or swapped it): so is what it told the memory.
+        with_db(lambda c: (c.execute("UPDATE vehicles SET here=0 WHERE camera=? AND name=? AND event_id=?", (camera, prev["name"], event_id)), c.commit()))
+    remember(camera, name, movement, event, start, seen)
+    story = dict(prev, event_id=event_id, camera=camera, name=name, how=how, movement=movement,
+                 zone=zones_for_car[0], start=start, end=end, final=int(end is not None), at=now)
+    save_sighting(story)
+    return story
+
+
+def vehicle_story(event_id: str) -> dict[str, Any] | None:
+    """What the memory makes of one detection: its sighting, brought up to date while the car is still in view."""
+    row = sighting(event_id)
+    if row and row["final"]:
+        return row
+    event = event_detail(event_id)
+    return observe_car(event) if event else row
+
+
+def with_vehicle_memory(item: dict[str, Any]) -> dict[str, Any]:
+    """
+    The review item with its cars as the memory knows them: the names it put to them added to its
+    sub_labels (kept apart from Frigate's own in `frigate_sub_labels`, so it can be told again),
+    and `vehicles`, each car's name, how it got it and what it did. Never stops an alert: anything
+    that goes wrong leaves the item as Frigate sent it.
+    """
+    data = item.get("data") or {}
+    if "car" not in review_labels(item):
+        return item
+    try:
+        own = list(data.get("frigate_sub_labels", data.get("sub_labels")) or [])
+        stories = []
+        for event_id in data.get("detections") or []:
+            story = vehicle_story(event_id) if event_id else None
+            if story:
+                stories.append({"event_id": event_id, "name": story.get("name"), "how": story.get("how"), "movement": story.get("movement")})
+        names = [s["name"] for s in stories if s["name"]]
+        return {**item, "data": {**data, "frigate_sub_labels": own, "sub_labels": unique(own + names), "vehicles": stories}}
+    except Exception as e:
+        log.warning("vehicle memory for %s: %s", item.get("id"), e)
+        return item
+
+
+def parked_verdict(item: dict[str, Any]) -> str:
+    """
+    The motion gate again, now the cars have names: an alert with nothing in it but cars the memory
+    knows, each of which stayed where it was parked, is Andrew's Tesla being re-detected, not news.
+    "wait" while it is open (it may yet drive off), "skip" once it ends, else "push".
+    """
+    data = item.get("data") or {}
+    stories = data.get("vehicles") or []
+    detections = [d for d in data.get("detections") or [] if d]
+    if (
+        review_labels(item) != ["car"] or not stories or len(stories) != len(detections)
+        or any(not s.get("name") or s.get("movement") != "parked" for s in stories)
+    ):
+        return "push"
+    if item.get("end_time") is None and time.time() - float(item.get("start_time") or 0) < MOTION_WAIT_CAP_SECONDS:
+        return "wait"
+    return "skip"
+
+
+def event_note(story: dict[str, Any]) -> str:
+    """The event's description in Frigate: its story and what the vision model saw, e.g. "Andrew's Tesla left the driveway · blue tesla Model Y suv"."""
+    parts = []
+    if story.get("movement") in ("arrived", "left", "moved"):
+        parts.append(told(display_name(story["name"]) if story.get("name") else "Car", story.get("zone"), story["movement"]))
+    elif story.get("name") and story.get("how") in ("parked", "looked"):
+        parts.append(told(display_name(story["name"]), story.get("zone"), "parked"))
+    if story.get("saw"):
+        parts.append(story["saw"])
+    return " · ".join(parts)
+
+
+def note_event(story: dict[str, Any]) -> None:
+    """Writes the event's story into its Frigate description, once per change. Raises if Frigate won't take it."""
+    note = event_note(story)
+    if not note or note == story.get("noted"):
+        return
+    requests.post(f"{FRIGATE}/api/events/{story['event_id']}/description", json={"description": note}, timeout=10).raise_for_status()
+    with_db(lambda c: (c.execute("UPDATE vehicle_sightings SET noted=? WHERE event_id=?", (note, story["event_id"])), c.commit()))
+    story["noted"] = note
+
+
+def renamed(summary: dict[str, Any], story: dict[str, Any]) -> bool:
+    """Has Frigate's name for a finished event changed since it was filed (a person tagged it late, say)?"""
+    name, _ = frigate_name(summary)
+    if name is None:
+        return story.get("how") in ("tagged", "classifier", "looked")
+    return name != story.get("name")
+
+
+def vehicle_memory_round(now: float | None = None) -> None:
+    """Files the car events of the last hour in each camera's car zones, and any still in view, oldest first."""
+    now = time.time() if now is None else now
+    for camera, zones_for_car in car_zones().items():
+        if not zones_for_car:
+            continue
+        summaries: dict[str, dict[str, Any]] = {}
+        for params in ({"after": now - VEHICLE_LOOKBACK_SECONDS}, {"in_progress": 1}):
+            r = requests.get(f"{FRIGATE}/api/events", params={
+                "camera": camera, "label": "car", "zones": ",".join(zones_for_car), "limit": CAR_ZONE_PAGE, **params,
+            }, timeout=10)
+            r.raise_for_status()
+            summaries.update({s["id"]: s for s in r.json() if s.get("id")})
+        for summary in sorted(summaries.values(), key=lambda s: float(s.get("start_time") or 0)):
+            story = sighting(summary["id"])
+            if not (story and story["final"] and not renamed(summary, story)):
+                event = event_detail(summary["id"])
+                story = observe_car(event, now) if event else None
+            # The vision model rewrites it with what it saw, when it looks.
+            if story and story["final"]:
+                try:
+                    note_event(story)
+                except Exception as e:
+                    log.warning("car %s: Frigate didn't take its description: %s", story["event_id"], e)
+
+
+def learn_looks(looks: dict[str, Any], description: dict[str, str]) -> dict[str, Any]:
+    """A car's looks with one more daylight description in: every colour it has been seen as (the latest few), its make, model and body."""
+    looks = dict(looks or {})
+    colour = description.get("colour")
+    if colour and colour != "unknown":
+        colours = [c for c in looks.get("colour") or [] if c != colour]
+        looks["colour"] = (colours + [colour])[-LOOKS_COLOURS_MAX:]
+    for key in ("make", "model", "body"):
+        value = description.get(key)
+        if value and value not in ("unknown", "other"):
+            looks[key] = value
+    return looks
+
+
+def expected_looks(name: str, learned: dict[str, Any]) -> dict[str, Any]:
+    """
+    What the car must look like: its HOUSEHOLD_CARS entry, else the make the model has read off it.
+    Learned colours rule nothing out: one car is several colours to a camera over a day.
+    """
+    if name in HOUSEHOLD_CARS:
+        return HOUSEHOLD_CARS[name]
+    return {"make": learned["make"]} if (learned or {}).get("make") else {}
+
+
+def vehicle_picture_path(camera: str, name: str) -> str | None:
+    """Where a car's reference picture is kept, next to relay.db; None for a name that can't be a file name."""
+    if not DATASET_NAME.fullmatch(camera) or not DATASET_NAME.fullmatch(name):
+        return None
+    return os.path.join(os.path.dirname(DB_PATH), "vehicles", f"{camera}--{name}.jpg")
+
+
+def reference_picture(camera: str, name: str) -> bytes | None:
+    path = vehicle_picture_path(camera, name)
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def learn_vehicle(camera: str, name: str, description: dict[str, str], picture: bytes, tagged: bool) -> None:
+    """
+    Keeps what the vision model saw of a car we know is `name`. Daylight only: an infrared picture
+    shows no colour and compares badly. A person's tag always replaces the reference picture; any
+    other known sighting only supplies the first.
+    """
+    if description.get("colour") in (None, "unknown"):
+        return
+    row = vehicle(camera, name) or {"camera": camera, "name": name, "here": 0, "spot": None, "since": None, "last_seen": None, "event_id": None, "looks": {}}
+    save_vehicle(dict(row, looks=learn_looks(row["looks"], description)))
+    path = vehicle_picture_path(camera, name)
+    if path and (tagged or not os.path.exists(path)):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(picture)
+        log.info("vehicle memory: reference picture of %s on %s kept (%s)", name, camera, "tagged" if tagged else "first")
+
+
+def same_car_prompt(name: str, looks: dict[str, Any]) -> str:
+    seen = " ".join(str(v) for v in ((looks or {}).get("colour") or [])[-1:] + [(looks or {}).get(k) for k in ("make", "model", "body")] if v)
+    return (
+        f"Both pictures are crops from the same home security camera. The first is {display_name(name)}"
+        + (f" ({seen})" if seen else "")
+        + ", a car that parks here. Is the vehicle in the centre of the second picture the same car? "
+        "Compare body shape, colour, roof, wheels, lights and any stickers or damage, not the lighting. "
+        "Answer \"unsure\" if either picture is too dark, blurred or cut off to tell."
+    )
+
+
+def same_car(reference: bytes, picture: bytes, prompt: str) -> str:
+    """The vision model's "yes", "no" or "unsure": is the car in `picture` the one in `reference`?"""
+    import base64
+
+    r = requests.post(f"{OLLAMA}/api/chat", json={
+        "model": VLM_MODEL,
+        "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(reference).decode(), base64.b64encode(picture).decode()]}],
+        "format": SAME_CAR_SCHEMA,
+        "stream": False,
+        "keep_alive": "24h",
+        "options": {"temperature": 0, "num_ctx": 8192, "num_gpu": 99},
+    }, timeout=120)
+    r.raise_for_status()
+    return json.loads(r.json()["message"]["content"]).get("same", "unsure")
+
+
+def compare_cars(camera: str, name: str, looks: dict[str, Any], picture: bytes) -> str | None:
+    """`same_car` against the car's reference picture: None when there is no picture, "unsure" when the model can't answer."""
+    reference = reference_picture(camera, name)
+    if reference is None:
+        return None
+    try:
+        return same_car(reference, picture, same_car_prompt(name, looks))
+    except Exception as e:
+        log.warning("vehicle memory: comparing with %s's picture failed: %s", name, e)
+        return "unsure"
+
+
+def memory_verdict(description: dict[str, str], expected: dict[str, Any], same: str | None) -> str:
+    """
+    Whether the car the memory put a name to is that car: "confirm", "reject" or "unsure". Looks
+    that can't be the car (a make or colour it never is) or a "no" from the comparison reject it; a
+    "yes" confirms it, and so, with no reference picture to compare, does the model reading the
+    car's own make off it.
+    """
+    if expected and not household_matches(description, {"car": expected}):
+        return "reject"
+    if same == "no":
+        return "reject"
+    if same == "yes":
+        return "confirm"
+    if same is None and expected.get("make") and description.get("make") == expected["make"]:
+        return "confirm"
+    return "unsure"
+
+
+def recognise_from_memory(camera: str, story: dict[str, Any], description: dict[str, str], picture: bytes) -> tuple[str | None, str]:
+    """
+    For an event Frigate left unnamed: the name the memory and the vision model agree on, and what
+    was decided ("confirm", "reject", "unsure", or "" when there was nothing to decide). A car the
+    memory named by its spot is checked against that car; one that arrived, against each remembered
+    car that is away and has a reference picture.
+    """
+    if story.get("how") == "parked" and story.get("name"):
+        name = story["name"]
+        row = vehicle(camera, name) or {"looks": {}}
+        verdict = memory_verdict(description, expected_looks(name, row["looks"]), compare_cars(camera, name, row["looks"], picture))
+        return (name if verdict != "reject" else None), verdict
+    if story.get("movement") == "arrived" and not story.get("name") and story.get("how") != "not":
+        yes = []
+        for row in vehicles_on(camera):
+            same = None if row["here"] else compare_cars(camera, row["name"], row["looks"], picture)
+            if same == "yes" and memory_verdict(description, expected_looks(row["name"], row["looks"]), same) == "confirm":
+                yes.append(row["name"])
+        return (yes[0], "confirm") if len(yes) == 1 else (None, "")
+    return None, ""
+
+
+def vehicle_memory_snapshot(now: float | None = None) -> dict[str, Any]:
+    """Every remembered car and the last day's comings and goings, for GET /vehicles."""
+    now = time.time() if now is None else now
+    cameras = with_db(lambda c: [r[0] for r in c.execute("SELECT DISTINCT camera FROM vehicles ORDER BY camera")])
+    cars = [
+        {"camera": v["camera"], "name": v["name"], "display_name": display_name(v["name"]), "here": bool(v["here"]),
+         "since": v["since"], "last_seen": v["last_seen"], "looks": v["looks"],
+         "has_picture": reference_picture(v["camera"], v["name"]) is not None}
+        for camera in cameras for v in vehicles_on(camera)
+    ]
+    rows = with_db(lambda c: c.execute(
+        f"SELECT {', '.join(_SIGHTING_COLUMNS)} FROM vehicle_sightings WHERE start>=? AND movement IN ('arrived','left','moved')"
+        " ORDER BY start DESC LIMIT 200", (now - 24 * 3600,)).fetchall())
+    events = [dict(zip(_SIGHTING_COLUMNS, r)) for r in rows]
+    return {
+        "vehicles": cars,
+        "recent": [
+            {"event_id": e["event_id"], "camera": e["camera"], "name": e["name"], "display_name": display_name(e["name"]) if e["name"] else None,
+             "how": e["how"], "movement": e["movement"], "start": e["start"], "end": e["end"],
+             "text": told(display_name(e["name"]) if e["name"] else "Car", e["zone"], e["movement"])}
+            for e in events
+        ],
+    }
 
 
 # ---------------------------------------------------------------- boot report
@@ -1657,8 +2368,7 @@ def startup() -> None:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     CONN = db()
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
-    if CAR_CLASSIFIER:
-        threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
+    threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
@@ -1943,6 +2653,16 @@ async def add_classification_example(
     log.info("classifier example by %s: %s/%s <- %s (box %.3f,%.3f %.3fx%.3f)", user, model, category, name, x, y, w, h)
     return {"ok": True, "file": name}
 
+
+
+@app.get("/vehicles")
+def vehicles(request: Request, device: str | None = None) -> dict[str, Any]:
+    """
+    What the vehicle memory knows: each named car per camera, whether it is parked there now and
+    since when, and the last day's arrivals, departures and moves. A signed-in user or a device.
+    """
+    authenticate(request, device)
+    return vehicle_memory_snapshot()
 
 
 @app.post("/test")
