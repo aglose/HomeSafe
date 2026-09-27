@@ -149,8 +149,11 @@ class AppE2eTest {
     fun aNotificationTapBeforeSignInLandsOnThatMomentOnceSignedIn() {
         val event = server.state.events.first { it.camera == "driveway" }
         app.launch(app.momentIntent(event.id, event.camera, event.startTime)).use {
-            app.signIn()
+            // Not signIn(): the pending link can open the camera screen before Home has shown its
+            // route badge, which that waits for, so the badge may never be on screen at all.
+            app.submitSignIn()
 
+            app.awaitSignInFormGone()
             app.awaitCameraScreen("Driveway")
             app.awaitSelected(TopLevelRoute.Home)
         }

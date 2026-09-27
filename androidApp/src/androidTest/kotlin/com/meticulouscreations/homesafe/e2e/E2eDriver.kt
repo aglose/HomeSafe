@@ -144,6 +144,16 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
     fun awaitSignInForm() = awaitSingle(hasTestTag(SIGN_IN_CONNECT_TEST_TAG) and isEnabled(), "the enabled Connect button")
 
     fun signIn(user: FakeUser = FakeFrigateState.ADMIN) {
+        submitSignIn(user)
+        awaitSignedIn()
+    }
+
+    /**
+     * Fills in the sign-in form and taps Connect, without waiting on where the app lands. For a
+     * launch that carries a notification's link, which can open its camera screen before Home
+     * ever shows the route badge [awaitSignedIn] looks for.
+     */
+    fun submitSignIn(user: FakeUser = FakeFrigateState.ADMIN) {
         awaitSignInForm()
         awaitSingle(hasTestTag(SIGN_IN_SERVER_URL_TEST_TAG)).performTextReplacement(server.baseUrl)
         awaitSingle(hasTestTag(SIGN_IN_USERNAME_TEST_TAG)).performTextReplacement(user.username)
@@ -156,14 +166,15 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         settle()
         scrollIntoView(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
         tap(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
-        awaitSignedIn()
     }
 
     /** The real shell: the route badge replaces the skeleton's status icon, and the form is gone. */
     fun awaitSignedIn() {
         awaitNode(hasText(ConnectionRoute.TAILSCALE.label), "the Tailscale route badge")
-        awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
+        awaitSignInFormGone()
     }
+
+    fun awaitSignInFormGone() = awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
 
     fun openTab(tab: TopLevelRoute) {
         tap(hasTestTag(bottomNavTestTag(tab)), "the ${tab.label} tab")
