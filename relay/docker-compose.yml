@@ -50,6 +50,7 @@ services:
         required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
+      # relay.db, and the vehicle memory's picture of each household car (data/vehicles/).
       - ./data:/data
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.

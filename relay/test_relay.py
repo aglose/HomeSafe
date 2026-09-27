@@ -319,14 +319,14 @@ class SubjectTest(unittest.TestCase):
 
     def test_a_person_is_never_hidden_behind_a_household_cars_name(self):
         # Seen 60 times in the week to 2026-09-25: "Andrews Tesla in the driveway" with a person in it.
-        self.assertEqual("Person and Andrews Tesla", relay.subject_for(["car", "car-verified", "person"], ["andrews_tesla"]))
+        self.assertEqual("Person and Andrew's Tesla", relay.subject_for(["car", "car-verified", "person"], ["andrews_tesla"]))
 
     def test_named_cars_and_faces_and_plain_labels(self):
-        self.assertEqual("Andrews Tesla", relay.subject_for(["car", "car-verified"], ["andrews_tesla"]))
-        self.assertEqual("Andrews Tesla and Sarahs Car", relay.subject_for(["car-verified"], ["andrews_tesla", "sarahs_car"]))
+        self.assertEqual("Andrew's Tesla", relay.subject_for(["car", "car-verified"], ["andrews_tesla"]))
+        self.assertEqual("Andrew's Tesla and Sarah's Car", relay.subject_for(["car-verified"], ["andrews_tesla", "sarahs_car"]))
         self.assertEqual("Sarah and car", relay.subject_for(["person", "car"], ["sarah"]))
         self.assertEqual("Person and car", relay.subject_for(["car", "person"], []), "people first")
-        self.assertEqual("Person, bicycle and Andrews Tesla", relay.subject_for(["bicycle", "car", "person"], ["andrews_tesla"]))
+        self.assertEqual("Person, bicycle and Andrew's Tesla", relay.subject_for(["bicycle", "car", "person"], ["andrews_tesla"]))
         self.assertEqual("Car", relay.subject_for(["car"], ["none"]), "the classifier's none class is not a name")
 
     def test_a_household_car_is_not_a_familiar_face(self):
@@ -1009,6 +1009,457 @@ class GoogleHomeTest(unittest.TestCase):
         self.assertEqual("deviceNotFound", self.execute("gone")["errorCode"])
         self.assertEqual("notSupported", self.execute("amcrest_1", protocols=["hls"])["errorCode"])
         self.assertEqual("functionNotSupported", self.execute("amcrest_1", command="action.devices.commands.OnOff")["errorCode"])
+
+
+class DisplayNameTest(unittest.TestCase):
+    """The relay words a car's name as the app's DetectionNames.kt does."""
+
+    def test_the_apostrophe_comes_back_for_an_owners_vehicle(self):
+        self.assertEqual("Andrew's Tesla", relay.display_name("andrews_tesla"))
+        self.assertEqual("Yaya's Car", relay.display_name("yayas_car"))
+        self.assertEqual("In-Laws' Mercedes", relay.display_name("in-laws_mercedes"))
+        self.assertEqual("James's Car", relay.display_name("james_car"))
+        self.assertEqual("Parents' Van", relay.display_name("parents_van"))
+        self.assertEqual("Yaya's BMW", relay.display_name("yayas_bmw"))
+
+    def test_anything_else_is_left_alone(self):
+        self.assertEqual("Andrews", relay.display_name("andrews"), "a face, not a vehicle")
+        self.assertEqual("Sarah", relay.display_name("sarah"))
+        self.assertEqual("Sarah's Tesla", relay.display_name("sarahs_tesla"), "spelled out")
+
+    def test_told(self):
+        self.assertEqual("Andrew's Tesla left the driveway", relay.told("Andrew's Tesla", "driveway", "left"))
+        self.assertEqual("Car arrived in the driveway", relay.told("Car", "driveway", "arrived"))
+        self.assertEqual("Car moved in the driveway", relay.told("Car", "driveway", "moved"))
+        self.assertEqual("Andrew's Tesla in the driveway", relay.told("Andrew's Tesla", "driveway", "parked"))
+        self.assertEqual("Person on the front lawn", relay.told("Person", "front_lawn"))
+        self.assertEqual("Car arrived", relay.told("Car", None, "arrived"))
+        self.assertEqual("Car detected", relay.told("Car", None))
+
+
+# A driveway for the memory's tests: the left half of the frame's lower half.
+DRIVEWAY = [(0.1, 0.4), (0.6, 0.4), (0.6, 0.95), (0.1, 0.95)]
+CAR_BOX = [0.25, 0.4, 0.2, 0.2]
+AT_SPOT = [(0.35, 0.6), (0.36, 0.61), (0.35, 0.6), (0.34, 0.6), (0.35, 0.61)]
+JITTER = [(0.35, 0.6), (0.30, 0.6), (0.40, 0.6), (0.35, 0.62), (0.31, 0.6)]
+ARRIVING = [(0.95, 0.5), (0.85, 0.52), (0.75, 0.55), (0.62, 0.58), (0.5, 0.6), (0.4, 0.6), (0.35, 0.6)]
+LEAVING = list(reversed(ARRIVING))
+ACROSS = [(0.35, 0.45), (0.35, 0.55), (0.35, 0.65), (0.35, 0.75), (0.35, 0.85), (0.35, 0.93)]
+
+
+def car_event(event_id, path, start, end=None, name=None, score=None, box=CAR_BOX, zones=("driveway",), camera="hikvision_1"):
+    return {"id": event_id, "label": "car", "camera": camera, "start_time": start, "end_time": end, "zones": list(zones),
+            "sub_label": name, "data": {"type": "object", "box": list(box), "sub_label_score": score,
+                                        "path_data": [[[x, y], start + i] for i, (x, y) in enumerate(path)]}}
+
+
+class _ScratchDb(unittest.TestCase):
+    NAMES = ("DB_PATH", "CONN", "HOUSEHOLD_CARS", "car_zones", "car_zone_polygons", "event_detail")
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in self.NAMES}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+        relay.HOUSEHOLD_CARS = CarCheckTest.CARS
+        relay.car_zones = lambda: {"hikvision_1": ["driveway"], "amcrest_1": []}
+        relay.car_zone_polygons = lambda: {"hikvision_1": [DRIVEWAY]}
+        self.events = {}
+        relay.event_detail = lambda event_id: self.events.get(event_id)
+        self.T = time.time() - 7200
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    def observe(self, event, now=None):
+        self.events[event["id"]] = event
+        return relay.observe_car(event, now if now is not None else (event["end_time"] or event["start_time"] + 30))
+
+    def here(self, name):
+        v = relay.vehicle("hikvision_1", name)
+        return bool(v and v["here"])
+
+
+class MovementTest(unittest.TestCase):
+    def test_what_a_car_did_in_the_driveway(self):
+        polys = [DRIVEWAY]
+        self.assertEqual("arrived", relay.movement_of(car_event("a", ARRIVING, 0), polys))
+        self.assertEqual("left", relay.movement_of(car_event("l", LEAVING, 0), polys))
+        self.assertEqual("moved", relay.movement_of(car_event("m", ACROSS, 0), polys))
+        self.assertEqual("parked", relay.movement_of(car_event("p", AT_SPOT, 0), polys))
+        self.assertEqual("parked", relay.movement_of(car_event("j", JITTER, 0), polys), "the box flickering is not a move")
+        self.assertEqual("parked", relay.movement_of(car_event("f", AT_SPOT[:2], 0), polys))
+        self.assertIsNone(relay.movement_of(car_event("s", DRIVE_PATH, 0, box=[0.6, 0.25, 0.14, 0.1]), polys), "went by outside")
+        self.assertIsNone(relay.movement_of(dict(car_event("n", AT_SPOT, 0), data={}), polys), "no box")
+
+    def test_without_the_outline_only_a_still_car_is_told(self):
+        self.assertEqual("parked", relay.movement_of(car_event("p", AT_SPOT, 0), []))
+        self.assertIsNone(relay.movement_of(car_event("a", ARRIVING, 0), []))
+
+    def test_the_real_tesla_pulling_out_left(self):
+        leaving = [(0.391, 0.547), (0.402, 0.56), (0.456, 0.526), (0.516, 0.499), (0.577, 0.467), (0.638, 0.451), (0.709, 0.44), (0.78, 0.444), (0.859, 0.461), (0.914, 0.482)]
+        event = car_event("t", leaving, 0, box=[0.308, 0.344, 0.24, 0.197], zones=())
+        self.assertEqual("left", relay.movement_of(event, [CarCheckTest.DRIVEWAY]))
+        self.assertTrue(relay.in_car_zone(event, ["driveway"], [CarCheckTest.DRIVEWAY]), "no zone tag, but its path began inside")
+
+
+class VehicleMemoryTest(_ScratchDb):
+    """Where the household's cars are parked, and what that makes of the cars Frigate didn't name."""
+
+    def park_andrews_tesla(self):
+        return self.observe(car_event("tagged", AT_SPOT, self.T, self.T + 60, name="andrews_tesla", score=1.0))
+
+    def test_a_tagged_car_is_remembered_where_it_parked(self):
+        story = self.park_andrews_tesla()
+        self.assertEqual(("andrews_tesla", "tagged", "parked"), (story["name"], story["how"], story["movement"]))
+        self.assertTrue(self.here("andrews_tesla"))
+        self.assertEqual(self.T, relay.vehicle("hikvision_1", "andrews_tesla")["since"])
+
+    def test_an_unnamed_car_where_it_is_parked_is_it(self):
+        self.park_andrews_tesla()
+        story = self.observe(car_event("flicker", JITTER, self.T + 600, self.T + 640))
+        self.assertEqual(("andrews_tesla", "parked", "parked"), (story["name"], story["how"], story["movement"]))
+
+    def test_it_is_named_when_it_leaves_and_forgotten_once_gone(self):
+        self.park_andrews_tesla()
+        story = self.observe(car_event("out", LEAVING, self.T + 900, self.T + 930))
+        self.assertEqual(("andrews_tesla", "parked", "left"), (story["name"], story["how"], story["movement"]))
+        self.assertFalse(self.here("andrews_tesla"))
+        later = self.observe(car_event("stranger", JITTER, self.T + 1200, self.T + 1230))
+        self.assertIsNone(later["name"], "an empty spot names nobody")
+
+    def test_an_old_event_seen_late_doesnt_bring_back_a_car_that_left(self):
+        self.park_andrews_tesla()
+        self.observe(car_event("out", LEAVING, self.T + 900, self.T + 930))
+        self.observe(car_event("before", AT_SPOT, self.T + 100, self.T + 160, name="andrews_tesla", score=0.98))
+        self.assertFalse(self.here("andrews_tesla"))
+        self.observe(car_event("back", ARRIVING, self.T + 3000, self.T + 3030, name="andrews_tesla", score=0.98))
+        self.assertTrue(self.here("andrews_tesla"))
+        self.assertEqual(self.T + 3000, relay.vehicle("hikvision_1", "andrews_tesla")["since"])
+
+    def test_a_long_stay_still_in_view_leaving_is_a_departure(self):
+        # Remembered first from a flicker the classifier named, while Frigate still tracks the car it has seen all morning.
+        self.observe(car_event("flicker", AT_SPOT, self.T + 600, self.T + 630, name="andrews_tesla", score=0.98))
+        self.observe(car_event("morning", LEAVING, self.T, None), now=self.T + 1000)
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_a_car_arriving_in_a_remembered_cars_spot_means_that_car_is_gone(self):
+        self.park_andrews_tesla()
+        story = self.observe(car_event("visitor", ARRIVING, self.T + 5000, self.T + 5040))
+        self.assertEqual((None, None, "arrived"), (story["name"], story["how"], story["movement"]), "an arrival is never named by the spot")
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_but_not_while_it_is_still_seen_there(self):
+        self.park_andrews_tesla()
+        self.observe(car_event("still-there", AT_SPOT, self.T + 4000, None), now=self.T + 6000)
+        self.observe(car_event("visitor", ARRIVING, self.T + 5000, self.T + 5040))
+        self.assertTrue(self.here("andrews_tesla"))
+
+    def test_a_name_frigate_takes_back_takes_back_the_memory_too(self):
+        self.observe(car_event("misnamed", AT_SPOT, self.T, self.T + 60, name="andrews_tesla", score=0.98))
+        self.assertTrue(self.here("andrews_tesla"))
+        story = self.observe(car_event("misnamed", AT_SPOT, self.T, self.T + 60))
+        self.assertEqual((None, "not"), (story["name"], story["how"]), "and it isn't guessed straight back from its own spot")
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_cars_outside_the_car_zones_and_other_things_are_not_filed(self):
+        self.assertIsNone(self.observe(car_event("street", DRIVE_PATH, self.T, self.T + 20, zones=(), box=[0.6, 0.25, 0.14, 0.1])))
+        self.assertIsNone(self.observe(dict(car_event("dog", AT_SPOT, self.T), label="dog")))
+        self.assertIsNone(self.observe(car_event("door", AT_SPOT, self.T, camera="amcrest_1")))
+
+    def test_the_review_item_carries_the_names_and_the_story(self):
+        self.park_andrews_tesla()
+        self.events["out"] = car_event("out", LEAVING, self.T + 900, self.T + 930)
+        item = {"id": "r", "camera": "hikvision_1", "start_time": self.T + 900, "end_time": None,
+                "data": {"objects": ["car"], "sub_labels": [], "zones": ["driveway"], "detections": ["out"]}}
+        told = relay.with_vehicle_memory(item)
+        self.assertEqual(["andrews_tesla"], told["data"]["sub_labels"])
+        self.assertEqual([{"event_id": "out", "name": "andrews_tesla", "how": "parked", "movement": "left"}], told["data"]["vehicles"])
+        self.assertFalse(relay.is_unnamed_car(told), "no Tag car button for a car the memory knows")
+        self.assertEqual({"car:andrews_tesla"}, relay.review_kinds(told))
+        visit = relay.Visit(told)
+        visit.add(told, self.T + 930)
+        self.assertEqual(("Front Yard", "Andrew's Tesla left the driveway"), visit.sentence(["driveway"]))
+
+    def flicker_item(self, *detections, ended=False, objects=("car",)):
+        return {"id": "r", "camera": "hikvision_1", "start_time": time.time() - 30, "end_time": time.time() if ended else None,
+                "data": {"objects": list(objects), "sub_labels": [], "zones": ["driveway"], "detections": list(detections)}}
+
+    def test_remembered_cars_that_stayed_parked_are_not_news(self):
+        self.park_andrews_tesla()
+        self.events["flicker"] = car_event("flicker", JITTER, self.T + 600, None)
+        told = relay.with_vehicle_memory(self.flicker_item("flicker"))
+        self.assertEqual([("andrews_tesla", "parked")], [(v["name"], v["movement"]) for v in told["data"]["vehicles"]])
+        self.assertEqual("wait", relay.parked_verdict(told), "it may yet drive off")
+        self.assertEqual("skip", relay.parked_verdict(relay.with_vehicle_memory(self.flicker_item("flicker", ended=True))))
+
+    def test_a_remembered_car_driving_off_is_news(self):
+        self.park_andrews_tesla()
+        self.events["out"] = car_event("out", LEAVING, self.T + 600, None)
+        self.assertEqual("push", relay.parked_verdict(relay.with_vehicle_memory(self.flicker_item("out", ended=True))))
+
+    def test_a_car_it_doesnt_know_or_a_person_is_news(self):
+        self.park_andrews_tesla()
+        self.events["flicker"] = car_event("flicker", JITTER, self.T + 600, None)
+        self.events["unknown"] = car_event("unknown", [(0.2, 0.85), (0.21, 0.85), (0.2, 0.86)], self.T + 600, None, box=[0.15, 0.75, 0.1, 0.1])
+        both = relay.with_vehicle_memory(self.flicker_item("flicker", "unknown", ended=True))
+        self.assertEqual(["andrews_tesla", None], [v["name"] for v in both["data"]["vehicles"]])
+        self.assertEqual("push", relay.parked_verdict(both))
+        person = relay.with_vehicle_memory(self.flicker_item("flicker", "person-1", ended=True, objects=("car", "person")))
+        self.assertEqual("push", relay.parked_verdict(person))
+
+    def test_the_memory_never_stops_an_alert(self):
+        relay.event_detail = lambda event_id: (_ for _ in ()).throw(RuntimeError("boom"))
+        item = {"id": "r", "camera": "hikvision_1", "data": {"objects": ["car"], "detections": ["x"]}}
+        self.assertIs(item, relay.with_vehicle_memory(item))
+        person = {"id": "p", "data": {"objects": ["person"], "detections": ["x"]}}
+        self.assertIs(person, relay.with_vehicle_memory(person))
+
+    def test_notes(self):
+        self.assertEqual("Andrew's Tesla left the driveway · blue tesla Model Y suv",
+                         relay.event_note({"name": "andrews_tesla", "how": "parked", "movement": "left", "zone": "driveway", "saw": "blue tesla Model Y suv"}))
+        self.assertEqual("Car arrived in the driveway", relay.event_note({"name": None, "movement": "arrived", "zone": "driveway"}))
+        self.assertEqual("Andrew's Tesla in the driveway", relay.event_note({"name": "andrews_tesla", "how": "parked", "movement": "parked", "zone": "driveway"}))
+        self.assertEqual("", relay.event_note({"name": "andrews_tesla", "how": "classifier", "movement": "parked", "zone": "driveway"}), "Frigate names it already")
+
+    def test_the_snapshot(self):
+        self.park_andrews_tesla()
+        self.observe(car_event("out", LEAVING, self.T + 900, self.T + 930))
+        snap = relay.vehicle_memory_snapshot(now=self.T + 1000)
+        self.assertEqual([("andrews_tesla", "Andrew's Tesla", False)], [(v["name"], v["display_name"], v["here"]) for v in snap["vehicles"]])
+        self.assertEqual(["Andrew's Tesla left the driveway"], [e["text"] for e in snap["recent"]])
+
+
+class VisitMovementTest(unittest.TestCase):
+    def item(self, rid, vehicles, objects=("car",), sub_labels=()):
+        return {"id": rid, "camera": "hikvision_1", "start_time": 0.0, "end_time": 10.0,
+                "data": {"objects": list(objects), "sub_labels": list(sub_labels), "zones": ["driveway"], "vehicles": vehicles}}
+
+    def visit(self, *items):
+        visit = relay.Visit(items[0])
+        for item in items:
+            visit.add(item, 10.0)
+        return visit
+
+    def test_one_car_is_told_by_its_latest_move(self):
+        a = self.item("a", [{"name": None, "movement": "arrived"}])
+        b = self.item("b", [{"name": None, "movement": "parked"}])
+        self.assertEqual("Car arrived in the driveway · 2 alerts", self.visit(a, b).sentence(["driveway"])[1])
+
+    def test_two_cars_or_a_person_are_not(self):
+        a = self.item("a", [{"name": "andrews_tesla", "movement": "parked"}], sub_labels=["andrews_tesla"])
+        b = self.item("b", [{"name": None, "movement": "arrived"}])
+        self.assertEqual("Andrew's Tesla in the driveway · 2 alerts", self.visit(a, b).sentence(["driveway"])[1])
+        c = self.item("c", [{"name": None, "movement": "left"}], objects=("car", "person"))
+        self.assertEqual("Person and car in the driveway", self.visit(c).sentence(["driveway"])[1])
+
+
+class FollowupsTest(unittest.TestCase):
+    """A car's notification is told again, quietly, once the memory knows more."""
+
+    def setUp(self):
+        self._real = relay.with_vehicle_memory
+        self.known = {}
+        relay.with_vehicle_memory = lambda item: dict(item, data=dict(item["data"], **self.known.get(item["id"], {})))
+        self.pushes = []
+
+    def tearDown(self):
+        relay.with_vehicle_memory = self._real
+
+    def push(self, title, body, data, familiar=False):
+        self.pushes.append((title, body, data))
+        return {"sent": 1}
+
+    def test_a_name_and_a_departure_found_later_rewrite_the_notification_quietly(self):
+        item = review("r", 1000.0, ["car"])
+        visit = relay.Visit(item)
+        visit.add(item, 1005.0)
+        followups = relay.Followups()
+        followups.track(visit, "Car in the driveway", {"review_id": "r", "notif_id": "r", "car_unnamed": "1"}, 1005.0)
+        followups.run([item], {"hikvision_1": ["driveway"]}, 1010.0, push=self.push)
+        self.assertEqual([], self.pushes, "not due yet")
+        followups.run([item], {"hikvision_1": ["driveway"]}, 1040.0, push=self.push)
+        self.assertEqual([], self.pushes, "nothing new: nothing pushed")
+        self.known["r"] = {"sub_labels": ["andrews_tesla"], "vehicles": [{"name": "andrews_tesla", "movement": "left"}]}
+        followups.run([item], {"hikvision_1": ["driveway"]}, 1080.0, push=self.push)
+        self.assertEqual([("Front Yard", "Andrew's Tesla left the driveway", {"review_id": "r", "notif_id": "r", "silent": "1"})], self.pushes)
+        followups.run([item], {"hikvision_1": ["driveway"]}, 1120.0, push=self.push)
+        self.assertEqual(1, len(self.pushes), "told once")
+
+    def test_it_gives_up_after_a_while_and_ignores_visits_without_cars(self):
+        item = review("r", 1000.0, ["car"])
+        visit = relay.Visit(item)
+        visit.add(item, 1005.0)
+        followups = relay.Followups()
+        followups.track(visit, "Car in the driveway", {}, 1005.0)
+        self.known["r"] = {"sub_labels": ["andrews_tesla"]}
+        followups.run([], {}, 1005.0 + relay.FOLLOWUP_SECONDS + 1, push=self.push)
+        self.assertEqual([], self.pushes)
+        person = review("p", 1000.0, ["person"])
+        visit = relay.Visit(person)
+        visit.add(person, 1005.0)
+        followups.track(visit, "Person in the driveway", {}, 1005.0)
+        self.assertEqual({}, followups.by_visit)
+
+
+class MemoryVerdictTest(unittest.TestCase):
+    TESLA = {"make": "tesla", "colour": ["blue", "black"]}
+
+    def seen(self, colour="blue", make="tesla"):
+        return {"colour": colour, "make": make, "model": "", "body": "suv", "delivery": "none"}
+
+    def test_verdicts(self):
+        self.assertEqual("confirm", relay.memory_verdict(self.seen(), self.TESLA, "yes"))
+        self.assertEqual("reject", relay.memory_verdict(self.seen(), self.TESLA, "no"))
+        self.assertEqual("reject", relay.memory_verdict(self.seen("red"), self.TESLA, "yes"), "never red")
+        self.assertEqual("reject", relay.memory_verdict(self.seen(make="toyota"), self.TESLA, None))
+        self.assertEqual("confirm", relay.memory_verdict(self.seen(), self.TESLA, None), "its own make, no picture to compare")
+        self.assertEqual("unsure", relay.memory_verdict(self.seen("unknown", "unknown"), self.TESLA, None), "infrared, no badge")
+        self.assertEqual("unsure", relay.memory_verdict(self.seen(), self.TESLA, "unsure"))
+        self.assertEqual("unsure", relay.memory_verdict(self.seen("white", "unknown"), {}, None), "nothing known of it")
+
+    def test_learned_looks(self):
+        looks = relay.learn_looks({}, self.seen())
+        looks = relay.learn_looks(looks, self.seen("black", "unknown"))
+        self.assertEqual({"colour": ["blue", "black"], "make": "tesla", "body": "suv"}, looks)
+        self.assertEqual({"make": "tesla"}, relay.expected_looks("grandmas_tesla", looks), "learned colours rule nothing out")
+        saved, relay.HOUSEHOLD_CARS = relay.HOUSEHOLD_CARS, CarCheckTest.CARS
+        try:
+            self.assertEqual(CarCheckTest.CARS["andrews_tesla"], relay.expected_looks("andrews_tesla", looks), "the configured looks win")
+        finally:
+            relay.HOUSEHOLD_CARS = saved
+
+
+class VehicleMemoryAgainstFrigate(_ScratchDb):
+    """The memory's round and the vision model's part in it, against a fake Frigate."""
+
+    NAMES = _ScratchDb.NAMES + ("OLLAMA", "describe_car", "car_picture", "same_car")
+
+    def setUp(self):
+        super().setUp()
+        self._requests = (relay.requests.get, relay.requests.post)
+        relay.requests.get, relay.requests.post = self.get, self.post
+        relay.OLLAMA = "http://ollama"
+        relay.car_picture = lambda event: b"jpeg"
+        self.saw = {"colour": "blue", "make": "tesla", "model": "Model Y", "body": "suv", "delivery": "none"}
+        relay.describe_car = lambda jpeg: self.saw
+        self.answers = []
+        relay.same_car = lambda reference, picture, prompt: (self.answers.append(prompt), self.same)[1]
+        self.same = "yes"
+        self.posts = []
+        self.now = time.time()
+
+    def tearDown(self):
+        relay.requests.get, relay.requests.post = self._requests
+        super().tearDown()
+
+    def get(self, url, params=None, timeout=None):
+        if url.endswith("/api/events"):
+            p = params or {}
+            listed = [e for e in self.events.values() if e["camera"] == p.get("camera") and e["start_time"] > p.get("after", float("-inf"))
+                      and (not p.get("in_progress") or e["end_time"] is None)]
+            return _Response(200, listed)
+        found = self.events.get(url.rsplit("/", 1)[1])
+        return _Response(200, found) if found else _Response(404)
+
+    def post(self, url, json=None, timeout=None):
+        self.posts.append((url, json))
+        event_id = url.split("/api/events/")[1].split("/")[0] if "/api/events/" in url else None
+        if event_id in self.events and url.endswith("/sub_label"):
+            self.events[event_id] = dict(self.events[event_id], sub_label=json["subLabel"] or None,
+                                         data=dict(self.events[event_id]["data"], sub_label_score=json["subLabelScore"]))
+        return _Response(200, {})
+
+    def descriptions(self):
+        return {url.split("/")[-2]: body["description"] for url, body in self.posts if url.endswith("/description")}
+
+    def sub_labels(self):
+        return [(url.split("/")[-2], body) for url, body in self.posts if url.endswith("/sub_label")]
+
+    def test_a_tag_is_learned_and_what_the_car_did_goes_into_frigate(self):
+        relay.OLLAMA = ""
+        self.events["tagged"] = car_event("tagged", AT_SPOT, self.now - 3000, self.now - 2900, name="andrews_tesla", score=1.0)
+        self.events["out"] = car_event("out", LEAVING, self.now - 600, self.now - 560)
+        relay.vehicle_memory_round(self.now)
+        self.assertEqual("left", relay.sighting("out")["movement"])
+        self.assertEqual("andrews_tesla", relay.sighting("out")["name"])
+        self.assertEqual({"out": "Andrew's Tesla left the driveway"}, self.descriptions())
+        relay.vehicle_memory_round(self.now + 30)
+        self.assertEqual(1, len(self.descriptions()), "written once")
+
+    def test_a_late_tag_is_picked_up(self):
+        self.events["e"] = car_event("e", AT_SPOT, self.now - 600, self.now - 500)
+        relay.vehicle_memory_round(self.now)
+        self.assertIsNone(relay.sighting("e")["name"])
+        self.events["e"] = dict(self.events["e"], sub_label="andrews_tesla", data=dict(self.events["e"]["data"], sub_label_score=1.0))
+        relay.vehicle_memory_round(self.now + 30)
+        self.assertEqual("tagged", relay.sighting("e")["how"])
+        self.assertTrue(self.here("andrews_tesla"))
+
+    def test_the_first_look_at_a_tagged_car_is_its_reference(self):
+        self.events["tagged"] = car_event("tagged", AT_SPOT, self.now - 900, self.now - 800, name="andrews_tesla", score=1.0)
+        relay.second_opinions()
+        self.assertIsNotNone(relay.reference_picture("hikvision_1", "andrews_tesla"))
+        self.assertEqual({"colour": ["blue"], "make": "tesla", "model": "Model Y", "body": "suv"}, relay.vehicle("hikvision_1", "andrews_tesla")["looks"])
+        self.assertEqual([], self.sub_labels())
+
+    def test_a_car_named_by_its_spot_is_confirmed_by_the_picture(self):
+        self.observe(car_event("tagged", AT_SPOT, self.now - 3000, self.now - 2900, name="andrews_tesla", score=1.0))
+        relay.learn_vehicle("hikvision_1", "andrews_tesla", self.saw, b"reference", tagged=True)
+        self.events["flicker"] = car_event("flicker", JITTER, self.now - 600, self.now - 560)
+        relay.second_opinions()
+        self.assertEqual([("flicker", {"subLabel": "andrews_tesla", "subLabelScore": relay.VLM_SCORE})], self.sub_labels())
+        self.assertIn("Andrew's Tesla", self.answers[0])
+        story = relay.sighting("flicker")
+        self.assertEqual(("andrews_tesla", "looked"), (story["name"], story["how"]))
+        self.assertEqual("Andrew's Tesla in the driveway · blue tesla Model Y suv", self.descriptions()["flicker"])
+        relay.vehicle_memory_round(self.now)
+        self.assertEqual("looked", relay.sighting("flicker")["how"], "Frigate's copy of the name doesn't change how it was given")
+
+    def test_a_different_car_in_its_spot_is_turned_down_and_the_car_forgotten(self):
+        self.observe(car_event("tagged", AT_SPOT, self.now - 3000, self.now - 2900, name="andrews_tesla", score=1.0))
+        relay.learn_vehicle("hikvision_1", "andrews_tesla", self.saw, b"reference", tagged=True)
+        self.events["flicker"] = car_event("flicker", JITTER, self.now - 600, self.now - 560)
+        self.same = "no"
+        relay.second_opinions()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual((None, "not"), (relay.sighting("flicker")["name"], relay.sighting("flicker")["how"]))
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_a_car_arriving_is_recognised_from_the_cars_that_are_away(self):
+        self.observe(car_event("tagged", AT_SPOT, self.now - 9000, self.now - 8900, name="andrews_tesla", score=1.0))
+        relay.learn_vehicle("hikvision_1", "andrews_tesla", self.saw, b"reference", tagged=True)
+        self.observe(car_event("out", LEAVING, self.now - 8000, self.now - 7960))
+        self.events["home"] = car_event("home", ARRIVING, self.now - 600, self.now - 560)
+        relay.second_opinions()
+        self.assertEqual([("home", {"subLabel": "andrews_tesla", "subLabelScore": relay.VLM_SCORE})], self.sub_labels())
+        self.assertTrue(self.here("andrews_tesla"))
+        self.assertEqual("Andrew's Tesla arrived in the driveway · blue tesla Model Y suv", self.descriptions()["home"])
+
+    def test_a_comparison_the_model_fails_leaves_the_guess_standing(self):
+        self.observe(car_event("tagged", AT_SPOT, self.now - 3000, self.now - 2900, name="andrews_tesla", score=1.0))
+        relay.learn_vehicle("hikvision_1", "andrews_tesla", self.saw, b"reference", tagged=True)
+        self.events["flicker"] = car_event("flicker", JITTER, self.now - 600, self.now - 560)
+        relay.same_car = lambda reference, picture, prompt: (_ for _ in ()).throw(RuntimeError("model can't take two images"))
+        relay.second_opinions()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual(("andrews_tesla", "parked"), (relay.sighting("flicker")["name"], relay.sighting("flicker")["how"]))
+        self.assertTrue(self.here("andrews_tesla"))
+
+    def test_an_arrival_nothing_matches_stays_unnamed(self):
+        self.observe(car_event("tagged", AT_SPOT, self.now - 9000, self.now - 8900, name="andrews_tesla", score=1.0))
+        relay.learn_vehicle("hikvision_1", "andrews_tesla", self.saw, b"reference", tagged=True)
+        self.observe(car_event("out", LEAVING, self.now - 8000, self.now - 7960))
+        self.events["visitor"] = car_event("visitor", ARRIVING, self.now - 600, self.now - 560)
+        self.same = "unsure"
+        relay.second_opinions()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual("Car arrived in the driveway · blue tesla Model Y suv", self.descriptions()["visitor"])
 
 
 if __name__ == "__main__":
