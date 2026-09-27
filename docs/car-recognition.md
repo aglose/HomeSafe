@@ -34,7 +34,8 @@ slugged the way the labelling screen slugs one ("Grandma's Van" -> `grandmas_van
 one is still in `train/`, and otherwise cuts the car out of the recording at its biggest timeline
 box, scaled to the detect height, through the relay's `/classification/{model}/dataset/{category}`.
 Both routes create a new category's folder with its first image, so no separate `create` call is
-made. The event is named at score 1.0 (which the car check leaves alone) and the model retrains.
+made. The event is named at score 1.0 and the model retrains. The name goes through the relay
+(`POST /events/{id}/sub_label`), which keeps it as a person's (see "Whose name it is" below).
 
 On Android a relay push with `car_unnamed=1` (only cars in the review, none named) gets a "Tag
 car" button that opens the picker on arrival; the in-app alerts set the same flag themselves.
@@ -54,7 +55,7 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   `STREET_NONE_MAX` images in `none` (600), and there is one retrain a day once `RETRAIN_AFTER`
   (60) new cars have gone in. Every decision is kept in the `car_checks` table.
 - **Second opinion.** A car in a car zone, finished or in view for 60 s, whose name no person gave
-  (score below 1.0), is cut out of the 4K recording at its last path point. That cut, 640 px on
+  (see "Whose name it is"), is cut out of the 4K recording at its last path point. That cut, 640 px on
   the long edge, is sent to `qwen3-vl:4b-instruct` in Ollama with a closed JSON schema (colour,
   make, model, body, delivery company). The answer is matched against `HOUSEHOLD_CARS`. If it
   contradicts the classifier's name, the name is swapped for the one household car that fits,
@@ -68,6 +69,29 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   - Infrared night footage answers colour `unknown`, which rules nothing out.
   - A car missing from `HOUSEHOLD_CARS` is never judged.
   - Plain `qwen3-vl:4b` is the Thinking build; keep the `-instruct` tag.
+
+## Whose name it is
+
+Frigate keeps one name per event, a `sub_label` with a score, whoever gave it. The relay used to
+take a score of 1.0 to mean a person had given the name, because that is the score the app tags
+with. Since the retrain of 2026-09-27, the `known_cars` classifier scores some of its own guesses
+1.0 too. One of those was the parked Tesla's event that carried on as a car on the street, and the
+relay filed it as the Tesla leaving.
+
+The app now tags through the relay (`POST /events/{id}/sub_label`; the body is Frigate's own).
+The relay passes the tag on to Frigate's signed-in port with the person's session cookie, so
+Frigate still decides who may name an event. What Frigate accepts is kept in `person_tags`, and
+an empty name removes the row. A name counts as a person's when `person_tags` has that name for
+that event (`by_a_person`). That decides:
+
+- when the vision model gives a second opinion;
+- when a picture may become a car's reference;
+- whether the vehicle memory files a name as `tagged` or `classifier`.
+
+Events that began before the relay kept these tags still count a 1.0 as a person's, so tags given
+the old way aren't second-guessed. If the relay doesn't take the tag, the app names the event in
+Frigate directly, and the relay then can't tell that name from the classifier's. The same goes
+for a name given in Frigate's own UI.
 
 ## The vehicle memory
 

@@ -150,6 +150,20 @@ class PushRelayApi(private val httpClient: HttpClient) {
             if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
         }
 
+    /**
+     * A person naming [eventId], through the relay so the name is known to be a person's: the
+     * classifier gives some of its own guesses Frigate's top score too. The relay passes it on to
+     * Frigate with the session cookie, so Frigate still decides who may. A null [subLabel] takes
+     * the name away.
+     */
+    suspend fun setSubLabel(serverUrl: String, eventId: String, subLabel: String?, score: Double?): Result<Unit> = runCatching {
+        val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/sub_label")) {
+            contentType(ContentType.Application.Json)
+            setBody(SubLabelRequest(subLabel = subLabel.orEmpty(), subLabelScore = score))
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")
     }

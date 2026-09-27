@@ -86,8 +86,17 @@ class ClassifierRepositoryImpl(
     override suspend fun addExample(modelName: String, category: String, frame: ByteArray, box: SeenBox): Result<Unit> =
         serverUrlOrFailure().fold({ relayApi.addClassifierExample(it, modelName, category, frame, box) }, { Result.failure(it) })
 
-    override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> =
-        serverUrlOrFailure().fold({ api.setSubLabel(it, eventId, subLabel, score = subLabel?.let { MANUAL_NAME_SCORE }) }, { Result.failure(it) })
+    /**
+     * Through the relay, which keeps the name as a person's (the classifier scores some of its own
+     * guesses 1.0 too). Straight to Frigate when the relay doesn't take it, so tagging still works;
+     * the relay then can't tell the name from the classifier's.
+     */
+    override suspend fun nameTrackedObject(eventId: String, subLabel: String?): Result<Unit> {
+        val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
+        val score = subLabel?.let { MANUAL_NAME_SCORE }
+        return relayApi.setSubLabel(serverUrl, eventId, subLabel, score)
+            .recoverCatching { api.setSubLabel(serverUrl, eventId, subLabel, score).getOrThrow() }
+    }
 
     override suspend fun getQueue(modelName: String): Result<List<UnlabeledCrop>> =
         serverUrlOrFailure().fold({ url -> api.getQueue(url, modelName).map { names -> names.map { UnlabeledCrop.fromFileName(it) } } }, { Result.failure(it) })

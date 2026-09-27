@@ -8,6 +8,7 @@ The web framework, Firebase and HTTP client are stubbed so `relay` imports witho
 requirements; every test here calls a function that touches none of them.
 """
 
+import json
 import os
 import sys
 import time
@@ -32,7 +33,18 @@ class _App:
         return lambda *args, **kwargs: (lambda fn: fn)
 
 
-_stub("fastapi", FastAPI=_App, HTTPException=Exception, Request=object, Response=object)
+class _HTTPException(Exception):
+    def __init__(self, status_code, detail=None):
+        super().__init__(detail)
+        self.status_code, self.detail = status_code, detail
+
+
+class _FastApiResponse:
+    def __init__(self, content=None, status_code=200, media_type=None, headers=None):
+        self.body, self.status_code, self.media_type = content, status_code, media_type
+
+
+_stub("fastapi", FastAPI=_App, HTTPException=_HTTPException, Request=object, Response=_FastApiResponse)
 _stub("pydantic", BaseModel=object)
 _stub("requests", get=None, post=None)
 _stub("google")
@@ -619,12 +631,6 @@ class CarCheckTest(unittest.TestCase):
 
     def test_a_name_with_no_description_is_left_alone(self):
         self.assertEqual(("keep", "moms_car"), relay.second_opinion_verdict("moms_car", [], self.CARS))
-
-    def test_a_persons_tag_is_final(self):
-        tagged = {"label": "car", "zones": ["driveway"], "start_time": 0.0, "end_time": 5.0, "sub_label": "sarahs_car", "data": {"sub_label_score": 1.0}}
-        self.assertFalse(relay.second_opinion_due(tagged, ["driveway"], 100.0))
-        tagged["data"]["sub_label_score"] = 0.98
-        self.assertTrue(relay.second_opinion_due(tagged, ["driveway"], 100.0))
 
     def test_a_car_still_in_the_driveway_waits_to_settle(self):
         car = {"label": "car", "zones": ["driveway"], "start_time": 100.0, "end_time": None, "sub_label": None, "data": {}}
@@ -1663,6 +1669,102 @@ class TrackerSwitchTest(_ScratchDb):
         self.assertTrue(self.here("andrews_tesla"))
         self.assertEqual(self.T + 3000, relay.vehicle("hikvision_1", "andrews_tesla")["since"])
 
+
+
+class _FrigateAnswer(_Response):
+    def __init__(self, status=200, body=None):
+        super().__init__(status, body)
+        self.content, self.headers = json.dumps(body or {}).encode(), {"content-type": "application/json"}
+
+
+class _Caller:
+    def __init__(self, cookie="frigate_token=abc"):
+        self.headers = {"cookie": cookie} if cookie else {}
+
+
+class PersonTagTest(_ScratchDb):
+    """Whose name an event carries: a person's, given through the relay, or the classifier's."""
+
+    NAMES = _ScratchDb.NAMES + ("require_frigate_session",)
+
+    def setUp(self):
+        super().setUp()
+        self._post = relay.requests.post
+        self.posted, self.answer = [], _FrigateAnswer(200, {"success": True})
+        relay.requests.post = lambda url, json=None, headers=None, timeout=None: (self.posted.append((url, json, headers)), self.answer)[1]
+        relay.require_frigate_session = lambda request: "andrew"
+        self.now = relay.person_tags_since() + 60
+
+    def tearDown(self):
+        relay.requests.post = self._post
+        super().tearDown()
+
+    def event(self, event_id, name="andrews_tesla", score=1.0, start=None):
+        return {"id": event_id, "label": "car", "camera": "hikvision_1", "zones": ["driveway"], "start_time": self.now if start is None else start,
+                "end_time": (self.now if start is None else start) + 5, "sub_label": name, "data": {"sub_label_score": score}}
+
+    def tag(self, event_id, name, caller=None):
+        return relay.tag_event(event_id, {"subLabel": name, "subLabelScore": 1.0 if name else None}, caller or _Caller())
+
+    def test_the_classifiers_1_0_is_not_a_persons_tag(self):
+        event = self.event("e")
+        self.assertFalse(relay.by_a_person(event))
+        self.assertTrue(relay.second_opinion_due(event, ["driveway"], self.now + 100), "the vision model gets a look")
+        self.assertFalse(relay.worth_learning(event, ["driveway"], self.now + 100), "nor is its picture the car's")
+
+    def test_a_1_0_from_before_the_relay_kept_tags_is_still_a_persons(self):
+        tagged = self.event("old", name="sarahs_car", start=0.0)
+        self.assertTrue(relay.by_a_person(tagged))
+        self.assertFalse(relay.second_opinion_due(tagged, ["driveway"], 100.0))
+        tagged["data"]["sub_label_score"] = 0.98
+        self.assertTrue(relay.second_opinion_due(tagged, ["driveway"], 100.0))
+
+    def test_a_tag_through_the_relay_goes_to_frigate_as_that_person_and_is_theirs(self):
+        answer = self.tag("e", "andrews_tesla")
+        self.assertEqual(200, answer.status_code)
+        [(url, body, headers)] = self.posted
+        self.assertEqual(f"{relay.FRIGATE_AUTH}/api/events/e/sub_label", url)
+        self.assertEqual({"subLabel": "andrews_tesla", "subLabelScore": 1.0}, body)
+        self.assertEqual({"Cookie": "frigate_token=abc"}, headers)
+        self.assertTrue(relay.by_a_person(self.event("e")))
+        self.assertFalse(relay.second_opinion_due(self.event("e"), ["driveway"], self.now + 100))
+        self.assertFalse(relay.by_a_person(self.event("e", name="sarahs_car")), "a name it was given since is not the person's")
+
+    def test_the_memory_files_a_persons_tag_as_tagged_and_the_classifiers_as_classifier(self):
+        self.tag("mine", "andrews_tesla")
+        path = [[[0.35, 0.6], self.now], [[0.35, 0.6], self.now + 1]]
+        for event_id in ("mine", "guess"):
+            self.events[event_id] = dict(self.event(event_id), data={"sub_label_score": 1.0, "box": list(CAR_BOX), "path_data": path})
+        self.assertEqual("tagged", relay.observe_car(self.events["mine"], self.now + 10)["how"])
+        self.assertEqual("classifier", relay.observe_car(self.events["guess"], self.now + 10)["how"])
+
+    def test_a_person_confirming_the_classifiers_name_undoes_what_was_decided_under_it(self):
+        path = [[[0.35, 0.6], self.now], [[0.35, 0.6], self.now + 1]]
+        self.events["e"] = dict(self.event("e", score=0.98), data={"sub_label_score": 0.98, "box": list(CAR_BOX), "path_data": path})
+        self.assertEqual("classifier", relay.observe_car(self.events["e"], self.now + 10)["how"])
+        relay.record_check("e", "learn", "untagged", "andrews_tesla")
+        self.tag("e", "andrews_tesla")
+        self.assertIsNone(relay.check_of("e", "learn"), "its picture may now be the car's")
+        self.assertEqual(0, relay.sighting("e")["final"], "the memory reads it again")
+        self.events["e"]["data"]["sub_label_score"] = 1.0
+        self.assertEqual("tagged", relay.observe_car(self.events["e"], self.now + 20)["how"])
+
+    def test_what_frigate_refuses_is_not_kept(self):
+        self.answer = _FrigateAnswer(403, {"success": False, "message": "Admin only"})
+        self.assertEqual(403, self.tag("e", "andrews_tesla").status_code)
+        self.assertFalse(relay.by_a_person(self.event("e")))
+
+    def test_taking_the_name_away_forgets_the_tag(self):
+        self.tag("e", "andrews_tesla")
+        self.tag("e", "")
+        self.assertEqual({"subLabel": "", "subLabelScore": None}, self.posted[-1][1])
+        self.assertIsNone(relay.with_db(lambda c: c.execute("SELECT 1 FROM person_tags WHERE event_id='e'").fetchone()))
+
+    def test_no_session_no_tag(self):
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.tag("e", "andrews_tesla", _Caller(cookie=None))
+        self.assertEqual(401, refused.exception.status_code)
+        self.assertEqual([], self.posted)
 
 if __name__ == "__main__":
     unittest.main()
