@@ -184,7 +184,11 @@ data class TrackedObject(
     val label: String,
     /** What Frigate has already named it, e.g. `sarahs_tesla`; null while nothing has. */
     val subLabel: String?,
-    /** Where it is on the detect frame: the event's best-frame box, which for a parked car is where it stands. */
+    /**
+     * Where it is now on the detect frame: the best frame's box, moved so its bottom centre sits on
+     * the last point of its path (see `FrigateEventData.latestBox`). A car that drove on after its
+     * best frame is placed where it went, not where it was.
+     */
     val box: SeenBox? = null,
 )
 
