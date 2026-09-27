@@ -107,6 +107,8 @@ import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -162,7 +164,7 @@ private val MomentCategory.icon: ImageVector?
  * recording from that instant on the full-width player — the way out of the card-sized one.
  */
 @Composable
-fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifier = Modifier) {
+fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifier = Modifier, scrollToTopRequests: Flow<Unit> = emptyFlow()) {
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
@@ -198,6 +200,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         },
         modifier = modifier,
         onTagCar = tagViewModel::open,
+        scrollToTopRequests = scrollToTopRequests,
     )
 }
 
@@ -225,6 +228,7 @@ internal fun MomentsFeed(
     modifier: Modifier = Modifier,
     onRefresh: () -> Unit = {},
     onTagCar: (MomentEvent) -> Unit = {},
+    scrollToTopRequests: Flow<Unit> = emptyFlow(),
 ) {
     var pickingDay by remember { mutableStateOf(false) }
     // Keyed by MomentItem.key, which holds while a visit grows newer clips.
@@ -319,6 +323,7 @@ internal fun MomentsFeed(
                 KeepGrowingEntryInView(listState, trigger = state.expandedEventId, entryKey = playingEntry)
                 KeepGrowingEntryInView(listState, trigger = justOpenedEntry, entryKey = justOpenedEntry)
                 StayAtTheTopForNewerMoments(listState, topKey = state.groups.first().headerKey)
+                ScrollToTopOnReselect(listState, scrollToTopRequests)
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),

@@ -68,6 +68,8 @@ import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -80,7 +82,12 @@ import kotlin.time.ExperimentalTime
  * stats and config), summarised in a line.
  */
 @Composable
-fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () -> Unit = {}, onOpenServer: () -> Unit = {}) {
+fun SettingsTabContent(
+    onOpenClassifier: (String) -> Unit = {},
+    onOpenFaces: () -> Unit = {},
+    onOpenServer: () -> Unit = {},
+    scrollToTopRequests: Flow<Unit> = emptyFlow(),
+) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -93,10 +100,12 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
         onPauseOrDispose { }
     }
 
+    val scrollState = rememberScrollState()
+    ScrollToTopOnReselect(scrollState, scrollToTopRequests)
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
             // Applied after verticalScroll, so this is content padding: the page scrolls under
             // the shell's floating top bar and the bottom nav rather than stopping short of them.

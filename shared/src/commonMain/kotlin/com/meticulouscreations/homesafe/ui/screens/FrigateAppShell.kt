@@ -80,7 +80,12 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 
 /**
  * The shell's navigation state: which tab is up, and the nested back stack of each tab that has
@@ -108,12 +113,19 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /** The tab that is up, as far as Compose knows; under a native tab bar the bar itself is the truth. */
     val selectedTab: TopLevelRoute get() = topLevel.topLevelKey
 
+    private val reselected = MutableSharedFlow<TopLevelRoute>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+
     /** Whether [tab] is showing its root screen, which is when the shell's own top bar belongs above it. */
-    fun showsTopBar(tab: TopLevelRoute): Boolean = when (tab) {
+    fun showsTopBar(tab: TopLevelRoute): Boolean = isAtRoot(tab)
+
+    private fun isAtRoot(tab: TopLevelRoute): Boolean = when (tab) {
         TopLevelRoute.Home -> homeBackStack.size <= 1
         TopLevelRoute.Settings -> settingsBackStack.size <= 1
-        else -> true
+        TopLevelRoute.Moments -> true
     }
+
+    /** Taps on [tab] in the bottom nav while it was already up at its root: its list scrolls to the top (see [ScrollToTopOnReselect]). */
+    fun reselections(tab: TopLevelRoute): Flow<Unit> = reselected.filter { it == tab }.map { }
 
     /**
      * Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which
@@ -125,13 +137,15 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /**
      * A tap on [tab] in the bottom nav, which follows Material's bottom navigation behaviour on
      * Android: the tab comes up at its root screen, with whatever had been drilled into there
-     * cleared away. On the tab that is already up, the tap pops its nested stack back to the root.
+     * cleared away. On the tab that is already up, the tap pops its nested stack back to the root,
+     * or, if it is at its root already, scrolls that screen back to the top.
      *
      * A tab being left keeps its nested stack while it slides away, so it shows what was on it
      * rather than snapping to its root first; it is cleared when the tab next comes up (Home, which
      * stays under the other tabs, as soon as it is off screen — see [FrigateAppShell]).
      */
     fun selectTab(tab: TopLevelRoute) {
+        if (tab == selectedTab && isAtRoot(tab)) reselected.tryEmit(tab)
         popToRoot(tab)
         showTab(tab)
     }
@@ -273,13 +287,14 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
 /** What [tab] shows: its root screen, and the nested stack beyond it where the tab has one. */
 @Composable
 private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    val scrollToTop = remember(nav, tab) { nav.reselections(tab) }
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, onOpenMoments = { nav.selectTab(TopLevelRoute.Moments) })
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, scrollToTop, onOpenMoments = { nav.selectTab(TopLevelRoute.Moments) })
 
-        TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection)
+        TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection, scrollToTopRequests = scrollToTop)
 
         TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces, openServer ->
-            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer)
+            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer, scrollToTopRequests = scrollToTop)
         }
     }
 }
@@ -522,11 +537,12 @@ private data class ClipEditorRoute(
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
- * [onOpenMoments] switches to the Moments tab, for the summary at the top of the camera list.
+ * [onOpenMoments] switches to the Moments tab, for the summary at the top of the camera list;
+ * [scrollToTop] are the bottom nav's re-taps on Home while the list is up.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, onOpenMoments: () -> Unit) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: Flow<Unit>, onOpenMoments: () -> Unit) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -544,6 +560,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         },
                         onOpenMoments = onOpenMoments,
                         onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
+                        scrollToTopRequests = scrollToTop,
                     )
                 }
                 entry<CameraDetailRoute>(

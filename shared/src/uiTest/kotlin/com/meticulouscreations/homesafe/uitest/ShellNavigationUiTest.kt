@@ -1,18 +1,27 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.screens.ScrollToTopOnReselect
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
+import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -160,6 +169,52 @@ class ShellNavigationUiTest {
         onNodeWithText("Showing Settings").assertIsDisplayed()
         onNodeWithText("Top bar").assertIsDisplayed()
         assertEquals(1, nav.settingsBackStack.size)
+    }
+
+    /** The shell around a long list standing in for Home's camera list, wired as `FrigateAppShell` wires a tab's root. */
+    private fun ComposeUiTest.setUpShellOverAList(nav: ShellNavigation, listState: LazyListState) {
+        setContent {
+            FrigatePreview {
+                ShellScaffold(
+                    showTopBar = nav.showsTopBar(nav.selectedTab),
+                    topBar = { Text("Top bar") },
+                    selectedTab = nav.selectedTab,
+                    onSelectTab = nav::selectTab,
+                ) {
+                    val scrollToTop = remember(nav) { nav.reselections(TopLevelRoute.Home) }
+                    ScrollToTopOnReselect(listState, scrollToTop)
+                    LazyColumn(state = listState) {
+                        items(50) { Text("Row $it", Modifier.height(120.dp)) }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun tappingTheTabThatIsUpAtItsRootScrollsItBackToTheTop() = runComposeUiTest {
+        val nav = ShellNavigation()
+        val listState = LazyListState(firstVisibleItemIndex = 30)
+        setUpShellOverAList(nav, listState)
+
+        onNodeWithTag(bottomNavTestTag(TopLevelRoute.Home)).performClick()
+
+        waitUntil(timeoutMillis = 5_000) { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
+    }
+
+    @Test
+    fun tappingTheTabThatIsUpInsideANestedScreenPopsItWithoutScrollingTheRoot() = runComposeUiTest {
+        val nav = ShellNavigation()
+        val listState = LazyListState(firstVisibleItemIndex = 30)
+        setUpShellOverAList(nav, listState)
+        runOnIdle { nav.homeBackStack.add("front_door") }
+
+        onNodeWithTag(bottomNavTestTag(TopLevelRoute.Home)).performClick()
+
+        runOnIdle {
+            assertEquals(1, nav.homeBackStack.size)
+            assertEquals(30, listState.firstVisibleItemIndex, "the first tap only returns to the root; a second scrolls it")
+        }
     }
 
     @Test
