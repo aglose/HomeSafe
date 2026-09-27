@@ -1,11 +1,15 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import io.ktor.client.HttpClient
+import io.ktor.client.plugins.HttpTimeoutConfig
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
+import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
@@ -34,18 +38,31 @@ import platform.posix.fwrite
  *
  * The response is streamed to the temporary file a chunk at a time rather than read into memory
  * whole: a clip can run to [com.meticulouscreations.homesafe.domain.model.ClipLimits.MAX_SECONDS],
- * which at a camera's main-stream bitrate is hundreds of megabytes.
+ * which at a camera's main-stream bitrate is hundreds of megabytes. For the same reason the
+ * shared client's request timeout is lifted for this one call: it bounds the whole exchange,
+ * body included, and Frigate cutting a long clip before sending a byte can take longer than
+ * that on its own. A stalled connection is still caught by the socket timeout.
  */
 @OptIn(ExperimentalForeignApi::class)
 private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownloader {
 
-    override suspend fun download(url: String, headers: Map<String, String>, fileName: String): Result<Unit> = runCatching {
+    override suspend fun download(
+        url: String,
+        headers: Map<String, String>,
+        fileName: String,
+        onProgress: (ClipDownloadProgress) -> Unit,
+    ): Result<Unit> = runCatching {
         val path = NSTemporaryDirectory() + fileName
+        onProgress(ClipDownloadProgress.Preparing)
         httpClient.prepareGet(url) {
             headers.forEach { (key, value) -> header(key, value) }
+            timeout {
+                requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+                socketTimeoutMillis = SOCKET_TIMEOUT_MS
+            }
         }.execute { response ->
             check(response.status.isSuccess()) { "Frigate answered ${response.status} for the clip" }
-            writeToFile(path, response.bodyAsChannel())
+            writeToFile(path, response.bodyAsChannel(), response.contentLength(), onProgress)
         }
 
         withContext(Dispatchers.Main) {
@@ -59,19 +76,30 @@ private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownlo
     }
 
     /**
-     * Copies [body] into the file at [path], [DOWNLOAD_CHUNK_BYTES] at a time. Plain POSIX file
-     * I/O rather than NSData, so this doesn't depend on Foundation's byte-buffer factory overloads.
+     * Copies [body] into the file at [path], [DOWNLOAD_CHUNK_BYTES] at a time, telling
+     * [onProgress] how much of [totalBytes] (null if the server didn't say) has arrived. Plain
+     * POSIX file I/O rather than NSData, so this doesn't depend on Foundation's byte-buffer
+     * factory overloads.
      */
-    private suspend fun writeToFile(path: String, body: ByteReadChannel) = withContext(Dispatchers.IO) {
+    private suspend fun writeToFile(
+        path: String,
+        body: ByteReadChannel,
+        totalBytes: Long?,
+        onProgress: (ClipDownloadProgress) -> Unit,
+    ) = withContext(Dispatchers.IO) {
         val file = fopen(path, "wb") ?: error("Couldn't open $path for writing")
         try {
             val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
+            var received = 0L
             while (true) {
                 val read = body.readAvailable(buffer, 0, buffer.size)
                 if (read < 0) break
                 if (read == 0) continue
                 val written = buffer.usePinned { pinned -> fwrite(pinned.addressOf(0), 1uL, read.toULong(), file) }
                 check(written == read.toULong()) { "Couldn't write the clip to $path" }
+                received += read
+                val fraction = totalBytes?.takeIf { it > 0L }?.let { (received.toDouble() / it).toFloat().coerceIn(0f, 1f) }
+                onProgress(ClipDownloadProgress.Downloading(fraction))
             }
         } finally {
             fclose(file)
@@ -90,6 +118,9 @@ private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownlo
 
 /** How much of the clip is held in memory at once on its way to the file. */
 private const val DOWNLOAD_CHUNK_BYTES = 256 * 1024
+
+/** How long the connection may go quiet (Frigate still cutting, or the network gone) before the save gives up. */
+private const val SOCKET_TIMEOUT_MS = 120_000L
 
 actual fun createClipDownloader(platformContext: PlatformContext, httpClient: HttpClient): ClipDownloader =
     IosClipDownloader(httpClient)
