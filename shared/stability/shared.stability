@@ -1410,6 +1410,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.SaveButton(save: com.met
     - onSave: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SaveProgressRing(fraction: kotlin.Float?, color: androidx.compose.ui.graphics.Color): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fraction: STABLE (class with no mutable properties)
+    - color: STABLE (marked @Stable or @Immutable)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.screens.SecureConnectionScreen(onConnected: kotlin.Function0<kotlin.Unit>, debugAutofillCredentials: com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials?): kotlin.Unit
   skippable: true
   restartable: true

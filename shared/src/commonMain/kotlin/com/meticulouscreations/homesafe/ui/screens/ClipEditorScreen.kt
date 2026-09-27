@@ -50,6 +50,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -96,6 +97,7 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.ClipLimits
 import com.meticulouscreations.homesafe.domain.model.ClipRange
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ClipTrimmer
 import com.meticulouscreations.homesafe.ui.components.ClipTrimmerStripHeight
@@ -120,7 +122,8 @@ import kotlin.math.round
  * The clip editor, full screen, after Google Photos' video editor: the picture up top on black,
  * the selection playing on a loop; under it the running time, a play button beside a filmstrip
  * trimmed with two grips; then one-tap lengths and the detections in reach, each of which snaps
- * the selection to exactly that event. Save sits top right and morphs through saving to saved.
+ * the selection to exactly that event. Save sits top right and morphs through saving to saved;
+ * the save runs in the background, so the viewer can keep trimming or close the editor meanwhile.
  *
  * It arrives as a splash: [splashOrigin] (a fraction of the window — where the scissors were) is
  * where the water lands, and it spreads until the editor covers everything, refracting the camera
@@ -366,16 +369,18 @@ private fun EditorTopBar(
 }
 
 /**
- * Save, as Google Photos' "Save copy" pill: tap it and the label gives way to a spinner, then a
- * tick. Only a clip that's loaded can be saved; while one is saving, taps are ignored.
+ * Save, as Google Photos' "Save copy" pill: tap it and the label gives way to a ring, then a
+ * tick. The ring spins while Frigate cuts the clip and fills as it comes down. Only a clip that's
+ * loaded can be saved; while one is saving, taps are ignored.
  */
 @Composable
 private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit) {
     val phase = when (save) {
         ClipSaveState.Idle, is ClipSaveState.Failed -> SavePhase.READY
-        ClipSaveState.Saving -> SavePhase.SAVING
+        is ClipSaveState.Saving -> SavePhase.SAVING
         ClipSaveState.Saved -> SavePhase.SAVED
     }
+    val fraction = ((save as? ClipSaveState.Saving)?.progress as? ClipDownloadProgress.Downloading)?.fraction
     val tappable = enabled && phase == SavePhase.READY
     val container = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
     val content = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -388,7 +393,7 @@ private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit
             .semantics {
                 contentDescription = when (phase) {
                     SavePhase.READY -> "Save clip"
-                    SavePhase.SAVING -> "Saving clip"
+                    SavePhase.SAVING -> fraction?.let { "Saving clip, ${percent(it)}" } ?: "Saving clip"
                     SavePhase.SAVED -> "Clip saved"
                 }
             }
@@ -407,7 +412,7 @@ private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 when (shown) {
                     SavePhase.READY -> Unit
-                    SavePhase.SAVING -> CircularProgressIndicator(modifier = Modifier.size(16.dp), color = content, strokeWidth = 2.dp)
+                    SavePhase.SAVING -> SaveProgressRing(fraction = fraction, color = content)
                     SavePhase.SAVED -> Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
                 }
                 Text(
@@ -425,6 +430,27 @@ private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit
 }
 
 private enum class SavePhase { READY, SAVING, SAVED }
+
+/** Spins until the size of the download is known, then fills (smoothly, between the downloader's reports). */
+@Composable
+private fun SaveProgressRing(fraction: Float?, color: Color) {
+    val modifier = Modifier.size(16.dp)
+    if (fraction == null) {
+        CircularProgressIndicator(modifier = modifier, color = color, strokeWidth = 2.dp)
+    } else {
+        val shown by animateFloatAsState(targetValue = fraction, animationSpec = tween(400), label = "save-progress")
+        CircularProgressIndicator(
+            progress = { shown },
+            modifier = modifier,
+            color = color,
+            strokeWidth = 2.dp,
+            trackColor = color.copy(alpha = 0.3f),
+        )
+    }
+}
+
+/** "42%". */
+private fun percent(fraction: Float): String = "${(fraction * 100).toInt()}%"
 
 /**
  * The picture, as large as the space allows at 16:9, on black. A tap plays or pauses. While a grip
@@ -826,32 +852,38 @@ private fun EditorChip(
 }
 
 /**
- * What happened to the save, said once at the foot of the screen: a moment of "Clip saved", or
- * why it failed with a way to try again. The save button says the same thing in its own way.
+ * What the save is doing, said once at the foot of the screen: when it starts, that it carries on
+ * in the background (so waiting on it isn't the only option); a moment of "Clip saved" when it
+ * lands; or why it failed, with a way to try again. The save button says the same in its own way.
  */
 @Composable
 private fun SaveBanner(save: ClipSaveState, onRetry: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
-    var showSaved by remember { mutableStateOf(false) }
-    LaunchedEffect(save) {
-        showSaved = save == ClipSaveState.Saved
-        if (showSaved) {
-            delay(SAVED_BANNER_MS)
-            showSaved = false
+    val saving = save is ClipSaveState.Saving
+    // Keyed on the kind of state, not its value, so progress ticks don't restart the timers.
+    var showBriefly by remember { mutableStateOf<BannerKind?>(null) }
+    LaunchedEffect(saving, save == ClipSaveState.Saved) {
+        showBriefly = when {
+            saving -> BannerKind.SAVING
+            save == ClipSaveState.Saved -> BannerKind.SAVED
+            else -> null
         }
+        when (showBriefly) {
+            BannerKind.SAVING -> delay(SAVING_BANNER_MS)
+            BannerKind.SAVED -> delay(SAVED_BANNER_MS)
+            else -> return@LaunchedEffect
+        }
+        showBriefly = null
     }
     val failure = save as? ClipSaveState.Failed
+    val kind = if (failure != null) BannerKind.FAILED else showBriefly
     // What the banner last said, kept past the state that caused it so it still has the same
     // words (and the same look) while it slides away.
     val memory = remember { BannerMemory() }
-    if (failure != null) {
-        memory.failed = true
-        memory.message = failure.message
-    } else if (showSaved) {
-        memory.failed = false
-    }
+    if (kind != null) memory.kind = kind
+    if (failure != null) memory.message = failure.message
 
     AnimatedVisibility(
-        visible = showSaved || failure != null,
+        visible = kind != null,
         modifier = modifier,
         enter = fadeIn(tween(180)) + slideInVertically(tween(260)) { it },
         exit = fadeOut(tween(180)) + slideOutVertically(tween(220)) { it },
@@ -866,21 +898,29 @@ private fun SaveBanner(save: ClipSaveState, onRetry: () -> Unit, onDismiss: () -
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val failed = memory.failed
+            val shown = memory.kind
             Icon(
-                imageVector = if (failed) Icons.Filled.ErrorOutline else Icons.Filled.Check,
+                imageVector = when (shown) {
+                    BannerKind.SAVING -> Icons.Filled.Download
+                    BannerKind.SAVED -> Icons.Filled.Check
+                    BannerKind.FAILED -> Icons.Filled.ErrorOutline
+                },
                 contentDescription = null,
-                tint = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                tint = if (shown == BannerKind.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
             )
             Text(
-                text = if (failed) "Couldn't save: ${memory.message}" else "Clip saved",
+                text = when (shown) {
+                    BannerKind.SAVING -> "Saving in the background. It'll finish even if you close the editor."
+                    BannerKind.SAVED -> "Clip saved"
+                    BannerKind.FAILED -> "Couldn't save: ${memory.message}"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (failed) {
+            if (shown == BannerKind.FAILED) {
                 BannerAction(label = "Dismiss", onClick = onDismiss)
                 BannerAction(label = "Retry", onClick = onRetry)
             }
@@ -888,11 +928,13 @@ private fun SaveBanner(save: ClipSaveState, onRetry: () -> Unit, onDismiss: () -
     }
 }
 
+private enum class BannerKind { SAVING, SAVED, FAILED }
+
 /**
  * The save banner's last words. A plain holder rather than state: it only changes in the same
  * composition that reads it, so there's nothing to invalidate (the clip trimmer's bubble does the same).
  */
-private class BannerMemory(var failed: Boolean = false, var message: String = "")
+private class BannerMemory(var kind: BannerKind = BannerKind.SAVED, var message: String = "")
 
 @Composable
 private fun BannerAction(label: String, onClick: () -> Unit) {
@@ -956,3 +998,6 @@ private const val HOLD_TOLERANCE_SECONDS = 0.5
 
 private const val SAVED_BANNER_MS = 2_500L
 private const val SHIMMER_MS = 1_300
+
+/** Long enough to read that the save carries on without the editor, then out of the way of the controls. */
+private const val SAVING_BANNER_MS = 4_000L

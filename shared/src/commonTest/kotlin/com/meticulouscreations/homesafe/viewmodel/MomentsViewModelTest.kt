@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.VisitKind
+import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -129,7 +130,7 @@ class MomentsViewModelTest {
     }
 
     private object NoDownloads : ClipDownloader {
-        override suspend fun download(url: String, headers: Map<String, String>, fileName: String): Result<Unit> = fail("unused")
+        override suspend fun download(url: String, headers: Map<String, String>, fileName: String, onProgress: (ClipDownloadProgress) -> Unit): Result<Unit> = fail("unused")
     }
 
     private fun event(id: String, camera: String, label: String) = MomentEvent(
