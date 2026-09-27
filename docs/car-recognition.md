@@ -80,10 +80,10 @@ now remembers the household's cars itself, in `relay.db` (`vehicle_memory_round`
 - **Where each car is parked.** `vehicles` holds each named car per camera: whether it is parked
   there now, where (the bottom centre and size of its box) and since when. A car a person tagged,
   or one the classifier or vision model named, is remembered where it ends up. Every 30 s the
-  relay reads the last hour of car events in the car zones, any still in view, the last hour's
-  cars Frigate didn't tag with a car zone (their path is checked against the outline, since
-  Frigate misses a brisk departure), and the last day's named cars in the car zones, so a tag
-  given before the relay started still counts.
+  relay reads the last hour of car events in the car zones, any still in view, and the last
+  hour's cars Frigate didn't tag with a car zone (their path is checked against the outline,
+  since Frigate misses a brisk departure). At start and then hourly it reads the whole last day
+  of both, paged, so a tag given before the relay started counts, and so does a departure since.
 - **What each car did.** Every car event in a car zone gets a `vehicle_sightings` row, filed
   under the zone it was in. Its movement comes from where its path began and ended against the
   zone outline:

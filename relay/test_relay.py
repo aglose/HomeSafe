@@ -1373,6 +1373,7 @@ class VehicleMemoryAgainstFrigate(_ScratchDb):
         self.posts = []
         self.listed = []
         self.now = time.time()
+        relay._vehicle_history_read.clear()
 
     def tearDown(self):
         relay.requests.get, relay.requests.post = self._requests
@@ -1383,12 +1384,13 @@ class VehicleMemoryAgainstFrigate(_ScratchDb):
             p = params or {}
             zones = set(p["zones"].split(",")) if p.get("zones") else None
             names = set(p["sub_labels"].split(",")) if p.get("sub_labels") else None
-            listed = [e for e in self.events.values() if e["camera"] == p.get("camera") and e["start_time"] > p.get("after", float("-inf"))
+            listed = [e for e in self.events.values() if e["camera"] == p.get("camera") and p.get("after", float("-inf")) < e["start_time"] < p.get("before", float("inf"))
                       and (not p.get("in_progress") or e["end_time"] is None)
                       and (zones is None or zones & set(e.get("zones") or []))
                       and (names is None or e.get("sub_label") in names)]
             self.listed.append(p)
-            return _Response(200, listed)
+            listed.sort(key=lambda e: e["start_time"], reverse=True)
+            return _Response(200, listed[:p.get("limit") or None])
         found = self.events.get(url.rsplit("/", 1)[1])
         return _Response(200, found) if found else _Response(404)
 
@@ -1443,13 +1445,42 @@ class VehicleMemoryAgainstFrigate(_ScratchDb):
     def test_a_tag_from_hours_ago_is_remembered(self):
         relay.OLLAMA = ""
         self.events["tagged"] = car_event("tagged", AT_SPOT, self.now - 5 * 3600, self.now - 5 * 3600 + 60, name="andrews_tesla", score=1.0)
-        self.events["old"] = car_event("old", AT_SPOT, self.now - 4 * 3600, self.now - 4 * 3600 + 60)
         relay.vehicle_memory_round(self.now)
         self.assertTrue(self.here("andrews_tesla"))
-        self.assertIsNone(relay.sighting("old"), "only named cars are read that far back")
-        self.assertIn("andrews_tesla", self.listed[-1]["sub_labels"].split(","))
         story = self.observe(car_event("flicker", JITTER, self.now - 60, self.now - 30))
         self.assertEqual(("andrews_tesla", "parked"), (story["name"], story["how"]))
+
+    def test_nor_is_a_departure_frigate_didnt_tag_hours_ago_missed(self):
+        relay.OLLAMA = ""
+        self.events["tagged"] = car_event("tagged", AT_SPOT, self.now - 5 * 3600, self.now - 5 * 3600 + 60, name="andrews_tesla", score=1.0)
+        self.events["out"] = car_event("out", LEAVING, self.now - 3 * 3600, self.now - 3 * 3600 + 40, zones=())
+        relay.vehicle_memory_round(self.now)
+        self.assertEqual(("andrews_tesla", "left"), (relay.sighting("out")["name"], relay.sighting("out")["movement"]))
+        self.assertFalse(self.here("andrews_tesla"), "a stale spot names nobody")
+
+    def test_the_day_is_read_at_start_and_hourly_and_the_hour_in_between(self):
+        relay.OLLAMA = ""
+        relay.vehicle_memory_round(self.now)
+        self.assertEqual(3, len(self.listed))
+        self.assertLessEqual(min(p["after"] for p in self.listed if p["after"]), self.now - relay.VEHICLE_STALE_SECONDS + 1)
+        self.listed.clear()
+        relay.vehicle_memory_round(self.now + 30)
+        self.assertEqual(self.now + 30 - relay.VEHICLE_LOOKBACK_SECONDS, min(p["after"] for p in self.listed if p["after"]))
+        self.listed.clear()
+        relay.vehicle_memory_round(self.now + relay.VEHICLE_HISTORY_EVERY_SECONDS)
+        self.assertEqual(self.now + relay.VEHICLE_HISTORY_EVERY_SECONDS - relay.VEHICLE_STALE_SECONDS, min(p["after"] for p in self.listed if p["after"]))
+
+    def test_a_long_history_is_paged(self):
+        relay.OLLAMA = ""
+        saved, relay.CAR_ZONE_PAGE = relay.CAR_ZONE_PAGE, 2
+        try:
+            for i in range(5):
+                self.events[f"s{i}"] = car_event(f"s{i}", DRIVE_PATH, self.now - 1000 * (i + 1), self.now - 1000 * (i + 1) + 20, zones=(), box=[0.6, 0.05, 0.14, 0.1])
+            found = relay.events_since({"camera": "hikvision_1", "label": "car"}, self.now - 86400, pages=10)
+            self.assertEqual(5, len(found))
+            self.assertEqual(2, len(relay.events_since({"camera": "hikvision_1", "label": "car"}, self.now - 86400, pages=1)))
+        finally:
+            relay.CAR_ZONE_PAGE = saved
 
     def test_a_car_tagged_after_the_model_looked_still_gives_its_picture(self):
         self.events["e"] = car_event("e", AT_SPOT, self.now - 900, self.now - 800)
@@ -1464,6 +1495,19 @@ class VehicleMemoryAgainstFrigate(_ScratchDb):
         relay.describe_car = lambda jpeg: (seen.append(jpeg), self.saw)[1]
         relay.second_opinions()
         self.assertEqual([], seen, "once")
+
+    def test_a_judged_car_whose_name_isnt_a_persons_is_looked_up_once(self):
+        self.saw = dict(self.saw, colour="unknown")  # night: no reference picture to learn from it
+        self.events["e"] = car_event("e", AT_SPOT, self.now - 900, self.now - 800, name="andrews_tesla", score=0.98)
+        relay.second_opinions()
+        looked_up = []
+        relay.event_detail = lambda event_id: (looked_up.append(event_id), self.events.get(event_id))[1]
+        relay.second_opinions()
+        relay.second_opinions()
+        self.assertEqual(["e"], looked_up)
+        self.events["e"] = dict(self.events["e"], sub_label="yayas_car")
+        relay.second_opinions()
+        self.assertEqual(["e", "e"], looked_up, "a new name is looked at again")
 
     def test_a_night_tag_is_tried_once(self):
         self.saw = dict(self.saw, colour="unknown")

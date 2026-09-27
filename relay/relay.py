@@ -1312,6 +1312,11 @@ def record_check(event_id: str, kind: str, verdict: str, detail: str = "") -> No
     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO car_checks VALUES (?,?,?,?,?)", (event_id, kind, time.time(), verdict, detail)), c.commit()))
 
 
+def check_of(event_id: str, kind: str) -> tuple[str, str] | None:
+    """The verdict and detail recorded for an event, if any."""
+    return with_db(lambda c: c.execute("SELECT verdict, detail FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone())
+
+
 def checked(event_id: str, kind: str) -> bool:
     return with_db(lambda c: c.execute("SELECT 1 FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone()) is not None
 
@@ -1561,11 +1566,19 @@ def second_opinions() -> None:
         for summary in r.json():
             event_id = summary.get("id", "")
             # Looked at once already, unless a person has tagged it since: then once more, for its picture.
+            # A name that turned out not to be a person's is passed over until it changes.
             judged = checked(event_id, "vlm")
-            if judged and (checked(event_id, "learn") or frigate_name(summary)[0] is None):
-                continue
+            if judged:
+                name_now = frigate_name(summary)[0]
+                learnt = check_of(event_id, "learn")
+                if (name_now is None or reference_picture(camera, name_now) is not None
+                        or (learnt and (learnt[0] != "untagged" or learnt[1] == name_now))):
+                    continue
             event = event_detail(event_id) or summary
             learning = worth_learning(event, zones_for_car, now) and not checked(event_id, "learn")
+            if judged and not learning:
+                record_check(event_id, "learn", "untagged", frigate_name(event)[0] or "")
+                continue
             if not ((not judged and second_opinion_due(event, zones_for_car, now)) or learning):
                 continue
             picture = car_picture(event)
@@ -1999,31 +2012,59 @@ def renamed(summary: dict[str, Any], story: dict[str, Any]) -> bool:
     return name != story.get("name")
 
 
+# Once at start and then hourly, the round reads a whole day back (VEHICLE_STALE_SECONDS) rather
+# than an hour, so a relay that was down or just deployed learns both the cars named in that time
+# and the departures Frigate didn't tag, before it trusts any spot. At most this many pages.
+VEHICLE_HISTORY_EVERY_SECONDS = 3600.0
+VEHICLE_HISTORY_PAGES = 20
+_vehicle_history_read: dict[str, float] = {}
+
+
+def events_since(params: dict[str, Any], after: float, pages: int = 1) -> list[dict[str, Any]]:
+    """Frigate's car events from `after` on, newest first, paging back up to `pages` pages of CAR_ZONE_PAGE."""
+    found: dict[str, dict[str, Any]] = {}
+    before = None
+    for _ in range(pages):
+        query = {**params, "after": after, "limit": CAR_ZONE_PAGE}
+        if before is not None:
+            query["before"] = before
+        r = requests.get(f"{FRIGATE}/api/events", params=query, timeout=10)
+        r.raise_for_status()
+        page = r.json()
+        fresh = [e for e in page if e.get("id") and e["id"] not in found]
+        found.update({e["id"]: e for e in fresh})
+        if len(page) < CAR_ZONE_PAGE or not fresh:
+            return list(found.values())
+        # `before` is strict on start_time: nudge it so an event sharing the oldest start isn't skipped.
+        before = min(float(e.get("start_time") or 0) for e in page) + 0.001
+    if pages > 1:
+        log.warning("vehicle memory: more than %d pages of car events since %s; the oldest are not read", pages, clock_text(after))
+    return list(found.values())
+
+
 def vehicle_memory_round(now: float | None = None) -> None:
     """
-    Files each camera's recent car events in the vehicle memory, oldest first: those of the last
-    hour in its car zones and any still in view; the last hour's cars Frigate didn't tag with a
-    car zone, whose path may still show one leaving (Frigate misses a brisk departure); and the
-    last day's named cars in its car zones, so the memory knows a car tagged before it started.
+    Files each camera's recent car events in the vehicle memory, oldest first: those in its car
+    zones and any still in view; the cars Frigate didn't tag with a car zone, whose path may still
+    show one leaving (Frigate misses a brisk departure); and named cars in its car zones, so the
+    memory knows a car tagged before it started. The last hour each round, the last day hourly.
     """
     now = time.time() if now is None else now
     for camera, zones_for_car in car_zones().items():
         if not zones_for_car:
             continue
-        in_zone = {"camera": camera, "label": "car", "zones": ",".join(zones_for_car), "limit": CAR_ZONE_PAGE}
-        looks: list[tuple[dict[str, Any], bool]] = [
-            ({**in_zone, "after": now - VEHICLE_LOOKBACK_SECONDS}, False),
-            ({**in_zone, "in_progress": 1}, False),
-            ({"camera": camera, "label": "car", "limit": CAR_ZONE_PAGE, "after": now - VEHICLE_LOOKBACK_SECONDS}, False),
-        ]
-        names = sorted(set(HOUSEHOLD_CARS) | {v["name"] for v in vehicles_on(camera)})
-        if names:
-            looks.append(({**in_zone, "after": now - VEHICLE_STALE_SECONDS, "sub_labels": ",".join(names)}, True))
+        history = now - _vehicle_history_read.get(camera, float("-inf")) >= VEHICLE_HISTORY_EVERY_SECONDS
+        since, pages = (now - VEHICLE_STALE_SECONDS, VEHICLE_HISTORY_PAGES) if history else (now - VEHICLE_LOOKBACK_SECONDS, 1)
+        in_zone = {"camera": camera, "label": "car", "zones": ",".join(zones_for_car)}
         summaries: dict[str, dict[str, Any]] = {}
-        for params, named_only in looks:
-            r = requests.get(f"{FRIGATE}/api/events", params=params, timeout=10)
-            r.raise_for_status()
-            summaries.update({s["id"]: s for s in r.json() if s.get("id") and (not named_only or frigate_name(s)[0])})
+        for found in (
+            events_since(in_zone, since, pages),
+            events_since({**in_zone, "in_progress": 1}, 0.0),
+            events_since({"camera": camera, "label": "car"}, since, pages),
+        ):
+            summaries.update({s["id"]: s for s in found})
+        if history:
+            _vehicle_history_read[camera] = now
         for summary in sorted(summaries.values(), key=lambda s: float(s.get("start_time") or 0)):
             story = sighting(summary["id"])
             if not (story and story["final"] and not renamed(summary, story)):
