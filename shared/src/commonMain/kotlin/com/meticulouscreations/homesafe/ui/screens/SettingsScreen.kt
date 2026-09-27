@@ -39,6 +39,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,8 +69,6 @@ import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -86,7 +85,7 @@ fun SettingsTabContent(
     onOpenClassifier: (String) -> Unit = {},
     onOpenFaces: () -> Unit = {},
     onOpenServer: () -> Unit = {},
-    scrollToTopRequests: Flow<Unit> = emptyFlow(),
+    scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -101,7 +100,7 @@ fun SettingsTabContent(
     }
 
     val scrollState = rememberScrollState()
-    ScrollToTopOnReselect(scrollState, scrollToTopRequests)
+    LaunchedEffect(scrollState, scrollToTopRequests) { scrollToTopRequests.collect { scrollState.animateScrollTo(0) } }
     Column(
         modifier = Modifier
             .fillMaxSize()

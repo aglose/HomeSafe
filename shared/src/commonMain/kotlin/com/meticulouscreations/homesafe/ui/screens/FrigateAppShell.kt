@@ -81,7 +81,6 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.coroutines.channels.BufferOverflow
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
@@ -124,8 +123,8 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         TopLevelRoute.Moments -> true
     }
 
-    /** Taps on [tab] in the bottom nav while it was already up at its root: its list scrolls to the top (see [ScrollToTopOnReselect]). */
-    fun reselections(tab: TopLevelRoute): Flow<Unit> = reselected.filter { it == tab }.map { }
+    /** Taps on [tab] in the bottom nav while it was already up at its root: its list scrolls to the top. */
+    fun reselections(tab: TopLevelRoute): ScrollToTopRequests = ScrollToTopRequests(reselected.filter { it == tab }.map { })
 
     /**
      * Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which
@@ -542,7 +541,7 @@ private data class ClipEditorRoute(
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: Flow<Unit>, onOpenMoments: () -> Unit) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: ScrollToTopRequests, onOpenMoments: () -> Unit) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,

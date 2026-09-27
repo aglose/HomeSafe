@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ComposeUiTest
@@ -18,7 +19,6 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
-import com.meticulouscreations.homesafe.ui.screens.ScrollToTopOnReselect
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
@@ -182,7 +182,7 @@ class ShellNavigationUiTest {
                     onSelectTab = nav::selectTab,
                 ) {
                     val scrollToTop = remember(nav) { nav.reselections(TopLevelRoute.Home) }
-                    ScrollToTopOnReselect(listState, scrollToTop)
+                    LaunchedEffect(listState, scrollToTop) { scrollToTop.collect { listState.animateScrollToItem(0) } }
                     LazyColumn(state = listState) {
                         items(50) { Text("Row $it", Modifier.height(120.dp)) }
                     }
