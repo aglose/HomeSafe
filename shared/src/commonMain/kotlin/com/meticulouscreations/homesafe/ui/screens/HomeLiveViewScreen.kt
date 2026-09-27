@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -49,7 +50,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -328,10 +328,11 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
 private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         // A 48dp target, as the IconButton it replaced was, with the caption centred in it: the
-        // space above and below the text is the gap to the summary and to the cards.
+        // space above and below the text is the gap to the summary and to the cards. heightIn, not
+        // minimumInteractiveComponentSize, so the button itself is 48dp tall and not just the room around it.
         Row(
             modifier = Modifier
-                .minimumInteractiveComponentSize()
+                .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .clickable(onClickLabel = "Check and tag the cars in view", role = Role.Button, onClick = onCheck)
                 .testTag(IN_VIEW_CHECK_TEST_TAG),
