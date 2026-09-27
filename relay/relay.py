@@ -1981,6 +1981,8 @@ GOOGLE_ACCESS_SECONDS = 3600
 GOOGLE_STREAM_SECONDS = 120
 # The page on a display that plays the stream is served from here, and posts the offer from it.
 GOOGLE_SIGNAL_ORIGIN = "https://www.gstatic.com"
+# "1" logs each display's WebRTC offer and go2rtc's answer in full, for a stream that negotiates but never plays.
+GOOGLE_LOG_SDP = os.environ.get("GOOGLE_LOG_SDP") == "1"
 GOOGLE_ICE_SERVERS = json.dumps([{"urls": "stun:stun.l.google.com:19302"}])
 GET_CAMERA_STREAM = "action.devices.commands.GetCameraStream"
 # The link page is on the internet: after this many wrong passwords in the window, it refuses
@@ -2300,4 +2302,6 @@ async def google_signal(camera: str, request: Request) -> Response:
         log.warning("google signal: go2rtc refused %s: %s", stream, e)
         return json_response({"error": "stream unavailable"}, 502, cors)
     log.info("google signal: %s streaming %s", camera, stream)
+    if GOOGLE_LOG_SDP:
+        log.info("google signal: %s offer:\n%s\nanswer:\n%s", camera, body["sdp"], sdp)
     return json_response({"action": "answer", "sdp": sdp}, headers=cors)
