@@ -1910,13 +1910,18 @@ def path_samples(event: dict[str, Any]) -> list[list[Any]]:
 
 
 def before_switch(event: dict[str, Any], polygons: list[list[tuple[float, float]]]) -> dict[str, Any]:
-    """The event with its path cut where it jumps across a car zone's edge (the tracker moving to another car); the event itself otherwise."""
+    """
+    The event with its path cut where it jumps across a car zone's edge (the tracker moving to
+    another car), and without Frigate's zone tags, which may have come from the part after the
+    jump; the event itself otherwise. Each zone's edge counts, so a jump from one car zone into
+    another is a switch too.
+    """
     samples = path_samples(event)
     for i in range(1, len(samples)):
         (ax, ay), (bx, by) = samples[i - 1][0][:2], samples[i][0][:2]
-        crossed = (zone_side((ax, ay), polygons) == "out") != (zone_side((bx, by), polygons) == "out")
+        crossed = any((zone_side((ax, ay), [poly]) == "out") != (zone_side((bx, by), [poly]) == "out") for poly in polygons)
         if crossed and ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5 > TRACK_SWITCH_JUMP:
-            return dict(event, data=dict(event["data"], path_data=samples[:i]))
+            return dict(event, zones=[], data=dict(event["data"], path_data=samples[:i]))
     return event
 
 

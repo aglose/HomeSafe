@@ -1622,8 +1622,20 @@ class TrackerSwitchTest(_ScratchDb):
 
     def test_a_jump_from_the_street_onto_the_parked_car_is_no_arrival(self):
         onto = [(0.793, 0.4431), (0.3047, 0.5458), (0.3047, 0.5458)]
-        self.assertIsNone(self.observe(car_event("onto", onto, self.T + 600, self.T + 603, zones=())), "only the street part is that car's")
+        # Frigate tags the driveway from the part after the jump; the tag goes with that part.
+        self.assertIsNone(self.observe(car_event("onto", onto, self.T + 600, self.T + 603)), "only the street part is that car's")
         self.assertTrue(self.here("andrews_tesla"))
+
+    def test_a_jump_from_one_car_zone_into_another_is_a_switch_too(self):
+        curb = [(0.72, 0.45), (0.95, 0.45), (0.95, 0.6), (0.72, 0.6)]
+        relay.car_zones = lambda: {"hikvision_1": ["driveway", "curb"]}
+        relay.car_zone_polygons = lambda: {"hikvision_1": [CarCheckTest.DRIVEWAY, curb]}
+        relay.car_zone_outlines = lambda: {"hikvision_1": {"driveway": CarCheckTest.DRIVEWAY, "curb": curb}}
+        across = [(0.3609, 0.5306), (0.3609, 0.5319), (0.8281, 0.5278), (0.8281, 0.5278)]
+        story = self.observe(car_event("across", across, self.T + 600, self.T + 603, name="andrews_tesla", score=0.99, zones=("driveway", "curb")))
+        self.assertEqual(("parked", "driveway"), (story["movement"], story["zone"]), "not the Tesla moving to the curb")
+        self.assertTrue(self.here("andrews_tesla"))
+        self.assertEqual(0.3609, relay.vehicle("hikvision_1", "andrews_tesla")["spot"]["x"])
 
     def test_a_car_backing_out_past_the_edge_before_it_is_seen_left(self):
         story = self.observe(car_event("backed", BACKED_OUT, self.T + 600, self.T + 624, name="andrews_tesla", score=0.974, zones=()))
