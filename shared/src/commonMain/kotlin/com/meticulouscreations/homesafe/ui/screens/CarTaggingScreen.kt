@@ -31,9 +31,11 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +65,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraFrame
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import kotlin.random.Random
 
 /**
  * Tagging the cars a camera can see, by hand: a still of [cameraName] as big as the screen allows,
@@ -76,7 +79,12 @@ fun CarTaggingScreen(cameraName: String, onBack: () -> Unit, modifier: Modifier 
     val viewModel = assistedMetroViewModel<CarTaggingViewModel, CarTaggingViewModel.Factory>(key = "car-tagging:$cameraName") {
         create(cameraName)
     }
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Each launch of the screen loads everything fresh; a rotation is the same launch and keeps it.
+    val launch = rememberSaveable { Random.nextLong() }
+    LaunchedEffect(launch) { viewModel.open(launch) }
+    val latest by viewModel.uiState.collectAsStateWithLifecycle()
+    // Until the view model has started this launch, what it holds is the last one's: show loading instead.
+    val uiState = latest.takeIf { it.launch == launch } ?: CarTaggingUiState()
 
     Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag(CAR_TAGGING_TEST_TAG)) {
         Header(cameraName = cameraName, refreshing = uiState.isLoading, onBack = onBack, onRefresh = viewModel::refresh)
