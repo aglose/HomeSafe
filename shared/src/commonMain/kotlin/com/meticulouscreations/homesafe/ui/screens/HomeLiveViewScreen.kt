@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -112,6 +113,7 @@ fun HomeTabContent(
     onCameraClick: (CameraTile) -> Unit = {},
     onOpenMoments: () -> Unit = {},
     onTagCars: (cameraName: String) -> Unit = {},
+    scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
@@ -135,6 +137,7 @@ fun HomeTabContent(
         // The camera the strip's first car is on: the frame to check the strip against.
         onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
         modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
+        scrollToTopRequests = scrollToTopRequests,
     ) { tile ->
         CameraCard(
             tile = tile,
@@ -184,12 +187,16 @@ internal fun HomeFeed(
     inView: List<InViewItem> = emptyList(),
     onInViewClick: (InViewItem) -> Unit = {},
     onInViewCheck: () -> Unit = {},
+    scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
     val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
+    val listState = rememberLazyListState()
+    LaunchedEffect(listState, scrollToTopRequests) { scrollToTopRequests.collect { listState.animateScrollToItem(0) } }
 
     LazyColumn(
+        state = listState,
         modifier = modifier.fillMaxSize(),
         contentPadding = tabContentPadding(),
         verticalArrangement = Arrangement.spacedBy(24.dp),

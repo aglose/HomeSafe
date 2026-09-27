@@ -35,6 +35,25 @@ class CameraDetailJourneyTest {
     }
 
     @Test
+    fun theHomeTabInTheBottomNavReturnsToTheCameraListFromACamera() = runAppJourney {
+        val home = HomeRobot(this)
+        signIn.signInAs()
+
+        // Material's bottom navigation: a tab opens at its root, both when it is already up...
+        home.openCamera("driveway", "Driveway")
+        shell.openTab(TopLevelRoute.Home)
+        home.awaitList()
+
+        // ...and when coming back to it from another tab.
+        home.openCamera("driveway", "Driveway")
+        shell.openTab(TopLevelRoute.Moments)
+        shell.awaitSelected(TopLevelRoute.Moments)
+        shell.openTab(TopLevelRoute.Home)
+        home.awaitList()
+        home.awaitCard("driveway", "Driveway")
+    }
+
+    @Test
     fun theCameraScreenListsThatCamerasOwnRecentDetections() = runAppJourney {
         val home = HomeRobot(this)
         signIn.signInAs()

@@ -162,7 +162,7 @@ private val MomentCategory.icon: ImageVector?
  * recording from that instant on the full-width player — the way out of the card-sized one.
  */
 @Composable
-fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifier = Modifier) {
+fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifier = Modifier, scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE) {
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
@@ -198,6 +198,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         },
         modifier = modifier,
         onTagCar = tagViewModel::open,
+        scrollToTopRequests = scrollToTopRequests,
     )
 }
 
@@ -225,6 +226,7 @@ internal fun MomentsFeed(
     modifier: Modifier = Modifier,
     onRefresh: () -> Unit = {},
     onTagCar: (MomentEvent) -> Unit = {},
+    scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     var pickingDay by remember { mutableStateOf(false) }
     // Keyed by MomentItem.key, which holds while a visit grows newer clips.
@@ -319,6 +321,7 @@ internal fun MomentsFeed(
                 KeepGrowingEntryInView(listState, trigger = state.expandedEventId, entryKey = playingEntry)
                 KeepGrowingEntryInView(listState, trigger = justOpenedEntry, entryKey = justOpenedEntry)
                 StayAtTheTopForNewerMoments(listState, topKey = state.groups.first().headerKey)
+                LaunchedEffect(listState, scrollToTopRequests) { scrollToTopRequests.collect { listState.animateScrollToItem(0) } }
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),

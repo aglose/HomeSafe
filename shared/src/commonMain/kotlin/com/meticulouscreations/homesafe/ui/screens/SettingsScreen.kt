@@ -39,6 +39,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -80,7 +81,12 @@ import kotlin.time.ExperimentalTime
  * stats and config), summarised in a line.
  */
 @Composable
-fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () -> Unit = {}, onOpenServer: () -> Unit = {}) {
+fun SettingsTabContent(
+    onOpenClassifier: (String) -> Unit = {},
+    onOpenFaces: () -> Unit = {},
+    onOpenServer: () -> Unit = {},
+    scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
+) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -93,10 +99,12 @@ fun SettingsTabContent(onOpenClassifier: (String) -> Unit = {}, onOpenFaces: () 
         onPauseOrDispose { }
     }
 
+    val scrollState = rememberScrollState()
+    LaunchedEffect(scrollState, scrollToTopRequests) { scrollToTopRequests.collect { scrollState.animateScrollTo(0) } }
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
             .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
             // Applied after verticalScroll, so this is content padding: the page scrolls under
             // the shell's floating top bar and the bottom nav rather than stopping short of them.
