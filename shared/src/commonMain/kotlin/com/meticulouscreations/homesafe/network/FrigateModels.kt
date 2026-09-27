@@ -229,6 +229,18 @@ data class FrigateEventData(
     }
 
     /**
+     * Where the object's box is now, as `[x, y, w, h]`: the best frame's size, moved so its
+     * bottom-centre sits on the last path point. The best frame can be long past — a car that
+     * drove from the driveway to the kerb keeps its driveway box — while the path follows it.
+     */
+    fun latestBox(): List<Double>? {
+        val b = box?.takeIf { it.size >= 4 } ?: return null
+        if (pathData.isNullOrEmpty()) return b
+        val at = bottomCentrePath().lastOrNull() ?: return b
+        return listOf(at.x - b[2] / 2, at.y - b[3], b[2], b[3])
+    }
+
+    /**
      * Where the object's bottom-centre was at [epochSeconds]: the last path point recorded at or
      * before then (Frigate only adds one when the object moves, so the last one still holds), the
      * first when the moment predates the path, and the best frame's when there's no path at all.
