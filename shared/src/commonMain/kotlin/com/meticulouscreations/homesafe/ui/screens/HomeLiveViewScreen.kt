@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -46,7 +47,6 @@ import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -75,6 +75,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -159,10 +160,12 @@ fun HomeTabContent(
  * At the top, [statusHeadline] and [statusDetails] (see [HomeStatusHeader]); either may be null
  * while it loads, and holds its place until then.
  *
- * Above the cameras, and below the summary, sits [inView] when there is anything in it: the
+ * Beneath the summary, in the same section, sits [inView] when there is anything in it: the
  * vehicles standing in view of a camera right now. It is deliberately the first thing on the
  * page — the question it answers ("is her car in the driveway?") is the one the app gets opened
  * for — and it disappears entirely when nothing is parked, rather than spending a row to say so.
+ * The two read as one block, a small caption apart rather than a heading and a section gap, so
+ * the cameras start as high up the screen as they can.
  * It usually arrives a beat after the cameras (its cache is read, and its poll runs, apart from
  * theirs), so it opens out rather than appearing: it shares the summary's list item and grows in
  * with it, and the cards below are carried down a frame at a time instead of jumping by the
@@ -205,8 +208,9 @@ internal fun HomeFeed(
             item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
         }
 
-        // One item, not two: an item of its own for the strip would still be spaced from its
-        // neighbours while empty, and would pop in whole rather than open out.
+        // One item, one section: an item of its own for the strip would still be spaced from its
+        // neighbours while empty, would pop in whole rather than open out, and would sit a whole
+        // section gap below the summary it belongs with.
         item(key = "status") {
             Column {
                 HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick)
@@ -303,8 +307,10 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
         exit = shrinkVertically(tween(IN_VIEW_REVEAL_MS, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
             fadeOut(tween(IN_VIEW_REVEAL_MS / 2)),
     ) {
-        // The list's own 24dp gap, carried inside the reveal so an empty strip costs nothing.
-        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 24.dp))
+        // The gap to the summary, carried inside the reveal so an empty strip costs nothing. Tighter
+        // than the list's 24dp between sections: this is the summary's second half, not a section.
+        // Most of it is the caption's own 48dp touch target, which is taller than its line of text.
+        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -314,27 +320,36 @@ private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Un
  * than a lazy one — there is never enough here for laziness to pay for itself, and a Row measures
  * its children in one pass.
  *
- * The info button beside the heading is [onCheck]: the camera's frame, to see whether the strip
- * is right and put it right by tagging the cars actually there (see [CarTaggingScreen]).
+ * It is headed by a caption rather than a heading, being part of the summary above it; the caption
+ * and its info mark are [onCheck]: the camera's frame, to see whether the strip is right and put
+ * it right by tagging the cars actually there (see [CarTaggingScreen]).
  */
 @Composable
 private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
-    val extraColors = LocalFrigateExtraColors.current
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+    Column(modifier = modifier) {
+        // A 48dp target, as the IconButton it replaced was, with the caption centred in it: the
+        // space above and below the text is the gap to the summary and to the cards. heightIn, not
+        // minimumInteractiveComponentSize, so the button itself is 48dp tall and not just the room around it.
+        Row(
+            modifier = Modifier
+                .heightIn(min = 48.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClickLabel = "Check and tag the cars in view", role = Role.Button, onClick = onCheck)
+                .testTag(IN_VIEW_CHECK_TEST_TAG),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             Text(
                 text = "In view now",
-                style = MaterialTheme.typography.headlineSmall,
-                color = extraColors.textPrimary,
-                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            IconButton(onClick = onCheck, modifier = Modifier.testTag(IN_VIEW_CHECK_TEST_TAG)) {
-                Icon(
-                    imageVector = Icons.Outlined.Info,
-                    contentDescription = "Check and tag the cars in view",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            Icon(
+                imageVector = Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
         }
         Row(
             modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -598,7 +613,7 @@ const val HOME_FEED_TEST_TAG = "home_feed"
 /** The summary at the top of the home feed, for tests to tap. */
 internal const val HOME_STATUS_TEST_TAG = "home_status"
 
-/** The "In view now" heading's info button, which opens the car-tagging screen. */
+/** The "In view now" caption, which opens the car-tagging screen. */
 internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"
 
 /** How long the in-view strip takes to open out or fold away: long enough to follow, short enough not to wait on. */

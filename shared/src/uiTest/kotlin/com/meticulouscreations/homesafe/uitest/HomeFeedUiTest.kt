@@ -1,18 +1,26 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.material3.Text
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeed
+import com.meticulouscreations.homesafe.ui.screens.IN_VIEW_CHECK_TEST_TAG
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import kotlin.test.Test
@@ -183,6 +191,31 @@ class HomeFeedUiTest {
         onNodeWithText("Sarah's Tesla").performClick()
 
         assertEquals("front_door", tapped?.subject?.cameraName, "the card opens the camera that can see the car")
+    }
+
+    @Test
+    fun theInViewCaptionIsAFullSizeButtonToTheCarTagging() = runComposeUiTest {
+        var checks = 0
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = listOf(tile("front_door")),
+                    onAwayBack = {},
+                    inView = listOf(parkedCar()),
+                    onInViewCheck = { checks++ },
+                ) { }
+            }
+        }
+
+        // A small caption, but the 48dp button the heading's IconButton used to be.
+        onNodeWithTag(IN_VIEW_CHECK_TEST_TAG)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+
+        assertEquals(1, checks, "the caption opens the car tagging")
     }
 
     @Test
