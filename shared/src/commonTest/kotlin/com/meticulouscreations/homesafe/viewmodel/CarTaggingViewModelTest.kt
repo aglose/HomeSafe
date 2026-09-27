@@ -17,10 +17,14 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TagCarUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -68,7 +72,15 @@ class CarTaggingViewModelTest {
         var trained = 0
         var frameReads = 0
 
-        override suspend fun getModels(): Result<List<ClassifierModel>> = Result.success(models)
+        /** Holds the next classifier read until completed. */
+        var modelsGate: CompletableDeferred<Unit>? = null
+
+        override suspend fun getModels(): Result<List<ClassifierModel>> {
+            // Like the real repository, whose requests sit in runCatching: a cancelled read comes
+            // back as a failed result rather than a thrown cancellation.
+            modelsGate?.let { gate -> runCatching { gate.await() }.onFailure { return Result.failure(it) } }
+            return Result.success(models)
+        }
         override suspend fun getDataset(modelName: String): Result<ClassifierDataset> = Result.success(
             ClassifierDataset(
                 model = models.first(),
@@ -177,6 +189,23 @@ class CarTaggingViewModelTest {
         assertEquals(listOf(tesla), reopened.trackedCars, "and what is tracked now")
         assertEquals("known_cars_v2", reopened.modelName, "the classifier read again too")
         assertNull(reopened.selectedEventId)
+    }
+
+    @Test
+    fun aCancelledLoadFromTheLastLaunchCantWriteIntoTheNewOne() = runTest(dispatcher) {
+        val repo = FakeClassifiers(tracked = listOf(tesla), jpeg = frame).apply { modelsGate = CompletableDeferred() }
+        val vm = viewModel(repo) // launch 1, stuck reading the classifiers
+        advanceUntilIdle()
+        val seen = mutableListOf<CarTaggingUiState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiState.toList(seen) }
+
+        repo.modelsGate = null
+        vm.open(launch = 2L)
+        advanceUntilIdle()
+
+        val newLaunch = seen.filter { it.launch == 2L }
+        assertTrue(newLaunch.none { it.loadError != null || it.noticeIsError }, "launch 1's cancelled read showed as an error: $newLaunch")
+        assertNotNull(vm.uiState.value.frame)
     }
 
     @Test

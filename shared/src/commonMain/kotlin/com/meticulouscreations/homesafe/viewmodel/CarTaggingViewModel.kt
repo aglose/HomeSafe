@@ -117,19 +117,21 @@ class CarTaggingViewModel(
     /** The classifier and its categories (once a launch), then a frame and what's tracked on it. */
     fun load() {
         loadJob?.cancel()
+        val launch = _uiState.value.launch
         _uiState.update { it.copy(isLoading = it.frame == null, loadError = null) }
         loadJob = viewModelScope.launch {
             val model = model ?: run {
-                val models = getClassifierModelsUseCase().getOrElse { e -> return@launch fail("Couldn't load the classifiers: ${e.message}") }
+                val models = getClassifierModelsUseCase().getOrElse { e -> return@launch fail(launch, "Couldn't load the classifiers: ${e.message}") }
                 models.carClassifier()
-                    ?: return@launch fail("This server has no classifier that runs on cars.")
+                    ?: return@launch fail(launch, "This server has no classifier that runs on cars.")
             }
+            if (_uiState.value.launch != launch) return@launch
             this@CarTaggingViewModel.model = model
             if (_uiState.value.categories.isEmpty()) {
-                val dataset = getClassifierDatasetUseCase(model.name).getOrElse { e -> return@launch fail("Couldn't load the known cars: ${e.message}") }
-                _uiState.update { it.copy(modelName = model.name, categories = dataset.categories) }
+                val dataset = getClassifierDatasetUseCase(model.name).getOrElse { e -> return@launch fail(launch, "Couldn't load the known cars: ${e.message}") }
+                updateFor(launch) { it.copy(modelName = model.name, categories = dataset.categories) }
             }
-            refreshFrame(model)
+            refreshFrame(model, launch)
         }
     }
 
@@ -137,7 +139,8 @@ class CarTaggingViewModel(
     fun refresh() {
         val model = model ?: return load()
         loadJob?.cancel()
-        loadJob = viewModelScope.launch { refreshFrame(model) }
+        val launch = _uiState.value.launch
+        loadJob = viewModelScope.launch { refreshFrame(model, launch) }
     }
 
     /** A tap on the frame ([x], [y] in fractions): picks the smallest tracked car under it, or clears the selection. */
@@ -164,6 +167,7 @@ class CarTaggingViewModel(
         val frame = state.frame ?: return
         val box = state.selection ?: return
         if (state.isSaving) return
+        val launch = state.launch
         _uiState.update { it.copy(isSaving = true, notice = null) }
         tagJob = viewModelScope.launch {
             tagCarUseCase(CarTag(model.name, category, frame.jpeg, box, state.selectedEventId))
@@ -176,29 +180,29 @@ class CarTaggingViewModel(
                         else -> "Showing as in view now."
                     }
                     val training = if (outcome.trainingStarted) "Retraining now." else "Saved for the next training."
-                    _uiState.update {
+                    updateFor(launch) {
                         it.copy(isSaving = false, notice = "Tagged as $name. $inView $training", noticeIsError = false, selection = null, selectedEventId = null)
                     }
                     // The frame again, so the name just given shows on the car's box.
-                    refreshFrame(model, keepNotice = true)
+                    refreshFrame(model, launch, keepNotice = true)
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isSaving = false, notice = "Couldn't save the tag: ${e.message}", noticeIsError = true) }
+                    updateFor(launch) { it.copy(isSaving = false, notice = "Couldn't save the tag: ${e.message}", noticeIsError = true) }
                 }
         }
     }
 
-    private suspend fun refreshFrame(model: ClassifierModel, keepNotice: Boolean = false) {
+    private suspend fun refreshFrame(model: ClassifierModel, launch: Long?, keepNotice: Boolean = false) {
         val (frameResult, trackedResult) = coroutineScope {
             val frame = async { getCameraFrameUseCase(cameraName) }
             val tracked = async { getTrackedObjectsUseCase(cameraName) }
             frame.await() to tracked.await()
         }
-        val jpeg = frameResult.getOrElse { e -> return fail("Couldn't load the camera: ${e.message}") }
-        val (width, height) = jpegSize(jpeg) ?: return fail("The camera sent a picture the app can't read.")
+        val jpeg = frameResult.getOrElse { e -> return fail(launch, "Couldn't load the camera: ${e.message}") }
+        val (width, height) = jpegSize(jpeg) ?: return fail(launch, "The camera sent a picture the app can't read.")
         // A failed read of the tracked cars still leaves a frame to draw a rectangle on.
         val cars = trackedResult.getOrElse { emptyList() }.filter { it.label in model.objects && it.box != null }
-        _uiState.update {
+        updateFor(launch) {
             it.copy(
                 isLoading = false,
                 loadError = null,
@@ -213,9 +217,17 @@ class CarTaggingViewModel(
     }
 
     /** With a frame already up, a failed reload is a notice over it rather than an error in place of it. */
-    private fun fail(message: String) = _uiState.update {
+    private fun fail(launch: Long?, message: String) = updateFor(launch) {
         if (it.frame != null) it.copy(isLoading = false, notice = message, noticeIsError = true) else it.copy(isLoading = false, loadError = message)
     }
+
+    /**
+     * [change], but only while the state is still [launch]'s. A job from a launch since replaced is
+     * cancelled, yet can still land: the repositories catch the cancellation as a failed result, and
+     * its error or old frame would otherwise overwrite the new launch.
+     */
+    private inline fun updateFor(launch: Long?, change: (CarTaggingUiState) -> CarTaggingUiState) =
+        _uiState.update { if (it.launch == launch) change(it) else it }
 
     private fun categoryName(category: String): String =
         if (category == NONE) "not ours" else subLabelDisplayName(category)
