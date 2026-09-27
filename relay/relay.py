@@ -1429,11 +1429,21 @@ def by_a_person(event: dict[str, Any]) -> bool:
 
 
 def record_person_tag(event_id: str, name: str | None, by: str) -> None:
-    """Keeps (or, for a name taken away, forgets) the name a person gave an event."""
-    if name:
-        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO person_tags VALUES (?,?,?,?)", (event_id, name, by, time.time())), c.commit()))
-    else:
-        with_db(lambda c: (c.execute("DELETE FROM person_tags WHERE event_id=?", (event_id,)), c.commit()))
+    """
+    Keeps (or, for a name taken away, forgets) the name a person gave an event, and drops what was
+    decided about the event while its name was the classifier's: the same name, now a person's,
+    may give the car its reference picture and is filed again as `tagged`.
+    """
+    def write(c: sqlite3.Connection) -> None:
+        if name:
+            c.execute("INSERT OR REPLACE INTO person_tags VALUES (?,?,?,?)", (event_id, name, by, time.time()))
+        else:
+            c.execute("DELETE FROM person_tags WHERE event_id=?", (event_id,))
+        c.execute("DELETE FROM car_checks WHERE event_id=? AND kind='learn'", (event_id,))
+        c.execute("UPDATE vehicle_sightings SET final=0 WHERE event_id=?", (event_id,))
+        c.commit()
+
+    with_db(write)
 
 
 def second_opinion_due(event: dict[str, Any], zones_for_car: list[str], now: float) -> bool:

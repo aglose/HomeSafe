@@ -78,7 +78,7 @@ with. Since the retrain of 2026-09-27, the `known_cars` classifier scores some o
 1.0 too. One of those was the parked Tesla's event that carried on as a car on the street, and the
 relay filed it as the Tesla leaving.
 
-The app now tags through the relay (`POST /events/{id}/sub_label`, the body Frigate's own).
+The app now tags through the relay (`POST /events/{id}/sub_label`; the body is Frigate's own).
 The relay passes the tag on to Frigate's signed-in port with the person's session cookie, so
 Frigate still decides who may name an event. What Frigate accepts is kept in `person_tags`, and
 an empty name removes the row. A name counts as a person's when `person_tags` has that name for

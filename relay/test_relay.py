@@ -1738,6 +1738,17 @@ class PersonTagTest(_ScratchDb):
         self.assertEqual("tagged", relay.observe_car(self.events["mine"], self.now + 10)["how"])
         self.assertEqual("classifier", relay.observe_car(self.events["guess"], self.now + 10)["how"])
 
+    def test_a_person_confirming_the_classifiers_name_undoes_what_was_decided_under_it(self):
+        path = [[[0.35, 0.6], self.now], [[0.35, 0.6], self.now + 1]]
+        self.events["e"] = dict(self.event("e", score=0.98), data={"sub_label_score": 0.98, "box": list(CAR_BOX), "path_data": path})
+        self.assertEqual("classifier", relay.observe_car(self.events["e"], self.now + 10)["how"])
+        relay.record_check("e", "learn", "untagged", "andrews_tesla")
+        self.tag("e", "andrews_tesla")
+        self.assertIsNone(relay.check_of("e", "learn"), "its picture may now be the car's")
+        self.assertEqual(0, relay.sighting("e")["final"], "the memory reads it again")
+        self.events["e"]["data"]["sub_label_score"] = 1.0
+        self.assertEqual("tagged", relay.observe_car(self.events["e"], self.now + 20)["how"])
+
     def test_what_frigate_refuses_is_not_kept(self):
         self.answer = _FrigateAnswer(403, {"success": False, "message": "Admin only"})
         self.assertEqual(403, self.tag("e", "andrews_tesla").status_code)
