@@ -44,6 +44,8 @@ class CameraFrame(val jpeg: ByteArray, val width: Int, val height: Int)
 
 @Immutable
 data class CarTaggingUiState(
+    /** The launch of the screen this state belongs to (see [CarTaggingViewModel.open]); null before the first. */
+    val launch: Long? = null,
     val isLoading: Boolean = true,
     val loadError: String? = null,
     /** The classifier a tag teaches: the server's first enabled one that runs on cars. */
@@ -94,12 +96,25 @@ class CarTaggingViewModel(
 
     private var model: ClassifierModel? = null
     private var loadJob: Job? = null
+    private var tagJob: Job? = null
 
-    init {
+    /**
+     * A launch of the screen: everything from scratch, the classifier and its categories, a frame
+     * and what's tracked on it, and nothing kept from the last time it was open. This view model
+     * outlives the screen (the shell keeps it per camera), so a reopened screen used to show the
+     * frame, boxes and choice it was left on. The same [launch] again, the screen recreated on
+     * rotation, keeps what's there.
+     */
+    fun open(launch: Long) {
+        if (_uiState.value.launch == launch) return
+        loadJob?.cancel()
+        tagJob?.cancel()
+        model = null
+        _uiState.value = CarTaggingUiState(launch = launch)
         load()
     }
 
-    /** The classifier and its categories (once), then a frame and what's tracked on it. */
+    /** The classifier and its categories (once a launch), then a frame and what's tracked on it. */
     fun load() {
         loadJob?.cancel()
         _uiState.update { it.copy(isLoading = it.frame == null, loadError = null) }
@@ -150,7 +165,7 @@ class CarTaggingViewModel(
         val box = state.selection ?: return
         if (state.isSaving) return
         _uiState.update { it.copy(isSaving = true, notice = null) }
-        viewModelScope.launch {
+        tagJob = viewModelScope.launch {
             tagCarUseCase(CarTag(model.name, category, frame.jpeg, box, state.selectedEventId))
                 .onSuccess { outcome ->
                     val name = categoryName(category)

@@ -135,7 +135,7 @@ class CarTaggingViewModelTest {
         getCameraFrameUseCase = GetCameraFrameUseCase(classifiers),
         getTrackedObjectsUseCase = GetTrackedObjectsUseCase(classifiers),
         tagCarUseCase = TagCarUseCase(classifiers, moments),
-    )
+    ).also { it.open(launch = 1L) }
 
     @Test
     fun opensOnAFrameWithTheCarsTrackedOnIt() = runTest(dispatcher) {
@@ -150,6 +150,46 @@ class CarTaggingViewModelTest {
         assertEquals(720, state.frame?.height)
         assertEquals(listOf(tesla, unnamed), state.trackedCars, "only what the car classifier runs on")
         assertEquals(listOf("andrews_tesla", "sarahs_car", "none"), state.categories)
+    }
+
+    @Test
+    fun reopeningTheScreenStartsFreshWithNothingFromLastTime() = runTest(dispatcher) {
+        val repo = FakeClassifiers(tracked = listOf(tesla, unnamed), jpeg = frame)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.tapAt(0.5, 0.6)
+        assertEquals(unnamed.eventId, vm.uiState.value.selectedEventId)
+
+        // The view model outlives the screen; the next launch gets it back holding all that.
+        repo.tracked = listOf(tesla)
+        repo.models = listOf(ClassifierModel("known_cars_v2", listOf("car")))
+        vm.open(launch = 2L)
+        val opening = vm.uiState.value
+        assertEquals(2L, opening.launch)
+        assertTrue(opening.isLoading)
+        assertNull(opening.frame, "not the frame the screen was left on")
+        assertNull(opening.selection)
+        assertTrue(opening.trackedCars.isEmpty())
+
+        advanceUntilIdle()
+        val reopened = vm.uiState.value
+        assertEquals(2, repo.frameReads, "a new frame for the new launch")
+        assertEquals(listOf(tesla), reopened.trackedCars, "and what is tracked now")
+        assertEquals("known_cars_v2", reopened.modelName, "the classifier read again too")
+        assertNull(reopened.selectedEventId)
+    }
+
+    @Test
+    fun theSameLaunchAgainKeepsWhatIsThere() = runTest(dispatcher) {
+        val repo = FakeClassifiers(tracked = listOf(tesla, unnamed), jpeg = frame)
+        val vm = viewModel(repo)
+        advanceUntilIdle()
+        vm.tapAt(0.5, 0.6)
+
+        vm.open(launch = 1L) // the screen recreated on rotation
+        advanceUntilIdle()
+        assertEquals(1, repo.frameReads)
+        assertEquals(unnamed.eventId, vm.uiState.value.selectedEventId, "the car being tagged is still chosen")
     }
 
     @Test
