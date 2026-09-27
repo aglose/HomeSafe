@@ -149,7 +149,7 @@ class AppE2eTest {
     fun aNotificationTapBeforeSignInLandsOnThatMomentOnceSignedIn() {
         val event = server.state.events.first { it.camera == "driveway" }
         app.launch(app.momentIntent(event.id, event.camera, event.startTime)).use {
-            app.signIn()
+            app.signIn(landsOnHome = false)
 
             app.awaitCameraScreen("Driveway")
             app.awaitSelected(TopLevelRoute.Home)

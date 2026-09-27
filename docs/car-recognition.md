@@ -91,6 +91,18 @@ now remembers the household's cars itself, in `relay.db` (`vehicle_memory_round`
   - `left`: from inside to outside;
   - `moved`: across the zone by more than its own size;
   - `parked`: it stayed put.
+- **Tracker switches.** Frigate's tracker sometimes hands one car's box to another, and the
+  memory reads around it (all seen on the Front Yard on 2026-09-27):
+  - A path that jumps across a car zone's edge by more than 0.25 of the frame in one step is two
+    cars, so only the part before the jump counts. The parked Tesla's event once carried on as a
+    car going by on the street, and would otherwise have been the Tesla leaving. A driving car
+    moves 0.05-0.13 a step, and 0.24 at the 99th percentile.
+  - A path that begins on the zone's edge (within 0.05) and ends outside is a departure, though
+    no point is inside. The tracker only finds a car backing out briskly once it is past the edge.
+  - An arrival more than 10 minutes after its event began is a car the tracker switched to as it
+    drove past. Sarah's car sat at the curb all night, then the event followed the Tesla into
+    the driveway. It is filed `how = late`: at the time it came in, and unnamed, because the
+    event's name belongs to the car at the curb. Its tag doesn't give a reference picture either.
 - **Naming by spot.** An unnamed car whose path begins within half a box of a remembered car's
   spot is that car (`how = parked`). An arrival is never named this way. Leaving forgets the
   spot, and so does any other car, named or not, pulling into it once the remembered car is no
