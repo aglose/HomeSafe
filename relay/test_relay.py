@@ -881,5 +881,135 @@ class BootReportTest(unittest.TestCase):
         self.assertEqual("12:33 AM UTC", relay.clock_text(1790296380.0))
 
 
+class GoogleTokensTest(unittest.TestCase):
+    """Google Home's account-link and stream tokens, against a scratch database."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._path, self._conn = relay.DB_PATH, relay.CONN
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+
+    def tearDown(self):
+        relay.CONN.close()
+        relay.DB_PATH, relay.CONN = self._path, self._conn
+        self._dir.cleanup()
+
+    def test_a_token_names_its_subject_until_it_expires(self):
+        token = relay.google_issue("access", "andrew", 3600, now=1000.0)
+        self.assertEqual("andrew", relay.google_check(token, "access", now=4599.0))
+        self.assertIsNone(relay.google_check(token, "access", now=4601.0))
+
+    def test_a_token_is_only_good_for_its_kind(self):
+        token = relay.google_issue("stream", "amcrest_1", 120, now=1000.0)
+        self.assertIsNone(relay.google_check(token, "access", now=1001.0))
+        self.assertEqual("amcrest_1", relay.google_check(token, "stream", now=1001.0))
+
+    def test_a_code_is_good_once(self):
+        code = relay.google_issue("code", "andrew", 600, now=1000.0)
+        self.assertEqual("andrew", relay.google_check(code, "code", consume=True, now=1001.0))
+        self.assertIsNone(relay.google_check(code, "code", consume=True, now=1002.0))
+
+    def test_a_refresh_token_lasts_until_unlinked(self):
+        refresh = relay.google_issue("refresh", "andrew", None, now=1000.0)
+        self.assertEqual("andrew", relay.google_check(refresh, "refresh", now=1e12))
+        relay.google_unlink()
+        self.assertIsNone(relay.google_check(refresh, "refresh", now=1001.0))
+
+    def test_only_the_hash_is_stored_and_empty_or_unknown_tokens_fail(self):
+        token = relay.google_issue("access", "andrew", 3600, now=1000.0)
+        stored = relay.with_db(lambda c: [r[0] for r in c.execute("SELECT hash FROM google_tokens")])
+        self.assertNotIn(token, stored)
+        self.assertIsNone(relay.google_check("", "access", now=1001.0))
+        self.assertIsNone(relay.google_check("nope", "access", now=1001.0))
+
+
+class GoogleHomeTest(unittest.TestCase):
+    CAMERAS = {"amcrest_1": "amcrest_1_sub", "hikvision_1": "hikvision_1_sub"}
+
+    def test_redirect_must_be_googles_for_our_project(self):
+        ok = relay.google_redirect_ok
+        self.assertTrue(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234", "homesafe-1234"))
+        self.assertTrue(ok("https://oauth-redirect-sandbox.googleusercontent.com/r/homesafe-1234", "homesafe-1234"))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/someone-else", "homesafe-1234"))
+        self.assertFalse(ok("https://evil.example/r/homesafe-1234", "homesafe-1234"))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com.evil.example/r/homesafe-1234", "homesafe-1234"))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234?next=https://evil.example", "homesafe-1234"))
+        # Without a project id nothing is accepted, not even Google's.
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234", ""))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/", ""))
+
+    def test_sign_ins_in_flight_together_share_the_limit(self):
+        attempts = []
+        # Every one is counted before its password is checked, so a burst stops at the limit.
+        self.assertEqual([True] * relay.GOOGLE_LOGIN_LIMIT + [False], [relay.reserve_login(attempts, 1000.0 + i) for i in range(relay.GOOGLE_LOGIN_LIMIT + 1)])
+        # A correct password hands its reservation back.
+        attempts.remove(1000.0)
+        self.assertTrue(relay.reserve_login(attempts, 1010.0))
+        # And the window passes.
+        self.assertTrue(relay.reserve_login(attempts, 1010.0 + relay.GOOGLE_LOGIN_WINDOW_SECONDS))
+
+    def test_only_cameras_given_a_stream_that_frigate_still_has_are_offered(self):
+        known = {"amcrest_1": ["amcrest_1", "amcrest_1_sub"], "hikvision_1": ["hikvision_1", "hikvision_1_sub"]}
+        self.assertEqual({"amcrest_1": "amcrest_1_sub"}, relay.google_offered({"amcrest_1": "amcrest_1_sub", "gone": "gone_sub"}, known))
+        self.assertEqual({}, relay.google_offered({}, known))
+
+    def test_display_answer_makes_audio_one_way_and_leaves_video(self):
+        answer = "\r\n".join([
+            "v=0", "a=group:BUNDLE 0 1",
+            "m=audio 9 UDP/TLS/RTP/SAVPF 111", "a=mid:0", "a=sendrecv",
+            "m=video 9 UDP/TLS/RTP/SAVPF 96", "a=mid:1", "a=sendonly", "",
+        ])
+        out = relay.display_answer(answer)
+        self.assertEqual(["a=sendonly", "a=sendonly"], [l for l in out.split("\r\n") if l.startswith("a=send") or l.startswith("a=recv")])
+        self.assertTrue(out.endswith("\r\n"))
+        # A stream with no audio: go2rtc would take the display's microphone; answer inactive instead.
+        silent = answer.replace("m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=sendrecv", "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=recvonly")
+        self.assertIn("a=mid:0\r\na=inactive", relay.display_answer(silent))
+        # Video's direction is never touched, even if it were sendrecv.
+        self.assertIn("a=mid:1\r\na=sendrecv", relay.display_answer(answer.replace("a=mid:1\r\na=sendonly", "a=mid:1\r\na=sendrecv")))
+        # Bare newlines too.
+        self.assertIn("a=mid:0\na=sendonly", relay.display_answer(answer.replace("\r\n", "\n")))
+
+    def test_basic_credentials(self):
+        import base64
+
+        header = "Basic " + base64.b64encode(b"homesafe:s3cret:with-colon").decode()
+        self.assertEqual(("homesafe", "s3cret:with-colon"), relay.basic_credentials(header))
+        self.assertEqual(("", ""), relay.basic_credentials("Basic not*base64=="))
+        self.assertEqual(("", ""), relay.basic_credentials("Basic " + base64.b64encode(b"\xff\xfe:x").decode()))
+
+    def test_sync_lists_each_camera_by_its_app_name(self):
+        devices = relay.google_sync("r1", self.CAMERAS)["payload"]["devices"]
+        self.assertEqual(["amcrest_1", "hikvision_1"], [d["id"] for d in devices])
+        self.assertEqual("Front Door", devices[0]["name"]["name"])
+        self.assertEqual(["webrtc"], devices[0]["attributes"]["cameraStreamSupportedProtocols"])
+
+    def test_query(self):
+        states = relay.google_query("r1", {"devices": [{"id": "amcrest_1"}, {"id": "gone"}]}, self.CAMERAS)["payload"]["devices"]
+        self.assertTrue(states["amcrest_1"]["online"])
+        self.assertEqual("deviceNotFound", states["gone"]["errorCode"])
+
+    def execute(self, camera, command=None, protocols=None):
+        params = {"StreamToChromecast": True, "SupportedStreamProtocols": protocols or ["hls", "webrtc"]}
+        payload = {"commands": [{"devices": [{"id": camera}], "execution": [{"command": command or relay.GET_CAMERA_STREAM, "params": params}]}]}
+        return relay.google_execute("r1", payload, self.CAMERAS, lambda cam: f"token-for-{cam}")["payload"]["commands"][0]
+
+    def test_execute_hands_out_a_signaling_address_with_its_token(self):
+        result = self.execute("amcrest_1")
+        self.assertEqual("SUCCESS", result["status"])
+        states = result["states"]
+        self.assertEqual("webrtc", states["cameraStreamProtocol"])
+        self.assertEqual("token-for-amcrest_1", states["cameraStreamAuthToken"])
+        self.assertTrue(states["cameraStreamSignalingUrl"].endswith("/google/signal/amcrest_1?token=token-for-amcrest_1"))
+
+    def test_execute_refuses_what_it_cant_do(self):
+        self.assertEqual("deviceNotFound", self.execute("gone")["errorCode"])
+        self.assertEqual("notSupported", self.execute("amcrest_1", protocols=["hls"])["errorCode"])
+        self.assertEqual("functionNotSupported", self.execute("amcrest_1", command="action.devices.commands.OnOff")["errorCode"])
+
+
 if __name__ == "__main__":
     unittest.main()
