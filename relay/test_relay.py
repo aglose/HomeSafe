@@ -956,6 +956,23 @@ class GoogleHomeTest(unittest.TestCase):
         self.assertEqual({"amcrest_1": "amcrest_1_sub"}, relay.google_offered({"amcrest_1": "amcrest_1_sub", "gone": "gone_sub"}, known))
         self.assertEqual({}, relay.google_offered({}, known))
 
+    def test_display_answer_makes_audio_one_way_and_leaves_video(self):
+        answer = "\r\n".join([
+            "v=0", "a=group:BUNDLE 0 1",
+            "m=audio 9 UDP/TLS/RTP/SAVPF 111", "a=mid:0", "a=sendrecv",
+            "m=video 9 UDP/TLS/RTP/SAVPF 96", "a=mid:1", "a=sendonly", "",
+        ])
+        out = relay.display_answer(answer)
+        self.assertEqual(["a=sendonly", "a=sendonly"], [l for l in out.split("\r\n") if l.startswith("a=send") or l.startswith("a=recv")])
+        self.assertTrue(out.endswith("\r\n"))
+        # A stream with no audio: go2rtc would take the display's microphone; answer inactive instead.
+        silent = answer.replace("m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=sendrecv", "m=audio 9 UDP/TLS/RTP/SAVPF 111\r\na=mid:0\r\na=recvonly")
+        self.assertIn("a=mid:0\r\na=inactive", relay.display_answer(silent))
+        # Video's direction is never touched, even if it were sendrecv.
+        self.assertIn("a=mid:1\r\na=sendrecv", relay.display_answer(answer.replace("a=mid:1\r\na=sendonly", "a=mid:1\r\na=sendrecv")))
+        # Bare newlines too.
+        self.assertIn("a=mid:0\na=sendonly", relay.display_answer(answer.replace("\r\n", "\n")))
+
     def test_basic_credentials(self):
         import base64
 

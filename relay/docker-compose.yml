@@ -36,11 +36,11 @@ services:
       # go2rtc a display's stream comes from.
       GOOGLE_PUBLIC_URL: https://debian-surveillance.tail4c441a.ts.net
       GO2RTC_URL: http://127.0.0.1:1984
-      # The cameras Google may show, each with a go2rtc stream inside Google's 480p-1080p. The Front
-      # Door's sub (704x480) fits as is; the Hikvisions' mains are 4K and subs 360p, so Frigate's
-      # go2rtc config makes each a 720p Constrained Baseline stream on the GPU (`*_google`).
+      # The cameras Google may show, each with a go2rtc stream a display can play: Frigate's go2rtc
+      # config makes each camera a `*_google` stream on the GPU, 720p Constrained Baseline H.264
+      # (inside Google's 480p-1080p, and the only profile a display offers) with the camera's audio.
       GOOGLE_STREAMS: >-
-        {"amcrest_1": "amcrest_1_sub",
+        {"amcrest_1": "amcrest_1_google",
          "hikvision_1": "hikvision_1_google",
          "hikvision_2": "hikvision_2_google"}
     # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID, only on the box. Without it the

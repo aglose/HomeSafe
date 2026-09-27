@@ -2115,6 +2115,25 @@ def go2rtc_answer(stream: str, offer_sdp: str) -> str:
     return r.json()["sdp"]
 
 
+def display_answer(sdp: str) -> str:
+    """
+    go2rtc's answer as a Google display takes it. The display offers two-way audio, and go2rtc
+    answers `sendrecv` (the camera's audio out, the display's microphone in), or `recvonly` for a
+    stream with no audio. Audio is made one-way instead: `sendonly`, or `inactive` with nothing to
+    send, so the display is never asked for its microphone. Scrypted's Google Home plugin, which
+    plays on Nest Hubs, answers the same way. Video is left as it is.
+    """
+    newline = "\r\n" if "\r\n" in sdp else "\n"
+    lines, section = [], None
+    for line in sdp.split(newline):
+        if line.startswith("m="):
+            section = line[2:].split(" ", 1)[0]
+        if section == "audio":
+            line = {"a=sendrecv": "a=sendonly", "a=recvonly": "a=inactive"}.get(line, line)
+        lines.append(line)
+    return newline.join(lines)
+
+
 def bearer(request: Request) -> str:
     auth = request.headers.get("authorization", "")
     return auth[7:].strip() if auth.lower().startswith("bearer ") else ""
@@ -2311,7 +2330,7 @@ async def google_signal(camera: str, request: Request) -> Response:
     if stream is None:
         return json_response({"error": "unknown camera"}, 404, cors)
     try:
-        sdp = await run_in_threadpool(go2rtc_answer, stream, body["sdp"])
+        sdp = display_answer(await run_in_threadpool(go2rtc_answer, stream, body["sdp"]))
     except Exception as e:
         log.warning("google signal: go2rtc refused %s: %s", stream, e)
         return json_response({"error": "stream unavailable"}, 502, cors)
