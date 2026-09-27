@@ -79,17 +79,22 @@ now remembers the household's cars itself, in `relay.db` (`vehicle_memory_round`
 
 - **Where each car is parked.** `vehicles` holds each named car per camera: whether it is parked
   there now, where (the bottom centre and size of its box) and since when. A car a person tagged,
-  or one the classifier or vision model named, is remembered where it ends up.
-- **What each car did.** Every car event in a car zone gets a `vehicle_sightings` row. Its
-  movement comes from where its path began and ended against the zone outline:
+  or one the classifier or vision model named, is remembered where it ends up. Every 30 s the
+  relay reads the last hour of car events in the car zones, any still in view, the last hour's
+  cars Frigate didn't tag with a car zone (their path is checked against the outline, since
+  Frigate misses a brisk departure), and the last day's named cars in the car zones, so a tag
+  given before the relay started still counts.
+- **What each car did.** Every car event in a car zone gets a `vehicle_sightings` row, filed
+  under the zone it was in. Its movement comes from where its path began and ended against the
+  zone outline:
   - `arrived`: from outside to inside;
   - `left`: from inside to outside;
   - `moved`: across the zone by more than its own size;
   - `parked`: it stayed put.
 - **Naming by spot.** An unnamed car whose path begins within half a box of a remembered car's
   spot is that car (`how = parked`). An arrival is never named this way. Leaving forgets the
-  spot, and so does an unnamed car pulling into it once the remembered car is no longer seen. An
-  old event seen late never undoes a newer one.
+  spot, and so does any other car, named or not, pulling into it once the remembered car is no
+  longer seen. An old event seen late never undoes a newer one.
 - **Notifications.** An alert's cars carry the memory's names, so the push says "Andrew's Tesla
   left the driveway" or "Car arrived in the driveway", and a household car doing its rounds stays
   quiet. An alert with nothing in it but remembered cars that stayed parked is dropped, like the
@@ -101,7 +106,8 @@ now remembers the household's cars itself, in `relay.db` (`vehicle_memory_round`
 
 The vision model keeps the memory honest when it runs:
 
-- It looks once at a car a person tagged, if that camera has no picture of it yet. In daylight,
+- It looks once at a car a person tagged, if that camera has no picture of it yet, even when it
+  had already looked at that event before the tag. In daylight,
   that crop becomes the car's reference picture, `data/vehicles/<camera>--<name>.jpg` next to
   `relay.db`, and what it saw becomes the car's `looks`.
 - A car named only by its spot is shown to the model next to the reference picture ("the same

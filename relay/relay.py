@@ -473,6 +473,7 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
 _required_zones: dict[str, list[str]] = {}
 _car_zones: dict[str, list[str]] = {}
 _car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
+_car_zone_outlines: dict[str, dict[str, list[tuple[float, float]]]] = {}
 _live_streams: dict[str, list[str]] = {}
 _config_loaded_at = 0.0
 
@@ -495,17 +496,18 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _live_streams, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
             cameras = cfg.get("cameras", {})
             _required_zones = {name: (cam.get("review", {}).get("alerts", {}).get("required_zones") or []) for name, cam in cameras.items()}
             _car_zones = {name: zones_wanting(cam, "car") for name, cam in cameras.items()}
-            _car_zone_polygons = {
-                name: [p for p in (zone_polygon((cam.get("zones") or {}).get(z)) for z in _car_zones[name]) if len(p) >= 3]
+            _car_zone_outlines = {
+                name: {z: p for z in _car_zones[name] if len(p := zone_polygon((cam.get("zones") or {}).get(z))) >= 3}
                 for name, cam in cameras.items()
             }
+            _car_zone_polygons = {name: list(outlines.values()) for name, outlines in _car_zone_outlines.items()}
             _live_streams = {name: list(((cam.get("live") or {}).get("streams") or {}).values()) for name, cam in cameras.items()}
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
@@ -528,6 +530,12 @@ def car_zone_polygons() -> dict[str, list[list[tuple[float, float]]]]:
     """Per camera, the outlines of the zones in `car_zones`."""
     refresh_config()
     return _car_zone_polygons
+
+
+def car_zone_outlines() -> dict[str, dict[str, list[tuple[float, float]]]]:
+    """Per camera, each zone in `car_zones` by name with its outline."""
+    refresh_config()
+    return _car_zone_outlines
 
 
 def live_streams() -> dict[str, list[str]]:
@@ -1552,10 +1560,13 @@ def second_opinions() -> None:
         r.raise_for_status()
         for summary in r.json():
             event_id = summary.get("id", "")
-            if checked(event_id, "vlm"):
+            # Looked at once already, unless a person has tagged it since: then once more, for its picture.
+            judged = checked(event_id, "vlm")
+            if judged and (checked(event_id, "learn") or frigate_name(summary)[0] is None):
                 continue
             event = event_detail(event_id) or summary
-            if not (second_opinion_due(event, zones_for_car, now) or worth_learning(event, zones_for_car, now)):
+            learning = worth_learning(event, zones_for_car, now) and not checked(event_id, "learn")
+            if not ((not judged and second_opinion_due(event, zones_for_car, now)) or learning):
                 continue
             picture = car_picture(event)
             if picture is None:
@@ -1580,8 +1591,10 @@ def second_opinions() -> None:
             summary_text = summary_text.strip()
             if score is not None and score >= 1.0:
                 # A person's name: nothing to judge, but the best picture there is of that car.
-                learn_vehicle(camera, name, description, picture, tagged=True)
-                record_check(event_id, "vlm", "person", json.dumps({"was": name, "score": score, "saw": description}))
+                learned = learn_vehicle(camera, name, description, picture, tagged=True)
+                record_check(event_id, "learn", "kept" if learned else "night", json.dumps({"name": name, "saw": description}))
+                if not judged:
+                    record_check(event_id, "vlm", "person", json.dumps({"was": name, "score": score, "saw": description}))
                 continue
             matches = household_matches(description, HOUSEHOLD_CARS)
             action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
@@ -1798,18 +1811,26 @@ def parked_at(camera: str, point: tuple[float, float], at: float) -> str | None:
     return min(fits)[1] if fits else None
 
 
+def vacate(camera: str, spot: dict[str, float] | None, start: float, event_id: str | None, arriving: str | None) -> None:
+    """
+    A car pulled into `spot`: any other remembered car parked there that hasn't been seen since
+    the arrival began isn't there any more.
+    """
+    if not spot:
+        return
+    for v in vehicles_on(camera):
+        if v["name"] != arriving and v["here"] and (v["last_seen"] or 0) < start and near_spot((spot["x"], spot["y"]), v["spot"]) is not None:
+            save_vehicle(dict(v, here=0))
+            log.info("vehicle memory: %s's spot on %s taken by %s (car %s)", v["name"], camera, arriving or "an unnamed car", event_id)
+
+
 def remember(camera: str, name: str | None, movement: str | None, event: dict[str, Any], start: float, seen: float) -> None:
     """What this event says about where the camera's cars are. Events are seen out of order, so an old one never undoes a newer one."""
     event_id = event.get("id")
     spot = spot_of(event)
     if name is None:
-        if movement == "arrived" and spot:
-            # Someone else pulled into a remembered car's spot, and that car hasn't been seen since it
-            # began: it isn't there.
-            for v in vehicles_on(camera):
-                if v["here"] and (v["last_seen"] or 0) < start and near_spot((spot["x"], spot["y"]), v["spot"]) is not None:
-                    save_vehicle(dict(v, here=0))
-                    log.info("vehicle memory: %s's spot on %s taken by car %s", v["name"], camera, event_id)
+        if movement == "arrived":
+            vacate(camera, spot, start, event_id, None)
         return
     if movement not in MOVEMENTS:
         return
@@ -1821,12 +1842,27 @@ def remember(camera: str, name: str | None, movement: str | None, event: dict[st
             return  # it has left again since
         if movement in ("parked", "moved") and not row["here"] and (row["last_seen"] or 0) > start:
             return  # it left after this began
+    if movement == "arrived":
+        vacate(camera, spot, start, event_id, name)
     row = row or {"camera": camera, "name": name, "here": 0, "since": None, "last_seen": None, "looks": {}}
     if movement == "left":
         save_vehicle(dict(row, here=0, last_seen=max(row["last_seen"] or 0, seen), event_id=event_id))
         return
     since = start if movement == "arrived" or not row["here"] or row["since"] is None else row["since"]
     save_vehicle(dict(row, here=1, spot=spot or row.get("spot"), since=since, last_seen=max(row["last_seen"] or 0, seen), event_id=event_id))
+
+
+def zone_of(event: dict[str, Any], zones_for_car: list[str], outlines: dict[str, list[tuple[float, float]]]) -> str:
+    """
+    The car zone the event was in: one Frigate tagged it with, else the one its path touched
+    (Frigate misses a car that leaves briskly), else the camera's first.
+    """
+    tagged = [z for z in event.get("zones") or [] if z in zones_for_car]
+    if tagged:
+        return tagged[-1]
+    points = event_points(event)
+    touched = [z for z, outline in outlines.items() if z in zones_for_car and any(zone_side(p, [outline]) == "in" for p in points)]
+    return touched[0] if touched else zones_for_car[0]
 
 
 def in_car_zone(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]]) -> bool:
@@ -1876,7 +1912,7 @@ def observe_car(event: dict[str, Any], now: float | None = None) -> dict[str, An
         with_db(lambda c: (c.execute("UPDATE vehicles SET here=0 WHERE camera=? AND name=? AND event_id=?", (camera, prev["name"], event_id)), c.commit()))
     remember(camera, name, movement, event, start, seen)
     story = dict(prev, event_id=event_id, camera=camera, name=name, how=how, movement=movement,
-                 zone=zones_for_car[0], start=start, end=end, final=int(end is not None), at=now)
+                 zone=zone_of(event, zones_for_car, car_zone_outlines().get(camera, {})), start=start, end=end, final=int(end is not None), at=now)
     save_sighting(story)
     return story
 
@@ -1964,23 +2000,39 @@ def renamed(summary: dict[str, Any], story: dict[str, Any]) -> bool:
 
 
 def vehicle_memory_round(now: float | None = None) -> None:
-    """Files the car events of the last hour in each camera's car zones, and any still in view, oldest first."""
+    """
+    Files each camera's recent car events in the vehicle memory, oldest first: those of the last
+    hour in its car zones and any still in view; the last hour's cars Frigate didn't tag with a
+    car zone, whose path may still show one leaving (Frigate misses a brisk departure); and the
+    last day's named cars in its car zones, so the memory knows a car tagged before it started.
+    """
     now = time.time() if now is None else now
     for camera, zones_for_car in car_zones().items():
         if not zones_for_car:
             continue
+        in_zone = {"camera": camera, "label": "car", "zones": ",".join(zones_for_car), "limit": CAR_ZONE_PAGE}
+        looks: list[tuple[dict[str, Any], bool]] = [
+            ({**in_zone, "after": now - VEHICLE_LOOKBACK_SECONDS}, False),
+            ({**in_zone, "in_progress": 1}, False),
+            ({"camera": camera, "label": "car", "limit": CAR_ZONE_PAGE, "after": now - VEHICLE_LOOKBACK_SECONDS}, False),
+        ]
+        names = sorted(set(HOUSEHOLD_CARS) | {v["name"] for v in vehicles_on(camera)})
+        if names:
+            looks.append(({**in_zone, "after": now - VEHICLE_STALE_SECONDS, "sub_labels": ",".join(names)}, True))
         summaries: dict[str, dict[str, Any]] = {}
-        for params in ({"after": now - VEHICLE_LOOKBACK_SECONDS}, {"in_progress": 1}):
-            r = requests.get(f"{FRIGATE}/api/events", params={
-                "camera": camera, "label": "car", "zones": ",".join(zones_for_car), "limit": CAR_ZONE_PAGE, **params,
-            }, timeout=10)
+        for params, named_only in looks:
+            r = requests.get(f"{FRIGATE}/api/events", params=params, timeout=10)
             r.raise_for_status()
-            summaries.update({s["id"]: s for s in r.json() if s.get("id")})
+            summaries.update({s["id"]: s for s in r.json() if s.get("id") and (not named_only or frigate_name(s)[0])})
         for summary in sorted(summaries.values(), key=lambda s: float(s.get("start_time") or 0)):
             story = sighting(summary["id"])
             if not (story and story["final"] and not renamed(summary, story)):
+                if checked(summary["id"], "memory"):
+                    continue  # finished outside every car zone
                 event = event_detail(summary["id"])
                 story = observe_car(event, now) if event else None
+                if story is None and event and event.get("end_time") is not None:
+                    record_check(summary["id"], "memory", "outside")
             # The vision model rewrites it with what it saw, when it looks.
             if story and story["final"]:
                 try:
@@ -2028,14 +2080,14 @@ def reference_picture(camera: str, name: str) -> bytes | None:
         return f.read()
 
 
-def learn_vehicle(camera: str, name: str, description: dict[str, str], picture: bytes, tagged: bool) -> None:
+def learn_vehicle(camera: str, name: str, description: dict[str, str], picture: bytes, tagged: bool) -> bool:
     """
     Keeps what the vision model saw of a car we know is `name`. Daylight only: an infrared picture
     shows no colour and compares badly. A person's tag always replaces the reference picture; any
     other known sighting only supplies the first.
     """
     if description.get("colour") in (None, "unknown"):
-        return
+        return False
     row = vehicle(camera, name) or {"camera": camera, "name": name, "here": 0, "spot": None, "since": None, "last_seen": None, "event_id": None, "looks": {}}
     save_vehicle(dict(row, looks=learn_looks(row["looks"], description)))
     path = vehicle_picture_path(camera, name)
@@ -2044,6 +2096,7 @@ def learn_vehicle(camera: str, name: str, description: dict[str, str], picture: 
         with open(path, "wb") as f:
             f.write(picture)
         log.info("vehicle memory: reference picture of %s on %s kept (%s)", name, camera, "tagged" if tagged else "first")
+    return True
 
 
 def same_car_prompt(name: str, looks: dict[str, Any]) -> str:
