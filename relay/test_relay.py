@@ -1577,5 +1577,80 @@ class VehicleMemoryAgainstFrigate(_ScratchDb):
         self.assertEqual("Car arrived in the driveway · blue tesla Model Y suv", self.descriptions()["visitor"])
 
 
+# The Front Yard on 2026-09-27, with the camera's real driveway outline. `timed` paths are
+# `(x, y, seconds into the event)`.
+TESLA_SPOT = [(0.3609, 0.5306), (0.3609, 0.5319)]
+# 11:58: the parked Tesla's event, a second in, jumps to a car going by on the street.
+SWITCHED_TO_THE_STREET = [(0.3063, 0.5694), (0.3063, 0.5764), (0.475, 0.3111), (0.5703, 0.3375), (0.6898, 0.3611),
+                          (0.7508, 0.3639), (0.8336, 0.4278), (0.9078, 0.4625)]
+# 09:50: the Tesla backing out and driving off, first seen just past the driveway's edge; no zone tag.
+BACKED_OUT = [(0.3047, 0.6389), (0.3047, 0.6333), (0.3523, 0.5958), (0.4078, 0.5625), (0.4578, 0.5333), (0.5133, 0.5014),
+              (0.5648, 0.4722), (0.6195, 0.4458), (0.6656, 0.4014), (0.7336, 0.3681), (0.7891, 0.4972), (0.8758, 0.4625), (0.9336, 0.4875)]
+# 22:41-10:58: Sarah's car at the curb all night, until the tracker moved to the Tesla driving past it into the driveway.
+CURB_THEN_TESLA = [(0.8281, 0.5278, 0), (0.7484, 0.5278, 821), (0.8273, 0.5167, 925), (0.8258, 0.5278, 11152),
+                   (0.8281, 0.5278, 43135), (0.7602, 0.4847, 44222), (0.6562, 0.4181, 44224), (0.6039, 0.4431, 44227),
+                   (0.5508, 0.4708, 44230), (0.4992, 0.5014, 44232), (0.4477, 0.5292, 44234), (0.3883, 0.5375, 44237),
+                   (0.3453, 0.5819, 44238), (0.3594, 0.5319, 44246)]
+
+
+def timed_car_event(event_id, timed, start, end, **kwargs):
+    event = car_event(event_id, [(x, y) for x, y, _ in timed], start, end, **kwargs)
+    event["data"]["path_data"] = [[[x, y], start + t] for x, y, t in timed]
+    return event
+
+
+class TrackerSwitchTest(_ScratchDb):
+    """The memory reading around Frigate's tracker handing a box from one car to another."""
+
+    def setUp(self):
+        super().setUp()
+        relay.car_zone_polygons = lambda: {"hikvision_1": [CarCheckTest.DRIVEWAY]}
+        relay.car_zone_outlines = lambda: {"hikvision_1": {"driveway": CarCheckTest.DRIVEWAY}}
+        self.observe(car_event("parked", TESLA_SPOT, self.T, self.T + 2, name="andrews_tesla", score=1.0))
+
+    def test_the_parked_car_carrying_on_as_a_passing_car_is_still_parked(self):
+        story = self.observe(car_event("switch", SWITCHED_TO_THE_STREET, self.T + 600, self.T + 607, name="andrews_tesla", score=0.99))
+        self.assertEqual(("andrews_tesla", "parked"), (story["name"], story["movement"]))
+        self.assertTrue(self.here("andrews_tesla"))
+
+    def test_without_the_jump_that_path_would_be_a_departure(self):
+        # The same shape drawn by one car (a step no bigger than 0.2) is a car leaving.
+        steady = [(0.3063, 0.5694), (0.36, 0.5), (0.42, 0.42), (0.5, 0.36), (0.6898, 0.3611), (0.8336, 0.4278), (0.9078, 0.4625)]
+        story = self.observe(car_event("out", steady, self.T + 600, self.T + 607, name="andrews_tesla", score=0.99))
+        self.assertEqual("left", story["movement"])
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_a_jump_from_the_street_onto_the_parked_car_is_no_arrival(self):
+        onto = [(0.793, 0.4431), (0.3047, 0.5458), (0.3047, 0.5458)]
+        self.assertIsNone(self.observe(car_event("onto", onto, self.T + 600, self.T + 603, zones=())), "only the street part is that car's")
+        self.assertTrue(self.here("andrews_tesla"))
+
+    def test_a_car_backing_out_past_the_edge_before_it_is_seen_left(self):
+        story = self.observe(car_event("backed", BACKED_OUT, self.T + 600, self.T + 624, name="andrews_tesla", score=0.974, zones=()))
+        self.assertEqual(("andrews_tesla", "left"), (story["name"], story["movement"]))
+        self.assertFalse(self.here("andrews_tesla"))
+
+    def test_a_car_going_by_near_the_edge_without_starting_there_is_not_filed(self):
+        along = [(0.62, 0.62), (0.45, 0.66), (0.3, 0.72), (0.2, 0.75)]  # beyond the edge the whole way
+        self.assertIsNone(self.observe(car_event("along", along, self.T + 600, self.T + 610, zones=())))
+
+    def test_an_arrival_hours_into_another_cars_event_is_filed_late_and_unnamed(self):
+        self.observe(car_event("backed", BACKED_OUT, self.T + 600, self.T + 624, name="andrews_tesla", score=0.974, zones=()))
+        event = timed_car_event("curb", CURB_THEN_TESLA, self.T - 36000, self.T + 8246, name="sarahs_car", score=1.0)
+        story = self.observe(event)
+        self.assertEqual((None, "late", "arrived"), (story["name"], story["how"], story["movement"]))
+        self.assertEqual(self.T - 36000 + 44230, story["start"], "when it came in, not when the event began")
+        self.assertIsNone(relay.vehicle("hikvision_1", "sarahs_car"), "the name is the car at the curb's")
+        self.assertFalse(relay.renamed(event, story), "and it isn't looked up again for it")
+
+    def test_an_arrival_soon_after_its_event_began_keeps_its_name(self):
+        self.observe(car_event("backed", BACKED_OUT, self.T + 600, self.T + 624, name="andrews_tesla", score=0.974, zones=()))
+        timed = [(x, y, t - 44222 + 5) for x, y, t in CURB_THEN_TESLA[5:]]
+        story = self.observe(timed_car_event("home", timed, self.T + 3000, self.T + 3035, name="andrews_tesla", score=0.98))
+        self.assertEqual(("andrews_tesla", "classifier", "arrived"), (story["name"], story["how"], story["movement"]))
+        self.assertTrue(self.here("andrews_tesla"))
+        self.assertEqual(self.T + 3000, relay.vehicle("hikvision_1", "andrews_tesla")["since"])
+
+
 if __name__ == "__main__":
     unittest.main()

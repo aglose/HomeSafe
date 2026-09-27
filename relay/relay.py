@@ -1575,7 +1575,8 @@ def second_opinions() -> None:
                         or (learnt and (learnt[0] != "untagged" or learnt[1] == name_now))):
                     continue
             event = event_detail(event_id) or summary
-            learning = worth_learning(event, zones_for_car, now) and not checked(event_id, "learn")
+            # A late arrival's tag is the car the event began as, so its picture isn't that car.
+            learning = worth_learning(event, zones_for_car, now) and not checked(event_id, "learn") and (sighting(event_id) or {}).get("how") != "late"
             if judged and not learning:
                 record_check(event_id, "learn", "untagged", frigate_name(event)[0] or "")
                 continue
@@ -1712,7 +1713,21 @@ def car_check_forever() -> None:
 #   never has, and the name is withdrawn and the car forgotten from that spot.
 # - A car that arrived unnamed is compared with each remembered car that is away and has a
 #   reference picture, and named when exactly one is the same car and its looks fit.
+#
+# Frigate's tracker hands a box from one car to another, and the memory reads around it (2026-09-27):
+# - A path that jumps across a car zone's edge in one step is two cars: the parked Tesla's event
+#   carried on as a car going by on the street (11:58), and was not the Tesla leaving. The memory
+#   keeps the path up to the jump.
+# - A path that begins on a car zone's edge and ends out of it is a departure, though no point is
+#   inside: the tracker only finds a car backing out briskly once it is past the edge (09:50).
+# - An arrival long after its event began is a car the tracker switched to as it went by (Sarah's
+#   car at the curb all night, then the Tesla coming home at 10:58). It is filed "late": at the
+#   time it came in, and unnamed, since the event's name is the other car's.
 SPOT_MATCH = 0.5  # a path starting within this share of the remembered box's longer side of its spot
+# A car driving moves 0.05-0.13 of the frame a path step (0.24 at the 99th percentile, 2026-09-26/27);
+# the box going from the driveway to the street or the curb in one step is 0.3-0.5.
+TRACK_SWITCH_JUMP = 0.25
+LATE_ARRIVAL_SECONDS = 600.0
 VEHICLE_STALE_SECONDS = 24 * 3600.0  # a spot nothing has been seen at for this long is not trusted
 VEHICLE_LOOKBACK_SECONDS = 3600.0
 LOOKS_COLOURS_MAX = 4
@@ -1879,9 +1894,36 @@ def zone_of(event: dict[str, Any], zones_for_car: list[str], outlines: dict[str,
 
 
 def in_car_zone(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]]) -> bool:
+    """Tagged with a car zone, or a path that touched one, or that began on its edge and left (see "vehicle memory")."""
     if any(z in zones_for_car for z in event.get("zones") or []):
         return True
-    return any(zone_side(p, polygons) == "in" for p in event_points(event)) if polygons else False
+    if not polygons:
+        return False
+    sides = [zone_side(p, polygons) for p in event_points(event)]
+    return "in" in sides or (len(sides) >= 2 and sides[0] == "edge" and sides[-1] == "out")
+
+
+def path_samples(event: dict[str, Any]) -> list[list[Any]]:
+    """The well-formed `[[x, y], time]` samples of `data.path_data`."""
+    return [s for s in (event.get("data") or {}).get("path_data") or []
+            if isinstance(s, list) and len(s) >= 2 and isinstance(s[0], list) and len(s[0]) >= 2]
+
+
+def before_switch(event: dict[str, Any], polygons: list[list[tuple[float, float]]]) -> dict[str, Any]:
+    """The event with its path cut where it jumps across a car zone's edge (the tracker moving to another car); the event itself otherwise."""
+    samples = path_samples(event)
+    for i in range(1, len(samples)):
+        (ax, ay), (bx, by) = samples[i - 1][0][:2], samples[i][0][:2]
+        crossed = (zone_side((ax, ay), polygons) == "out") != (zone_side((bx, by), polygons) == "out")
+        if crossed and ((bx - ax) ** 2 + (by - ay) ** 2) ** 0.5 > TRACK_SWITCH_JUMP:
+            return dict(event, data=dict(event["data"], path_data=samples[:i]))
+    return event
+
+
+def came_in_at(event: dict[str, Any], polygons: list[list[tuple[float, float]]]) -> float | None:
+    """When a car that arrived came in: the time of its path's last point clearly outside every car zone."""
+    outside = [float(s[1]) for s in path_samples(event) if zone_side((float(s[0][0]), float(s[0][1])), polygons) == "out"]
+    return outside[-1] if outside else None
 
 
 def frigate_name(event: dict[str, Any]) -> tuple[str | None, float | None]:
@@ -1899,19 +1941,28 @@ def observe_car(event: dict[str, Any], now: float | None = None) -> dict[str, An
     camera = event.get("camera", "")
     zones_for_car = car_zones().get(camera, [])
     polygons = car_zone_polygons().get(camera, [])
-    if event.get("label") != "car" or not event.get("id") or not zones_for_car or not in_car_zone(event, zones_for_car, polygons):
+    if event.get("label") != "car" or not event.get("id") or not zones_for_car:
+        return None
+    event = before_switch(event, polygons) if polygons else event
+    if not in_car_zone(event, zones_for_car, polygons):
         return None
     event_id = event["id"]
     prev = sighting(event_id) or {}
     name, score = frigate_name(event)
+    movement = movement_of(event, polygons)
+    start = float(event.get("start_time") or now)
+    came = came_in_at(event, polygons) if movement == "arrived" else None
+    late = came is not None and came - start > LATE_ARRIVAL_SECONDS
+    if late:
+        name, score, start = None, None, came  # the event's name is the car the tracker followed before this one
     how = ("tagged" if score is not None and score >= 1.0 else "classifier") if name else None
     if name and prev.get("how") == "looked" and prev.get("name") == name:
         how = "looked"  # the name the vision model gave it, back from Frigate
-    movement = movement_of(event, polygons)
-    start = float(event.get("start_time") or now)
     end = event.get("end_time")
     seen = float(end) if end is not None else now
-    if name is None:
+    if late:
+        how = "late"
+    elif name is None:
         if prev.get("how") in ("parked", "looked", "not"):
             name, how = prev.get("name"), prev["how"]  # decided already: kept, confirmed, or turned down
         elif prev.get("how") in ("tagged", "classifier"):
@@ -2006,6 +2057,8 @@ def note_event(story: dict[str, Any]) -> None:
 
 def renamed(summary: dict[str, Any], story: dict[str, Any]) -> bool:
     """Has Frigate's name for a finished event changed since it was filed (a person tagged it late, say)?"""
+    if story.get("how") == "late":
+        return False  # its name was never this car's
     name, _ = frigate_name(summary)
     if name is None:
         return story.get("how") in ("tagged", "classifier", "looked")
