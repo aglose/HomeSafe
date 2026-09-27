@@ -24,6 +24,13 @@ object CarTagging {
      */
     const val MATCH_MIN_CONTAINED = 0.7
 
+    /**
+     * But only when the smaller box is at least this share of the bigger one's area. A car far
+     * behind the one drawn round sits inside the rectangle too: on 2026-09-27 a rectangle round
+     * the Tesla at the kerb named the SUV across the street, whose box was 0.16 of it.
+     */
+    const val MATCH_MIN_SIZE_RATIO = 0.25
+
     /** Smaller than this, as a fraction of the frame on either side, is a stray tap rather than a car. */
     const val MIN_BOX_FRACTION = 0.02
 
@@ -54,12 +61,16 @@ class EventFrame(val jpeg: ByteArray, val box: SeenBox)
 
 /**
  * The tracked object [box] is about, if any: the one it overlaps most, as long as it overlaps
- * enough ([CarTagging.MATCH_MIN_IOU], or [CarTagging.MATCH_MIN_CONTAINED] of the smaller box).
- * Objects Frigate gave no box are never matched.
+ * enough ([CarTagging.MATCH_MIN_IOU], or [CarTagging.MATCH_MIN_CONTAINED] of the smaller box
+ * when the two are of a size, [CarTagging.MATCH_MIN_SIZE_RATIO]). Objects Frigate gave no box
+ * are never matched.
  */
 fun List<TrackedObject>.trackedObjectAt(box: SeenBox): TrackedObject? =
     mapNotNull { obj -> obj.box?.let { obj to it.overlapWith(box) } }
-        .filter { (_, overlap) -> overlap.iou >= CarTagging.MATCH_MIN_IOU || overlap.contained >= CarTagging.MATCH_MIN_CONTAINED }
+        .filter { (_, overlap) ->
+            overlap.iou >= CarTagging.MATCH_MIN_IOU ||
+                (overlap.contained >= CarTagging.MATCH_MIN_CONTAINED && overlap.sizeRatio >= CarTagging.MATCH_MIN_SIZE_RATIO)
+        }
         .maxByOrNull { (_, overlap) -> overlap.iou }
         ?.first
 
@@ -79,16 +90,16 @@ val SeenBox.isTaggable: Boolean
 /** Whether ([x], [y]), in fractions of the frame, is inside this box. */
 fun SeenBox.contains(x: Double, y: Double): Boolean = x in this.x..(this.x + width) && y in this.y..(this.y + height)
 
-private data class Overlap(val iou: Double, val contained: Double)
+private data class Overlap(val iou: Double, val contained: Double, val sizeRatio: Double)
 
 private fun SeenBox.overlapWith(other: SeenBox): Overlap {
     val w = min(x + width, other.x + other.width) - max(x, other.x)
     val h = min(y + height, other.y + other.height) - max(y, other.y)
-    if (w <= 0 || h <= 0) return Overlap(0.0, 0.0)
+    if (w <= 0 || h <= 0) return Overlap(0.0, 0.0, 0.0)
     val intersection = w * h
     val a = width * height
     val b = other.width * other.height
-    return Overlap(iou = intersection / (a + b - intersection), contained = intersection / min(a, b))
+    return Overlap(iou = intersection / (a + b - intersection), contained = intersection / min(a, b), sizeRatio = min(a, b) / max(a, b))
 }
 
 /**

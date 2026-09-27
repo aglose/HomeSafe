@@ -67,7 +67,8 @@ class ClassifierRepositoryImpl(
         val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
         return api.getInProgressEvents(serverUrl, cameraName)
             .map { events ->
-                events.map { TrackedObject(eventId = it.id, label = it.label, subLabel = it.subLabel, box = it.data?.box?.seenBox(epochSeconds = null)) }
+                // Where each is now, not its best frame: that is where a car is drawn round on the live frame.
+                events.map { TrackedObject(eventId = it.id, label = it.label, subLabel = it.subLabel, box = it.data?.latestBox()?.seenBox(epochSeconds = null)) }
             }
     }
 

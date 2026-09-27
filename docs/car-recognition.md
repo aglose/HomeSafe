@@ -177,6 +177,27 @@ ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep -E "v
 ssh frigate 'docker exec homesafe-relay python -c "import sqlite3; print(sqlite3.connect(\"/data/relay.db\").execute(\"select camera, name, here, since, last_seen, looks from vehicles\").fetchall())"'
 ```
 
+## Tagging from the live frame
+
+On a camera's live frame, a rectangle drawn round a car names whichever car Frigate is tracking
+there (`trackedObjectAt`). Each tracked car is placed where it is now: its best frame's box,
+moved so its bottom centre sits on the last path point (`FrigateEventData.latestBox`). A car
+that drove on keeps its old best frame; at 14:49 on 2026-09-27, the Tesla at the kerb still
+carried its box from the driveway.
+
+A car counts as matched when its box overlaps the rectangle by 0.3 IoU. It also matches when
+0.7 of the smaller box sits inside the other, but only if the smaller is at least a quarter of
+the bigger. Without that size check, a rectangle round the Tesla named the SUV parked across
+the street behind it, whose small box sat 84% inside the rectangle.
+
+## The Front Yard's driveway outline
+
+Cars parked nearer the house end their box's bottom centre about 0.06 of the frame below the
+old outline. Sarah's car did on 2026-09-27, so neither Frigate nor the relay counted it as in the
+driveway. The outline's lower edge now reaches the planter's corner (`0.419,0.458, 0.504,0.5,
+0.34,0.72, 0.12,0.74, 0.217,0.504`, set live through `config/set`). The old config is in
+`config/config.yml.bak-20260927-150254-driveway` on the box.
+
 ## Deploying
 
 Frigate: detect the Front Yard from go2rtc's copy of the 4K main stream, scaled on the GPU, and

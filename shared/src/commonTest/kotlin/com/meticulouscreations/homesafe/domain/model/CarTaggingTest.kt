@@ -35,6 +35,18 @@ class CarTaggingTest {
     }
 
     @Test
+    fun aFarCarBehindTheOneDrawnRoundIsNotIt() {
+        // 2026-09-27 14:49: a rectangle round the Tesla at the kerb. The SUV parked across the
+        // street behind it is 84% inside the rectangle but only 0.16 of its size.
+        val drawn = box(0.741, 0.313, 0.216, 0.337)
+        val suv = TrackedObject("e87hxf", "car", subLabel = null, box = box(0.838, 0.296, 0.111, 0.106))
+        assertNull(listOf(suv).trackedObjectAt(drawn))
+        // The Tesla where it is now (its best frame was in the driveway): that's the car.
+        val teslaNow = TrackedObject("hs2pop", "car", subLabel = "andrews_tesla", box = box(0.7194, 0.2917, 0.255, 0.225))
+        assertEquals(teslaNow, listOf(suv, teslaNow).trackedObjectAt(drawn))
+    }
+
+    @Test
     fun aRectangleThatBarelyTouchesACarIsNotIt() {
         // Overlaps the Tesla's right edge by a sliver.
         assertNull(tracked.trackedObjectAt(box(0.38, 0.20, 0.05, 0.35)))
