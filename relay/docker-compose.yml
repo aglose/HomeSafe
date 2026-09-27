@@ -36,6 +36,9 @@ services:
       # go2rtc a display's stream comes from.
       GOOGLE_PUBLIC_URL: https://debian-surveillance.tail4c441a.ts.net
       GO2RTC_URL: http://127.0.0.1:1984
+      # The cameras Google may show, each with a go2rtc stream inside Google's 480p-1080p. Only the
+      # Front Door's sub (704x480) fits as is: the main streams are 4K and the Hikvision subs 360p.
+      GOOGLE_STREAMS: '{"amcrest_1": "amcrest_1_sub"}'
     # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID, only on the box. Without it the
     # Google Home endpoints answer 404.
     env_file:

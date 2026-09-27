@@ -1971,8 +1971,9 @@ GOOGLE_PROJECT_ID = os.environ.get("GOOGLE_PROJECT_ID", "")
 # Where Funnel publishes the relay, for the signaling address handed to a display.
 GOOGLE_PUBLIC_URL = os.environ.get("GOOGLE_PUBLIC_URL", "").rstrip("/")
 GO2RTC = os.environ.get("GO2RTC_URL", "http://127.0.0.1:1984").rstrip("/")
-# Per camera, the go2rtc stream to show, overriding the pick in `google_stream`. Google wants
-# 480p to 1080p; here the main streams are 4K and the Hikvision subs 360p.
+# Per camera, the go2rtc stream a display gets. Only the cameras listed are offered to Google: it
+# wants 480p to 1080p, and here the main streams are 4K and the Hikvision subs 360p, so a camera
+# needs a stream picked (or made) for it. Set in docker-compose.yml.
 GOOGLE_STREAMS: dict[str, str] = json.loads(os.environ.get("GOOGLE_STREAMS") or "{}")
 GOOGLE_AGENT_USER = "homesafe"  # one household, one Google link
 GOOGLE_CODE_SECONDS = 600
@@ -1989,7 +1990,7 @@ GET_CAMERA_STREAM = "action.devices.commands.GetCameraStream"
 # every sign-in until the window passes. Frigate itself doesn't limit them.
 GOOGLE_LOGIN_LIMIT = 5
 GOOGLE_LOGIN_WINDOW_SECONDS = 900
-_google_login_failures: list[float] = []
+_google_login_attempts: list[float] = []
 
 
 def token_hash(token: str) -> str:
@@ -2028,32 +2029,31 @@ def google_unlink() -> None:
 
 
 def google_redirect_ok(uri: str, project: str) -> bool:
-    """Only Google's account-linking redirect may receive a code, and only for our project once it's known."""
-    for host in ("oauth-redirect.googleusercontent.com", "oauth-redirect-sandbox.googleusercontent.com"):
-        prefix = f"https://{host}/r/"
-        if uri.startswith(prefix):
-            rest = uri[len(prefix):]
-            return rest == project if project else re.fullmatch(r"[a-z0-9-]+", rest) is not None
-    return False
+    """Only Google's account-linking redirect for our project may receive a code."""
+    hosts = ("oauth-redirect.googleusercontent.com", "oauth-redirect-sandbox.googleusercontent.com")
+    return bool(project) and uri in {f"https://{host}/r/{project}" for host in hosts}
 
 
-def login_locked(failures: list[float], now: float) -> bool:
-    failures[:] = [t for t in failures if now - t < GOOGLE_LOGIN_WINDOW_SECONDS]
-    return len(failures) >= GOOGLE_LOGIN_LIMIT
+def reserve_login(attempts: list[float], now: float) -> bool:
+    """
+    Counts a sign-in against the limit *before* its password is checked, so guesses sent at once
+    can't all slip under it; False once the limit is reached. A correct password hands its
+    reservation back (`attempts.remove(now)`), so only wrong ones use up the window.
+    """
+    attempts[:] = [t for t in attempts if now - t < GOOGLE_LOGIN_WINDOW_SECONDS]
+    if len(attempts) >= GOOGLE_LOGIN_LIMIT:
+        return False
+    attempts.append(now)
+    return True
 
 
-def google_stream(camera: str, streams: list[str], overrides: dict[str, str]) -> str | None:
-    """The go2rtc stream a display gets for `camera`: the override, else its sub stream, else its first live stream."""
-    if camera in overrides:
-        return overrides[camera]
-    return next((s for s in streams if s.endswith("_sub")), streams[0] if streams else None)
+def google_offered(streams: dict[str, str], known: dict[str, list[str]]) -> dict[str, str]:
+    """The cameras Google may show, with their streams: those given a stream that Frigate still has."""
+    return {camera: stream for camera, stream in streams.items() if camera in known}
 
 
 def google_cameras() -> dict[str, str]:
-    """Each camera Google may show, with its stream."""
-    streams = live_streams()
-    picks = {camera: google_stream(camera, s, GOOGLE_STREAMS) for camera, s in streams.items()}
-    return {camera: stream for camera, stream in picks.items() if stream}
+    return google_offered(GOOGLE_STREAMS, live_streams())
 
 
 def google_sync(request_id: str, cameras: dict[str, str]) -> dict[str, Any]:
@@ -2128,8 +2128,20 @@ def json_response(body: dict[str, Any], status: int = 200, headers: dict[str, st
     return Response(content=json.dumps(body), status_code=status, media_type="application/json", headers=headers)
 
 
+def basic_credentials(header: str) -> tuple[str, str]:
+    """Client id and secret from an `Authorization: Basic` header; both empty when it's malformed."""
+    import base64
+
+    try:
+        decoded = base64.b64decode(header[6:].strip(), validate=True).decode()
+    except ValueError:  # bad base64 (binascii.Error) or bytes that aren't UTF-8
+        return "", ""
+    client_id, _, secret = decoded.partition(":")
+    return client_id, secret
+
+
 def require_google() -> None:
-    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_PUBLIC_URL):
+    if not (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID and GOOGLE_PUBLIC_URL):
         raise HTTPException(status_code=404, detail="Google Home is not set up")
 
 
@@ -2169,7 +2181,9 @@ async def google_authorize(request: Request) -> Response:
     require_google()
     fields = form_fields(await request.body())
     check_link_request(fields)
-    if login_locked(_google_login_failures, time.time()):
+    # Reserved here, with no await since the check, so sign-ins in flight together share the limit.
+    attempt = time.time()
+    if not reserve_login(_google_login_attempts, attempt):
         log.warning("google link: sign-in refused, too many failures")
         return link_page(fields, "Too many attempts. Try again in a few minutes.")
     user = fields.get("user", "")
@@ -2179,12 +2193,13 @@ async def google_authorize(request: Request) -> Response:
         ))
         ok = r.status_code == 200
     except Exception as e:
+        _google_login_attempts.remove(attempt)  # not a guess
         log.warning("google link: frigate unreachable: %s", e)
         return link_page(fields, "Frigate is unreachable.")
     if not ok:
-        _google_login_failures.append(time.time())
         log.warning("google link: wrong password for %r", user)
         return link_page(fields, "Wrong username or password.")
+    _google_login_attempts.remove(attempt)
     code = await run_in_threadpool(google_issue, "code", user, GOOGLE_CODE_SECONDS)
     log.info("google link: %s signed in", user)
     return Response(status_code=302, headers={"Location": f"{fields['redirect_uri']}?{urlencode({'code': code, 'state': fields.get('state', '')})}"})
@@ -2200,10 +2215,9 @@ async def google_token(request: Request) -> Response:
     client_id, client_secret = fields.get("client_id", ""), fields.get("client_secret", "")
     auth = request.headers.get("authorization", "")
     if auth.lower().startswith("basic "):
-        import base64
-
-        client_id, _, client_secret = base64.b64decode(auth[6:].strip()).decode(errors="replace").partition(":")
-    if client_id != GOOGLE_CLIENT_ID or not secrets.compare_digest(client_secret, GOOGLE_CLIENT_SECRET):
+        client_id, client_secret = basic_credentials(auth)
+    # As bytes: compare_digest refuses a str with anything but ASCII in it.
+    if client_id != GOOGLE_CLIENT_ID or not secrets.compare_digest(client_secret.encode(), GOOGLE_CLIENT_SECRET.encode()):
         return json_response({"error": "invalid_client"}, 401)
     grant = fields.get("grant_type")
     if grant == "authorization_code":

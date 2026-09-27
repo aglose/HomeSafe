@@ -936,22 +936,33 @@ class GoogleHomeTest(unittest.TestCase):
         self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/someone-else", "homesafe-1234"))
         self.assertFalse(ok("https://evil.example/r/homesafe-1234", "homesafe-1234"))
         self.assertFalse(ok("https://oauth-redirect.googleusercontent.com.evil.example/r/homesafe-1234", "homesafe-1234"))
-        # Before the project id is configured, any project of Google's, but still only Google's.
-        self.assertTrue(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234", ""))
-        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/x?next=https://evil.example", ""))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234?next=https://evil.example", "homesafe-1234"))
+        # Without a project id nothing is accepted, not even Google's.
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/homesafe-1234", ""))
+        self.assertFalse(ok("https://oauth-redirect.googleusercontent.com/r/", ""))
 
-    def test_sign_in_locks_after_repeated_failures_then_recovers(self):
-        failures = [1000.0 + i for i in range(relay.GOOGLE_LOGIN_LIMIT - 1)]
-        self.assertFalse(relay.login_locked(failures, 1010.0))
-        failures.append(1010.0)
-        self.assertTrue(relay.login_locked(failures, 1011.0))
-        self.assertFalse(relay.login_locked(failures, 1011.0 + relay.GOOGLE_LOGIN_WINDOW_SECONDS))
+    def test_sign_ins_in_flight_together_share_the_limit(self):
+        attempts = []
+        # Every one is counted before its password is checked, so a burst stops at the limit.
+        self.assertEqual([True] * relay.GOOGLE_LOGIN_LIMIT + [False], [relay.reserve_login(attempts, 1000.0 + i) for i in range(relay.GOOGLE_LOGIN_LIMIT + 1)])
+        # A correct password hands its reservation back.
+        attempts.remove(1000.0)
+        self.assertTrue(relay.reserve_login(attempts, 1010.0))
+        # And the window passes.
+        self.assertTrue(relay.reserve_login(attempts, 1010.0 + relay.GOOGLE_LOGIN_WINDOW_SECONDS))
 
-    def test_stream_pick(self):
-        self.assertEqual("hikvision_1_sub", relay.google_stream("hikvision_1", ["hikvision_1", "hikvision_1_sub"], {}))
-        self.assertEqual("hikvision_1", relay.google_stream("hikvision_1", ["hikvision_1", "hikvision_1_sub"], {"hikvision_1": "hikvision_1"}))
-        self.assertEqual("porch", relay.google_stream("porch", ["porch"], {}))
-        self.assertIsNone(relay.google_stream("porch", [], {}))
+    def test_only_cameras_given_a_stream_that_frigate_still_has_are_offered(self):
+        known = {"amcrest_1": ["amcrest_1", "amcrest_1_sub"], "hikvision_1": ["hikvision_1", "hikvision_1_sub"]}
+        self.assertEqual({"amcrest_1": "amcrest_1_sub"}, relay.google_offered({"amcrest_1": "amcrest_1_sub", "gone": "gone_sub"}, known))
+        self.assertEqual({}, relay.google_offered({}, known))
+
+    def test_basic_credentials(self):
+        import base64
+
+        header = "Basic " + base64.b64encode(b"homesafe:s3cret:with-colon").decode()
+        self.assertEqual(("homesafe", "s3cret:with-colon"), relay.basic_credentials(header))
+        self.assertEqual(("", ""), relay.basic_credentials("Basic not*base64=="))
+        self.assertEqual(("", ""), relay.basic_credentials("Basic " + base64.b64encode(b"\xff\xfe:x").decode()))
 
     def test_sync_lists_each_camera_by_its_app_name(self):
         devices = relay.google_sync("r1", self.CAMERAS)["payload"]["devices"]
