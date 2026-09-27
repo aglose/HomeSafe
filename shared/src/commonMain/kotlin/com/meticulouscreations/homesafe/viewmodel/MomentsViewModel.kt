@@ -58,8 +58,8 @@ import kotlin.time.ExperimentalTime
  *
  * For one detection that is all there is. For several folded into a visit or a household car's
  * routine stretch ([kind]), [event] is the one a tap plays and whose thumbnail stands for the
- * lot, [presentation] reads for the whole entry, and [clips] lists every detection in it, oldest
- * first, for the card to open onto.
+ * lot, [presentation] reads for the whole entry, and [clips] lists each stretch of footage in it
+ * ([com.meticulouscreations.homesafe.domain.model.MomentTake]), oldest first, for the card to open onto.
  */
 @Immutable
 data class MomentItem(
@@ -74,7 +74,7 @@ data class MomentItem(
     val canTagCar: Boolean = false,
 )
 
-/** One detection inside a folded entry, as its row in the opened list reads. */
+/** One take inside a folded entry — its [event] is the clip that plays — as its row in the opened list reads. */
 @Immutable
 data class MomentClip(
     val event: MomentEvent,
@@ -247,7 +247,10 @@ class MomentsViewModel(
                 val clips = if (visit.kind == VisitKind.SINGLE) {
                     emptyList()
                 } else {
-                    visit.events.map { event ->
+                    // One row per take: overlapping detections are the same footage, so listing
+                    // each would play the same seconds several times over.
+                    visit.takes.map { take ->
+                        val event = take.lead
                         val p = event.present(day)
                         MomentClip(event, p.timeLabel, p.title, p.durationLabel, canTagCar = event.isGenericCar)
                     }

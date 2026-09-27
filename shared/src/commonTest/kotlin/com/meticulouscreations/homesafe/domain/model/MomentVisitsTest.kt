@@ -90,6 +90,56 @@ class MomentVisitsTest {
         assertEquals("Since 10:00 AM", visit.present(day, utc).timeLabel)
     }
 
+    /**
+     * The Front Yard at 7:55 PM on 2026-09-26: two people crossing the lawn together, one of them
+     * lost and re-found, came out as "3 clips" that all played the same footage.
+     */
+    private val frontLawn = listOf(
+        event("a", at(19, 55, 2), end = at(19, 55, 24), camera = "front_yard", zones = listOf("lawn")),
+        event("b", at(19, 55, 6), end = at(19, 55, 19), camera = "front_yard", zones = listOf("driveway")),
+        event("c", at(19, 55, 12), end = at(19, 55, 19), camera = "front_yard", zones = listOf("lawn")),
+    )
+
+    @Test
+    fun detectionsWhoseSpansOverlapAreOneTakeAndReadAsOneCard() {
+        val visit = frontLawn.shuffled().groupIntoVisits().single()
+        assertEquals(VisitKind.SINGLE, visit.kind, "the same footage three times over is one moment")
+        assertEquals(listOf(listOf("a", "b", "c")), visit.takes.map { t -> t.events.map { it.id } })
+        assertEquals("a", visit.key)
+        assertEquals("a", visit.lead.id, "the clip that covers the take plays")
+        val p = visit.present(day, utc)
+        assertNull(p.clipCountLabel, "nothing to open onto")
+        assertEquals("Person on the lawn", p.title)
+        assertEquals("7:55 PM", p.timeLabel)
+        assertEquals("0:22", p.durationLabel)
+        assertEquals("Front Yard · Lawn, Driveway", p.locationLabel)
+    }
+
+    @Test
+    fun aVisitCountsItsTakesAndEachPlaysTheClipCoveringMostOfIt() {
+        val later = listOf(
+            event("d", at(19, 56, 0), end = at(19, 56, 5), camera = "front_yard"),
+            event("e", at(19, 56, 3), end = at(19, 56, 40), camera = "front_yard"),
+        )
+        val visit = (frontLawn + later).groupIntoVisits().single()
+        assertEquals(VisitKind.VISIT, visit.kind)
+        assertEquals(listOf("a", "e"), visit.takes.map { it.lead.id }, "the longer clip, even when it started second")
+        assertEquals("a", visit.lead.id)
+        assertEquals("2 clips", visit.present(day, utc).clipCountLabel)
+    }
+
+    @Test
+    fun aClipStillInProgressLeadsItsTake() {
+        val take = listOf(event("done", at(9, 0), end = at(9, 0, 40)), event("live", at(9, 0, 10), end = null)).intoTakes().single()
+        assertEquals("live", take.lead.id)
+    }
+
+    @Test
+    fun detectionsThatOnlyTouchEndToStartAreSeparateTakes() {
+        val takes = listOf(event("x", at(9, 0), end = at(9, 0, 10)), event("y", at(9, 0, 10))).intoTakes()
+        assertEquals(listOf("x", "y"), takes.map { it.lead.id })
+    }
+
     @Test
     fun otherCamerasAndOtherLabelsAreOtherVisits() {
         val visits = listOf(
