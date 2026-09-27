@@ -140,9 +140,15 @@ internal fun List<MomentEvent>.intoTakes(): List<MomentTake> {
     val takes = ArrayList<MutableList<MomentEvent>>()
     for (event in sortedBy { it.startEpochSeconds }) {
         val open = takes.lastOrNull()
-        if (open != null && event.follows(open, gapSeconds = 0.0)) open += event else takes += mutableListOf(event)
+        if (open != null && event.overlaps(open)) open += event else takes += mutableListOf(event)
     }
     return takes.map { MomentTake(it) }
+}
+
+/** Starts strictly before the latest end in [take], or while any of it is still in progress: one ending as the next starts shares no footage. */
+private fun MomentEvent.overlaps(take: List<MomentEvent>): Boolean {
+    if (take.any { it.isInProgress }) return true
+    return startEpochSeconds < take.maxOf { it.endEpochSeconds ?: it.startEpochSeconds }
 }
 
 /**

@@ -135,8 +135,8 @@ class MomentVisitsTest {
     }
 
     @Test
-    fun takesTouchingEndToStartAreStillSeparateWhenTheyDoNotOverlap() {
-        val takes = listOf(event("x", at(9, 0), end = at(9, 0, 10)), event("y", at(9, 0, 11))).intoTakes()
+    fun detectionsThatOnlyTouchEndToStartAreSeparateTakes() {
+        val takes = listOf(event("x", at(9, 0), end = at(9, 0, 10)), event("y", at(9, 0, 10))).intoTakes()
         assertEquals(listOf("x", "y"), takes.map { it.lead.id })
     }
 
