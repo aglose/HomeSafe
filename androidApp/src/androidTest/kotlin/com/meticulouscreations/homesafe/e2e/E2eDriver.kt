@@ -143,7 +143,12 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
 
     fun awaitSignInForm() = awaitSingle(hasTestTag(SIGN_IN_CONNECT_TEST_TAG) and isEnabled(), "the enabled Connect button")
 
-    fun signIn(user: FakeUser = FakeFrigateState.ADMIN) {
+    /**
+     * Signs in through the form. [landsOnHome] false for a launch that goes straight on to another
+     * screen (a notification's moment): Home's route badge may never be drawn, so only the form
+     * going away is waited for.
+     */
+    fun signIn(user: FakeUser = FakeFrigateState.ADMIN, landsOnHome: Boolean = true) {
         awaitSignInForm()
         awaitSingle(hasTestTag(SIGN_IN_SERVER_URL_TEST_TAG)).performTextReplacement(server.baseUrl)
         awaitSingle(hasTestTag(SIGN_IN_USERNAME_TEST_TAG)).performTextReplacement(user.username)
@@ -156,7 +161,7 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
         settle()
         scrollIntoView(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
         tap(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the Connect button")
-        awaitSignedIn()
+        if (landsOnHome) awaitSignedIn() else awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
     }
 
     /** The real shell: the route badge replaces the skeleton's status icon, and the form is gone. */
