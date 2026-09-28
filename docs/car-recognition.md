@@ -3,7 +3,7 @@
 Frigate's `known_cars` classifier names the household's cars ("Andrew's Tesla"), and the app
 folds a named car's comings and goings out of the way. On 2026-09-23 it was naming 45-89% of the
 cars driving past the Front Yard as one of ours, mostly `andrews_tesla` at 0.98, so strangers were
-being folded away with them. Five things were wrong, and this is what was done about each.
+being folded away with them. Six things were wrong, and this is what was done about each.
 
 | Problem | Fix | Where |
 |---|---|---|
@@ -12,6 +12,7 @@ being folded away with them. Five things were wrong, and this is what was done a
 | The classifier sees a 55-124 px crop of a 640x360 frame | The Front Yard detects on a 1280x720 frame scaled from the 4K stream | Frigate config |
 | YOLOv9-t's boxes on a parked car flicker around the 0.7 threshold | YOLOv9-s (COCO mAP 38 -> 47) | Frigate config |
 | Nothing checks the classifier | A local vision model looks at driveway cars in the 4K recording and vetoes or corrects the name | Relay, car check + Ollama |
+| A car across the street is a few dozen pixels, and dark it reads as Andrew's Tesla | A car outside the car zones from a crop under 110 px loses the classifier's name | Relay, car check |
 
 The ceiling stays: nothing that goes by appearance can tell our dark blue Model Y from a neighbour's.
 Where a car parks is the signal that can, which is why the app leans on the driveway zone.
@@ -54,6 +55,17 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   it is still tracking, so an event is only written off as `gone` once it began an hour ago. The caps are 2 crops per car, `STREET_NONE_PER_HOUR` cars an hour (12) and
   `STREET_NONE_MAX` images in `none` (600), and there is one retrain a day once `RETRAIN_AFTER`
   (60) new cars have gone in. Every decision is kept in the `car_checks` table.
+- **Far cars lose their name.** The classifier judges a square crop of the detect frame whose side
+  is the box's longer side. On the Front Yard's 1280x720 frame a car across the street is 40-100
+  px, and on 2026-09-27 a neighbour's dark SUV parked across the road scored `andrews_tesla`
+  0.7-0.99 at night, even after 14 crops of it went into `none`. In the three days before, all 29
+  cars named outside the car zones from a crop under 110 px were the wrong car. Sarah's Tesla at
+  the curb, half behind the tree, is 115 px. So a named car that was tagged with no car zone, whose
+  path stayed clearly out of every car zone outline (by 0.05), and whose crop was under
+  `FAR_CAR_MAX_PX` (110) has its name cleared once it is finished or in view for 60 s. Small
+  crops in the driveway are left alone, because the porch beam cuts the car there in half. A
+  person's tag stays, and an event the classifier names again is cleared again. The verdicts
+  (`cleared`, `near`, `person`) are kept in `car_checks` under kind `far`.
 - **Second opinion.** A car in a car zone, finished or in view for 60 s, whose name no person gave
   (see "Whose name it is"), is cut out of the 4K recording at its last path point. That cut, 640 px on
   the long edge, is sent to `qwen3-vl:4b-instruct` in Ollama with a closed JSON schema (colour,
@@ -162,7 +174,7 @@ it is here and since when, and the last day's arrivals, departures and moves.
 Check it with:
 
 ```bash
-ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep -E "street car|car .* on |retrain|Ollama"'
+ssh frigate 'sudo journalctl -t homesafe-relay --since "1 hour ago" | grep -E "street car|far car|car .* on |retrain|Ollama"'
 ```
 
 ```bash

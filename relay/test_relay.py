@@ -584,6 +584,49 @@ class CarCheckTest(unittest.TestCase):
     def test_a_car_still_in_view_is_judged_later(self):
         self.assertFalse(relay.is_passing_street_car(self.street(end_time=None), ["driveway"]))
 
+    # Real boxes from the Front Yard (1280x720 detect), 2026-09-27.
+    FRAME = (1280, 720)
+    SUV_ACROSS = {"box": [0.86, 0.25, 0.036, 0.042], "path_data": [[[0.878, 0.292], 0.0], [[0.879, 0.292], 0.0]]}
+    CURB_TESLA = {"box": [0.75, 0.33, 0.15, 0.2], "path_data": [[[0.825, 0.53], 0.0], [[0.826, 0.53], 0.0]]}
+    SARAH_AT_THE_CURB = {"box": [0.714, 0.332, 0.09, 0.157], "path_data": [[[0.759, 0.489], 0.0], [[0.76, 0.489], 0.0]]}
+    BEAM_CUT = {"box": [0.3, 0.43, 0.08, 0.15], "path_data": [[[0.34, 0.58], 0.0], [[0.341, 0.58], 0.0]]}
+
+    def far(self, data, **overrides):
+        e = {"id": "1790570880.906516-25u212", "label": "car", "camera": "hikvision_1", "start_time": 1000.0, "end_time": 1030.0,
+             "zones": [], "sub_label": "andrews_tesla", "data": dict(data, sub_label_score=0.93)}
+        e.update(overrides)
+        return relay.is_far_car(e, ["driveway"], [self.DRIVEWAY], self.FRAME, 2000.0)
+
+    def test_the_classifier_crop_is_the_boxs_longer_side_in_detect_pixels(self):
+        self.assertAlmostEqual(192.0, relay.classifier_crop_px({"data": self.CURB_TESLA}, self.FRAME))
+        self.assertAlmostEqual(46.08, relay.classifier_crop_px({"data": self.SUV_ACROSS}, self.FRAME))
+        self.assertIsNone(relay.classifier_crop_px({"data": {}}, self.FRAME))
+        self.assertIsNone(relay.classifier_crop_px({"data": self.CURB_TESLA}, None))
+
+    def test_a_small_car_across_the_street_is_far(self):
+        self.assertTrue(self.far(self.SUV_ACROSS))
+
+    def test_the_household_cars_at_the_curb_are_near_enough(self):
+        self.assertFalse(self.far(self.CURB_TESLA))
+        self.assertFalse(self.far(self.SARAH_AT_THE_CURB), "half behind the tree, 115 px")
+
+    def test_a_car_the_porch_beam_cuts_in_half_in_the_driveway_is_not_far(self):
+        self.assertFalse(self.far(self.BEAM_CUT), "its path is on the driveway, tagged or not")
+        self.assertFalse(self.far(self.SUV_ACROSS, zones=["driveway"]), "Frigate's tag is enough")
+
+    def test_a_small_car_whose_path_came_near_the_driveway_is_not_far(self):
+        near = {"box": [0.2, 0.3, 0.05, 0.05], "path_data": [[[0.225, 0.35], 0.0], [[0.3, 0.46], 0.0]]}
+        self.assertFalse(self.far(near))
+
+    def test_a_far_car_still_in_view_waits_until_settled(self):
+        self.assertFalse(self.far(self.SUV_ACROSS, end_time=None, start_time=1990.0))
+        self.assertTrue(self.far(self.SUV_ACROSS, end_time=None, start_time=1000.0))
+
+    def test_far_cant_be_told_without_a_car_zone_outline(self):
+        e = {"label": "car", "start_time": 1000.0, "end_time": 1030.0, "zones": [], "data": self.SUV_ACROSS}
+        self.assertFalse(relay.is_far_car(e, ["driveway"], [], self.FRAME, 2000.0))
+        self.assertFalse(relay.is_far_car(e, [], [self.DRIVEWAY], self.FRAME, 2000.0))
+
     def test_zones_that_want_a_car(self):
         cam = {"zones": {"street": {"objects": ["bird"]}, "driveway": {"objects": ["person", "car", "dog"]}, "any": {"objects": []}, "lawn": {"objects": ["person"]}}}
         self.assertEqual(["driveway", "any"], relay.zones_wanting(cam, "car"))
@@ -689,8 +732,8 @@ class _Response:
             raise RuntimeError(f"HTTP {self.status_code}")
 
 
-class CarCheckAgainstFrigate(unittest.TestCase):
-    """The car check's rounds against a fake Frigate: what it files, writes off, retries and leaves alone."""
+class _FakeFrigate(unittest.TestCase):
+    """A scratch relay.db and a fake Frigate for the car check's rounds; no tests of its own."""
 
     def setUp(self):
         import tempfile
@@ -735,6 +778,17 @@ class CarCheckAgainstFrigate(unittest.TestCase):
         self.posts.append((url, json))
         return _Response(400 if any(part in url for part in self.refuse) else 200, {})
 
+    def verdict(self, event_id, kind="street"):
+        row = relay.with_db(lambda c: c.execute("SELECT verdict FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone())
+        return row and row[0]
+
+    def sub_labels(self):
+        return [body for url, body in self.posts if url.endswith("/sub_label")]
+
+
+class CarCheckAgainstFrigate(_FakeFrigate):
+    """The car check's rounds against a fake Frigate: what it files, writes off, retries and leaves alone."""
+
     def street_car(self, age=600.0, crops=2):
         start = self.now - age
         event_id = f"{start:.6f}-abc{len(self.events)}"
@@ -745,10 +799,6 @@ class CarCheckAgainstFrigate(unittest.TestCase):
         for i in range(crops):
             open(os.path.join(train, f"{event_id}-{start + i:.6f}-andrews_tesla-0.98.webp"), "wb").close()
         return event_id
-
-    def verdict(self, event_id, kind="street"):
-        row = relay.with_db(lambda c: c.execute("SELECT verdict FROM car_checks WHERE event_id=? AND kind=?", (event_id, kind)).fetchone())
-        return row and row[0]
 
     def categorized(self):
         return [body["training_file"] for url, body in self.posts if url.endswith("/categorize")]
@@ -818,9 +868,6 @@ class CarCheckAgainstFrigate(unittest.TestCase):
         relay.describe_car = lambda jpeg: {"colour": "red", "make": "tesla", "model": "", "body": "suv", "delivery": "none"}
         return car
 
-    def sub_labels(self):
-        return [body for url, body in self.posts if url.endswith("/sub_label")]
-
     def test_a_person_tagging_the_car_while_the_model_looks_is_left_alone(self):
         car = self.driveway_car()
         def tagged_meanwhile(jpeg):
@@ -840,6 +887,74 @@ class CarCheckAgainstFrigate(unittest.TestCase):
         relay.second_opinions()
         self.assertEqual([{"subLabel": "sarahs_car", "subLabelScore": relay.VLM_SCORE}] * 2, self.sub_labels())
         self.assertEqual("relabel", self.verdict(car["id"], "vlm"))
+
+
+class FarCarsAgainstFrigate(_FakeFrigate):
+    """The far-car round against a fake Frigate: which names it takes off, and which it leaves."""
+
+    def setUp(self):
+        super().setUp()
+        self._saved["detect_sizes"] = relay.detect_sizes
+        relay.detect_sizes = lambda: {"hikvision_1": (1280, 720)}
+        relay.car_zone_polygons = lambda: {"hikvision_1": [CarCheckTest.DRIVEWAY]}
+        relay.HOUSEHOLD_CARS = CarCheckTest.CARS
+
+    def car(self, tag, data, name="andrews_tesla", score=0.93, age=300.0, ended=True, zones=()):
+        start = self.now - age
+        e = {"id": f"{start:.6f}-{tag}", "label": "car", "camera": "hikvision_1", "start_time": start,
+             "end_time": start + 30 if ended else None, "zones": list(zones), "sub_label": name,
+             "data": dict(data, sub_label_score=score)}
+        self.visits.append(e)
+        return e["id"]
+
+    def test_the_suv_across_the_street_loses_the_name_once(self):
+        suv = self.car("suv", CarCheckTest.SUV_ACROSS)
+        relay.clear_far_car_names()
+        self.assertEqual([{"subLabel": "", "subLabelScore": None}], self.sub_labels())
+        self.assertEqual("cleared", self.verdict(suv, "far"))
+        self.visits[0]["sub_label"] = None  # as Frigate has it now
+        relay.clear_far_car_names()
+        self.assertEqual(1, len(self.sub_labels()))
+
+    def test_and_again_should_the_classifier_name_it_anew(self):
+        self.car("suv", CarCheckTest.SUV_ACROSS, ended=False, age=120.0)
+        relay.clear_far_car_names()
+        relay.clear_far_car_names()  # Frigate still names it: taken off again
+        self.assertEqual(2, len(self.sub_labels()))
+
+    def test_near_cars_and_a_persons_tag_keep_their_names(self):
+        curb = self.car("curb", CarCheckTest.CURB_TESLA)
+        beam = self.car("beam", CarCheckTest.BEAM_CUT, name="sarahs_car")
+        tagged = self.car("tagged", CarCheckTest.SUV_ACROSS, score=1.0)
+        relay.state_set("person_tags_since", self.now)  # tagged before the table: its 1.0 is a person's
+        unnamed = self.car("unnamed", CarCheckTest.SUV_ACROSS, name=None)
+        relay.clear_far_car_names()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual(("near", "near", "person", None), tuple(self.verdict(e, "far") for e in (curb, beam, tagged, unnamed)))
+
+    def test_a_car_just_seen_is_looked_at_later(self):
+        young = self.car("young", CarCheckTest.SUV_ACROSS, ended=False, age=10.0)
+        near = self.car("near", CarCheckTest.CURB_TESLA, ended=False, age=120.0)
+        relay.clear_far_car_names()
+        self.assertEqual([], self.sub_labels())
+        self.assertEqual((None, None), (self.verdict(young, "far"), self.verdict(near, "far")), "either may yet change")
+
+    def test_a_refused_clear_is_tried_again(self):
+        suv = self.car("suv", CarCheckTest.SUV_ACROSS)
+        self.refuse.add("/sub_label")
+        with self.assertRaises(Exception):
+            relay.clear_far_car_names()
+        self.assertIsNone(self.verdict(suv, "far"))
+        self.refuse.clear()
+        relay.clear_far_car_names()
+        self.assertEqual("cleared", self.verdict(suv, "far"))
+
+    def test_no_names_to_take_off_asks_frigate_nothing(self):
+        relay.HOUSEHOLD_CARS = {}
+        relay.CAR_CLASSIFIER = ""
+        self.car("suv", CarCheckTest.SUV_ACROSS)
+        relay.requests.get = lambda *a, **k: self.fail("no names, no lookup")
+        relay.clear_far_car_names()
 
 
 class BootReportTest(unittest.TestCase):
