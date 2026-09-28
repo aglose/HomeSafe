@@ -545,8 +545,12 @@ class ConnectionRepositoryImplTest {
 
         // The probe answers after all: the session follows it to the LAN, no second login.
         probe.complete(Unit)
-        eventually("the route to move to the LAN") { h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK }
-        assertEquals(localUrl, h.repository.currentServerUrl.value)
+        // currentServerUrl is derived on the test dispatcher, so it can trail an activeConnection
+        // the mock engine's thread has just moved: wait for both rather than assert the second.
+        eventually("the route and the URL to move to the LAN") {
+            h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK &&
+                h.repository.currentServerUrl.value == localUrl
+        }
         assertEquals(1, h.frigate.logins(tailscaleHost))
         assertEquals(0, h.frigate.logins(localHost))
     }
