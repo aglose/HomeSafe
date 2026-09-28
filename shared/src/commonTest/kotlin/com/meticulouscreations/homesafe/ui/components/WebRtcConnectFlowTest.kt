@@ -99,6 +99,24 @@ class WebRtcConnectFlowTest {
     }
 
     @Test
+    fun thePeerIsHandedOverBeforeTheOffer_soItsFirstFrameCanBeDrawn() = runTest {
+        val h = Harness()
+        h.peer.offerDelayMs = 100
+        var seen: WebRtcPeer? = null
+        var offersWhenSeen = -1
+        launch {
+            h.flow.connect(endpoint, streamKey) { peer ->
+                seen = peer
+                offersWhenSeen = h.signaling.offers.size
+            }
+        }
+        runCurrent()
+
+        assertSame(h.peer, seen)
+        assertEquals(0, offersWhenSeen)
+    }
+
+    @Test
     fun iceThatNeverConnectsTimesOutClosesThePeerAndCountsAgainstTheStream() = runTest {
         val h = Harness()
         val result = CompletableDeferred<WebRtcConnectResult>()

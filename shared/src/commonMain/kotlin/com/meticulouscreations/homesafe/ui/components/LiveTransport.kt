@@ -196,8 +196,13 @@ class WebRtcConnectFlow(
     private val connectTimeoutMs: Long = LivePlaybackPolicy.WEBRTC_CONNECT_TIMEOUT_MS,
     private val firstFrameTimeoutMs: Long = LivePlaybackPolicy.WEBRTC_FIRST_FRAME_TIMEOUT_MS,
 ) {
-    /** [streamKey] identifies the stream in [memory]; the source's HLS URL. */
-    suspend fun connect(endpoint: WebRtcEndpoint, streamKey: String): WebRtcConnectResult {
+    /**
+     * [streamKey] identifies the stream in [memory]; the source's HLS URL. [onPeerCreated] is
+     * handed the peer before the offer is made, for a caller that wants its frames drawn from the
+     * very first one — the join itself still owns the peer until it returns
+     * [WebRtcConnectResult.Connected], and closes it on failure.
+     */
+    suspend fun connect(endpoint: WebRtcEndpoint, streamKey: String, onPeerCreated: (WebRtcPeer) -> Unit = {}): WebRtcConnectResult {
         // The engine can refuse to build a peer at all (no native library, a bad configuration);
         // that is a join failure like any other, not an exception for the caller to survive.
         val peer = try {
@@ -209,6 +214,7 @@ class WebRtcConnectFlow(
             return WebRtcConnectResult.Failed(WebRtcFailure.PeerFailed(e.message ?: "peer creation failed"))
         }
         val result = try {
+            onPeerCreated(peer)
             attempt(peer, endpoint)
         } catch (e: CancellationException) {
             peer.close()
@@ -228,7 +234,8 @@ class WebRtcConnectFlow(
     private suspend fun attempt(peer: WebRtcPeer, endpoint: WebRtcEndpoint): WebRtcConnectResult {
         // One budget for everything up to a connection: a stage that is slow on its own is
         // just as much a sign the route is dead as one that never completes.
-        val connectFailure = withTimeoutOrNull(connectTimeoutMs) { connectStages(peer, endpoint) }
+        val stream = endpoint.signalingUrl.substringAfterLast("src=")
+        val connectFailure = withTimeoutOrNull(connectTimeoutMs) { connectStages(peer, endpoint, stream) }
             ?: return WebRtcConnectResult.Failed(WebRtcFailure.IceTimeout)
         connectFailure.reason?.let { return WebRtcConnectResult.Failed(it) }
 
@@ -238,13 +245,15 @@ class WebRtcConnectFlow(
         } ?: return WebRtcConnectResult.Failed(WebRtcFailure.NoFirstFrame)
         val (frame, state) = frameOrFailure
         if (!frame) return WebRtcConnectResult.Failed(WebRtcFailure.PeerFailed((state as WebRtcPeerState.Failed).reason))
+        LiveStartupMilestones.mark("rtc.frame $stream")
         return WebRtcConnectResult.Connected(peer)
     }
 
     /** Non-null so a timeout (null from `withTimeoutOrNull`) is distinguishable from "reached a connection". */
     private class StageOutcome(val reason: WebRtcFailure?)
 
-    private suspend fun connectStages(peer: WebRtcPeer, endpoint: WebRtcEndpoint): StageOutcome {
+    private suspend fun connectStages(peer: WebRtcPeer, endpoint: WebRtcEndpoint, stream: String): StageOutcome {
+        LiveStartupMilestones.mark("rtc.start $stream")
         val offer = try {
             peer.createOffer()
         } catch (e: CancellationException) {
@@ -252,6 +261,7 @@ class WebRtcConnectFlow(
         } catch (e: Exception) {
             return StageOutcome(WebRtcFailure.PeerFailed(e.message ?: "offer failed"))
         }
+        LiveStartupMilestones.mark("rtc.offer $stream")
         val answer = try {
             signaling.exchange(endpoint.signalingUrl, offer)
         } catch (e: CancellationException) {
@@ -261,6 +271,7 @@ class WebRtcConnectFlow(
         } catch (e: Exception) {
             return StageOutcome(WebRtcFailure.Signaling(null))
         }
+        LiveStartupMilestones.mark("rtc.answer $stream")
         try {
             peer.setAnswer(answer)
         } catch (e: CancellationException) {
@@ -269,6 +280,7 @@ class WebRtcConnectFlow(
             return StageOutcome(WebRtcFailure.PeerFailed(e.message ?: "answer rejected"))
         }
         val settled = peer.state.first { it is WebRtcPeerState.Connected || it is WebRtcPeerState.Failed || it is WebRtcPeerState.Closed }
+        LiveStartupMilestones.mark("rtc.ice $stream")
         return when (settled) {
             is WebRtcPeerState.Failed -> StageOutcome(WebRtcFailure.PeerFailed(settled.reason))
             is WebRtcPeerState.Closed -> StageOutcome(WebRtcFailure.PeerFailed("closed"))

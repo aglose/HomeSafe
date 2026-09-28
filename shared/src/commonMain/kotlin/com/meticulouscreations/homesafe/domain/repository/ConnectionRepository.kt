@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
 /** Manages the connection to a Frigate server: login, session state, route selection, history, and biometric credentials. */
@@ -17,6 +18,19 @@ interface ConnectionRepository {
      * derived from it (stream and snapshot URLs) follows automatically.
      */
     val currentServerUrl: StateFlow<String?>
+
+    /**
+     * Where a sign-in in progress is expected to land, from the moment its route is known well
+     * enough to bet on — the LAN answered, or the Tailscale login went through — until the sign-in
+     * lands or fails; null the rest of the time. What [activeConnection] will most likely become
+     * a few hundred milliseconds later, once the server has checked the password and the route
+     * is verified.
+     *
+     * For work that needs only the address, not the session: go2rtc's live streams take no
+     * credentials, so the grid's players can start joining while the password is still being
+     * checked. A fake that never signs in needn't override it.
+     */
+    val expectedConnection: StateFlow<ActiveConnection?> get() = NoExpectedConnection
 
     /** The most recently successful connection, used to prefill the connect screen. */
     val mostRecentConnection: Flow<ConnectionRecord?>
@@ -61,3 +75,5 @@ interface ConnectionRepository {
      */
     fun onAppVisibilityChanged(visible: Boolean)
 }
+
+private val NoExpectedConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)

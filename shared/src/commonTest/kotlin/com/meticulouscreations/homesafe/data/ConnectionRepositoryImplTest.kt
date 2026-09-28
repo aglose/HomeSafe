@@ -448,6 +448,61 @@ class ConnectionRepositoryImplTest {
     }
 
     @Test
+    fun theLanIsExpectedWhileTheSignInIsStillGoing_andForgottenOnceItLands() = runTest {
+        val h = Harness(this)
+        // A first sign-in waits for the camera list; holding that open freezes it mid-flight.
+        val gate = CompletableDeferred<Unit>()
+        h.frigate.configGate = gate
+        val result = CompletableDeferred<Result<SavedCredentials>>()
+        backgroundScope.launch { result.complete(h.repository.connect(serverUrl, localUrl, "andrew", "pw")) }
+
+        eventually("the sign-in to expect a connection") { h.repository.expectedConnection.value != null }
+        val expected = assertNotNull(h.repository.expectedConnection.value)
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, expected.route)
+        assertEquals(localUrl, expected.activeUrl)
+        assertEquals(serverUrl, expected.serverUrl)
+        assertNull(h.repository.activeConnection.value, "not connected yet: the camera list is still on its way")
+
+        gate.complete(Unit)
+        eventually("the sign-in to land") { result.isCompleted }
+        assertTrue(result.await().isSuccess)
+        assertEquals(expected, h.repository.activeConnection.value)
+        assertNull(h.repository.expectedConnection.value)
+    }
+
+    @Test
+    fun tailscaleIsExpectedOnceItAcceptsThePassword_whenTheLanIsNotThere() = runTest {
+        val h = Harness(this)
+        h.frigate.localReachable = false
+        val gate = CompletableDeferred<Unit>()
+        h.frigate.configGate = gate
+        val result = CompletableDeferred<Result<SavedCredentials>>()
+        backgroundScope.launch { result.complete(h.repository.connect(serverUrl, localUrl, "andrew", "pw")) }
+
+        eventually("the sign-in to expect a connection") { h.repository.expectedConnection.value != null }
+        assertEquals(serverUrl, h.repository.expectedConnection.value?.activeUrl)
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.expectedConnection.value?.route)
+
+        gate.complete(Unit)
+        eventually("the sign-in to land") { result.isCompleted }
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+        assertNull(h.repository.expectedConnection.value)
+    }
+
+    @Test
+    fun aRefusedPasswordLeavesNothingExpected() = runTest {
+        val h = Harness(this)
+        h.frigate.rejectLogin = true
+
+        val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
+        settle()
+
+        assertTrue(result.isFailure)
+        assertNull(h.repository.activeConnection.value)
+        assertNull(h.repository.expectedConnection.value)
+    }
+
+    @Test
     fun aFirstSignInWaitsForTheCameraListAndFailsWithoutOne() = runTest {
         val h = Harness(this)
         h.frigate.configBroken = true

@@ -68,6 +68,14 @@ internal object LivePlaybackPolicy {
      */
     const val STANDBY_PEER_TTL_MS = 20_000L
 
+    /**
+     * How long a player started ahead of its screen ([LivePlayerPrefetch]) plays as if watched.
+     * The sign-in it is started during normally lands, and Home binds the player, in well under
+     * a second; the rest is headroom for a slow server. After it, an unbound player pauses and is
+     * released after the usual idle window.
+     */
+    const val PREFETCH_HOLD_MS = 15_000L
+
     /** Cadence of the fresh-snapshot refresh while no video frame is on screen. */
     const val POSTER_REFRESH_MS = 1_000L
 

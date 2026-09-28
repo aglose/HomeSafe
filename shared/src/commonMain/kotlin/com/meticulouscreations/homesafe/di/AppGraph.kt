@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
+import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
@@ -34,6 +35,8 @@ import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
+import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
+import com.meticulouscreations.homesafe.ui.components.createLivePlayerPrefetch
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provider
@@ -104,6 +107,9 @@ interface AppGraph : ViewModelGraph {
      */
     val presenceAutomation: PresenceAutomation
 
+    /** Started once by [com.meticulouscreations.homesafe.App]; starts the Home grid's players while a sign-in is in flight. */
+    val liveStreamPrefetcher: LiveStreamPrefetcher
+
     @Provides
     fun providePlatform(): Platform = getPlatform()
 
@@ -156,6 +162,10 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun providePushTokenProvider(platformContext: PlatformContext): PushTokenProvider =
         createPushTokenProvider(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideLivePlayerPrefetch(platformContext: PlatformContext): LivePlayerPrefetch = createLivePlayerPrefetch(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides
