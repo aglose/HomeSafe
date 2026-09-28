@@ -82,6 +82,10 @@ class ConnectionRepositoryImplTest {
         var httpsRejected = false
 
         val requests = mutableListOf<Pair<String, String>>()
+
+        /** Reachability probes (`/api/version`) answered, and those of them that carried a cookie. */
+        var probesAnswered = 0
+        val probesWithCookies = mutableListOf<String>()
         private val issuedTokens = mutableSetOf<String>()
         private var nextToken = 0
 
@@ -101,6 +105,8 @@ class ConnectionRepositoryImplTest {
             val authenticated = token != null && token in issuedTokens && !(host == localHost && rogueLocalHost)
             when {
                 path.endsWith("/api/version") -> {
+                    probesAnswered++
+                    if (request.headers[HttpHeaders.Cookie] != null) probesWithCookies += host
                     if (host == localHost) localProbeGate?.await()
                     respond("0.15.0", HttpStatusCode.OK)
                 }
@@ -564,6 +570,28 @@ class ConnectionRepositoryImplTest {
 
         assertNull(h.repository.expectedConnection.value)
         prompt.complete(Result.failure(IllegalStateException("cancelled")))
+    }
+
+    @Test
+    fun reachabilityProbesNeverCarryTheSessionCookie() = runTest {
+        // Signed in: the jar holds a session for both addresses.
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        eventually("the LAN route") { h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK }
+
+        val answeredAtSignIn = h.frigate.probesAnswered
+
+        // Network changes probe the LAN address again, with a session for it in the jar — as the
+        // biometric prompt's probes may, before anyone has signed in.
+        h.frigate.localReachable = false
+        emitNetworkChange(h)
+        eventually("switch to Tailscale") { h.repository.currentServerUrl.value == serverUrl }
+        h.frigate.localReachable = true
+        emitNetworkChange(h)
+        eventually("switch back to the LAN") { h.repository.currentServerUrl.value == localUrl }
+
+        assertTrue(h.frigate.probesAnswered > answeredAtSignIn, "the LAN address answered a probe after sign-in")
+        assertEquals(emptyList(), h.frigate.probesWithCookies)
     }
 
     @Test

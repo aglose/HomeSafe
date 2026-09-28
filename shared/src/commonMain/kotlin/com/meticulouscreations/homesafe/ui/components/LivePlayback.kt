@@ -128,8 +128,11 @@ internal object LivePlaybackPolicy {
      * launches (see `LiveTransportMemory.restore`). Inside it the holder joins over WebRTC alone;
      * outside it — a route the app hasn't joined on, or not lately — HLS is started alongside the
      * join, so a picture is on screen in the second or two HLS needs rather than after the join's
-     * full budget when ICE can't get through ([WEBRTC_CONNECT_TIMEOUT_MS] plus
-     * [WEBRTC_FIRST_FRAME_TIMEOUT_MS], eight seconds of poster). The cost of the shadow is one
+     * full budget when it can't get through. That budget runs stage by stage: up to
+     * [WEBRTC_CONNECT_TIMEOUT_MS] for the offer, [WEBRTC_SIGNALING_TIMEOUT_MS] for signaling,
+     * [WEBRTC_CONNECT_TIMEOUT_MS] for ICE and [WEBRTC_FIRST_FRAME_TIMEOUT_MS] for a frame — 16 s of
+     * poster at worst, though a prepared offer takes none of the first and a dead route usually
+     * fails at the connection long before signaling's bound. The cost of the shadow is one
      * short HLS session per unproven cold start. A week: a route that joined a few days ago almost
      * always still does, and one that no longer does costs that budget once, after which its
      * failure clears the record.

@@ -53,12 +53,16 @@ def find_bounds(serial, text, timeout_s):
     raise TimeoutError(f"'{text}' not on screen after {timeout_s}s")
 
 
-def wait_for_idle_go2rtc(go2rtc, ignore_agent=None, timeout_s=90):
+def wait_for_idle_go2rtc(go2rtc, ignore_agent=None, count_local=False, timeout_s=90):
     """Blocks until go2rtc has no consumers from off the server, so every run joins cold streams.
 
     A force-stopped app's WebRTC consumers linger on the server until their connections time
     out, keeping the camera's RTSP session (the producer) up; a run that starts then joins a warm
     stream, which is not what opening the app after a while looks like. Returns the seconds waited.
+
+    [count_local] counts consumers on go2rtc's own machine too: an emulator's traffic to go2rtc on
+    the host it runs on (CI, via 10.0.2.2) arrives from 127.0.0.1, where on the real server those
+    are Frigate's own readers.
     """
     started = time.monotonic()
     while time.monotonic() - started < timeout_s:
@@ -68,7 +72,7 @@ def wait_for_idle_go2rtc(go2rtc, ignore_agent=None, timeout_s=90):
         # there for good; only the app's are in question.
         remote = [
             c for v in streams.values() for c in v.get("consumers") or []
-            if not c.get("remote_addr", "").startswith("127.0.0.1")
+            if (count_local or not c.get("remote_addr", "").startswith("127.0.0.1"))
             and not (ignore_agent and ignore_agent in c.get("user_agent", ""))
         ]
         if not remote:
@@ -263,6 +267,7 @@ def main():
     p.add_argument("--settle", type=float, default=4, help="seconds to keep collecting milestones after every camera drew")
     p.add_argument("--pause", type=float, default=4, help="seconds between runs, for go2rtc to drop the last run's consumers")
     p.add_argument("--go2rtc", help="e.g. http://192.168.68.65:1984: before each run, wait until it has no consumers (cold streams)")
+    p.add_argument("--go2rtc-count-local", action="store_true", help="for --go2rtc: consumers from 127.0.0.1 count too (go2rtc on the emulator's host, as in CI)")
     p.add_argument("--go2rtc-ignore-agent", help="consumers whose user agent contains this don't count (e.g. curl holding streams warm on purpose)")
     p.add_argument("--idle-extra", type=float, default=3, help="seconds to wait after go2rtc went idle, for it to close the camera sessions")
     p.add_argument("--label", default="run")
@@ -288,7 +293,7 @@ def main():
     for i in range(args.runs):
         if args.go2rtc:
             adb(args.serial, "shell", "am", "force-stop", args.package)
-            waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent)
+            waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent, args.go2rtc_count_local)
             if waited > 0.5:
                 print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
             time.sleep(args.idle_extra)

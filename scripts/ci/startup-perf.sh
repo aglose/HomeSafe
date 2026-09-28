@@ -18,9 +18,13 @@ RUNS=${3:-4}
 SERIAL=${ANDROID_SERIAL:-emulator-5554}
 PACKAGE=com.meticulouscreations.homesafe
 
+# Every run starts from cold streams: the last run's consumers linger on go2rtc until their
+# connections time out, so wait for it to have none (the emulator's arrive from 127.0.0.1) and for
+# go2rtc to stop the test-pattern producers, rather than trusting a fixed pause.
 bench() {
   python3 scripts/bench-first-live-pixel.py --serial "$SERIAL" --package "$PACKAGE" \
-    --cameras 1 --timeout 30 --settle 1 --pause 3 "$@"
+    --cameras 1 --timeout 30 --settle 1 --pause 0 \
+    --go2rtc http://127.0.0.1:1984 --go2rtc-count-local --idle-extra 2 "$@"
 }
 
 # The milestones arrived with the change that introduced this gate; a base from before it can

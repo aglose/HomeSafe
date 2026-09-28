@@ -39,7 +39,7 @@ It also remembers which streams have *proven* WebRTC lately (`recentlyConnected`
 last successful join), and keeps that record across launches (`LiveTransportMemory.restore`,
 SharedPreferences on Android, user defaults on iOS; failures stay per launch). A cold start of an
 unproven stream — a route the app has never joined on, or not in a week — starts HLS alongside the WebRTC join rather than sitting on
-the poster for the join's full budget (3 s + 5 s) when ICE can't get through: the picture is up at
+the poster for the join's full budget when it can't get through — stage by stage up to 3 s for the offer, 5 s for signaling, 3 s for ICE and 5 s for a frame (16 s at worst; a prepared offer takes none of the first, and a dead route usually fails at the connection): the picture is up at
 HLS speed, and the peer takes over on its first frame through the same make-before-break as the
 warm fast path. A proven stream joins over WebRTC alone, since its join shows a frame within a
 keyframe interval and the shadow would only cost the server an HLS session.
@@ -157,7 +157,8 @@ Server side — both applied 2026-09-27:
 The `startup-perf` job in ci.yml (part of `ci-green`) builds the base branch's benchmarkRelease
 app and this branch's, signed in to the fake Frigate (`http://10.0.2.2:8971`, `admin`) with go2rtc
 serving ffmpeg test patterns under the fake's stream names (`scripts/ci/go2rtc-testsrc.sh`), and
-times both on one API 34 emulator in ABBA blocks, each block starting with a discarded run
+times both on one API 34 emulator in ABBA blocks, each block starting with a discarded run and
+every run waiting for go2rtc to have no consumers left, so each join is a cold one
 (`scripts/ci/startup-perf.sh`). It gates two medians:
 
 - **cold launch (TTID)** — `am start -W` TotalTime: process start to the first frame;

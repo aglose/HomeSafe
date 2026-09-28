@@ -11,7 +11,9 @@
 # sees it. Exits non-zero unless /api/streams lists every stream.
 set -euo pipefail
 
-GO2RTC_VERSION=1.9.10 # what the real server runs
+# The release baseline-profile.yml pins too; its linux_amd64 asset's checksum is verified below.
+GO2RTC_VERSION=1.9.14
+GO2RTC_SHA256=32d616af226bd731678ffde328b94cfb94e30339bfefc469cfb76323144615a6
 LOG_DIR=${1:?log dir}
 shift
 STREAMS=("$@")
@@ -22,6 +24,7 @@ mkdir -p "$LOG_DIR"
 BIN=${GO2RTC_BIN:-$LOG_DIR/go2rtc}
 if [ ! -x "$BIN" ]; then
   curl -fsSL -o "$BIN" "https://github.com/AlexxIT/go2rtc/releases/download/v${GO2RTC_VERSION}/go2rtc_linux_amd64"
+  echo "$GO2RTC_SHA256  $BIN" | sha256sum --check --quiet || { echo "::error::go2rtc download failed its checksum"; rm -f "$BIN"; exit 1; }
   chmod +x "$BIN"
 fi
 
