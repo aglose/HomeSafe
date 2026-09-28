@@ -2,7 +2,7 @@ name: Baseline Profile
 
 # Regenerates the committed Baseline Profile (androidApp/src/release/generated/baselineProfiles/)
 # once a week and opens, or updates, a pull request from the fixed branch automation/baseline-profile.
-# See "Baseline Profile regeneration" in docs/testing.md, including the two one-time setup steps.
+# See "Baseline Profile regeneration" in docs/testing.md, including the one-time token setup.
 #
 # The journey (baselineprofile/src/main/.../BaselineProfileGenerator.kt) signs in to the fake
 # Frigate through the nonMinifiedRelease build's "Autofill test credentials" button and scrolls
@@ -201,11 +201,14 @@ jobs:
           fi
           for name in $GO2RTC_STREAMS; do
             out="$RUNNER_TEMP/go2rtc/$name.mp4"
-            # --max-time ends the endless stream; curl then exits 28, which is expected here.
-            curl -s --max-time 8 -o "$out" "http://127.0.0.1:1984/api/stream.mp4?src=$name" || true
+            # --max-time ends the endless stream, so curl exits 28 on success; any other failure
+            # (connection refused, and with --fail an HTTP error such as go2rtc's 500 when ffmpeg
+            # won't start) is a broken sidecar. The body must also be MP4, not an error message.
+            status=0
+            code=$(curl -s --fail --max-time 8 -o "$out" -w '%{http_code}' "http://127.0.0.1:1984/api/stream.mp4?src=$name") || status=$?
             size=$(stat -c %s "$out" 2>/dev/null || echo 0)
-            echo "$name: $size bytes in 8 s"
-            if [ "$size" -eq 0 ]; then
+            echo "$name: HTTP $code, curl exit $status, $size bytes in 8 s"
+            if { [ "$status" -ne 0 ] && [ "$status" -ne 28 ]; } || [ "$code" != 200 ] || ! head -c 64 "$out" | grep -aq ftyp; then
               echo "::error::go2rtc stream $name produced no video"; cat "$LOG_DIR/go2rtc.log"; exit 1
             fi
           done

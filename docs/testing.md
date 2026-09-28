@@ -154,13 +154,13 @@ The Baseline Profile in `androidApp/src/release/generated/baselineProfiles/` is 
 
 The pull request is opened with a token of its own rather than `GITHUB_TOKEN`. GitHub doesn't run workflows for a pull
 request that `GITHUB_TOKEN` opened, so `ci-green` would never report and the merge would stay blocked. The repository
-owner has to set this up once:
-
-1. Create a repository secret `BASELINE_PROFILE_TOKEN` (Settings → Secrets and variables → Actions). It can be a
-   fine-grained personal access token or a GitHub App token, scoped to this repository, with **Contents: read and
-   write** and **Pull requests: read and write**.
-2. In Settings → Actions → General → Workflow permissions, enable **Allow GitHub Actions to create and approve pull
-   requests**.
+owner has to set this up once: create a fine-grained personal access token scoped to this repository, with
+**Contents: read and write** and **Pull requests: read and write**, and store it as the repository secret
+`BASELINE_PROFILE_TOKEN` (Settings → Secrets and variables → Actions). Fine-grained tokens expire (a year at most),
+so renew it when GitHub warns. A GitHub App installation token won't do as a stored secret — it lasts an hour; using an
+App would mean minting a token in the workflow from the App's ID and private key. The "Allow GitHub Actions to create
+and approve pull requests" setting isn't needed: it only governs `GITHUB_TOKEN`, which this workflow doesn't use for
+the pull request.
 
 Until the secret exists, the run still generates the profile and uploads the artifact, then fails at the pull request
 step with a message saying the secret is missing.
