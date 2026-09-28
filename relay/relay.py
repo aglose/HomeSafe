@@ -478,6 +478,7 @@ _car_zones: dict[str, list[str]] = {}
 _car_zone_polygons: dict[str, list[list[tuple[float, float]]]] = {}
 _car_zone_outlines: dict[str, dict[str, list[tuple[float, float]]]] = {}
 _live_streams: dict[str, list[str]] = {}
+_detect_sizes: dict[str, tuple[int, int]] = {}
 _config_loaded_at = 0.0
 
 
@@ -499,7 +500,7 @@ def zone_polygon(zone: dict[str, Any]) -> list[tuple[float, float]]:
 
 
 def refresh_config() -> None:
-    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _config_loaded_at
+    global _required_zones, _car_zones, _car_zone_polygons, _car_zone_outlines, _live_streams, _detect_sizes, _config_loaded_at
     if time.time() - _config_loaded_at > CONFIG_REFRESH_SECONDS:
         try:
             cfg = requests.get(f"{FRIGATE}/api/config", timeout=10).json()
@@ -512,6 +513,10 @@ def refresh_config() -> None:
             }
             _car_zone_polygons = {name: list(outlines.values()) for name, outlines in _car_zone_outlines.items()}
             _live_streams = {name: list(((cam.get("live") or {}).get("streams") or {}).values()) for name, cam in cameras.items()}
+            _detect_sizes = {
+                name: (int(d["width"]), int(d["height"])) for name, cam in cameras.items()
+                if (d := cam.get("detect") or {}).get("width") and d.get("height")
+            }
             _config_loaded_at = time.time()
         except Exception as e:  # keep the last known maps
             log.warning("config refresh failed: %s", e)
@@ -539,6 +544,12 @@ def car_zone_outlines() -> dict[str, dict[str, list[tuple[float, float]]]]:
     """Per camera, each zone in `car_zones` by name with its outline."""
     refresh_config()
     return _car_zone_outlines
+
+
+def detect_sizes() -> dict[str, tuple[int, int]]:
+    """Per camera, the detect frame's width and height in pixels: what the car classifier crops from."""
+    refresh_config()
+    return _detect_sizes
 
 
 def live_streams() -> dict[str, list[str]]:
@@ -1128,6 +1139,7 @@ def poll_forever() -> None:
 #   the frame, and had no car in a car zone near them in time are filed into `none`, a few an
 #   hour so the class spans day, dusk and infrared night — and the model is retrained once a day
 #   when enough have been added.
+# - Far cars lose their name (see "far cars").
 # - A second opinion on cars in a car zone (the driveway), from a local vision model through
 #   Ollama. It looks at the car in the 4K recording rather than the detect frame (~6x the pixels),
 #   and answers a closed set — colour, make, body — which is then matched against what the
@@ -1390,6 +1402,97 @@ def maybe_retrain() -> None:
         return
     state_set("car_retrain_at", now)
     log.info("retrain of %s requested after %d new street crops: %s %s", CAR_CLASSIFIER, filed_since("street", last), r.status_code, r.text[:200])
+
+
+# ---------------------------------------------------------------- far cars
+#
+# The classifier names every car Frigate tracks, however small, and a car across the street is a
+# few dozen pixels of the detect frame blown up to the classifier's 224. Dark, it is "Andrew's
+# Tesla": a neighbour's SUV parked across the road scored 0.7-0.99 at night on 2026-09-27, after
+# 14 crops of it had been filed into `none`. In the three days to then, all 29 cars named outside
+# the car zones from a crop under 110 px were the wrong car: cars across the street, cars driving
+# by, one cut off by the frame's edge. Just above that is a household car: Sarah's, parked at the
+# curb half behind the tree, is a 115 px crop, and her training pictures are of that very view.
+# Inside the driveway small crops are ours too: the porch beam cuts the car in half.
+#
+# So a car that kept clear of every car zone, and whose crop was under FAR_CAR_MAX_PX, has the
+# classifier's name taken off once it is done or settled. A person's tag stays.
+FAR_CAR_MAX_PX = 110
+FAR_CAR_PAGE = 200
+
+
+def classifier_crop_px(event: dict[str, Any], frame: tuple[int, int] | None) -> float | None:
+    """
+    The side of the square the classifier judged the car from: the box's longer side in pixels of
+    the detect frame (Frigate crops a square of that side around the box). None without a box.
+    """
+    box = (event.get("data") or {}).get("box")
+    if not frame or not box or len(box) < 4:
+        return None
+    return max(float(box[2]) * frame[0], float(box[3]) * frame[1])
+
+
+def is_far_car(event: dict[str, Any], zones_for_car: list[str], polygons: list[list[tuple[float, float]]],
+               frame: tuple[int, int] | None, now: float) -> bool:
+    """
+    A car too far off for the classifier to name (see "far cars"): done or settled, tagged with no
+    car zone, every point of its path clearly out of them, and a crop under FAR_CAR_MAX_PX. Never
+    on a camera without car zone outlines, where "far" can't be told.
+    """
+    px = classifier_crop_px(event, frame)
+    points = event_points(event)
+    return (
+        event.get("label") == "car"
+        and bool(zones_for_car) and bool(polygons)
+        and (event.get("end_time") is not None or now - float(event.get("start_time") or now) >= VLM_SETTLE_SECONDS)
+        and not any(z in zones_for_car for z in event.get("zones") or [])
+        and bool(points) and all(zone_side(p, polygons) == "out" for p in points)
+        and px is not None and px < FAR_CAR_MAX_PX
+    )
+
+
+def classifier_names() -> list[str]:
+    """The names the car classifier gives: its dataset's categories but `none`, and the household's cars."""
+    folder = os.path.join(CLIPS_DIR, CAR_CLASSIFIER, "dataset")
+    found = os.listdir(folder) if CAR_CLASSIFIER and os.path.isdir(folder) else []
+    return sorted({n for n in found + list(HOUSEHOLD_CARS) if n.lower() not in NOT_A_NAME})
+
+
+def clear_far_car_names() -> None:
+    """
+    Takes the classifier's name off each far car of the last hour or still in view (Frigate's
+    `after` is by start time, and a parked car's event can stay open for hours), and off it again
+    should the classifier name it anew. A person's tag is looked at again each round, since it may
+    be taken away.
+    """
+    names = classifier_names()
+    if not names:
+        return
+    now = time.time()
+    frames, polygons = detect_sizes(), car_zone_polygons()
+    for camera, zones_for_car in car_zones().items():
+        if not zones_for_car or not polygons.get(camera) or not frames.get(camera):
+            continue
+        named = {"camera": camera, "label": "car", "sub_labels": ",".join(names), "limit": FAR_CAR_PAGE}
+        found: dict[str, dict[str, Any]] = {}
+        for params in ({**named, "after": now - 3600}, {**named, "in_progress": 1}):
+            r = requests.get(f"{FRIGATE}/api/events", params=params, timeout=10)
+            r.raise_for_status()
+            found.update({e["id"]: e for e in r.json() if e.get("id")})
+        for event in found.values():
+            event_id = event.get("id", "")
+            name, score = frigate_name(event)
+            before = check_of(event_id, "far")
+            if not name or (before and before[0] != "cleared") or by_a_person(event):
+                continue
+            if not is_far_car(event, zones_for_car, polygons[camera], frames[camera], now):
+                if event.get("end_time") is not None:
+                    record_check(event_id, "far", "near", name)
+                continue  # still in view: it may yet come closer
+            requests.post(f"{FRIGATE}/api/events/{event_id}/sub_label", json={"subLabel": "", "subLabelScore": None}, timeout=10).raise_for_status()
+            px = classifier_crop_px(event, frames[camera]) or 0.0
+            record_check(event_id, "far", "cleared", json.dumps({"was": name, "score": score, "px": round(px)}))
+            log.info("far car %s on %s: %s (%s) taken off, a %.0f px crop outside the car zones", event_id, camera, name, score, px)
 
 
 def sub_label_of(event: dict[str, Any]) -> tuple[str | None, float | None]:
@@ -1714,6 +1817,10 @@ def car_check_forever() -> None:
                 maybe_retrain()
             except Exception as e:
                 log.warning("street crops: %s", e)
+            try:
+                clear_far_car_names()
+            except Exception as e:
+                log.warning("far cars: %s", e)
         try:
             vehicle_memory_round()
         except Exception as e:
