@@ -100,10 +100,15 @@ def run_once(serial, package, cameras, timeout_s, settle_s, taps):
     adb(serial, "shell", "input", "tap", *map(str, taps["connect"]))
     deadline = time.monotonic() + timeout_s
     marks = {}
-    while time.monotonic() < deadline:
+    while True:
         marks = milestones(serial)
-        if sum(1 for k in marks if re.fullmatch(r"pixel [^ ]+", k)) >= cameras:
+        drawn = sorted(k.split(" ", 1)[1] for k in marks if re.fullmatch(r"pixel [^ ]+", k))
+        if len(drawn) >= cameras:
             break
+        if time.monotonic() >= deadline:
+            # A run where a camera never drew is not a slow sample: recording it would drop that
+            # camera's stages from the medians and bias them towards the runs that worked.
+            raise TimeoutError(f"only {len(drawn)} of {cameras} cameras drew within {timeout_s}s ({', '.join(drawn) or 'none'})")
         time.sleep(0.25)
     # Later milestones (a WebRTC join finishing after HLS drew) are part of the story too.
     time.sleep(settle_s)

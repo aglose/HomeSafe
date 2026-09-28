@@ -280,11 +280,17 @@ class WebRtcConnectFlow(
             return StageOutcome(WebRtcFailure.PeerFailed(e.message ?: "answer rejected"))
         }
         val settled = peer.state.first { it is WebRtcPeerState.Connected || it is WebRtcPeerState.Failed || it is WebRtcPeerState.Closed }
-        LiveStartupMilestones.mark("rtc.ice $stream")
         return when (settled) {
             is WebRtcPeerState.Failed -> StageOutcome(WebRtcFailure.PeerFailed(settled.reason))
+
             is WebRtcPeerState.Closed -> StageOutcome(WebRtcFailure.PeerFailed("closed"))
-            else -> StageOutcome(null)
+
+            else -> {
+                // Only a connection counts: milestones are once per stream, and a failed first
+                // attempt recorded here would be paired with a later attempt's first frame.
+                LiveStartupMilestones.mark("rtc.ice $stream")
+                StageOutcome(null)
+            }
         }
     }
 }
