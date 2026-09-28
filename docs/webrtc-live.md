@@ -66,6 +66,43 @@ Audio: only the detail screen's full-quality source asks for it (`audio = true`)
 are video-only on the server, and the join-then-upgrade plan hands sound over with the upgrade.
 libwebrtc decodes Opus natively, which is what the cameras publish, so nothing is transcoded.
 
+## Time to the first live picture
+
+A cold start's first live pixel on Home used to wait on everything in turn: sign-in (the server
+checking the password), Home composing, and only then each card's join. Two things now take that
+off the critical path on Android:
+
+- **Joins start during sign-in.** go2rtc's port takes no credentials, so as soon as the sign-in
+  knows which address it will land on (`ConnectionRepository.expectedConnection`: the LAN
+  answering, or Tailscale accepting the password), `LiveStreamPrefetcher` starts the grid players
+  for the cameras cached for that server, under the same keys and sources the cards will bind.
+  Nothing is drawn until a card binds, which only happens once the sign-in has succeeded; a failed
+  sign-in lets them go at once. A prefetched player counts as watched for
+  `LivePlaybackPolicy.PREFETCH_HOLD_MS`, then falls back to the usual idle rules. iOS and desktop
+  don't prefetch yet (`createLivePlayerPrefetch` is a no-op there).
+- **A cold join draws its first frame.** The renderers are attached to the peer as soon as it is
+  created, not when the join has been adopted, so the first decoded frame is the first frame on
+  screen instead of being spent proving the join worked.
+
+Measure it with `scripts/bench-first-live-pixel.py` (Android, a build with the test credentials).
+Each run force-stops the app, signs in with the Autofill button and waits for every camera's
+first frame. The app logs each stage once per process under `HomeSafeTTFP`, and `--stages` prints
+per-stage medians side by side. Pass `--go2rtc http://192.168.68.65:1984`: a force-stopped app's
+consumers linger on go2rtc for several seconds and keep the camera's RTSP session up, so without
+the wait a run joins warm streams and looks 2–3 s faster than opening the app after a while does.
+
+On the CiApi34 emulator on the LAN, with cold streams, interleaved A/B, 10 runs each
+(2026-09-27): **5.25 s → 3.79 s** median from tapping Connect to the first live pixel (every run
+of the new build beat every run of the old). The emulator inflates sign-in (≈2.3 s after it has
+sat idle), so the absolute numbers are high; the ~1.5 s saved is the join moving under the sign-in.
+
+What remains is mostly go2rtc's cold join. With nobody watching, go2rtc has no RTSP session to the
+camera, and a new consumer's `POST /api/webrtc` isn't answered until it has dialled one (~1.2–1.7
+s), after which the camera's first keyframe takes another ~0.75 s. With the `_sub` producers held
+open (a consumer on each), the same A/B gave **2.96 s** median. Keeping them open permanently —
+e.g. pointing Frigate's detect inputs at the go2rtc restream (`rtsp://127.0.0.1:8554/<cam>_sub`)
+— is a server-side choice; see also the keyframe interval below.
+
 ## Platforms
 
 - **Android** — `io.getstream:stream-webrtc-android` (the upstream `org.webrtc` API).

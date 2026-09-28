@@ -102,6 +102,8 @@ internal fun startAppServices(appGraph: AppGraph) {
     // home geofence flip this phone's presence. Both idempotent; both outlive any tab.
     appGraph.deviceRegistrar.start()
     appGraph.presenceAutomation.start()
+    // Home's players, started as soon as a sign-in knows where it is going (see LiveStreamPrefetcher).
+    appGraph.liveStreamPrefetcher.start()
     // libwebrtc's one-off native start-up, done now behind the sign-in screen rather than
     // inside the first camera's join.
     warmUpLivePlayback(appGraph.platformContext)

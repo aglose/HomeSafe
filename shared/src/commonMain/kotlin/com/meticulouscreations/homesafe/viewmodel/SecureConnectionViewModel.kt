@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetBiometricLoginStatusUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
+import com.meticulouscreations.homesafe.ui.components.LiveStartupMilestones
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -71,9 +72,13 @@ class SecureConnectionViewModel(
 
     fun connect(serverUrl: String, username: String, password: String) {
         _uiState.value = ConnectUiState.Connecting
+        LiveStartupMilestones.mark("signin.submit")
         viewModelScope.launch {
             connectToServerUseCase(serverUrl, username, password)
-                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = false) }
+                .onSuccess { credentials ->
+                    LiveStartupMilestones.mark("signin.ok")
+                    _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = false)
+                }
                 .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Couldn't connect to server") }
         }
     }
@@ -82,8 +87,16 @@ class SecureConnectionViewModel(
     fun signInWithBiometrics() {
         _uiState.value = ConnectUiState.AwaitingBiometrics
         viewModelScope.launch {
-            signInWithBiometricsUseCase(onCredentialsUnlocked = { _uiState.value = ConnectUiState.Connecting })
-                .onSuccess { credentials -> _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = true) }
+            signInWithBiometricsUseCase(
+                onCredentialsUnlocked = {
+                    LiveStartupMilestones.mark("signin.submit")
+                    _uiState.value = ConnectUiState.Connecting
+                },
+            )
+                .onSuccess { credentials ->
+                    LiveStartupMilestones.mark("signin.ok")
+                    _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = true)
+                }
                 .onFailure { error ->
                     // A refused saved password is forgotten by the repository; drop the
                     // biometric button along with it so the form is the obvious next step.

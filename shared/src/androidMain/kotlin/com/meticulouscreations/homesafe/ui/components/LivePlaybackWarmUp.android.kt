@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.PlatformContext
  * so the sign-in form is on screen before the ~100–300 ms this takes.
  */
 actual fun warmUpLivePlayback(context: PlatformContext) {
+    installLiveStartupMilestones()
     val appContext = context.context.applicationContext
     Handler(Looper.getMainLooper()).post {
         runCatching { LivePlayerPool.warmUp(appContext) }

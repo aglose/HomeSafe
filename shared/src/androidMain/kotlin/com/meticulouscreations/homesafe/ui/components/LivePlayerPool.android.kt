@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.ui.components
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import android.view.TextureView
@@ -16,10 +18,12 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.network.WhepSignalingClient
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -139,6 +143,22 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     private var peerWatchJob: Job? = null
     private var joinJob: Job? = null
 
+    /**
+     * A cold join's peer, drawing to the renderers before the join has finished — so the first
+     * decoded frame is the first frame on screen, rather than being spent proving the join worked
+     * and the picture waiting for the next one. Only when no other peer is drawing: a warm swap
+     * keeps the previous peer's picture up until the new one is adopted.
+     */
+    private var joiningPeer: AndroidWebRtcPeer? = null
+
+    /**
+     * The [coldStartGeneration] [joiningPeer] is drawing for, or -1. A renderer frame counts as
+     * this generation's picture while the holder is still on HLS only when it matches — see the
+     * binder's first-frame check.
+     */
+    var earlyDrawGeneration = -1
+        private set
+
     /** A connected peer this holder stopped showing but may want back; see the class doc. At most one. */
     private var standby: StandbyPeer? = null
 
@@ -178,7 +198,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     /** WebRTC frames go to [renderer] too, from the current peer and any that replaces it. */
     fun bindRenderer(renderer: WebRtcTextureRenderer) {
         if (renderers.add(renderer)) {
-            peer?.addSink(renderer)
+            (peer ?: joiningPeer)?.addSink(renderer)
             Log.d(LOG_TAG, "$key: renderer bound (${renderers.size} attached, peer=${peer != null}, transport=$transport)")
         }
     }
@@ -186,6 +206,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     fun unbindRenderer(renderer: WebRtcTextureRenderer) {
         if (renderers.remove(renderer)) {
             peer?.removeSink(renderer)
+            joiningPeer?.removeSink(renderer)
             Log.d(LOG_TAG, "$key: renderer unbound (${renderers.size} attached)")
         }
     }
@@ -228,6 +249,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
      * peer is playing changes nothing: the picture is the same camera either way.
      */
     fun load(next: VideoSource) {
+        LiveStartupMilestones.mark("live.load $key")
         val current = source
         if (current != null && current.url == next.url && !needsColdStart) {
             source = next
@@ -329,9 +351,11 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         player.playWhenReady = playing
         // A paused or unwatched peer stops feeding its surfaces; the connection itself stays up for the idle window.
         peer?.setVideoEnabled(playing)
+        joiningPeer?.setVideoEnabled(playing)
     }
 
     private fun start(toLoad: VideoSource, cold: Boolean) {
+        LiveStartupMilestones.mark("live.start $key")
         needsColdStart = false
         joinJob?.cancel()
         joinJob = null
@@ -389,10 +413,23 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
      */
     private fun startWebRtc(toLoad: VideoSource.Live, endpoint: WebRtcEndpoint) {
         val startedAt = SystemClock.elapsedRealtime()
+        val drawEarly = peer == null
         joinJob = scope.launch {
-            val result = webRtc.connect(endpoint, streamKey = toLoad.url)
+            var early: AndroidWebRtcPeer? = null
+            val result = try {
+                webRtc.connect(endpoint, streamKey = toLoad.url) { created ->
+                    if (drawEarly) early = drawEarly(created as AndroidWebRtcPeer)
+                }
+            } catch (e: CancellationException) {
+                early?.let { endEarlyDraw(it, adopted = false) }
+                throw e
+            }
             val elapsed = SystemClock.elapsedRealtime() - startedAt
             joinJob = null
+            if (source?.url != toLoad.url || result is WebRtcConnectResult.Failed) {
+                // A peer that isn't adopted must not leave its last frame on top of whatever plays next.
+                early?.let { endEarlyDraw(it, adopted = false) }
+            }
             if (source?.url != toLoad.url) {
                 // Superseded while joining: the newer load owns the holder now.
                 (result as? WebRtcConnectResult.Connected)?.peer?.close()
@@ -401,6 +438,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             when (result) {
                 is WebRtcConnectResult.Connected -> {
                     Log.d(LOG_TAG, "$key: webrtc joined in ${elapsed}ms")
+                    early?.let { endEarlyDraw(it, adopted = true) }
                     adopt(result.peer as AndroidWebRtcPeer, endpoint)
                 }
 
@@ -417,6 +455,30 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         }
     }
 
+    private fun drawEarly(joining: AndroidWebRtcPeer): AndroidWebRtcPeer {
+        joiningPeer = joining
+        earlyDrawGeneration = coldStartGeneration
+        joining.setMuted(true)
+        joining.setVideoEnabled(requestedPlayWhenReady && activeBinders > 0)
+        renderers.forEach(joining::addSink)
+        return joining
+    }
+
+    /**
+     * The join that [joining] was drawing early for is over. Adopted, it simply carries on as the
+     * holder's peer; otherwise its sinks go, and the renderers are cleared of anything it drew.
+     */
+    private fun endEarlyDraw(joining: AndroidWebRtcPeer, adopted: Boolean) {
+        if (joiningPeer !== joining) return
+        joiningPeer = null
+        earlyDrawGeneration = -1
+        if (adopted) return
+        renderers.forEach { renderer ->
+            joining.removeSink(renderer)
+            renderer.clear()
+        }
+    }
+
     /** [newPeer] becomes the picture; whatever was showing it before is parked or closed. */
     private fun adopt(newPeer: AndroidWebRtcPeer, endpoint: WebRtcEndpoint) {
         val previous = peer
@@ -430,6 +492,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         webRtcStalled = false
         webRtcHasAudio = newPeer.hasAudio.value
         transport = LiveTransport.WEBRTC
+        LiveStartupMilestones.mark("rtc.adopt $key")
         consecutiveFailures = 0
         Log.d(
             LOG_TAG,
@@ -544,6 +607,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             dropStandby()
         }
         transport = LiveTransport.HLS
+        LiveStartupMilestones.mark("hls.start $key")
         val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
         val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))
         when (toLoad) {
@@ -621,6 +685,13 @@ internal object LivePlayerPool {
     }
 
     private val entries = HashMap<String, Entry>()
+
+    /** A prefetched player's lease: a pool reference plus one "watching" binder, both returned when it ends. */
+    private class PrefetchLease(val holder: LivePlayerHolder, val url: String) {
+        var expiryJob: Job? = null
+    }
+
+    private val prefetched = HashMap<String, PrefetchLease>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val webRtcLock = Any()
     private var webRtc: WebRtcConnectFlow? = null
@@ -654,6 +725,41 @@ internal object LivePlayerPool {
     }
 
     /**
+     * Starts each of [streams] as if a card were already watching it — see [LivePlayerPrefetch].
+     * A key already prefetched for the same source is left alone; one for another source, or no
+     * longer asked for, is let go first.
+     */
+    fun prefetch(context: Context, streams: List<LivePrefetch>) {
+        val wanted = streams.associateBy { it.playerKey }
+        prefetched.entries.filter { (key, lease) -> wanted[key]?.source?.url != lease.url }.map { it.key }.forEach(::endPrefetch)
+        for (stream in streams) {
+            if (stream.playerKey in prefetched) continue
+            val holder = acquire(context, stream.playerKey)
+            val lease = PrefetchLease(holder, stream.source.url)
+            prefetched[stream.playerKey] = lease
+            holder.onBinderStarted()
+            holder.load(stream.source)
+            lease.expiryJob = scope.launch {
+                delay(LivePlaybackPolicy.PREFETCH_HOLD_MS)
+                endPrefetch(stream.playerKey)
+            }
+        }
+        Log.d(LOG_TAG, "prefetching ${streams.map { it.playerKey }}")
+    }
+
+    /** Lets go of every prefetched player; a card that has bound one meanwhile keeps it going. */
+    fun cancelPrefetch() {
+        prefetched.keys.toList().forEach(::endPrefetch)
+    }
+
+    private fun endPrefetch(key: String) {
+        val lease = prefetched.remove(key) ?: return
+        lease.expiryJob?.cancel()
+        lease.holder.onBinderStopped()
+        release(lease.holder)
+    }
+
+    /**
      * Everything a first join would otherwise build lazily: the signaling client and libwebrtc
      * itself (native load, peer connection factory, EGL). See [warmUpLivePlayback].
      */
@@ -671,3 +777,19 @@ internal object LivePlayerPool {
         ).also { webRtc = it }
     }
 }
+
+/** Hops to the main thread, where the pool and its players live. */
+private class AndroidLivePlayerPrefetch(private val context: Context) : LivePlayerPrefetch {
+    private val mainThread = Handler(Looper.getMainLooper())
+
+    override fun prefetch(streams: List<LivePrefetch>) {
+        mainThread.post { LivePlayerPool.prefetch(context, streams) }
+    }
+
+    override fun cancel() {
+        mainThread.post { LivePlayerPool.cancelPrefetch() }
+    }
+}
+
+actual fun createLivePlayerPrefetch(context: PlatformContext): LivePlayerPrefetch =
+    AndroidLivePlayerPrefetch(context.context.applicationContext)

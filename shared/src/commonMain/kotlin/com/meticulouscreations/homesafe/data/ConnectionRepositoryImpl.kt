@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.SessionCheck
 import com.meticulouscreations.homesafe.network.swapUrlScheme
+import com.meticulouscreations.homesafe.ui.components.LiveStartupMilestones
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -90,6 +91,9 @@ class ConnectionRepositoryImpl(
 
     override val currentServerUrl: StateFlow<String?> =
         _activeConnection.map { it?.activeUrl }.stateIn(appScope, SharingStarted.Eagerly, null)
+
+    private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
+    override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
 
     override val mostRecentConnection: Flow<ConnectionRecord?> =
         connectionHistoryDao.mostRecentAsFlow().map { entity ->
@@ -252,11 +256,37 @@ class ConnectionRepositoryImpl(
         localUrl: String?,
         username: String,
         password: String,
+    ): Result<SavedCredentials> = try {
+        signInExpecting(serverUrl, localUrl, username, password)
+    } finally {
+        _expectedConnection.value = null
+    }
+
+    /**
+     * [signIn] itself, publishing [expectedConnection] along the way: the LAN as soon as it
+     * answers (it is used unless it turns out not to be this server, which is rare), otherwise
+     * Tailscale as soon as it has accepted the password — the LAN probe can take up to
+     * [LOCAL_PROBE_TIMEOUT_MS] longer to give up.
+     */
+    private suspend fun signInExpecting(
+        serverUrl: String,
+        localUrl: String?,
+        username: String,
+        password: String,
     ): Result<SavedCredentials> = coroutineScope {
-        val lanAnswers = async { localAnswers(localUrl) }
+        val lanAnswers = async {
+            localAnswers(localUrl).also { answered ->
+                if (answered) _expectedConnection.value = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
+                LiveStartupMilestones.mark("signin.lan $answered")
+            }
+        }
         val remote = loginResolvingScheme(serverUrl, username, password)
+        LiveStartupMilestones.mark("signin.login")
         val remoteUrl = remote.getOrNull()
         val remoteError = remote.exceptionOrNull()
+        if (remoteUrl != null && _expectedConnection.value == null) {
+            _expectedConnection.value = ActiveConnection(remoteUrl, localUrl, ConnectionRoute.TAILSCALE)
+        }
         val connection = when {
             remoteUrl != null -> {
                 val verifiedLocal = if (lanAnswers.await()) verifiedLocalUrl(remoteUrl, localUrl!!, username) else null

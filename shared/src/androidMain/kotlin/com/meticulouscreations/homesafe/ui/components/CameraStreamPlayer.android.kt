@@ -168,6 +168,7 @@ actual fun CameraStreamPlayer(
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
                 if (holder.transport != LiveTransport.HLS) return
+                markFirstLivePixel(holder, currentSource, "hls")
                 renderedGeneration = holder.coldStartGeneration
                 holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
@@ -206,12 +207,17 @@ actual fun CameraStreamPlayer(
             // follows look like a repeat, leaving the poster up for good. That is exactly what
             // happened to grid cards, which bind before their join, while the detail screen,
             // binding to a holder already on WebRTC, was fine.
+            //
+            // The one exception is a cold join drawing before it has been adopted (the holder's
+            // earlyDrawGeneration): its first frame is the picture this generation is waiting for.
             var renderedFor = -1
             val onSurfaceUpdated = Runnable {
-                if (holder.transport != LiveTransport.WEBRTC) return@Runnable
                 val generation = holder.coldStartGeneration
+                val peerDrawing = holder.transport == LiveTransport.WEBRTC || holder.earlyDrawGeneration == generation
+                if (!peerDrawing) return@Runnable
                 if (renderedFor == generation) return@Runnable
                 renderedFor = generation
+                markFirstLivePixel(holder, currentSource, "rtc")
                 Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation")
                 renderedGeneration = generation
                 bridgeFrame = null
@@ -289,6 +295,14 @@ actual fun CameraStreamPlayer(
             delay(POSITION_POLL_INTERVAL_MS)
         }
     }
+}
+
+/** The first frame a surface drew for a live source — what the startup benchmark times — once per camera, and once per engine. */
+private fun markFirstLivePixel(holder: LivePlayerHolder, source: VideoSource, engine: String) {
+    if (source !is VideoSource.Live) return
+    LiveStartupMilestones.mark("pixel ${holder.key}")
+    LiveStartupMilestones.mark("pixel.$engine ${holder.key}")
+    LiveStartupMilestones.mark("pixel.first")
 }
 
 /** An audio track the player both found and can decode — a track it merely knows about but can't play is no use to a mute button. */
