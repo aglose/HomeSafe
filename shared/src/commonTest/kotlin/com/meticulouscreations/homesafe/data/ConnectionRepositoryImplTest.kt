@@ -75,6 +75,9 @@ class ConnectionRepositoryImplTest {
         /** When set, the LAN host's `/api/version` (the reachability probe) waits for it: a probe still out when the login lands. */
         var localProbeGate: CompletableDeferred<Unit>? = null
 
+        /** When set, `/api/login` waits for it before answering: a password the server is still checking when the LAN probe lands. */
+        var loginGate: CompletableDeferred<Unit>? = null
+
         /** Cameras the server reports, name to enabled. */
         var cameras: Map<String, Boolean> = mapOf("front_door" to true, "backyard" to false)
 
@@ -111,7 +114,8 @@ class ConnectionRepositoryImplTest {
                     respond("0.15.0", HttpStatusCode.OK)
                 }
 
-                path.endsWith("/api/login") ->
+                path.endsWith("/api/login") -> {
+                    loginGate?.await()
                     if (loginBroken) {
                         respond("", HttpStatusCode.InternalServerError)
                     } else if (rejectLogin) {
@@ -121,6 +125,7 @@ class ConnectionRepositoryImplTest {
                         issuedTokens += issued
                         respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=$issued; Path=/"))
                     }
+                }
 
                 !authenticated -> respond("", HttpStatusCode.Unauthorized)
 
@@ -476,6 +481,10 @@ class ConnectionRepositoryImplTest {
     @Test
     fun theLanIsExpectedWhileTheSignInIsStillGoing_andForgottenOnceItLands() = runTest {
         val h = Harness(this)
+        // The LAN probe and the Tailscale login race, and whichever lands first is expected
+        // (Tailscale, briefly, when the login wins). Holding the login makes the LAN win.
+        val login = CompletableDeferred<Unit>()
+        h.frigate.loginGate = login
         // A first sign-in waits for the camera list; holding that open freezes it mid-flight.
         val gate = CompletableDeferred<Unit>()
         h.frigate.configGate = gate
@@ -487,6 +496,11 @@ class ConnectionRepositoryImplTest {
         assertEquals(ConnectionRoute.LOCAL_NETWORK, expected.route)
         assertEquals(localUrl, expected.activeUrl)
         assertEquals(serverUrl, expected.serverUrl)
+
+        // The password is accepted: the LAN stays expected while the camera list is on its way.
+        login.complete(Unit)
+        eventually("the sign-in to ask the LAN for the camera list") { h.frigate.configFetches(localHost) > 0 }
+        assertEquals(expected, h.repository.expectedConnection.value)
         assertNull(h.repository.activeConnection.value, "not connected yet: the camera list is still on its way")
 
         gate.complete(Unit)
@@ -531,8 +545,12 @@ class ConnectionRepositoryImplTest {
 
         // The probe answers after all: the session follows it to the LAN, no second login.
         probe.complete(Unit)
-        eventually("the route to move to the LAN") { h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK }
-        assertEquals(localUrl, h.repository.currentServerUrl.value)
+        // currentServerUrl is derived on the test dispatcher, so it can trail an activeConnection
+        // the mock engine's thread has just moved: wait for both rather than assert the second.
+        eventually("the route and the URL to move to the LAN") {
+            h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK &&
+                h.repository.currentServerUrl.value == localUrl
+        }
         assertEquals(1, h.frigate.logins(tailscaleHost))
         assertEquals(0, h.frigate.logins(localHost))
     }
