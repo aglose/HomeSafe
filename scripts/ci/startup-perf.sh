@@ -26,7 +26,9 @@ bench() {
 # The milestones arrived with the change that introduced this gate; a base from before it can
 # only have its cold launch timed.
 BASE_MODE=()
-if ! unzip -p "$BASE_APK" 'classes*.dex' | grep -aq HomeSafeTTFP; then
+# Counted, not `grep -q`: that exits at the first match, unzip dies of SIGPIPE, and under pipefail
+# the pipeline then reads as "not found".
+if [ "$(unzip -p "$BASE_APK" 'classes*.dex' | grep -ac HomeSafeTTFP || true)" -eq 0 ]; then
   BASE_MODE=(--launch-only)
   echo "::notice::The base build has no startup milestones; only its cold launch is compared."
 fi
