@@ -1,9 +1,12 @@
 package com.meticulouscreations.homesafe.domain.usecase
 
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
+import com.meticulouscreations.homesafe.domain.repository.CarProfileRepository
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import dev.zacsweers.metro.Inject
 
@@ -66,4 +69,24 @@ class GetDetectionUseCase(private val repository: ClassifierRepository) {
 @Inject
 class GetCameraFrameUseCase(private val repository: ClassifierRepository) {
     suspend operator fun invoke(cameraName: String): Result<ByteArray> = repository.getLatestFrame(cameraName)
+}
+
+/** What the household's cars look like, which the relay checks the known-cars classifier against. */
+@Inject
+class GetCarProfilesUseCase(private val repository: CarProfileRepository) {
+    suspend operator fun invoke(): Result<CarProfiles> = repository.getProfiles()
+}
+
+/** Saves a car's make, model, colour and plate, trimmed and with the plate as the relay reads plates. */
+@Inject
+class SaveCarProfileUseCase(private val repository: CarProfileRepository) {
+    suspend operator fun invoke(profile: CarProfile): Result<CarProfile> =
+        repository.saveProfile(
+            profile.copy(
+                make = profile.make.trim(),
+                model = profile.model.trim().take(CarProfile.MODEL_MAX_LENGTH),
+                colour = profile.colour.trim(),
+                plate = CarProfile.normalPlate(profile.plate),
+            ),
+        )
 }

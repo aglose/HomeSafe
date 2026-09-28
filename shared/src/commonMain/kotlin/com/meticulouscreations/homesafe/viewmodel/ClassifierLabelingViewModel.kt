@@ -3,13 +3,18 @@ package com.meticulouscreations.homesafe.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
+import com.meticulouscreations.homesafe.domain.model.CarTagging
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DiscardClassifierCropsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetCarProfilesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TrainClassifierUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
@@ -41,6 +46,13 @@ data class ClassifierLabelingUiState(
     val newCategoryDraft: String = "",
     /** Whether the crops the model is sure about are listed too (see [ClassifierDataset.confidentQueue]). */
     val showConfident: Boolean = false,
+    /** What each known car looks like, for a car classifier; null for any other, or while the relay can't say. */
+    val carProfiles: CarProfiles? = null,
+    /** The car profile being edited, while its dialog is open. */
+    val profileDraft: CarProfile? = null,
+    val isSavingProfile: Boolean = false,
+    /** Why the last save didn't take, shown in the dialog. */
+    val profileError: String? = null,
 )
 
 /**
@@ -57,6 +69,8 @@ class ClassifierLabelingViewModel(
     private val discardClassifierCropsUseCase: DiscardClassifierCropsUseCase,
     private val createClassifierCategoryUseCase: CreateClassifierCategoryUseCase,
     private val trainClassifierUseCase: TrainClassifierUseCase,
+    private val getCarProfilesUseCase: GetCarProfilesUseCase,
+    private val saveCarProfileUseCase: SaveCarProfileUseCase,
 ) : ViewModel() {
 
     /** One view model per classifier; the screen keys it by [modelName]. */
@@ -78,8 +92,48 @@ class ClassifierLabelingViewModel(
         _uiState.update { it.copy(isLoading = it.dataset == null, loadError = null) }
         viewModelScope.launch {
             getClassifierDatasetUseCase(modelName)
-                .onSuccess { data -> _uiState.update { it.copy(isLoading = false, dataset = data, decided = emptyMap(), showConfident = false) } }
+                .onSuccess { data ->
+                    _uiState.update { it.copy(isLoading = false, dataset = data, decided = emptyMap(), showConfident = false) }
+                    if (CarTagging.CAR_LABEL in data.model.objects) {
+                        getCarProfilesUseCase().onSuccess { profiles -> _uiState.update { it.copy(carProfiles = profiles) } }
+                    }
+                }
                 .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.message ?: "Couldn't load the classifier") } }
+        }
+    }
+
+    /** Opens [category]'s make, model, colour and plate for editing; only once the relay has answered for a car classifier. */
+    fun editProfile(category: String) {
+        val profiles = _uiState.value.carProfiles ?: return
+        _uiState.update { it.copy(profileDraft = profiles.profileOf(category), profileError = null) }
+    }
+
+    fun updateProfileDraft(profile: CarProfile) = _uiState.update { it.copy(profileDraft = profile, profileError = null) }
+
+    fun dismissProfile() = _uiState.update { if (it.isSavingProfile) it else it.copy(profileDraft = null, profileError = null) }
+
+    fun saveProfile() {
+        val draft = _uiState.value.profileDraft ?: return
+        if (_uiState.value.isSavingProfile) return
+        val plate = CarProfile.normalPlate(draft.plate)
+        if (plate.isNotEmpty() && plate.length < CarProfile.PLATE_MIN_LENGTH) {
+            _uiState.update { it.copy(profileError = "A plate needs at least ${CarProfile.PLATE_MIN_LENGTH} letters or digits") }
+            return
+        }
+        _uiState.update { it.copy(isSavingProfile = true, profileError = null) }
+        viewModelScope.launch {
+            saveCarProfileUseCase(draft)
+                .onSuccess { saved ->
+                    _uiState.update { state ->
+                        val profiles = state.carProfiles
+                        state.copy(
+                            isSavingProfile = false,
+                            profileDraft = null,
+                            carProfiles = profiles?.copy(profiles = (profiles.profiles.filterNot { it.name == saved.name } + saved).sortedBy { it.name }),
+                        )
+                    }
+                }
+                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = "Couldn't save: ${e.message}") } }
         }
     }
 

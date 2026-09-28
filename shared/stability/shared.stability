@@ -481,6 +481,29 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(disp
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: com.meticulouscreations.homesafe.domain.model.CarProfile, makes: kotlin.collections.List<kotlin.String>, colours: kotlin.collections.List<kotlin.String>, saving: kotlin.Boolean, error: kotlin.String?, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CarProfile, kotlin.Unit>, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - draft: STABLE (marked @Stable or @Immutable)
+    - makes: RUNTIME (requires runtime check)
+    - colours: RUNTIME (requires runtime check)
+    - saving: STABLE (primitive type)
+    - error: STABLE (class with no mutable properties)
+    - onChange: STABLE (function type)
+    - onSave: STABLE (function type)
+    - onDismiss: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CarProfilesCard(cars: kotlin.collections.List<kotlin.String>, profiles: com.meticulouscreations.homesafe.domain.model.CarProfiles, onEdit: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - cars: RUNTIME (requires runtime check)
+    - profiles: STABLE (marked @Stable or @Immutable)
+    - onEdit: STABLE (function type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.screens.CarTaggingScreen(cameraName: kotlin.String, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true

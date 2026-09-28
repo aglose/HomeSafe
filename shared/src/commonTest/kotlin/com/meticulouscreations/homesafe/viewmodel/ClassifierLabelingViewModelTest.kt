@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.viewmodel
 
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.EventFrame
@@ -7,12 +9,15 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
+import com.meticulouscreations.homesafe.domain.repository.CarProfileRepository
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DiscardClassifierCropsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.GetCarProfilesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TrainClassifierUseCase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -26,6 +31,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -77,7 +83,20 @@ class ClassifierLabelingViewModelTest {
         newImagesSinceTraining = 0,
     )
 
-    private fun viewModel(repo: ClassifierRepository) = ClassifierLabelingViewModel(
+    private class FakeCarProfiles(var profiles: CarProfiles? = CARS) : CarProfileRepository {
+        val saved = mutableListOf<CarProfile>()
+        var saveFails = false
+
+        override suspend fun getProfiles(): Result<CarProfiles> = profiles?.let { Result.success(it) } ?: Result.failure(Exception("no relay"))
+
+        override suspend fun saveProfile(profile: CarProfile): Result<CarProfile> {
+            if (saveFails) return Result.failure(Exception("relay said no"))
+            saved += profile
+            return Result.success(profile.copy(make = profile.make.lowercase()))
+        }
+    }
+
+    private fun viewModel(repo: ClassifierRepository, cars: CarProfileRepository = FakeCarProfiles()) = ClassifierLabelingViewModel(
         modelName = "known_cars",
         getClassifierDatasetUseCase = GetClassifierDatasetUseCase(repo),
         getClassifierQueueImageUrlUseCase = GetClassifierQueueImageUrlUseCase(repo),
@@ -85,7 +104,81 @@ class ClassifierLabelingViewModelTest {
         discardClassifierCropsUseCase = DiscardClassifierCropsUseCase(repo),
         createClassifierCategoryUseCase = CreateClassifierCategoryUseCase(repo),
         trainClassifierUseCase = TrainClassifierUseCase(repo),
+        getCarProfilesUseCase = GetCarProfilesUseCase(cars),
+        saveCarProfileUseCase = SaveCarProfileUseCase(cars),
     )
+
+    @Test
+    fun aCarsProfileIsEditedAndSavedWithItsPlateAsTheRelayReadsIt() = runTest(dispatcher) {
+        val cars = FakeCarProfiles()
+        val vm = viewModel(FakeClassifiers(dataset), cars)
+        advanceUntilIdle()
+        vm.editProfile("sarahs_tesla")
+        assertEquals(CarProfile("sarahs_tesla"), vm.uiState.value.profileDraft, "nothing on file yet")
+
+        vm.updateProfileDraft(CarProfile("sarahs_tesla", make = "Tesla", model = " Model Y ", colour = "red", plate = "9xyz-789"))
+        vm.saveProfile()
+        advanceUntilIdle()
+
+        assertEquals(listOf(CarProfile("sarahs_tesla", make = "Tesla", model = "Model Y", colour = "red", plate = "9XYZ789")), cars.saved)
+        val state = vm.uiState.value
+        assertNull(state.profileDraft, "the dialog closes")
+        assertEquals(
+            listOf("andrews_tesla", "sarahs_tesla"),
+            state.carProfiles?.profiles?.map { it.name },
+        )
+        assertEquals("tesla", state.carProfiles?.profileOf("sarahs_tesla")?.make, "as the relay answered it")
+    }
+
+    @Test
+    fun aPlateTooShortIsRefusedBeforeAsking() = runTest(dispatcher) {
+        val cars = FakeCarProfiles()
+        val vm = viewModel(FakeClassifiers(dataset), cars)
+        advanceUntilIdle()
+        vm.editProfile("andrews_tesla")
+        vm.updateProfileDraft(vm.uiState.value.profileDraft!!.copy(plate = "8-A"))
+        vm.saveProfile()
+        advanceUntilIdle()
+        assertTrue(cars.saved.isEmpty())
+        assertEquals("A plate needs at least 4 letters or digits", vm.uiState.value.profileError)
+    }
+
+    @Test
+    fun aFailedSaveKeepsTheDialogOpen() = runTest(dispatcher) {
+        val cars = FakeCarProfiles().apply { saveFails = true }
+        val vm = viewModel(FakeClassifiers(dataset), cars)
+        advanceUntilIdle()
+        vm.editProfile("andrews_tesla")
+        vm.saveProfile()
+        advanceUntilIdle()
+        assertEquals("andrews_tesla", vm.uiState.value.profileDraft?.name)
+        assertEquals("Couldn't save: relay said no", vm.uiState.value.profileError)
+        assertFalse(vm.uiState.value.isSavingProfile)
+    }
+
+    @Test
+    fun withoutTheRelayThereAreNoProfilesToEdit() = runTest(dispatcher) {
+        val vm = viewModel(FakeClassifiers(dataset), FakeCarProfiles(profiles = null))
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.carProfiles)
+        vm.editProfile("andrews_tesla")
+        assertNull(vm.uiState.value.profileDraft)
+    }
+
+    @Test
+    fun aClassifierOfSomethingElseDoesntAskForCarProfiles() = runTest(dispatcher) {
+        val vm = viewModel(FakeClassifiers(dataset.copy(model = ClassifierModel("dogs", listOf("dog")))))
+        advanceUntilIdle()
+        assertNull(vm.uiState.value.carProfiles)
+    }
+
+    private companion object {
+        val CARS = CarProfiles(
+            profiles = listOf(CarProfile("andrews_tesla", make = "tesla", model = "Model Y", colour = "blue")),
+            makes = listOf("tesla", "toyota"),
+            colours = listOf("blue", "red"),
+        )
+    }
 
     @Test
     fun clearConfidentDiscardsThemInOneCallAndDropsThemFromTheQueue() = runTest(dispatcher) {

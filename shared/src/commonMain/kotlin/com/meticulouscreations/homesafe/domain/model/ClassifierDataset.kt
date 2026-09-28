@@ -30,14 +30,36 @@ data class UnlabeledCrop(
     val guessedScore: Double?,
     /** Where the object this crop was cut around stood, so the screen can frame it; null when the event is gone. */
     val subject: CropSubject? = null,
+    /** What the relay's car check made of the crop's detection; null when it hasn't looked (see [checksKnown]). */
+    val check: CarCheck? = null,
+    /** Whether the relay answered for the car check at all. Without it, a 1.0 is taken at its word, as before there was a check. */
+    val checksKnown: Boolean = false,
 ) {
     /**
-     * The model is certain of its guess: a `none-1.0` crop of a passing street car, or a 1.0 of a
-     * car it already knows. Not worth a person's time by default — Frigate saves a crop on every
-     * frame it classifies, so these flood the queue — but kept reachable rather than deleted: a
-     * brand-new car's crops look exactly like this, and the queue is the only place it can be named.
+     * The model is certain of its guess, and nothing says otherwise: a `none-1.0` crop of a passing
+     * street car, or a 1.0 of a car it already knows *that the car check confirmed by its plate or
+     * its make, model and colour*. The classifier's 1.0 alone isn't enough: it named Sarah's red
+     * Model Y "Andrew's Tesla" at 1.0 on 2026-09-27. Those confirmed are filed into their car by the
+     * relay; the rest are left for a person to correct.
+     *
+     * Not worth a person's time by default — Frigate saves a crop on every frame it classifies, so
+     * these flood the queue — but kept reachable rather than deleted: a brand-new car's crops look
+     * exactly like a `none-1.0`, and the queue is the only place it can be named.
      */
-    val isConfident: Boolean get() = guessedScore != null && guessedScore >= CONFIDENT_SCORE
+    val isConfident: Boolean
+        get() {
+            if (guessedScore == null || guessedScore < CONFIDENT_SCORE) return false
+            if (!checksKnown) return true
+            val guess = guessedCategory ?: return true
+            return MomentVisits.isPlaceholderName(guess) || check?.confirms(guess) == true
+        }
+
+    /**
+     * The classifier was sure, and the car check wasn't: why the crop is asking to be corrected
+     * rather than folded away with the sure ones.
+     */
+    val isDoubted: Boolean
+        get() = checksKnown && guessedScore != null && guessedScore >= CONFIDENT_SCORE && !isConfident
 
     companion object {
         /** Frigate rounds scores to two decimals, so 1.0 is what "100 %" looks like. */

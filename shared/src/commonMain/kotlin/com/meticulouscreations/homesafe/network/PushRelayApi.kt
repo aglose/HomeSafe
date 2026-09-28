@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.domain.model.CarCheck
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
@@ -164,12 +167,45 @@ class PushRelayApi(private val httpClient: HttpClient) {
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
     }
 
+    /** The household cars' make, model, colour and plate, which the relay checks the classifier's names against. */
+    suspend fun getCarProfiles(serverUrl: String): Result<CarProfiles> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/cars/profiles"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayCarProfiles>().toDomain()
+    }
+
+    /** Saves [profile]; blank fields aren't checked. Answers the profile as the relay keeps it (make lower case, plate normalised). */
+    suspend fun saveCarProfile(serverUrl: String, profile: CarProfile): Result<CarProfile> = runCatching {
+        val response = httpClient.put(relayUrl(serverUrl, "/cars/profiles/${profile.name}")) {
+            contentType(ContentType.Application.Json)
+            setBody(RelayCarProfile(profile.name, profile.make, profile.model, profile.colour, profile.plate))
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayCarProfile>().toDomain()
+    }
+
+    /**
+     * What the relay's car check made of each of [eventIds], keyed by event id. Events it hasn't
+     * looked at are missing. Fails when the relay can't say (an older relay has no such route).
+     */
+    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>> = runCatching {
+        if (eventIds.isEmpty()) return@runCatching emptyMap()
+        eventIds.chunked(CAR_CHECKS_PER_CALL).flatMap { ids ->
+            val response = httpClient.get(relayUrl(serverUrl, "/cars/checks")) { parameter("events", ids.joinToString(",")) }
+            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+            response.body<RelayCarChecks>().checks.map { (id, check) -> id to check.toDomain() }
+        }.toMap()
+    }
+
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")
     }
 
     companion object {
         const val RELAY_PORT = 8787
+
+        /** The relay answers for at most 200 events a call (its `CAR_CHECKS_MAX`). */
+        private const val CAR_CHECKS_PER_CALL = 200
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
@@ -259,4 +295,55 @@ internal data class RelayPresenceDevice(
     /** The device_id; older relays don't send it, and their devices can't be removed from the app. */
     val id: String? = null,
     @SerialName("last_seen") val lastSeen: Double? = null,
+)
+
+/** The relay's `GET /cars/profiles` body. */
+@Serializable
+internal data class RelayCarProfiles(
+    val profiles: List<RelayCarProfile> = emptyList(),
+    val makes: List<String> = emptyList(),
+    val colours: List<String> = emptyList(),
+) {
+    fun toDomain() = CarProfiles(profiles = profiles.map { it.toDomain() }, makes = makes, colours = colours)
+}
+
+@Serializable
+internal data class RelayCarProfile(
+    val name: String,
+    val make: String? = null,
+    val model: String? = null,
+    val colour: String? = null,
+    val plate: String? = null,
+) {
+    fun toDomain() = CarProfile(name = name, make = make.orEmpty(), model = model.orEmpty(), colour = colour.orEmpty(), plate = plate.orEmpty())
+}
+
+/** The relay's `GET /cars/checks` body. */
+@Serializable
+internal data class RelayCarChecks(val checks: Map<String, RelayCarCheck> = emptyMap())
+
+@Serializable
+internal data class RelayCarCheck(
+    val verdict: String,
+    val classifier: String? = null,
+    val name: String? = null,
+    val verified: String? = null,
+    val saw: RelayCarLooks? = null,
+) {
+    fun toDomain() = CarCheck(
+        verdict = verdict,
+        classifierName = classifier,
+        name = name,
+        verified = verified,
+        sawColour = saw?.colour,
+        sawMake = saw?.make,
+        sawModel = saw?.model,
+    )
+}
+
+@Serializable
+internal data class RelayCarLooks(
+    val colour: String? = null,
+    val make: String? = null,
+    val model: String? = null,
 )

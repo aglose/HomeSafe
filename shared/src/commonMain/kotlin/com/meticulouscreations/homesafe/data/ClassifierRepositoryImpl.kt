@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.CarTagging
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
 import com.meticulouscreations.homesafe.domain.model.CropSubject
@@ -47,12 +48,21 @@ class ClassifierRepositoryImpl(
         val eventIds = crops.mapNotNull { it.eventId }.distinct()
         val events = api.getEvents(serverUrl, eventIds).getOrElse { emptyList() }.associateBy { it.id }
         val timeline = api.getTimeline(serverUrl, eventIds).getOrElse { emptyList() }.groupBy { it.sourceId }
+        // The relay's check of each car (make, model, colour, plate): what tells a sure 1.0 from one
+        // to correct. Without the relay the queue splits on the classifier's score alone, as it did.
+        val checks = if (CarTagging.CAR_LABEL in model.objects) relayApi.getCarChecks(serverUrl, eventIds).getOrNull() else null
         val meta = dataset.trainingMetadata
         return Result.success(
             ClassifierDataset(
                 model = ClassifierModel(model.name, model.objects, model.enabled),
                 categoryCounts = dataset.categories.mapValues { it.value.size },
-                queue = crops.map { crop -> crop.copy(subject = cropSubject(crop, events, timeline, config.detectSizes)) }
+                queue = crops.map { crop ->
+                    crop.copy(
+                        subject = cropSubject(crop, events, timeline, config.detectSizes),
+                        check = crop.eventId?.let { checks?.get(it) },
+                        checksKnown = checks != null,
+                    )
+                }
                     .sortedByDescending { it.capturedEpochSeconds ?: 0.0 },
                 hasTrained = meta?.hasTrained ?: false,
                 newImagesSinceTraining = meta?.newImagesCount ?: 0,

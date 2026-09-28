@@ -18,15 +18,20 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -57,9 +62,13 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.CropBox
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
+import com.meticulouscreations.homesafe.domain.model.checkNote
+import com.meticulouscreations.homesafe.domain.model.makeName
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState
@@ -94,6 +103,21 @@ fun ClassifierLabelingScreen(
             else -> uiState.dataset?.let { data -> Body(uiState = uiState, data = data, viewModel = viewModel) }
         }
     }
+
+    val draft = uiState.profileDraft
+    val profiles = uiState.carProfiles
+    if (draft != null && profiles != null) {
+        CarProfileDialog(
+            draft = draft,
+            makes = profiles.makes,
+            colours = profiles.colours,
+            saving = uiState.isSavingProfile,
+            error = uiState.profileError,
+            onChange = viewModel::updateProfileDraft,
+            onSave = viewModel::saveProfile,
+            onDismiss = viewModel::dismissProfile,
+        )
+    }
 }
 
 @Composable
@@ -124,6 +148,11 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(key = "categories", contentType = "categories") { CategoriesCard(uiState = uiState, data = data, viewModel = viewModel) }
+        uiState.carProfiles?.let { profiles ->
+            item(key = "car-profiles", contentType = "car-profiles") {
+                CarProfilesCard(cars = data.knownCars, profiles = profiles, onEdit = viewModel::editProfile)
+            }
+        }
         item(key = "train", contentType = "train") { TrainCard(uiState = uiState, data = data, onTrain = viewModel::train) }
         val uncertain = data.uncertainQueue
         val confident = data.confidentQueue
@@ -207,7 +236,7 @@ internal fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onT
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "Usually cars that aren't yours. A car you've never named looks the same to the model, so show them to teach it a new one.",
+            text = "Cars that aren't yours, and yours once their plate or looks confirmed it. A car you've never named looks the same to the model, so show them to teach it a new one.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -354,6 +383,13 @@ internal fun CropCard(
                 knownAs?.let {
                     Text(text = "Frigate calls it ${subLabelDisplayName(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 }
+                crop.checkNote()?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (crop.isDoubted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary,
+                    )
+                }
                 crop.capturedEpochSeconds?.let {
                     Text(text = formatClockTime(it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -373,6 +409,127 @@ internal fun CropCard(
             }
         }
     }
+}
+
+/**
+ * What each known car looks like, which the relay's car check holds the classifier's names to: a
+ * 100% guess is only taken as sure (and filed into its car) once the car's plate or its make,
+ * model and colour agree. A car with nothing on file can't be checked, so its sure guesses always
+ * wait in the queue.
+ */
+@Composable
+private fun CarProfilesCard(cars: List<String>, profiles: CarProfiles, onEdit: (String) -> Unit) {
+    Card {
+        Text(text = "What your cars look like", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            text = "A 100% guess only counts once its plate, or its make, model and colour, match. The rest wait here for you.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        (cars + profiles.profiles.map { it.name }).distinct().forEach { name ->
+            val profile = profiles.profileOf(name)
+            Row(
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Edit ${categoryDisplayName(name)}") { onEdit(name) }.padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(text = categoryDisplayName(name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(
+                        text = when {
+                            profile.isEmpty -> "Not described yet"
+                            profile.plate.isNotBlank() -> listOf(profile.looks, "plate on file").filter { it.isNotBlank() }.joinToString(" · ")
+                            else -> profile.looks
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (profile.isEmpty) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(text = if (profile.isEmpty) "Describe" else "Edit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+    }
+}
+
+/**
+ * One car's make, model, colour and plate. Make and colour are picked from what the vision model
+ * can answer, since a word it never says could never match; the model name is free text, matched
+ * loosely ("Model Y" is "Tesla Model Y Long Range"). One colour, on purpose: see [CarProfile].
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun CarProfileDialog(
+    draft: CarProfile,
+    makes: List<String>,
+    colours: List<String>,
+    saving: Boolean,
+    error: String?,
+    onChange: (CarProfile) -> Unit,
+    onSave: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(categoryDisplayName(draft.name)) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(text = "Make", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                var makesOpen by remember { mutableStateOf(false) }
+                Box {
+                    OutlinedButton(onClick = { makesOpen = true }) { Text(draft.make.takeIf { it.isNotBlank() }?.let(::makeName) ?: "Any make") }
+                    DropdownMenu(expanded = makesOpen, onDismissRequest = { makesOpen = false }) {
+                        (listOf("") + makes).forEach { make ->
+                            DropdownMenuItem(
+                                text = { Text(make.takeIf { it.isNotBlank() }?.let(::makeName) ?: "Any make") },
+                                onClick = {
+                                    makesOpen = false
+                                    onChange(draft.copy(make = make))
+                                },
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(
+                    value = draft.model,
+                    onValueChange = { onChange(draft.copy(model = it.take(CarProfile.MODEL_MAX_LENGTH))) },
+                    label = { Text("Model, e.g. Model Y") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(text = "Colour", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    colours.forEach { colour ->
+                        Chip(
+                            label = colour.replaceFirstChar { it.uppercase() },
+                            selected = colour == draft.colour,
+                            onClick = { onChange(draft.copy(colour = if (colour == draft.colour) "" else colour)) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    value = draft.plate,
+                    onValueChange = { onChange(draft.copy(plate = it.uppercase().take(CarProfile.PLATE_MAX_LENGTH + 2))) },
+                    label = { Text("Licence plate") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
+                    supportingText = { Text("Names the car whenever the camera can read it, even at night") },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                error?.let { Text(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSave, enabled = !saving) {
+                if (saving) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
+                } else {
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } },
+    )
 }
 
 @Composable
