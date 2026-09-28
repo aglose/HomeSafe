@@ -72,6 +72,9 @@ class ConnectionRepositoryImplTest {
         /** When set, `/api/config` waits for it before answering, so a test can see what happens meanwhile. */
         var configGate: CompletableDeferred<Unit>? = null
 
+        /** When set, the LAN host's `/api/version` (the reachability probe) waits for it: a probe still out when the login lands. */
+        var localProbeGate: CompletableDeferred<Unit>? = null
+
         /** Cameras the server reports, name to enabled. */
         var cameras: Map<String, Boolean> = mapOf("front_door" to true, "backyard" to false)
 
@@ -97,7 +100,10 @@ class ConnectionRepositoryImplTest {
             val token = request.headers[HttpHeaders.Cookie]?.substringAfter("frigate_token=", "")?.substringBefore(';')?.takeIf { it.isNotEmpty() }
             val authenticated = token != null && token in issuedTokens && !(host == localHost && rogueLocalHost)
             when {
-                path.endsWith("/api/version") -> respond("0.15.0", HttpStatusCode.OK)
+                path.endsWith("/api/version") -> {
+                    if (host == localHost) localProbeGate?.await()
+                    respond("0.15.0", HttpStatusCode.OK)
+                }
 
                 path.endsWith("/api/login") ->
                     if (loginBroken) {
@@ -157,6 +163,16 @@ class ConnectionRepositoryImplTest {
         override fun clear() {
             saved = null
         }
+    }
+
+    /** A saved login behind a prompt the test resolves. */
+    private class GatedBiometrics(private val prompt: CompletableDeferred<Result<SavedCredentials>>) : BiometricCredentialStore {
+        override fun isAvailable() = true
+        override fun displayName() = "fingerprint"
+        override fun hasSavedCredentials() = true
+        override suspend fun save(credentials: SavedCredentials) = Result.success(Unit)
+        override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> = prompt.await()
+        override fun clear() = Unit
     }
 
     private object NoBiometrics : BiometricCredentialStore {
@@ -487,6 +503,62 @@ class ConnectionRepositoryImplTest {
         eventually("the sign-in to land") { result.isCompleted }
         assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
         assertNull(h.repository.expectedConnection.value)
+    }
+
+    @Test
+    fun aSignInDoesNotWaitForASlowLanProbe_andMovesToTheLanWhenItAnswers() = runTest {
+        val h = Harness(this)
+        val probe = CompletableDeferred<Unit>()
+        h.frigate.localProbeGate = probe
+
+        val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
+
+        // Signed in over Tailscale while the LAN probe is still out.
+        assertTrue(result.isSuccess)
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+        assertFalse(probe.isCompleted)
+
+        // The probe answers after all: the session follows it to the LAN, no second login.
+        probe.complete(Unit)
+        eventually("the route to move to the LAN") { h.repository.activeConnection.value?.route == ConnectionRoute.LOCAL_NETWORK }
+        assertEquals(localUrl, h.repository.currentServerUrl.value)
+        assertEquals(1, h.frigate.logins(tailscaleHost))
+        assertEquals(0, h.frigate.logins(localHost))
+    }
+
+    @Test
+    fun aSavedLoginsAddressIsExpectedWhileTheBiometricPromptIsUp() = runTest {
+        // A previous launch signed in over the LAN and cached the cameras.
+        val cameraDao = InMemoryCameraDao()
+        val first = Harness(this, cameraDao = cameraDao)
+        assertTrue(first.repository.connect(serverUrl, localUrl, "andrew", "pw").isSuccess)
+        settle()
+
+        val prompt = CompletableDeferred<Result<SavedCredentials>>()
+        val h = Harness(this, biometrics = GatedBiometrics(prompt), cameraDao = cameraDao)
+        h.historyDao.insert(first.historyDao.mostRecentAsFlow().first()!!)
+        val result = CompletableDeferred<Result<SavedCredentials>>()
+        backgroundScope.launch { result.complete(h.repository.signInWithBiometrics()) }
+
+        eventually("the saved login's address to be expected") { h.repository.expectedConnection.value != null }
+        assertNull(h.repository.activeConnection.value, "the prompt is still up")
+        assertEquals(0, h.frigate.logins(tailscaleHost), "nothing but reachability probes before the prompt is passed")
+
+        // Dismissed: nothing is expected any more, so whatever started for it is let go.
+        prompt.complete(Result.failure(IllegalStateException("cancelled")))
+        eventually("the prompt to resolve") { result.isCompleted }
+        assertNull(h.repository.expectedConnection.value)
+    }
+
+    @Test
+    fun aDeviceWithNothingCachedExpectsNothingWhileThePromptIsUp() = runTest {
+        val prompt = CompletableDeferred<Result<SavedCredentials>>()
+        val h = Harness(this, biometrics = GatedBiometrics(prompt))
+        backgroundScope.launch { h.repository.signInWithBiometrics() }
+        settle()
+
+        assertNull(h.repository.expectedConnection.value)
+        prompt.complete(Result.failure(IllegalStateException("cancelled")))
     }
 
     @Test

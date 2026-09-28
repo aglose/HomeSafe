@@ -31,6 +31,12 @@ import kotlinx.coroutines.launch
  * is drawn anywhere until a card binds, which only happens once the sign-in has succeeded; if it
  * fails instead, the players are let go at once.
  *
+ * Before any of that, at launch, the offers those joins will make are prepared for the last
+ * server this device signed in to ([LivePlayerPrefetch.prepare]): peer created and ICE gathered,
+ * nothing sent. A device that has never signed in (nothing cached) prepares and prefetches nothing.
+ * For a returning user the expectation can arrive while the biometric prompt is still up — see
+ * `ConnectionRepositoryImpl.anticipateSavedLogin`.
+ *
  * The sources must match what the Home grid builds (see `HomeViewModel.tile` — grid stream,
  * silent WebRTC) or the cards would start their own. A wrong guess costs little: the card's
  * source replaces the prefetched one, and the prefetched peer's picture stays up until the new
@@ -51,6 +57,7 @@ class LiveStreamPrefetcher(
     fun start() {
         if (job != null) return
         job = appScope.launch {
+            launch { prepareOffers() }
             var started = false
             connectionRepository.expectedConnection.collectLatest { expected ->
                 if (expected != null) {
@@ -62,6 +69,12 @@ class LiveStreamPrefetcher(
                 }
             }
         }
+    }
+
+    private suspend fun prepareOffers() {
+        val record = connectionRepository.mostRecentConnection.first() ?: return
+        val count = cachedCameras(record.serverUrl).count { it.enabled }.coerceAtMost(MAX_PREFETCHED)
+        if (count > 0) players.prepare(count)
     }
 
     /** Returns whether anything was started. */

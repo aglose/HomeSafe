@@ -135,12 +135,49 @@ class WebRtcConnectFlowTest {
     }
 
     @Test
-    fun theConnectBudgetCoversSignalingToo() = runTest {
+    fun slowSignalingIsAServerDiallingItsCamera_notADeadRoute() = runTest {
+        // go2rtc answers a cold stream only once it has dialled the camera: seconds, not a dead route.
         val h = Harness()
-        h.signaling.delayMs = 10_000
+        h.signaling.delayMs = 4_000
         val result = CompletableDeferred<WebRtcConnectResult>()
         launch { result.complete(h.flow.connect(endpoint, streamKey)) }
-        advanceTimeBy(3_001)
+        advanceTimeBy(4_001)
+        runCurrent()
+        assertFalse(result.isCompleted, "the connect budget starts at the answer")
+        assertEquals("v=0\r\nanswer", h.peer.answer)
+
+        h.peer.state.value = WebRtcPeerState.Connected
+        h.peer.firstFrameReceived.value = true
+        runCurrent()
+        assertIs<WebRtcConnectResult.Connected>(result.await())
+    }
+
+    @Test
+    fun signalingThatNeverAnswersIsGivenUpOnAtItsOwnBound() = runTest {
+        val h = Harness()
+        h.signaling.delayMs = 60_000
+        val result = CompletableDeferred<WebRtcConnectResult>()
+        launch { result.complete(h.flow.connect(endpoint, streamKey)) }
+        advanceTimeBy(4_999)
+        runCurrent()
+        assertFalse(result.isCompleted)
+        advanceTimeBy(2)
+        runCurrent()
+
+        assertEquals(WebRtcConnectResult.Failed(WebRtcFailure.Signaling(null)), result.await())
+        assertTrue(h.peer.closed)
+    }
+
+    @Test
+    fun iceHasTheConnectBudgetFromTheAnswer() = runTest {
+        val h = Harness()
+        h.signaling.delayMs = 2_000
+        val result = CompletableDeferred<WebRtcConnectResult>()
+        launch { result.complete(h.flow.connect(endpoint, streamKey)) }
+        advanceTimeBy(2_000 + 2_999)
+        runCurrent()
+        assertFalse(result.isCompleted)
+        advanceTimeBy(2)
         runCurrent()
 
         assertEquals(WebRtcConnectResult.Failed(WebRtcFailure.IceTimeout), result.await())

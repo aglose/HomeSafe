@@ -685,16 +685,32 @@ internal object LivePlayerPool {
     }
 
     private val entries = HashMap<String, Entry>()
-
-    /** A prefetched player's lease: a pool reference plus one "watching" binder, both returned when it ends. */
-    private class PrefetchLease(val holder: LivePlayerHolder, val url: String) {
-        var expiryJob: Job? = null
-    }
-
-    private val prefetched = HashMap<String, PrefetchLease>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val webRtcLock = Any()
     private var webRtc: WebRtcConnectFlow? = null
+
+    /** A silent peer whose offer was made ahead of any join ([prepare]), until it is taken or expires. */
+    private class PreparedPeer(val peer: AndroidWebRtcPeer) {
+        var expiry: Job? = null
+    }
+
+    /** Oldest first. */
+    private val prepared = ArrayDeque<PreparedPeer>()
+
+    private var appContext: Context? = null
+    private val prefetches = LivePrefetchLeases(
+        scope = scope,
+        start = { stream ->
+            val holder = acquire(checkNotNull(appContext), stream.playerKey)
+            holder.onBinderStarted()
+            holder.load(stream.source)
+            holder
+        },
+        stop = { holder ->
+            holder.onBinderStopped()
+            release(holder)
+        },
+    )
 
     fun acquire(context: Context, key: String?): LivePlayerHolder {
         val appContext = context.applicationContext
@@ -730,33 +746,36 @@ internal object LivePlayerPool {
      * longer asked for, is let go first.
      */
     fun prefetch(context: Context, streams: List<LivePrefetch>) {
-        val wanted = streams.associateBy { it.playerKey }
-        prefetched.entries.filter { (key, lease) -> wanted[key]?.source?.url != lease.url }.map { it.key }.forEach(::endPrefetch)
-        for (stream in streams) {
-            if (stream.playerKey in prefetched) continue
-            val holder = acquire(context, stream.playerKey)
-            val lease = PrefetchLease(holder, stream.source.url)
-            prefetched[stream.playerKey] = lease
-            holder.onBinderStarted()
-            holder.load(stream.source)
-            lease.expiryJob = scope.launch {
-                delay(LivePlaybackPolicy.PREFETCH_HOLD_MS)
-                endPrefetch(stream.playerKey)
-            }
-        }
+        appContext = context.applicationContext
+        prefetches.prefetch(streams)
         Log.d(LOG_TAG, "prefetching ${streams.map { it.playerKey }}")
     }
 
     /** Lets go of every prefetched player; a card that has bound one meanwhile keeps it going. */
     fun cancelPrefetch() {
-        prefetched.keys.toList().forEach(::endPrefetch)
+        prefetches.cancel()
     }
 
-    private fun endPrefetch(key: String) {
-        val lease = prefetched.remove(key) ?: return
-        lease.expiryJob?.cancel()
-        lease.holder.onBinderStopped()
-        release(lease.holder)
+    /** Tops the stash of prepared silent offers up to [count]; see [LivePlayerPrefetch.prepare]. */
+    fun prepare(context: Context, count: Int) {
+        val factory = WebRtcRuntime.peerConnectionFactory(context.applicationContext)
+        repeat(count - prepared.size) {
+            val entry = PreparedPeer(AndroidWebRtcPeer(factory, audio = false).also { it.prepareOffer(scope) })
+            entry.expiry = scope.launch {
+                delay(LivePlaybackPolicy.PREPARED_OFFER_TTL_MS)
+                if (prepared.remove(entry)) entry.peer.close()
+            }
+            prepared.addLast(entry)
+        }
+        LiveStartupMilestones.mark("rtc.prepared $count")
+    }
+
+    /** A prepared peer for a silent join, if one is waiting; the join then owns it. */
+    private fun takePrepared(audio: Boolean): AndroidWebRtcPeer? {
+        if (audio) return null
+        val entry = prepared.removeFirstOrNull() ?: return null
+        entry.expiry?.cancel()
+        return entry.peer
     }
 
     /**
@@ -772,7 +791,8 @@ internal object LivePlayerPool {
     private fun connectFlow(appContext: Context): WebRtcConnectFlow = synchronized(webRtcLock) {
         webRtc ?: WebRtcConnectFlow(
             signaling = WhepSignalingClient(HttpClient(OkHttp) { install(HttpTimeout) }),
-            peers = { audio -> AndroidWebRtcPeer(WebRtcRuntime.peerConnectionFactory(appContext), audio) },
+            // Joins run on the main thread, which is where the stash of prepared peers lives too.
+            peers = { audio -> takePrepared(audio) ?: AndroidWebRtcPeer(WebRtcRuntime.peerConnectionFactory(appContext), audio) },
             memory = LiveTransportMemory.shared,
         ).also { webRtc = it }
     }
@@ -781,6 +801,10 @@ internal object LivePlayerPool {
 /** Hops to the main thread, where the pool and its players live. */
 private class AndroidLivePlayerPrefetch(private val context: Context) : LivePlayerPrefetch {
     private val mainThread = Handler(Looper.getMainLooper())
+
+    override fun prepare(count: Int) {
+        mainThread.post { LivePlayerPool.prepare(context, count) }
+    }
 
     override fun prefetch(streams: List<LivePrefetch>) {
         mainThread.post { LivePlayerPool.prefetch(context, streams) }

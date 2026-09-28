@@ -18,7 +18,12 @@ import com.meticulouscreations.homesafe.PlatformContext
 actual fun warmUpLivePlayback(context: PlatformContext) {
     installLiveStartupMilestones()
     val appContext = context.context.applicationContext
+    // Made here so the preferences file starts loading off the main thread; read in the post.
+    val transportStore = SharedPreferencesTransportStore(appContext)
     Handler(Looper.getMainLooper()).post {
+        // Before any player can ask which streams are proven (the memory is main-thread only).
+        runCatching { LiveTransportMemory.shared.restore(transportStore) }
+            .onFailure { Log.w("HomeSafeLive", "couldn't restore the WebRTC record; this launch starts without it", it) }
         runCatching { LivePlayerPool.warmUp(appContext) }
             .onFailure { Log.w("HomeSafeLive", "live playback warm-up failed; the first join will initialise instead", it) }
     }

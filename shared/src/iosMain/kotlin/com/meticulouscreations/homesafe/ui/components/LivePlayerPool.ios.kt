@@ -293,6 +293,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     private fun webRtcAllowed(streamUrl: String): Boolean = IosWebRtc.peerFactory != null && LiveTransportMemory.shared.allowsWebRtc(streamUrl)
 
     private fun start(toLoad: VideoSource, cold: Boolean) {
+        LiveStartupMilestones.mark("live.start $key")
         needsColdStart = false
         joinJob?.cancel()
         joinJob = null
@@ -590,6 +591,30 @@ internal object LivePlayerPool {
             },
             memory = LiveTransportMemory.shared,
         )
+    }
+
+    private val prefetches = LivePrefetchLeases(
+        scope = scope,
+        start = { stream ->
+            val holder = acquire(stream.playerKey)
+            holder.onBinderStarted()
+            holder.load(stream.source)
+            holder
+        },
+        stop = { holder ->
+            holder.onBinderStopped()
+            release(holder)
+        },
+    )
+
+    /** Starts each of [streams] as if a card were already watching it — see [LivePlayerPrefetch]. */
+    fun prefetch(streams: List<LivePrefetch>) {
+        prefetches.prefetch(streams)
+    }
+
+    /** Lets go of every prefetched player; a card that has bound one meanwhile keeps it going. */
+    fun cancelPrefetch() {
+        prefetches.cancel()
     }
 
     fun acquire(key: String?): LivePlayerHolder {

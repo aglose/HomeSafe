@@ -11,7 +11,9 @@ process start, so the numbers need no clock shared with this machine.
 Build and install a variant that carries the test credentials first (debug, or benchmarkRelease
 for release bytecode: `./gradlew :androidApp:installBenchmarkRelease`). --serial is required so a
 run never drives a phone that happens to be plugged in. Results are appended as JSON lines to
-build/bench/first-live-pixel.jsonl; --compare A B prints two labels side by side.
+build/bench/first-live-pixel.jsonl; --compare A B prints two labels side by side, --stages A B ...
+the per-stage medians, and --gate BASE HEAD fails (exit 1) when HEAD regressed past
+--max-regression — what CI's startup-perf job runs (scripts/ci/startup-perf.sh).
 """
 import argparse
 import json
@@ -84,12 +86,16 @@ def milestones(serial):
     return found
 
 
-def run_once(serial, package, cameras, timeout_s, settle_s, taps):
+def run_once(serial, package, cameras, timeout_s, settle_s, taps, launch_only=False):
     adb(serial, "shell", "am", "force-stop", package)
     time.sleep(1)
     adb(serial, "logcat", "-c")
     launch = adb(serial, "shell", "am", "start", "-W", "-n", f"{package}/com.meticulouscreations.homesafe.MainActivity")
     total = re.search(r"TotalTime: (\d+)", launch)
+    if launch_only:
+        # A build from before the milestones existed: only the cold launch itself can be timed.
+        find_bounds(serial, "Autofill test credentials", 15)
+        return {"launch.totalTime": int(total.group(1)) if total else None}
     if "autofill" not in taps:
         taps["autofill"] = find_bounds(serial, "Autofill test credentials", 15)
     else:
@@ -196,6 +202,57 @@ def stages(labels):
         print(f"{name:34s}" + "".join(f"{c:>16s}" for c in cells))
 
 
+# What the CI gate compares, and the smallest regression worth failing a build over for each: the
+# emulator on a hosted runner is noisy enough that a few percent of a small number is nothing.
+GATED = {
+    # Cold launch to the first frame (am start -W TotalTime): process start, Application, first Activity frame.
+    "cold launch (TTID)": ("launch.totalTime", 40),
+    # Sign-in submitted to the first live video frame on Home: sign-in, Home, and the stream join.
+    "sign-in → first live pixel": ("submit->pixel.first", 150),
+}
+
+
+def metric(row, key):
+    return row["marks"].get(key) if key == "launch.totalTime" else row["derived"].get(key)
+
+
+def gate(base_label, head_label, max_regression):
+    """Fails (exit 1) when a gated median of [head_label] is worse than [base_label]'s by more than
+    [max_regression] (a fraction) *and* by more than that metric's floor. Metrics the base build
+    couldn't record (it predates the milestones) are reported but not gated."""
+    base, head = load(base_label), load(head_label)
+    lines = [f"| metric | base (n) | head (n) | change | limit |", "|---|---|---|---|---|"]
+    failed = []
+    for name, (key, floor_ms) in GATED.items():
+        b = [v for v in (metric(r, key) for r in base) if v is not None]
+        h = [v for v in (metric(r, key) for r in head) if v is not None]
+        if not h:
+            failed.append(f"{name}: the head build recorded nothing")
+            lines.append(f"| {name} | – | – | – | – |")
+            continue
+        mh = statistics.median(h)
+        if not b:
+            lines.append(f"| {name} | not recorded | {mh:.0f} ms ({len(h)}) | – | not gated |")
+            continue
+        mb = statistics.median(b)
+        delta = mh - mb
+        limit = max(mb * max_regression, floor_ms)
+        verdict = "❌" if delta > limit else "✅"
+        lines.append(f"| {name} | {mb:.0f} ms ({len(b)}) | {mh:.0f} ms ({len(h)}) | {delta:+.0f} ms ({delta / mb:+.1%}) {verdict} | +{limit:.0f} ms |")
+        if delta > limit:
+            failed.append(f"{name}: {mb:.0f} → {mh:.0f} ms ({delta / mb:+.1%}; limit +{max_regression:.0%} or +{floor_ms} ms, whichever is larger)")
+    table = "\n".join(lines)
+    print(table)
+    summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if summary:
+        with open(summary, "a") as f:
+            f.write(f"### Cold launch vs the base branch\n\n{table}\n\n")
+            f.write("Medians of interleaved runs on one emulator; see docs/webrtc-live.md.\n")
+    if failed:
+        print("\nRegressed:\n  " + "\n  ".join(failed))
+        sys.exit(1)
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--serial", help="adb serial of the device to drive (required for a run)")
@@ -211,7 +268,13 @@ def main():
     p.add_argument("--label", default="run")
     p.add_argument("--compare", nargs=2, metavar=("A", "B"))
     p.add_argument("--stages", nargs="+", metavar="LABEL", help="per-stage durations for these labels, side by side")
+    p.add_argument("--launch-only", action="store_true", help="time only the cold launch (a build without the milestones)")
+    p.add_argument("--gate", nargs=2, metavar=("BASE", "HEAD"), help="fail if HEAD's medians regressed against BASE's")
+    p.add_argument("--max-regression", type=float, default=0.15, help="for --gate: allowed slowdown as a fraction of the base median")
     args = p.parse_args()
+    if args.gate:
+        gate(*args.gate, args.max_regression)
+        return
     if args.compare:
         compare(*args.compare)
         return
@@ -229,7 +292,7 @@ def main():
             if waited > 0.5:
                 print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
             time.sleep(args.idle_extra)
-        marks = run_once(args.serial, args.package, args.cameras, args.timeout, args.settle, taps)
+        marks = run_once(args.serial, args.package, args.cameras, args.timeout, args.settle, taps, args.launch_only)
         row = {"label": args.label, "run": i, "marks": marks, "derived": derived(marks)}
         rows.append(row)
         with open(OUT, "a") as f:
