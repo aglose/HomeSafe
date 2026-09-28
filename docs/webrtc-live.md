@@ -130,7 +130,7 @@ HLS ~10 s in; now it joins over WebRTC.
 (0.8 s between the prompt appearing and the touch; the streams had been joining for ~3.3 s by the
 time the prompt was passed.)
 
-Server side — measured, and the second one is **not** applied:
+Server side — both applied 2026-09-27:
 
 - **Sub-stream keyframe every 1 s** (was 2 s; applied 2026-09-27: Hikvision `GovLength` 50 → 25,
   Amcrest `GOP` 40 → 20; revert notes in `~/surveillance/sub-gop-before.txt` on the box). With
@@ -138,16 +138,19 @@ Server side — measured, and the second one is **not** applied:
   pixel 3.84 → 3.77 s) — but it halves the wait for a viewer joining a stream someone else is
   already watching. `GovLength` counts frames, so a camera that drops its frame rate in low light
   (hikvision_2 runs ~12 fps at dusk) gets proportionally longer intervals.
-- **Keeping go2rtc connected to the `_sub` streams** (e.g. pointing Frigate's detect inputs at the
-  go2rtc restream, `rtsp://127.0.0.1:8554/<cam>_sub`). Benefit, same build and keyframes: first
-  live pixel 3.77 → **2.91 s**, all three cameras 5.79 → **2.95 s** — signaling no longer waits
-  for a camera dial (2.09 → 0.98 s) and the frames are ready before Home has composed. Cost,
-  measured on the box with a local reader holding each stream: go2rtc +1.4 % of one core, camera
-  traffic on eno2 +0.5 Mbit/s (12.9 → 13.4), three permanent camera sessions. Moving
-  hikvision_2's and amcrest_1's detect inputs to the restream costs no extra session at all (they
-  already pull the sub stream from the camera directly); hikvision_1's detect reads the *main*
-  restream, so its sub stream would need a reader of its own or a detect-resolution change. The
-  catch: detection then depends on go2rtc staying up, as hikvision_1's already does.
+- **go2rtc keeps a session open on every `_sub` stream.** hikvision_2's and amcrest_1's detect
+  inputs now read go2rtc's restream (`rtsp://127.0.0.1:8554/<cam>_sub`, `preset-rtsp-restream`)
+  instead of the camera, which costs no extra camera session. hikvision_1's detect reads the
+  *main* restream at 1280x720, so its sub stream is held by a `go2rtc-keepalive` container in the
+  Frigate compose file: Frigate's own image running `ffmpeg -c copy -f null` against the restream,
+  `restart: always`. Measured before applying, with the same setup simulated: go2rtc +1.4 % of
+  one core, camera traffic on eno2 +0.5 Mbit/s (12.9 → 13.4). go2rtc now answers a join in
+  30–60 ms instead of 1.3–2.4 s. Password sign-in: first live pixel 3.77 → **2.91 s**, all three
+  cameras 5.79 → **2.95 s**. Fingerprint unlock: all three cameras 1.71 → **1.12 s**; the first
+  picture stays ~1 s, bound by the sign-in the streams were already hidden behind. The catch:
+  detection on those two cameras now depends on go2rtc staying up, as hikvision_1's already did.
+  Undo: the `config.yml.bak-20260927-214452` / `docker-compose.yml.bak-20260927-214452` backups
+  beside the files, `docker restart frigate`, and `docker rm -f go2rtc-keepalive`.
 
 ## Cold-launch regression gate (CI)
 
