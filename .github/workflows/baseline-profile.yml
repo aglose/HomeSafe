@@ -1,0 +1,299 @@
+name: Baseline Profile
+
+# Regenerates the committed Baseline Profile (androidApp/src/release/generated/baselineProfiles/)
+# once a week and opens, or updates, a pull request from the fixed branch automation/baseline-profile.
+# See "Baseline Profile regeneration" in docs/testing.md, including the two one-time setup steps.
+#
+# The journey (baselineprofile/src/main/.../BaselineProfileGenerator.kt) signs in to the fake
+# Frigate through the nonMinifiedRelease build's "Autofill test credentials" button and scrolls
+# Home. The fake has no live video, so a go2rtc sidecar on the runner serves test-pattern streams
+# under the fake cameras' names: the profile then records the successful WebRTC join and first
+# frame, not only the failed join and the HLS fallback.
+#
+# The PR is opened with the BASELINE_PROFILE_TOKEN secret, not GITHUB_TOKEN: a pull request opened
+# with GITHUB_TOKEN triggers no workflows, so ci-green would never report and the merge would block.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Regenerate even if main has no commits since the last profile update
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baseline-profile
+  cancel-in-progress: true
+
+env:
+  PROFILE_DIR: androidApp/src/release/generated/baselineProfiles
+  LOG_DIR: build/baseline-profile
+
+jobs:
+  gate:
+    name: Anything new since the last profile?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      commits: ${{ steps.count.outputs.commits }}
+      last-profile-commit: ${{ steps.count.outputs.last-profile-commit }}
+      generate: ${{ steps.count.outputs.generate }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      # A schedule run has no inputs, so FORCE is empty there and counts as false.
+      - name: Count commits on main since the profile last changed
+        id: count
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          last=$(git log -1 --format=%H -- "$PROFILE_DIR")
+          if [ -n "$last" ]; then
+            commits=$(git rev-list --count "$last..HEAD")
+          else
+            commits=$(git rev-list --count HEAD)
+          fi
+          if [ "$commits" -gt 0 ] || [ "$FORCE" = "true" ]; then
+            generate=true
+          else
+            generate=false
+          fi
+          echo "Last profile change: ${last:-none}; commits on main since: $commits; force: ${FORCE:-false}; generate: $generate"
+          {
+            echo "commits=$commits"
+            echo "last-profile-commit=$last"
+            echo "generate=$generate"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$generate" = "false" ]; then
+            echo "::notice::main has not changed since the profile was last regenerated ($last); skipping."
+          fi
+
+  generate:
+    name: Generate the Baseline Profile (emulator)
+    needs: gate
+    if: needs.gate.outputs.generate == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      API_LEVEL: 34
+      # Pinned; bump deliberately. The digest is the release asset's, as GitHub lists it.
+      GO2RTC_VERSION: v1.9.14
+      GO2RTC_SHA256: 32d616af226bd731678ffde328b94cfb94e30339bfefc469cfb76323144615a6
+      # The go2rtc stream names the app asks for, from what the fake's /api/config returns for
+      # FakeFrigateState.household() (see FrigateApiClient.toFrigateCamera): front_door and
+      # back_yard have no live.streams, so their camera name is both the grid and the full stream;
+      # driveway's live.streams names driveway (full, the detail screen) and driveway_sub (grid).
+      GO2RTC_STREAMS: front_door driveway driveway_sub back_yard
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+
+      # As in ci.yml: the real Firebase config when the secret exists, otherwise build without it
+      # (androidApp/build.gradle.kts applies the plugin only when the file is there).
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "$GOOGLE_SERVICES_JSON" | base64 --decode > androidApp/google-services.json
+            echo "Firebase config written."
+          else
+            echo "GOOGLE_SERVICES_JSON secret not set; building without Firebase."
+          fi
+
+      # What the nonMinifiedRelease build's "Autofill test credentials" button fills in (see
+      # androidApp/build.gradle.kts). It is read when Gradle configures, so it must exist before
+      # the first Gradle call. The account is the fake's FakeFrigateState.ADMIN, not a secret.
+      - name: Write local.credentials.properties
+        run: |
+          {
+            echo "test.serverUrl=http://10.0.2.2:8971"
+            echo "test.username=admin"
+            echo "test.password=correct-horse"
+          } > local.credentials.properties
+
+      # Builds the app outside the emulator step, so a compile failure doesn't cost a boot.
+      - name: Build the app and the fake Frigate
+        run: ./gradlew :androidApp:assembleNonMinifiedRelease :fake-frigate:installDist --stacktrace
+
+      # On the runner, where the emulator reaches it at 10.0.2.2.
+      - name: Start the fake Frigate
+        run: |
+          mkdir -p "$LOG_DIR"
+          nohup fake-frigate/build/install/fake-frigate/bin/fake-frigate --port 8971 --host 0.0.0.0 --advertise 10.0.2.2 \
+            > "$LOG_DIR/fake-frigate.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8971/api/version && exit 0
+            sleep 1
+          done
+          echo "::error::The fake Frigate did not start"; cat "$LOG_DIR/fake-frigate.log"; exit 1
+
+      - name: Install ffmpeg and go2rtc
+        run: |
+          if ! command -v ffmpeg >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+          fi
+          ffmpeg -hide_banner -version | head -n 1
+          mkdir -p "$RUNNER_TEMP/go2rtc"
+          curl -fsSL -o "$RUNNER_TEMP/go2rtc/go2rtc" \
+            "https://github.com/AlexxIT/go2rtc/releases/download/$GO2RTC_VERSION/go2rtc_linux_amd64"
+          echo "$GO2RTC_SHA256  $RUNNER_TEMP/go2rtc/go2rtc" | sha256sum --check
+          chmod +x "$RUNNER_TEMP/go2rtc/go2rtc"
+
+      # go2rtc on the ports the app expects (FrigateSession.kt: :1984 for HLS and WHEP signaling),
+      # WebRTC media on 8555 with 10.0.2.2 as the candidate the emulator can reach. The emulator's
+      # 10.0.2.2 is the runner's loopback, so WebRTC listens there explicitly: given only a port,
+      # go2rtc binds UDP to each non-loopback interface and the emulator's UDP would find nothing.
+      # Each stream is an H.264 test pattern (baseline, zerolatency, a keyframe every second),
+      # started on demand.
+      - name: Start go2rtc
+        run: |
+          config="$RUNNER_TEMP/go2rtc/go2rtc.yaml"
+          {
+            echo 'api:'
+            echo '  listen: ":1984"'
+            echo 'webrtc:'
+            echo '  listen: "127.0.0.1:8555"'
+            echo '  candidates:'
+            echo '    - 10.0.2.2:8555'
+            echo 'streams:'
+            for name in $GO2RTC_STREAMS; do
+              echo "  $name: exec:ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc=size=640x360:rate=15 -c:v libx264 -preset ultrafast -tune zerolatency -profile:v baseline -pix_fmt yuv420p -g 15 -keyint_min 15 -sc_threshold 0 -an -rtsp_transport tcp -f rtsp {output}"
+            done
+          } > "$config"
+          cat "$config"
+          nohup "$RUNNER_TEMP/go2rtc/go2rtc" -config "$config" > "$LOG_DIR/go2rtc.log" 2>&1 &
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:1984/api/streams > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::go2rtc did not start"; cat "$LOG_DIR/go2rtc.log"; exit 1
+
+      # Every name the app will ask for must be configured, and each must actually produce video.
+      - name: Check the go2rtc streams
+        run: |
+          if ! streams=$(curl -sf http://127.0.0.1:1984/api/streams); then
+            echo "::error::go2rtc did not list its streams"; cat "$LOG_DIR/go2rtc.log"; exit 1
+          fi
+          echo "$streams" | jq .
+          missing=
+          for name in $GO2RTC_STREAMS; do
+            echo "$streams" | jq -e --arg name "$name" 'has($name)' > /dev/null || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::go2rtc is missing streams:$missing"; cat "$LOG_DIR/go2rtc.log"; exit 1
+          fi
+          for name in $GO2RTC_STREAMS; do
+            out="$RUNNER_TEMP/go2rtc/$name.mp4"
+            # --max-time ends the endless stream; curl then exits 28, which is expected here.
+            curl -s --max-time 8 -o "$out" "http://127.0.0.1:1984/api/stream.mp4?src=$name" || true
+            size=$(stat -c %s "$out" 2>/dev/null || echo 0)
+            echo "$name: $size bytes in 8 s"
+            if [ "$size" -eq 0 ]; then
+              echo "::error::go2rtc stream $name produced no video"; cat "$LOG_DIR/go2rtc.log"; exit 1
+            fi
+          done
+
+      # KVM is what makes the x86_64 emulator usable on a hosted Linux runner.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The same cache as ci.yml's android-ui job (same paths and key), so the two share one snapshot.
+      - name: AVD snapshot cache
+        id: avd-cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api${{ env.API_LEVEL }}-google_apis-x86_64
+      - name: Create AVD and snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: false
+          script: echo "Generated AVD snapshot for caching."
+
+      # baselineprofile/build.gradle.kts has useConnectedDevices = true, so the generator runs on
+      # this emulator. run-instrumented-tests.sh stops Gradle after 45 minutes and dumps the stuck
+      # threads; logcat is saved either way. (Each script line runs on its own, hence one line.)
+      - name: Generate the Baseline Profile
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ env.API_LEVEL }}
+          target: google_apis
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: scripts/run-instrumented-tests.sh 45 -- :androidApp:generateBaselineProfile --stacktrace; status=$?; adb logcat -d > "$LOG_DIR/logcat.txt"; exit $status
+
+      - name: Show what changed in the profile
+        id: diff
+        run: |
+          git status --short -- "$PROFILE_DIR"
+          git diff --stat -- "$PROFILE_DIR"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: baseline-profile
+          path: |
+            androidApp/src/release/generated/baselineProfiles/**
+            baselineprofile/build/outputs/connected_android_test_additional_output/**
+            baselineprofile/build/outputs/androidTest-results/**
+            baselineprofile/build/reports/**
+            build/baseline-profile/**
+          retention-days: 14
+
+      - name: Check for the pull request token
+        env:
+          BASELINE_PROFILE_TOKEN: ${{ secrets.BASELINE_PROFILE_TOKEN }}
+        run: |
+          if [ -z "$BASELINE_PROFILE_TOKEN" ]; then
+            echo "::error::The BASELINE_PROFILE_TOKEN secret is not set, so no pull request can be opened. The profile is in the baseline-profile artifact; see docs/testing.md for the setup."
+            exit 1
+          fi
+
+      - name: Open or update the pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.BASELINE_PROFILE_TOKEN }}
+          branch: automation/baseline-profile
+          base: main
+          delete-branch: true
+          add-paths: androidApp/src/release/generated/baselineProfiles
+          commit-message: Regenerate the Baseline Profile
+          title: Regenerate the Baseline Profile
+          body: |
+            The weekly Baseline Profile regeneration, from main at ${{ steps.diff.outputs.sha }}: ${{ needs.gate.outputs.commits }} commit(s) since the profile last changed (${{ needs.gate.outputs.last-profile-commit || 'never' }}).
+
+            Generated by `./gradlew :androidApp:generateBaselineProfile` on an API ${{ env.API_LEVEL }} emulator, signed in to the fake Frigate with go2rtc serving test-pattern live streams. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            See "Baseline Profile regeneration" in docs/testing.md.

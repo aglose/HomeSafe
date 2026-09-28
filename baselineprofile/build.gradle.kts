@@ -11,6 +11,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
  * Both need a connected device (a physical one for numbers that mean anything; the emulator is
  * accepted for smoke runs, see suppressErrors below) with the debug/benchmark sign-in credentials
  * in local.credentials.properties and the Frigate server reachable from it.
+ *
+ * CI regenerates the profile weekly against the fake Frigate and opens a pull request with the result:
+ * .github/workflows/baseline-profile.yml, described under "Baseline Profile regeneration" in docs/testing.md.
  */
 plugins {
     alias(libs.plugins.androidTest)
