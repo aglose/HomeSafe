@@ -769,6 +769,7 @@ class _FakeFrigate(unittest.TestCase):
             return _Response(200, [
                 v for v in self.visits
                 if p.get("after", float("-inf")) < v["start_time"] < p.get("before", float("inf"))
+                and ("in_progress" not in p or v["end_time"] is None)
                 and ("min_length" not in p or (v["end_time"] is not None and v["end_time"] - v["start_time"] >= p["min_length"]))
             ])
         found = self.events.get(url.rsplit("/", 1)[1], 404)
@@ -930,7 +931,23 @@ class FarCarsAgainstFrigate(_FakeFrigate):
         unnamed = self.car("unnamed", CarCheckTest.SUV_ACROSS, name=None)
         relay.clear_far_car_names()
         self.assertEqual([], self.sub_labels())
-        self.assertEqual(("near", "near", "person", None), tuple(self.verdict(e, "far") for e in (curb, beam, tagged, unnamed)))
+        self.assertEqual(("near", "near", None, None), tuple(self.verdict(e, "far") for e in (curb, beam, tagged, unnamed)))
+
+    def test_a_tag_taken_away_leaves_the_classifiers_name_to_be_judged(self):
+        relay.state_set("person_tags_since", 0.0)
+        suv = self.car("suv", CarCheckTest.SUV_ACROSS)
+        relay.record_person_tag(suv, "andrews_tesla", "andrew")
+        relay.clear_far_car_names()
+        self.assertEqual([], self.sub_labels())
+        relay.record_person_tag(suv, None, "andrew")  # untagged, and the classifier's name is back
+        relay.clear_far_car_names()
+        self.assertEqual("cleared", self.verdict(suv, "far"))
+
+    def test_a_car_in_view_since_before_the_hour_is_still_looked_at(self):
+        suv = self.car("suv", CarCheckTest.SUV_ACROSS, ended=False, age=2 * 3600.0)
+        relay.clear_far_car_names()
+        self.assertEqual("cleared", self.verdict(suv, "far"))
+        self.assertEqual(1, len(self.sub_labels()), "found by both lookups, cleared once")
 
     def test_a_car_just_seen_is_looked_at_later(self):
         young = self.car("young", CarCheckTest.SUV_ACROSS, ended=False, age=10.0)

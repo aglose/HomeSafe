@@ -63,9 +63,11 @@ car" button that opens the picker on arrival; the in-app alerts set the same fla
   the curb, half behind the tree, is 115 px. So a named car that was tagged with no car zone, whose
   path stayed clearly out of every car zone outline (by 0.05), and whose crop was under
   `FAR_CAR_MAX_PX` (110) has its name cleared once it is finished or in view for 60 s. Small
-  crops in the driveway are left alone, because the porch beam cuts the car there in half. A
-  person's tag stays, and an event the classifier names again is cleared again. The verdicts
-  (`cleared`, `near`, `person`) are kept in `car_checks` under kind `far`.
+  crops in the driveway are left alone, because the porch beam cuts the car there in half. The
+  check reads the last hour's named cars plus any still in view, however long ago they started. A
+  person's tag stays, and it is looked at again every round in case it is taken away. An event the
+  classifier names again is cleared again. The verdicts (`cleared`, `near`) are kept in
+  `car_checks` under kind `far`.
 - **Second opinion.** A car in a car zone, finished or in view for 60 s, whose name no person gave
   (see "Whose name it is"), is cut out of the 4K recording at its last path point. That cut, 640 px on
   the long edge, is sent to `qwen3-vl:4b-instruct` in Ollama with a closed JSON schema (colour,

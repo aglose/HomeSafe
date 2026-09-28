@@ -1459,7 +1459,12 @@ def classifier_names() -> list[str]:
 
 
 def clear_far_car_names() -> None:
-    """Takes the classifier's name off each far car of the last hour, and off it again should the classifier name it anew."""
+    """
+    Takes the classifier's name off each far car of the last hour or still in view (Frigate's
+    `after` is by start time, and a parked car's event can stay open for hours), and off it again
+    should the classifier name it anew. A person's tag is looked at again each round, since it may
+    be taken away.
+    """
     names = classifier_names()
     if not names:
         return
@@ -1468,18 +1473,17 @@ def clear_far_car_names() -> None:
     for camera, zones_for_car in car_zones().items():
         if not zones_for_car or not polygons.get(camera) or not frames.get(camera):
             continue
-        r = requests.get(f"{FRIGATE}/api/events", params={
-            "camera": camera, "label": "car", "sub_labels": ",".join(names), "after": now - 3600, "limit": FAR_CAR_PAGE,
-        }, timeout=10)
-        r.raise_for_status()
-        for event in r.json():
+        named = {"camera": camera, "label": "car", "sub_labels": ",".join(names), "limit": FAR_CAR_PAGE}
+        found: dict[str, dict[str, Any]] = {}
+        for params in ({**named, "after": now - 3600}, {**named, "in_progress": 1}):
+            r = requests.get(f"{FRIGATE}/api/events", params=params, timeout=10)
+            r.raise_for_status()
+            found.update({e["id"]: e for e in r.json() if e.get("id")})
+        for event in found.values():
             event_id = event.get("id", "")
             name, score = frigate_name(event)
             before = check_of(event_id, "far")
-            if not name or (before and before[0] != "cleared"):
-                continue
-            if by_a_person(event):
-                record_check(event_id, "far", "person", name)
+            if not name or (before and before[0] != "cleared") or by_a_person(event):
                 continue
             if not is_far_car(event, zones_for_car, polygons[camera], frames[camera], now):
                 if event.get("end_time") is not None:
