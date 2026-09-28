@@ -81,10 +81,13 @@ fun interface WebRtcPeerFactory {
 
 /** Why a WebRTC join didn't produce a picture. */
 sealed interface WebRtcFailure {
-    /** The signaling server answered but not with an SDP answer, or couldn't be reached at all ([status] null). */
+    /**
+     * The signaling server answered but not with an SDP answer, or couldn't be reached at all, or
+     * not inside [LivePlaybackPolicy.WEBRTC_SIGNALING_TIMEOUT_MS] ([status] null for the last two).
+     */
     data class Signaling(val status: Int?) : WebRtcFailure
 
-    /** Offer, signaling and ICE didn't reach a connection inside [LivePlaybackPolicy.WEBRTC_CONNECT_TIMEOUT_MS]. */
+    /** The offer, or ICE after the answer, took longer than [LivePlaybackPolicy.WEBRTC_CONNECT_TIMEOUT_MS]. */
     data object IceTimeout : WebRtcFailure
 
     /** Connected, but no decoded frame inside [LivePlaybackPolicy.WEBRTC_FIRST_FRAME_TIMEOUT_MS]. */
@@ -111,13 +114,17 @@ sealed interface WebRtcConnectResult {
  *    HLS until [LivePlaybackPolicy.WEBRTC_FALLBACK_TTL_MS] has passed since the last failure
  *    ([allowsWebRtc]). Any successful join wipes the failures.
  *  - **Proven.** A stream that joined over WebRTC within [LivePlaybackPolicy.WEBRTC_PROVEN_TTL_MS]
- *    is trusted to do so again quickly ([recentlyConnected]); one that hasn't — first open after
- *    launch, a new network, or a route this app has never joined on — gets HLS started alongside
- *    the join so a picture is up at HLS speed whatever ICE does (see the holders' `start`).
+ *    is trusted to do so again quickly ([recentlyConnected]); one that hasn't — a route this app
+ *    has never joined on, or not for a week — gets HLS started alongside the join so a picture is
+ *    up at HLS speed whatever ICE does (see the holders' `start`).
  *
  * A stream's key is its HLS URL — host included, so the LAN and Tailscale routes to the same
  * camera are separate entries, and moving between networks naturally gets a fresh try.
- * Session-scoped: nothing is persisted.
+ *
+ * The proven record outlives the process once a [Store] is [restore]d: a cold launch is exactly
+ * when an HLS shadow costs most (three extra sessions against go2rtc while the cards are joining)
+ * and when it is least needed, since the same routes joined fine the last time the app was open.
+ * Failures stay session-scoped — a blocked port is worth re-checking after a relaunch.
  *
  * Not thread-safe; every caller runs on the main thread, like the player holders that use it.
  */
@@ -131,6 +138,31 @@ class LiveTransportMemory(
 
     private val records = HashMap<String, Record>()
     private val lastConnectedAt = HashMap<String, Long>()
+    private var store: Store? = null
+
+    /** Where the proven record is kept between launches. */
+    interface Store {
+        /** Stream key to the epoch millis it last joined at. */
+        fun load(): Map<String, Long>
+
+        fun save(connectedAt: Map<String, Long>)
+    }
+
+    /**
+     * Picks up what [store] kept from earlier launches — only records still inside the proven
+     * window, and never over a fresher one from this session — and keeps it up to date from now on.
+     */
+    fun restore(store: Store) {
+        this.store = store
+        val now = now()
+        for ((key, at) in store.load()) {
+            if (now - at < provenTtlMs && (lastConnectedAt[key] ?: Long.MIN_VALUE) < at) lastConnectedAt[key] = at
+        }
+    }
+
+    private fun persist() {
+        store?.save(HashMap(lastConnectedAt))
+    }
 
     /** Whether the next cold start of [streamKey] should try WebRTC before HLS. */
     fun allowsWebRtc(streamKey: String): Boolean {
@@ -160,17 +192,19 @@ class LiveTransportMemory(
         val record = records.getOrPut(streamKey) { Record(failures = 0, lastFailureAt = 0L) }
         record.failures++
         record.lastFailureAt = now()
-        lastConnectedAt.remove(streamKey)
+        if (lastConnectedAt.remove(streamKey) != null) persist()
     }
 
     fun markConnected(streamKey: String) {
         records.remove(streamKey)
         lastConnectedAt[streamKey] = now()
+        persist()
     }
 
     fun clear() {
         records.clear()
         lastConnectedAt.clear()
+        persist()
     }
 
     companion object {
@@ -195,6 +229,7 @@ class WebRtcConnectFlow(
     private val memory: LiveTransportMemory,
     private val connectTimeoutMs: Long = LivePlaybackPolicy.WEBRTC_CONNECT_TIMEOUT_MS,
     private val firstFrameTimeoutMs: Long = LivePlaybackPolicy.WEBRTC_FIRST_FRAME_TIMEOUT_MS,
+    private val signalingTimeoutMs: Long = LivePlaybackPolicy.WEBRTC_SIGNALING_TIMEOUT_MS,
 ) {
     /**
      * [streamKey] identifies the stream in [memory]; the source's HLS URL. [onPeerCreated] is
@@ -232,12 +267,8 @@ class WebRtcConnectFlow(
     }
 
     private suspend fun attempt(peer: WebRtcPeer, endpoint: WebRtcEndpoint): WebRtcConnectResult {
-        // One budget for everything up to a connection: a stage that is slow on its own is
-        // just as much a sign the route is dead as one that never completes.
         val stream = endpoint.signalingUrl.substringAfterLast("src=")
-        val connectFailure = withTimeoutOrNull(connectTimeoutMs) { connectStages(peer, endpoint, stream) }
-            ?: return WebRtcConnectResult.Failed(WebRtcFailure.IceTimeout)
-        connectFailure.reason?.let { return WebRtcConnectResult.Failed(it) }
+        connectStages(peer, endpoint, stream).reason?.let { return WebRtcConnectResult.Failed(it) }
 
         val frameOrFailure = withTimeoutOrNull(firstFrameTimeoutMs) {
             combine(peer.firstFrameReceived, peer.state) { frame, state -> frame to state }
@@ -252,10 +283,17 @@ class WebRtcConnectFlow(
     /** Non-null so a timeout (null from `withTimeoutOrNull`) is distinguishable from "reached a connection". */
     private class StageOutcome(val reason: WebRtcFailure?)
 
+    /**
+     * Offer, signaling, ICE. The local stages share [connectTimeoutMs], a stage that is slow on
+     * its own being as good a sign of a dead route as one that never completes. Signaling has its
+     * own, longer bound ([signalingTimeoutMs]): go2rtc answers only once it has a session with the
+     * camera, and for a stream nobody was watching that means dialling the camera first — a
+     * second or more of a server that is plainly there, which must not be mistaken for a dead one.
+     */
     private suspend fun connectStages(peer: WebRtcPeer, endpoint: WebRtcEndpoint, stream: String): StageOutcome {
         LiveStartupMilestones.mark("rtc.start $stream")
         val offer = try {
-            peer.createOffer()
+            withTimeoutOrNull(connectTimeoutMs) { peer.createOffer() } ?: return StageOutcome(WebRtcFailure.IceTimeout)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -263,7 +301,8 @@ class WebRtcConnectFlow(
         }
         LiveStartupMilestones.mark("rtc.offer $stream")
         val answer = try {
-            signaling.exchange(endpoint.signalingUrl, offer)
+            withTimeoutOrNull(signalingTimeoutMs) { signaling.exchange(endpoint.signalingUrl, offer) }
+                ?: return StageOutcome(WebRtcFailure.Signaling(null))
         } catch (e: CancellationException) {
             throw e
         } catch (e: WhepSignalingException) {
@@ -279,7 +318,9 @@ class WebRtcConnectFlow(
         } catch (e: Exception) {
             return StageOutcome(WebRtcFailure.PeerFailed(e.message ?: "answer rejected"))
         }
-        val settled = peer.state.first { it is WebRtcPeerState.Connected || it is WebRtcPeerState.Failed || it is WebRtcPeerState.Closed }
+        val settled = withTimeoutOrNull(connectTimeoutMs) {
+            peer.state.first { it is WebRtcPeerState.Connected || it is WebRtcPeerState.Failed || it is WebRtcPeerState.Closed }
+        } ?: return StageOutcome(WebRtcFailure.IceTimeout)
         return when (settled) {
             is WebRtcPeerState.Failed -> StageOutcome(WebRtcFailure.PeerFailed(settled.reason))
 

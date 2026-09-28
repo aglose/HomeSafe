@@ -11,9 +11,7 @@ import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -33,7 +31,7 @@ class LiveStreamPrefetcherTest {
         override val activeConnection = MutableStateFlow<ActiveConnection?>(null)
         override val expectedConnection = MutableStateFlow<ActiveConnection?>(null)
         override val currentServerUrl = MutableStateFlow<String?>(null)
-        override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
+        override val mostRecentConnection = MutableStateFlow<ConnectionRecord?>(null)
         override val biometricLoginAvailable = false
         override val biometricDisplayName = "biometrics"
         override fun hasSavedBiometricCredentials() = false
@@ -46,7 +44,11 @@ class LiveStreamPrefetcherTest {
 
     private class RecordingPrefetch : LivePlayerPrefetch {
         val prefetched = mutableListOf<List<LivePrefetch>>()
+        val prepared = mutableListOf<Int>()
         var cancels = 0
+        override fun prepare(count: Int) {
+            prepared += count
+        }
         override fun prefetch(streams: List<LivePrefetch>) {
             prefetched += streams
         }
@@ -106,6 +108,29 @@ class LiveStreamPrefetcherTest {
         settle()
 
         assertEquals(listOf(listOf(gridCard(localUrl, "driveway"))), h.players.prefetched)
+    }
+
+    @Test
+    fun preparesAnOfferPerCachedCameraOfTheLastServer_atLaunch() = runTest {
+        val connection = FakeConnection()
+        val cameraDao = InMemoryCameraDao()
+        val players = RecordingPrefetch()
+        cameraDao.insertAll(listOf(camera("driveway"), camera("porch"), camera("attic", enabled = false)).map { it.copy(serverUrl = serverUrl) })
+        connection.mostRecentConnection.value = ConnectionRecord(serverUrl, localUrl, connectedAtEpochMillis = 0)
+
+        LiveStreamPrefetcher(connection, cameraDao, mediaUrls, players, backgroundScope).start()
+        settle()
+
+        assertEquals(listOf(2), players.prepared)
+        assertTrue(players.prefetched.isEmpty(), "preparing sends nothing and starts no stream")
+    }
+
+    @Test
+    fun preparesNothingOnADeviceThatHasNeverSignedIn() = runTest {
+        val h = Harness(this)
+        settle()
+
+        assertTrue(h.players.prepared.isEmpty())
     }
 
     @Test

@@ -4,7 +4,9 @@ import dev.zacsweers.metro.Inject
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
+import io.ktor.client.plugins.cookies.ConstantCookiesStorage
 import io.ktor.client.plugins.cookies.CookiesStorage
+import io.ktor.client.plugins.cookies.HttpCookies
 import io.ktor.client.plugins.cookies.cookies
 import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
@@ -65,14 +67,24 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
     }
 
     /**
+     * [httpClient] without the session jar, for requests that must not carry a session cookie.
+     * `config` layers a second `HttpCookies` configuration over the first, so this client's
+     * storage is a jar that is always empty, while the engine and everything else are shared.
+     */
+    private val cookielessClient: HttpClient by lazy { httpClient.config { install(HttpCookies) { storage = ConstantCookiesStorage() } } }
+
+    /**
      * Whether [serverUrl] answers HTTP at all within [timeoutMillis]. Any response counts — a
      * 401 from the authenticated port proves the host is there just as well as a 200 — so only
      * a connection failure or a timeout means "not reachable". Used to decide between a
-     * server's private LAN address and its Tailscale address.
+     * server's private LAN address and its Tailscale address, including before anyone has
+     * signed in (while the biometric prompt is up), which is why it never sends the session
+     * cookie: the address being probed isn't known to be this server yet — the compiled-in LAN
+     * address can be someone else's device on another network — and the answer doesn't need it.
      */
     suspend fun isReachable(serverUrl: String, timeoutMillis: Long): Boolean =
         try {
-            httpClient.get("${serverUrl.trimEnd('/')}/api/version") {
+            cookielessClient.get("${serverUrl.trimEnd('/')}/api/version") {
                 timeout {
                     requestTimeoutMillis = timeoutMillis
                     connectTimeoutMillis = timeoutMillis

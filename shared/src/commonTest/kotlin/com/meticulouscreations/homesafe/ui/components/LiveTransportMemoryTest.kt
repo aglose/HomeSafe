@@ -11,6 +11,44 @@ class LiveTransportMemoryTest {
     private val lan = "http://192.168.68.64:1984/api/stream.m3u8?src=cam"
     private val tailscale = "http://100.99.163.71:1984/api/stream.m3u8?src=cam"
 
+    /** What a previous launch left behind, and what this one writes back. */
+    private class FakeStore(var saved: Map<String, Long> = emptyMap()) : LiveTransportMemory.Store {
+        override fun load() = saved
+        override fun save(connectedAt: Map<String, Long>) {
+            saved = connectedAt
+        }
+    }
+
+    @Test
+    fun aStreamProvenInAnEarlierLaunchIsStillProven_untilItsWindowRunsOut() {
+        val store = FakeStore(mapOf(lan to now - 500_000, tailscale to now - 600_000))
+        memory.restore(store)
+
+        assertTrue(memory.recentlyConnected(lan))
+        assertFalse(memory.recentlyConnected(tailscale), "joined longer ago than the proven window")
+        now += 100_000
+        assertFalse(memory.recentlyConnected(lan))
+    }
+
+    @Test
+    fun joinsAndFailuresAreWrittenBack_soTheNextLaunchSeesThem() {
+        val store = FakeStore()
+        memory.restore(store)
+
+        memory.markConnected(lan)
+        memory.markConnected(tailscale)
+        assertTrue(store.saved.keys == setOf(lan, tailscale))
+
+        // A failure unproves the stream for the next launch too; its failure count stays behind.
+        memory.markFailed(tailscale)
+        assertTrue(store.saved.keys == setOf(lan))
+        val nextLaunch = LiveTransportMemory(now = { now }, provenTtlMs = 600_000)
+        nextLaunch.restore(store)
+        assertTrue(nextLaunch.recentlyConnected(lan))
+        assertFalse(nextLaunch.recentlyConnected(tailscale))
+        assertTrue(nextLaunch.allowsWebRtc(tailscale))
+    }
+
     @Test
     fun anUnknownStreamTriesWebRtc() {
         assertTrue(memory.allowsWebRtc(lan))

@@ -20,8 +20,11 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +39,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -92,6 +97,9 @@ class ConnectionRepositoryImpl(
     override val currentServerUrl: StateFlow<String?> =
         _activeConnection.map { it?.activeUrl }.stateIn(appScope, SharingStarted.Eagerly, null)
 
+    /** [LAN_GRACE_MS]; tests shorten or lengthen it (real time, see [signInExpecting]). */
+    internal var lanGraceMs = LAN_GRACE_MS
+
     private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
     override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
 
@@ -142,8 +150,51 @@ class ConnectionRepositoryImpl(
         signIn(serverUrl, normalizedLocalUrl, username, password)
     }
 
-    override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> =
-        biometricCredentialStore.authenticateAndRetrieve().fold(
+    override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> {
+        // A returning user's live video can start joining while the prompt is still up.
+        val anticipation = appScope.launch { anticipateSavedLogin() }
+        try {
+            val unlocked = biometricCredentialStore.authenticateAndRetrieve()
+            // The sign-in proper probes the routes itself from here on.
+            anticipation.cancelAndJoin()
+            return completeBiometricSignIn(unlocked, onCredentialsUnlocked)
+        } finally {
+            anticipation.cancel()
+            // A prompt dismissed (or a sign-in that failed) leaves nothing to expect.
+            if (_activeConnection.value == null) _expectedConnection.value = null
+        }
+    }
+
+    /**
+     * Publishes [expectedConnection] for the last server this device signed in to, from nothing
+     * but whether its addresses answer — no credentials go anywhere — so the players for its
+     * cached cameras can start while the biometric prompt is up (see `LiveStreamPrefetcher`). The
+     * LAN wins whenever it answers; Tailscale is expected only once it has answered and the LAN
+     * has had [LAN_GRACE_MS] more to do the same. A device with nothing cached expects nothing,
+     * because it has nothing to prefetch.
+     */
+    private suspend fun anticipateSavedLogin() {
+        val record = mostRecentConnection.first() ?: return
+        if (cameraDao.observeByServer(record.serverUrl).first().isEmpty()) return
+        coroutineScope {
+            launch {
+                if (localAnswers(LOCAL_SERVER_URL)) {
+                    _expectedConnection.value = ActiveConnection(record.serverUrl, LOCAL_SERVER_URL, ConnectionRoute.LOCAL_NETWORK)
+                }
+            }
+            launch {
+                if (apiClient.isReachable(record.serverUrl, LOCAL_PROBE_TIMEOUT_MS)) {
+                    delay(lanGraceMs)
+                    if (_expectedConnection.value == null) {
+                        _expectedConnection.value = ActiveConnection(record.serverUrl, LOCAL_SERVER_URL, ConnectionRoute.TAILSCALE)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun completeBiometricSignIn(unlocked: Result<SavedCredentials>, onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> =
+        unlocked.fold(
             onSuccess = { credentials ->
                 onCredentialsUnlocked()
                 // Deliberately not credentials.localUrl: the LAN address is compiled in, and a
@@ -274,11 +325,14 @@ class ConnectionRepositoryImpl(
         username: String,
         password: String,
     ): Result<SavedCredentials> = coroutineScope {
-        val lanAnswers = async {
-            localAnswers(localUrl).also { answered ->
-                if (answered) _expectedConnection.value = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
-                LiveStartupMilestones.mark("signin.lan $answered")
-            }
+        // Not a child of this scope: away from home the probe can take its whole timeout to give
+        // up, and the sign-in doesn't wait for that (below). The watcher that publishes a LAN
+        // expectation is a child, cancelled once the sign-in stops listening to the probe.
+        val lanAnswers = appScope.async { localAnswers(localUrl) }
+        val lanWatch = launch {
+            val answered = lanAnswers.await()
+            if (answered) _expectedConnection.value = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
+            LiveStartupMilestones.mark("signin.lan $answered")
         }
         val remote = loginResolvingScheme(serverUrl, username, password)
         LiveStartupMilestones.mark("signin.login")
@@ -289,7 +343,17 @@ class ConnectionRepositoryImpl(
         }
         val connection = when {
             remoteUrl != null -> {
-                val verifiedLocal = if (lanAnswers.await()) verifiedLocalUrl(remoteUrl, localUrl!!, username) else null
+                // At home the LAN has long answered by the time Tailscale accepts a password; away,
+                // its probe may still be waiting out the timeout. Give it [LAN_GRACE_MS], then go on
+                // over Tailscale, and move to the LAN behind the sign-in if it answers after all.
+                // On a real clock: the probe is real network I/O, and a test scheduler's virtual
+                // time would let the grace run out before any reply could arrive.
+                val lanUp = withContext(Dispatchers.Default) { withTimeoutOrNull(lanGraceMs) { lanAnswers.await() } }
+                if (lanUp == null) {
+                    lanWatch.cancel()
+                    moveToLanIfItAnswers(lanAnswers, remoteUrl)
+                }
+                val verifiedLocal = if (lanUp == true) verifiedLocalUrl(remoteUrl, localUrl!!, username) else null
                 ActiveConnection(
                     serverUrl = remoteUrl,
                     localUrl = verifiedLocal ?: localUrl,
@@ -313,6 +377,19 @@ class ConnectionRepositoryImpl(
             localUrl = connection.localUrl,
         )
         activate(connection, credentials).map { credentials }
+    }
+
+    /**
+     * A sign-in that went ahead over Tailscale without waiting for the LAN probe: if the probe
+     * answers after all, the route is re-chosen (as on a network change) once the sign-in has
+     * landed — the session moves to the LAN, and everything derived from the address follows.
+     */
+    private fun moveToLanIfItAnswers(lanAnswers: Deferred<Boolean>, serverUrl: String) {
+        appScope.launch {
+            if (!lanAnswers.await()) return@launch
+            withTimeoutOrNull(ROUTE_SWITCH_RETRY_MS) { _activeConnection.first { it?.serverUrl == serverUrl } } ?: return@launch
+            if (revalidationJob?.isActive != true) revalidationJob = appScope.launch { refreshRoute(verifySession = false) }
+        }
     }
 
     /**
@@ -480,6 +557,13 @@ class ConnectionRepositoryImpl(
     private companion object {
         /** A LAN address either answers in well under a second or isn't there; don't make a remote sign-in wait longer. */
         const val LOCAL_PROBE_TIMEOUT_MS = 1_500L
+
+        /**
+         * How long a sign-in that Tailscale has accepted still waits for the LAN probe. At home
+         * the probe answers in tens of milliseconds, well before the login; away from home it can
+         * take all of [LOCAL_PROBE_TIMEOUT_MS] to give up, and that is not worth holding the app for.
+         */
+        const val LAN_GRACE_MS = 250L
 
         /** A session check goes to an address already known to answer; still bounded so a stalled route can't hang a switch. */
         const val SESSION_CHECK_TIMEOUT_MS = 5_000L

@@ -76,6 +76,13 @@ internal object LivePlaybackPolicy {
      */
     const val PREFETCH_HOLD_MS = 15_000L
 
+    /**
+     * How long an offer made ahead of any join ([LivePlayerPrefetch.prepare]) is kept for one. Its
+     * candidates are this device's addresses at the time it was gathered; long enough to cover
+     * a biometric prompt and a sign-in, short enough that a network change rarely lands in between.
+     */
+    const val PREPARED_OFFER_TTL_MS = 20_000L
+
     /** Cadence of the fresh-snapshot refresh while no video frame is on screen. */
     const val POSTER_REFRESH_MS = 1_000L
 
@@ -83,11 +90,21 @@ internal object LivePlaybackPolicy {
     const val POSTER_RETRY_MS = 3_000L
 
     /**
-     * How long a WebRTC join may take from creating the offer to ICE reporting a connection.
-     * Host candidates over the LAN or Tailscale pair in well under a second; anything slower is
-     * a blocked port or a dead route, and the HLS fallback is the faster way to a picture.
+     * How long a WebRTC join may spend making its offer, and then — once the server has answered —
+     * getting ICE to a connection. Host candidates over the LAN or Tailscale pair in well under a
+     * second; anything slower is a blocked port or a dead route, and the HLS fallback is the
+     * faster way to a picture.
      */
     const val WEBRTC_CONNECT_TIMEOUT_MS = 3_000L
+
+    /**
+     * How long the signaling round trip may take. Longer than [WEBRTC_CONNECT_TIMEOUT_MS] because
+     * go2rtc only answers once it has a session with the camera: for a stream nobody was
+     * watching, that means dialling the camera's RTSP first — 1.3–2.4 s on these cameras
+     * (measured 2026-09-27), and more with several cards joining at once. A route that is really
+     * dead fails well before this, at the connection itself.
+     */
+    const val WEBRTC_SIGNALING_TIMEOUT_MS = 5_000L
 
     /**
      * How long a connected peer may go without delivering a decoded frame. Bounded by the
@@ -107,14 +124,20 @@ internal object LivePlaybackPolicy {
     const val WEBRTC_FALLBACK_TTL_MS = 10 * 60_000L
 
     /**
-     * How long a successful WebRTC join vouches for the next cold start of the same stream. Inside
-     * it the holder joins over WebRTC alone; outside it — the first open after launch, a route the
-     * app hasn't joined on yet — HLS is started alongside the join, so a picture is on screen in
-     * the second or two HLS needs rather than after the join's full budget when ICE can't get
-     * through ([WEBRTC_CONNECT_TIMEOUT_MS] plus [WEBRTC_FIRST_FRAME_TIMEOUT_MS], eight seconds of
-     * poster). The cost of the shadow is one short HLS session per unproven cold start.
+     * How long a successful WebRTC join vouches for the next cold start of the same stream, across
+     * launches (see `LiveTransportMemory.restore`). Inside it the holder joins over WebRTC alone;
+     * outside it — a route the app hasn't joined on, or not lately — HLS is started alongside the
+     * join, so a picture is on screen in the second or two HLS needs rather than after the join's
+     * full budget when it can't get through. That budget runs stage by stage: up to
+     * [WEBRTC_CONNECT_TIMEOUT_MS] for the offer, [WEBRTC_SIGNALING_TIMEOUT_MS] for signaling,
+     * [WEBRTC_CONNECT_TIMEOUT_MS] for ICE and [WEBRTC_FIRST_FRAME_TIMEOUT_MS] for a frame — 16 s of
+     * poster at worst, though a prepared offer takes none of the first and a dead route usually
+     * fails at the connection long before signaling's bound. The cost of the shadow is one
+     * short HLS session per unproven cold start. A week: a route that joined a few days ago almost
+     * always still does, and one that no longer does costs that budget once, after which its
+     * failure clears the record.
      */
-    const val WEBRTC_PROVEN_TTL_MS = 10 * 60_000L
+    const val WEBRTC_PROVEN_TTL_MS = 7 * 24 * 60 * 60_000L
 
     private const val FIRST_RETRY_DELAY_MS = 250L
     private const val MAX_RETRY_DELAY_MS = 30_000L
