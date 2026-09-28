@@ -135,7 +135,10 @@ actual fun CameraStreamPlayer(
         // The engine calls back on the main thread once this container's renderer has drawn;
         // only a frame for the current transport counts.
         holder.bindRenderer(webRtcContainer) {
-            if (holder.transport == LiveTransport.WEBRTC) renderedGeneration = holder.coldStartGeneration
+            if (holder.transport == LiveTransport.WEBRTC) {
+                markFirstLivePixel(holder, currentSource, "rtc")
+                renderedGeneration = holder.coldStartGeneration
+            }
         }
         onDispose {
             holder.removeListener(listener)
@@ -182,6 +185,7 @@ actual fun CameraStreamPlayer(
             val webRtcShowing = holder.transport == LiveTransport.WEBRTC
             val item = player.currentItem
             if (!webRtcShowing && playerLayer.readyForDisplay && item?.status == AVPlayerItemStatusReadyToPlay) {
+                markFirstLivePixel(holder, currentSource, "hls")
                 renderedGeneration = holder.coldStartGeneration
             }
             // Same safety net as the Android binder: an adopted peer (the join waited for its first
@@ -268,3 +272,11 @@ private class HolderLease(key: String?) : RememberObserver {
 
 /** AVFoundation drives any number of player layers, and the WebRTC engine draws into every bound container. */
 actual val liveSurfaceIsExclusive: Boolean = false
+
+/** The first frame a surface showed for a live source — what the startup timings end on — once per camera, and once per engine. */
+private fun markFirstLivePixel(holder: LivePlayerHolder, source: VideoSource, engine: String) {
+    if (source !is VideoSource.Live) return
+    LiveStartupMilestones.mark("pixel ${holder.key}")
+    LiveStartupMilestones.mark("pixel.$engine ${holder.key}")
+    LiveStartupMilestones.mark("pixel.first")
+}

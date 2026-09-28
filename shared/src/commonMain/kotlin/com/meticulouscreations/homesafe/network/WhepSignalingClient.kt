@@ -30,7 +30,8 @@ class WhepSignalingException(val status: Int?, message: String) : Exception(mess
  * candidates, so one request settles everything.
  *
  * The client needs Ktor's `HttpTimeout` plugin installed; the whole exchange is capped at
- * [REQUEST_TIMEOUT_MS], comfortably inside the connect budget a caller gives a join.
+ * [REQUEST_TIMEOUT_MS] — the same bound the join gives signaling (`WEBRTC_SIGNALING_TIMEOUT_MS`),
+ * which is long because go2rtc may have to dial the camera before it can answer.
  */
 class WhepSignalingClient(private val httpClient: HttpClient) : WhepSignaling {
 

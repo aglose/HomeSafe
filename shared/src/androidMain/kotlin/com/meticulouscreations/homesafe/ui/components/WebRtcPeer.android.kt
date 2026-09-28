@@ -4,6 +4,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -117,7 +120,21 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
         if (audio) connection.addTransceiver(MediaStreamTrack.MediaType.MEDIA_TYPE_AUDIO, recvOnly)
     }
 
-    override suspend fun createOffer(): String {
+    /** Set by [prepareOffer]: the offer, gathered ahead of the join that will use it. */
+    private var preparedOffer: Deferred<String>? = null
+
+    /**
+     * Starts making this peer's offer now — the local description and ICE gathering, a couple of
+     * hundred milliseconds — so the join that takes it later can go straight to signaling.
+     * [createOffer] then returns (or waits for) this one.
+     */
+    fun prepareOffer(scope: CoroutineScope) {
+        if (preparedOffer == null) preparedOffer = scope.async { makeOffer() }
+    }
+
+    override suspend fun createOffer(): String = preparedOffer?.await() ?: makeOffer()
+
+    private suspend fun makeOffer(): String {
         val offer = suspendCancellableCoroutine { continuation ->
             connection.createOffer(
                 object : SdpObserverAdapter() {
