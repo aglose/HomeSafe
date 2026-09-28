@@ -249,7 +249,11 @@ class ConnectionRepositoryImplTest {
             networkMonitor = network,
             appScope = scope.backgroundScope,
             clock = clock,
-        )
+        ).apply {
+            // Real time (see ConnectionRepositoryImpl.lanGraceMs): generous, so the mock LAN
+            // host always answers inside it on a slow runner; the test about a late probe shortens it.
+            lanGraceMs = 5_000
+        }
 
         suspend fun cameraNames(): List<String> = cameraDao.observeByServer(serverUrl).first().map { it.name }.sorted()
     }
@@ -510,6 +514,7 @@ class ConnectionRepositoryImplTest {
         val h = Harness(this)
         val probe = CompletableDeferred<Unit>()
         h.frigate.localProbeGate = probe
+        h.repository.lanGraceMs = 100
 
         val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
 

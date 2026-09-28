@@ -21,6 +21,7 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
@@ -38,6 +39,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -94,6 +96,9 @@ class ConnectionRepositoryImpl(
 
     override val currentServerUrl: StateFlow<String?> =
         _activeConnection.map { it?.activeUrl }.stateIn(appScope, SharingStarted.Eagerly, null)
+
+    /** [LAN_GRACE_MS]; tests shorten or lengthen it (real time, see [signInExpecting]). */
+    internal var lanGraceMs = LAN_GRACE_MS
 
     private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
     override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
@@ -179,7 +184,7 @@ class ConnectionRepositoryImpl(
             }
             launch {
                 if (apiClient.isReachable(record.serverUrl, LOCAL_PROBE_TIMEOUT_MS)) {
-                    delay(LAN_GRACE_MS)
+                    delay(lanGraceMs)
                     if (_expectedConnection.value == null) {
                         _expectedConnection.value = ActiveConnection(record.serverUrl, LOCAL_SERVER_URL, ConnectionRoute.TAILSCALE)
                     }
@@ -341,7 +346,9 @@ class ConnectionRepositoryImpl(
                 // At home the LAN has long answered by the time Tailscale accepts a password; away,
                 // its probe may still be waiting out the timeout. Give it [LAN_GRACE_MS], then go on
                 // over Tailscale, and move to the LAN behind the sign-in if it answers after all.
-                val lanUp = withTimeoutOrNull(LAN_GRACE_MS) { lanAnswers.await() }
+                // On a real clock: the probe is real network I/O, and a test scheduler's virtual
+                // time would let the grace run out before any reply could arrive.
+                val lanUp = withContext(Dispatchers.Default) { withTimeoutOrNull(lanGraceMs) { lanAnswers.await() } }
                 if (lanUp == null) {
                     lanWatch.cancel()
                     moveToLanIfItAnswers(lanAnswers, remoteUrl)
