@@ -128,3 +128,42 @@ layers above are what gate a merge.
 The sign-in fields, the Connect button and the bottom nav carry test tags, and `MainActivity` exposes test tags as
 resource ids (`testTagsAsResourceId`). So `android layout`, UiAutomator and the Macrobenchmark journeys all see
 handles like `sign_in_server_url` and `bottom_nav_moments`.
+
+## Baseline Profile regeneration
+
+The Baseline Profile in `androidApp/src/release/generated/baselineProfiles/` is committed, and the
+**Baseline Profile** workflow (`.github/workflows/baseline-profile.yml`) keeps it current. It runs every Monday at
+07:00 UTC, and on demand from the Actions tab.
+
+1. **Gate.** Counts the commits on `main` since the last commit that touched the profile directory. With none, the
+   run stops there. A manual run with `force` ticked regenerates anyway.
+2. **Generate.** On an API 34 `google_apis` x86_64 emulator, which shares its AVD snapshot cache with `ci.yml`:
+   - The runner starts the fake Frigate (`--port 8971 --host 0.0.0.0 --advertise 10.0.2.2`) and writes
+     `local.credentials.properties` with its `admin` account. The `nonMinifiedRelease` build's
+     "Autofill test credentials" button then signs the journey in to `http://10.0.2.2:8971`.
+   - Beside it runs a pinned go2rtc with an ffmpeg `testsrc` H.264 stream for each name the app asks the fake's cameras
+     for: `front_door`, `driveway`, `driveway_sub` and `back_yard`. Its API is on `:1984` and WebRTC on `:8555`, with
+     `10.0.2.2` as the candidate. The fake has no live video of its own, and without go2rtc the profile would only
+     record the failed WebRTC join and the HLS fallback, not the path users actually take. If the fake's cameras or
+     their `live.streams` change, update `GO2RTC_STREAMS` in the workflow. The step fails when any name is missing.
+   - It then runs `./gradlew :androidApp:generateBaselineProfile`, which runs `BaselineProfileGenerator` on the
+     emulator.
+3. **Pull request.** Any change to the profile is opened as a pull request, or pushed to the existing one, from the
+   fixed branch `automation/baseline-profile`. Review it and merge it like any other. The profiles, logcat and the
+   fake Frigate and go2rtc logs are also uploaded as the `baseline-profile` artifact.
+
+The pull request is opened with a token of its own rather than `GITHUB_TOKEN`. GitHub doesn't run workflows for a pull
+request that `GITHUB_TOKEN` opened, so `ci-green` would never report and the merge would stay blocked. The repository
+owner has to set this up once:
+
+1. Create a repository secret `BASELINE_PROFILE_TOKEN` (Settings → Secrets and variables → Actions). It can be a
+   fine-grained personal access token or a GitHub App token, scoped to this repository, with **Contents: read and
+   write** and **Pull requests: read and write**.
+2. In Settings → Actions → General → Workflow permissions, enable **Allow GitHub Actions to create and approve pull
+   requests**.
+
+Until the secret exists, the run still generates the profile and uploads the artifact, then fails at the pull request
+step with a message saying the secret is missing.
+
+To regenerate by hand instead, run `./gradlew :androidApp:generateBaselineProfile` with a device connected, and with
+`local.credentials.properties` pointing at a Frigate server the device can reach, such as the fake one above.
