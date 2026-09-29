@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.ui.components
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.view.TextureView
 import org.webrtc.EglBase
@@ -35,6 +36,10 @@ import java.util.concurrent.CountDownLatch
  * `onSurfaceTextureUpdated`, i.e. after the render thread has actually swapped it in, not when a
  * frame was merely handed to the renderer. Callers that only care about the first one keep
  * their own flag.
+ *
+ * [peerFrameGeneration] and [onDetaching] exist so the picture outlives the view: the holder
+ * copies what this surface is showing ([snapshot]) for the next surface bound to the same
+ * camera — see `LivePlayerHolder.bridgeFrame`.
  */
 internal class WebRtcTextureRenderer(
     context: Context,
@@ -46,6 +51,16 @@ internal class WebRtcTextureRenderer(
     private var released = false
 
     var onFrameRendered: (() -> Unit)? = null
+
+    /**
+     * The holder's cold-start generation this surface is showing a peer frame for, or -1 while it
+     * shows nothing of the peer's (new, or [clear]ed). Set by the binder, which is what can tell a
+     * peer frame from the swap a clear makes.
+     */
+    var peerFrameGeneration = -1
+
+    /** Runs as the view leaves the window, while its layer can still be read. */
+    var onDetaching: (() -> Unit)? = null
 
     init {
         isOpaque = false
@@ -70,12 +85,22 @@ internal class WebRtcTextureRenderer(
         }
     }
 
+    override fun onDetachedFromWindow() {
+        // Before super: TextureView drops its layer right after this, and [snapshot] reads it.
+        onDetaching?.invoke()
+        super.onDetachedFromWindow()
+    }
+
+    /** What the surface is showing right now, or null if it has no layer to read. */
+    fun snapshot(): Bitmap? = if (!released && isAvailable) runCatching { bitmap }.getOrNull() else null
+
     override fun onFrame(frame: VideoFrame) {
         renderer.onFrame(frame)
     }
 
     /** Paints the view transparent, so whatever is stacked beneath it shows through until the next frame. */
     fun clear() {
+        peerFrameGeneration = -1
         if (!released) renderer.clearImage()
     }
 
@@ -83,6 +108,7 @@ internal class WebRtcTextureRenderer(
         if (released) return
         released = true
         onFrameRendered = null
+        onDetaching = null
         renderer.release()
     }
 }
