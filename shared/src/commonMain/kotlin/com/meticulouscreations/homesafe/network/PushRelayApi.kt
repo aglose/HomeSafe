@@ -1,7 +1,9 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import dev.zacsweers.metro.Inject
@@ -164,6 +166,31 @@ class PushRelayApi(private val httpClient: HttpClient) {
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
     }
 
+    /**
+     * Someone saying [eventId], a person detection, was not a person: the relay keeps its box as a
+     * phantom spot on its camera, so the same thing there isn't pushed again, and files the
+     * detection as a `none` example for the person classifier when there is one. A user action, so
+     * the session cookie. Answers the spot.
+     */
+    suspend fun markNotAPerson(serverUrl: String, eventId: String): Result<PhantomSpot> = runCatching {
+        val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException("Relay kept no spot")
+    }
+
+    /** Takes a [markNotAPerson] back: the phantom spot goes. */
+    suspend fun undoNotAPerson(serverUrl: String, eventId: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
+    /** Every phantom spot the relay keeps, for the feed to hide what the relay no longer pushes. */
+    suspend fun getPhantomSpots(serverUrl: String): Result<List<PhantomSpot>> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/phantoms"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayPhantoms>().spots.mapNotNull { it.toDomain() }
+    }
+
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")
     }
@@ -260,3 +287,19 @@ internal data class RelayPresenceDevice(
     val id: String? = null,
     @SerialName("last_seen") val lastSeen: Double? = null,
 )
+
+/** One of the relay's phantom spots (`GET /phantoms`, `POST .../not_a_person`). */
+@Serializable
+internal data class RelayPhantomSpot(
+    @SerialName("event_id") val eventId: String,
+    val camera: String,
+    val box: List<Double> = emptyList(),
+) {
+    fun toDomain(): PhantomSpot? = DetectionBox.fromFractions(box)?.let { PhantomSpot(eventId, camera, it) }
+}
+
+@Serializable
+internal data class RelayPhantoms(val spots: List<RelayPhantomSpot> = emptyList())
+
+@Serializable
+internal data class RelayNotAPerson(val spot: RelayPhantomSpot)
