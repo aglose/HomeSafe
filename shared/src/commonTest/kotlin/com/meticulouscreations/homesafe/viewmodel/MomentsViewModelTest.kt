@@ -292,12 +292,12 @@ class MomentsViewModelTest {
         val harness = Harness()
         val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
         harness.viewModel.markNotAPerson(person)
-        advanceUntilIdle()
+        testScheduler.runCurrent()
         assertEquals(listOf("b", "c", "d"), harness.viewModel.uiState.value.ids)
         assertEquals(person, harness.viewModel.notAPersonState.value.marked)
 
         harness.viewModel.undoNotAPerson()
-        advanceUntilIdle()
+        testScheduler.runCurrent()
         assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
         assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
     }
@@ -308,11 +308,23 @@ class MomentsViewModelTest {
         harness.phantoms.refuse = true
         val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
         harness.viewModel.markNotAPerson(person)
-        advanceUntilIdle()
+        testScheduler.runCurrent()
         assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
         assertEquals("Relay answered 502", harness.viewModel.notAPersonState.value.error)
         harness.viewModel.dismissNotAPerson()
         assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
+    }
+
+    @Test
+    fun theUndoOfferLetsItselfGo() = runTest(dispatcher) {
+        val harness = Harness()
+        val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
+        harness.viewModel.markNotAPerson(person)
+        testScheduler.runCurrent()
+        assertEquals(person, harness.viewModel.notAPersonState.value.marked)
+        advanceUntilIdle()
+        assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value, "the offer went, the card stays hidden")
+        assertEquals(listOf("b", "c", "d"), harness.viewModel.uiState.value.ids)
     }
 
     @Test

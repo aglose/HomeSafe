@@ -24,10 +24,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -38,7 +35,6 @@ import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
-import kotlinx.coroutines.delay
 
 /*
  * Marking a person detection "Not a person": the detector saw someone in clutter by the door. The
@@ -103,19 +99,14 @@ private fun NotAPersonPill(marking: Boolean, modifier: Modifier = Modifier) {
 
 /**
  * What came of the last "Not a person", under the feed's filters: done, with Undo, or why it
- * wasn't. Lets itself go after [NOT_A_PERSON_BAR_MS]; nothing while [state] has neither.
+ * wasn't; nothing while [state] has neither. The view model lets it go after a while, as it does
+ * a download's result, so no timer runs in the composition.
  */
 @Composable
 internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val marked = state.marked
     val error = state.error
-    // The latest onDismiss, read when the bar lets itself go: a new lambda doesn't restart its timer.
-    val dismiss by rememberUpdatedState(onDismiss)
     if (marked == null && error == null) return
-    LaunchedEffect(marked, error) {
-        delay(NOT_A_PERSON_BAR_MS)
-        dismiss()
-    }
     val shape = RoundedCornerShape(12.dp)
     Row(
         modifier = modifier
@@ -139,9 +130,6 @@ internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismi
         }
     }
 }
-
-/** How long the bar offers Undo before it lets itself go. */
-private const val NOT_A_PERSON_BAR_MS = 8_000L
 
 private val previewMarked = MomentEvent(
     id = "1790655519.294717-p1",

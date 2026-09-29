@@ -473,9 +473,9 @@ class MomentsViewModel(
             markNotAPersonUseCase(event.id)
                 .onSuccess {
                     if (_clip.value.eventId == event.id) collapse()
-                    _notAPersonState.value = NotAPersonUiState(marked = event)
+                    flashNotAPerson(NotAPersonUiState(marked = event))
                 }
-                .onFailure { _notAPersonState.value = NotAPersonUiState(error = it.message ?: "Couldn't mark it") }
+                .onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't mark it")) }
         }
     }
 
@@ -484,7 +484,16 @@ class MomentsViewModel(
         val event = _notAPersonState.value.marked ?: return
         _notAPersonState.value = NotAPersonUiState()
         viewModelScope.launch {
-            undoNotAPersonUseCase(event.id).onFailure { _notAPersonState.value = NotAPersonUiState(error = it.message ?: "Couldn't undo it") }
+            undoNotAPersonUseCase(event.id).onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't undo it")) }
+        }
+    }
+
+    /** Shows [state] (the Undo offer, or why not) for [NOT_A_PERSON_FLASH_MS], unless something newer replaces it first. */
+    private fun flashNotAPerson(state: NotAPersonUiState) {
+        _notAPersonState.value = state
+        viewModelScope.launch {
+            delay(NOT_A_PERSON_FLASH_MS)
+            _notAPersonState.update { if (it === state) NotAPersonUiState() else it }
         }
     }
 
@@ -507,6 +516,9 @@ class MomentsViewModel(
 
     private companion object {
         const val RESULT_FLASH_MS = 2_500L
+
+        /** How long a "Not a person" offers Undo (or says why it failed) before it lets itself go. */
+        const val NOT_A_PERSON_FLASH_MS = 8_000L
 
         /** The shortest a pull to refresh shows its scan for, however quickly the server answers. */
         const val MIN_REFRESH_MS = 900L
