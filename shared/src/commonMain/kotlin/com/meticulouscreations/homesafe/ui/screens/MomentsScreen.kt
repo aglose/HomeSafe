@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.PersonOff
 import androidx.compose.material.icons.filled.PersonSearch
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.PlayArrow
@@ -106,6 +107,7 @@ import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
+import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDate
@@ -166,6 +168,7 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
     val viewModel: MomentsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val downloadState by viewModel.downloadState.collectAsStateWithLifecycle()
+    val notAPersonState by viewModel.notAPersonState.collectAsStateWithLifecycle()
     val tagViewModel: MomentCarTagViewModel = metroViewModel()
     val tagState by tagViewModel.uiState.collectAsStateWithLifecycle()
 
@@ -198,6 +201,10 @@ fun MomentsTabContent(onOpenFullScreen: (MomentEvent) -> Unit, modifier: Modifie
         },
         modifier = modifier,
         onTagCar = tagViewModel::open,
+        notAPersonState = notAPersonState,
+        onNotAPerson = viewModel::markNotAPerson,
+        onUndoNotAPerson = viewModel::undoNotAPerson,
+        onDismissNotAPerson = viewModel::dismissNotAPerson,
         scrollToTopRequests = scrollToTopRequests,
     )
 }
@@ -226,6 +233,10 @@ internal fun MomentsFeed(
     modifier: Modifier = Modifier,
     onRefresh: () -> Unit = {},
     onTagCar: (MomentEvent) -> Unit = {},
+    notAPersonState: NotAPersonUiState = NotAPersonUiState(),
+    onNotAPerson: (MomentEvent) -> Unit = {},
+    onUndoNotAPerson: () -> Unit = {},
+    onDismissNotAPerson: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     var pickingDay by remember { mutableStateOf(false) }
@@ -291,6 +302,8 @@ internal fun MomentsFeed(
                 modifier = Modifier.padding(start = 16.dp),
             )
         }
+
+        NotAPersonBar(state = notAPersonState, onUndo = onUndoNotAPerson, onDismiss = onDismissNotAPerson)
 
         // The pull is only for the feed: the filter chips above stay where they are.
         ApertureRefreshBox(isRefreshing = state.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
@@ -377,6 +390,8 @@ internal fun MomentsFeed(
                                     onDownloadClick = { onDownloadClick(item.event) },
                                     onFullScreenClick = { playing?.let(onFullScreenClick) },
                                     onTagCar = onTagCar,
+                                    onNotAPerson = onNotAPerson,
+                                    markingNotAPersonId = notAPersonState.markingEventId,
                                 )
                             }
                         }
@@ -852,6 +867,8 @@ private fun MomentCard(
     onDownloadClick: () -> Unit,
     onFullScreenClick: () -> Unit,
     onTagCar: (MomentEvent) -> Unit,
+    onNotAPerson: (MomentEvent) -> Unit = {},
+    markingNotAPersonId: String? = null,
 ) {
     val extraColors = LocalFrigateExtraColors.current
     val event = item.event
@@ -983,6 +1000,7 @@ private fun MomentCard(
                             )
                         }
                         if (item.canTagCar) TagCarButton(onClick = { onTagCar(event) })
+                        if (item.canMarkNotPerson) NotAPersonButton(onClick = { onNotAPerson(event) }, marking = markingNotAPersonId == event.id)
                     }
                     if (event.hasClip) {
                         DownloadButton(
@@ -998,7 +1016,7 @@ private fun MomentCard(
 
         if (item.clips.isNotEmpty()) {
             AnimatedVisibility(visible = clipsOpen) {
-                MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay, onTagCar = onTagCar)
+                MomentClipList(item = item, playingEventId = player.playingEventId, onPlay = onPlay, onTagCar = onTagCar, onNotAPerson = onNotAPerson)
             }
         }
 
@@ -1114,8 +1132,14 @@ private fun ClipsToggle(label: String, open: Boolean, onClick: () -> Unit) {
  * space, so the durations still line up.
  */
 @Composable
-private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (MomentEvent) -> Unit, onTagCar: (MomentEvent) -> Unit) {
-    val anyTaggable = item.clips.any { it.canTagCar }
+private fun MomentClipList(
+    item: MomentItem,
+    playingEventId: String?,
+    onPlay: (MomentEvent) -> Unit,
+    onTagCar: (MomentEvent) -> Unit,
+    onNotAPerson: (MomentEvent) -> Unit = {},
+) {
+    val anyTaggable = item.clips.any { it.canTagCar || it.canMarkNotPerson }
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         item.clips.forEach { clip ->
             val playing = clip.event.id == playingEventId
@@ -1167,6 +1191,25 @@ private fun MomentClipList(item: MomentItem, playingEventId: String?, onPlay: (M
                             imageVector = Icons.Filled.Sell,
                             contentDescription = "Tag this car",
                             tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                } else if (clip.canMarkNotPerson) {
+                    Box(
+                        modifier = Modifier
+                            .size(CLIP_ROW_MIN_HEIGHT)
+                            .clickable(
+                                interactionSource = null,
+                                indication = ripple(bounded = false, radius = 20.dp),
+                                role = Role.Button,
+                                onClick = { onNotAPerson(clip.event) },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PersonOff,
+                            contentDescription = "Not a person",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp),
                         )
                     }

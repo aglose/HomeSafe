@@ -3,9 +3,11 @@ package com.meticulouscreations.homesafe.viewmodel
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
+import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
@@ -16,19 +18,24 @@ import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.domain.repository.PhantomRepository
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LoadOlderMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.MarkNotAPersonUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObservePhantomSpotsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshPhantomSpotsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
+import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -129,6 +136,27 @@ class MomentsViewModelTest {
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
+    /** The relay's phantom spots: whatever [spots] holds, and a mark that fails while [refuse] is set. */
+    private class FakePhantoms : PhantomRepository {
+        override val spots = MutableStateFlow<List<PhantomSpot>>(emptyList())
+        var refreshCalls = 0
+        var refuse = false
+        override suspend fun refresh(): Result<Unit> {
+            refreshCalls++
+            return Result.success(Unit)
+        }
+        override suspend fun markNotAPerson(eventId: String): Result<PhantomSpot> {
+            if (refuse) return Result.failure(IllegalStateException("Relay answered 502"))
+            val spot = PhantomSpot(eventId, "front_door", DetectionBox(0.1, 0.3, 0.2, 0.4))
+            spots.value += spot
+            return Result.success(spot)
+        }
+        override suspend fun undoNotAPerson(eventId: String): Result<Unit> {
+            spots.value = spots.value.filterNot { it.eventId == eventId }
+            return Result.success(Unit)
+        }
+    }
+
     private object NoDownloads : ClipDownloader {
         override suspend fun download(url: String, headers: Map<String, String>, fileName: String, onProgress: (ClipDownloadProgress) -> Unit): Result<Unit> = fail("unused")
     }
@@ -155,6 +183,7 @@ class MomentsViewModelTest {
     private inner class Harness(cameras: List<Camera> = listOf(Camera("front_door", true), Camera("backyard", true)), events: List<MomentEvent> = feed) {
         val moments = FakeMoments(events)
         val cameraRepo = FakeCameras(cameras)
+        val phantoms = FakePhantoms()
         val viewModel = MomentsViewModel(
             observeMomentsUseCase = ObserveMomentsUseCase(moments),
             observeMomentsErrorUseCase = ObserveMomentsErrorUseCase(moments),
@@ -169,6 +198,10 @@ class MomentsViewModelTest {
             downloadMomentClipUseCase = DownloadMomentClipUseCase(moments, NoDownloads),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             getRecordingSnapshotUrlUseCase = GetRecordingSnapshotUrlUseCase(FakeMediaUrls),
+            observePhantomSpotsUseCase = ObservePhantomSpotsUseCase(phantoms),
+            refreshPhantomSpotsUseCase = RefreshPhantomSpotsUseCase(phantoms),
+            markNotAPersonUseCase = MarkNotAPersonUseCase(phantoms),
+            undoNotAPersonUseCase = UndoNotAPersonUseCase(phantoms),
             clock = object : Clock {
                 override fun now(): Instant = Instant.fromEpochSeconds(1_789_400_000)
             },
@@ -238,6 +271,70 @@ class MomentsViewModelTest {
         assertEquals(true, harness.viewModel.uiState.value.refreshing, "the server answered at once, but the scan runs its sweep")
         advanceUntilIdle()
         assertEquals(false, harness.viewModel.uiState.value.refreshing)
+    }
+
+    @Test
+    fun onlyAnUnnamedPersonCanBeMarkedNotAPerson() = runTest(dispatcher) {
+        val items = state(Harness().viewModel).groups.flatMap { it.items }.associateBy { it.event.id }
+        assertEquals(mapOf("a" to true, "b" to false, "c" to true, "d" to false), items.mapValues { it.value.canMarkNotPerson })
+    }
+
+    @Test
+    fun theFeedAsksTheRelayForItsPhantomsAndHidesThem() = runTest(dispatcher) {
+        val harness = Harness()
+        harness.phantoms.spots.value = listOf(PhantomSpot("c", "backyard", DetectionBox(0.1, 0.3, 0.2, 0.4)))
+        assertEquals(listOf("a", "b", "d"), state(harness.viewModel).ids)
+        assertEquals(1, harness.phantoms.refreshCalls)
+    }
+
+    @Test
+    fun markingNotAPersonHidesTheCardAndOffersUndo() = runTest(dispatcher) {
+        val harness = Harness()
+        val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
+        harness.viewModel.markNotAPerson(person)
+        testScheduler.runCurrent()
+        assertEquals(listOf("b", "c", "d"), harness.viewModel.uiState.value.ids)
+        assertEquals(person, harness.viewModel.notAPersonState.value.marked)
+
+        harness.viewModel.undoNotAPerson()
+        testScheduler.runCurrent()
+        assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
+        assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
+    }
+
+    @Test
+    fun aMarkTheRelayRefusesSaysSoAndHidesNothing() = runTest(dispatcher) {
+        val harness = Harness()
+        harness.phantoms.refuse = true
+        val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
+        harness.viewModel.markNotAPerson(person)
+        testScheduler.runCurrent()
+        assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
+        assertEquals("Relay answered 502", harness.viewModel.notAPersonState.value.error)
+        harness.viewModel.dismissNotAPerson()
+        assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
+    }
+
+    @Test
+    fun theUndoOfferLetsItselfGo() = runTest(dispatcher) {
+        val harness = Harness()
+        val person = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "a" }.event
+        harness.viewModel.markNotAPerson(person)
+        testScheduler.runCurrent()
+        assertEquals(person, harness.viewModel.notAPersonState.value.marked)
+        advanceUntilIdle()
+        assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value, "the offer went, the card stays hidden")
+        assertEquals(listOf("b", "c", "d"), harness.viewModel.uiState.value.ids)
+    }
+
+    @Test
+    fun aCarCannotBeMarkedNotAPerson() = runTest(dispatcher) {
+        val harness = Harness()
+        val car = state(harness.viewModel).groups.flatMap { it.items }.first { it.event.id == "b" }.event
+        harness.viewModel.markNotAPerson(car)
+        advanceUntilIdle()
+        assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
+        assertEquals(0, harness.phantoms.spots.value.size)
     }
 
     @Test
