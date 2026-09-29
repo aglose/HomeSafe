@@ -8,24 +8,30 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
+import com.meticulouscreations.homesafe.domain.model.canMarkNotPerson
 import com.meticulouscreations.homesafe.domain.model.downloadFileName
 import com.meticulouscreations.homesafe.domain.model.endOfDayEpochSeconds
 import com.meticulouscreations.homesafe.domain.model.groupIntoVisits
 import com.meticulouscreations.homesafe.domain.model.isGenericCar
+import com.meticulouscreations.homesafe.domain.model.isPhantom
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.DownloadMomentClipUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetMomentClipStreamUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LoadOlderMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.MarkNotAPersonUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsPagingUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObservePhantomSpotsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshMomentsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshPhantomSpotsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
+import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import dev.zacsweers.metro.AppScope
@@ -43,6 +49,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -72,6 +79,8 @@ data class MomentItem(
     val clips: List<MomentClip> = emptyList(),
     /** [event] is a car the classifier left unnamed, and nothing else in the entry was named: it can be tagged as a known car. */
     val canTagCar: Boolean = false,
+    /** [event] is a person nobody put a name to, and nothing else in the entry was named: it can be marked "Not a person". */
+    val canMarkNotPerson: Boolean = false,
 )
 
 /** One take inside a folded entry — its [event] is the clip that plays — as its row in the opened list reads. */
@@ -86,6 +95,19 @@ data class MomentClip(
     val durationLabel: String?,
     /** A car the classifier left unnamed, which can be tagged as a known car. */
     val canTagCar: Boolean = false,
+    /** A person nobody put a name to, which can be marked "Not a person". */
+    val canMarkNotPerson: Boolean = false,
+)
+
+/**
+ * A "Not a person" in progress or just done, at most one at a time. [marked] is set once the relay
+ * took it, for the feed to offer Undo; [error] once it didn't.
+ */
+@Immutable
+data class NotAPersonUiState(
+    val markingEventId: String? = null,
+    val marked: MomentEvent? = null,
+    val error: String? = null,
 )
 
 /** A date header and the cards beneath it, in feed order. */
@@ -159,6 +181,10 @@ class MomentsViewModel(
     private val downloadMomentClipUseCase: DownloadMomentClipUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
+    observePhantomSpotsUseCase: ObservePhantomSpotsUseCase,
+    private val refreshPhantomSpotsUseCase: RefreshPhantomSpotsUseCase,
+    private val markNotAPersonUseCase: MarkNotAPersonUseCase,
+    private val undoNotAPersonUseCase: UndoNotAPersonUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -175,6 +201,17 @@ class MomentsViewModel(
     private val _downloadState = MutableStateFlow(DownloadUiState())
     val downloadState: StateFlow<DownloadUiState> = _downloadState.asStateFlow()
     private var downloadJob: Job? = null
+
+    private val _notAPersonState = MutableStateFlow(NotAPersonUiState())
+    val notAPersonState: StateFlow<NotAPersonUiState> = _notAPersonState.asStateFlow()
+
+    /**
+     * The feed without its phantom people (see [com.meticulouscreations.homesafe.domain.model.PhantomSpot]):
+     * what the relay no longer pushes, the feed no longer shows, so one "Not a person" on a card
+     * clears every re-detection of the same thing at the same spot.
+     */
+    private val visibleEvents: Flow<List<MomentEvent>> =
+        combine(observeMomentsUseCase(), observePhantomSpotsUseCase()) { events, spots -> events.filterNot { it.isPhantom(spots) } }
 
     /**
      * What the feed is narrowed to. A picked camera the server no longer lists (a switch to
@@ -211,6 +248,10 @@ class MomentsViewModel(
         viewModelScope.launch {
             filters.map { it.camera?.name }.distinctUntilChanged().drop(1).collect { collapse() }
         }
+        // The relay's phantom spots, again for each server (and each route to it) the feed is shown for.
+        viewModelScope.launch {
+            serverUrl.filterNotNull().distinctUntilChanged().collect { refreshPhantomSpotsUseCase() }
+        }
     }
 
     /**
@@ -218,7 +259,7 @@ class MomentsViewModel(
      * that isn't about the open clip.
      */
     private val feed: Flow<MomentsUiState> = combine(
-        observeMomentsUseCase(),
+        visibleEvents,
         filters,
         observeMomentsErrorUseCase(),
         observeMomentsPagingUseCase(),
@@ -252,12 +293,30 @@ class MomentsViewModel(
                     visit.takes.map { take ->
                         val event = take.lead
                         val p = event.present(day)
-                        MomentClip(event, p.timeLabel, p.title, p.durationLabel, canTagCar = event.isGenericCar)
+                        MomentClip(
+                            event,
+                            p.timeLabel,
+                            p.title,
+                            p.durationLabel,
+                            canTagCar = event.isGenericCar,
+                            canMarkNotPerson = event.canMarkNotPerson,
+                        )
                     }
                 }
                 // A household car's routine is named by definition; a visit with a name in it reads as that name.
                 val canTagCar = visit.kind != VisitKind.ROUTINE && !visit.isFamiliar && lead.isGenericCar
-                MomentItem(lead, visit.present(day), thumb, key = visit.key, kind = visit.kind, clips = clips, canTagCar = canTagCar)
+                // Likewise a visit with a known face in it is someone's, whatever else the detector saw.
+                val canMarkNotPerson = visit.kind != VisitKind.ROUTINE && !visit.isFamiliar && lead.canMarkNotPerson
+                MomentItem(
+                    lead,
+                    visit.present(day),
+                    thumb,
+                    key = visit.key,
+                    kind = visit.kind,
+                    clips = clips,
+                    canTagCar = canTagCar,
+                    canMarkNotPerson = canMarkNotPerson,
+                )
             }
         // groupBy preserves encounter order, and the feed arrives newest-first, so "Today" leads.
         val groups = items
@@ -324,6 +383,7 @@ class MomentsViewModel(
             try {
                 coroutineScope {
                     launch { delay(MIN_REFRESH_MS) }
+                    launch { refreshPhantomSpotsUseCase() }
                     refreshMomentsUseCase()
                 }
             } finally {
@@ -400,6 +460,48 @@ class MomentsViewModel(
         }
     }
 
+    /**
+     * Marks [event] "Not a person" (see [MarkNotAPersonUseCase]). Once the relay has it, the card
+     * and every re-detection at the same spot leave the feed, and [notAPersonState] offers Undo.
+     * One at a time, and never cancelled: a mark the relay kept but the app stopped listening for
+     * would be a spot nobody could see to undo. A tap while one is on its way is let go.
+     */
+    fun markNotAPerson(event: MomentEvent) {
+        if (!event.canMarkNotPerson || _notAPersonState.value.markingEventId != null) return
+        _notAPersonState.value = NotAPersonUiState(markingEventId = event.id)
+        viewModelScope.launch {
+            markNotAPersonUseCase(event.id)
+                .onSuccess {
+                    if (_clip.value.eventId == event.id) collapse()
+                    flashNotAPerson(NotAPersonUiState(marked = event))
+                }
+                .onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't mark it")) }
+        }
+    }
+
+    /** Takes the last "Not a person" back: its card, and the re-detections it hid, return. */
+    fun undoNotAPerson() {
+        val event = _notAPersonState.value.marked ?: return
+        _notAPersonState.value = NotAPersonUiState()
+        viewModelScope.launch {
+            undoNotAPersonUseCase(event.id).onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't undo it")) }
+        }
+    }
+
+    /** Shows [state] (the Undo offer, or why not) for [NOT_A_PERSON_FLASH_MS], unless something newer replaces it first. */
+    private fun flashNotAPerson(state: NotAPersonUiState) {
+        _notAPersonState.value = state
+        viewModelScope.launch {
+            delay(NOT_A_PERSON_FLASH_MS)
+            _notAPersonState.update { if (it === state) NotAPersonUiState() else it }
+        }
+    }
+
+    /** The Undo offer (or the error) has been seen and let go. */
+    fun dismissNotAPerson() {
+        _notAPersonState.update { if (it.markingEventId != null) it else NotAPersonUiState() }
+    }
+
     private fun today(): LocalDate = clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
 
     private data class Filters(val category: MomentCategory, val unfamiliarOnly: Boolean, val cameras: List<MomentCameraOption>, val camera: MomentCameraOption?)
@@ -414,6 +516,9 @@ class MomentsViewModel(
 
     private companion object {
         const val RESULT_FLASH_MS = 2_500L
+
+        /** How long a "Not a person" offers Undo (or says why it failed) before it lets itself go. */
+        const val NOT_A_PERSON_FLASH_MS = 8_000L
 
         /** The shortest a pull to refresh shows its scan for, however quickly the server answers. */
         const val MIN_REFRESH_MS = 900L

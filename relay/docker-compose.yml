@@ -23,6 +23,10 @@ services:
       # The car check (relay.py, "car check"): files passing street cars' crops into the
       # classifier's `none` class, and asks the vision model below about cars in the driveway.
       CAR_CLASSIFIER: known_cars
+      # The person check (relay.py, "person check"): grows a `person`/`none` classifier from the
+      # detections marked "Not a person" and the faces Frigate names. Idle until Frigate has the
+      # model (see docs/phantom-people.md).
+      PERSON_CLASSIFIER: person_check
       OLLAMA_URL: http://127.0.0.1:11434
       VLM_MODEL: qwen3-vl:4b-instruct
       # How each household car looks, by the classifier's category, checked against its training
