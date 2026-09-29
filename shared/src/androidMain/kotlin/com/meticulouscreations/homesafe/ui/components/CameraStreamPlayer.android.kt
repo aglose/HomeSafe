@@ -19,7 +19,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +65,14 @@ import kotlinx.coroutines.isActive
  * binder, a cold connect, a reconnect after an error, a return from a long background — with a
  * snapshot that is at most a second old, and leaves a good frame alone across warm swaps.
  *
+ * A binder that arrives while the holder is warm doesn't need the poster at all: it starts with
+ * the holder's [LivePlayerHolder.bridgeFrame] — the camera's picture as it is on screen (or was,
+ * when the last surface went) — counts it as this generation's frame, and so reports
+ * [LiveStreamStatus.Live] from its first composition. The copy is drawn over its surfaces until
+ * one of them renders a frame of its own. That is what keeps a live camera looking live when the
+ * detail screen opens over its card, when the grid comes back from the detail screen or another
+ * tab, and when a card scrolls back into view.
+ *
  * A bare `TextureView` is used rather than [androidx.media3.ui.PlayerView] or libwebrtc's
  * `SurfaceViewRenderer`: a `SurfaceView` punches its own hole in the window and doesn't
  * composite with Compose content above or below it, which is how black boxes used to persist
@@ -102,9 +109,13 @@ actual fun CameraStreamPlayer(
     val currentOnPlaybackError by rememberUpdatedState(onPlaybackError)
     val currentOnAudioAvailabilityChanged by rememberUpdatedState(onAudioAvailabilityChanged)
 
+    // What the camera is showing elsewhere (or was, when its last surface went), if the holder is
+    // warm: taken now, in composition, so this binder's very first frame already has the picture.
+    val initialBridge = remember(holder) { holder.bridgeFrame()?.asImageBitmap() }
+
     // The cold-start generation a surface here last rendered a frame for; the poster stays up
-    // until it catches up with the holder's current one.
-    var renderedGeneration by remember(holder) { mutableIntStateOf(-1) }
+    // until it catches up with the holder's current one. A bridge is a frame of the current one.
+    var renderedGeneration by remember(holder) { mutableIntStateOf(if (initialBridge != null) holder.coldStartGeneration else -1) }
     val posterVisible = renderedGeneration != holder.coldStartGeneration
 
     // The two bits behind LiveStreamStatus: nothing decoded yet for this cold start (the poster is
@@ -118,13 +129,15 @@ actual fun CameraStreamPlayer(
         starved -> LiveStreamStatus.Buffering
         else -> LiveStreamStatus.Live
     }
-    LaunchedEffect(streamStatus) { currentOnStreamStatusChanged(streamStatus) }
-
     val textureView = remember(holder) {
-        TextureView(context).apply {
+        LiveTextureView(context).apply {
             // Never composite as an opaque (black) layer while there's no frame yet.
             isOpaque = false
         }
+    }
+    LaunchedEffect(streamStatus) {
+        Log.d(LOG_TAG, "${holder.key}: binder ${System.identityHashCode(textureView)} status $streamStatus (transport=$transport)")
+        currentOnStreamStatusChanged(streamStatus)
     }
     // Only a binder that may see WebRTC frames gets a renderer (each one owns a render thread):
     // its source carries an endpoint, or the holder is already playing a peer — the detail
@@ -133,9 +146,9 @@ actual fun CameraStreamPlayer(
     val wantsWebRtc = (source is VideoSource.Live && source.webRtc != null) || transport == LiveTransport.WEBRTC
     val renderer = if (wantsWebRtc) remember(holder) { RendererLease(context) }.renderer else null
 
-    // The last frame of whichever surface this one took over from (see LivePlayerHolder.bindSurface),
-    // shown until this surface has a frame of its own. Cleared on that first frame.
-    var bridgeFrame by remember(holder) { mutableStateOf<ImageBitmap?>(null) }
+    // Shown over the surfaces until one of them has a frame of its own; cleared on that first frame.
+    var bridgeFrame by remember(holder) { mutableStateOf(initialBridge) }
+    val currentPlayWhenReady by rememberUpdatedState(request.playWhenReady)
 
     Box(modifier = modifier) {
         AndroidView(
@@ -163,7 +176,8 @@ actual fun CameraStreamPlayer(
     }
 
     DisposableEffect(holder) {
-        bridgeFrame = holder.bindSurface(textureView)?.asImageBitmap()
+        holder.bindSurface(textureView)
+        textureView.onDetaching = { holder.keepFrame(textureView) }
 
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
@@ -194,6 +208,7 @@ actual fun CameraStreamPlayer(
         onDispose {
             player.removeListener(listener)
             holder.unbindSurface(textureView)
+            textureView.onDetaching = null
         }
     }
 
@@ -217,6 +232,7 @@ actual fun CameraStreamPlayer(
                 if (!peerDrawing) return@Runnable
                 if (renderedFor == generation) return@Runnable
                 renderedFor = generation
+                renderer.peerFrameGeneration = generation
                 markFirstLivePixel(holder, currentSource, "rtc")
                 Log.d(LOG_TAG, "${holder.key}: renderer drew its first frame for generation $generation")
                 renderedGeneration = generation
@@ -227,9 +243,11 @@ actual fun CameraStreamPlayer(
                 if (Looper.myLooper() == Looper.getMainLooper()) onSurfaceUpdated.run() else mainThread.post(onSurfaceUpdated)
             }
             holder.bindRenderer(renderer)
+            renderer.onDetaching = { holder.keepFrame(renderer) }
             onDispose {
                 holder.unbindRenderer(renderer)
                 renderer.onFrameRendered = null
+                renderer.onDetaching = null
             }
         }
 
@@ -289,6 +307,12 @@ actual fun CameraStreamPlayer(
                 if (holder.transport == LiveTransport.HLS) holder.onSurfaceRenderedFrame(textureView)
                 bridgeFrame = null
             }
+            // The same fallback for a bridge: once video is flowing, a missed first-frame report
+            // mustn't leave a still over it. Not while paused — then the still is the picture.
+            if (steadyPolls >= STEADY_PLAYBACK_POLLS_TO_TRUST && bridgeFrame != null && currentPlayWhenReady) {
+                Log.d(LOG_TAG, "${holder.key}: dropping the bridge frame after steady ${holder.transport} playback")
+                bridgeFrame = null
+            }
             if (currentSource is VideoSource.Recording && player.playbackState == Player.STATE_READY) {
                 currentOnPositionChanged(player.currentPosition)
             }
@@ -331,6 +355,17 @@ private class RendererLease(context: Context) : RememberObserver {
     override fun onRemembered() = Unit
     override fun onForgotten() = renderer.release()
     override fun onAbandoned() = renderer.release()
+}
+
+/** The HLS surface, with the same last-chance hook as [WebRtcTextureRenderer.onDetaching]. */
+private class LiveTextureView(context: Context) : TextureView(context) {
+    var onDetaching: (() -> Unit)? = null
+
+    override fun onDetachedFromWindow() {
+        // Before super: TextureView drops its layer right after this, and the holder reads it.
+        onDetaching?.invoke()
+        super.onDetachedFromWindow()
+    }
 }
 
 /** ExoPlayer renders HLS to the one TextureView bound last (see [LivePlayerHolder.bindSurface]). */
