@@ -481,7 +481,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(disp
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: com.meticulouscreations.homesafe.domain.model.CarProfile, makes: kotlin.collections.List<kotlin.String>, colours: kotlin.collections.List<kotlin.String>, saving: kotlin.Boolean, error: kotlin.String?, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CarProfile, kotlin.Unit>, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: com.meticulouscreations.homesafe.domain.model.CarProfile, makes: kotlin.collections.List<kotlin.String>, colours: kotlin.collections.List<kotlin.String>, saving: kotlin.Boolean, error: kotlin.String?, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CarProfile, kotlin.Unit>, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>, onForget: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
   skippable: false
   restartable: true
   params:
@@ -493,6 +493,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: 
     - onChange: STABLE (function type)
     - onSave: STABLE (function type)
     - onDismiss: STABLE (function type)
+    - onForget: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarProfilesCard(cars: kotlin.collections.List<kotlin.String>, profiles: com.meticulouscreations.homesafe.domain.model.CarProfiles, onEdit: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit

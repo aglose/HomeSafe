@@ -12,4 +12,7 @@ interface CarProfileRepository {
 
     /** Answers the profile as the relay keeps it. */
     suspend fun saveProfile(profile: CarProfile): Result<CarProfile>
+
+    /** Forgets the profile of the car filed as [name]. */
+    suspend fun deleteProfile(name: String): Result<Unit>
 }

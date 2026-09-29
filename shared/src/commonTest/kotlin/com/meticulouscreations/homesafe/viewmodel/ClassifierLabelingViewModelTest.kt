@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.CarProfileRepository
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.DeleteCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DiscardClassifierCropsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetCarProfilesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
@@ -94,6 +95,14 @@ class ClassifierLabelingViewModelTest {
             saved += profile
             return Result.success(profile.copy(make = profile.make.lowercase()))
         }
+
+        val deleted = mutableListOf<String>()
+
+        override suspend fun deleteProfile(name: String): Result<Unit> {
+            if (saveFails) return Result.failure(Exception("relay said no"))
+            deleted += name
+            return Result.success(Unit)
+        }
     }
 
     private fun viewModel(repo: ClassifierRepository, cars: CarProfileRepository = FakeCarProfiles()) = ClassifierLabelingViewModel(
@@ -106,7 +115,33 @@ class ClassifierLabelingViewModelTest {
         trainClassifierUseCase = TrainClassifierUseCase(repo),
         getCarProfilesUseCase = GetCarProfilesUseCase(cars),
         saveCarProfileUseCase = SaveCarProfileUseCase(cars),
+        deleteCarProfileUseCase = DeleteCarProfileUseCase(cars),
     )
+
+    @Test
+    fun aProfileTheRelayKeepsCanBeForgotten() = runTest(dispatcher) {
+        val cars = FakeCarProfiles()
+        val vm = viewModel(FakeClassifiers(dataset), cars)
+        advanceUntilIdle()
+        vm.editProfile("andrews_tesla")
+        vm.deleteProfile()
+        advanceUntilIdle()
+        assertEquals(listOf("andrews_tesla"), cars.deleted)
+        assertNull(vm.uiState.value.profileDraft, "the dialog closes")
+        assertEquals(emptyList(), vm.uiState.value.carProfiles?.profiles)
+    }
+
+    @Test
+    fun aFailedForgetKeepsTheProfile() = runTest(dispatcher) {
+        val cars = FakeCarProfiles().apply { saveFails = true }
+        val vm = viewModel(FakeClassifiers(dataset), cars)
+        advanceUntilIdle()
+        vm.editProfile("andrews_tesla")
+        vm.deleteProfile()
+        advanceUntilIdle()
+        assertEquals("Couldn't forget: relay said no", vm.uiState.value.profileError)
+        assertEquals(listOf("andrews_tesla"), vm.uiState.value.carProfiles?.profiles?.map { it.name })
+    }
 
     @Test
     fun aCarsProfileIsEditedAndSavedWithItsPlateAsTheRelayReadsIt() = runTest(dispatcher) {

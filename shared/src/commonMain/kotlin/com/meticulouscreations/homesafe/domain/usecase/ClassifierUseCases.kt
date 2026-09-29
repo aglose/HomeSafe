@@ -90,3 +90,9 @@ class SaveCarProfileUseCase(private val repository: CarProfileRepository) {
             ),
         )
 }
+
+/** Forgets a car's profile, so the relay stops checking the classifier's name for it. */
+@Inject
+class DeleteCarProfileUseCase(private val repository: CarProfileRepository) {
+    suspend operator fun invoke(name: String): Result<Unit> = repository.deleteProfile(name)
+}

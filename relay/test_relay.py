@@ -688,7 +688,9 @@ class CarCheckTest(unittest.TestCase):
     def test_a_plate_far_from_the_named_cars_takes_the_name_away(self):
         self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("blue"), "7QRS456"))
         self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "8ABD124"), "two off: a misread, not proof")
-        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "too short to rule out")
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "a scrap of a longer plate rules nothing out")
+        short = {"vanity": {"make": "tesla", "colour": "blue", "plate": "AB12"}}
+        self.assertEqual(("clear", None, None), relay.second_opinion_verdict("vanity", self.saw("blue"), short, "XY99"), "a four-character plate is a full read of a four-character plate")
 
     def test_plates_are_read_as_letters_and_digits(self):
         self.assertEqual("8ABC123", relay.normal_plate(" 8abc-123 "))

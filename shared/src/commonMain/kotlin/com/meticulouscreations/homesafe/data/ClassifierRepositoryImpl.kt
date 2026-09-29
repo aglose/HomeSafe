@@ -49,8 +49,9 @@ class ClassifierRepositoryImpl(
         val events = api.getEvents(serverUrl, eventIds).getOrElse { emptyList() }.associateBy { it.id }
         val timeline = api.getTimeline(serverUrl, eventIds).getOrElse { emptyList() }.groupBy { it.sourceId }
         // The relay's check of each car (make, model, colour, plate): what tells a sure 1.0 from one
-        // to correct. Without the relay the queue splits on the classifier's score alone, as it did.
-        val checks = if (CarTagging.CAR_LABEL in model.objects) relayApi.getCarChecks(serverUrl, eventIds).getOrNull() else null
+        // to correct. A relay too old to check splits the queue on the classifier's score alone, as it
+        // did; one that couldn't answer this time confirms nothing, so no 1.0 folds away unchecked.
+        val checks = if (CarTagging.CAR_LABEL in model.objects) relayApi.getCarChecks(serverUrl, eventIds).getOrElse { emptyMap() } else null
         val meta = dataset.trainingMetadata
         return Result.success(
             ClassifierDataset(

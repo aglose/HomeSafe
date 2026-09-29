@@ -20,6 +20,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -184,17 +185,27 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayCarProfile>().toDomain()
     }
 
+    /** Forgets the profile of the car filed as [name]; the relay stops checking that name. */
+    suspend fun deleteCarProfile(serverUrl: String, name: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/cars/profiles/$name"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
     /**
      * What the relay's car check made of each of [eventIds], keyed by event id. Events it hasn't
-     * looked at are missing. Fails when the relay can't say (an older relay has no such route).
+     * looked at are missing. Null when the relay has no such route (an older relay, which answers
+     * 404); fails when it couldn't say this time (unreachable, timed out, an error).
      */
-    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>> = runCatching {
+    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>?> = runCatching {
         if (eventIds.isEmpty()) return@runCatching emptyMap()
-        eventIds.chunked(CAR_CHECKS_PER_CALL).flatMap { ids ->
+        val checks = mutableMapOf<String, CarCheck>()
+        for (ids in eventIds.chunked(CAR_CHECKS_PER_CALL)) {
             val response = httpClient.get(relayUrl(serverUrl, "/cars/checks")) { parameter("events", ids.joinToString(",")) }
+            if (response.status == HttpStatusCode.NotFound) return@runCatching null
             if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
-            response.body<RelayCarChecks>().checks.map { (id, check) -> id to check.toDomain() }
-        }.toMap()
+            response.body<RelayCarChecks>().checks.forEach { (id, check) -> checks[id] = check.toDomain() }
+        }
+        checks
     }
 
     private fun HttpRequestBuilder.bearer(secret: String?) {

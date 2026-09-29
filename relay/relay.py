@@ -1824,9 +1824,14 @@ def plate_owner(plate: str, cars: dict[str, dict[str, Any]]) -> str | None:
 
 
 def plate_rules_out(plate: str, name: str, cars: dict[str, dict[str, Any]]) -> bool:
-    """Whether a plate read clearly isn't the named car's: a full read, far from the plate on its profile."""
+    """
+    Whether a plate read clearly isn't the named car's: a full read, far from the plate on its profile.
+    A read is full when it is about as long as that plate, so a scrap of a longer plate is only far
+    from it by length and rules nothing out, while a short plate on file can still be ruled out.
+    """
     own = normal_plate((cars.get(name) or {}).get("plate"))
-    return bool(own) and len(plate) > PLATE_MIN_LENGTH and edit_distance(plate, own) >= PLATE_DIFFERENT_DISTANCE
+    full = len(plate) >= max(PLATE_MIN_LENGTH, len(own) - PLATE_MATCH_DISTANCE)
+    return bool(own) and full and edit_distance(plate, own) >= PLATE_DIFFERENT_DISTANCE
 
 
 def second_opinion_verdict(name: str | None, description: dict[str, str], cars: dict[str, dict[str, Any]], plate: str = "") -> tuple[str, str | None, str | None]:

@@ -25,6 +25,9 @@ class CarProfileRepositoryImpl(
     override suspend fun saveProfile(profile: CarProfile): Result<CarProfile> =
         serverUrlOrFailure().fold({ relayApi.saveCarProfile(it, profile) }, { Result.failure(it) })
 
+    override suspend fun deleteProfile(name: String): Result<Unit> =
+        serverUrlOrFailure().fold({ relayApi.deleteCarProfile(it, name) }, { Result.failure(it) })
+
     private fun serverUrlOrFailure(): Result<String> =
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
