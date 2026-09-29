@@ -71,8 +71,10 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
+import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
@@ -388,11 +390,21 @@ private fun PlayerSurface(
                     .align(Alignment.Center)
                     .pinchZoomContent(zoom),
             ) {
-                if (request != null) {
+                // Until the view model has chosen a stream (its first camera read is still in
+                // flight), keep showing what the card was playing, on the same pooled player; the
+                // view model's first request is that very stream, so nothing reloads. One call site
+                // for both, so the surface bound as the transition starts is the one that stays:
+                // swapping call sites mid-transition bound a second, empty surface, and the video
+                // went blank just as the card finished flying in.
+                val warmRequest = remember(warmStreamUrl, warmPosterUrl) {
+                    warmStreamUrl?.let { PlayerRequest(VideoSource.Live(it, warmPosterUrl)) }
+                }
+                val shownRequest = request ?: warmRequest
+                if (shownRequest != null) {
                     // Same playerKey as the grid card: this binds to the player the card was already
                     // running, so live video is on screen before the shared-element transition ends.
                     CameraStreamPlayer(
-                        request = request,
+                        request = shownRequest,
                         modifier = Modifier.fillMaxSize(),
                         playerKey = playerKey,
                         onPositionChanged = viewModel::onPlayerPositionChanged,
@@ -401,16 +413,6 @@ private fun PlayerSurface(
                         onPlaybackEnded = viewModel::onPlaybackEnded,
                         onPlaybackError = viewModel::onPlaybackError,
                         onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
-                    )
-                } else if (warmStreamUrl != null) {
-                    // The view model hasn't chosen a stream yet (its first camera read is still in
-                    // flight): keep showing what the card was playing, on the same pooled player.
-                    // The view model's first request is that very stream, so nothing reloads.
-                    CameraStreamPlayer(
-                        streamUrl = warmStreamUrl,
-                        modifier = Modifier.fillMaxSize(),
-                        posterUrl = warmPosterUrl,
-                        playerKey = playerKey,
                     )
                 } else {
                     Icon(

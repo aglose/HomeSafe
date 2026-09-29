@@ -72,11 +72,18 @@ private const val LOG_TAG = "HomeSafeLive"
  *    joined with audio also plays the silent grid card, and nothing rejoins at all.
  *  - **HLS** through one [ExoPlayer], for recordings, for live sources without an endpoint, and
  *    as the fallback. ExoPlayer renders to a single surface, so when a second binder takes over
- *    the new surface is blank until the next video frame; [bindSurface] hands the incoming
- *    binder the last frame of the outgoing surface to show until then. Live HLS recovers from
+ *    the new surface is blank until the next video frame. Live HLS recovers from
  *    go2rtc's session expiry and other IO errors by re-preparing, backing off per
  *    [LivePlaybackPolicy.retryDelayMs] — only while someone is watching. Recordings get no
  *    retry: binders report those errors to their caller.
+ *
+ * Whichever engine is drawing, a surface that has just been bound has nothing on it until the
+ * next frame reaches it — and for a WebRTC renderer, until its EGL surface exists too, which
+ * on a card coming back from the detail screen is a few hundred milliseconds. [bridgeFrame]
+ * gives it the picture the camera was last showing to stand in until then: copied off a
+ * surface still showing it, or, when none is left (the whole grid went away behind the detail
+ * screen or another tab), the copy [keepFrame] took as the last one left. So a camera that
+ * stays live never shows a poster, or "Connecting", just because the screen around it changed.
  *
  * All calls must be made on the main thread; ExoPlayer requires it and every entry point here is
  * driven from composition, lifecycle callbacks, or [scope] (main-immediate).
@@ -128,11 +135,14 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
      * a single surface, so when a second binder takes over (the detail screen opening over the
      * grid card, or the card taking back over when it closes) the new surface is blank until the
      * next video frame — on a low-rate sub-stream, long enough to read as a black flash mid
-     * shared-element transition. [bridgeFrame] copies the last frame off the outgoing surface
-     * for the incoming binder to show until its own first frame lands.
+     * shared-element transition. That's what [bridgeFrame] covers.
      */
     private var boundSurface: TextureView? = null
     private var boundSurfaceHasFrame = false
+
+    /** The picture the last surface to go was showing, and the [coldStartGeneration] it belongs to; see [keepFrame]. */
+    private var keptFrame: Bitmap? = null
+    private var keptFrameGeneration = -1
 
     /** Every attached WebRTC renderer; the live peer feeds them all, and a new peer inherits them. */
     private val renderers = LinkedHashSet<WebRtcTextureRenderer>()
@@ -167,19 +177,51 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         var watchJob: Job? = null
     }
 
-    /** Route HLS video to [surface]; returns the last frame of the surface it replaces, if that had one. */
-    fun bindSurface(surface: TextureView): Bitmap? {
-        val previous = boundSurface
-        val bridge = if (previous != null && previous !== surface && boundSurfaceHasFrame && previous.isAvailable) {
-            runCatching { previous.bitmap }.getOrNull()
-        } else {
-            null
-        }
+    /** Route HLS video to [surface]. */
+    fun bindSurface(surface: TextureView) {
         boundSurface = surface
         boundSurfaceHasFrame = false
         player.setVideoTextureView(surface)
-        return bridge
     }
+
+    /**
+     * The picture this camera is showing right now, for a binder about to bind a new surface to
+     * show until that surface has a frame of its own: a copy of a surface showing it, or the one
+     * [keepFrame] took when the last surface went. Null when there's no warm session — a cold
+     * start is what the poster is for, and whatever was kept is stale by then.
+     */
+    fun bridgeFrame(): Bitmap? {
+        if (needsColdStart) return null
+        val generation = coldStartGeneration
+        val live = if (peerIsPicture()) {
+            renderers.firstOrNull { it.peerFrameGeneration == generation }?.snapshot()
+        } else {
+            boundSurface?.takeIf { boundSurfaceHasFrame && it.isAvailable }?.let { runCatching { it.bitmap }.getOrNull() }
+        }
+        return live ?: keptFrame.takeIf { keptFrameGeneration == generation }
+    }
+
+    /**
+     * [surface] (an HLS surface or a WebRTC renderer) is about to go. If it is the last one
+     * showing this camera's picture, keep a copy for [bridgeFrame]; while another is still
+     * showing it, that one is copied live instead. Called both as the view detaches and as the
+     * binder unbinds — whichever comes first finds the layer still readable.
+     */
+    fun keepFrame(surface: TextureView) {
+        val showing = if (peerIsPicture()) {
+            surface is WebRtcTextureRenderer && surface in renderers && renderers.size == 1 &&
+                surface.peerFrameGeneration == coldStartGeneration
+        } else {
+            surface === boundSurface && boundSurfaceHasFrame
+        }
+        if (!showing || !surface.isAvailable) return
+        val frame = (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull() ?: return
+        keptFrame = frame
+        keptFrameGeneration = coldStartGeneration
+    }
+
+    /** Whether the renderers, rather than the HLS surface, carry the picture: an adopted peer, or a cold join drawing early. */
+    private fun peerIsPicture(): Boolean = transport == LiveTransport.WEBRTC || earlyDrawGeneration == coldStartGeneration
 
     /** Called by the binder whose HLS surface just rendered a frame. */
     fun onSurfaceRenderedFrame(surface: TextureView) {
@@ -188,6 +230,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
 
     /** Detach [surface]; a no-op if another binder has since taken over (ExoPlayer checks identity). */
     fun unbindSurface(surface: TextureView) {
+        keepFrame(surface)
         player.clearVideoTextureView(surface)
         if (boundSurface === surface) {
             boundSurface = null
@@ -204,6 +247,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     }
 
     fun unbindRenderer(renderer: WebRtcTextureRenderer) {
+        keepFrame(renderer)
         if (renderers.remove(renderer)) {
             peer?.removeSink(renderer)
             joiningPeer?.removeSink(renderer)
@@ -310,6 +354,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         dropPeer()
         dropStandby()
         renderers.clear()
+        keptFrame = null
         scope.cancel()
         player.removeListener(listener)
         player.release()
@@ -343,6 +388,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
             player.stop()
             hlsUrl = null
             needsColdStart = true
+            keptFrame = null
         }
     }
 
