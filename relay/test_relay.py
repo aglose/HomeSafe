@@ -690,6 +690,16 @@ class CarCheckTest(unittest.TestCase):
         self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "8ABD124"), "two off: a misread, not proof")
         self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "too short to rule out")
 
+    def test_the_models_unknown_is_no_model_and_no_plate(self):
+        # 2026-09-29: qwen3-vl answered model "unknown" for most cars, and plate "unknown" for one.
+        blue = self.saw("blue", model="unknown", plate="unknown")
+        self.assertEqual("match", relay.looks_verdict(blue, self.CARS["andrews_tesla"]))
+        self.assertEqual("", relay.plate_read({"data": {}}, blue))
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", blue, relay.plate_read({"data": {}}, blue)))
+        for nothing in ("Unknown", "N/A", "none", "not visible", "unreadable"):
+            self.assertEqual("", relay.normal_plate(nothing), nothing)
+            self.assertEqual("", relay.normal_model(nothing, "tesla"), nothing)
+
     def test_plates_are_read_as_letters_and_digits(self):
         self.assertEqual("8ABC123", relay.normal_plate(" 8abc-123 "))
         self.assertEqual("8ABC123", relay.plate_read({"data": {"recognized_license_plate": "8abc 123"}}, self.saw(plate="")))

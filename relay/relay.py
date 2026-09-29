@@ -1705,11 +1705,17 @@ PLATE_MIN_LENGTH = 4
 PLATE_MAX_LENGTH = 10
 PROFILE_MODEL_MAX = 40
 _PROFILE_KEYS = ("make", "model", "colour", "plate")
+# What the vision model writes, letters and digits only, when it can't read a free-text field,
+# though the prompt asks for an empty string: on 2026-09-29 it answered model "unknown" for most
+# cars and plate "unknown" for one. Taken as a model name or a plate, "unknown" contradicts every
+# profile, and a seven-letter "plate" far from ours took names away.
+NOT_READ = {"UNKNOWN", "NONE", "NA", "NULL", "OTHER", "UNREADABLE", "NOTVISIBLE", "NOPLATE", "UNCLEAR", "NOTREADABLE"}
 
 
 def normal_plate(plate: Any) -> str:
-    """A plate as letters and digits only, upper case: "8abc 123" and "8ABC-123" are one plate."""
-    return re.sub(r"[^A-Z0-9]", "", str(plate or "").upper())[:PLATE_MAX_LENGTH]
+    """A plate as letters and digits only, upper case: "8abc 123" and "8ABC-123" are one plate. Empty for the model's "unknown"."""
+    text = re.sub(r"[^A-Z0-9]", "", str(plate or "").upper())
+    return "" if text in NOT_READ else text[:PLATE_MAX_LENGTH]
 
 
 def edit_distance(a: str, b: str) -> int:
@@ -1724,6 +1730,8 @@ def edit_distance(a: str, b: str) -> int:
 def normal_model(model: Any, make: str = "") -> str:
     """ "Tesla Model Y" and "model-y" as "modely": letters and digits, lower case, the make dropped from the front."""
     text = re.sub(r"[^a-z0-9]", "", str(model or "").lower())
+    if text.upper() in NOT_READ:
+        return ""
     make = re.sub(r"[^a-z0-9]", "", (make or "").lower())
     return text[len(make):] if make and make not in ("unknown", "other") and text.startswith(make) and len(text) > len(make) else text
 
