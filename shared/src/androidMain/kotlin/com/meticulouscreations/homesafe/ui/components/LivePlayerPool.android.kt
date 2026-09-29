@@ -194,7 +194,8 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         if (needsColdStart) return null
         val generation = coldStartGeneration
         val live = if (peerIsPicture()) {
-            renderers.firstOrNull { it.peerFrameGeneration == generation }?.snapshot()
+            // Past any that have already left the window: a renderer can detach before its binder unbinds.
+            renderers.firstNotNullOfOrNull { if (it.peerFrameGeneration == generation) it.snapshot() else null }
         } else {
             boundSurface?.takeIf { boundSurfaceHasFrame && it.isAvailable }?.let { runCatching { it.bitmap }.getOrNull() }
         }
@@ -208,16 +209,19 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
      * binder unbinds — whichever comes first finds the layer still readable.
      */
     fun keepFrame(surface: TextureView) {
+        val generation = coldStartGeneration
         val showing = if (peerIsPicture()) {
-            surface is WebRtcTextureRenderer && surface in renderers && renderers.size == 1 &&
-                surface.peerFrameGeneration == coldStartGeneration
+            // Another renderer still attached doesn't count once its view has left the window
+            // too (two surfaces going in one pass): neither would be there to copy live later.
+            surface is WebRtcTextureRenderer && surface in renderers && surface.peerFrameGeneration == generation &&
+                renderers.none { it !== surface && it.peerFrameGeneration == generation && it.isAvailable }
         } else {
             surface === boundSurface && boundSurfaceHasFrame
         }
         if (!showing || !surface.isAvailable) return
         val frame = (surface as? WebRtcTextureRenderer)?.snapshot() ?: runCatching { surface.bitmap }.getOrNull() ?: return
         keptFrame = frame
-        keptFrameGeneration = coldStartGeneration
+        keptFrameGeneration = generation
     }
 
     /** Whether the renderers, rather than the HLS surface, carry the picture: an adopted peer, or a cold join drawing early. */
