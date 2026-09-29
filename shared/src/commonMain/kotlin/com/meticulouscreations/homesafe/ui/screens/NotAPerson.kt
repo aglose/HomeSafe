@@ -25,7 +25,9 @@ import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,10 +109,12 @@ private fun NotAPersonPill(marking: Boolean, modifier: Modifier = Modifier) {
 internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val marked = state.marked
     val error = state.error
+    // The latest onDismiss, read when the bar lets itself go: a new lambda doesn't restart its timer.
+    val dismiss by rememberUpdatedState(onDismiss)
     if (marked == null && error == null) return
     LaunchedEffect(marked, error) {
         delay(NOT_A_PERSON_BAR_MS)
-        onDismiss()
+        dismiss()
     }
     val shape = RoundedCornerShape(12.dp)
     Row(
@@ -174,4 +178,3 @@ private fun NotAPersonBarPreview() {
         }
     }
 }
-
