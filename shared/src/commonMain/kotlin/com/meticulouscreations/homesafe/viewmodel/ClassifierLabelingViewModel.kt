@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.CarTagging
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.DetectionZone
 import com.meticulouscreations.homesafe.domain.usecase.CreateClassifierCategoryUseCase
+import com.meticulouscreations.homesafe.domain.usecase.DeleteCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.DiscardClassifierCropsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetCarProfilesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
@@ -71,6 +72,7 @@ class ClassifierLabelingViewModel(
     private val trainClassifierUseCase: TrainClassifierUseCase,
     private val getCarProfilesUseCase: GetCarProfilesUseCase,
     private val saveCarProfileUseCase: SaveCarProfileUseCase,
+    private val deleteCarProfileUseCase: DeleteCarProfileUseCase,
 ) : ViewModel() {
 
     /** One view model per classifier; the screen keys it by [modelName]. */
@@ -134,6 +136,23 @@ class ClassifierLabelingViewModel(
                     }
                 }
                 .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = "Couldn't save: ${e.message}") } }
+        }
+    }
+
+    /** Drops the open car's profile from the relay, so its name is no longer checked (a stale or mistaken entry). */
+    fun deleteProfile() {
+        val name = _uiState.value.profileDraft?.name ?: return
+        if (_uiState.value.isSavingProfile) return
+        _uiState.update { it.copy(isSavingProfile = true, profileError = null) }
+        viewModelScope.launch {
+            deleteCarProfileUseCase(name)
+                .onSuccess {
+                    _uiState.update { state ->
+                        val profiles = state.carProfiles
+                        state.copy(isSavingProfile = false, profileDraft = null, carProfiles = profiles?.copy(profiles = profiles.profiles.filterNot { it.name == name }))
+                    }
+                }
+                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = "Couldn't forget: ${e.message}") } }
         }
     }
 

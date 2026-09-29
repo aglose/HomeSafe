@@ -3,8 +3,10 @@ package com.meticulouscreations.homesafe.network
 import com.meticulouscreations.homesafe.domain.model.CarCheck
 import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.CarProfiles
+import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
+import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
 import dev.zacsweers.metro.Inject
@@ -20,6 +22,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -184,17 +187,52 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayCarProfile>().toDomain()
     }
 
+    /** Forgets the profile of the car filed as [name]; the relay stops checking that name. */
+    suspend fun deleteCarProfile(serverUrl: String, name: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/cars/profiles/$name"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
     /**
      * What the relay's car check made of each of [eventIds], keyed by event id. Events it hasn't
-     * looked at are missing. Fails when the relay can't say (an older relay has no such route).
+     * looked at are missing. Null when the relay has no such route (an older relay, which answers
+     * 404); fails when it couldn't say this time (unreachable, timed out, an error).
      */
-    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>> = runCatching {
+    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>?> = runCatching {
         if (eventIds.isEmpty()) return@runCatching emptyMap()
-        eventIds.chunked(CAR_CHECKS_PER_CALL).flatMap { ids ->
+        val checks = mutableMapOf<String, CarCheck>()
+        for (ids in eventIds.chunked(CAR_CHECKS_PER_CALL)) {
             val response = httpClient.get(relayUrl(serverUrl, "/cars/checks")) { parameter("events", ids.joinToString(",")) }
+            if (response.status == HttpStatusCode.NotFound) return@runCatching null
             if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
-            response.body<RelayCarChecks>().checks.map { (id, check) -> id to check.toDomain() }
-        }.toMap()
+            response.body<RelayCarChecks>().checks.forEach { (id, check) -> checks[id] = check.toDomain() }
+        }
+        checks
+    }
+
+    /**
+     * Someone saying [eventId], a person detection, was not a person: the relay keeps its box as a
+     * phantom spot on its camera, so the same thing there isn't pushed again, and files the
+     * detection as a `none` example for the person classifier when there is one. A user action, so
+     * the session cookie. Answers the spot.
+     */
+    suspend fun markNotAPerson(serverUrl: String, eventId: String): Result<PhantomSpot> = runCatching {
+        val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException("Relay kept no spot")
+    }
+
+    /** Takes a [markNotAPerson] back: the phantom spot goes. */
+    suspend fun undoNotAPerson(serverUrl: String, eventId: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
+    /** Every phantom spot the relay keeps, for the feed to hide what the relay no longer pushes. */
+    suspend fun getPhantomSpots(serverUrl: String): Result<List<PhantomSpot>> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/phantoms"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayPhantoms>().spots.mapNotNull { it.toDomain() }
     }
 
     private fun HttpRequestBuilder.bearer(secret: String?) {
@@ -347,3 +385,19 @@ internal data class RelayCarLooks(
     val make: String? = null,
     val model: String? = null,
 )
+
+/** One of the relay's phantom spots (`GET /phantoms`, `POST .../not_a_person`). */
+@Serializable
+internal data class RelayPhantomSpot(
+    @SerialName("event_id") val eventId: String,
+    val camera: String,
+    val box: List<Double> = emptyList(),
+) {
+    fun toDomain(): PhantomSpot? = DetectionBox.fromFractions(box)?.let { PhantomSpot(eventId, camera, it) }
+}
+
+@Serializable
+internal data class RelayPhantoms(val spots: List<RelayPhantomSpot> = emptyList())
+
+@Serializable
+internal data class RelayNotAPerson(val spot: RelayPhantomSpot)

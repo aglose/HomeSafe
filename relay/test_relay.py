@@ -688,7 +688,9 @@ class CarCheckTest(unittest.TestCase):
     def test_a_plate_far_from_the_named_cars_takes_the_name_away(self):
         self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("blue"), "7QRS456"))
         self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "8ABD124"), "two off: a misread, not proof")
-        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "too short to rule out")
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "a scrap of a longer plate rules nothing out")
+        short = {"vanity": {"make": "tesla", "colour": "blue", "plate": "AB12"}}
+        self.assertEqual(("clear", None, None), relay.second_opinion_verdict("vanity", self.saw("blue"), short, "XY99"), "a four-character plate is a full read of a four-character plate")
 
     def test_the_models_unknown_is_no_model_and_no_plate(self):
         # 2026-09-29: qwen3-vl answered model "unknown" for most cars, and plate "unknown" for one.
@@ -2045,6 +2047,206 @@ class PersonTagTest(_ScratchDb):
             self.tag("e", "andrews_tesla", _Caller(cookie=None))
         self.assertEqual(401, refused.exception.status_code)
         self.assertEqual([], self.posted)
+
+
+# The Front Door's phantom, 2026-09-29: something by the door the detector kept calling a person.
+DOOR_BOX = [0.05, 0.30, 0.22, 0.40]
+DOOR_PATH = [(0.16, 0.70), (0.161, 0.702), (0.159, 0.70), (0.16, 0.699), (0.162, 0.701)]
+# Someone walking up the steps to the door.
+WALK_PATH = [(0.60, 0.95), (0.45, 0.88), (0.32, 0.80), (0.20, 0.72), (0.17, 0.70)]
+
+
+class PhantomTest(_FakeFrigate):
+    """Phantom people: marking one, knowing it again, and what the person classifier learns from it."""
+
+    def setUp(self):
+        super().setUp()
+        self._more = {name: getattr(relay, name) for name in (
+            "PERSON_CLASSIFIER", "PERSON_CLASS_MAX", "PERSON_RETRAIN_AFTER", "require_frigate_session", "detect_sizes",
+            "save_classification_example")}
+        relay.PERSON_CLASSIFIER = ""
+        relay.require_frigate_session = lambda request: "andrew"
+        relay.detect_sizes = lambda: {"amcrest_1": (704, 480)}
+
+    def tearDown(self):
+        for name, value in self._more.items():
+            setattr(relay, name, value)
+        super().tearDown()
+
+    def person(self, path=DOOR_PATH, box=DOOR_BOX, camera="amcrest_1", name=None, age=600.0, ended=True, label="person"):
+        start = self.now - age
+        event_id = f"{start:.6f}-p{len(self.events)}"
+        self.events[event_id] = {
+            "id": event_id, "label": label, "camera": camera, "start_time": start, "end_time": start + 3 if ended else None,
+            "sub_label": name, "data": {"type": "object", "box": list(box), "path_data": [[[x, y], start + i] for i, (x, y) in enumerate(path)]},
+        }
+        return event_id
+
+    def review(self, detections, objects=None, ended=True, age=600.0, camera="amcrest_1"):
+        start = self.now - age
+        return {"id": f"r{len(detections)}", "camera": camera, "start_time": start, "end_time": start + 3 if ended else None,
+                "data": {"objects": objects or ["person"], "detections": detections}}
+
+    def mark(self, event_id):
+        return relay.not_a_person(event_id, _Caller())
+
+    def classifier(self):
+        relay.PERSON_CLASSIFIER = "person_check"
+        os.makedirs(os.path.join(self._dir.name, "person_check", "train"), exist_ok=True)
+
+    def queue(self, event_id, model="person_check"):
+        name = f"{event_id}-{self.now:.6f}-person-0.81.webp"
+        open(os.path.join(self._dir.name, model, "train", name), "wb").close()
+        return name
+
+    def categorized(self):
+        return [(body["category"], body["training_file"]) for url, body in self.posts if url.endswith("/categorize")]
+
+    def test_box_iou(self):
+        self.assertAlmostEqual(1.0, relay.box_iou(DOOR_BOX, DOOR_BOX))
+        self.assertEqual(0.0, relay.box_iou([0, 0, 0.1, 0.1], [0.5, 0.5, 0.1, 0.1]))
+        self.assertAlmostEqual(1 / 3, relay.box_iou([0, 0, 0.2, 0.1], [0.1, 0, 0.2, 0.1]))
+
+    def test_marking_keeps_the_spot_and_the_same_phantom_is_known_again(self):
+        answer = self.mark(self.person())
+        self.assertEqual(DOOR_BOX, answer["spot"]["box"])
+        self.assertIsNone(answer["example"], "no person classifier configured")
+        spots = relay.phantom_spots("amcrest_1")
+        self.assertTrue(relay.is_phantom(self.events[self.person(box=[0.06, 0.31, 0.21, 0.38])], spots))
+        self.assertTrue(relay.is_phantom(self.events[self.person(path=DOOR_PATH[:2])], spots), "a one-second flicker")
+
+    def test_a_real_person_at_the_spot_is_not_a_phantom(self):
+        self.mark(self.person())
+        spots = relay.phantom_spots()
+        self.assertFalse(relay.is_phantom(self.events[self.person(path=WALK_PATH)], spots), "they walked there")
+        self.assertFalse(relay.is_phantom(self.events[self.person(name="andrew")], spots), "a face Frigate knows")
+        self.assertTrue(relay.is_phantom(self.events[self.person(name="none")], spots), "`none` is no name")
+        self.assertTrue(relay.is_phantom(self.events[self.person(name="Unknown")], spots), "nor, in any case, is `unknown`")
+        self.assertFalse(relay.is_phantom(self.events[self.person(box=[0.6, 0.3, 0.2, 0.4])], spots), "somewhere else")
+        self.assertFalse(relay.is_phantom(self.events[self.person(camera="hikvision_1")], spots), "another camera")
+        self.assertFalse(relay.is_phantom(self.events[self.person(label="dog")], spots))
+
+    def test_only_a_person_with_a_box_can_be_marked(self):
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.mark(self.person(label="car"))
+        self.assertEqual(400, refused.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as known:
+            self.mark(self.person(name="andrew"))
+        self.assertEqual(400, known.exception.status_code, "a face Frigate knows is someone")
+        with self.assertRaises(relay.HTTPException) as missing:
+            self.mark("1789612937.165365-gone")
+        self.assertEqual(404, missing.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as bad:
+            self.mark("../config")
+        self.assertEqual(404, bad.exception.status_code)
+        boxless = self.person()
+        self.events[boxless]["data"]["box"] = None
+        with self.assertRaises(relay.HTTPException):
+            self.mark(boxless)
+        self.assertEqual([], relay.phantom_spots())
+
+    def test_taking_it_back_forgets_the_spot(self):
+        first = self.person()
+        self.mark(first)
+        self.assertTrue(relay.undo_not_a_person(first, _Caller())["removed"])
+        self.assertEqual([], relay.phantom_spots())
+        self.assertFalse(relay.undo_not_a_person(first, _Caller())["removed"])
+
+    def test_verdict_skips_phantoms_waits_on_open_ones_and_pushes_anything_else(self):
+        self.assertEqual("push", relay.phantom_verdict(self.review([self.person()])), "nothing marked yet")
+        self.mark(self.person())
+        again = self.person()
+        self.assertEqual("skip", relay.phantom_verdict(self.review([again])))
+        self.assertEqual("wait", relay.phantom_verdict(self.review([again], ended=False, age=5.0)))
+        self.assertEqual("skip", relay.phantom_verdict(self.review([again], ended=False, age=relay.MOTION_WAIT_CAP_SECONDS + 1)))
+        self.assertEqual("push", relay.phantom_verdict(self.review([again, self.person(path=WALK_PATH)])), "someone real with it")
+        self.assertEqual("push", relay.phantom_verdict(self.review([again], objects=["person", "car"])))
+        self.assertEqual("push", relay.phantom_verdict(self.review(["1789612937.165365-gone"])), "can't be judged")
+        self.assertEqual("push", relay.phantom_verdict(self.review([again], camera="hikvision_1")))
+
+    def test_skipping_marks_the_alert_sent(self):
+        self.mark(self.person())
+        item = self.review([self.person()])
+        self.assertTrue(relay.skip_phantom(item))
+        self.assertTrue(relay.was_sent(item["id"]))
+        waiting = dict(self.review([self.person()], ended=False, age=5.0), id="open")
+        self.assertTrue(relay.skip_phantom(waiting))
+        self.assertFalse(relay.was_sent("open"), "judged again next poll")
+        self.assertFalse(relay.skip_phantom(dict(self.review([self.person(path=WALK_PATH)]), id="real")))
+
+    def test_a_mark_files_the_queued_crop_as_none(self):
+        self.classifier()
+        phantom = self.person()
+        crop = self.queue(phantom)
+        self.assertEqual("queued", self.mark(phantom)["example"])
+        self.assertEqual([("none", crop)], self.categorized())
+
+    def test_a_mark_with_no_queued_crop_cuts_one_from_the_recording(self):
+        self.classifier()
+        saved = []
+        relay.save_classification_example = lambda model, category, jpeg, box: saved.append((model, category, box)) or "x.png"
+        phantom = self.person()
+        asked = []
+        fake_get = self.get
+        relay.requests.get = lambda url, params=None, timeout=None: (
+            (asked.append((url, params)), _FrigateAnswer(200, {}))[1] if url.endswith("/snapshot.jpg") else fake_get(url, params, timeout))
+        self.assertEqual("recording", self.mark(phantom)["example"])
+        [(url, params)] = asked
+        self.assertIn("/api/amcrest_1/recordings/", url)
+        self.assertEqual({"height": 480}, params, "the detect frame's size, which is what the classifier crops from")
+        [(model, category, box)] = saved
+        self.assertEqual(("person_check", "none"), (model, category))
+        self.assertAlmostEqual(DOOR_PATH[-1][0], box[0] + box[2] / 2)
+        self.assertEqual(1, relay.person_examples_since(0))
+
+    def test_queued_crops_of_phantoms_and_named_faces_are_filed_and_the_rest_left(self):
+        self.classifier()
+        self.mark(self.person())
+        phantom, face, stranger, fresh = self.person(), self.person(path=WALK_PATH, name="andrew"), self.person(path=WALK_PATH), self.person(age=10.0)
+        crops = {e: self.queue(e) for e in (phantom, face, stranger, fresh)}
+        relay.file_person_crops()
+        self.assertEqual({("none", crops[phantom]), ("person", crops[face])}, set(self.categorized()))
+        self.assertEqual("unsure", self.verdict(stranger, "person-check"))
+        self.assertIsNone(self.verdict(fresh, "person-check"), "its face may yet be named")
+        relay.file_person_crops()
+        self.assertEqual(2, len(self.categorized()), "each event is judged once")
+
+    def test_a_full_class_takes_no_more(self):
+        self.classifier()
+        relay.PERSON_CLASS_MAX = 1
+        folder = os.path.join(self._dir.name, "person_check", "dataset", "person")
+        os.makedirs(folder)
+        open(os.path.join(folder, "a.png"), "wb").close()
+        face = self.person(path=WALK_PATH, name="andrew")
+        self.queue(face)
+        relay.file_person_crops()
+        self.assertEqual([], self.categorized())
+        self.assertEqual("full", self.verdict(face, "person-check"))
+
+    def test_retrains_once_enough_examples_went_in(self):
+        self.classifier()
+        relay.PERSON_RETRAIN_AFTER = 2
+        relay.record_check("a", "person-check", "filed", "person")
+        relay.maybe_retrain_person()
+        self.assertFalse(any(url.endswith("/train") for url, _ in self.posts))
+        relay.record_check("b", "not-a-person", "filed", "queued")
+        relay.maybe_retrain_person()
+        self.assertEqual([f"{relay.FRIGATE}/api/classification/person_check/train"], [url for url, _ in self.posts if url.endswith("/train")])
+        relay.maybe_retrain_person()
+        self.assertEqual(1, len([url for url, _ in self.posts if url.endswith("/train")]), "once a day")
+
+    def test_the_phantom_list_answers_every_spot(self):
+        self.mark(self.person())
+        self.mark(self.person(camera="hikvision_2", box=[0.5, 0.5, 0.1, 0.2]))
+        relay.authenticate = lambda request, device=None: "andrew"
+        try:
+            answer = relay.phantoms(_Caller())
+        finally:
+            relay.authenticate = self._auth
+        self.assertEqual(["amcrest_1", "hikvision_2"], [s["camera"] for s in answer["spots"]])
+        self.assertEqual(relay.PHANTOM_IOU, answer["iou"])
+
+    _auth = relay.authenticate
 
 if __name__ == "__main__":
     unittest.main()

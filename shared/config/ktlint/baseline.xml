@@ -30,8 +30,8 @@
         <error line="502" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
-        <error line="84" column="5" source="compose:modifier-missing-check" />
-        <error line="150" column="64" source="compose:vm-forwarding-check" />
+        <error line="87" column="5" source="compose:modifier-missing-check" />
+        <error line="154" column="64" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/DetectionZonesScreen.kt">
         <error line="82" column="5" source="compose:modifier-missing-check" />

@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,6 +72,8 @@ import com.meticulouscreations.homesafe.domain.model.checkNote
 import com.meticulouscreations.homesafe.domain.model.makeName
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.ui.formatClockTime
+import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
@@ -116,6 +119,7 @@ fun ClassifierLabelingScreen(
             onChange = viewModel::updateProfileDraft,
             onSave = viewModel::saveProfile,
             onDismiss = viewModel::dismissProfile,
+            onForget = viewModel::deleteProfile.takeIf { profiles.profiles.any { it.name == draft.name } },
         )
     }
 }
@@ -455,6 +459,7 @@ private fun CarProfilesCard(cars: List<String>, profiles: CarProfiles, onEdit: (
  * One car's make, model, colour and plate. Make and colour are picked from what the vision model
  * can answer, since a word it never says could never match; the model name is free text, matched
  * loosely ("Model Y" is "Tesla Model Y Long Range"). One colour, on purpose: see [CarProfile].
+ * [onForget] is there once the relay keeps a profile for the car, to drop one it shouldn't.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -467,6 +472,7 @@ private fun CarProfileDialog(
     onChange: (CarProfile) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
+    onForget: (() -> Unit)?,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -509,7 +515,7 @@ private fun CarProfileDialog(
                 }
                 OutlinedTextField(
                     value = draft.plate,
-                    onValueChange = { onChange(draft.copy(plate = it.uppercase().take(CarProfile.PLATE_MAX_LENGTH + 2))) },
+                    onValueChange = { onChange(draft.copy(plate = CarProfile.normalPlate(it))) },
                     label = { Text("Licence plate") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
@@ -528,7 +534,12 @@ private fun CarProfileDialog(
                 }
             }
         },
-        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") } },
+        dismissButton = {
+            Row {
+                onForget?.let { TextButton(onClick = it, enabled = !saving) { Text("Forget", color = MaterialTheme.colorScheme.error) } }
+                TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+            }
+        },
     )
 }
 
@@ -602,4 +613,43 @@ private fun DrawScope.drawSubjectFrame(box: CropBox, image: IntSize) {
     if (right <= left || bottom <= top) return
     val dashes = if (box.exact) null else PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 3.dp.toPx()))
     drawRect(color = SubjectFrameColor, topLeft = Offset(left, top), size = Size(right - left, bottom - top), style = Stroke(width = stroke, pathEffect = dashes))
+}
+
+private val previewProfiles = CarProfiles(
+    profiles = listOf(
+        CarProfile("andrews_tesla", make = "tesla", model = "Model Y", colour = "blue", plate = "8ABC123"),
+        CarProfile("sarahs_car", make = "tesla", model = "Model Y", colour = "red"),
+    ),
+    makes = listOf("tesla", "toyota", "bmw", "mercedes"),
+    colours = listOf("white", "black", "grey", "blue", "red", "green"),
+)
+
+/** The card with a plate on file, looks alone, and a car the classifier knows but nobody has described. */
+@Preview(name = "Known cars card")
+@Composable
+private fun CarProfilesCardPreview() {
+    FrigateTheme {
+        Box(modifier = Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
+            CarProfilesCard(cars = listOf("andrews_tesla", "sarahs_car", "yayas_car"), profiles = previewProfiles, onEdit = {})
+        }
+    }
+}
+
+/** Editing a car the relay keeps a profile for, so it can also be forgotten. */
+@Preview(name = "Known car dialog", widthDp = 412, heightDp = 915)
+@Composable
+private fun CarProfileDialogPreview() {
+    FrigatePreview {
+        CarProfileDialog(
+            draft = previewProfiles.profiles.first(),
+            makes = previewProfiles.makes,
+            colours = previewProfiles.colours,
+            saving = false,
+            error = null,
+            onChange = {},
+            onSave = {},
+            onDismiss = {},
+            onForget = {},
+        )
+    }
 }

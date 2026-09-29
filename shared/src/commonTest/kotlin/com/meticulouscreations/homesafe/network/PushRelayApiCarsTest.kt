@@ -15,6 +15,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The relay's car profiles and car checks, as its `relay.py` answers them. */
@@ -71,11 +72,20 @@ class PushRelayApiCarsTest {
     }
 
     @Test
-    fun noEventsAsksNothingAndAnOlderRelayFails() = runTest {
+    fun forgettingDeletesTheProfileUnderItsCategory() = runTest {
+        val (api, seen) = api(respondWith = """{"ok":true}""")
+        assertTrue(api.deleteCarProfile("http://frigate:5000", "sarahs_car").isSuccess)
+        assertEquals("http://frigate:8787/cars/profiles/sarahs_car", seen.urls.single())
+    }
+
+    @Test
+    fun noEventsAsksNothingAnOlderRelayHasNoChecksAndAnErrorFails() = runTest {
         val (quiet, seen) = api(respondWith = "{}")
         assertEquals(emptyMap(), quiet.getCarChecks("http://frigate:5000", emptyList()).getOrThrow())
         assertTrue(seen.urls.isEmpty())
         val (old, _) = api(HttpStatusCode.NotFound, """{"detail":"Not Found"}""")
-        assertTrue(old.getCarChecks("http://frigate:5000", listOf("1790636195.070977-unrrq2")).isFailure)
+        assertNull(old.getCarChecks("http://frigate:5000", listOf("1790636195.070977-unrrq2")).getOrThrow(), "no such route: an older relay")
+        val (down, _) = api(HttpStatusCode.BadGateway, "")
+        assertTrue(down.getCarChecks("http://frigate:5000", listOf("1790636195.070977-unrrq2")).isFailure, "a relay that couldn't say this time")
     }
 }
