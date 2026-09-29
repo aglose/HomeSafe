@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.domain.model.CarCheck
+import com.meticulouscreations.homesafe.domain.model.CarProfile
+import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
@@ -19,6 +22,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -166,6 +170,46 @@ class PushRelayApi(private val httpClient: HttpClient) {
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
     }
 
+    /** The household cars' make, model, colour and plate, which the relay checks the classifier's names against. */
+    suspend fun getCarProfiles(serverUrl: String): Result<CarProfiles> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/cars/profiles"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayCarProfiles>().toDomain()
+    }
+
+    /** Saves [profile]; blank fields aren't checked. Answers the profile as the relay keeps it (make lower case, plate normalised). */
+    suspend fun saveCarProfile(serverUrl: String, profile: CarProfile): Result<CarProfile> = runCatching {
+        val response = httpClient.put(relayUrl(serverUrl, "/cars/profiles/${profile.name}")) {
+            contentType(ContentType.Application.Json)
+            setBody(RelayCarProfile(profile.name, profile.make, profile.model, profile.colour, profile.plate))
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        response.body<RelayCarProfile>().toDomain()
+    }
+
+    /** Forgets the profile of the car filed as [name]; the relay stops checking that name. */
+    suspend fun deleteCarProfile(serverUrl: String, name: String): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/cars/profiles/$name"))
+        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+    }
+
+    /**
+     * What the relay's car check made of each of [eventIds], keyed by event id. Events it hasn't
+     * looked at are missing. Null when the relay has no such route (an older relay, which answers
+     * 404); fails when it couldn't say this time (unreachable, timed out, an error).
+     */
+    suspend fun getCarChecks(serverUrl: String, eventIds: List<String>): Result<Map<String, CarCheck>?> = runCatching {
+        if (eventIds.isEmpty()) return@runCatching emptyMap()
+        val checks = mutableMapOf<String, CarCheck>()
+        for (ids in eventIds.chunked(CAR_CHECKS_PER_CALL)) {
+            val response = httpClient.get(relayUrl(serverUrl, "/cars/checks")) { parameter("events", ids.joinToString(",")) }
+            if (response.status == HttpStatusCode.NotFound) return@runCatching null
+            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+            response.body<RelayCarChecks>().checks.forEach { (id, check) -> checks[id] = check.toDomain() }
+        }
+        checks
+    }
+
     /**
      * Someone saying [eventId], a person detection, was not a person: the relay keeps its box as a
      * phantom spot on its camera, so the same thing there isn't pushed again, and files the
@@ -197,6 +241,9 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
     companion object {
         const val RELAY_PORT = 8787
+
+        /** The relay answers for at most 200 events a call (its `CAR_CHECKS_MAX`). */
+        private const val CAR_CHECKS_PER_CALL = 200
 
         /** Same host as Frigate, the relay's port, no query — works for both the LAN and Tailscale addresses. */
         fun relayUrl(serverUrl: String, path: String): String =
@@ -286,6 +333,57 @@ internal data class RelayPresenceDevice(
     /** The device_id; older relays don't send it, and their devices can't be removed from the app. */
     val id: String? = null,
     @SerialName("last_seen") val lastSeen: Double? = null,
+)
+
+/** The relay's `GET /cars/profiles` body. */
+@Serializable
+internal data class RelayCarProfiles(
+    val profiles: List<RelayCarProfile> = emptyList(),
+    val makes: List<String> = emptyList(),
+    val colours: List<String> = emptyList(),
+) {
+    fun toDomain() = CarProfiles(profiles = profiles.map { it.toDomain() }, makes = makes, colours = colours)
+}
+
+@Serializable
+internal data class RelayCarProfile(
+    val name: String,
+    val make: String? = null,
+    val model: String? = null,
+    val colour: String? = null,
+    val plate: String? = null,
+) {
+    fun toDomain() = CarProfile(name = name, make = make.orEmpty(), model = model.orEmpty(), colour = colour.orEmpty(), plate = plate.orEmpty())
+}
+
+/** The relay's `GET /cars/checks` body. */
+@Serializable
+internal data class RelayCarChecks(val checks: Map<String, RelayCarCheck> = emptyMap())
+
+@Serializable
+internal data class RelayCarCheck(
+    val verdict: String,
+    val classifier: String? = null,
+    val name: String? = null,
+    val verified: String? = null,
+    val saw: RelayCarLooks? = null,
+) {
+    fun toDomain() = CarCheck(
+        verdict = verdict,
+        classifierName = classifier,
+        name = name,
+        verified = verified,
+        sawColour = saw?.colour,
+        sawMake = saw?.make,
+        sawModel = saw?.model,
+    )
+}
+
+@Serializable
+internal data class RelayCarLooks(
+    val colour: String? = null,
+    val make: String? = null,
+    val model: String? = null,
 )
 
 /** One of the relay's phantom spots (`GET /phantoms`, `POST .../not_a_person`). */

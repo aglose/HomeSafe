@@ -532,10 +532,10 @@ class CarCheckTest(unittest.TestCase):
     """The pure halves of the car check: which crops are passing street cars, and what the vision model's description does to a name."""
 
     CARS = {
-        "andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]},
-        "sarahs_car": {"make": "tesla", "colour": "red"},
+        "andrews_tesla": {"make": "tesla", "model": "Model Y", "colour": "blue", "plate": "8ABC123"},
+        "sarahs_car": {"make": "tesla", "model": "Model Y", "colour": "red", "plate": "9XYZ789"},
         "in-laws_mercedes": {"make": "mercedes", "colour": "silver"},
-        "yayas_car": {"colour": ["white", "silver"]},
+        "yayas_car": {"colour": "white"},
     }
 
     def street(self, **overrides):
@@ -631,49 +631,74 @@ class CarCheckTest(unittest.TestCase):
         cam = {"zones": {"street": {"objects": ["bird"]}, "driveway": {"objects": ["person", "car", "dog"]}, "any": {"objects": []}, "lawn": {"objects": ["person"]}}}
         self.assertEqual(["driveway", "any"], relay.zones_wanting(cam, "car"))
 
+    @staticmethod
+    def saw(colour="blue", make="tesla", model="", plate=""):
+        return {"colour": colour, "make": make, "model": model, "body": "suv", "delivery": "none", "plate": plate}
+
+    def verdict(self, name, description, plate=""):
+        return relay.second_opinion_verdict(name, description, self.CARS, plate)
+
     def test_a_red_car_called_andrews_tesla_is_renamed_to_the_one_red_tesla(self):
-        matches = relay.household_matches({"colour": "red", "make": "tesla", "body": "suv"}, self.CARS)
-        self.assertEqual(("relabel", "sarahs_car"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "tesla"))
+        self.assertEqual(("relabel", "sarahs_car", "looks"), self.verdict("andrews_tesla", self.saw("red", model="Model Y")))
 
     def test_a_red_car_of_no_readable_make_only_loses_the_wrong_name(self):
-        matches = relay.household_matches({"colour": "red", "make": "unknown"}, self.CARS)
-        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "unknown"))
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("red", "unknown")))
 
     def test_a_blue_toyota_called_andrews_tesla_loses_the_name(self):
-        matches = relay.household_matches({"colour": "blue", "make": "toyota", "body": "sedan"}, self.CARS)
-        self.assertEqual([], matches)
-        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+        self.assertEqual([], relay.household_matches(self.saw("blue", "toyota"), {"andrews_tesla": self.CARS["andrews_tesla"]}))
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("blue", "toyota")))
 
-    def test_a_dark_blue_tesla_called_andrews_tesla_keeps_it_even_when_it_reads_as_black(self):
-        for colour in ("blue", "black"):
-            matches = relay.household_matches({"colour": colour, "make": "tesla"}, self.CARS)
-            self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS), colour)
-        matches = relay.household_matches({"colour": "blue", "make": "tesla"}, self.CARS)
-        self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+    def test_a_blue_tesla_is_verified_and_a_black_one_is_not_andrews(self):
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue")))
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("black")), "strict: black is not blue")
 
-    def test_infrared_rules_out_nothing_by_colour(self):
-        matches = relay.household_matches({"colour": "unknown", "make": "tesla"}, self.CARS)
-        self.assertEqual(["andrews_tesla", "sarahs_car", "yayas_car"], matches)
-        self.assertEqual(("keep", "andrews_tesla"), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS))
+    def test_a_model_that_isnt_the_cars_rules_it_out(self):
+        self.assertEqual("match", relay.looks_verdict(self.saw(model="Tesla Model Y"), self.CARS["andrews_tesla"]))
+        self.assertEqual("match", relay.looks_verdict(self.saw(model="model-y long range"), self.CARS["andrews_tesla"]))
+        self.assertEqual("mismatch", relay.looks_verdict(self.saw(model="Model 3"), self.CARS["andrews_tesla"]))
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw(model="Model 3")))
+
+    def test_infrared_rules_nothing_out_but_verifies_nothing_either(self):
+        night = self.saw("unknown")
+        self.assertEqual(["andrews_tesla", "sarahs_car", "yayas_car"], relay.household_matches(night, self.CARS))
+        self.assertEqual(("keep", "andrews_tesla", None), self.verdict("andrews_tesla", night))
 
     def test_silver_and_grey_are_one_colour(self):
-        self.assertEqual(["in-laws_mercedes", "yayas_car"], relay.household_matches({"colour": "grey", "make": "mercedes"}, self.CARS))
+        self.assertEqual(["in-laws_mercedes"], relay.household_matches(self.saw("grey", "mercedes"), self.CARS))
 
     def test_an_unknown_make_rules_out_nothing_by_make(self):
-        self.assertEqual(["sarahs_car"], relay.household_matches({"colour": "red", "make": "unknown"}, self.CARS))
+        self.assertEqual(["sarahs_car"], relay.household_matches(self.saw("red", "unknown"), self.CARS))
 
     def test_a_white_toyota_called_andrews_tesla_is_not_handed_to_the_white_car_with_no_make_on_file(self):
-        matches = relay.household_matches({"colour": "white", "make": "toyota"}, self.CARS)
-        self.assertEqual(["yayas_car"], matches)
-        self.assertEqual(("clear", None), relay.second_opinion_verdict("andrews_tesla", matches, self.CARS, "toyota"))
+        self.assertEqual(["yayas_car"], relay.household_matches(self.saw("white", "toyota"), self.CARS))
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("white", "toyota")))
 
-    def test_never_names_a_car_the_classifier_left_unnamed(self):
-        matches = relay.household_matches({"colour": "blue", "make": "tesla"}, self.CARS)
+    def test_never_names_a_car_the_classifier_left_unnamed_on_looks(self):
         for unnamed in (None, "none"):
-            self.assertEqual("keep", relay.second_opinion_verdict(unnamed, matches, self.CARS)[0])
+            self.assertEqual(("keep", unnamed, None), self.verdict(unnamed, self.saw("blue")))
 
-    def test_a_name_with_no_description_is_left_alone(self):
-        self.assertEqual(("keep", "moms_car"), relay.second_opinion_verdict("moms_car", [], self.CARS))
+    def test_a_name_with_no_profile_is_left_alone(self):
+        self.assertEqual(("keep", "moms_car", None), self.verdict("moms_car", self.saw()))
+
+    def test_a_plate_of_ours_names_the_car_whatever_it_looks_like(self):
+        self.assertEqual(("keep", "andrews_tesla", "plate"), self.verdict("andrews_tesla", self.saw("black"), "8ABC123"), "dusk")
+        self.assertEqual(("relabel", "sarahs_car", "plate"), self.verdict("andrews_tesla", self.saw("unknown"), "9XYZ789"))
+        self.assertEqual(("relabel", "andrews_tesla", "plate"), self.verdict(None, self.saw("unknown"), "8ABC12B"), "one character off")
+
+    def test_a_plate_far_from_the_named_cars_takes_the_name_away(self):
+        self.assertEqual(("clear", None, None), self.verdict("andrews_tesla", self.saw("blue"), "7QRS456"))
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "8ABD124"), "two off: a misread, not proof")
+        self.assertEqual(("keep", "andrews_tesla", "looks"), self.verdict("andrews_tesla", self.saw("blue"), "7QRS"), "a scrap of a longer plate rules nothing out")
+        short = {"vanity": {"make": "tesla", "colour": "blue", "plate": "AB12"}}
+        self.assertEqual(("clear", None, None), relay.second_opinion_verdict("vanity", self.saw("blue"), short, "XY99"), "a four-character plate is a full read of a four-character plate")
+
+    def test_plates_are_read_as_letters_and_digits(self):
+        self.assertEqual("8ABC123", relay.normal_plate(" 8abc-123 "))
+        self.assertEqual("8ABC123", relay.plate_read({"data": {"recognized_license_plate": "8abc 123"}}, self.saw(plate="")))
+        self.assertEqual("9XYZ789", relay.plate_read({"data": {}}, self.saw(plate="9xyz789")))
+        self.assertEqual("", relay.plate_read({"data": {}}, self.saw(plate="9X")), "a scrap of a plate is no plate")
+        self.assertEqual(1, relay.edit_distance("8ABC123", "8ABC12B"))
+        self.assertIsNone(relay.plate_owner("8ABC123", {"a": {"plate": "8ABC123"}, "b": {"plate": "8ABC124"}}), "two owners: a typo somewhere")
 
     def test_a_car_still_in_the_driveway_waits_to_settle(self):
         car = {"label": "car", "zones": ["driveway"], "start_time": 100.0, "end_time": None, "sub_label": None, "data": {}}
@@ -888,6 +913,121 @@ class CarCheckAgainstFrigate(_FakeFrigate):
         relay.second_opinions()
         self.assertEqual([{"subLabel": "sarahs_car", "subLabelScore": relay.VLM_SCORE}] * 2, self.sub_labels())
         self.assertEqual("relabel", self.verdict(car["id"], "vlm"))
+
+    def queue(self, event_id, *guesses):
+        train = os.path.join(self._dir.name, "known_cars", "train")
+        os.makedirs(train, exist_ok=True)
+        start = float(event_id.split("-")[0])
+        for i, guess in enumerate(guesses):
+            open(os.path.join(train, f"{event_id}-{start + i:.6f}-{guess}.webp"), "wb").close()
+
+    def test_a_blue_tesla_the_classifier_was_sure_of_is_filed_into_andrews(self):
+        car = self.driveway_car()
+        relay.describe_car = lambda jpeg: CarCheckTest.saw("blue", model="Model Y")
+        self.queue(car["id"], "andrews_tesla-1.0", "andrews_tesla-0.97", "andrews_tesla-1.0", "andrews_tesla-1.0")
+        relay.second_opinions()
+        self.assertEqual("keep", self.verdict(car["id"], "vlm"))
+        relay.file_verified_crops()
+        self.assertEqual("filed", self.verdict(car["id"], "verified"))
+        filed = [(url.rsplit("/", 3)[1], body["category"], body["training_file"]) for url, body in self.posts if url.endswith("/categorize")]
+        self.assertEqual(relay.VERIFIED_CROPS_PER_EVENT, len(filed))
+        self.assertTrue(all(category == "andrews_tesla" and f.endswith("-1.0.webp") for _, category, f in filed), filed)
+        self.assertEqual({"verdict": "keep", "classifier": "andrews_tesla", "name": "andrews_tesla", "verified": "looks",
+                          "saw": {"colour": "blue", "make": "tesla", "model": "Model Y", "body": "suv"}, "plate_read": False, "filed": "filed"},
+                         relay.car_check_json(car["id"]))
+
+    def test_a_black_tesla_the_classifier_was_sure_was_andrews_stays_in_the_queue(self):
+        car = self.driveway_car()
+        relay.describe_car = lambda jpeg: CarCheckTest.saw("black")
+        self.queue(car["id"], "andrews_tesla-1.0")
+        relay.second_opinions()
+        relay.file_verified_crops()
+        self.assertEqual("clear", self.verdict(car["id"], "vlm"))
+        self.assertEqual("unverified", self.verdict(car["id"], "verified"))
+        self.assertEqual([], self.categorized())
+
+    def test_a_car_seen_only_by_infrared_isnt_filed_on_the_classifiers_word(self):
+        car = self.driveway_car()
+        relay.describe_car = lambda jpeg: CarCheckTest.saw("unknown")
+        self.queue(car["id"], "andrews_tesla-1.0")
+        relay.second_opinions()
+        relay.file_verified_crops()
+        self.assertEqual("keep", self.verdict(car["id"], "vlm"))
+        self.assertEqual("unverified", self.verdict(car["id"], "verified"))
+        self.assertEqual([], self.categorized())
+
+    def test_crops_wait_for_the_check_and_one_car_is_filed_at_most_hourly(self):
+        car = self.driveway_car()
+        relay.describe_car = lambda jpeg: CarCheckTest.saw("blue")
+        self.queue(car["id"], "andrews_tesla-1.0")
+        relay.file_verified_crops()
+        self.assertIsNone(self.verdict(car["id"], "verified"), "not looked at yet")
+        relay.second_opinions()
+        relay.file_verified_crops()
+        self.assertEqual("filed", self.verdict(car["id"], "verified"))
+        again = dict(car, id=f"{self.now - 100:.6f}-drv2", start_time=self.now - 100, end_time=self.now - 70)
+        self.events[again["id"]] = again
+        self.visits.append(again)
+        self.queue(again["id"], "andrews_tesla-1.0")
+        relay.second_opinions()
+        relay.file_verified_crops()
+        self.assertEqual("enough", self.verdict(again["id"], "verified"))
+        self.assertEqual(1, len(self.categorized()))
+
+    def test_verified_crops_count_towards_a_retrain(self):
+        relay.RETRAIN_AFTER = 2
+        relay.record_check("e1", "street", "filed")
+        relay.record_check("e2", "verified", "filed", json.dumps({"name": "andrews_tesla"}))
+        relay.maybe_retrain()
+        self.assertTrue(any(url.endswith("/train") for url, _ in self.posts))
+
+
+class CarProfilesTest(unittest.TestCase):
+    """Car profiles: seeded from the environment once, then the app's to edit."""
+
+    def setUp(self):
+        import tempfile
+
+        self._dir = tempfile.TemporaryDirectory()
+        self._saved = {name: getattr(relay, name) for name in ("DB_PATH", "CONN", "HOUSEHOLD_CARS")}
+        relay.DB_PATH = os.path.join(self._dir.name, "relay.db")
+        relay.CONN = relay.db()
+
+    def tearDown(self):
+        relay.CONN.close()
+        for name, value in self._saved.items():
+            setattr(relay, name, value)
+        self._dir.cleanup()
+
+    def test_the_environment_seeds_strict_profiles_the_app_then_owns(self):
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}}
+        relay.load_car_profiles()
+        self.assertEqual({"andrews_tesla": {"make": "tesla", "colour": "blue"}}, relay.HOUSEHOLD_CARS, "a list of colours becomes its first")
+        relay.save_car_profile("andrews_tesla", {"make": "tesla", "model": "Model Y", "colour": "blue", "plate": "8ABC123"}, "andrew")
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}}  # the next boot
+        relay.load_car_profiles()
+        self.assertEqual({"andrews_tesla": {"make": "tesla", "model": "Model Y", "colour": "blue", "plate": "8ABC123"}}, relay.HOUSEHOLD_CARS)
+        relay.save_car_profile("andrews_tesla", None, "andrew")
+        self.assertEqual({}, relay.HOUSEHOLD_CARS)
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}}
+        relay.load_car_profiles()
+        self.assertEqual({}, relay.HOUSEHOLD_CARS, "removed in the app, not seeded again")
+
+    def test_the_app_saves_only_what_the_vision_model_can_answer(self):
+        saved, relay.require_frigate_session = relay.require_frigate_session, lambda request: "andrew"
+        try:
+            body = relay.put_car_profile("sarahs_car", {"make": "Tesla", "model": " Model Y ", "colour": "Red", "plate": "9xyz-789"}, object())
+            self.assertEqual({"name": "sarahs_car", "display_name": "Sarah's Car", "make": "tesla", "model": "Model Y", "colour": "red", "plate": "9XYZ789"}, body)
+            relay.put_car_profile("sarahs_car", {"make": "tesla", "colour": "", "plate": ""}, object())
+            self.assertEqual({"make": "tesla"}, relay.HOUSEHOLD_CARS["sarahs_car"], "blanks clear a field")
+            for bad in ({"colour": "teal"}, {"colour": "unknown"}, {"make": "yugo"}, {"plate": "9X"}, {"model": "x" * 41}):
+                with self.assertRaises(relay.HTTPException, msg=str(bad)):
+                    relay.put_car_profile("sarahs_car", bad, object())
+            for name in ("none", "../x"):
+                with self.assertRaises(relay.HTTPException, msg=name):
+                    relay.put_car_profile(name, {}, object())
+        finally:
+            relay.require_frigate_session = saved
 
 
 class FarCarsAgainstFrigate(_FakeFrigate):

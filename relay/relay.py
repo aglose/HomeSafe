@@ -264,6 +264,8 @@ def db() -> sqlite3.Connection:
     # The names people gave events through the relay (see "person tags"), and since when it keeps them.
     conn.execute("CREATE TABLE IF NOT EXISTS person_tags (event_id TEXT PRIMARY KEY, name TEXT, by TEXT, at REAL)")
     conn.execute("INSERT OR IGNORE INTO state VALUES ('person_tags_since', ?)", (json.dumps(time.time()),))
+    # Each household car's make, model, colour and plate (see "car profiles"); `by` who saved it, or "env".
+    conn.execute("CREATE TABLE IF NOT EXISTS car_profiles (name TEXT PRIMARY KEY, make TEXT, model TEXT, colour TEXT, plate TEXT, updated REAL, by TEXT)")
     # Detections someone said are not a person (see "phantom people"): the event, and where on its
     # camera the thing that fooled the detector sits (`box`, JSON [x, y, w, h] in frame fractions).
     conn.execute("CREATE TABLE IF NOT EXISTS phantoms (event_id TEXT PRIMARY KEY, camera TEXT, box TEXT, by TEXT, at REAL)")
@@ -1279,12 +1281,15 @@ def poll_forever() -> None:
 # - Far cars lose their name (see "far cars").
 # - A second opinion on cars in a car zone (the driveway), from a local vision model through
 #   Ollama. It looks at the car in the 4K recording rather than the detect frame (~6x the pixels),
-#   and answers a closed set — colour, make, body — which is then matched against what the
-#   household's cars look like (HOUSEHOLD_CARS). It only ever vetoes or corrects the classifier:
-#   a name that contradicts what the car looks like is replaced by the one household car that
-#   fits, or cleared; it never names a car the classifier left unnamed, and never touches a name a
-#   person gave (score 1.0, from the app's car tagging). No appearance can tell our dark blue Model Y
-#   from a neighbour's; this catches the red hatchback called "Andrew's Tesla".
+#   and answers a closed set — colour, make, model, body, and the plate when it can read one —
+#   which is then checked against the household's car profiles (see "car profiles"). It only ever
+#   vetoes or corrects the classifier: a name that contradicts what the car looks like is replaced
+#   by the one household car that fits, or cleared; it never names a car the classifier left
+#   unnamed on looks alone (a plate of ours does), and never touches a name a person gave (score
+#   1.0, from the app's car tagging). No appearance can tell our dark blue Model Y from a
+#   neighbour's, which is what the plate is for; looks catch the red Model Y called "Andrew's Tesla".
+# - Verified crops into their car (see "verified crops"): a name the check confirmed by plate or by
+#   looks, on crops the classifier was 100% sure of, is filed as a training example of that car.
 CAR_CLASSIFIER = os.environ.get("CAR_CLASSIFIER", "")
 STREET_NONE_MAX = int(os.environ.get("STREET_NONE_MAX", "600"))
 STREET_NONE_PER_HOUR = int(os.environ.get("STREET_NONE_PER_HOUR", "12"))
@@ -1316,10 +1321,11 @@ RETRAIN_RETRY_SECONDS = 3600.0
 OLLAMA = os.environ.get("OLLAMA_URL", "").rstrip("/")
 # The Instruct build: plain `qwen3-vl:4b` is the Thinking one, which spends seconds reasoning first.
 VLM_MODEL = os.environ.get("VLM_MODEL", "qwen3-vl:4b-instruct")
-# {"andrews_tesla": {"make": "tesla", "colour": ["blue", "black"]}, ...}: how each household car
-# looks, keyed by the classifier's category. `colour` is one colour or a list of the ones a camera
-# might see it as (dark blue reads as black at dusk). A car missing here is never judged.
-HOUSEHOLD_CARS: dict[str, dict[str, str]] = json.loads(os.environ.get("HOUSEHOLD_CARS", "{}") or "{}")
+# {"andrews_tesla": {"make": "tesla", "model": "Model Y", "colour": "blue", "plate": "8ABC123"}, ...}:
+# how each household car looks, keyed by the classifier's category (see "car profiles"). The
+# HOUSEHOLD_CARS environment variable only seeds the profiles the app then edits; this dict is the
+# live copy of the `car_profiles` table. A car missing here is never judged.
+HOUSEHOLD_CARS: dict[str, dict[str, Any]] = json.loads(os.environ.get("HOUSEHOLD_CARS", "{}") or "{}")
 # Below a person's 1.0 (the app's tags), above nothing the classifier needs to beat.
 VLM_SCORE = 0.9
 # A car still in view is judged once it has been tracked this long: the classifier's attempts
@@ -1350,15 +1356,18 @@ VLM_SCHEMA = {
         "model": {"type": "string"},
         "body": {"type": "string", "enum": BODIES},
         "delivery": {"type": "string", "enum": DELIVERY},
+        "plate": {"type": "string"},
     },
-    "required": ["colour", "make", "model", "body", "delivery"],
+    "required": ["colour", "make", "model", "body", "delivery", "plate"],
 }
 VLM_PROMPT = (
     "This is a crop from a home security camera. Describe the vehicle in the centre of the picture. "
     "If the picture is black-and-white infrared night footage, answer colour \"unknown\". "
     "Answer make \"unknown\" unless a badge or an unmistakable shape shows it. "
     "model is the model name if you can tell (\"Model Y\", \"Camry\"), else an empty string. "
-    "delivery is the company if it is a marked delivery vehicle, else \"none\"."
+    "delivery is the company if it is a marked delivery vehicle, else \"none\". "
+    "plate is the vehicle's licence plate, letters and digits only, if the plate is in the picture and every "
+    "character is sharp enough to read; otherwise an empty string. Never guess a character."
 )
 
 
@@ -1534,7 +1543,7 @@ def maybe_retrain() -> None:
     """Retrains the classifier once a day, when at least RETRAIN_AFTER street crops went in since the last one."""
     now = time.time()
     last = state_get("car_retrain_at") or 0.0
-    if now - last < RETRAIN_EVERY_SECONDS or filed_since("street", last) < RETRAIN_AFTER:
+    if now - last < RETRAIN_EVERY_SECONDS or filed_since("street", last) + filed_since("verified", last) < RETRAIN_AFTER:
         return
     if now - (state_get("car_retrain_tried_at") or 0.0) < RETRAIN_RETRY_SECONDS:
         return
@@ -1544,7 +1553,99 @@ def maybe_retrain() -> None:
         log.warning("retrain of %s refused, trying again in %.0f min: %s %s", CAR_CLASSIFIER, RETRAIN_RETRY_SECONDS / 60, r.status_code, r.text[:200])
         return
     state_set("car_retrain_at", now)
-    log.info("retrain of %s requested after %d new street crops: %s %s", CAR_CLASSIFIER, filed_since("street", last), r.status_code, r.text[:200])
+    log.info("retrain of %s requested after %d new street and %d verified crops: %s %s",
+             CAR_CLASSIFIER, filed_since("street", last), filed_since("verified", last), r.status_code, r.text[:200])
+
+
+# ---------------------------------------------------------------- verified crops
+#
+# The user's rule (2026-09-28): a detection the model is 100% sure of is simply taken, and one it
+# isn't sure of is left for a person to correct. But the classifier's 100% alone isn't enough: on
+# 2026-09-27 it named Sarah's red Model Y `andrews_tesla` at 1.0, and filing that would have taught
+# it the mistake. So a queued crop the classifier scored 1.0 for a household car is filed into that
+# car's dataset only once the car check verified the event as that very car, by its plate or its
+# looks (see "car profiles"). The rest stay in the queue, where the app shows every 1.0 crop the
+# check didn't verify alongside the uncertain ones.
+#
+# A parked car is re-registered all day in the same spot, and a class trained from one spot learns
+# the spot (see the quarantine of 2026-09-27). So few crops per event, and few an hour per car,
+# spread over the day's light rather than piled up from one afternoon.
+CONFIDENT_SCORE = 1.0
+VERIFIED_CROPS_PER_EVENT = 2
+VERIFIED_EVENTS_PER_CAR_PER_DAY = 6
+VERIFIED_SPACING_SECONDS = 3600.0
+
+
+def train_crop_guess(file_name: str) -> tuple[str, float] | None:
+    """The classifier's guess on a queued crop, `<event id>-<frame time>-<category>-<score>.webp`, as (category, score)."""
+    if train_crop_event(file_name) is None:
+        return None
+    parts = file_name.rsplit(".", 1)[0].split("-")
+    try:
+        return "-".join(parts[3:-1]), float(parts[-1])
+    except ValueError:
+        return None
+
+
+def verified_as(event_id: str) -> tuple[str | None, str | None, str | None]:
+    """
+    What the car check made of an event: (the name it ends with, what verified it, the check's
+    verdict). All None until the check has looked; the first two None when nothing verified it.
+    """
+    row = check_of(event_id, "vlm")
+    if row is None:
+        return None, None, None
+    verdict, detail = row
+    try:
+        d = json.loads(detail or "{}")
+    except ValueError:
+        d = {}
+    how = d.get("verified")
+    name = d.get("now") if verdict in ("relabel", "name", "clear") else d.get("was")
+    return (name if how else None), how, verdict
+
+
+def verified_filings(name: str, since: float) -> list[float]:
+    """When crops of `name` were filed as verified since `since`."""
+    rows = with_db(lambda c: c.execute("SELECT at, detail FROM car_checks WHERE kind='verified' AND verdict='filed' AND at>=?", (since,)).fetchall())
+    return [at for at, detail in rows if (json.loads(detail or "{}") or {}).get("name") == name]
+
+
+def file_verified_crops() -> None:
+    """Files the queued 1.0 crops of cars the check verified into those cars (see "verified crops")."""
+    model = CAR_CLASSIFIER
+    train = os.path.join(CLIPS_DIR, model, "train")
+    by_event: dict[str, list[tuple[str, str]]] = {}
+    for file_name in sorted(os.listdir(train)) if os.path.isdir(train) else []:
+        event_id, guess = train_crop_event(file_name), train_crop_guess(file_name)
+        if event_id and guess and file_name.endswith(".webp") and guess[1] >= CONFIDENT_SCORE and guess[0] in HOUSEHOLD_CARS:
+            by_event.setdefault(event_id, []).append((file_name, guess[0]))
+    now = time.time()
+    for event_id, crops in by_event.items():
+        if checked(event_id, "verified"):
+            continue
+        name, how, verdict = verified_as(event_id)
+        if verdict is None:
+            continue  # not looked at (yet): the check only looks at cars in a car zone
+        if how is None:
+            record_check(event_id, "verified", "unverified", verdict)
+            continue
+        files = [f for f, category in crops if category == name][:VERIFIED_CROPS_PER_EVENT]
+        if not files:
+            record_check(event_id, "verified", "other-name", json.dumps({"name": name}))
+            continue
+        filed = verified_filings(name, now - 24 * 3600)
+        if len(filed) >= VERIFIED_EVENTS_PER_CAR_PER_DAY or (filed and now - max(filed) < VERIFIED_SPACING_SECONDS):
+            record_check(event_id, "verified", "enough", json.dumps({"name": name}))
+            continue
+        moved = []
+        for file_name in files:
+            r = requests.post(f"{FRIGATE}/api/classification/{model}/dataset/categorize",
+                              json={"category": name, "training_file": file_name}, timeout=10)
+            if r.ok:
+                moved.append(file_name)
+        record_check(event_id, "verified", "filed" if moved else "failed", json.dumps({"name": name, "how": how, "files": moved}))
+        log.info("verified car %s: %d crop(s) the classifier was sure of filed as %s/%s (by %s)", event_id, len(moved), model, name, how)
 
 
 # ---------------------------------------------------------------- far cars
@@ -1728,38 +1829,182 @@ def vlm_crop_box(box: tuple[float, float, float, float], margin: float = 0.25) -
     return left, top, right - left, bottom - top
 
 
-def household_matches(description: dict[str, str], cars: dict[str, dict[str, str]]) -> list[str]:
-    """The household cars the description fits. Unknown colour or make (infrared, no badge) rules nothing out."""
+# ---------------------------------------------------------------- car profiles
+#
+# Each household car's make, model, colour and plate, keyed by the classifier's category, set from
+# the app (PUT /cars/profiles/{name}) and kept in `car_profiles`. Colour is one colour, and it is
+# strict: the user chose (2026-09-28) that a blue Tesla never passes as a black one, although dark
+# blue reads as black at dusk. A car whose colour can't be told is left for the plate, or for a
+# person to confirm in the app's labelling queue, rather than waved through.
+#
+# A plate is the strongest word there is: two Model Ys in the household differ only in colour, and
+# a neighbour's in neither. The Front Yard seldom shows one (the porch beam and the angle hide the
+# parked cars' plates), so it counts only when the model read every character: within
+# PLATE_MATCH_DISTANCE of a household plate it names the car, whatever the classifier said; at
+# least PLATE_DIFFERENT_DISTANCE from the named car's plate it takes that name away.
+PLATE_MATCH_DISTANCE = 1
+PLATE_DIFFERENT_DISTANCE = 3
+PLATE_MIN_LENGTH = 4
+PLATE_MAX_LENGTH = 10
+PROFILE_MODEL_MAX = 40
+_PROFILE_KEYS = ("make", "model", "colour", "plate")
+
+
+def normal_plate(plate: Any) -> str:
+    """A plate as letters and digits only, upper case: "8abc 123" and "8ABC-123" are one plate."""
+    return re.sub(r"[^A-Z0-9]", "", str(plate or "").upper())[:PLATE_MAX_LENGTH]
+
+
+def edit_distance(a: str, b: str) -> int:
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        previous, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            previous, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, previous + (ca != cb))
+    return row[-1]
+
+
+def normal_model(model: Any, make: str = "") -> str:
+    """ "Tesla Model Y" and "model-y" as "modely": letters and digits, lower case, the make dropped from the front."""
+    text = re.sub(r"[^a-z0-9]", "", str(model or "").lower())
+    make = re.sub(r"[^a-z0-9]", "", (make or "").lower())
+    return text[len(make):] if make and make not in ("unknown", "other") and text.startswith(make) and len(text) > len(make) else text
+
+
+def profile_row(row: tuple) -> tuple[str, dict[str, Any]]:
+    name, make, model, colour, plate = row
+    return name, {k: v for k, v in zip(_PROFILE_KEYS, (make, model, colour, plate)) if v}
+
+
+def load_car_profiles() -> None:
+    """
+    Seeds `car_profiles` from the HOUSEHOLD_CARS environment variable, once (a list of colours
+    becomes its first, the strict rule; a car the app removes stays removed), and makes the table
+    the live copy.
+    """
+    global HOUSEHOLD_CARS
+
+    def seed(c: sqlite3.Connection) -> None:
+        for name, looks in HOUSEHOLD_CARS.items():
+            colour = looks.get("colour")
+            colour = (colour[0] if colour else None) if isinstance(colour, list) else colour
+            c.execute("INSERT OR IGNORE INTO car_profiles VALUES (?,?,?,?,?,?,?)",
+                      (name, looks.get("make"), looks.get("model"), colour, normal_plate(looks.get("plate")) or None, time.time(), "env"))
+        c.commit()
+
+    if not state_get("car_profiles_seeded"):
+        with_db(seed)
+        state_set("car_profiles_seeded", time.time())
+        log.info("car profiles seeded from HOUSEHOLD_CARS: %s", sorted(HOUSEHOLD_CARS))
+    HOUSEHOLD_CARS = car_profiles()
+
+
+def car_profiles() -> dict[str, dict[str, Any]]:
+    rows = with_db(lambda c: c.execute("SELECT name, make, model, colour, plate FROM car_profiles ORDER BY name").fetchall())
+    return dict(profile_row(r) for r in rows)
+
+
+def save_car_profile(name: str, profile: dict[str, Any] | None, by: str) -> None:
+    """Writes (or, for None, removes) a car's profile and reloads the live copy."""
+    global HOUSEHOLD_CARS
+
+    def write(c: sqlite3.Connection) -> None:
+        if profile is None:
+            c.execute("DELETE FROM car_profiles WHERE name=?", (name,))
+        else:
+            c.execute("INSERT OR REPLACE INTO car_profiles VALUES (?,?,?,?,?,?,?)",
+                      (name, *(profile.get(k) or None for k in _PROFILE_KEYS), time.time(), by))
+        c.commit()
+
+    with_db(write)
+    HOUSEHOLD_CARS = car_profiles()
+
+
+def looks_verdict(description: dict[str, str], profile: dict[str, Any]) -> str:
+    """
+    Whether a car the vision model described is the car of `profile`: "mismatch" when a make,
+    model or colour it read contradicts the profile, "match" when it read the car's colour and
+    nothing it read contradicts it, else "unsure". What the model couldn't tell (infrared, no badge,
+    no model name) rules nothing out, but nor does it confirm: colour is what tells the household's
+    two Model Ys apart. A profile may still carry a list of colours (the old configuration).
+    """
     def group(colour: str) -> str:
         return COLOUR_GROUPS.get(colour, colour)
-    colour, make = description.get("colour", "unknown"), description.get("make", "unknown")
-    fits = []
-    for name, looks in cars.items():
-        if looks.get("make") and make not in ("unknown", "other") and make != looks["make"]:
-            continue
-        wanted = looks.get("colour") or []
-        wanted = [wanted] if isinstance(wanted, str) else wanted
-        if wanted and colour != "unknown" and group(colour) not in {group(c) for c in wanted}:
-            continue
-        fits.append(name)
-    return fits
+
+    make = description.get("make") or "unknown"
+    if profile.get("make") and make not in ("unknown", "other") and make != profile["make"]:
+        return "mismatch"
+    wanted_model, seen_model = normal_model(profile.get("model"), profile.get("make", "")), normal_model(description.get("model"), make)
+    if wanted_model and seen_model and wanted_model not in seen_model and seen_model not in wanted_model:
+        return "mismatch"
+    wanted = profile.get("colour") or []
+    wanted = [wanted] if isinstance(wanted, str) else wanted
+    colour = description.get("colour") or "unknown"
+    if wanted and colour != "unknown":
+        return "match" if group(colour) in {group(c) for c in wanted} else "mismatch"
+    return "unsure"
 
 
-def second_opinion_verdict(name: str | None, matches: list[str], cars: dict[str, dict[str, str]], make: str = "unknown") -> tuple[str, str | None]:
+def household_matches(description: dict[str, str], cars: dict[str, dict[str, Any]]) -> list[str]:
+    """The household cars the description doesn't contradict."""
+    return [name for name, profile in cars.items() if looks_verdict(description, profile) != "mismatch"]
+
+
+def plate_read(event: dict[str, Any], description: dict[str, str]) -> str:
+    """The plate read off the car: Frigate's own reader if it is on, else the vision model's. Empty when neither could."""
+    data = event.get("data") or {}
+    for plate in (data.get("recognized_license_plate"), event.get("recognized_license_plate"), description.get("plate")):
+        plate = normal_plate(plate[0] if isinstance(plate, list) and plate else plate)
+        if len(plate) >= PLATE_MIN_LENGTH:
+            return plate
+    return ""
+
+
+def plate_owner(plate: str, cars: dict[str, dict[str, Any]]) -> str | None:
+    """The household car whose plate this is, within PLATE_MATCH_DISTANCE; None when it is nobody's, or two cars' (a typo in a profile)."""
+    owners = [name for name, p in cars.items() if p.get("plate") and edit_distance(plate, normal_plate(p["plate"])) <= PLATE_MATCH_DISTANCE]
+    return owners[0] if plate and len(owners) == 1 else None
+
+
+def plate_rules_out(plate: str, name: str, cars: dict[str, dict[str, Any]]) -> bool:
     """
-    What to do with the classifier's name given the cars the picture fits: ("keep", name),
-    ("relabel", other name) or ("clear", None). An unnamed car, or a name with no description to
-    check it against, is kept as it is — this only vetoes and corrects. A wrong name is replaced
-    only by the one household car that fits *and* whose make the model read off the picture;
-    fitting on colour alone ("some white car") is not enough to call it anyone's.
+    Whether a plate read clearly isn't the named car's: a full read, far from the plate on its profile.
+    A read is full when it is about as long as that plate, so a scrap of a longer plate is only far
+    from it by length and rules nothing out, while a short plate on file can still be ruled out.
     """
+    own = normal_plate((cars.get(name) or {}).get("plate"))
+    full = len(plate) >= max(PLATE_MIN_LENGTH, len(own) - PLATE_MATCH_DISTANCE)
+    return bool(own) and full and edit_distance(plate, own) >= PLATE_DIFFERENT_DISTANCE
+
+
+def second_opinion_verdict(name: str | None, description: dict[str, str], cars: dict[str, dict[str, Any]], plate: str = "") -> tuple[str, str | None, str | None]:
+    """
+    What to do with the classifier's name given what the vision model saw: ("keep", name, how),
+    ("relabel", other name, how) or ("clear", None, None), where `how` says what verified the name
+    it ends with ("plate" or "looks"), None when nothing did.
+
+    A plate of ours names the car outright. Otherwise an unnamed car, or a name with no profile to
+    check it against, is kept as it is. A name whose car doesn't look like its profile (or whose
+    plate isn't its own) is replaced only by the one other household car that looks right *and*
+    whose make the model read off the picture — colour alone ("some white car") doesn't make it
+    anyone's — or else cleared. A name that fits but whose colour couldn't be told is kept, unverified.
+    """
+    owner = plate_owner(plate, cars)
+    if owner:
+        return ("keep" if owner == name else "relabel"), owner, "plate"
     if not name or name.lower() in ("none", "unknown") or name not in cars:
-        return "keep", name
-    if name in matches:
-        return "keep", name
-    if len(matches) == 1 and cars[matches[0]].get("make") == make:
-        return "relabel", matches[0]
-    return "clear", None
+        return "keep", name, None
+    verdict = "mismatch" if plate_rules_out(plate, name, cars) else looks_verdict(description, cars[name])
+    if verdict == "match":
+        return "keep", name, "looks"
+    if verdict == "unsure":
+        return "keep", name, None
+    make = description.get("make") or "unknown"
+    others = [n for n, p in cars.items() if n != name and looks_verdict(description, p) == "match" and p.get("make") == make
+              and not plate_rules_out(plate, n, cars)]
+    if len(others) == 1:
+        return "relabel", others[0], "looks"
+    return "clear", None, None
 
 
 def describe_car(jpeg: bytes) -> dict[str, str]:
@@ -1903,8 +2148,8 @@ def second_opinions() -> None:
                 if not judged:
                     record_check(event_id, "vlm", "person", json.dumps({"was": name, "score": score, "saw": description}))
                 continue
-            matches = household_matches(description, HOUSEHOLD_CARS)
-            action, new_name = second_opinion_verdict(name, matches, HOUSEHOLD_CARS, description.get("make", "unknown"))
+            plate = plate_read(event, description)
+            action, new_name, verified = second_opinion_verdict(name, description, HOUSEHOLD_CARS, plate)
             story = observe_car(event) or {}
             recognised, remembered = None, ""
             if action == "keep" and frigate_name(event)[0] is None:
@@ -1936,12 +2181,16 @@ def second_opinions() -> None:
             except Exception as e:
                 log.warning("car %s: Frigate didn't take the verdict (%s %s), trying again next round: %s", event_id, action, new_name or "", e)
                 continue
-            if action == "keep" and name and name in matches:
-                learn_vehicle(camera, name, description, picture, tagged=False)
-            record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description, "memory": remembered or None}))
+            if verified == "plate" or (action == "keep" and verified == "looks"):
+                learn_vehicle(camera, new_name, description, picture, tagged=False)
+            if action == "name":
+                verified = None  # the memory's name, not the classifier's: no crops of it to file
+            record_check(event_id, "vlm", action, json.dumps({"was": name, "score": score, "now": new_name, "saw": description,
+                                                             "memory": remembered or None, "verified": verified, "plate": plate or None}))
             took = time.time() - started
-            log.info("car %s on %s: classifier %s (%s), model saw %s in %.1fs -> %s %s%s",
-                     event_id, camera, name, score, summary_text, took, action, new_name or "", f" (memory: {remembered})" if remembered else "")
+            log.info("car %s on %s: classifier %s (%s), model saw %s%s in %.1fs -> %s %s%s%s",
+                     event_id, camera, name, score, summary_text, f" plate {plate}" if plate else "", took, action, new_name or "",
+                     f" ({verified})" if verified else "", f" (memory: {remembered})" if remembered else "")
             if took > VLM_SLOW_SECONDS:
                 log.warning("vision model took %.0fs for one car: is Ollama running on the CPU? (docker logs ollama | grep load_tensors)", took)
 
@@ -2096,6 +2345,10 @@ def car_check_forever() -> None:
                 clear_far_car_names()
             except Exception as e:
                 log.warning("far cars: %s", e)
+            try:
+                file_verified_crops()
+            except Exception as e:
+                log.warning("verified crops: %s", e)
         if person_classifier_ready():
             try:
                 file_person_crops()
@@ -2634,7 +2887,11 @@ def learn_vehicle(camera: str, name: str, description: dict[str, str], picture: 
 
 
 def same_car_prompt(name: str, looks: dict[str, Any]) -> str:
-    seen = " ".join(str(v) for v in ((looks or {}).get("colour") or [])[-1:] + [(looks or {}).get(k) for k in ("make", "model", "body")] if v)
+    """The comparison's question, describing the car by its profile where it has one, else by what the model has seen of it."""
+    looks = dict(looks or {}, **{k: v for k, v in (HOUSEHOLD_CARS.get(name) or {}).items() if k != "plate"})
+    colours = looks.get("colour") or []
+    colours = [colours] if isinstance(colours, str) else colours
+    seen = " ".join(str(v) for v in colours[-1:] + [looks.get(k) for k in ("make", "model", "body")] if v)
     return (
         f"Both pictures are crops from the same home security camera. The first is {display_name(name)}"
         + (f" ({seen})" if seen else "")
@@ -2954,6 +3211,7 @@ def startup() -> None:
     global CONN
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     CONN = db()
+    load_car_profiles()
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
     threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
@@ -3317,6 +3575,94 @@ def vehicles(request: Request, device: str | None = None) -> dict[str, Any]:
     """
     authenticate(request, device)
     return vehicle_memory_snapshot()
+
+
+def profile_json(name: str, profile: dict[str, Any]) -> dict[str, Any]:
+    colour = profile.get("colour")
+    return {"name": name, "display_name": display_name(name), "make": profile.get("make"), "model": profile.get("model"),
+            "colour": colour[0] if isinstance(colour, list) and colour else colour, "plate": profile.get("plate")}
+
+
+@app.get("/cars/profiles")
+def get_car_profiles(request: Request) -> dict[str, Any]:
+    """The household cars' profiles (see "car profiles"), and the makes and colours a profile may name. A signed-in user."""
+    require_frigate_session(request)
+    return {
+        "profiles": [profile_json(name, profile) for name, profile in sorted(HOUSEHOLD_CARS.items())],
+        "makes": [m for m in MAKES if m not in ("other", "unknown")],
+        "colours": [c for c in COLOURS if c != "unknown"],
+    }
+
+
+@app.put("/cars/profiles/{name}")
+def put_car_profile(name: str, body: dict[str, Any], request: Request) -> dict[str, Any]:
+    """
+    Sets a car's make, model, colour and plate. `name` is the classifier's category for it. Each
+    field is optional (blank or missing leaves it unchecked), but what is given must be one of
+    the vision model's makes and colours, since those are all it can answer.
+    """
+    if not DATASET_NAME.fullmatch(name) or name.lower() in NOT_A_NAME:
+        raise HTTPException(status_code=400, detail="Bad car name")
+    make = str(body.get("make") or "").strip().lower()
+    colour = str(body.get("colour") or "").strip().lower()
+    model = str(body.get("model") or "").strip()
+    plate = normal_plate(body.get("plate"))
+    if make and make not in MAKES:
+        raise HTTPException(status_code=400, detail=f"Unknown make {make}")
+    if colour and (colour not in COLOURS or colour == "unknown"):
+        raise HTTPException(status_code=400, detail=f"Unknown colour {colour}")
+    if len(model) > PROFILE_MODEL_MAX:
+        raise HTTPException(status_code=400, detail="Model name too long")
+    if body.get("plate") and len(plate) < PLATE_MIN_LENGTH:
+        raise HTTPException(status_code=400, detail="Plate too short")
+    user = require_frigate_session(request)
+    profile = {"make": make, "model": model, "colour": colour, "plate": plate}
+    save_car_profile(name, profile, user)
+    log.info("car profile by %s: %s <- %s", user, name, {k: v for k, v in profile.items() if k != "plate"} | {"plate": bool(plate)})
+    return profile_json(name, HOUSEHOLD_CARS.get(name) or {})
+
+
+@app.delete("/cars/profiles/{name}")
+def delete_car_profile(name: str, request: Request) -> dict[str, Any]:
+    user = require_frigate_session(request)
+    save_car_profile(name, None, user)
+    log.info("car profile by %s: %s removed", user, name)
+    return {"ok": True}
+
+
+CAR_CHECKS_MAX = 200
+
+
+def car_check_json(event_id: str) -> dict[str, Any] | None:
+    """What the car check made of one event, for the app's labelling queue; None before it has looked."""
+    row = check_of(event_id, "vlm")
+    if row is None:
+        return None
+    verdict, detail = row
+    try:
+        d = json.loads(detail or "{}")
+    except ValueError:
+        d = {}
+    saw = d.get("saw") or {}
+    name, how, _ = verified_as(event_id)
+    filed = check_of(event_id, "verified")
+    return {
+        "verdict": verdict,
+        "classifier": d.get("was"),
+        "name": name or (d.get("now") if verdict in ("relabel", "name", "clear") else d.get("was")),
+        "verified": how,
+        "saw": {k: saw.get(k) for k in ("colour", "make", "model", "body")},
+        "plate_read": bool(d.get("plate")),
+        "filed": filed[0] if filed else None,
+    }
+
+
+@app.get("/cars/checks")
+def car_checks(events: str, request: Request) -> dict[str, Any]:
+    """The car check's verdicts on the given events (comma-separated ids), keyed by id; events it hasn't looked at are left out."""
+    require_frigate_session(request)
+    ids = [e for e in events.split(",") if EVENT_ID.fullmatch(e)][:CAR_CHECKS_MAX]
+    return {"checks": {e: c for e in ids if (c := car_check_json(e)) is not None}}
 
 
 @app.post("/test")
