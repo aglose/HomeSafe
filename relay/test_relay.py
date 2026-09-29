@@ -1971,6 +1971,7 @@ class PhantomTest(_FakeFrigate):
         self.assertFalse(relay.is_phantom(self.events[self.person(path=WALK_PATH)], spots), "they walked there")
         self.assertFalse(relay.is_phantom(self.events[self.person(name="andrew")], spots), "a face Frigate knows")
         self.assertTrue(relay.is_phantom(self.events[self.person(name="none")], spots), "`none` is no name")
+        self.assertTrue(relay.is_phantom(self.events[self.person(name="Unknown")], spots), "nor, in any case, is `unknown`")
         self.assertFalse(relay.is_phantom(self.events[self.person(box=[0.6, 0.3, 0.2, 0.4])], spots), "somewhere else")
         self.assertFalse(relay.is_phantom(self.events[self.person(camera="hikvision_1")], spots), "another camera")
         self.assertFalse(relay.is_phantom(self.events[self.person(label="dog")], spots))
@@ -1979,6 +1980,9 @@ class PhantomTest(_FakeFrigate):
         with self.assertRaises(relay.HTTPException) as refused:
             self.mark(self.person(label="car"))
         self.assertEqual(400, refused.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as known:
+            self.mark(self.person(name="andrew"))
+        self.assertEqual(400, known.exception.status_code, "a face Frigate knows is someone")
         with self.assertRaises(relay.HTTPException) as missing:
             self.mark("1789612937.165365-gone")
         self.assertEqual(404, missing.exception.status_code)

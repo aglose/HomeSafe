@@ -3,7 +3,11 @@ package com.meticulouscreations.homesafe.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -17,13 +21,20 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
 import kotlinx.coroutines.delay
 
@@ -36,14 +47,35 @@ import kotlinx.coroutines.delay
 /**
  * The "Not a person" pill on a moment whose person nobody named. Quieter than "Tag car": it
  * corrects the detector rather than asking something of the reader. Spins while [marking].
+ *
+ * The pill is drawn small, but the touch target around it is the full 48dp; the ripple stays on
+ * the pill.
  */
 @Composable
 internal fun NotAPersonButton(onClick: () -> Unit, modifier: Modifier = Modifier, marking: Boolean = false) {
+    val interaction = remember { MutableInteractionSource() }
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+                enabled = !marking,
+                onClickLabel = "Mark as not a person",
+                role = Role.Button,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        NotAPersonPill(marking = marking, modifier = Modifier.clip(CircleShape).indication(interaction, ripple()))
+    }
+}
+
+@Composable
+private fun NotAPersonPill(marking: Boolean, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier
-            .clip(CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
-            .clickable(enabled = !marking, onClickLabel = "Mark as not a person", onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -106,3 +138,40 @@ internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismi
 
 /** How long the bar offers Undo before it lets itself go. */
 private const val NOT_A_PERSON_BAR_MS = 8_000L
+
+private val previewMarked = MomentEvent(
+    id = "1790655519.294717-p1",
+    cameraName = "amcrest_1",
+    label = "person",
+    subLabel = null,
+    startEpochSeconds = 1_790_655_519.0,
+    endEpochSeconds = 1_790_655_521.0,
+    topScore = 0.74,
+    hasClip = true,
+    hasSnapshot = false,
+)
+
+/** The pill idle and on its way to the relay; sized to the pills. */
+@Preview(name = "Not a person button")
+@Composable
+private fun NotAPersonButtonPreview() {
+    FrigateTheme {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            NotAPersonButton(onClick = {})
+            NotAPersonButton(onClick = {}, marking = true)
+        }
+    }
+}
+
+/** The bar once a mark landed, and once one didn't. */
+@Preview(name = "Not a person bar", widthDp = 360)
+@Composable
+private fun NotAPersonBarPreview() {
+    FrigateTheme {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            NotAPersonBar(state = NotAPersonUiState(marked = previewMarked), onUndo = {}, onDismiss = {})
+            NotAPersonBar(state = NotAPersonUiState(error = "Relay answered 502 Bad Gateway"), onUndo = {}, onDismiss = {})
+        }
+    }
+}
+

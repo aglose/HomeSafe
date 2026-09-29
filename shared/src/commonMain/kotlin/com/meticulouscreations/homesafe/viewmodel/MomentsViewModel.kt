@@ -204,7 +204,6 @@ class MomentsViewModel(
 
     private val _notAPersonState = MutableStateFlow(NotAPersonUiState())
     val notAPersonState: StateFlow<NotAPersonUiState> = _notAPersonState.asStateFlow()
-    private var notAPersonJob: Job? = null
 
     /**
      * The feed without its phantom people (see [com.meticulouscreations.homesafe.domain.model.PhantomSpot]):
@@ -464,12 +463,13 @@ class MomentsViewModel(
     /**
      * Marks [event] "Not a person" (see [MarkNotAPersonUseCase]). Once the relay has it, the card
      * and every re-detection at the same spot leave the feed, and [notAPersonState] offers Undo.
+     * One at a time, and never cancelled: a mark the relay kept but the app stopped listening for
+     * would be a spot nobody could see to undo. A tap while one is on its way is let go.
      */
     fun markNotAPerson(event: MomentEvent) {
-        if (!event.canMarkNotPerson || _notAPersonState.value.markingEventId == event.id) return
-        notAPersonJob?.cancel()
+        if (!event.canMarkNotPerson || _notAPersonState.value.markingEventId != null) return
         _notAPersonState.value = NotAPersonUiState(markingEventId = event.id)
-        notAPersonJob = viewModelScope.launch {
+        viewModelScope.launch {
             markNotAPersonUseCase(event.id)
                 .onSuccess {
                     if (_clip.value.eventId == event.id) collapse()
@@ -482,9 +482,8 @@ class MomentsViewModel(
     /** Takes the last "Not a person" back: its card, and the re-detections it hid, return. */
     fun undoNotAPerson() {
         val event = _notAPersonState.value.marked ?: return
-        notAPersonJob?.cancel()
         _notAPersonState.value = NotAPersonUiState()
-        notAPersonJob = viewModelScope.launch {
+        viewModelScope.launch {
             undoNotAPersonUseCase(event.id).onFailure { _notAPersonState.value = NotAPersonUiState(error = it.message ?: "Couldn't undo it") }
         }
     }

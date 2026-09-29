@@ -908,6 +908,12 @@ def phantom_spots(camera: str | None = None) -> list[dict[str, Any]]:
     return [{"event_id": e, "camera": cam, "box": json.loads(box), "at": at} for e, cam, box, at in rows]
 
 
+def face_name(event: dict[str, Any]) -> str | None:
+    """The name Frigate put to the event, unless it is one of the NOT_A_NAME placeholders (in any case)."""
+    name, _ = sub_label_of(event)
+    return name if name and name.lower() not in NOT_A_NAME else None
+
+
 def is_phantom(event: dict[str, Any], spots: list[dict[str, Any]]) -> bool:
     """
     A person event that is a phantom: one marked as such itself, or an unnamed person who stayed put
@@ -917,8 +923,7 @@ def is_phantom(event: dict[str, Any], spots: list[dict[str, Any]]) -> bool:
         return False
     if any(s["event_id"] == event.get("id") for s in spots):
         return True
-    name, _ = sub_label_of(event)
-    if name and name not in NOT_A_NAME:
+    if face_name(event):
         return False  # a face Frigate knows
     box = (event.get("data") or {}).get("box")
     if not box or len(box) < 4 or not stayed_put(event):
@@ -1980,8 +1985,7 @@ def person_crop_category(event: dict[str, Any], spots: list[dict[str, Any]]) -> 
     """What a queued crop of [event] teaches: `none` for a phantom, `person` for a named face, else nothing."""
     if is_phantom(event, spots):
         return "none"
-    name, _ = sub_label_of(event)
-    if event.get("label") == "person" and name and name not in NOT_A_NAME:
+    if event.get("label") == "person" and face_name(event):
         return "person"
     return None
 
@@ -3281,6 +3285,8 @@ def not_a_person(event_id: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Frigate no longer has this detection")
     if event.get("label") != "person":
         raise HTTPException(status_code=400, detail="Only a person detection can be marked not a person")
+    if face_name(event):
+        raise HTTPException(status_code=400, detail="Frigate knows this face; it is someone")
     spot = mark_phantom(event, user)
     example = file_not_a_person(event)
     log.info("not a person, by %s: %s on %s at %s (example: %s)", user, event_id, spot["camera"], spot["box"], example)
