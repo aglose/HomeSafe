@@ -2474,7 +2474,14 @@ class CarPresenceTest(_FakeFrigate):
         relay.save_vehicle(dict(relay.vehicle("hikvision_1", "sarahs_car"), here=1))
         self.tick(self.T)
         self.assertEqual({"andrews_tesla": True, "sarahs_car": False}, {n: c["here"] for n, c in self.cars.cars.items()})
-        self.assertFalse(relay.seen_since_it_left("nobody", self.T))
+        self.assertEqual((False, self.T), relay.starting_state("nobody", self.T))
+
+    def test_a_departure_still_being_confirmed_at_the_start_is_judged_like_any_other(self):
+        # 2026-09-29 21:29: the relay came up three minutes after a "left" of the Tesla.
+        self.seen("t-left2", "andrews_tesla", "left", self.T - 360, self.T - 180)
+        self.assertEqual([], self.tick(self.T))
+        self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T - 180 + relay.CAR_LEFT_CONFIRM_SECONDS))
 
     def test_twenty_departures_of_a_car_that_never_moved_are_none(self):
         # 2026-09-28 12:39-13:37: "left" after "left", each followed by the Tesla re-detected where it stands.

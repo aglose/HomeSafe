@@ -1384,21 +1384,27 @@ def spot_still_taken(camera: str, name: str) -> bool:
     return False
 
 
-def seen_since_it_left(name: str, now: float) -> bool:
+def starting_state(name: str, now: float) -> tuple[bool, float]:
     """
-    Whether the car's sightings of the last day have it here: some, and either none of them a
-    departure, or the car seen again after the last one (the departure rule of `CarPresence`).
+    Where a car starts, as (here, since), by its sightings of the last day: here when there are
+    some and none is a departure, or it was seen again after the last one (the departure rule of
+    `CarPresence`), or that departure is still inside its CAR_LEFT_CONFIRM_SECONDS — then `since`
+    falls just before it, so `CarPresence.departure` judges it like any other. Away otherwise.
     """
     rows = car_sightings(name, now - VEHICLE_STALE_SECONDS)
     lefts = [r for r in rows if r["movement"] == "left"]
     if not lefts:
-        return bool(rows)
+        return bool(rows), now
     gone = lefts[-1]
     gone_at = float(gone["end"] if gone["end"] is not None else gone["start"])
-    return any(
+    if any(
         r["movement"] != "left" and (float(r["start"]) > gone_at or (r["end"] is not None and float(r["end"]) > gone_at + CAR_SEEN_AFTER_SECONDS))
         for r in rows
-    )
+    ):
+        return True, now
+    if now < gone_at + CAR_LEFT_CONFIRM_SECONDS:
+        return True, float(gone["start"]) - 1
+    return False, now
 
 
 def span_text(seconds: float) -> str:
@@ -1422,7 +1428,7 @@ class CarPresence:
     def discover(self, now: float) -> None:
         """
         Loads the saved state once, and starts each car the vehicle memory knows and it doesn't by
-        its sightings of the last day (`seen_since_it_left`), not the memory's `here`: a false
+        its sightings of the last day (`starting_state`), not the memory's `here`: a false
         "left" clears that, and on 2026-09-29 both cars started away with the Tesla in the driveway.
         """
         if self.cars is None:
@@ -1432,7 +1438,8 @@ class CarPresence:
         for name, camera in rows:
             if name in self.cars or name in found:
                 continue
-            found[name] = {"here": seen_since_it_left(name, now), "since": now, "camera": camera, "skip": None, "known": False}
+            here, since = starting_state(name, now)
+            found[name] = {"here": here, "since": since, "camera": camera, "skip": None, "known": False}
         for name, car in found.items():
             self.cars[name] = car
             log.info("car presence: %s starts %s", name, "home" if car["here"] else "away")
