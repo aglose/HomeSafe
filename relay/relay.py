@@ -269,6 +269,14 @@ def db() -> sqlite3.Connection:
     # Detections someone said are not a person (see "phantom people"): the event, and where on its
     # camera the thing that fooled the detector sits (`box`, JSON [x, y, w, h] in frame fractions).
     conn.execute("CREATE TABLE IF NOT EXISTS phantoms (event_id TEXT PRIMARY KEY, camera TEXT, box TEXT, by TEXT, at REAL)")
+    # What the notification policy made of each alert and each household car coming or going (see
+    # "notification policy"), whether it was acted on or only logged: `key` is the review id, or
+    # "car:<name>:<time>"; `route` "instant", "update", "fold", "digest", "car" or, for what the
+    # old rules did, "legacy-sound", "legacy-silent", "legacy-away".
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS notify_log (key TEXT PRIMARY KEY, at REAL, policy TEXT, mode TEXT, route TEXT,"
+        " camera TEXT, title TEXT, body TEXT, start REAL, event_id TEXT)"
+    )
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -621,16 +629,36 @@ AWAY_DEBUG_PLATFORMS = {"ios"}
 # whichever phone is standing in it; both phones draw their geofence around it.
 HOME_KEY = "home"
 
+# The presence authority: one install whose away switch alone decides whether the house is empty.
+# "Every release phone" let stale rows vote — three old iPhone debug installs and a release build on
+# an emulator, none of which will ever say away — so `everyone_away` could not come true
+# (2026-09-29, and away mode had been silent since). The phone that carries its owner in and out
+# (Andrew's release Pixel) is chosen from the app (`PUT /presence/authority`), or by
+# PRESENCE_DEVICE until it has been; the build rule above applies only while neither is set.
+PRESENCE_KEY = "presence_device"
+PRESENCE_DEVICE = os.environ.get("PRESENCE_DEVICE", "").strip()
+
+
+def presence_authority() -> str | None:
+    """The device_id that decides away mode on its own, or None while every counting phone votes."""
+    return state_get(PRESENCE_KEY) or PRESENCE_DEVICE or None
+
 
 def counts_for_away(platform: str, build: str) -> bool:
-    """Whether this device's away switch is part of `everyone_away`."""
+    """Whether this device's away switch is part of `everyone_away` when no presence authority is set."""
     return (build or "").lower() in AWAY_BUILDS or (platform or "").lower() in AWAY_DEBUG_PLATFORMS
+
+
+def counts(device_id: str, platform: str, build: str, authority: str | None) -> bool:
+    """Whether this device's away switch decides away mode: the authority alone when there is one."""
+    return device_id == authority if authority else counts_for_away(platform, build)
 
 
 def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
     """
     Who says they're home. Every registered device is listed (so a debug install can see itself),
-    but `everyone_away` is decided by the counting ones alone: at least one, and all of them away.
+    but `everyone_away` is decided by the counting ones alone: at least one, and all of them away —
+    which with a presence `authority` is that one phone.
     A device that has *left* but is still inside its dwell (see `promote_pending`) shows as
     `pending_away` and is not away yet. `this_device` matches a device_id or, for old apps, a token.
     `id` and `last_seen` let Settings tell a phone in use from an old install, and remove the
@@ -648,24 +676,28 @@ def presence_snapshot(this_device: str | None = None) -> dict[str, Any]:
             "away_updated": u,
             "this_device": this_device is not None and this_device in (d, t),
             "build": b,
-            "counts": counts_for_away(p, b),
             "pending_away": ps is not None,
             "last_seen": ls,
         }
         for d, t, n, p, a, u, b, ps, ls in rows
     ]
+    authority = presence_authority()
+    for device in devices:
+        device["counts"] = counts(device["id"], device["platform"], device["build"], authority)
     counting = [d for d in devices if d["counts"]]
     return {
         "devices": devices,
         "everyone_away": bool(counting) and all(d["away"] for d in counting),
         "home": state_get(HOME_KEY),
+        "authority": authority,
     }
 
 
 def away_since() -> float | None:
     """When the last person left, or None while somebody is home (or no counting phone has registered)."""
-    rows = with_db(lambda c: c.execute("SELECT platform, away, away_updated, build FROM devices").fetchall())
-    counting = [(a, u) for p, a, u, b in rows if counts_for_away(p, b)]
+    rows = with_db(lambda c: c.execute("SELECT device_id, platform, away, away_updated, build FROM devices").fetchall())
+    authority = presence_authority()
+    counting = [(a, u) for d, p, a, u, b in rows if counts(d, p, b, authority)]
     if not counting or not all(a for a, _ in counting):
         return None
     return float(max((u or 0.0) for _, u in counting))
@@ -722,6 +754,8 @@ def push_away_review(item: dict[str, Any], zones: dict[str, list[str]]) -> None:
     }
     result = broadcast(title, body, data, away=True)
     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), title)), c.commit()))
+    if NOTIFY_POLICY != "legacy":
+        log_decision(f"{rid}:legacy", "away", "legacy-away", item.get("camera", ""), title, body, float(item.get("start_time") or 0), data["event_id"])
     log.info("away alert %s -> %s: %s | %s", rid, title, body, result)
 
 
@@ -1174,6 +1208,301 @@ class Followups:
             log.info("visit %s told again -> %s: %s | %s", visit.id, title, body, result)
 
 
+# ---------------------------------------------------------------- notification policy
+
+# What deserves a sound depends on whether anyone is home (see "presence authority"). Measured
+# 2026-09-26..29: 802 pushes in three days, two thirds of them "... in the driveway" on the Front
+# Yard, a quarter of them people Frigate had put a name to, and among them no telling a household
+# car coming or going from its re-detections. So while the house is occupied:
+# - a household car arriving or leaving sounds, once each way (see "car presence");
+# - a person on a camera in INSTANT_PERSON_CAMERAS (the Front Yard) sounds at once, and then that
+#   camera stays quiet until it has been empty of people for YARD_QUIET_SECONDS: anyone else in
+#   the meantime only updates the same notification (`YardWatch`). Replayed, the Front Yard's 271
+#   person alerts of those three days sound 54 times;
+# - a person in the same review as a household car coming, going or moving, or who turns up within
+#   FOLD_SECONDS of one arriving, is that car's driver or passenger: folded into the car's
+#   notification rather than sounding on their own (`folded_into_car`);
+# - everything else — the Front Door, the Backyard, unnamed cars, animals — is kept for a summary
+#   (`notify_log`, route "digest").
+# While everyone is away, the old rules stand: every alert, and every person escalated.
+#
+# NOTIFY_POLICY: "legacy" pushes by the old rules only; "shadow" pushes by the old rules and logs
+# what this policy would have done, to compare the two; "v2" pushes by this policy.
+NOTIFY_POLICY = os.environ.get("NOTIFY_POLICY", "legacy").strip().lower()
+INSTANT_PERSON_CAMERAS = {c.strip() for c in os.environ.get("INSTANT_PERSON_CAMERAS", "hikvision_1").split(",") if c.strip()}
+YARD_QUIET_SECONDS = 600.0
+FOLD_SECONDS = 180.0
+# A person beside a car that is coming or going but has no name yet waits this long for the
+# classifier (it names a car within seconds when it can) before sounding as a stranger's visit.
+FOLD_NAME_WAIT_SECONDS = 20.0
+
+
+def log_decision(key: str, mode: str, route: str, camera: str, title: str = "", body: str = "",
+                 start: float | None = None, event_id: str | None = None) -> None:
+    with_db(lambda c: (c.execute(
+        "INSERT OR REPLACE INTO notify_log VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (key, time.time(), NOTIFY_POLICY, mode, route, camera, title, body, start, event_id),
+    ), c.commit()))
+
+
+def seen_until(item: dict[str, Any], now: float) -> float:
+    end = item.get("end_time")
+    return float(end) if end is not None else now
+
+
+def folded_into_car(item: dict[str, Any]) -> bool:
+    """
+    Whether the people in this review came with a household car: one in the review that arrived,
+    left or moved, or one that arrived on the camera within FOLD_SECONDS before it (they got out).
+    """
+    if any(s.get("name") and s.get("movement") in ("arrived", "left", "moved") for s in (item.get("data") or {}).get("vehicles") or []):
+        return True
+    start = float(item.get("start_time") or 0)
+    return bool(with_db(lambda c: c.execute(
+        "SELECT 1 FROM vehicle_sightings WHERE camera=? AND name IS NOT NULL AND how NOT IN ('not', 'late')"
+        " AND movement='arrived' AND start BETWEEN ? AND ?",
+        (item.get("camera", ""), start - FOLD_SECONDS, start + POLL_SECONDS),
+    ).fetchone()))
+
+
+class YardWatch:
+    """Each instant-person camera's current run of people: the first sounds, the rest update it, until the camera has been empty a while."""
+
+    def __init__(self) -> None:
+        self.by_camera: dict[str, dict[str, Any]] = {}
+
+    def observe(self, items: list[dict[str, Any]], now: float) -> None:
+        """Keeps a run going while any of its reviews is still in progress, as `Visits.observe` does."""
+        for item in items:
+            run = self.by_camera.get(item.get("camera", ""))
+            if run is not None and item["id"] in run["items"]:
+                run["last_seen"] = max(run["last_seen"], seen_until(item, now))
+
+    def see(self, item: dict[str, Any], now: float, folded: bool) -> tuple[dict[str, Any], bool]:
+        """Files a person review in its camera's run (a new one once the camera has been empty YARD_QUIET_SECONDS) and says whether it sounds."""
+        camera = item.get("camera", "")
+        start = float(item.get("start_time") or 0)
+        run = self.by_camera.get(camera)
+        fresh = run is None or start - run["last_seen"] > YARD_QUIET_SECONDS
+        if fresh:
+            run = self.by_camera[camera] = {"id": item["id"], "first_start": start, "last_seen": start, "items": set(), "sightings": 0}
+        run["items"].add(item["id"])
+        run["last_seen"] = max(run["last_seen"], seen_until(item, now))
+        if not folded:
+            run["sightings"] += 1
+        return run, fresh and not folded and now - start < BACKLOG_SECONDS
+
+
+def yard_sentence(run: dict[str, Any], item: dict[str, Any], required_zones: list[str]) -> tuple[str, str]:
+    """ "Front Yard", "Person on the front lawn · 3 sightings": who, by face when Frigate knows it, never the cars beside them."""
+    data = item.get("data") or {}
+    names = review_names(item)
+    faces = [n for n in names if n not in car_names(review_labels(item), names)]
+    body = told(subject_for(["person"], faces), alert_zone(data.get("zones") or [], required_zones))
+    if run["sightings"] > 1:
+        body += f" · {run['sightings']} sightings"
+    return camera_name(item.get("camera", "")), body
+
+
+def awaiting_car_name(item: dict[str, Any], now: float) -> bool:
+    """A car in the review arriving, leaving or moving with no name yet, while the review is young enough for one to come."""
+    moving = [s for s in (item.get("data") or {}).get("vehicles") or [] if s.get("movement") in ("arrived", "left", "moved")]
+    return any(not s.get("name") for s in moving) and now - float(item.get("start_time") or 0) < FOLD_NAME_WAIT_SECONDS
+
+
+def home_route(item: dict[str, Any], yard: YardWatch, now: float) -> tuple[str, dict[str, Any] | None]:
+    """
+    What an alert is while someone is home: "instant", "update" or "fold" (with its yard run),
+    "digest", or "wait" — judged again next poll, its car may yet be named.
+    """
+    if item.get("camera") in INSTANT_PERSON_CAMERAS and has_person(item):
+        folded = folded_into_car(item)
+        if not folded and awaiting_car_name(item, now):
+            return "wait", None
+        run, sound = yard.see(item, now, folded)
+        return ("fold" if folded else "instant" if sound else "update"), run
+    return "digest", None
+
+
+# ---------------------------------------------------------------- car presence
+
+# Whether each household car is home, from the vehicle memory's sightings, so that "Sarah's car
+# arrived" and "Andrew's Tesla left" are each said once. The sightings alone won't do: Frigate's
+# tracker loses a parked car and re-finds it, and a jump of its box reads as "left" — Andrew's
+# Tesla "left the driveway" twenty times between 12:39 and 13:37 on 2026-09-28 without moving.
+# - A car that is home has *left* once a departure has ended and, for CAR_LEFT_CONFIRM_SECONDS
+#   after it, nothing has seen the car again, and no car still stands in its spot. A car found in
+#   its spot turns that departure down for good.
+# - A car that is away has *arrived* at its first sighting since — arriving, or found parked (the
+#   tracker often misses the arrival and only picks the car up standing). A name the classifier
+#   gave is held until the vision model has looked (see "car check"), for at most
+#   CAR_NAME_WAIT_SECONDS, since the classifier calls passing cars "Andrew's Tesla".
+# The state is kept in `state` under CAR_PRESENCE_KEY; a car first heard of starts where the
+# vehicle memory has it, silently, so a deploy never replays the day.
+CAR_PRESENCE_KEY = "car_presence"
+CAR_LEFT_CONFIRM_SECONDS = 600.0
+CAR_NAME_WAIT_SECONDS = 180.0
+CAR_PRESENCE_EVERY_SECONDS = 15.0
+# A sighting ending this long after a departure ended is the car still here, not the departure itself.
+CAR_SEEN_AFTER_SECONDS = 30.0
+CAR_ARRIVAL_MOVES = ("arrived", "parked", "moved")
+
+
+def car_sightings(name: str, after: float) -> list[dict[str, Any]]:
+    """The car's sightings that began after `after`, oldest first, less those the vision model turned down or that were another car's."""
+    rows = with_db(lambda c: c.execute(
+        f"SELECT {', '.join(_SIGHTING_COLUMNS)} FROM vehicle_sightings WHERE name=? AND start>?"
+        " AND COALESCE(how, '') NOT IN ('not', 'late') ORDER BY start",
+        (name, after),
+    ).fetchall())
+    return [dict(zip(_SIGHTING_COLUMNS, r)) for r in rows]
+
+
+def name_settled(row: dict[str, Any], now: float) -> bool:
+    """Whether a sighting's name can be told: a person's, the vision model's or the memory's, one the model has checked, or waited on long enough."""
+    if row.get("how") in ("tagged", "looked", "parked") or not (OLLAMA and HOUSEHOLD_CARS):
+        return True
+    return checked(row["event_id"], "vlm") or now - float(row["start"] or now) >= CAR_NAME_WAIT_SECONDS
+
+
+def spot_still_taken(camera: str, name: str) -> bool:
+    """
+    Whether a car still stands where `name` was parked: an event in progress on the camera whose
+    path ends at its spot, and that isn't another household car or a car that has since pulled in.
+    """
+    v = vehicle(camera, name)
+    if not v or not v.get("spot"):
+        return False
+    for summary in events_since({"camera": camera, "label": "car", "in_progress": 1}, 0.0):
+        event = event_detail(summary["id"]) or summary
+        points = event_points(event)
+        if not points or near_spot(points[-1], v["spot"]) is None:
+            continue
+        story = sighting(summary["id"]) or {}
+        if story.get("name") in (None, name) and story.get("movement") != "arrived":
+            return True
+    return False
+
+
+def span_text(seconds: float) -> str:
+    """ "3h 10m", "25m", "2d 4h"."""
+    minutes = max(1, int(seconds // 60))
+    days, hours, minutes = minutes // 1440, minutes // 60 % 24, minutes % 60
+    if days:
+        return f"{days}d {hours}h" if hours else f"{days}d"
+    if hours:
+        return f"{hours}h {minutes}m" if minutes else f"{hours}h"
+    return f"{minutes}m"
+
+
+class CarPresence:
+    """Each household car's home or away, and what changed (see "car presence")."""
+
+    def __init__(self) -> None:
+        self.cars: dict[str, dict[str, Any]] | None = None
+        self.checked_at = float("-inf")
+
+    def discover(self, now: float) -> None:
+        """Loads the saved state once, and starts each car the vehicle memory knows and it doesn't where the memory has it."""
+        if self.cars is None:
+            self.cars = state_get(CAR_PRESENCE_KEY) or {}
+        rows = with_db(lambda c: c.execute("SELECT name, camera, here, last_seen FROM vehicles ORDER BY here").fetchall())
+        found: dict[str, dict[str, Any]] = {}
+        for name, camera, here, last_seen in rows:
+            if name in self.cars:
+                continue
+            present = bool(here) and (last_seen or 0) >= now - VEHICLE_STALE_SECONDS
+            if name not in found or present:
+                found[name] = {"here": present, "since": now, "camera": camera, "skip": None, "known": False}
+        for name, car in found.items():
+            self.cars[name] = car
+            log.info("car presence: %s starts %s", name, "home" if car["here"] else "away")
+        if found:
+            state_set(CAR_PRESENCE_KEY, self.cars)
+
+    def tick(self, now: float | None = None) -> list[dict[str, Any]]:
+        """Every CAR_PRESENCE_EVERY_SECONDS: each car that arrived or left since, as `{name, movement, camera, event_id, at, was}`."""
+        now = time.time() if now is None else now
+        if now - self.checked_at < CAR_PRESENCE_EVERY_SECONDS:
+            return []
+        self.checked_at = now
+        self.discover(now)
+        changes = []
+        for name, car in list(self.cars.items()):
+            rows = car_sightings(name, float(car["since"]))
+            change = self.departure(name, car, rows, now) if car["here"] else self.arrival(name, car, rows, now)
+            if change:
+                changes.append(change)
+        if changes or any(car.get("dirty") for car in self.cars.values()):
+            for car in self.cars.values():
+                car.pop("dirty", None)
+            state_set(CAR_PRESENCE_KEY, self.cars)
+        return changes
+
+    def arrival(self, name: str, car: dict[str, Any], rows: list[dict[str, Any]], now: float) -> dict[str, Any] | None:
+        row = next((r for r in rows if r["movement"] in CAR_ARRIVAL_MOVES), None)
+        if row is None or not name_settled(row, now):
+            return None
+        return self.change(name, car, float(row["start"]), row)
+
+    def departure(self, name: str, car: dict[str, Any], rows: list[dict[str, Any]], now: float) -> dict[str, Any] | None:
+        lefts = [r for r in rows if r["movement"] == "left" and r["final"] and r["event_id"] != car.get("skip")]
+        if not lefts:
+            return None
+        gone = lefts[-1]
+        gone_at = float(gone["end"] if gone["end"] is not None else gone["start"])
+        confirmed_at = gone_at + CAR_LEFT_CONFIRM_SECONDS
+        if any(
+            r["movement"] != "left" and float(r["start"]) <= confirmed_at
+            and (float(r["start"]) > gone_at or (r["end"] is not None and float(r["end"]) > gone_at + CAR_SEEN_AFTER_SECONDS))
+            for r in rows
+        ):
+            return None  # seen again within the window: that was the tracker, not the car
+        if now < confirmed_at:
+            return None
+        if spot_still_taken(gone["camera"], name):
+            log.info("car presence: %s's departure %s turned down, a car still stands in its spot", name, gone["event_id"])
+            car["skip"], car["dirty"] = gone["event_id"], True
+            return None
+        return self.change(name, car, gone_at, gone)
+
+    def change(self, name: str, car: dict[str, Any], at: float, row: dict[str, Any]) -> dict[str, Any]:
+        here = not car["here"]
+        was = at - float(car["since"]) if car.get("known") else None
+        self.cars[name] = {"here": here, "since": at, "camera": row["camera"], "skip": None, "known": True}
+        movement = "left" if not here else "arrived" if row["movement"] == "arrived" else "is home"
+        return {"name": name, "movement": movement, "camera": row["camera"], "event_id": row["event_id"], "at": at, "was": was}
+
+
+def car_sentence(change: dict[str, Any]) -> tuple[str, str]:
+    """ "Sarah's Car arrived home", "Front Yard · away 3h 10m"; "Andrew's Tesla left", "Front Yard · home 5h"."""
+    subject = display_name(change["name"])
+    title = {"arrived": f"{subject} arrived home", "is home": f"{subject} is home"}.get(change["movement"], f"{subject} left")
+    body = camera_name(change["camera"])
+    if change.get("was") is not None:
+        body += f" · {'home' if change['movement'] == 'left' else 'away'} {span_text(change['was'])}"
+    return title, body
+
+
+def tell_car(change: dict[str, Any], mode: str, push: Callable[..., dict[str, int]] | None = None) -> None:
+    """One household car arriving or leaving: pushed under "v2", only logged otherwise."""
+    title, body = car_sentence(change)
+    act = NOTIFY_POLICY == "v2"
+    if act:
+        data = {
+            "notif_id": f"car-{change['name']}",
+            "camera": change["camera"],
+            "event_id": change["event_id"] or "",
+            "event_start": str(change["at"]),
+            "start_time": str(change["at"]),
+        }
+        result = (push or broadcast)(title, body, data, away=mode == "away")
+    else:
+        result = "not pushed"
+    log_decision(f"car:{change['name']}:{int(change['at'])}", mode, "car", change["camera"], title, body, change["at"], change["event_id"])
+    log.info("car presence (%s): %s | %s -> %s", NOTIFY_POLICY, title, body, result)
+
+
 def skip_phantom(item: dict[str, Any]) -> bool:
     """
     Whether to pass over [item] this poll because it is phantom people (see "phantom people"): not
@@ -1186,9 +1515,43 @@ def skip_phantom(item: dict[str, Any]) -> bool:
     return verdict != "push"
 
 
+def tell_home(item: dict[str, Any], route: str, run: dict[str, Any] | None, zones: dict[str, list[str]],
+              push: Callable[..., dict[str, int]] | None = None) -> None:
+    """
+    One alert while someone is home, by its `home_route`: under "v2" an instant one sounds, an
+    update lands silently on its run's notification, and the rest are marked sent unpushed (kept
+    in `notify_log` for the summary); under "shadow" it is only logged.
+    """
+    rid, camera = item["id"], item.get("camera", "")
+    required = zones.get(camera, [])
+    title, body = yard_sentence(run, item, required) if run is not None and route in ("instant", "update") else sentence(item, required)
+    event_id = ((item.get("data") or {}).get("detections") or [""])[0]
+    result: Any = "not pushed"
+    if NOTIFY_POLICY == "v2":
+        if route in ("instant", "update"):
+            data = {
+                "review_id": rid,
+                "notif_id": run["id"],
+                "camera": camera,
+                "event_id": event_id,
+                "event_start": str(item.get("start_time", "")),
+                "zones": ",".join((item.get("data") or {}).get("zones") or []),
+                "start_time": str(run["first_start"]),
+            }
+            if route == "update":
+                data["silent"] = "1"
+            result = (push or broadcast)(title, body, data, familiar=is_recognised_person(item))
+        sent_body = body if route in ("instant", "update") else f"({route})"
+        with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), sent_body)), c.commit()))
+    log_decision(rid, "home", route, camera, title, body, float(item.get("start_time") or 0), event_id)
+    log.info("alert %s at home (%s): %s -> %s: %s | %s", rid, NOTIFY_POLICY, route, title, body, result)
+
+
 def poll_forever() -> None:
     visits = Visits()
     followups = Followups()
+    yard = YardWatch()
+    cars = CarPresence()
     # Everything that already exists at boot is history, not news.
     try:
         for item in recent_alerts():
@@ -1211,8 +1574,11 @@ def poll_forever() -> None:
                         continue
                     push_away_review(item, zones)
             # ---- end away mode ----
+            mode = "home" if since is None else "away"
+            policy = NOTIFY_POLICY in ("shadow", "v2") and mode == "home"
             alerts = recent_alerts()
             visits.observe(alerts, time.time())
+            yard.observe(alerts, time.time())
             for item in reversed(alerts):  # oldest first, so pushes arrive in order
                 rid = item["id"]
                 if was_sent(rid):
@@ -1237,6 +1603,13 @@ def poll_forever() -> None:
                     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), "(parked)")), c.commit()))
                     log.info("alert %s skipped: %s stayed parked", rid, ", ".join(s["name"] for s in item["data"]["vehicles"]))
                     continue
+                if policy:
+                    route, run = home_route(item, yard, time.time())
+                    if route == "wait":
+                        continue
+                    tell_home(item, route, run, zones)
+                    if NOTIFY_POLICY == "v2":
+                        continue
                 visit, sound = visits.judge(item, time.time())
                 title, body = visit.sentence(zones.get(item.get("camera", ""), []))
                 data = {
@@ -1258,8 +1631,14 @@ def poll_forever() -> None:
                 result = broadcast(title, body, data, familiar=is_recognised_person(item))
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
+                if NOTIFY_POLICY == "shadow":
+                    log_decision(f"{rid}:legacy", mode, "legacy-sound" if sound else "legacy-silent", item.get("camera", ""), title, body,
+                                 float(item.get("start_time") or 0), data["event_id"])
                 followups.track(visit, body, data, time.time())
             followups.run(alerts, zones, time.time())
+            if NOTIFY_POLICY in ("shadow", "v2"):
+                for change in cars.tick():
+                    tell_car(change, mode)
         except Exception as e:
             log.warning("poll error: %s", e)
         time.sleep(POLL_SECONDS)
@@ -3161,6 +3540,11 @@ class Home(BaseModel):
     radius_m: float = 150
 
 
+class Authority(BaseModel):
+    # The install whose away switch alone decides away mode (see "presence authority").
+    device_id: str
+
+
 def require_frigate_session(request: Request) -> str:
     """The caller proves they're a signed-in HomeSafe user by carrying a valid Frigate session cookie."""
     cookie = request.headers.get("cookie")
@@ -3269,7 +3653,7 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     log.info(
         "device registered by %s: %s (%s %s, push=%s, strangers only=%s, quiet=%s-%s %s, only away=%s, counts for away=%s)",
         user, device.name or "unnamed", device.platform, device.build, device.token is not None, device.quiet_familiar,
-        device.quiet_start, device.quiet_end, device.tz, device.only_away, counts_for_away(device.platform, device.build),
+        device.quiet_start, device.quiet_end, device.tz, device.only_away, counts(device_id, device.platform, device.build, presence_authority()),
     )
     return {"ok": True, "device_id": device_id, "secret": secret}
 
@@ -3367,15 +3751,45 @@ def clear_home(request: Request, device: str | None = None) -> dict[str, Any]:
     return presence_snapshot(device)
 
 
+@app.put("/presence/authority")
+def set_presence_authority(authority: Authority, request: Request) -> dict[str, Any]:
+    """
+    Makes one install the presence authority: from then on its away switch alone says whether the
+    house is empty. An install may choose itself (its bearer secret); a signed-in user may choose any.
+    """
+    user = authenticate(request, authority.device_id)
+    row = find_device(authority.device_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unknown device")
+    state_set(PRESENCE_KEY, row[0])
+    snapshot = presence_snapshot(row[0])
+    log.info("presence authority set by %s: %s -> everyone_away=%s", user, row[2] or row[0], snapshot["everyone_away"])
+    return snapshot
+
+
+@app.delete("/presence/authority")
+def clear_presence_authority(request: Request, device: str | None = None) -> dict[str, Any]:
+    """
+    Hands the decision back to PRESENCE_DEVICE, or failing that to every counting phone. The
+    authority itself may step down (its bearer secret, `device` naming it); a signed-in user may always.
+    """
+    current = state_get(PRESENCE_KEY)
+    user = authenticate(request, device if device and device == current else None)
+    state_set(PRESENCE_KEY, None)
+    log.info("presence authority cleared by %s (was %s)", user, current)
+    return presence_snapshot(device)
+
+
 @app.get("/devices")
 def list_devices(request: Request) -> list[dict[str, Any]]:
     require_frigate_session(request)
     rows = with_db(lambda c: c.execute(
-        "SELECT platform, name, created, last_seen, away, build, token IS NOT NULL, away_pending_since IS NOT NULL FROM devices"
+        "SELECT device_id, platform, name, created, last_seen, away, build, token IS NOT NULL, away_pending_since IS NOT NULL FROM devices"
     ).fetchall())
+    authority = presence_authority()
     return [
-        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts_for_away(p, b), "push": bool(push), "pending_away": bool(pend)}
-        for p, n, cr, ls, a, b, push, pend in rows
+        {"platform": p, "name": n, "created": cr, "last_seen": ls, "away": bool(a), "build": b, "counts_for_away": counts(d, p, b, authority), "push": bool(push), "pending_away": bool(pend)}
+        for d, p, n, cr, ls, a, b, push, pend in rows
     ]
 
 

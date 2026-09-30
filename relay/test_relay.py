@@ -2238,5 +2238,319 @@ class PhantomTest(_FakeFrigate):
 
     _auth = relay.authenticate
 
+class PresenceAuthorityTest(Devices):
+    """One phone decides whether the house is empty; the rest are listed but have no say."""
+
+    def setUp(self):
+        super().setUp()
+        self._env, relay.PRESENCE_DEVICE = relay.PRESENCE_DEVICE, ""
+
+    def tearDown(self):
+        relay.PRESENCE_DEVICE = self._env
+        super().tearDown()
+
+    def away(self, device_id, away=True, at=5000.0):
+        relay.with_db(lambda c: (c.execute("UPDATE devices SET away=?, away_updated=? WHERE device_id=?", (int(away), at, device_id)), c.commit()))
+
+    def household(self):
+        # 2026-09-29: the Pixel, a release build on the emulator and an old iPhone debug install, all voting.
+        self.add("pixel", "Google Pixel 10 Pro XL")
+        self.add("emulator", "Google sdk_gphone64_arm64")
+        relay.with_db(lambda c: (c.execute(
+            "INSERT INTO devices (device_id, platform, name, created, last_seen, build) VALUES ('iphone','ios','Apple iPhone',1,1,'debug')"
+        ), c.commit()))
+
+    def test_without_an_authority_a_stale_install_holds_the_house_occupied(self):
+        self.household()
+        self.away("pixel")
+        self.assertFalse(relay.presence_snapshot()["everyone_away"])
+        self.assertIsNone(relay.away_since())
+
+    def test_the_authority_alone_decides(self):
+        self.household()
+        relay.set_presence_authority(types.SimpleNamespace(device_id="pixel"), request=None)
+        self.assertEqual("pixel", relay.presence_authority())
+        snapshot = relay.presence_snapshot("pixel")
+        self.assertEqual({"pixel": True, "emulator": False, "iphone": False}, {d["id"]: d["counts"] for d in snapshot["devices"]})
+        self.assertFalse(snapshot["everyone_away"])
+        self.away("pixel", at=5000.0)
+        self.assertTrue(relay.presence_snapshot()["everyone_away"])
+        self.assertEqual(5000.0, relay.away_since())
+        self.away("emulator", away=False)
+        self.assertEqual(5000.0, relay.away_since(), "the others have no say")
+
+    def test_the_environment_names_it_until_the_app_does(self):
+        self.household()
+        relay.PRESENCE_DEVICE = "emulator"
+        self.assertEqual("emulator", relay.presence_authority())
+        relay.state_set(relay.PRESENCE_KEY, "pixel")
+        self.assertEqual("pixel", relay.presence_authority())
+        relay.clear_presence_authority(request=None)
+        self.assertEqual("emulator", relay.presence_authority())
+
+    def test_an_authority_that_is_not_registered_is_refused(self):
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.set_presence_authority(types.SimpleNamespace(device_id="nobody"), request=None)
+        self.assertEqual(404, refused.exception.status_code)
+
+    def test_a_missing_authority_means_home(self):
+        self.household()
+        relay.state_set(relay.PRESENCE_KEY, "gone")
+        self.away("pixel")
+        self.away("emulator")
+        self.assertIsNone(relay.away_since())
+
+
+class PolicyTest(_FakeFrigate):
+    """What an alert is while someone is home, and how the Front Yard's people become one notification."""
+
+    T = 1_790_360_000.0
+
+    def setUp(self):
+        super().setUp()
+        self._policy = relay.NOTIFY_POLICY
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {}, "sarahs_car": {}}
+        self.yard = relay.YardWatch()
+        self.pushes = []
+
+    def tearDown(self):
+        relay.NOTIFY_POLICY = self._policy
+        super().tearDown()
+
+    def route(self, item, now=None):
+        return relay.home_route(item, self.yard, now if now is not None else item["start_time"] + 5)
+
+    def push(self, title, body, data, **kwargs):
+        self.pushes.append((title, body, data))
+        return {"sent": 1}
+
+    def arrival(self, event_id, name, start, how="classifier", camera="hikvision_1"):
+        relay.save_sighting({"event_id": event_id, "camera": camera, "name": name, "how": how, "movement": "arrived",
+                             "zone": "driveway", "start": start, "end": start + 60, "final": 1, "at": start + 60})
+
+    def test_a_person_on_the_front_yard_sounds_and_the_next_ten_minutes_update_it(self):
+        route, run = self.route(review("a", self.T, ["person"], end=self.T + 30, zones=("front_lawn",)))
+        self.assertEqual("instant", route)
+        self.assertEqual("update", self.route(review("b", self.T + 90, ["person"], end=self.T + 120))[0])
+        self.assertEqual("update", self.route(review("c", self.T + 120 + 600, ["person"]))[0], "ten minutes after b ended")
+        self.assertEqual("a", run["id"])
+        self.assertEqual(("Front Yard", "Person in the driveway · 3 sightings"), relay.yard_sentence(run, review("c", self.T, ["person"]), ["driveway"]))
+
+    def test_the_yard_sounds_again_once_it_has_been_empty_ten_minutes(self):
+        self.route(review("a", self.T, ["person"], end=self.T + 30))
+        route, run = self.route(review("b", self.T + 30 + 601, ["person"]))
+        self.assertEqual(("instant", "b"), (route, run["id"]))
+
+    def test_someone_still_in_view_keeps_the_yard_busy(self):
+        first = review("a", self.T, ["person"])
+        self.route(first)
+        self.yard.observe([first], self.T + 1500)
+        self.assertEqual("update", self.route(review("b", self.T + 1800, ["person"]))[0])
+
+    def test_the_other_cameras_and_cars_wait_for_the_summary(self):
+        self.assertEqual("digest", self.route(review("a", self.T, ["person"], camera="amcrest_1", zones=()))[0])
+        self.assertEqual("digest", self.route(review("b", self.T, ["person"], camera="hikvision_2", zones=()))[0])
+        self.assertEqual("digest", self.route(review("c", self.T, ["car"]))[0])
+        self.assertEqual("digest", self.route(review("d", self.T, ["dog"]))[0])
+
+    def test_a_backlog_never_sounds(self):
+        item = review("a", self.T, ["person"], end=self.T + 30)
+        self.assertEqual("update", self.route(item, now=self.T + relay.BACKLOG_SECONDS + 1)[0])
+
+    def test_people_with_a_household_car_coming_or_going_are_folded_into_it(self):
+        item = review("a", self.T, ["person", "car"], ["sarahs_car"])
+        item["data"]["vehicles"] = [{"event_id": "c", "name": "sarahs_car", "how": "classifier", "movement": "arrived"}]
+        self.assertEqual("fold", self.route(item)[0])
+
+    def test_people_who_turn_up_just_after_a_household_car_arrived_are_its_passengers(self):
+        self.arrival("car", "sarahs_car", self.T - 120)
+        self.assertEqual("fold", self.route(review("a", self.T, ["person"], end=self.T + 30))[0])
+        self.assertEqual("update", self.route(review("b", self.T + 90, ["person"]))[0], "past the fold, but the yard is busy with them")
+
+    def test_a_car_arrival_long_before_or_a_stranger_car_does_not_fold(self):
+        self.arrival("old", "sarahs_car", self.T - relay.FOLD_SECONDS - 60)
+        self.arrival("stranger", None, self.T - 30, how=None)
+        self.arrival("turned-down", "sarahs_car", self.T - 30, how="not")
+        self.assertEqual("instant", self.route(review("a", self.T, ["person"]))[0])
+
+    def test_people_with_a_car_that_is_parked_are_not_folded(self):
+        item = review("a", self.T, ["person", "car"], ["andrews_tesla"])
+        item["data"]["vehicles"] = [{"event_id": "c", "name": "andrews_tesla", "how": "parked", "movement": "parked"}]
+        self.assertEqual("instant", self.route(item)[0])
+
+    def test_a_person_beside_a_car_arriving_unnamed_waits_for_its_name_then_sounds(self):
+        item = review("a", self.T, ["person", "car"])
+        item["data"]["vehicles"] = [{"event_id": "c", "name": None, "how": None, "movement": "arrived"}]
+        self.assertEqual(("wait", None), self.route(item, now=self.T + 5))
+        self.assertEqual("instant", self.route(item, now=self.T + relay.FOLD_NAME_WAIT_SECONDS + 1)[0])
+
+    def test_v2_pushes_the_yard_and_keeps_the_rest_for_the_summary(self):
+        relay.NOTIFY_POLICY = "v2"
+        zones = {"hikvision_1": ["driveway", "front_lawn"]}
+        first = review("a", self.T, ["person"], end=self.T + 30, zones=("front_lawn",))
+        relay.tell_home(first, *self.route(first), zones, push=self.push)
+        second = review("b", self.T + 60, ["person"], zones=("front_lawn",))
+        relay.tell_home(second, *self.route(second), zones, push=self.push)
+        door = review("c", self.T + 70, ["person"], camera="amcrest_1", zones=())
+        relay.tell_home(door, *self.route(door), zones, push=self.push)
+        self.assertEqual(
+            [("Front Yard", "Person on the front lawn"), ("Front Yard", "Person on the front lawn · 2 sightings")],
+            [(t, b) for t, b, _ in self.pushes],
+        )
+        self.assertNotIn("silent", self.pushes[0][2])
+        self.assertEqual(("1", "a", str(self.T)), (self.pushes[1][2]["silent"], self.pushes[1][2]["notif_id"], self.pushes[1][2]["start_time"]))
+        self.assertTrue(all(relay.was_sent(r) for r in ("a", "b", "c")))
+        routes = dict(relay.with_db(lambda c: c.execute("SELECT key, route FROM notify_log").fetchall()))
+        self.assertEqual({"a": "instant", "b": "update", "c": "digest"}, routes)
+
+    def test_shadow_only_logs(self):
+        relay.NOTIFY_POLICY = "shadow"
+        item = review("a", self.T, ["person"])
+        relay.tell_home(item, *self.route(item), {}, push=self.push)
+        self.assertEqual([], self.pushes)
+        self.assertFalse(relay.was_sent("a"), "the old rules still push it")
+        self.assertEqual(("instant",), relay.with_db(lambda c: c.execute("SELECT route FROM notify_log WHERE key='a'").fetchone()))
+
+
+class CarPresenceTest(_FakeFrigate):
+    """Whether each household car is home, and saying so once each way."""
+
+    T = 1_790_360_000.0
+    SPOT = {"x": 0.31, "y": 0.60, "w": 0.20, "h": 0.23}
+
+    def setUp(self):
+        super().setUp()
+        self._ollama = relay.OLLAMA
+        relay.OLLAMA = ""
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {}, "sarahs_car": {}}
+        relay.save_vehicle({"camera": "hikvision_1", "name": "andrews_tesla", "here": 1, "spot": self.SPOT,
+                            "since": self.T - 7200, "last_seen": self.T - 60, "event_id": "x", "looks": {}})
+        relay.save_vehicle({"camera": "hikvision_1", "name": "sarahs_car", "here": 0, "spot": None,
+                            "since": None, "last_seen": self.T - 3600, "event_id": "y", "looks": {}})
+        self.cars = relay.CarPresence()
+        self.clock = self.T
+
+    def tearDown(self):
+        relay.OLLAMA = self._ollama
+        super().tearDown()
+
+    def tick(self, at):
+        self.clock = max(self.clock + relay.CAR_PRESENCE_EVERY_SECONDS, at)
+        return [(c["name"], c["movement"], c["was"]) for c in self.cars.tick(self.clock)]
+
+    def seen(self, event_id, name, movement, start, end=None, how="classifier"):
+        relay.save_sighting({"event_id": event_id, "camera": "hikvision_1", "name": name, "how": how, "movement": movement,
+                             "zone": "driveway", "start": start, "end": end, "final": int(end is not None), "at": start})
+
+    def test_starts_where_the_vehicle_memory_has_each_car_and_says_nothing(self):
+        self.assertEqual([], self.tick(self.T))
+        self.assertEqual({"andrews_tesla": True, "sarahs_car": False}, {n: c["here"] for n, c in self.cars.cars.items()})
+        self.assertEqual(self.cars.cars, relay.CarPresence().cars or relay.state_get(relay.CAR_PRESENCE_KEY))
+
+    def test_a_departure_is_told_once_nothing_has_seen_the_car_for_ten_minutes(self):
+        self.tick(self.T)
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS - 5))
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+        self.assertEqual([], self.tick(self.T + 3000), "once")
+        self.seen("back", "andrews_tesla", "arrived", self.T + 130 + 3 * 3600, self.T + 130 + 3 * 3600 + 40)
+        self.assertEqual([("andrews_tesla", "arrived", 3 * 3600.0)], self.tick(self.T + 130 + 3 * 3600 + 50))
+
+    def test_a_car_back_an_hour_later_still_left_and_then_arrived(self):
+        # The relay was down through the departure's window: it sees both at once when it's back.
+        self.tick(self.T)
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.seen("back", "andrews_tesla", "arrived", self.T + 3600, self.T + 3640)
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 4000))
+        self.assertEqual([("andrews_tesla", "arrived", 3600 - 130.0)], self.tick(self.T + 4015))
+
+    def test_twenty_departures_of_a_car_that_never_moved_are_none(self):
+        # 2026-09-28 12:39-13:37: "left" after "left", each followed by the Tesla re-detected where it stands.
+        self.tick(self.T)
+        for i in range(20):
+            start = self.T + 100 + i * 180
+            self.seen(f"l{i}", "andrews_tesla", "left", start, start + 10)
+            self.seen(f"p{i}", "andrews_tesla", "parked", start + 60, start + 90)
+        self.assertEqual([], self.tick(self.T + 100 + 20 * 180 + 3600))
+        self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
+
+    def test_a_car_still_standing_in_its_spot_turns_the_departure_down(self):
+        self.tick(self.T)
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.visits.append({"id": "standing", "start_time": self.T + 50, "end_time": None})
+        self.events["standing"] = {"id": "standing", "camera": "hikvision_1", "label": "car",
+                                   "data": {"box": [0.21, 0.37, 0.2, 0.23], "path_data": [[[0.31, 0.6], self.T + 50]]}}
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+        self.assertEqual("go", self.cars.cars["andrews_tesla"]["skip"])
+        del self.events["standing"]
+        self.visits.clear()
+        self.assertEqual([], self.tick(self.T + 3000), "turned down for good")
+
+    def test_another_car_pulling_into_the_spot_does_not_hold_the_departure(self):
+        self.tick(self.T)
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.visits.append({"id": "visitor", "start_time": self.T + 300, "end_time": None})
+        self.events["visitor"] = {"id": "visitor", "camera": "hikvision_1", "label": "car",
+                                  "data": {"box": [0.21, 0.37, 0.2, 0.23], "path_data": [[[0.31, 0.6], self.T + 300]]}}
+        self.seen("visitor", None, "arrived", self.T + 300, how=None)
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+
+    def test_a_car_found_parked_after_it_left_is_home(self):
+        self.tick(self.T)
+        self.seen("parked", "sarahs_car", "parked", self.T + 500, self.T + 530)
+        self.assertEqual([("sarahs_car", "is home", None)], self.tick(self.T + 540))
+
+    def test_the_classifiers_name_waits_for_the_vision_model(self):
+        relay.OLLAMA = "http://ollama"
+        self.tick(self.T)
+        self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540)
+        self.assertEqual([], self.tick(self.T + 560))
+        relay.record_check("in", "vlm", "verified")
+        self.assertEqual([("sarahs_car", "arrived", None)], self.tick(self.T + 580))
+
+    def test_the_classifiers_name_is_told_after_a_while_without_the_vision_model(self):
+        relay.OLLAMA = "http://ollama"
+        self.tick(self.T)
+        self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540)
+        self.assertEqual([("sarahs_car", "arrived", None)], self.tick(self.T + 500 + relay.CAR_NAME_WAIT_SECONDS))
+
+    def test_a_name_the_vision_model_turned_down_never_arrives(self):
+        self.tick(self.T)
+        self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540, how="not")
+        self.assertEqual([], self.tick(self.T + 1000))
+
+    def test_a_car_first_heard_of_starts_silently(self):
+        self.tick(self.T)
+        relay.save_vehicle({"camera": "hikvision_1", "name": "yayas_car", "here": 1, "spot": None,
+                            "since": self.T + 100, "last_seen": self.T + 100, "event_id": "z", "looks": {}})
+        self.assertEqual([], self.tick(self.T + 200))
+        self.assertTrue(self.cars.cars["yayas_car"]["here"])
+
+    def test_wording(self):
+        self.assertEqual(("Sarah's Car arrived home", "Front Yard · away 3h 10m"),
+                         relay.car_sentence({"name": "sarahs_car", "movement": "arrived", "camera": "hikvision_1", "was": 3 * 3600 + 600}))
+        self.assertEqual(("Andrew's Tesla left", "Front Yard · home 45m"),
+                         relay.car_sentence({"name": "andrews_tesla", "movement": "left", "camera": "hikvision_1", "was": 2700}))
+        self.assertEqual(("Sarah's Car is home", "Front Yard"),
+                         relay.car_sentence({"name": "sarahs_car", "movement": "is home", "camera": "hikvision_1", "was": None}))
+        self.assertEqual(["1m", "59m", "1h", "2d 4h", "3d"], [relay.span_text(s) for s in (5, 59 * 60, 3600, 2 * 86400 + 4 * 3600, 3 * 86400)])
+
+    def test_v2_pushes_a_change_and_shadow_only_logs_it(self):
+        pushes = []
+        change = {"name": "sarahs_car", "movement": "arrived", "camera": "hikvision_1", "event_id": "in", "at": self.T, "was": None}
+        saved = relay.NOTIFY_POLICY
+        try:
+            relay.NOTIFY_POLICY = "shadow"
+            relay.tell_car(change, "home", push=lambda *a, **k: pushes.append((a, k)))
+            self.assertEqual([], pushes)
+            relay.NOTIFY_POLICY = "v2"
+            relay.tell_car(change, "home", push=lambda *a, **k: pushes.append((a, k)))
+        finally:
+            relay.NOTIFY_POLICY = saved
+        (title, body, data), kwargs = pushes[0]
+        self.assertEqual(("Sarah's Car arrived home", "car-sarahs_car", False), (title, data["notif_id"], kwargs["away"]))
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM notify_log WHERE route='car'").fetchone()[0]))
+
+
 if __name__ == "__main__":
     unittest.main()

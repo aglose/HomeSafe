@@ -47,10 +47,19 @@ services:
         {"amcrest_1": "amcrest_1_google",
          "hikvision_1": "hikvision_1_google",
          "hikvision_2": "hikvision_2_google"}
+      # The notification policy (relay.py, "notification policy"): "shadow" pushes by the old
+      # rules and logs what the new ones would do into notify_log; "v2" pushes by the new ones.
+      NOTIFY_POLICY: shadow
+      # People on these cameras sound at once while someone is home; the rest wait for a summary.
+      INSTANT_PERSON_CAMERAS: hikvision_1
     # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID, only on the box. Without it the
     # Google Home endpoints answer 404.
+    # PRESENCE_DEVICE, the device_id of the phone whose away switch alone decides away mode (see
+    # docs/away-mode.md, "The presence authority"), only on the box: the repo is public.
     env_file:
       - path: google-home.env
+        required: false
+      - path: presence.env
         required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
