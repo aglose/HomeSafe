@@ -2669,5 +2669,156 @@ class SummaryTest(_FakeFrigate):
             self.assertEqual(["labels", "names"], columns[-2:])
 
 
+def _jwt(sub):
+    import base64
+
+    part = base64.urlsafe_b64encode(json.dumps({"sub": sub}).encode()).decode().rstrip("=")
+    return f"h.{part}.s"
+
+
+class TeslaTest(CarPresenceTest):
+    """
+    Tesla's word on where a household car is, over the camera's guess. Runs every CarPresenceTest
+    too, with Tesla linked but unable to find the cars: the camera must decide exactly as before.
+    """
+
+    HOME = {"lat": 37.4220, "lng": -122.0841, "radius_m": 150}
+    NEAR = (37.4225, -122.0845)  # ~65 m
+    FAR = (37.4500, -122.1000)  # ~3.4 km
+
+    def setUp(self):
+        super().setUp()
+        self._tesla = {n: getattr(relay, n) for n in ("TESLA_CLIENT_ID", "TESLA_CLIENT_SECRET", "TESLA_PUBLIC_URL", "TESLA_CARS", "TESLA_CALLS_PER_DAY")}
+        relay.TESLA_CLIENT_ID, relay.TESLA_CLIENT_SECRET, relay.TESLA_PUBLIC_URL = "client", "secret", "https://box.example.ts.net"
+        relay.TESLA_CARS = {"andrews_tesla": "VIN_A", "sarahs_car": "VIN_S"}
+        relay._tesla_answers.clear()
+        relay.state_set(relay.HOME_KEY, self.HOME)
+        relay.tesla_save_tokens({"access_token": _jwt("andrew"), "refresh_token": "r1", "expires_in": 3600})
+        for vin in ("VIN_A", "VIN_S"):
+            relay.with_db(lambda c: (c.execute("INSERT OR REPLACE INTO tesla_vehicles VALUES (?,?,?,?)", (vin, "andrew", "", 0)), c.commit()))
+        self.where = {}  # vin -> (lat, lng), or "asleep"
+        self.fix_age = 5.0
+        self.tesla_calls = []
+        self.token_posts = []
+
+    def tearDown(self):
+        for name, value in self._tesla.items():
+            setattr(relay, name, value)
+        relay._tesla_answers.clear()
+        super().tearDown()
+
+    def get(self, url, params=None, timeout=None, headers=None):
+        if url.startswith(relay.TESLA_API):
+            self.tesla_calls.append(url)
+            if url.endswith("/api/1/vehicles"):
+                return _Response(200, {"response": [{"vin": "VIN_A", "display_name": "Blue"}, {"vin": "VIN_S", "display_name": "Red"}]})
+            vin = url.split("/")[-2]
+            where = self.where.get(vin)
+            if where == "asleep":
+                return _Response(408, {"error": "vehicle unavailable"})
+            if where is None:
+                return _Response(404, {})
+            return _Response(200, {"response": {"drive_state": {"latitude": where[0], "longitude": where[1], "gps_as_of": time.time() - self.fix_age}}})
+        return super().get(url, params, timeout)
+
+    def post(self, url, json=None, timeout=None, data=None, headers=None):
+        if url == relay.TESLA_TOKEN:
+            self.token_posts.append(data)
+            n = len(self.token_posts) + 1
+            return _Response(200, {"access_token": _jwt("andrew"), "refresh_token": f"r{n}", "expires_in": 28800})
+        return super().post(url, json, timeout)
+
+    def test_near_home_is_home_far_is_away_asleep_or_in_between_is_the_cameras_call(self):
+        self.where = {"VIN_A": self.NEAR, "VIN_S": self.FAR}
+        self.assertEqual("home", relay.tesla_verdict("andrews_tesla"))
+        self.assertEqual("away", relay.tesla_verdict("sarahs_car"))
+        relay._tesla_answers.clear()
+        self.where = {"VIN_A": "asleep", "VIN_S": (37.4238, -122.0841)}  # ~200 m: past the margin, short of away
+        self.assertIsNone(relay.tesla_verdict("andrews_tesla"))
+        self.assertIsNone(relay.tesla_verdict("sarahs_car"))
+        self.assertIsNone(relay.tesla_verdict("yayas_car"), "not a Tesla")
+
+    def test_a_stale_fix_says_nothing(self):
+        self.where, self.fix_age = {"VIN_A": self.FAR}, relay.TESLA_STALE_SECONDS + 60
+        self.assertIsNone(relay.tesla_verdict("andrews_tesla"))
+
+    def test_one_call_per_car_a_minute_and_a_daily_cap(self):
+        self.where = {"VIN_A": self.NEAR}
+        relay.tesla_verdict("andrews_tesla", now=1000.0)
+        relay.tesla_verdict("andrews_tesla", now=1030.0)
+        self.assertEqual(1, len(self.tesla_calls))
+        relay.TESLA_CALLS_PER_DAY = 1
+        self.assertIsNone(relay.tesla_verdict("andrews_tesla", now=1100.0))
+        self.assertEqual(1, len(self.tesla_calls))
+
+    def test_an_expired_token_is_refreshed_and_the_next_refresh_token_kept(self):
+        relay.with_db(lambda c: (c.execute("UPDATE tesla_accounts SET expires=0"), c.commit()))
+        self.where = {"VIN_A": self.NEAR}
+        self.assertEqual("home", relay.tesla_verdict("andrews_tesla"))
+        self.assertEqual([{"grant_type": "refresh_token", "client_id": "client", "refresh_token": "r1"}], self.token_posts)
+        self.assertEqual(("r2",), relay.with_db(lambda c: c.execute("SELECT refresh FROM tesla_accounts").fetchone()))
+
+    def test_nothing_is_asked_without_a_home(self):
+        relay.state_set(relay.HOME_KEY, None)
+        self.where = {"VIN_A": self.FAR}
+        self.assertIsNone(relay.tesla_verdict("andrews_tesla"))
+        self.assertEqual([], self.tesla_calls)
+
+    def test_a_link_signs_in_once(self):
+        url = relay.tesla_link_url()
+        state = relay.parse_qs(url.split("?", 1)[1])["state"][0]
+        self.assertIn("redirect_uri=https%3A%2F%2Fbox.example.ts.net%2Ftesla%2Fcallback", url)
+        page = relay.tesla_callback(code="c1", state=state)
+        self.assertEqual(200, page.status_code)
+        self.assertIn("Andrew&#x27;s Tesla, Sarah&#x27;s Car", page.body)
+        self.assertEqual("authorization_code", self.token_posts[0]["grant_type"])
+        self.assertEqual(400, relay.tesla_callback(code="c1", state=state).status_code, "used")
+        self.assertEqual(400, relay.tesla_callback(code="c1", state="made-up").status_code)
+
+    def test_tesla_turns_down_a_departure_whose_spot_looks_empty(self):
+        self.tick(self.T)
+        self.where = {"VIN_A": self.NEAR}
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+        self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
+
+    def test_tesla_confirms_a_departure_though_a_car_stands_in_the_spot(self):
+        self.tick(self.T)
+        self.where = {"VIN_A": self.FAR}
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.visits.append({"id": "standing", "start_time": self.T + 50, "end_time": None})
+        self.events["standing"] = {"id": "standing", "camera": "hikvision_1", "label": "car",
+                                   "data": {"box": [0.21, 0.37, 0.2, 0.23], "path_data": [[[0.31, 0.6], self.T + 50]]}}
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+
+    def test_tesla_confirms_an_arrival_without_waiting_for_the_vision_model(self):
+        relay.OLLAMA = "http://ollama"
+        self.tick(self.T)
+        self.where = {"VIN_S": self.NEAR}
+        self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540)
+        self.assertEqual([("sarahs_car", "arrived", None)], self.tick(self.T + 545))
+
+    def test_an_arrival_of_a_car_tesla_has_far_away_was_another_car(self):
+        self.tick(self.T)
+        self.where = {"VIN_S": self.FAR}
+        self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540)
+        self.assertEqual([], self.tick(self.T + 600))
+        relay._tesla_answers.clear()
+        self.where = {"VIN_S": self.NEAR}
+        self.seen("in2", "sarahs_car", "arrived", self.T + 3000, self.T + 3040)
+        self.assertEqual([("sarahs_car", "arrived", None)], self.tick(self.T + 3100))
+
+    def test_a_car_tesla_cant_see_falls_back_to_the_camera(self):
+        self.tick(self.T)
+        self.where = {"VIN_A": "asleep"}
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+
+    def test_account_by_the_tokens_subject(self):
+        self.assertEqual("andrew", relay.jwt_subject(_jwt("andrew")))
+        self.assertEqual("", relay.jwt_subject("not a jwt"))
+        self.assertAlmostEqual(3400, relay.haversine_metres(self.FAR, (self.HOME["lat"], self.HOME["lng"])), delta=200)
+
+
 if __name__ == "__main__":
     unittest.main()

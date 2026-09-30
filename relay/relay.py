@@ -269,6 +269,10 @@ def db() -> sqlite3.Connection:
     # Detections someone said are not a person (see "phantom people"): the event, and where on its
     # camera the thing that fooled the detector sits (`box`, JSON [x, y, w, h] in frame fractions).
     conn.execute("CREATE TABLE IF NOT EXISTS phantoms (event_id TEXT PRIMARY KEY, camera TEXT, box TEXT, by TEXT, at REAL)")
+    # Each linked Tesla account's tokens (the refresh token is single use: every refresh hands back
+    # the next), and which account each VIN is reached through (see "Tesla").
+    conn.execute("CREATE TABLE IF NOT EXISTS tesla_accounts (account TEXT PRIMARY KEY, refresh TEXT, access TEXT, expires REAL, updated REAL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS tesla_vehicles (vin TEXT PRIMARY KEY, account TEXT, name TEXT, updated REAL)")
     # What the notification policy made of each alert and each household car coming or going (see
     # "notification policy"), whether it was acted on or only logged: `key` is the review id, or
     # "car:<name>:<time>"; `route` "instant", "update", "fold", "digest", "car" or, for what the
@@ -1347,6 +1351,9 @@ def home_route(item: dict[str, Any], yard: YardWatch, now: float) -> tuple[str, 
 #   tracker often misses the arrival and only picks the car up standing). A name the classifier
 #   gave is held until the vision model has looked (see "car check"), for at most
 #   CAR_NAME_WAIT_SECONDS, since the classifier calls passing cars "Andrew's Tesla".
+# - Where a car is one of TESLA_CARS and Tesla can say where it is (see "Tesla"), that decides
+#   instead: near home confirms an arrival at once and turns a departure down; well away confirms a
+#   departure without the spot check, and turns an arrival down (another car given its name).
 # The state is kept in `state` under CAR_PRESENCE_KEY; a car first heard of starts where the
 # vehicle memory has it, silently, so a deploy never replays the day.
 CAR_PRESENCE_KEY = "car_presence"
@@ -1476,8 +1483,17 @@ class CarPresence:
         return changes
 
     def arrival(self, name: str, car: dict[str, Any], rows: list[dict[str, Any]], now: float) -> dict[str, Any] | None:
-        row = next((r for r in rows if r["movement"] in CAR_ARRIVAL_MOVES), None)
-        if row is None or not name_settled(row, now):
+        turned_down = car.get("not_arrivals") or []
+        row = next((r for r in rows if r["movement"] in CAR_ARRIVAL_MOVES and r["event_id"] not in turned_down), None)
+        if row is None:
+            return None
+        # Tesla, when it can say, settles it at once: near home is the car; well away, it was another.
+        verdict = tesla_verdict(name, now)
+        if verdict == "away":
+            log.info("car presence: %s's arrival %s turned down, Tesla has the car away", name, row["event_id"])
+            car["not_arrivals"], car["dirty"] = (turned_down + [row["event_id"]])[-20:], True
+            return None
+        if verdict != "home" and not name_settled(row, now):
             return None
         return self.change(name, car, float(row["start"]), row)
 
@@ -1496,8 +1512,10 @@ class CarPresence:
             return None  # seen again within the window: that was the tracker, not the car
         if now < confirmed_at:
             return None
-        if spot_still_taken(gone["camera"], name):
-            log.info("car presence: %s's departure %s turned down, a car still stands in its spot", name, gone["event_id"])
+        verdict = tesla_verdict(name, now)
+        if verdict == "home" or (verdict is None and spot_still_taken(gone["camera"], name)):
+            log.info("car presence: %s's departure %s turned down, %s", name, gone["event_id"],
+                     "Tesla has the car at home" if verdict else "a car still stands in its spot")
             car["skip"], car["dirty"] = gone["event_id"], True
             return None
         return self.change(name, car, gone_at, gone)
@@ -4635,3 +4653,261 @@ async def google_signal(camera: str, request: Request) -> Response:
     if GOOGLE_LOG_SDP:
         log.info("google signal: %s offer:\n%s\nanswer:\n%s", camera, body["sdp"], sdp)
     return json_response({"action": "answer", "sdp": sdp}, headers=cors)
+
+
+# ---------------------------------------------------------------- Tesla
+
+# Both household cars are Teslas, and Tesla's Fleet API knows where each one is — which settles
+# what the camera can only guess at (see "car presence"). The relay asks only at the moments the
+# camera thinks a car arrived or left: never on a timer, and never waking a sleeping car. A car that
+# is near home confirms an arrival and turns a departure down; one that is well away confirms the
+# departure and turns down the arrival (the classifier naming someone else's car); a car asleep,
+# unlinked or out of calls leaves the camera to decide as before. A few dozen calls a day at
+# $0.002 each, inside the $10 a month Tesla credits a personal account.
+#
+# Setup (docs/tesla.md): a Tesla developer application whose allowed origin is TESLA_PUBLIC_URL,
+# its key pair's public half served at /.well-known/appspecific/com.tesla.3p.public-key.pem (Funnel
+# publishes that and /tesla/*), `python relay.py tesla-register` once, then `python relay.py
+# tesla-link` for each Tesla account that owns a household car, opened in a browser. Off unless
+# TESLA_CLIENT_ID is set (tesla.env on the box).
+TESLA_CLIENT_ID = os.environ.get("TESLA_CLIENT_ID", "")
+TESLA_CLIENT_SECRET = os.environ.get("TESLA_CLIENT_SECRET", "")
+TESLA_PUBLIC_URL = os.environ.get("TESLA_PUBLIC_URL", os.environ.get("GOOGLE_PUBLIC_URL", "")).rstrip("/")
+TESLA_API = os.environ.get("TESLA_API", "https://fleet-api.prd.na.vn.cloud.tesla.com").rstrip("/")
+TESLA_AUTHORIZE = "https://auth.tesla.com/oauth2/v3/authorize"
+TESLA_TOKEN = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token"
+TESLA_SCOPES = "openid offline_access vehicle_device_data vehicle_location"
+# The public half of the application's key pair; the private half stays off the box (the relay only reads).
+TESLA_PUBLIC_KEY_FILE = os.environ.get("TESLA_PUBLIC_KEY_FILE", "/data/tesla-public-key.pem")
+# Each household car's VIN, by its classifier name: {"andrews_tesla": "5YJ...", "sarahs_car": "7SA..."}.
+TESLA_CARS: dict[str, str] = json.loads(os.environ.get("TESLA_CARS") or "{}")
+TESLA_CALLS_PER_DAY = int(os.environ.get("TESLA_CALLS_PER_DAY", "200"))
+# Within the home radius and this many metres more is home; beyond it and TESLA_AWAY_METRES more is away.
+TESLA_HOME_MARGIN_METRES = 50.0
+TESLA_AWAY_METRES = 250.0
+# One answer per car is reused this long; a location older than TESLA_STALE_SECONDS says nothing.
+TESLA_CACHE_SECONDS = 60.0
+TESLA_STALE_SECONDS = 600.0
+TESLA_LINK_SECONDS = 900
+TESLA_CALLS_KEY = "tesla_calls"
+_tesla_answers: dict[str, tuple[float, str | None]] = {}
+
+
+def tesla_on() -> bool:
+    return bool(TESLA_CLIENT_ID and TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL)
+
+
+def tesla_redirect_uri() -> str:
+    return f"{TESLA_PUBLIC_URL}/tesla/callback"
+
+
+def jwt_subject(token: str) -> str:
+    """The `sub` of a JWT, unverified — only to tell one linked account from another."""
+    import base64
+
+    try:
+        part = token.split(".")[1]
+        return str(json.loads(base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))).get("sub") or "")
+    except Exception:
+        return ""
+
+
+def tesla_token_request(form: dict[str, str]) -> dict[str, Any]:
+    r = requests.post(TESLA_TOKEN, data=form, timeout=15)
+    r.raise_for_status()
+    return r.json()
+
+
+def tesla_save_tokens(tokens: dict[str, Any], account: str | None = None) -> str:
+    """Keeps a token answer: the account it belongs to (by the access token's subject), its access token and the next refresh token."""
+    account = account or jwt_subject(tokens.get("access_token", "")) or hashlib.sha256(tokens.get("refresh_token", "").encode()).hexdigest()[:16]
+    expires = time.time() + float(tokens.get("expires_in") or 3600)
+
+    with_db(lambda c: (c.execute("INSERT OR REPLACE INTO tesla_accounts VALUES (?,?,?,?,?)",
+                                 (account, tokens.get("refresh_token"), tokens.get("access_token"), expires, time.time())), c.commit()))
+    return account
+
+
+def tesla_access(account: str) -> str | None:
+    """A live access token for the account, refreshing it (and keeping the next refresh token) when it is about to lapse."""
+    row = with_db(lambda c: c.execute("SELECT refresh, access, expires FROM tesla_accounts WHERE account=?", (account,)).fetchone())
+    if not row:
+        return None
+    refresh, access, expires = row
+    if access and float(expires or 0) > time.time() + 60:
+        return access
+    tokens = tesla_token_request({"grant_type": "refresh_token", "client_id": TESLA_CLIENT_ID, "refresh_token": refresh})
+    tesla_save_tokens(tokens, account)
+    return tokens.get("access_token")
+
+
+def tesla_spend() -> bool:
+    """Counts one Fleet API call against today's TESLA_CALLS_PER_DAY; False once the day's are spent."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    spent = state_get(TESLA_CALLS_KEY) or {}
+    count = int(spent.get(today, 0)) if isinstance(spent, dict) else 0
+    if count >= TESLA_CALLS_PER_DAY:
+        return False
+    state_set(TESLA_CALLS_KEY, {today: count + 1})
+    return True
+
+
+def tesla_learn_vehicles(account: str) -> list[str]:
+    """Files each vehicle the account can see under it, by VIN; answers the VINs."""
+    access = tesla_access(account)
+    if not access or not tesla_spend():
+        return []
+    r = requests.get(f"{TESLA_API}/api/1/vehicles", headers={"Authorization": f"Bearer {access}"}, timeout=15)
+    r.raise_for_status()
+    vins = []
+    for v in r.json().get("response") or []:
+        vin = v.get("vin")
+        if vin:
+            vins.append(vin)
+            with_db(lambda c: (c.execute("INSERT OR REPLACE INTO tesla_vehicles VALUES (?,?,?,?)",
+                                         (vin, account, v.get("display_name") or "", time.time())), c.commit()))
+    return vins
+
+
+def haversine_metres(a: tuple[float, float], b: tuple[float, float]) -> float:
+    import math
+
+    (lat1, lng1), (lat2, lng2) = (tuple(map(math.radians, p)) for p in (a, b))
+    h = math.sin((lat2 - lat1) / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin((lng2 - lng1) / 2) ** 2
+    return 2 * 6_371_000 * math.asin(math.sqrt(h))
+
+
+def tesla_location(vin: str) -> dict[str, Any] | None:
+    """
+    Where the car is, as `{"lat", "lng", "at"}`, or `{"asleep": True}`; None when it can't be asked
+    (not linked, out of calls, an error). Never wakes the car: a sleeping one answers 408.
+    """
+    row = with_db(lambda c: c.execute("SELECT account FROM tesla_vehicles WHERE vin=?", (vin,)).fetchone())
+    if not row:
+        return None
+    access = tesla_access(row[0])
+    if not access or not tesla_spend():
+        return None
+    r = requests.get(f"{TESLA_API}/api/1/vehicles/{vin}/vehicle_data", params={"endpoints": "location_data"},
+                     headers={"Authorization": f"Bearer {access}"}, timeout=15)
+    if r.status_code == 408:
+        return {"asleep": True}
+    r.raise_for_status()
+    drive = (r.json().get("response") or {}).get("drive_state") or {}
+    if drive.get("latitude") is None or drive.get("longitude") is None:
+        return None
+    stamp = drive.get("gps_as_of") or (float(drive["timestamp"]) / 1000 if drive.get("timestamp") else time.time())
+    return {"lat": float(drive["latitude"]), "lng": float(drive["longitude"]), "at": float(stamp)}
+
+
+def tesla_verdict(name: str, now: float | None = None) -> str | None:
+    """
+    "home" or "away" by where Tesla says the car is against the household's home (see HOME_KEY);
+    None when Tesla can't say (not one of TESLA_CARS, not linked, asleep, a stale fix, no home set,
+    or somewhere in between). One answer per car per TESLA_CACHE_SECONDS.
+    """
+    vin = TESLA_CARS.get(name)
+    home = state_get(HOME_KEY)
+    if not (tesla_on() and vin and home):
+        return None
+    now = time.time() if now is None else now
+    cached = _tesla_answers.get(name)
+    if cached and now - cached[0] < TESLA_CACHE_SECONDS:
+        return cached[1]
+    verdict = None
+    try:
+        where = tesla_location(vin)
+        if where and not where.get("asleep") and now - float(where["at"]) <= TESLA_STALE_SECONDS:
+            d = haversine_metres((where["lat"], where["lng"]), (float(home["lat"]), float(home["lng"])))
+            radius = float(home.get("radius_m") or 150)
+            verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
+            log.info("tesla: %s is %.0f m from home -> %s", name, d, verdict)
+        elif where and where.get("asleep"):
+            log.info("tesla: %s is asleep; the camera decides", name)
+    except Exception as e:
+        log.warning("tesla: asking where %s is failed: %s", name, e)
+    _tesla_answers[name] = (now, verdict)
+    return verdict
+
+
+def tesla_link_url(now: float | None = None) -> str:
+    """A one-time link that signs a Tesla account in and links it to the relay, good for TESLA_LINK_SECONDS."""
+    state = secrets.token_urlsafe(24)
+    now = time.time() if now is None else now
+    links = {s: t for s, t in (state_get("tesla_links") or {}).items() if t > now}
+    links[state] = now + TESLA_LINK_SECONDS
+    state_set("tesla_links", links)
+    return TESLA_AUTHORIZE + "?" + urlencode({
+        "response_type": "code", "client_id": TESLA_CLIENT_ID, "redirect_uri": tesla_redirect_uri(),
+        "scope": TESLA_SCOPES, "state": state, "prompt_missing_scopes": "true",
+    })
+
+
+def tesla_page(text: str, status: int = 200) -> Response:
+    body = f"<!doctype html><meta name=viewport content='width=device-width'><title>HomeSafe · Tesla</title><p style='font:16px system-ui;margin:2em'>{html.escape(text)}</p>"
+    return Response(content=body, status_code=status, media_type="text/html")
+
+
+@app.get("/tesla/callback")
+def tesla_callback(code: str = "", state: str = "", error: str = "") -> Response:
+    """Where Tesla sends the browser back: a link minted by `tesla_link_url`, used once, becomes a linked account."""
+    if not tesla_on():
+        return tesla_page("Tesla isn't set up on this relay.", 404)
+    links = state_get("tesla_links") or {}
+    expires = links.pop(state, None) if state else None
+    state_set("tesla_links", links)
+    if error or not code or expires is None or expires < time.time():
+        return tesla_page("That link has expired or was already used. Make a new one with `python relay.py tesla-link`.", 400)
+    try:
+        tokens = tesla_token_request({
+            "grant_type": "authorization_code", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
+            "code": code, "audience": TESLA_API, "redirect_uri": tesla_redirect_uri(),
+        })
+        account = tesla_save_tokens(tokens)
+        vins = tesla_learn_vehicles(account)
+    except Exception as e:
+        log.warning("tesla: linking failed: %s", e)
+        return tesla_page("Tesla didn't accept the sign-in. Try a new link.", 502)
+    known = [name for name, vin in TESLA_CARS.items() if vin in vins]
+    log.info("tesla: account %s linked, %d vehicles (%s)", account[:8], len(vins), ", ".join(known) or "none of TESLA_CARS")
+    return tesla_page(f"Linked. HomeSafe can now see {', '.join(display_name(n) for n in known) or 'this account’s cars (none of them is in TESLA_CARS yet)'}.")
+
+
+@app.get("/.well-known/appspecific/com.tesla.3p.public-key.pem")
+def tesla_public_key() -> Response:
+    """The application's public key, where Tesla looks for it on the registered domain."""
+    try:
+        with open(TESLA_PUBLIC_KEY_FILE, encoding="utf-8") as f:
+            return Response(content=f.read(), media_type="application/x-pem-file")
+    except OSError:
+        raise HTTPException(status_code=404)
+
+
+def tesla_register() -> dict[str, Any]:
+    """Registers the application's domain with the Fleet API (once per region), by a partner token."""
+    from urllib.parse import urlparse
+
+    partner = tesla_token_request({
+        "grant_type": "client_credentials", "client_id": TESLA_CLIENT_ID, "client_secret": TESLA_CLIENT_SECRET,
+        "scope": TESLA_SCOPES.replace("offline_access ", ""), "audience": TESLA_API,
+    })
+    r = requests.post(f"{TESLA_API}/api/1/partner_accounts", json={"domain": urlparse(TESLA_PUBLIC_URL).hostname},
+                      headers={"Authorization": f"Bearer {partner['access_token']}"}, timeout=15)
+    r.raise_for_status()
+    return r.json()
+
+
+if __name__ == "__main__":
+    # `python relay.py tesla-register` / `tesla-link`, run in the relay's container.
+    import sys
+
+    CONN = db()
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if not tesla_on():
+        sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")
+    if command == "tesla-register":
+        print(json.dumps(tesla_register(), indent=2))
+    elif command == "tesla-link":
+        print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
+    else:
+        sys.exit("usage: python relay.py tesla-register | tesla-link")
