@@ -52,6 +52,8 @@ services:
       NOTIFY_POLICY: shadow
       # People on these cameras sound at once while someone is home; the rest wait for a summary.
       INSTANT_PERSON_CAMERAS: hikvision_1
+      # When the summary of what stayed quiet goes out, hours on the household's clock.
+      DIGEST_HOURS: "9,12,15,18,21"
     # GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET and GOOGLE_PROJECT_ID, only on the box. Without it the
     # Google Home endpoints answer 404.
     # PRESENCE_DEVICE, the device_id of the phone whose away switch alone decides away mode (see
