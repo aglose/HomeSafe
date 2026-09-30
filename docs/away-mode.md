@@ -72,7 +72,27 @@ returned on every registration.
   `token TEXT UNIQUE` (nullable), plus `secret`, `away_pending_since`, `away_pending_dwell`;
   existing rows get `device_id = token`. `broadcast()` skips rows with no token.
 
-### Which phones count
+### The presence authority
+
+One phone decides. With a **presence authority** set, `everyone_away` is that one install's
+away switch and nothing else: every other row is listed with `counts: false`, whatever its build.
+It replaced "every release phone votes" on 2026-09-29, when three stale iPhone debug rows and a
+release build on an emulator — none of which will ever say away — had kept away mode from firing
+at all. The household's authority is Andrew's release Pixel.
+
+| Route | Auth | Body | Answer |
+| --- | --- | --- | --- |
+| `PUT /presence/authority` | cookie, or the named device's bearer | `{"device_id"}` | presence snapshot |
+| `DELETE /presence/authority?device={id}` | cookie, or the authority's own bearer | — | presence snapshot |
+
+- Chosen in the app (kept in `state` as `presence_device`), else by the relay's `PRESENCE_DEVICE`
+  environment variable (set on the box in `relay/presence.env`, never in the repo), else nobody —
+  and then the build rule below applies, as before.
+- The snapshot carries `"authority": <device_id> | null`.
+- An authority whose row is gone (uninstalled, removed in Settings) means **home**: nothing counts,
+  so `everyone_away` is false. Away mode fails quiet rather than loud.
+
+### Which phones count (no authority set)
 
 Only the household's real phones may decide the house is empty. `POST /devices` carries
 `build` — `"release"` or `"debug"` — and `counts_for_away(platform, build)` is the one place that
