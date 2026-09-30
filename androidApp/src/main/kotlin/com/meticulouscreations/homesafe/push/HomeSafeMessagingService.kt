@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
  * for every push, foreground or background — Android never draws one itself. It posts the text
  * at once, then leaves the picture and the clip to [AlertMediaWorker]: those take up to a minute
  * to arrive, longer than this callback may run, and a process with nothing running is frozen.
+ * A summary (`summary=1`) is text only: it posts on the quiet "Summaries" channel and gets no media.
  */
 class HomeSafeMessagingService : FirebaseMessagingService() {
 
@@ -38,6 +39,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             silent = message.data["silent"] == "1",
             // The relay marks an alert about a car the classifier didn't name (car_unnamed=1), for a "Tag car" button.
             offerCarTag = message.data["car_unnamed"] == "1",
+            // The relay's periodic summary of what was seen while someone was home: quiet, all text, no media.
+            summary = message.data["summary"] == "1",
         )
         AlertNotificationPoster.ensureChannels(this)
         // Already off the main thread: Firebase calls this on its own worker.
@@ -46,6 +49,6 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         // start_time is the visit's, for the tap; the clip's timing is this alert's own.
         val eventId = message.data["event_id"]
         val eventStart = message.data["event_start"]?.toDoubleOrNull()
-        if (target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, eventStart ?: target.startEpochSeconds)
+        if (!text.summary && target != null && !eventId.isNullOrBlank()) AlertMediaWorker.enqueue(applicationContext, text, eventId, eventStart ?: target.startEpochSeconds)
     }
 }

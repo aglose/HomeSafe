@@ -5,10 +5,12 @@ import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.repository.RelayPushStatus
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.network.DeviceRegistration
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import dev.zacsweers.metro.AppScope
+import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +41,7 @@ import kotlin.time.ExperimentalTime
  */
 @Inject
 @SingleIn(AppScope::class)
+@ContributesBinding(AppScope::class)
 class DeviceRegistrar(
     private val relayApi: PushRelayApi,
     private val identity: DeviceIdentityStore,
@@ -47,7 +50,7 @@ class DeviceRegistrar(
     private val connectionRepository: ConnectionRepository,
     private val settingsRepository: SettingsRepository,
     private val appScope: CoroutineScope,
-) {
+) : RelayPushStatus {
     private var job: Job? = null
 
     /** A token the platform pushed at us (Android's `onNewToken`); null means ask [tokenProvider]. */
@@ -61,7 +64,7 @@ class DeviceRegistrar(
      * install without push (iOS for now) and until the first registration succeeds. A later
      * failed re-registration leaves it as it was — the relay still has the token it last took.
      */
-    val pushRegistered: StateFlow<Boolean> = registeredForPush.asStateFlow()
+    override val pushRegistered: StateFlow<Boolean> = registeredForPush.asStateFlow()
 
     /** Idempotent: follows the connection for the life of the app. */
     fun start() {

@@ -47,6 +47,10 @@ import kotlin.math.roundToInt
  * row of presets and only laid out in full when the user asks, or when they've been tuned into
  * something no preset describes. Where last week's detections say a rule would be noisy, its
  * switch says how noisy.
+ *
+ * The rules only drive the in-app poller, which stands down on a phone the relay pushes to
+ * ([SettingsUiState.relayPushes]). There the relay decides what's worth a sound, so the rules and
+ * presets give way to a line saying what that is.
  */
 @Composable
 internal fun AlertsSection(
@@ -77,6 +81,7 @@ internal fun AlertsSection(
             title = "Notifications",
             description = when {
                 blocked -> "Blocked in system settings. Allow notifications for HomeSafe to turn this on."
+                state.pushNotificationsActive && state.relayPushes -> "On — from the HomeSafe relay, even while HomeSafe is closed."
                 state.pushNotificationsActive -> "On — a notification for each new detection while HomeSafe is running."
                 else -> "Get a notification when a camera sees something."
             },
@@ -104,7 +109,11 @@ internal fun AlertsSection(
             // zones, quiet hours and the stranger rule alike. They keep their values for later.
             if (!alerts.onlyWhenAway) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-                AlertRules(state, onPreset = onPreset, onZoneCategory = onZoneCategory, onLoadVolume = onLoadVolume)
+                if (state.relayPushes) {
+                    RelayAlertPolicy()
+                } else {
+                    AlertRules(state, onPreset = onPreset, onZoneCategory = onZoneCategory, onLoadVolume = onLoadVolume)
+                }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 QuietHoursRows(
                     enabled = alerts.quietHours.enabled,
@@ -138,8 +147,12 @@ internal fun AlertsSection(
                 if (state.testNotificationSent) SettingsCaption("Sent")
             }
             SettingsCaption(
-                "HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. " +
-                    "Frigate has no push service for phones, so nothing arrives once the system stops the app.",
+                if (state.relayPushes) {
+                    "Alerts come from the HomeSafe relay on the Frigate box, so they arrive even when HomeSafe is closed."
+                } else {
+                    "HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. " +
+                        "Frigate has no push service for phones, so nothing arrives once the system stops the app."
+                },
             )
         }
     }
@@ -194,6 +207,21 @@ private fun AlertRules(
                 CameraAlertZones(camera = camera, alerts = state.alerts, volume = state.alertVolume, onZoneCategory = onZoneCategory)
             }
         }
+    }
+}
+
+/**
+ * What a phone the relay pushes to hears, in place of the zone rules: the relay's own policy for
+ * when someone is home (see `docs/away-mode.md`), which no per-zone switch here would change.
+ */
+@Composable
+private fun RelayAlertPolicy() {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(text = "What you'll hear about", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        SettingsCaption(
+            "While someone's home: household cars arriving and leaving, and people on the Front Yard, right away; " +
+                "everything else in a summary a few times a day. While everyone's away: everything.",
+        )
     }
 }
 

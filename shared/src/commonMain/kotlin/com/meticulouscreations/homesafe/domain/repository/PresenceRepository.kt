@@ -25,6 +25,14 @@ interface PresenceRepository {
      */
     suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource = PresenceSource.MANUAL, dwellSeconds: Int = 0): Result<Unit>
 
+    /**
+     * Makes this phone the household's presence authority, or with false steps it down: while it
+     * decides, its switch alone says whether the house is empty. Only notifications' loudness
+     * follows from that — every phone still gets them. Bears this install's relay secret, like
+     * [setThisDeviceAway]; [presence] reflects the relay's answer.
+     */
+    suspend fun setDecidesPresence(decides: Boolean): Result<Unit>
+
     /** Sets (or, with null, clears) the household's home; every phone's geofence follows [presence]. */
     suspend fun setHome(home: HomeLocation?): Result<Unit>
 

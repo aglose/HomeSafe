@@ -49,6 +49,9 @@ object AlertNotificationPoster {
     /** The loud channel for people seen while nobody is home (docs/away-mode.md). */
     const val AWAY_CHANNEL_ID = "away_alerts"
 
+    /** The quiet channel for the relay's summaries of what the cameras saw while someone was home. */
+    const val SUMMARY_CHANNEL_ID = "summaries"
+
     private const val NOTIFICATION_ID = 1
     private const val FRAME_COUNT = 10
     private const val FRAME_MS = 300L
@@ -82,6 +85,11 @@ object AlertNotificationPoster {
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
                 )
                 enableVibration(true)
+            },
+        )
+        manager.createNotificationChannel(
+            NotificationChannel(SUMMARY_CHANNEL_ID, "Summaries", NotificationManager.IMPORTANCE_LOW).apply {
+                description = "A few times a day: what the cameras saw while someone was home"
             },
         )
     }
@@ -144,6 +152,9 @@ object AlertNotificationPoster {
     }
 
     private fun build(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
+        if (notification.summary) buildSummary(context, notification, postedAt) else buildAlert(context, notification, postedAt, picture, largeIcon)
+
+    private fun buildAlert(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
         NotificationCompat.Builder(context, if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_detection)
             .setContentTitle(notification.title)
@@ -164,6 +175,27 @@ object AlertNotificationPoster {
                     setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?))
                 }
             }
+            .build()
+
+    /**
+     * The relay's summary: several cameras' worth of text, so [NotificationCompat.BigTextStyle]
+     * shows all of it when expanded. Low priority on its own low channel — no sound, no heads-up —
+     * and never a picture: it's about no one detection. A tap opens the app as it was.
+     */
+    private fun buildSummary(context: Context, notification: AlertNotification, postedAt: Long): Notification =
+        NotificationCompat.Builder(context, SUMMARY_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_detection)
+            .setContentTitle(notification.title)
+            .setContentText(notification.body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body))
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setWhen(postedAt)
+            .setShowWhen(true)
+            .setAutoCancel(true)
+            .setContentIntent(openIntent(context, notification))
             .build()
 
     /**

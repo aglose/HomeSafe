@@ -75,6 +75,7 @@ class DetectionAlertServiceTest {
         override val presence = MutableStateFlow(HouseholdPresence.EMPTY)
         override suspend fun refresh() = Result.success(Unit)
         override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int) = Result.success(Unit)
+        override suspend fun setDecidesPresence(decides: Boolean) = Result.success(Unit)
         override suspend fun setHome(home: HomeLocation?) = Result.success(Unit)
         override suspend fun removeDevice(deviceId: String) = Result.success(Unit)
 

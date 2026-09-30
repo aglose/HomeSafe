@@ -3,7 +3,9 @@ package com.meticulouscreations.homesafe.domain.usecase
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.domain.repository.RelayPushStatus
 import dev.zacsweers.metro.Inject
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Where the OS stands on this app's notifications. [isSupported] is false on platforms with no
@@ -26,6 +28,15 @@ class RequestNotificationPermissionUseCase(private val notifier: AlertNotifier) 
 @Inject
 class OpenNotificationSettingsUseCase(private val notifier: AlertNotifier) {
     operator fun invoke() = notifier.openSystemSettings()
+}
+
+/**
+ * True while the relay pushes this phone its alerts. Then what it hears follows the relay's policy
+ * for when someone is home, not the per-zone rules, which only drive the in-app poller.
+ */
+@Inject
+class ObserveRelayPushUseCase(private val status: RelayPushStatus) {
+    operator fun invoke(): StateFlow<Boolean> = status.pushRegistered
 }
 
 /** Posts a sample notification so the user can see what one looks like and that the OS lets them through. */

@@ -23,6 +23,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetNotificationPermission
 import com.meticulouscreations.homesafe.domain.usecase.ObserveActiveConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveLocationAccessUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveRelayPushUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewErrorUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
@@ -36,6 +37,7 @@ import com.meticulouscreations.homesafe.domain.usecase.SendTestNotificationUseCa
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetDecidesPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import dev.zacsweers.metro.AppScope
@@ -73,6 +75,8 @@ data class SettingsUiState(
     val presence: HouseholdPresence = HouseholdPresence.EMPTY,
     /** True while the "I'm away" switch is mid-flight. */
     val awayBusy: Boolean = false,
+    /** True while the "This phone decides home/away" switch is mid-flight. */
+    val decidesBusy: Boolean = false,
     /** Why the relay couldn't be read or told, e.g. it's down. */
     val awayError: String? = null,
     /** The device being removed from the relay, by id; its row's remove button waits for the answer. */
@@ -86,6 +90,11 @@ data class SettingsUiState(
     val homeError: String? = null,
     /** How often each alert rule would have fired last week; null until read, and left null if the read fails. */
     val alertVolume: AlertVolume? = null,
+    /**
+     * The relay pushes this phone its alerts, so what it hears follows the relay's policy and the
+     * per-zone rules (which only drive the in-app poller) decide nothing here.
+     */
+    val relayPushes: Boolean = false,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -106,6 +115,9 @@ data class SettingsUiState(
     /** This phone's switch. Optimistically nothing until the relay has listed this device. */
     val thisDeviceAway: Boolean get() = presence.thisDevice?.away == true
 
+    /** This phone is the presence authority: its switch alone says whether the house is empty. */
+    val thisDeviceDecides: Boolean get() = presence.thisDevice?.decides == true
+
     /** The push switch is effectively on only when the OS also allows it. */
     val pushNotificationsActive: Boolean
         get() = alerts.pushNotificationsEnabled && notificationPermission == NotificationPermission.GRANTED
@@ -119,6 +131,7 @@ private data class LocalState(
     val testNotificationSent: Boolean = false,
     val classifiers: List<ClassifierModel> = emptyList(),
     val awayBusy: Boolean = false,
+    val decidesBusy: Boolean = false,
     val awayError: String? = null,
     val removingDevice: String? = null,
     val homeBusy: Boolean = false,
@@ -147,18 +160,21 @@ class SettingsViewModel(
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val setAwayUseCase: SetAwayUseCase,
+    private val setDecidesPresenceUseCase: SetDecidesPresenceUseCase,
     private val removeHouseholdDeviceUseCase: RemoveHouseholdDeviceUseCase,
     observeLocationAccessUseCase: ObserveLocationAccessUseCase,
     private val requestLocationAccessUseCase: RequestLocationAccessUseCase,
     private val setHomeHereUseCase: SetHomeHereUseCase,
     private val clearHomeUseCase: ClearHomeUseCase,
     private val estimateAlertVolumeUseCase: EstimateAlertVolumeUseCase,
+    observeRelayPushUseCase: ObserveRelayPushUseCase,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
     private val geofenceSupported: Boolean = observeLocationAccessUseCase.geofenceSupported
     private val presence: StateFlow<HouseholdPresence> = observeHouseholdPresenceUseCase()
     private val locationAccess: StateFlow<LocationAccess> = observeLocationAccessUseCase()
+    private val relayPushes: StateFlow<Boolean> = observeRelayPushUseCase()
 
     private val settings: StateFlow<AlertSettings> =
         observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertSettings.DEFAULT)
@@ -185,6 +201,7 @@ class SettingsViewModel(
                 testNotificationSent = local.testNotificationSent,
                 classifiers = local.classifiers,
                 awayBusy = local.awayBusy,
+                decidesBusy = local.decidesBusy,
                 awayError = local.awayError,
                 removingDevice = local.removingDevice,
                 geofenceSupported = geofenceSupported,
@@ -195,7 +212,8 @@ class SettingsViewModel(
         },
         presence,
         locationAccess,
-    ) { state, presence, access -> state.copy(presence = presence, locationAccess = access) }
+        relayPushes,
+    ) { state, presence, access, pushed -> state.copy(presence = presence, locationAccess = access, relayPushes = pushed) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -326,6 +344,19 @@ class SettingsViewModel(
         viewModelScope.launch {
             val result = setAwayUseCase(away)
             local.update { it.copy(awayBusy = false, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
+        }
+    }
+
+    /**
+     * "This phone decides home/away": makes this phone the presence authority, or hands the
+     * decision back. Like the away switch, it shows what the relay answered, not what was asked.
+     */
+    fun setDecidesPresence(decides: Boolean) {
+        if (local.value.decidesBusy) return
+        local.update { it.copy(decidesBusy = true, awayError = null) }
+        viewModelScope.launch {
+            val result = setDecidesPresenceUseCase(decides)
+            local.update { it.copy(decidesBusy = false, awayError = result.exceptionOrNull()?.let(::friendlyAwayError)) }
         }
     }
 

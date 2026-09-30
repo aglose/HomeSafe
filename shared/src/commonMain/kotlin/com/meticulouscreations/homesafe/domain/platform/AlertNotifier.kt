@@ -51,6 +51,13 @@ data class AlertNotification(
      * lands one tap from the tag.
      */
     val offerCarTag: Boolean = false,
+    /**
+     * The relay's periodic summary (`summary=1`): what the cameras saw while someone was home,
+     * gathered into one [body] that may run long. Posted quietly on its own low channel with the
+     * whole text showing, no picture and no heads-up; it names no detection, so it has no
+     * [target] and never gets media. iOS gets the relay's passive banner instead.
+     */
+    val summary: Boolean = false,
 )
 
 /**

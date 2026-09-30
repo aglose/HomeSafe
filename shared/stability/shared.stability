@@ -314,12 +314,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.AwayBanner(onBack: kotli
     - onBack: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onDecides: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
     - onAway: STABLE (function type)
+    - onDecides: STABLE (function type)
     - onAutomatic: STABLE (function type)
     - onRequestLocation: STABLE (function type)
     - onSetHomeHere: STABLE (function type)
@@ -982,7 +983,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeStatusHeader(headli
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenMoments: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenMoments: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function1<@[ParameterName(name = \, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1423,6 +1424,12 @@ public fun com.meticulouscreations.homesafe.ui.screens.RecognitionSection(models
     - faceRecognitionEnabled: STABLE (class with no mutable properties)
     - onOpen: STABLE (function type)
     - onOpenFaces: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.RelayAlertPolicy(): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.RoutineRow(item: com.meticulouscreations.homesafe.viewmodel.MomentItem, clipsOpen: kotlin.Boolean, player: com.meticulouscreations.homesafe.ui.screens.ClipPlayerState, onToggleClips: kotlin.Function0<kotlin.Unit>, onPlay: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>, onClipBuffering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClipError: kotlin.Function0<kotlin.Unit>, onFullScreenClick: kotlin.Function0<kotlin.Unit>, onTagCar: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentEvent, kotlin.Unit>): kotlin.Unit
