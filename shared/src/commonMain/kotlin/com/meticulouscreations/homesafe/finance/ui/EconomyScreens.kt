@@ -237,7 +237,11 @@ private fun YieldCurveBlock(state: FinanceUiState) {
     var compare by rememberSaveable { mutableStateOf(CurveCompare.YEAR) }
     var scrub by remember { mutableStateOf<Int?>(null) }
     val latestTime = YieldCurve.tenors.mapNotNull { state.curve[it.fredId]?.lastTime }.maxOrNull()
-    if (latestTime == null || state.curve.size < YieldCurve.tenors.size / 2) {
+    if (state.failedTenors.isNotEmpty() && state.curveSettled) {
+        FinePrint("Some of the curve's maturities didn't load from FRED. Pull down to try again.")
+        return
+    }
+    if (latestTime == null || !state.curveSettled) {
         Shimmer(Modifier.fillMaxWidth().height(260.dp).padding(horizontal = PageGutter), corner = 14.dp)
         return
     }

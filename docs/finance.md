@@ -24,8 +24,9 @@ Out", "Debt", "Future Holdings", the history table's "Date" row, and so on) rath
 address. Rows can be added, moved or removed. A block the parser can't find is left off the screen.
 
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
-"Not for this account". To name the readers explicitly instead, set `FINANCE_USERS` to a
-comma-separated list of Frigate usernames in `finance.env`.
+"Not for this account". To let a household member whose Frigate login is a viewer in too, add
+their username to `FINANCE_USERS` (comma-separated) in `finance.env`. Admins keep access either
+way. Every answer is marked `Cache-Control: private, no-store`.
 
 A few conventions the parser relies on:
 

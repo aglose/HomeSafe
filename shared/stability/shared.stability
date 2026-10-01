@@ -496,11 +496,12 @@ public fun com.meticulouscreations.homesafe.finance.ui.components.ChangePill(tex
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.components.DigitWheel(digit: kotlin.Int, style: androidx.compose.ui.text.TextStyle, color: androidx.compose.ui.graphics.Color): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.components.DigitWheel(digit: kotlin.Int, rising: kotlin.Boolean, style: androidx.compose.ui.text.TextStyle, color: androidx.compose.ui.graphics.Color): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - digit: STABLE (primitive type)
+    - rising: STABLE (primitive type)
     - style: STABLE (marked @Stable or @Immutable)
     - color: STABLE (marked @Stable or @Immutable)
 

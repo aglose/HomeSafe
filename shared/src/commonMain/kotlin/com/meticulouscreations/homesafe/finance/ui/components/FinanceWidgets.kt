@@ -30,6 +30,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
@@ -69,19 +70,27 @@ import kotlin.math.roundToInt
 
 /**
  * [text] with every digit on its own odometer wheel: when the number changes each digit rolls to
- * its new value — up when it grew, down when it shrank — the way Robinhood's portfolio value
- * ticks. Slots are keyed from the right so the decimal point stays put while the number grows a
- * digit on the left. Screen readers get the text, not ten digits a slot.
+ * its new value — forward when the number grew, back when it shrank, carrying through 0 the way
+ * an odometer does ($19 → $20 rolls the units on from 9 to 0) — the way Robinhood's portfolio
+ * value ticks. Slots are keyed from the right so the decimal point stays put while the number
+ * grows a digit on the left. Screen readers get the text, not ten digits a slot.
  */
 @Composable
 fun RollingNumber(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
     val animatedColor by animateColorAsState(color, tween(350), label = "rollingColor")
+    val value = numericValue(text)
+    // The last value shown, outside the snapshot system: it only decides which way the wheels
+    // turn and must not recompose anything when it changes.
+    val previous = remember { arrayOfNulls<Double>(1).also { it[0] = value } }
+    val before = previous[0]
+    val rising = value == null || before == null || value >= before
+    SideEffect { previous[0] = value }
     Row(modifier.clearAndSetSemantics { contentDescription = text }, verticalAlignment = Alignment.CenterVertically) {
         val n = text.length
         text.forEachIndexed { i, ch ->
             key(n - i) {
                 if (ch.isDigit()) {
-                    DigitWheel(ch.digitToInt(), style, animatedColor)
+                    DigitWheel(ch.digitToInt(), rising, style, animatedColor)
                 } else {
                     Text(ch.toString(), style = style, color = animatedColor)
                 }
@@ -90,11 +99,27 @@ fun RollingNumber(text: String, style: TextStyle, color: Color, modifier: Modifi
     }
 }
 
+/** The number [text] writes ("$1,234.50" → 1234.5, "−0.25%" → -0.25), or null if it isn't one. */
+internal fun numericValue(text: String): Double? {
+    val negative = text.contains('-') || text.contains('−')
+    val digits = text.filter { it.isDigit() || it == '.' }
+    return digits.toDoubleOrNull()?.let { if (negative) -it else it }
+}
+
 @Composable
-private fun DigitWheel(digit: Int, style: TextStyle, color: Color) {
+private fun DigitWheel(digit: Int, rising: Boolean, style: TextStyle, color: Color) {
+    // An unbounded position: the wheel shows it mod 10, so rolling from 9 up to 10 lands on 0
+    // having turned forward.
     val position = remember { Animatable(digit.toFloat()) }
     LaunchedEffect(digit) {
-        position.animateTo(digit.toFloat(), spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+        val current = position.value
+        val shown = ((current.roundToInt() % 10) + 10) % 10
+        if (shown == digit && abs(current - current.roundToInt()) < 0.01f) return@LaunchedEffect
+        val step = ((digit - shown) % 10 + 10) % 10
+        val target = if (rising) current.roundToInt() + step else current.roundToInt() - ((10 - step) % 10)
+        position.animateTo(target.toFloat(), spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow))
+        // Back into 0..9 so the position never drifts far.
+        position.snapTo(digit.toFloat())
     }
     Layout(
         content = { for (d in 0..9) Text(d.toString(), style = style, color = color) },
@@ -103,15 +128,19 @@ private fun DigitWheel(digit: Int, style: TextStyle, color: Color) {
         val loose = constraints.copy(minWidth = 0, minHeight = 0)
         val digits = measurables.map { it.measure(loose) }
         val cell = digits.maxOf { it.height }
+        val pos = ((position.value % 10f) + 10f) % 10f
         // The app's sans has proportional figures, so the wheel is as wide as the digit it shows,
         // easing between widths as it rolls: no gap after a narrow 1.
-        val pos = position.value.coerceIn(0f, 9f)
-        val lo = pos.toInt().coerceAtMost(8)
-        val frac = pos - lo
-        val width = (digits[lo].width + (digits[lo + 1].width - digits[lo].width) * frac).roundToInt()
+        val lo = pos.toInt() % 10
+        val hi = (lo + 1) % 10
+        val frac = pos - pos.toInt()
+        val width = (digits[lo].width + (digits[hi].width - digits[lo].width) * frac).roundToInt()
         layout(width, cell) {
             digits.forEachIndexed { d, placeable ->
-                val y = ((d - pos) * cell).roundToInt()
+                var delta = d - pos
+                if (delta < -5f) delta += 10f
+                if (delta > 5f) delta -= 10f
+                val y = (delta * cell).roundToInt()
                 if (y > -cell && y < cell) placeable.place((width - placeable.width) / 2, y)
             }
         }

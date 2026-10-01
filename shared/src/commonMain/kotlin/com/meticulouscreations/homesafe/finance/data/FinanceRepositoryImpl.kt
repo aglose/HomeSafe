@@ -59,14 +59,15 @@ class FinanceRepositoryImpl(
         // for as long, so it doesn't send every call back to Yahoo for all of them.
         val pending = symbols.filter { quoteCache.get(it, maxAgeMillis) == null && unknownSymbols.get(it, UNKNOWN_SYMBOL_MS) == null }
         if (pending.isEmpty()) return Result.success(symbols.mapNotNull { quoteCache.get(it, maxAgeMillis) })
-        return yahoo.quotes(symbols).onSuccess { list ->
+        // Only the stale ones go to Yahoo; the rest are answered from the cache.
+        return yahoo.quotes(pending).onSuccess { list ->
             list.forEach { quoteCache.put(it.symbol, it) }
             val answered = list.mapTo(HashSet()) { it.symbol }
-            symbols.filterNot { it in answered }.forEach { unknownSymbols.put(it, Unit) }
+            pending.filterNot { it in answered }.forEach { unknownSymbols.put(it, Unit) }
         }.map { list ->
-            // Only what Yahoo just said: an old quote for a symbol it left out would pass for a live one.
-            val bySymbol = list.associateBy { it.symbol }
-            symbols.mapNotNull { bySymbol[it] }
+            // A pending symbol Yahoo left out has no quote: an old one would pass for a live one.
+            val fetched = list.associateBy { it.symbol }
+            symbols.mapNotNull { s -> if (s in pending) fetched[s] else quoteCache.get(s, maxAgeMillis) }
         }
     }
 

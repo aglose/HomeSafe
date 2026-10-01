@@ -2755,8 +2755,9 @@ class FinanceSheet(unittest.TestCase):
             self.assertFalse(relay.finance_may_read({"username": "sitter", "role": "viewer"}))
             self.assertFalse(relay.finance_may_read({}))
             relay.FINANCE_USERS = {"alex"}
-            self.assertTrue(relay.finance_may_read({"username": "alex", "role": "viewer"}))
-            self.assertFalse(relay.finance_may_read({"username": "sam", "role": "admin"}))
+            self.assertTrue(relay.finance_may_read({"username": "alex", "role": "viewer"}), "a listed viewer may")
+            self.assertTrue(relay.finance_may_read({"username": "sam", "role": "admin"}), "an admin still may")
+            self.assertFalse(relay.finance_may_read({"username": "sitter", "role": "viewer"}))
         finally:
             relay.FINANCE_USERS = saved
 
@@ -2788,6 +2789,7 @@ class FinanceSheetRoute(unittest.TestCase):
     VALUES = {"valueRanges": [{"values": [["Flow In", "Alex"]]}]}
 
     def setUp(self):
+        self.response = types.SimpleNamespace(headers={})
         self.saved = (relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, dict(relay._finance_cache))
         relay.FINANCE_SHEET_ID = "sheet123"
         relay.require_finance_user = lambda request: "alex"
@@ -2802,7 +2804,8 @@ class FinanceSheetRoute(unittest.TestCase):
         relay._finance_cache.update(cache)
 
     def test_reads_only_the_grid_tabs_unformatted(self):
-        body = relay.get_finance_sheet(object())
+        body = relay.get_finance_sheet(object(), self.response)
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
         self.assertEqual([["Flow In", "Alex"]], body["sheets"][0]["values"])
         meta_url, meta_params = self.sheets.calls[0]
         self.assertTrue(meta_url.endswith("/sheet123"))
@@ -2813,37 +2816,37 @@ class FinanceSheetRoute(unittest.TestCase):
         self.assertIn(("valueRenderOption", "UNFORMATTED_VALUE"), params)
 
     def test_a_minute_of_cache_that_a_refresh_skips_but_not_within_seconds(self):
-        relay.get_finance_sheet(object())
-        relay.get_finance_sheet(object())
+        relay.get_finance_sheet(object(), self.response)
+        relay.get_finance_sheet(object(), self.response)
         self.assertEqual(2, len(self.sheets.calls))
-        relay.get_finance_sheet(object(), refresh=True)
+        relay.get_finance_sheet(object(), self.response, refresh=True)
         self.assertEqual(2, len(self.sheets.calls), "a refresh within the minimum interval is served from memory")
         relay._finance_cache["at"] -= relay.FINANCE_MIN_REFRESH_SECONDS + 1
-        relay.get_finance_sheet(object(), refresh=True)
+        relay.get_finance_sheet(object(), self.response, refresh=True)
         self.assertEqual(4, len(self.sheets.calls))
 
     def test_a_failure_is_answered_from_memory_for_a_few_seconds(self):
         self.sheets.meta = (403, {"error": {"message": "The caller does not have permission", "status": "PERMISSION_DENIED"}})
         for _ in range(3):
             with self.assertRaises(relay.HTTPException) as caught:
-                relay.get_finance_sheet(object())
+                relay.get_finance_sheet(object(), self.response)
             self.assertEqual("not_shared", caught.exception.detail["error"])
         self.assertEqual(1, len(self.sheets.calls))
         relay._finance_cache["failed_at"] -= relay.FINANCE_MIN_REFRESH_SECONDS + 1
         self.sheets.meta = (200, self.META)
-        self.assertEqual("Budget", relay.get_finance_sheet(object())["title"])
+        self.assertEqual("Budget", relay.get_finance_sheet(object(), self.response)["title"])
 
     def test_an_unreachable_google_is_a_502_without_the_details(self):
         self.sheets.meta = (200, ConnectionError("https://sheets.googleapis.com/v4/spreadsheets/sheet123 refused"))
         with self.assertRaises(relay.HTTPException) as caught:
-            relay.get_finance_sheet(object())
+            relay.get_finance_sheet(object(), self.response)
         self.assertEqual(502, caught.exception.status_code)
         self.assertNotIn("sheet123", caught.exception.detail["message"])
 
     def test_no_sheet_configured(self):
         relay.FINANCE_SHEET_ID = ""
         with self.assertRaises(relay.HTTPException) as caught:
-            relay.get_finance_sheet(object())
+            relay.get_finance_sheet(object(), self.response)
         self.assertEqual((503, "not_configured"), (caught.exception.status_code, caught.exception.detail["error"]))
 
     def test_a_read_stuck_on_google_is_not_queued_behind(self):
@@ -2852,7 +2855,7 @@ class FinanceSheetRoute(unittest.TestCase):
         relay.FINANCE_LOCK_SECONDS = 0.05
         relay._finance_lock.acquire()
         try:
-            self.assertEqual("stale", relay.get_finance_sheet(object())["title"])
+            self.assertEqual("stale", relay.get_finance_sheet(object(), self.response)["title"])
         finally:
             relay._finance_lock.release()
             relay.FINANCE_LOCK_SECONDS = saved

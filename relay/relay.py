@@ -4643,8 +4643,8 @@ async def google_signal(camera: str, request: Request) -> Response:
 # change.
 #
 # It's the household's money, not the cameras: a Frigate *viewer* account (a sitter, a guest) gets
-# no further than a 403. Only Frigate admins may read it, or — when FINANCE_USERS is set — only the
-# Frigate usernames it lists.
+# no further than a 403. Frigate admins may read it, and so may any username FINANCE_USERS lists
+# (a household member whose Frigate login is a viewer).
 #
 # Setup, once: switch on the Google Sheets API for the key's Cloud project, share the sheet with
 # the key's `client_email` (read-only), and set FINANCE_SHEET_ID (in finance.env on the box; the
@@ -4672,10 +4672,8 @@ _finance_google: dict[str, Any] = {"session": None, "account": None}
 
 
 def finance_may_read(profile: dict[str, Any]) -> bool:
-    """Whether Frigate's `/api/profile` answer is someone allowed the household's finances."""
-    if FINANCE_USERS:
-        return str(profile.get("username", "")) in FINANCE_USERS
-    return profile.get("role") == "admin"
+    """Whether Frigate's `/api/profile` answer is someone allowed the household's finances: an admin, or a listed user."""
+    return profile.get("role") == "admin" or str(profile.get("username", "")) in FINANCE_USERS
 
 
 def require_finance_user(request: Request) -> str:
@@ -4828,9 +4826,15 @@ def read_finance_sheet() -> dict[str, Any]:
         raise HTTPException(502, {"error": "google_error", "message": "Couldn't reach Google", "service_account": account}) from e
 
 
+# The workbook is the household's books and rides on a cookie, which doesn't stop an HTTP cache
+# keeping a copy the way an Authorization header would: every answer says not to.
+FINANCE_CACHE_CONTROL = "private, no-store"
+
+
 @app.get("/finance/sheet")
-def get_finance_sheet(request: Request, refresh: bool = False) -> dict[str, Any]:
-    """The household budget workbook (see "finance"), every grid tab. A Frigate admin (or FINANCE_USERS)."""
+def get_finance_sheet(request: Request, response: Response, refresh: bool = False) -> dict[str, Any]:
+    """The household budget workbook (see "finance"), every grid tab. A Frigate admin, or a user in FINANCE_USERS."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
     if not FINANCE_SHEET_ID:
         raise HTTPException(503, {"error": "not_configured", "message": "FINANCE_SHEET_ID isn't set on the relay"})

@@ -45,7 +45,7 @@ internal fun SheetSetupCard(issue: SheetIssue, onRetry: () -> Unit, modifier: Mo
 
         SheetProblem.NOT_CONFIGURED ->
             "Point the server at your sheet" to
-                "Set FINANCE_SHEET_ID in the relay's docker-compose.yml to the sheet's id (the long part of its URL) and restart the relay."
+                "Put FINANCE_SHEET_ID=<the sheet's id> (the long part of its URL) in relay/finance.env on the server and restart the relay. It stays out of the public docker-compose.yml."
 
         SheetProblem.NO_KEY ->
             "The server has no Google key" to

@@ -41,10 +41,14 @@ data class Quote(
     val change: Double get() = price - previousClose
     val changePercent: Double get() = if (previousClose == 0.0) 0.0 else change / previousClose * 100.0
 
-    /** Whether [nowEpochSeconds] is inside the regular session (crypto trades around the clock). */
+    /**
+     * Whether [nowEpochSeconds] is inside the regular session. A quote that came without its
+     * session times isn't known to be open, so it isn't (callers treat crypto, which trades round
+     * the clock, as open on their own).
+     */
     fun isSessionOpen(nowEpochSeconds: Long): Boolean {
-        val start = sessionStartEpochSeconds ?: return true
-        val end = sessionEndEpochSeconds ?: return true
+        val start = sessionStartEpochSeconds ?: return false
+        val end = sessionEndEpochSeconds ?: return false
         return nowEpochSeconds in start until end
     }
 }

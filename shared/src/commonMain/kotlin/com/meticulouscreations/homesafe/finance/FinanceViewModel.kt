@@ -52,6 +52,8 @@ data class FinanceUiState(
     val failedIndicators: Set<String> = emptySet(),
     /** The Treasury curve's tenors' histories, keyed by FRED id. */
     val curve: Map<String, Series> = emptyMap(),
+    /** Tenors whose fetch failed this round, so the curve can stop waiting for them. */
+    val failedTenors: Set<String> = emptySet(),
     val finance: PersonalFinance? = null,
     val financeLoading: Boolean = true,
     val sheetIssue: SheetIssue? = null,
@@ -63,6 +65,9 @@ data class FinanceUiState(
     val stress: StressScore? get() = StressScore.of(readings.values.filter { it.indicator in IndicatorCatalog.radar })
 
     val economyLoading: Boolean get() = readings.size + failedIndicators.size < IndicatorCatalog.all.size
+
+    /** Every tenor of the curve has answered, one way or the other. */
+    val curveSettled: Boolean get() = YieldCurve.tenors.all { it.fredId in curve || it.fredId in failedTenors }
 
     fun chart(symbol: String, range: ChartRange): ChartLoad? = charts[chartKey(symbol, range)]
 
@@ -122,7 +127,7 @@ class FinanceViewModel(
                 launch { fetchQuotes(maxAgeMillis = 0) },
                 launch { fetchSheet(refresh = true) },
                 launch {
-                    _uiState.update { it.copy(failedIndicators = emptySet()) }
+                    _uiState.update { it.copy(failedIndicators = emptySet(), failedTenors = emptySet()) }
                     fetchEconomy()
                 },
             )
@@ -189,9 +194,9 @@ class FinanceViewModel(
             IndicatorCatalog.all.forEach { indicator -> launch { fetchIndicator(indicator) } }
             YieldCurve.tenors.forEach { tenor ->
                 launch {
-                    repository.fredSeries(tenor.fredId, YieldCurve.START_DATE).onSuccess { series ->
-                        _uiState.update { it.copy(curve = it.curve + (tenor.fredId to series)) }
-                    }
+                    repository.fredSeries(tenor.fredId, YieldCurve.START_DATE)
+                        .onSuccess { series -> _uiState.update { it.copy(curve = it.curve + (tenor.fredId to series), failedTenors = it.failedTenors - tenor.fredId) } }
+                        .onFailure { _uiState.update { it.copy(failedTenors = it.failedTenors + tenor.fredId) } }
                 }
             }
         }

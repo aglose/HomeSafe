@@ -29,7 +29,8 @@ data class FinancePalette(
     val hairline: Color = Color(0xFF242628),
     val textPrimary: Color = Color(0xFFFFFFFF),
     val textSecondary: Color = Color(0xFF9BA1A6),
-    val textTertiary: Color = Color(0xFF5E6468),
+    /** At least 4.5:1 on the background and on cards: it carries the small print and the chart axes. */
+    val textTertiary: Color = Color(0xFF777E82),
     val gain: Color = Color(0xFF00C805),
     val loss: Color = Color(0xFFFF5000),
     /** Robinhood's newer neon, for highlights that aren't up or down. */
