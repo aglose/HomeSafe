@@ -19,6 +19,7 @@ import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
 import com.meticulouscreations.homesafe.finance.domain.ChartDomain
+import com.meticulouscreations.homesafe.finance.domain.ChartHealth
 import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
@@ -32,13 +33,18 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
+import com.meticulouscreations.homesafe.finance.domain.ParseNote
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Quote
+import com.meticulouscreations.homesafe.finance.domain.SectionHealth
+import com.meticulouscreations.homesafe.finance.domain.SectionStatus
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetChart
 import com.meticulouscreations.homesafe.finance.domain.SheetChartKind
 import com.meticulouscreations.homesafe.finance.domain.SheetChartSeries
+import com.meticulouscreations.homesafe.finance.domain.SheetHealth
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
+import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
@@ -233,6 +239,24 @@ internal object FinanceFixtures {
         )
     }
 
+    /** A sync after some reorganising: one title renamed, one block emptied, a row without a date, a chart on a deleted tab. */
+    val troubledHealth = SheetHealth(
+        sections = SheetSection.entries.map { section ->
+            when (section) {
+                SheetSection.EXPENSES -> SectionHealth(section, SectionStatus.MISSING, null)
+                SheetSection.VESTING -> SectionHealth(section, SectionStatus.EMPTY, null)
+                SheetSection.HISTORY -> SectionHealth(section, SectionStatus.OK, "25 snapshots")
+                else -> SectionHealth(section, SectionStatus.OK, "read")
+            }
+        },
+        charts = listOf(
+            ChartHealth("Total Assets", "Home", null),
+            ChartHealth("Total Debt", "Home", null),
+            ChartHealth("Income", "Forecasts", "It plots “Forecasts”, which the sheet no longer has"),
+        ),
+        notes = listOf(ParseNote(SheetSection.HISTORY, "1 row in the history has figures but no date, so it was left out")),
+    )
+
     val state = FinanceUiState(
         quotes = quotes,
         readings = readings,
@@ -266,6 +290,30 @@ private fun FinanceSheetChartsPreview() {
     FinanceStage {
         Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             FinanceFixtures.finance.charts.forEach { SheetChartCard(it) }
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FinanceSheetSyncPreview() {
+    FinanceStage {
+        SheetSyncScreen(
+            FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)),
+            previewPadding,
+            onSyncNow = {},
+        )
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 200)
+@Composable
+private fun FinanceSheetSyncLinesPreview() {
+    FinanceStage {
+        Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SheetSyncLine(FinanceFixtures.state, onOpen = {})
+            SheetSyncLine(FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)), onOpen = {})
+            SheetSyncLine(FinanceFixtures.state.copy(sheetIssue = SheetIssue(SheetProblem.OTHER, "Google didn't answer", null, null)), onOpen = {})
         }
     }
 }

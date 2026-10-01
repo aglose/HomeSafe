@@ -10,6 +10,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -61,6 +62,7 @@ class SheetChartReaderTest {
         assertEquals(ChartValueFormat.MONEY, chart.series.single().format)
         assertEquals("https://docs.google.com/spreadsheets/d/x/edit#gid=12", chart.sourceUrl)
         assertTrue(chart.isDrawable)
+        assertNull(chart.issue)
     }
 
     @Test
@@ -212,6 +214,9 @@ class SheetChartReaderTest {
         assertEquals("Chart on T", charts[0].title)
         assertEquals("https://docs.google.com/spreadsheets/d/x/edit", charts[0].sourceUrl, "no tab id: the sheet itself")
         assertTrue(charts.none { it.isDrawable })
+        assertEquals("A waterfall chart isn't one the app draws", charts[0].issue)
+        assertEquals("The cells it plots are empty", charts[1].issue)
+        assertEquals("It plots “Gone”, which the sheet no longer has", charts[2].issue)
     }
 
     @Test

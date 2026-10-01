@@ -51,6 +51,33 @@ does:
 So a chart added, edited or removed in the sheet changes the app on the next refresh, with no change
 to the app or the relay.
 
+### Keeping in sync
+
+The app reads the sheet whenever Finance (or the drawer) opens, every two minutes while it's on
+screen, and on a pull to refresh. The relay keeps a read for a minute and the app for two, so an
+edit shows within a few minutes, or at once with a pull.
+
+Reorganising the sheet is expected. Each part is found by its title, so moving a part around its
+tab, inserting or deleting rows and columns, a few blank rows inside a block or the history, and the
+people's columns sitting a few columns away from a block's title are all fine. Renaming a part's
+title is what loses it, and so is moving a Home part to another tab: the Home parts are read from
+the tab that has "Brokerage Accounts" (or "Monthly Cash Flow"), Income & taxes from the tab with the
+"Year" / "Take Home" table, and so on. Renaming a tab is fine.
+
+Every read also builds a report (`SheetHealth`): each part read, empty (its title is there, nothing
+under it could be read) or missing (no title), each chart drawn or why not (a kind the app doesn't
+draw, empty cells, a tab that's gone), and rows the parser had to leave out (a history row with no
+date). The Wallet's first line shows it:
+
+- green, "Synced 3 min ago · everything read";
+- amber, "Synced · 2 things need a look", when a part or a chart couldn't be read;
+- red, "Couldn't sync · showing the sheet from 2 h ago", when the last read failed. The page keeps
+  the last read that worked rather than going blank.
+
+Tapping it opens **Sheet sync**, which lists every part with what it found ("22 lines", "25
+snapshots") or the title it looks for, every chart, and anything left out, with Sync now and Open the
+sheet.
+
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add
 their username to `FINANCE_USERS` (comma-separated) in `finance.env`. Admins keep access either
