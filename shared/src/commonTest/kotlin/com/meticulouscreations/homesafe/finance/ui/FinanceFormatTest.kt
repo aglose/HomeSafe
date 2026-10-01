@@ -119,4 +119,18 @@ class FinanceFormatTest {
         assertEquals("−250K", FinanceFormat.indicatorChange(-250.4, IndicatorUnit.THOUSANDS))
         assertEquals("+0.02", FinanceFormat.indicatorChange(0.015, IndicatorUnit.INDEX))
     }
+
+    @Test
+    fun agoChangesUnitAtEachThresholdAndNeverGoesNegative() {
+        val now = 1_790_000_000L
+        assertEquals("just now", FinanceFormat.ago(now, now))
+        assertEquals("just now", FinanceFormat.ago(now, now - 59))
+        assertEquals("1 min ago", FinanceFormat.ago(now, now - 60))
+        assertEquals("59 min ago", FinanceFormat.ago(now, now - 3_599))
+        assertEquals("1 h ago", FinanceFormat.ago(now, now - 3_600))
+        assertEquals("35 h ago", FinanceFormat.ago(now, now - (36 * 3_600 - 1)))
+        val then = now - 36 * 3_600
+        assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)), FinanceFormat.ago(now, then), "a day and a half on, the date")
+        assertEquals("just now", FinanceFormat.ago(now, now + 600), "a clock a little ahead of the relay's isn't the future")
+    }
 }
