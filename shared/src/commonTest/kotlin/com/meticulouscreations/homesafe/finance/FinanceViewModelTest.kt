@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.finance
 
+import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
@@ -25,6 +26,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -64,9 +66,12 @@ class FinanceViewModelTest {
             return Result.success(IndicatorReading(indicator, Series.Empty))
         }
 
+        /** What each read of the sheet answers; by default, not shared. */
+        var sheet: () -> Result<PersonalFinance> = { Result.failure(SheetUnavailableException(SheetProblem.NOT_SHARED, "share it")) }
+
         override suspend fun personalFinance(refresh: Boolean): Result<PersonalFinance> {
             sheetCalls++
-            return Result.failure(SheetUnavailableException(SheetProblem.NOT_SHARED, "share it"))
+            return sheet()
         }
     }
 
@@ -88,6 +93,51 @@ class FinanceViewModelTest {
         assertEquals(IndicatorCatalog.all.size, repo.indicatorCalls, "the full app asks for every reading, once")
         assertEquals(1, repo.sheetCalls, "and doesn't ask for the sheet again")
         vm.setActive(false)
+    }
+
+    @Test
+    fun theSheetIsAskedForOnEveryOpeningAndEveryCoupleOfMinutesWhileOpen() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val ticking = object : Clock {
+            override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
+        }
+        val vm = FinanceViewModel(repo, ticking)
+        vm.setActive(true)
+        runCurrent()
+        assertEquals(1, repo.sheetCalls)
+        // Quotes poll every minute with no market open; the sheet rides along every two.
+        advanceTimeBy(3 * 60_000L + 1)
+        assertEquals(2, repo.sheetCalls, "asked again while open")
+
+        vm.setActive(false)
+        runCurrent()
+        vm.setActive(true)
+        runCurrent()
+        assertEquals(3, repo.sheetCalls, "and again on opening")
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aFailedSyncKeepsTheLastReadAndSaysSo() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
+        repo.sheet = { Result.success(read) }
+        val vm = FinanceViewModel(repo, clock)
+        vm.retrySheet()
+        runCurrent()
+        assertEquals(read, vm.uiState.value.finance)
+        assertNull(vm.uiState.value.sheetIssue)
+
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.OTHER, "Google is down")) }
+        vm.retrySheet()
+        runCurrent()
+        assertEquals(read, vm.uiState.value.finance, "the last read stays on screen")
+        assertEquals("Google is down", vm.uiState.value.sheetIssue?.message)
+
+        repo.sheet = { Result.success(read) }
+        vm.retrySheet()
+        runCurrent()
+        assertNull(vm.uiState.value.sheetIssue, "and the warning goes once a sync works")
     }
 
     @Test

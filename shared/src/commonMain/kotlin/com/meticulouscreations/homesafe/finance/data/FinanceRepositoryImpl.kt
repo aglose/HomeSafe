@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.finance.domain.ChartHealth
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
@@ -109,8 +110,9 @@ class FinanceRepositoryImpl(
             // Dozens of passes over a thousand-row grid: off the main thread.
             withContext(Dispatchers.Default) {
                 val grids = wb.grids()
-                PersonalFinanceParser.parse(wb.title, wb.fetchedAt.toLong(), grids, wb.url)
-                    .copy(charts = SheetChartReader.read(wb.charts, grids, wb.url))
+                val finance = PersonalFinanceParser.parse(wb.title, wb.fetchedAt.toLong(), grids, wb.url)
+                val charts = SheetChartReader.read(wb.charts, grids, wb.url)
+                finance.copy(charts = charts, health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }))
             }
         }.onSuccess { sheet = TimeSource.Monotonic.markNow() to it }
     }
@@ -118,7 +120,7 @@ class FinanceRepositoryImpl(
     private companion object {
         const val FRED_CONCURRENCY = 6
         const val FRED_MAX_AGE_MS = 3 * 60 * 60_000L
-        const val SHEET_MAX_AGE_MS = 5 * 60_000L
+        const val SHEET_MAX_AGE_MS = 2 * 60_000L
         const val UNKNOWN_SYMBOL_MS = 10 * 60_000L
     }
 }

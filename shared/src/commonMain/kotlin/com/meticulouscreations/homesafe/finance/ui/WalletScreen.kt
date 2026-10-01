@@ -88,9 +88,11 @@ internal fun WalletScreen(
     contentPadding: PaddingValues,
     onOpenQuote: (String) -> Unit,
     onRetrySheet: () -> Unit,
+    onOpenSync: () -> Unit = {},
 ) {
     val finance = state.finance
     LazyColumn(state = listState, contentPadding = contentPadding) {
+        if (finance != null) item(key = "sync") { SheetSyncLine(state, onOpenSync, Modifier.padding(top = 4.dp)) }
         when {
             finance != null -> walletItems(finance, state)
             state.financeLoading -> item(key = "loading") { WalletSkeleton() }

@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.Owner
+import com.meticulouscreations.homesafe.finance.domain.SectionStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -58,8 +60,7 @@ class PersonalFinanceParserTest {
 
     // ---- The "Home" tab ------------------------------------------------------------------------
 
-    private val homeGrid = sheetGrid(
-        "Home",
+    private val homeCells: Map<String, Any> =
         mapOf(
             "A3" to "Monthly Cash Flow", "I3" to "Savings", "M3" to "Future Holdings",
 
@@ -149,9 +150,9 @@ class PersonalFinanceParserTest {
             "S61" to 43796.0, "T61" to -13420.0, "U61" to 17850.0, "V61" to 3680.0, "W61" to 463200.0, "Z61" to -1298500.0,
             "S62" to 44000.0, "T62" to -14650.0, "U62" to 18320.0, "V62" to 3120.0, "W62" to 548700.0, "Z62" to -1298400.0,
             "S63" to 44200.0, "T63" to -15870.0, "U63" to 18990.0, "V63" to 2740.0, "W63" to 634900.0, "Z63" to -1211300.0,
-        ),
-        merges = listOf("J6:K6", "J20:K20"),
-    )
+        )
+    private val homeMerges = listOf("J6:K6", "J20:K20")
+    private val homeGrid = sheetGrid("Home", homeCells, homeMerges)
 
     // ---- The "Forecasts" tab: a distractor "Year" table above the real one -------------------
 
@@ -438,6 +439,85 @@ class PersonalFinanceParserTest {
         assertEquals(emptyList(), empty.taxYears)
         assertNull(empty.mortgagePlan)
         assertNull(empty.oldHouse)
+    }
+
+    // ---- Rearranging the sheet -------------------------------------------------------------
+
+    private fun ref(row: Int, col: Int): String {
+        var n = col + 1
+        var letters = ""
+        while (n > 0) {
+            val rem = (n - 1) % 26
+            letters = ('A' + rem) + letters
+            n = (n - 1) / 26
+        }
+        return "$letters${row + 1}"
+    }
+
+    /** The Home tab with [n] blank rows inserted before (0-based) [at], as inserting rows in Sheets does. */
+    private fun homeWithRows(at: Int, n: Int): SheetGrid {
+        fun move(r: String) = a1(r).let { (row, col) -> ref(if (row >= at) row + n else row, col) }
+        return sheetGrid("Home", homeCells.mapKeys { (k, _) -> move(k) }, homeMerges.map { m -> m.split(":").joinToString(":") { move(it) } })
+    }
+
+    /** The Home tab with [n] blank columns inserted before (0-based) [at]. */
+    private fun homeWithColumns(at: Int, n: Int): SheetGrid {
+        fun move(r: String) = a1(r).let { (row, col) -> ref(row, if (col >= at) col + n else col) }
+        return sheetGrid("Home", homeCells.mapKeys { (k, _) -> move(k) }, homeMerges.map { m -> m.split(":").joinToString(":") { move(it) } })
+    }
+
+    private fun parseWith(home: SheetGrid) = PersonalFinanceParser.parse("Budget", 0L, listOf(home, forecastsGrid, newHouseGrid, oldHouseGrid))
+
+    @Test
+    fun theFixtureReadsEveryPartWithNothingToFlag() {
+        assertEquals(0, finance.health.problemCount, finance.health.toString())
+        assertTrue(finance.health.sections.all { it.status == SectionStatus.OK })
+        assertEquals("3 snapshots", finance.health.sections.first { it.section == SheetSection.HISTORY }.found)
+    }
+
+    @Test
+    fun blankRowsInsideTheBlocksAndTheHistoryAreSkippedNotTakenAsTheirEnd() {
+        // Three blank rows inside the accounts, expenses and vesting blocks, side by side in the same rows.
+        val gapped = parseWith(homeWithRows(at = 7, n = 3))
+        assertEquals(finance.accounts, gapped.accounts)
+        assertEquals(finance.expenses, gapped.expenses)
+        assertEquals(finance.vesting, gapped.vesting)
+        // A blank row in the middle of the history.
+        val history = parseWith(homeWithRows(at = 61, n = 1))
+        assertEquals(finance.history, history.history)
+        assertEquals(0, history.health.problemCount)
+    }
+
+    @Test
+    fun columnsInsertedBetweenATitleAndThePeoplesColumnsDoNotLoseThem() {
+        // Two columns between "Brokerage Accounts" (I) and Alex's and Sam's columns.
+        val shifted = parseWith(homeWithColumns(at = 9, n = 2))
+        fun brokerage(f: com.meticulouscreations.homesafe.finance.domain.PersonalFinance) =
+            f.accounts.filter { it.category != AccountCategory.HOME && it.category != AccountCategory.CASH }.map { it.name to it.owner }
+        assertEquals(brokerage(finance), brokerage(shifted))
+        assertEquals(finance.debts.map { it.name to it.owner }, parseWith(homeWithColumns(at = 5, n = 2)).debts.map { it.name to it.owner })
+    }
+
+    @Test
+    fun aRowWithFiguresButNoDateIsLeftOutOfTheHistoryAndSaysSo() {
+        val cells = homeCells - "S62"
+        val read = parseWith(sheetGrid("Home", cells, homeMerges))
+        assertEquals(2, read.history.size)
+        assertEquals(SheetSection.HISTORY, read.health.notes.single().section)
+        assertTrue("no date" in read.health.notes.single().message)
+    }
+
+    @Test
+    fun aRenamedTitleIsMissingAndATitleWithNothingUnderItIsEmpty() {
+        val renamed = parseWith(sheetGrid("Home", homeCells + ("E5" to "Spending"), homeMerges))
+        val expenses = renamed.health.sections.first { it.section == SheetSection.EXPENSES }
+        assertEquals(SectionStatus.MISSING, expenses.status)
+        assertNull(expenses.found)
+        assertEquals(1, renamed.health.problemCount)
+
+        // "Future Holdings" still there, but its "Type" heading gone: nothing can be read under it.
+        val headless = parseWith(sheetGrid("Home", homeCells - "N5", homeMerges))
+        assertEquals(SectionStatus.EMPTY, headless.health.sections.first { it.section == SheetSection.VESTING }.status)
     }
 
     // ---- The small internal helpers, directly ----------------------------------------------

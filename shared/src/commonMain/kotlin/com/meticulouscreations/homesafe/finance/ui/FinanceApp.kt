@@ -105,6 +105,9 @@ internal sealed interface FinanceDetail {
     data class QuotePage(val symbol: String) : FinanceDetail
 
     data class IndicatorPage(val id: String) : FinanceDetail
+
+    /** How the budget sheet's last sync went, part by part. */
+    data object SheetSync : FinanceDetail
 }
 
 /**
@@ -167,12 +170,26 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                     contentKey = { it },
                 ) { page ->
                     when (page) {
-                        FinanceTab.WALLET -> WalletScreen(state, listStates.getValue(FinanceTab.WALLET), padding, onOpenQuote = { details += FinanceDetail.QuotePage(it) }, onRetrySheet = viewModel::retrySheet)
+                        FinanceTab.WALLET -> WalletScreen(
+                            state,
+                            listStates.getValue(FinanceTab.WALLET),
+                            padding,
+                            onOpenQuote = { details += FinanceDetail.QuotePage(it) },
+                            onRetrySheet = viewModel::retrySheet,
+                            onOpenSync = { details += FinanceDetail.SheetSync },
+                        )
+
                         FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { details += FinanceDetail.QuotePage(it) }
+
                         FinanceTab.ECONOMY -> EconomyScreen(state, listStates.getValue(FinanceTab.ECONOMY), padding) { details += FinanceDetail.IndicatorPage(it) }
+
                         FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { details += FinanceDetail.IndicatorPage(it) }
+
                         is FinanceDetail.QuotePage -> QuoteDetailScreen(page.symbol, state, detailPadding, viewModel::requestHistory)
+
                         is FinanceDetail.IndicatorPage -> IndicatorDetailScreen(page.id, state, detailPadding)
+
+                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
                     }
                 }
             }
@@ -207,6 +224,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
 private fun titleOf(detail: FinanceDetail): String = when (detail) {
     is FinanceDetail.QuotePage -> MarketCatalog.lookup(detail.symbol).shortName
     is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.shortTitle ?: ""
+    FinanceDetail.SheetSync -> "Sheet sync"
 }
 
 /**

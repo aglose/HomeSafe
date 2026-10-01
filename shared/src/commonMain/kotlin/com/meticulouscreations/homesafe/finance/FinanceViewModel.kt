@@ -99,7 +99,6 @@ class FinanceViewModel(
     private var pollJob: Job? = null
     private val chartTickets = HashMap<String, Int>()
     private var economyStarted = false
-    private var sheetStarted = false
 
     /** The finance app came up ([full]) or only the drawer's teaser did; false when both are gone. */
     fun setActive(active: Boolean, full: Boolean = true) {
@@ -108,11 +107,12 @@ class FinanceViewModel(
             pollJob = null
             return
         }
-        if (pollJob?.isActive != true) pollJob = viewModelScope.launch { pollQuotes() }
-        if (!sheetStarted) {
-            // The sheet decides the watchlist, so it's asked for even by the teaser (it's cached).
-            sheetStarted = true
+        if (pollJob?.isActive != true) {
+            // Each time the drawer or the app comes up, the sheet is asked for again (the
+            // repository answers from its cache for a couple of minutes), so an edit made since
+            // shows without a pull to refresh. The sheet decides the watchlist, so even the teaser asks.
             loadSheet(refresh = false)
+            pollJob = viewModelScope.launch { poll() }
         }
         if (full && !economyStarted) {
             economyStarted = true
@@ -164,10 +164,16 @@ class FinanceViewModel(
         }
     }
 
-    private suspend fun pollQuotes() {
+    /** Quotes every 15 s while a market is open (a minute when not), and the sheet every couple of minutes, while on screen. */
+    private suspend fun poll() {
+        var sheetAskedAt = clock.now().epochSeconds
         while (currentCoroutineContext().isActive) {
             fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
             val now = clock.now().epochSeconds
+            if (now - sheetAskedAt >= SHEET_POLL_SECONDS) {
+                sheetAskedAt = now
+                fetchSheet(refresh = false)
+            }
             val anyOpen = _uiState.value.quotes.values.any { !it.symbol.endsWith("-USD") && it.isSessionOpen(now) }
             delay(if (anyOpen) QUOTE_POLL_OPEN_MS else QUOTE_POLL_CLOSED_MS)
         }
@@ -233,5 +239,6 @@ class FinanceViewModel(
     private companion object {
         const val QUOTE_POLL_OPEN_MS = 15_000L
         const val QUOTE_POLL_CLOSED_MS = 60_000L
+        const val SHEET_POLL_SECONDS = 120L
     }
 }

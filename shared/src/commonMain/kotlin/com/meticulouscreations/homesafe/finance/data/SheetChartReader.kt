@@ -53,7 +53,10 @@ object SheetChartReader {
             series = emptyList(),
             sourceUrl = link,
         )
-        if (kind == SheetChartKind.OTHER) return base.withTitle(null)
+        if (kind == SheetChartKind.OTHER) {
+            val name = chart.kind.lowercase().replace('_', ' ').takeUnless { it == "other" }
+            return base.withTitle(null).copy(issue = "${name?.let { "A $it chart" } ?: "This kind of chart"} isn't one the app draws")
+        }
 
         // A domain plotted again as a series of its own (Sheets allows it; dates as bars) isn't data.
         val plotted = chart.series.filterNot { chart.domain.isNotEmpty() && it.ranges == chart.domain }
@@ -102,7 +105,19 @@ object SheetChartReader {
             domainOut = ChartDomain.Categories(slices.map { labels[it] })
             series = series.take(1).map { s -> s.copy(values = slices.map { s.values[it] }) }
         }
-        return base.copy(domain = domainOut, series = series).withTitle(series.singleOrNull()?.label)
+        val drawn = base.copy(domain = domainOut, series = series).withTitle(series.singleOrNull()?.label)
+        return if (drawn.isDrawable) drawn else drawn.copy(issue = emptyReason(chart, grids))
+    }
+
+    /** Why a chart of a kind the app draws has nothing to draw. */
+    private fun emptyReason(chart: RelayChart, grids: Map<String, SheetGrid>): String {
+        val tabs = (chart.domain + chart.series.flatMap { it.ranges }).map { it.sheet }.distinct()
+        val gone = tabs.filter { it !in grids }
+        return when {
+            chart.series.isEmpty() -> "It has no data ranges"
+            gone.isNotEmpty() -> "It plots ${gone.joinToString { "“$it”" }}, which the sheet no longer has"
+            else -> "The cells it plots are empty"
+        }
     }
 
     /** A chart without a title is named after its one series, or its tab. */

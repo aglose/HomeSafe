@@ -77,6 +77,8 @@ data class SheetChart(
     val series: List<SheetChartSeries>,
     /** The chart's tab in Google Sheets, when the relay gave the sheet's address. */
     val sourceUrl: String?,
+    /** Why the chart can't be drawn, in a sentence, when it can't. */
+    val issue: String? = null,
 ) {
     /** Whether some series are drawn against the right-hand scale and some against the left. */
     val isDualAxis: Boolean get() = series.any { it.rightAxis } && series.any { !it.rightAxis }
