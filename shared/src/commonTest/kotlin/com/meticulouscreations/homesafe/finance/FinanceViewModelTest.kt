@@ -69,8 +69,12 @@ class FinanceViewModelTest {
         /** What each read of the sheet answers; by default, not shared. */
         var sheet: () -> Result<PersonalFinance> = { Result.failure(SheetUnavailableException(SheetProblem.NOT_SHARED, "share it")) }
 
+        /** When set, every read of the sheet waits on it: a relay that's slow to answer. */
+        var slowSheet: CompletableDeferred<Result<PersonalFinance>>? = null
+
         override suspend fun personalFinance(refresh: Boolean): Result<PersonalFinance> {
             sheetCalls++
+            slowSheet?.let { return it.await() }
             return sheet()
         }
     }
@@ -105,7 +109,7 @@ class FinanceViewModelTest {
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
-        // Quotes poll every minute with no market open; the sheet rides along every two.
+        // Every two minutes while open, on its own loop.
         advanceTimeBy(3 * 60_000L + 1)
         assertEquals(2, repo.sheetCalls, "asked again while open")
 
@@ -115,6 +119,33 @@ class FinanceViewModelTest {
         runCurrent()
         assertEquals(3, repo.sheetCalls, "and again on opening")
         vm.setActive(false)
+    }
+
+    @Test
+    fun aSlowSheetReadDoesNotHoldUpTheQuotes() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val never = CompletableDeferred<Result<PersonalFinance>>()
+        repo.slowSheet = never
+        val vm = FinanceViewModel(repo, clock)
+        vm.setActive(true)
+        runCurrent()
+        val first = repo.quoteCalls
+        advanceTimeBy(3 * 60_000L + 1)
+        assertTrue(repo.quoteCalls >= first + 3, "quotes kept polling while the sheet hung")
+        assertEquals(1, repo.sheetCalls, "and the sheet isn't asked again over a read still in flight")
+        vm.setActive(false)
+    }
+
+    @Test
+    fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.slowSheet = CompletableDeferred()
+        val vm = FinanceViewModel(repo, clock)
+        vm.setActive(true)
+        runCurrent()
+        vm.setActive(false)
+        runCurrent()
+        assertNull(vm.uiState.value.sheetIssue)
     }
 
     @Test

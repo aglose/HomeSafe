@@ -520,6 +520,36 @@ class PersonalFinanceParserTest {
         assertEquals(SectionStatus.EMPTY, headless.health.sections.first { it.section == SheetSection.VESTING }.status)
     }
 
+    @Test
+    fun titlesThatAreAlsoColumnHeadingsElsewhereStillShowAsMissingWhenRenamed() {
+        // The history's header row has "Total Assets" and "Debt" too; they aren't the summary's or the debt block's titles.
+        val renamed = parseWith(sheetGrid("Home", homeCells + ("A40" to "Assets") + ("E37" to "Owed"), homeMerges))
+        val status = renamed.health.sections.associate { it.section to it.status }
+        assertEquals(SectionStatus.MISSING, status[SheetSection.TOTAL_ASSETS])
+        assertEquals(SectionStatus.MISSING, status[SheetSection.DEBTS])
+        assertNull(renamed.totalAssets, "and the history's heading isn't read as the total")
+    }
+
+    @Test
+    fun aRenamedFlowInLosesTheIncomeButNotTheDebtsBesideTheirOwnNames() {
+        val renamed = parseWith(sheetGrid("Home", homeCells + ("A5" to "Money In"), homeMerges))
+        val status = renamed.health.sections.associate { it.section to it.status }
+        assertEquals(SectionStatus.MISSING, status[SheetSection.INCOME])
+        assertEquals(SectionStatus.OK, status[SheetSection.DEBTS])
+        assertEquals(finance.debts, renamed.debts)
+    }
+
+    @Test
+    fun anUndatedRowRightUnderTheHistoryIsReportedButFiguresFurtherDownAreNot() {
+        val trailing = parseWith(sheetGrid("Home", homeCells + ("W64" to 701000.0), homeMerges))
+        assertEquals(3, trailing.history.size)
+        assertTrue("1 row" in trailing.health.notes.single().message)
+
+        // After a blank row, figures in the same columns are something else on the tab.
+        val below = parseWith(sheetGrid("Home", homeCells + ("W66" to 12.0), homeMerges))
+        assertEquals(emptyList(), below.health.notes)
+    }
+
     // ---- The small internal helpers, directly ----------------------------------------------
 
     @Test

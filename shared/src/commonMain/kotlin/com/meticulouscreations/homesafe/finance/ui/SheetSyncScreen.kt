@@ -18,12 +18,14 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
@@ -67,8 +69,10 @@ internal fun SheetSyncLine(state: FinanceUiState, onOpen: () -> Unit, modifier: 
     Row(
         modifier
             .padding(horizontal = PageGutter)
+            // A 48 dp touch target around the slim pill, announced as a button.
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(50))
-            .clickable(onClick = onOpen)
+            .clickable(role = Role.Button, onClickLabel = "Open sheet sync", onClick = onOpen)
             .background(if (light == SyncLight.OK) Color.Transparent else light.color().copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -224,9 +228,10 @@ private fun PillButton(text: String, color: Color, onClick: () -> Unit, modifier
         style = FinanceTheme.type.bodyStrong,
         color = color,
         modifier = modifier
+            .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(50))
             .background(color.copy(alpha = 0.12f))
-            .clickable(onClick = onClick)
+            .clickable(role = Role.Button, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
     )
 }

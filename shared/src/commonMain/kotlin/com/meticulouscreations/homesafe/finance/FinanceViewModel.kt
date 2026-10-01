@@ -21,6 +21,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -97,6 +98,7 @@ class FinanceViewModel(
     val uiState: StateFlow<FinanceUiState> = _uiState.asStateFlow()
 
     private var pollJob: Job? = null
+    private var sheetPollJob: Job? = null
     private val chartTickets = HashMap<String, Int>()
     private var economyStarted = false
 
@@ -105,14 +107,18 @@ class FinanceViewModel(
         if (!active) {
             pollJob?.cancel()
             pollJob = null
+            sheetPollJob?.cancel()
+            sheetPollJob = null
             return
         }
-        if (pollJob?.isActive != true) {
+        if (pollJob?.isActive != true) pollJob = viewModelScope.launch { pollQuotes() }
+        if (sheetPollJob?.isActive != true) {
             // Each time the drawer or the app comes up, the sheet is asked for again (the
             // repository answers from its cache for a couple of minutes), so an edit made since
-            // shows without a pull to refresh. The sheet decides the watchlist, so even the teaser asks.
-            loadSheet(refresh = false)
-            pollJob = viewModelScope.launch { poll() }
+            // shows without a pull to refresh; then every couple of minutes while it stays up. The
+            // sheet decides the watchlist, so even the teaser asks. Its own loop, so a slow read of
+            // the sheet never holds up the quotes.
+            sheetPollJob = viewModelScope.launch { pollSheet() }
         }
         if (full && !economyStarted) {
             economyStarted = true
@@ -164,16 +170,11 @@ class FinanceViewModel(
         }
     }
 
-    /** Quotes every 15 s while a market is open (a minute when not), and the sheet every couple of minutes, while on screen. */
-    private suspend fun poll() {
-        var sheetAskedAt = clock.now().epochSeconds
+    /** Quotes every 15 s while a market is open, a minute when not, while on screen. */
+    private suspend fun pollQuotes() {
         while (currentCoroutineContext().isActive) {
             fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
             val now = clock.now().epochSeconds
-            if (now - sheetAskedAt >= SHEET_POLL_SECONDS) {
-                sheetAskedAt = now
-                fetchSheet(refresh = false)
-            }
             val anyOpen = _uiState.value.quotes.values.any { !it.symbol.endsWith("-USD") && it.isSessionOpen(now) }
             delay(if (anyOpen) QUOTE_POLL_OPEN_MS else QUOTE_POLL_CLOSED_MS)
         }
@@ -188,6 +189,14 @@ class FinanceViewModel(
                 }
             }
             .onFailure { e -> _uiState.update { it.copy(quotesError = e.message ?: "Markets are unreachable") } }
+    }
+
+    /** The sheet now and then every couple of minutes, each read finishing before the next wait starts. */
+    private suspend fun pollSheet() {
+        while (currentCoroutineContext().isActive) {
+            fetchSheet(refresh = false)
+            delay(SHEET_POLL_MS)
+        }
     }
 
     private fun loadEconomy() {
@@ -224,6 +233,8 @@ class FinanceViewModel(
         repository.personalFinance(refresh)
             .onSuccess { f -> _uiState.update { it.copy(finance = f, financeLoading = false, sheetIssue = null) } }
             .onFailure { e ->
+                // A read cut short because Finance closed isn't a failed sync.
+                if (e is CancellationException) throw e
                 val issue = (e as? SheetUnavailableException)?.let { SheetIssue(it.problem, it.message.orEmpty(), it.serviceAccount, it.activationUrl) }
                     ?: SheetIssue(SheetProblem.OTHER, e.message ?: "Couldn't read the budget sheet", null, null)
                 _uiState.update { it.copy(financeLoading = false, sheetIssue = issue) }
@@ -239,6 +250,6 @@ class FinanceViewModel(
     private companion object {
         const val QUOTE_POLL_OPEN_MS = 15_000L
         const val QUOTE_POLL_CLOSED_MS = 60_000L
-        const val SHEET_POLL_SECONDS = 120L
+        const val SHEET_POLL_MS = 120_000L
     }
 }
