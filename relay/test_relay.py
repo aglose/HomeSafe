@@ -2197,6 +2197,38 @@ class PhantomTest(_FakeFrigate):
         self.assertEqual(1, len(self.filed), "one example is enough")
         self.assertEqual(1, relay.person_examples_since(0))
 
+    def test_two_phones_marking_at_once_file_one_example(self):
+        import threading
+
+        self.classifier()
+        phantom = self.person()
+        saved, started = [], threading.Event()
+        release = threading.Event()
+
+        def slow_save(model, category, jpeg, box):
+            started.set()
+            release.wait(5)  # the first mark holds here while the second arrives
+            saved.append(category)
+            return f"x{len(saved)}.png"
+
+        relay.save_classification_example = slow_save
+        fake_get = self.get
+        relay.requests.get = lambda url, params=None, timeout=None: (
+            _FrigateAnswer(200, {}) if url.endswith("/snapshot.jpg") else fake_get(url, params, timeout))
+        answers = []
+        first = threading.Thread(target=lambda: answers.append(relay.file_not_a_person(self.events[phantom])))
+        second = threading.Thread(target=lambda: answers.append(relay.file_not_a_person(self.events[phantom])))
+        first.start()
+        self.assertTrue(started.wait(5))
+        second.start()
+        second.join(0.2)
+        self.assertTrue(second.is_alive(), "the second mark waits for the first")
+        release.set()
+        first.join(5)
+        second.join(5)
+        self.assertEqual(["phantom"], saved, "one example, the one Undo knows")
+        self.assertEqual(["recording", "recording"], answers)
+
     def test_taking_a_mark_back_takes_its_example_out_of_the_dataset(self):
         self.classifier()
         phantom = self.person()

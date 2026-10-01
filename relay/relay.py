@@ -2762,15 +2762,29 @@ def file_queued_crop(model: str, category: str, training_file: str) -> str:
     return name
 
 
+# One lock per event being filed: two phones marking the same alert at once must not both file it,
+# since only the last file's name is kept and Undo could then take back just one of them.
+_filing_guard = threading.Lock()
+_filing: dict[str, threading.Lock] = {}
+
+
 def file_not_a_person(event: dict[str, Any]) -> str | None:
     """
     Files a detection someone marked "not a person" into the person classifier's PERSON_PHANTOM_CLASS:
     its newest queued crop, or else the person cut out of the recording at its last sighting, framed
     as Frigate frames a crop. Answers how ("queued", "recording"), or None when it couldn't. The
-    file's name is kept with the check, for `unfile_not_a_person`.
+    file's name is kept with the check, for `unfile_not_a_person`. Marks of the same event take
+    turns; the second finds the first's example and files nothing.
     """
     if not person_classifier_ready():
         return None
+    with _filing_guard:
+        lock = _filing.setdefault(event["id"], threading.Lock())  # kept: marks are taps, a lock each is nothing
+    with lock:
+        return _file_not_a_person(event)
+
+
+def _file_not_a_person(event: dict[str, Any]) -> str | None:
     filed = check_of(event["id"], "not-a-person")
     if filed and filed[0] == "filed":
         return filed_how(filed[1])  # marked twice (the notification's button, then the app): one example is enough

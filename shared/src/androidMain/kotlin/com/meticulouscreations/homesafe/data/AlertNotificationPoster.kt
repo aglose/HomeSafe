@@ -72,6 +72,15 @@ object AlertNotificationPoster {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>?) = size > MAX_REMEMBERED
     }
 
+    /**
+     * Alerts taken down by "Not a person": a picture or clip still on its way to one (the media
+     * worker calls [show] directly, and may be mid-download) is dropped rather than put the alert
+     * back. A new alert under the same id — the visit brought someone else — lifts it.
+     */
+    private val markedNotAPerson = object : LinkedHashSet<String>() {
+        override fun add(element: String): Boolean = super.add(element).also { if (size > MAX_REMEMBERED) remove(first()) }
+    }
+
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
@@ -117,6 +126,11 @@ object AlertNotificationPoster {
         val now = System.currentTimeMillis()
         val remembered = synchronized(firstPosted) { firstPosted[notification.id] }
         val isUpdate = notification.thumbnail != null || notification.animation != null
+        val dropped = synchronized(markedNotAPerson) {
+            if (!isUpdate) markedNotAPerson.remove(notification.id)
+            isUpdate && notification.id in markedNotAPerson
+        }
+        if (dropped) return@withContext
         val postedAt = if (!isUpdate) {
             remembered ?: now
         } else {
@@ -133,17 +147,19 @@ object AlertNotificationPoster {
         val thumbnail = notification.thumbnail?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
         val frames = notification.animation?.let { gifFrames(it) }.orEmpty()
         if (frames.size < 2) {
+            if (isUpdate && isMarkedNotAPerson(notification.id)) return@withContext // marked while its picture decoded
             notify(context, notification.id, build(context, notification, postedAt, picture = frames.firstOrNull() ?: thumbnail, largeIcon = thumbnail))
             return@withContext
         }
         animating.withLock {
             repeat(PASSES) {
                 for (frame in frames) {
-                    if (!isShowing(context, notification.id)) return@withLock
+                    if (!isShowing(context, notification.id) || isMarkedNotAPerson(notification.id)) return@withLock
                     notify(context, notification.id, build(context, notification, postedAt, picture = frame, largeIcon = thumbnail))
                     delay(FRAME_MS)
                 }
             }
+            if (isMarkedNotAPerson(notification.id)) return@withLock
             notify(context, notification.id, build(context, notification, postedAt, picture = frames[frames.size / 2], largeIcon = thumbnail))
         }
     }
@@ -219,6 +235,9 @@ object AlertNotificationPoster {
 
     /** The alert [id] is being marked: down it comes, and "Marking…" stands in until the relay answers. */
     fun showMarkingNotAPerson(context: Context, id: String, target: MomentDeepLink) {
+        synchronized(markedNotAPerson) { markedNotAPerson.add(id) }
+        // Forgotten too, so the moments-after-posting allowance in [show] can't let a picture back in.
+        synchronized(firstPosted) { firstPosted.remove(id) }
         synchronized(running) { running.remove(id)?.cancel() }
         cancel(context, id)
         confirm(context, id, target, "Marking as not a person…", cameraDisplayName(target.cameraName), action = null)
@@ -264,6 +283,8 @@ object AlertNotificationPoster {
             .build()
         notify(context, confirmTag(id), notification)
     }
+
+    private fun isMarkedNotAPerson(id: String) = synchronized(markedNotAPerson) { id in markedNotAPerson }
 
     private fun confirmTag(id: String) = "$id:not-a-person"
 
