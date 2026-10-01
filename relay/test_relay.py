@@ -2735,6 +2735,20 @@ class SummaryTest(_FakeFrigate):
         relay.summarise(self.NOON + 3 * 3600 + 40, push=self.push)
         self.assertEqual(1, len(self.pushes), "once a slot")
 
+    def test_a_summary_of_only_named_people_skips_the_phones_that_want_strangers(self):
+        familiar = []
+        push = lambda title, body, data, **kwargs: familiar.append(kwargs.get("familiar")) or {"sent": 1}
+        relay.summarise(self.NOON + 10, push=push)
+        self.kept("a", self.NOON + 600, ["person"], ["sarah"])
+        self.kept("b", self.NOON + 4000, ["person"], ["andrew"], camera="hikvision_2")
+        relay.summarise(self.NOON + 3 * 3600 + 10, push=push)
+        self.kept("c", self.NOON + 3 * 3600 + 600, ["person"], ["sarah"])
+        self.kept("d", self.NOON + 3 * 3600 + 700, ["dog"], camera="hikvision_2")
+        relay.summarise(self.NOON + 6 * 3600 + 10, push=push)
+        self.kept("e", self.NOON + 6 * 3600 + 600, ["person"])
+        relay.summarise(self.NOON + 9 * 3600 + 10, push=push)
+        self.assertEqual([True, False, False], familiar, "family only; family and a dog; a stranger")
+
     def test_nothing_kept_no_summary(self):
         relay.summarise(self.NOON + 10, push=self.push)
         relay.summarise(self.NOON + 3 * 3600 + 10, push=self.push)

@@ -314,7 +314,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.AwayBanner(onBack: kotli
     - onBack: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onDecides: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onAway: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onDecides: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAutomatic: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onRequestLocation: kotlin.Function0<kotlin.Unit>, onSetHomeHere: kotlin.Function0<kotlin.Unit>, onClearHome: kotlin.Function0<kotlin.Unit>, onRemoveDevice: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
