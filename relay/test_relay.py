@@ -357,6 +357,14 @@ class SubjectTest(unittest.TestCase):
         self.assertFalse(relay.is_unnamed_car(review("r", 0, ["car", "person"])), "its first detection may be the person")
         self.assertFalse(relay.is_unnamed_car(review("r", 0, ["truck"])), "the classifier only runs on cars")
 
+    def test_a_review_of_unnamed_people_offers_not_a_person_and_nothing_else_does(self):
+        self.assertEqual({"person_unnamed": "1"}, relay.offers(review("r", 0, ["person"])))
+        self.assertEqual({"person_unnamed": "1"}, relay.offers(review("r", 0, ["person"], ["unknown"])), "a placeholder is no name")
+        self.assertEqual({}, relay.offers(review("r", 0, ["person"], ["sarah"])), "Frigate knows the face")
+        self.assertEqual({}, relay.offers(review("r", 0, ["person", "car"])), "its first detection may be the car")
+        self.assertEqual({"car_unnamed": "1"}, relay.offers(review("r", 0, ["car"])))
+        self.assertEqual({}, relay.offers(review("r", 0, ["dog"])))
+
 
 class VisitsTest(unittest.TestCase):
     """How a run of alerts on one camera becomes one notification, and which of its pushes sound."""
@@ -2053,23 +2061,38 @@ class PhantomTest(_FakeFrigate):
         super().setUp()
         self._more = {name: getattr(relay, name) for name in (
             "PERSON_CLASSIFIER", "PERSON_CLASS_MAX", "PERSON_RETRAIN_AFTER", "require_frigate_session", "detect_sizes",
-            "save_classification_example")}
+            "save_classification_example", "file_queued_crop")}
         relay.PERSON_CLASSIFIER = ""
         relay.require_frigate_session = lambda request: "andrew"
         relay.detect_sizes = lambda: {"amcrest_1": (704, 480)}
+        self.filed, self.filed_as = [], {}  # (model, category, queued crop) as filed, and each crop's name in the dataset
+        relay.file_queued_crop = self.file_queued_crop
+
+    def file_queued_crop(self, model, category, training_file):
+        """What the real one does, without Pillow: the crop leaves the queue for the category's folder under a new name."""
+        folder = os.path.join(self._dir.name, model, "dataset", category)
+        os.makedirs(folder, exist_ok=True)
+        name = relay.dataset_file_name(category, time.time())
+        os.replace(os.path.join(self._dir.name, model, "train", training_file), os.path.join(folder, name))
+        self.filed.append((model, category, training_file))
+        self.filed_as[training_file] = name
+        return name
 
     def tearDown(self):
         for name, value in self._more.items():
             setattr(relay, name, value)
         super().tearDown()
 
-    def person(self, path=DOOR_PATH, box=DOOR_BOX, camera="amcrest_1", name=None, age=600.0, ended=True, label="person"):
+    def person(self, path=DOOR_PATH, box=DOOR_BOX, camera="amcrest_1", name=None, age=600.0, ended=True, label="person", verdict=None):
+        """A detection; [verdict] is the person classifier's (class, score), as Frigate keeps it in the event's data."""
         start = self.now - age
         event_id = f"{start:.6f}-p{len(self.events)}"
         self.events[event_id] = {
             "id": event_id, "label": label, "camera": camera, "start_time": start, "end_time": start + 3 if ended else None,
             "sub_label": name, "data": {"type": "object", "box": list(box), "path_data": [[[x, y], start + i] for i, (x, y) in enumerate(path)]},
         }
+        if verdict:
+            self.events[event_id]["data"].update({"person_check": verdict[0], "person_check_score": verdict[1]})
         return event_id
 
     def review(self, detections, objects=None, ended=True, age=600.0, camera="amcrest_1"):
@@ -2164,12 +2187,67 @@ class PhantomTest(_FakeFrigate):
         self.assertFalse(relay.was_sent("open"), "judged again next poll")
         self.assertFalse(relay.skip_phantom(dict(self.review([self.person(path=WALK_PATH)]), id="real")))
 
-    def test_a_mark_files_the_queued_crop_as_none(self):
+    def test_a_mark_files_the_queued_crop_as_a_phantom(self):
         self.classifier()
         phantom = self.person()
         crop = self.queue(phantom)
         self.assertEqual("queued", self.mark(phantom)["example"])
-        self.assertEqual([("none", crop)], self.categorized())
+        self.assertEqual([("person_check", "phantom", crop)], self.filed)
+        self.assertEqual("queued", self.mark(phantom)["example"], "marked again from the app")
+        self.assertEqual(1, len(self.filed), "one example is enough")
+        self.assertEqual(1, relay.person_examples_since(0))
+
+    def test_taking_a_mark_back_takes_its_example_out_of_the_dataset(self):
+        self.classifier()
+        phantom = self.person()
+        self.queue(phantom)
+        self.mark(phantom)
+        [(_, _, crop)] = self.filed
+        dataset = os.path.join(self._dir.name, "person_check", "dataset", "phantom")
+        self.assertEqual([self.filed_as[crop]], os.listdir(dataset))
+        answer = relay.undo_not_a_person(phantom, _Caller())
+        self.assertEqual({"ok": True, "removed": True, "unfiled": True}, answer)
+        self.assertEqual([], os.listdir(dataset))
+        self.assertEqual([self.filed_as[crop]], os.listdir(os.path.join(self._dir.name, "person_check", "undone")), "kept, not deleted")
+        self.assertEqual(0, relay.person_examples_since(0), "it no longer counts towards a retrain")
+        self.assertFalse(relay.undo_not_a_person(phantom, _Caller())["unfiled"])
+
+    def test_a_notification_marks_on_the_installs_secret(self):
+        relay.require_frigate_session = self._more["require_frigate_session"]
+        relay.with_db(lambda c: (c.execute("INSERT INTO devices (device_id, token, name, secret, platform) VALUES ('d1','t1','Pixel','s3cret','android')"), c.commit()))
+        phantom = self.person()
+        caller = _Caller(cookie=None)
+        caller.headers["authorization"] = "Bearer s3cret"
+        self.assertEqual(DOOR_BOX, relay.not_a_person(phantom, caller, device="d1")["spot"]["box"])
+        self.assertTrue(relay.undo_not_a_person(phantom, caller, device="d1")["removed"])
+        caller.headers["authorization"] = "Bearer wrong"
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.not_a_person(phantom, caller, device="d1")
+        self.assertEqual(401, refused.exception.status_code)
+        self.assertEqual([], relay.phantom_spots())
+
+    def test_a_person_who_stayed_put_and_the_classifier_calls_a_phantom_is_one_anywhere(self):
+        self.classifier()
+        elsewhere = [0.6, 0.3, 0.2, 0.4]
+        sure = self.person(box=elsewhere, verdict=("phantom", 0.95))
+        self.assertTrue(relay.is_phantom(self.events[sure], []))
+        self.assertEqual("skip", relay.phantom_verdict(self.review([sure])), "no spot needed")
+        self.assertEqual("wait", relay.phantom_verdict(self.review([sure], ended=False, age=5.0)))
+        self.assertFalse(relay.is_phantom(self.events[self.person(box=elsewhere, verdict=("phantom", 0.85))], []), "not sure enough")
+        self.assertFalse(relay.is_phantom(self.events[self.person(path=WALK_PATH, verdict=("phantom", 0.99))], []), "they walked")
+        self.assertFalse(relay.is_phantom(self.events[self.person(name="andrew", verdict=("phantom", 0.99))], []), "a face Frigate knows")
+        self.assertFalse(relay.is_phantom(self.events[self.person(verdict=("person", 0.99))], []))
+        self.assertEqual("push", relay.phantom_verdict(self.review([self.person(box=elsewhere)])), "no verdict yet")
+        relay.PERSON_CLASSIFIER = ""
+        self.assertFalse(relay.is_phantom(self.events[sure], []), "no classifier, no verdict")
+
+    def test_a_phantom_only_the_classifier_saw_is_not_filed_back_into_it(self):
+        self.classifier()
+        own = self.person(box=[0.6, 0.3, 0.2, 0.4], verdict=("phantom", 0.99))
+        self.queue(own)
+        relay.file_person_crops()
+        self.assertEqual([], self.categorized())
+        self.assertEqual("unsure", self.verdict(own, "person-check"))
 
     def test_a_mark_with_no_queued_crop_cuts_one_from_the_recording(self):
         self.classifier()
@@ -2185,21 +2263,22 @@ class PhantomTest(_FakeFrigate):
         self.assertIn("/api/amcrest_1/recordings/", url)
         self.assertEqual({"height": 480}, params, "the detect frame's size, which is what the classifier crops from")
         [(model, category, box)] = saved
-        self.assertEqual(("person_check", "none"), (model, category))
+        self.assertEqual(("person_check", "phantom"), (model, category))
         self.assertAlmostEqual(DOOR_PATH[-1][0], box[0] + box[2] / 2)
         self.assertEqual(1, relay.person_examples_since(0))
 
-    def test_queued_crops_of_phantoms_and_named_faces_are_filed_and_the_rest_left(self):
+    def test_queued_crops_of_phantoms_named_faces_and_walkers_are_filed_and_the_rest_left(self):
         self.classifier()
         self.mark(self.person())
-        phantom, face, stranger, fresh = self.person(), self.person(path=WALK_PATH, name="andrew"), self.person(path=WALK_PATH), self.person(age=10.0)
-        crops = {e: self.queue(e) for e in (phantom, face, stranger, fresh)}
+        phantom, face, walker = self.person(), self.person(name="andrew"), self.person(path=WALK_PATH)
+        standing, fresh = self.person(box=[0.6, 0.3, 0.2, 0.4]), self.person(age=10.0)
+        crops = {e: self.queue(e) for e in (phantom, face, walker, standing, fresh)}
         relay.file_person_crops()
-        self.assertEqual({("none", crops[phantom]), ("person", crops[face])}, set(self.categorized()))
-        self.assertEqual("unsure", self.verdict(stranger, "person-check"))
+        self.assertEqual({("phantom", crops[phantom]), ("person", crops[face]), ("person", crops[walker])}, set(self.categorized()))
+        self.assertEqual("unsure", self.verdict(standing, "person-check"), "stood still somewhere new: can't be told")
         self.assertIsNone(self.verdict(fresh, "person-check"), "its face may yet be named")
         relay.file_person_crops()
-        self.assertEqual(2, len(self.categorized()), "each event is judged once")
+        self.assertEqual(3, len(self.categorized()), "each event is judged once")
 
     def test_a_full_class_takes_no_more(self):
         self.classifier()
@@ -2228,15 +2307,14 @@ class PhantomTest(_FakeFrigate):
     def test_the_phantom_list_answers_every_spot(self):
         self.mark(self.person())
         self.mark(self.person(camera="hikvision_2", box=[0.5, 0.5, 0.1, 0.2]))
-        relay.authenticate = lambda request, device=None: "andrew"
+        saved, relay.authenticate = relay.authenticate, lambda request, device=None: "andrew"
         try:
             answer = relay.phantoms(_Caller())
         finally:
-            relay.authenticate = self._auth
+            relay.authenticate = saved
         self.assertEqual(["amcrest_1", "hikvision_2"], [s["camera"] for s in answer["spots"]])
         self.assertEqual(relay.PHANTOM_IOU, answer["iou"])
 
-    _auth = relay.authenticate
 
 class PresenceAuthorityTest(Devices):
     """One phone decides whether the house is empty; the rest are listed but have no say."""

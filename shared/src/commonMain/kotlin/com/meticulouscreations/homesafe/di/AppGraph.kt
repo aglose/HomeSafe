@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MomentsDao
+import com.meticulouscreations.homesafe.data.PushedAlertActions
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
@@ -99,6 +100,9 @@ interface AppGraph : ViewModelGraph {
 
     /** A pushed notification's picture and clip, for Android's messaging service (which may have woken with no session). */
     val pushedAlertMedia: PushedAlertMedia
+
+    /** A pushed notification's buttons ("Not a person", Undo), for Android's notification receiver (no session either). */
+    val pushedAlertActions: PushedAlertActions
 
     /**
      * Started once by [com.meticulouscreations.homesafe.App]. Also the entry point for what the OS

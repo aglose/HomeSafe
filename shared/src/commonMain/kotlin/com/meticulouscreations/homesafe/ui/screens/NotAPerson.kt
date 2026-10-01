@@ -29,11 +29,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
+import com.meticulouscreations.homesafe.viewmodel.LandedPersonUiState
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
 
 /*
@@ -131,6 +133,63 @@ internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismi
     }
 }
 
+/**
+ * On the camera screen a detection opened, when its person is one nobody named: was anyone there?
+ * [state] says which moment, and the mark is a tap away; once made it says what it did and offers
+ * Undo, and a mark or Undo that didn't land says why. Nothing while [state] has no detection.
+ */
+@Composable
+internal fun NotAPersonPrompt(state: LandedPersonUiState, onMark: () -> Unit, onUndo: () -> Unit, modifier: Modifier = Modifier) {
+    if (state.eventId == null) return
+    val shape = RoundedCornerShape(16.dp)
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
+            .padding(start = 16.dp, end = if (state.marked) 4.dp else 12.dp, top = 12.dp, bottom = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier.size(32.dp).background(MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.PersonOff,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = if (state.marked) "Marked not a person" else "Was anyone there?",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            val error = state.error
+            Text(
+                text = when {
+                    error != null -> error
+                    state.marked -> "${state.cameraDisplayName} won't alert for this again."
+                    else -> state.summary
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (state.marked) {
+            TextButton(onClick = onUndo, enabled = !state.isSaving) { Text("Undo") }
+        } else {
+            NotAPersonButton(onClick = onMark, marking = state.isSaving)
+        }
+    }
+}
+
 private val previewMarked = MomentEvent(
     id = "1790655519.294717-p1",
     cameraName = "amcrest_1",
@@ -151,6 +210,20 @@ private fun NotAPersonButtonPreview() {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             NotAPersonButton(onClick = {})
             NotAPersonButton(onClick = {}, marking = true)
+        }
+    }
+}
+
+/** The camera screen's prompt: asking, marked with Undo, and a mark that didn't land. */
+@Preview(name = "Not a person prompt", widthDp = 360)
+@Composable
+private fun NotAPersonPromptPreview() {
+    val asking = LandedPersonUiState(eventId = previewMarked.id, summary = "Person at the front door · 4:23 PM", cameraDisplayName = "Front Door")
+    FrigateTheme {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            NotAPersonPrompt(state = asking, onMark = {}, onUndo = {})
+            NotAPersonPrompt(state = asking.copy(marked = true), onMark = {}, onUndo = {})
+            NotAPersonPrompt(state = asking.copy(error = "Relay answered 502 Bad Gateway"), onMark = {}, onUndo = {})
         }
     }
 }

@@ -38,6 +38,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             urgent = input.getBoolean(KEY_URGENT, false),
             silent = input.getBoolean(KEY_SILENT, false),
             offerCarTag = input.getBoolean(KEY_OFFER_CAR_TAG, false),
+            offerNotAPerson = input.getBoolean(KEY_OFFER_NOT_A_PERSON, false),
         )
         BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
             AlertNotificationPoster.show(applicationContext, stage)
@@ -57,6 +58,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val KEY_URGENT = "urgent"
         private const val KEY_SILENT = "silent"
         private const val KEY_OFFER_CAR_TAG = "offer_car_tag"
+        private const val KEY_OFFER_NOT_A_PERSON = "offer_not_a_person"
 
         /** Where a tap opens: the visit's start, which may be well before this alert's own ([KEY_START]). */
         private const val KEY_TARGET_START = "target_start"
@@ -72,6 +74,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 KEY_URGENT to text.urgent,
                 KEY_SILENT to text.silent,
                 KEY_OFFER_CAR_TAG to text.offerCarTag,
+                KEY_OFFER_NOT_A_PERSON to text.offerNotAPerson,
                 KEY_TARGET_START to (text.target?.startEpochSeconds ?: startEpochSeconds),
             )
             val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()

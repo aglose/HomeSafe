@@ -16,6 +16,10 @@
             android:exported="false" />
 
         <receiver
+            android:name="com.meticulouscreations.homesafe.data.NotAPersonReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name="com.meticulouscreations.homesafe.data.BootReceiver"
             android:exported="false">
             <intent-filter>

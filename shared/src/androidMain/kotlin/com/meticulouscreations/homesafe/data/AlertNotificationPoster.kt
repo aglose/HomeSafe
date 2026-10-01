@@ -18,7 +18,9 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
+import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -57,6 +59,9 @@ object AlertNotificationPoster {
 
     /** A post this soon after the first may not be in the shade's active list yet, so its absence proves nothing. */
     private const val POST_SETTLE_MS = 2_000L
+
+    /** How long a "Not a person" confirmation, and its Undo, stays in the shade. */
+    private const val CONFIRM_TIMEOUT_MS = 10 * 60_000L
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val running = HashMap<String, Job>()
@@ -159,6 +164,7 @@ object AlertNotificationPoster {
             .setContentIntent(openIntent(context, notification))
             .apply {
                 tagCarIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, "Tag car", it) }
+                notAPersonIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, "Not a person", it) }
                 if (largeIcon != null) setLargeIcon(largeIcon)
                 if (picture != null) {
                     setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?))
@@ -191,6 +197,75 @@ object AlertNotificationPoster {
         val intent = Intent(Intent.ACTION_VIEW, target.copy(tagCar = true).toUri().toUri()).setComponent(launch.component)
         return PendingIntent.getActivity(context, "${notification.id}:tag-car".hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
+
+    /**
+     * The "Not a person" button: marks the detection in the background ([NotAPersonReceiver]), no
+     * app opened. Null unless the notification offers it. A later alert of the same visit replaces
+     * this PendingIntent's extras (same request code), so the button always speaks for the alert
+     * the notification shows.
+     */
+    private fun notAPersonIntent(context: Context, notification: AlertNotification): PendingIntent? {
+        val target = notification.target?.takeIf { notification.offerNotAPerson && it.eventId.isNotBlank() } ?: return null
+        return NotAPersonReceiver.intent(context, NotAPersonReceiver.ACTION_MARK, notification.id, target)
+    }
+
+    /*
+     * What a "Not a person" press shows. The alert itself goes at once: it said someone was there,
+     * and nobody was. Its place is taken by a quiet notification of its own (tag [confirmTag]), so a
+     * picture or clip still on its way to the alert finds it gone and stays away (see [show]). That
+     * one says how it went and offers Undo, or, if the relay couldn't be reached, Try again; it
+     * clears itself after [CONFIRM_TIMEOUT_MS].
+     */
+
+    /** The alert [id] is being marked: down it comes, and "Marking…" stands in until the relay answers. */
+    fun showMarkingNotAPerson(context: Context, id: String, target: MomentDeepLink) {
+        synchronized(running) { running.remove(id)?.cancel() }
+        cancel(context, id)
+        confirm(context, id, target, "Marking as not a person…", cameraDisplayName(target.cameraName), action = null)
+    }
+
+    /** The relay has the mark: this spot won't alert again, and Undo takes it back. */
+    fun showMarkedNotAPerson(context: Context, id: String, target: MomentDeepLink) =
+        confirm(
+            context = context,
+            id = id,
+            target = target,
+            title = "Marked not a person",
+            body = "${cameraDisplayName(target.cameraName)} won't alert for this again, and HomeSafe learns from it.",
+            action = "Undo" to NotAPersonReceiver.ACTION_UNDO,
+        )
+
+    /** The mark didn't reach the relay; [reason] says why, and the button tries again. */
+    fun showNotAPersonFailed(context: Context, id: String, target: MomentDeepLink, reason: String) =
+        confirm(context, id, target, "Couldn't mark it not a person", reason, action = "Try again" to NotAPersonReceiver.ACTION_MARK)
+
+    /** Undo landed: nothing left to say. */
+    fun clearNotAPerson(context: Context, id: String) = cancel(context, confirmTag(id))
+
+    /** Undo didn't reach the relay: the mark stands, and the button is still there. */
+    fun showUndoFailed(context: Context, id: String, target: MomentDeepLink, reason: String) =
+        confirm(context, id, target, "Couldn't undo it", reason, action = "Undo" to NotAPersonReceiver.ACTION_UNDO)
+
+    private fun confirm(context: Context, id: String, target: MomentDeepLink, title: String, body: String, action: Pair<String, String>?) {
+        if (!canPost(context)) return
+        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification_detection)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setSilent(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(true)
+            .setTimeoutAfter(CONFIRM_TIMEOUT_MS)
+            .setContentIntent(openIntent(context, AlertNotification(id = confirmTag(id), title = title, body = body, target = target)))
+            .apply {
+                action?.let { (label, act) -> addAction(R.drawable.ic_notification_detection, label, NotAPersonReceiver.intent(context, act, id, target)) }
+            }
+            .build()
+        notify(context, confirmTag(id), notification)
+    }
+
+    private fun confirmTag(id: String) = "$id:not-a-person"
 
     /** Tagged by the detection's id, so each detection has its own notification and every stage replaces the last. */
     private fun notify(context: Context, id: String, notification: Notification) {

@@ -751,6 +751,7 @@ def push_away_review(item: dict[str, Any], zones: dict[str, list[str]]) -> None:
         "zones": ",".join(item.get("data", {}).get("zones") or []),
         "start_time": str(item.get("start_time", "")),
         "away": "1",
+        **offers(item),
     }
     result = broadcast(title, body, data, away=True)
     with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), title)), c.commit()))
@@ -784,6 +785,28 @@ def is_unnamed_car(item: dict[str, Any]) -> bool:
     with a person in it isn't, since its first detection may be the person.
     """
     return review_labels(item) == ["car"] and not review_names(item)
+
+
+def is_unnamed_person(item: dict[str, Any]) -> bool:
+    """
+    Nothing but people in it, and nobody named: its `event_id` (the first detection) is a person
+    who may not be one at all, so the app offers a "Not a person" button on the notification (see
+    "phantom people"). Not with a car in it, since its first detection may be the car.
+    """
+    return review_labels(item) == ["person"] and not review_names(item)
+
+
+# The push data keys that offer a button on the notification, by what the review holds.
+OFFER_KEYS = ("car_unnamed", "person_unnamed")
+
+
+def offers(item: dict[str, Any]) -> dict[str, str]:
+    """The push data that offers [item]'s buttons: "Tag car" for an unnamed car, "Not a person" for an unnamed person."""
+    if is_unnamed_car(item):
+        return {"car_unnamed": "1"}
+    if is_unnamed_person(item):
+        return {"person_unnamed": "1"}
+    return {}
 
 
 def awaiting_recognition(item: dict[str, Any]) -> bool:
@@ -897,13 +920,15 @@ def motion_verdict(item: dict[str, Any]) -> str:
 # every time its score on it crept over the threshold and fell back: most a second or two long, a
 # few a minute. Nothing was ever there.
 #
-# So a person can be marked "not a person" from the app (POST /events/{id}/not_a_person). The relay
-# keeps where that event's box was as a *phantom spot* on its camera, and from then on a person who
-# stayed put (`stayed_put`) with a box overlapping a phantom spot by PHANTOM_IOU is the same phantom
-# again, and not news: its alert is skipped like a parked car's, and the app hides it from the feed
-# (GET /phantoms, the same rule in `MomentEvent.isPhantom`). A real person at that spot still gets
-# through: they walked there, so they didn't stay put, and a face Frigate names is never a phantom.
-# The mark is also a training example (see "person check").
+# So a person can be marked "not a person" from the app (POST /events/{id}/not_a_person), on a
+# Moments card, on the detection a notification opened, or with the notification's own button. The
+# relay keeps where that event's box was as a *phantom spot* on its camera, and from then on a person
+# who stayed put (`stayed_put`) with a box overlapping a phantom spot by PHANTOM_IOU is the same
+# phantom again, and not news: its alert is skipped like a parked car's, and the app hides it from
+# the feed (GET /phantoms, the same rule in `MomentEvent.isPhantom`). A real person at that spot
+# still gets through: they walked there, so they didn't stay put, and a face Frigate names is never
+# a phantom. The mark is also a training example (see "person check"), and once that classifier has
+# learnt them, a person who stayed put *anywhere* and that it calls a phantom is one too.
 #
 # Staying put is stricter than a car's `is_still`, which lets 30% of the path stray and the rest
 # wander a whole box: up close, as at a front door, a person's box is half the frame, and someone
@@ -950,10 +975,23 @@ def face_name(event: dict[str, Any]) -> str | None:
     return name if name and name.lower() not in NOT_A_NAME else None
 
 
-def is_phantom(event: dict[str, Any], spots: list[dict[str, Any]]) -> bool:
+def classifier_says_phantom(event: dict[str, Any]) -> bool:
+    """
+    The person classifier (see "person check") called [event] a phantom, at PERSON_PHANTOM_MIN_SCORE
+    or better. Frigate keeps an `attribute` model's verdict in the event's data under the model's
+    name, and its score beside it, from the moment its attempts agree, open events included.
+    """
+    if not PERSON_CLASSIFIER:
+        return False
+    data = event.get("data") or {}
+    return data.get(PERSON_CLASSIFIER) == PERSON_PHANTOM_CLASS and float(data.get(f"{PERSON_CLASSIFIER}_score") or 0) >= PERSON_PHANTOM_MIN_SCORE
+
+
+def is_phantom(event: dict[str, Any], spots: list[dict[str, Any]], classifier: bool = True) -> bool:
     """
     A person event that is a phantom: one marked as such itself, or an unnamed person who stayed put
-    with a box that overlaps one of [spots] (its camera's) by PHANTOM_IOU.
+    and either has a box that overlaps one of [spots] (its camera's) by PHANTOM_IOU or, unless
+    [classifier] is false, is one the person classifier calls a phantom.
     """
     if event.get("label") != "person":
         return False
@@ -964,6 +1002,8 @@ def is_phantom(event: dict[str, Any], spots: list[dict[str, Any]]) -> bool:
     box = (event.get("data") or {}).get("box")
     if not box or len(box) < 4 or not stayed_put(event):
         return False
+    if classifier and classifier_says_phantom(event):
+        return True
     return any(s["camera"] == event.get("camera") and box_iou(box, s["box"]) >= PHANTOM_IOU for s in spots)
 
 
@@ -979,7 +1019,7 @@ def phantom_verdict(item: dict[str, Any]) -> str:
     if labels != {"person"} or not detections:
         return "push"
     spots = phantom_spots(item.get("camera"))
-    if not spots:
+    if not spots and not person_classifier_ready():
         return "push"
     for event_id in detections:
         event = event_detail(event_id)
@@ -1198,10 +1238,9 @@ class Followups:
             if body == f["body"]:
                 continue
             last = list(visit.items.values())[-1]
-            data = {k: v for k, v in f["data"].items() if k != "car_unnamed"}
+            data = {k: v for k, v in f["data"].items() if k not in OFFER_KEYS}
             data["silent"] = "1"
-            if is_unnamed_car(last):
-                data["car_unnamed"] = "1"
+            data.update(offers(last))
             result = push(title, body, data, familiar=is_recognised_person(last))
             f["body"], f["data"] = body, data
             f["updates"] += 1
@@ -1566,6 +1605,7 @@ def tell_home(item: dict[str, Any], route: str, run: dict[str, Any] | None, zone
             }
             if route == "update":
                 data["silent"] = "1"
+            data.update(offers(item))
             result = (push or broadcast)(title, body, data, familiar=is_recognised_person(item))
         sent_body = body if route in ("instant", "update") else f"({route})"
         with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), sent_body)), c.commit()))
@@ -1652,8 +1692,7 @@ def poll_forever() -> None:
                 }
                 if not sound:
                     data["silent"] = "1"
-                if is_unnamed_car(item):
-                    data["car_unnamed"] = "1"
+                data.update(offers(item))
                 result = broadcast(title, body, data, familiar=is_recognised_person(item))
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
@@ -2609,21 +2648,35 @@ VLM_RETRY_SECONDS = 600.0
 # A phantom spot (see "phantom people") only catches the phantom it was shown, where it was shown.
 # What carries over to the next bag left on the step is a model that has learnt the household's own
 # phantoms. Frigate's object classification can run a second model on every person it tracks, as
-# `known_cars` runs on cars: PERSON_CLASSIFIER names one with two classes, `person` and `none`, and
-# the relay grows its dataset from what the household already knows, with no labelling to sit through:
-# - `none`: each detection someone marks "not a person" (Frigate's own queued crop of it when it
+# `known_cars` runs on cars: PERSON_CLASSIFIER names one with two classes, `person` and
+# PERSON_PHANTOM_CLASS, and the relay grows its dataset from what the household already knows, with
+# no labelling to sit through:
+# - `phantom`: each detection someone marks "not a person" (Frigate's own queued crop of it when it
 #   still has one, else cut from the recording as Frigate would), and from then on each re-detection
 #   of a phantom: the detector's confident mistakes, which teach the most;
-# - `person`: the people Frigate put a face's name to, which are people whatever else is true.
+# - `person`: the people Frigate put a face's name to, which are people whatever else is true, and
+#   people who walked across the frame (PERSON_WALKED), so the class isn't only the household's
+#   faces at the door: clutter doesn't cross a yard.
+# Not `none`, which is what `known_cars` calls "not ours": Frigate drops a `none` verdict before it
+# reaches the event, so the relay could never see the classifier say "phantom". With a class of
+# its own it lands in the event's data (`classifier_says_phantom`), and a person who stayed put
+# and is called a phantom with PERSON_PHANTOM_MIN_SCORE is one, wherever on the camera they are.
 # Queued crops are filed a few an hour, each class capped at PERSON_CLASS_MAX, and the model is
 # retrained once a day when PERSON_RETRAIN_AFTER examples went in. All of it is off without
 # PERSON_CLASSIFIER, and waits while Frigate has no such model (no `clips/<model>` folder).
 PERSON_CLASSIFIER = os.environ.get("PERSON_CLASSIFIER", "")
+PERSON_PHANTOM_CLASS = "phantom"
+PERSON_PHANTOM_MIN_SCORE = float(os.environ.get("PERSON_PHANTOM_MIN_SCORE", "0.9"))
 PERSON_CLASS_MAX = int(os.environ.get("PERSON_CLASS_MAX", "400"))
 PERSON_FILED_PER_HOUR = int(os.environ.get("PERSON_FILED_PER_HOUR", "12"))
 PERSON_RETRAIN_AFTER = int(os.environ.get("PERSON_RETRAIN_AFTER", "20"))
 # How long an ended event's queued crops wait for Frigate's face name before the event is judged anyway.
 PERSON_SETTLE_SECONDS = 60.0
+# How far, in frame fractions, a person's path must reach to count as someone who walked, and so a
+# `person` example. A phantom's box only jitters; a fifth of the frame is several strides.
+PERSON_WALKED = 0.2
+# Where a "not a person" example goes when the mark is taken back: out of the dataset, kept for a look.
+PERSON_UNDONE_DIR = "undone"
 
 
 def person_classifier_ready() -> bool:
@@ -2636,22 +2689,28 @@ def person_examples_since(since: float) -> int:
 
 
 def person_crop_category(event: dict[str, Any], spots: list[dict[str, Any]]) -> str | None:
-    """What a queued crop of [event] teaches: `none` for a phantom, `person` for a named face, else nothing."""
-    if is_phantom(event, spots):
-        return "none"
-    if event.get("label") == "person" and face_name(event):
+    """
+    What a queued crop of [event] teaches: PERSON_PHANTOM_CLASS for a phantom, `person` for a named
+    face or someone who walked across PERSON_WALKED of the frame, else nothing. A phantom only the
+    classifier called one teaches nothing: filing its own verdicts back in would only harden them.
+    """
+    if event.get("label") != "person":
+        return None
+    if is_phantom(event, spots, classifier=False):
+        return PERSON_PHANTOM_CLASS
+    if face_name(event) or path_travel(event) >= PERSON_WALKED:
         return "person"
     return None
 
 
 def file_person_crops() -> None:
-    """Files queued crops of phantoms into `none` and of named faces into `person`, within the hourly and per-class caps."""
+    """Files queued crops of phantoms and of people (`person_crop_category`), within the hourly and per-class caps."""
     model = PERSON_CLASSIFIER
     now = time.time()
     budget = PERSON_FILED_PER_HOUR - filed_since("person-check", now - 3600)
     if budget <= 0:
         return
-    room = {category: PERSON_CLASS_MAX - dataset_count(model, category) for category in ("person", "none")}
+    room = {category: PERSON_CLASS_MAX - dataset_count(model, category) for category in ("person", PERSON_PHANTOM_CLASS)}
     spots = phantom_spots()
     for event_id, files in queued_crops(model).items():
         if budget <= 0:
@@ -2685,23 +2744,43 @@ def file_person_crops() -> None:
             log.info("person check %s: a crop filed as %s/%s", event_id, model, category)
 
 
+def file_queued_crop(model: str, category: str, training_file: str) -> str:
+    """
+    Moves one of the crops Frigate queued for [model] into [category], as Frigate's `categorize`
+    does (a PNG, since a webp can't be trained on, under the name Frigate would give it), and
+    answers the new file's name, which `categorize` doesn't: a mark taken back needs to find it.
+    """
+    from PIL import Image
+
+    source = os.path.join(CLIPS_DIR, model, "train", training_file)
+    folder = os.path.join(CLIPS_DIR, model, "dataset", category)
+    os.makedirs(folder, exist_ok=True)
+    name = dataset_file_name(category, time.time())
+    with Image.open(source) as crop:
+        crop.convert("RGB").save(os.path.join(folder, name), format="PNG")
+    os.unlink(source)
+    return name
+
+
 def file_not_a_person(event: dict[str, Any]) -> str | None:
     """
-    Files a detection someone marked "not a person" into the person classifier's `none`: its newest
-    queued crop, or else the person cut out of the recording at its last sighting, framed as Frigate
-    frames a crop. Answers how ("queued", "recording"), or None when it couldn't.
+    Files a detection someone marked "not a person" into the person classifier's PERSON_PHANTOM_CLASS:
+    its newest queued crop, or else the person cut out of the recording at its last sighting, framed
+    as Frigate frames a crop. Answers how ("queued", "recording"), or None when it couldn't. The
+    file's name is kept with the check, for `unfile_not_a_person`.
     """
     if not person_classifier_ready():
         return None
+    filed = check_of(event["id"], "not-a-person")
+    if filed and filed[0] == "filed":
+        return filed_how(filed[1])  # marked twice (the notification's button, then the app): one example is enough
     model = PERSON_CLASSIFIER
     try:
         crops = queued_crops(model).get(event["id"])
         if crops:
-            r = requests.post(f"{FRIGATE}/api/classification/{model}/dataset/categorize",
-                              json={"category": "none", "training_file": crops[-1]}, timeout=10)
-            if r.ok:
-                record_check(event["id"], "not-a-person", "filed", "queued")
-                return "queued"
+            name = file_queued_crop(model, PERSON_PHANTOM_CLASS, crops[-1])
+            record_check(event["id"], "not-a-person", "filed", json.dumps({"how": "queued", "file": name}))
+            return "queued"
         sighting = last_sighting(event)
         if sighting is None:
             return None
@@ -2711,12 +2790,44 @@ def file_not_a_person(event: dict[str, Any]) -> str | None:
                          params={"height": height} if height else None, timeout=30)
         if not r.ok:
             return None
-        save_classification_example(model, "none", r.content, box)
-        record_check(event["id"], "not-a-person", "filed", "recording")
+        name = save_classification_example(model, PERSON_PHANTOM_CLASS, r.content, box)
+        record_check(event["id"], "not-a-person", "filed", json.dumps({"how": "recording", "file": name}))
         return "recording"
     except Exception as e:
         log.warning("not-a-person example for %s failed: %s", event.get("id"), e)
         return None
+
+
+def filed_how(detail: str) -> str:
+    """How a "not a person" example was filed, from its check's detail: JSON now, the bare word from older relays."""
+    try:
+        return str(json.loads(detail).get("how"))
+    except (ValueError, AttributeError):
+        return detail
+
+
+def unfile_not_a_person(event_id: str) -> bool:
+    """
+    Takes back the example a "not a person" filed, now the mark is: out of the dataset into the
+    model's PERSON_UNDONE_DIR (kept, never deleted, in case the mark was right after all), and its
+    check marked "undone". Whether there was one to take. A retrain since has already learnt it;
+    the next one forgets it.
+    """
+    check = check_of(event_id, "not-a-person")
+    if not check or check[0] != "filed" or not PERSON_CLASSIFIER:
+        return False
+    try:
+        name = os.path.basename(str(json.loads(check[1]).get("file") or ""))
+    except (ValueError, AttributeError):
+        name = None  # filed by an older relay, which didn't keep the name
+    source = os.path.join(CLIPS_DIR, PERSON_CLASSIFIER, "dataset", PERSON_PHANTOM_CLASS, name) if name else None
+    if not source or not os.path.isfile(source):
+        return False
+    folder = os.path.join(CLIPS_DIR, PERSON_CLASSIFIER, PERSON_UNDONE_DIR)
+    os.makedirs(folder, exist_ok=True)
+    os.replace(source, os.path.join(folder, name))
+    record_check(event_id, "not-a-person", "undone", check[1])
+    return True
 
 
 def maybe_retrain_person() -> None:
@@ -3965,16 +4076,18 @@ def tag_event(event_id: str, body: dict[str, Any], request: Request) -> Response
 
 
 @app.post("/events/{event_id}/not_a_person")
-def not_a_person(event_id: str, request: Request) -> dict[str, Any]:
+def not_a_person(event_id: str, request: Request, device: str | None = None) -> dict[str, Any]:
     """
     Someone saying a person detection was not a person (see "phantom people"): its box becomes a
-    phantom spot on its camera, and the detection a `none` example for the person classifier (see
-    "person check"). A user action, so the session cookie. Answers the spot, and how the example
-    was filed (null when it wasn't: no classifier yet, or no picture of it left).
+    phantom spot on its camera, and the detection a phantom example for the person classifier (see
+    "person check"). A user action: the session cookie, or, for a notification's "Not a person"
+    button, which may wake the app with no session at all, the install's own secret and [device].
+    Answers the spot, and how the example was filed (null when it wasn't: no classifier yet, or no
+    picture of it left).
     """
     if not EVENT_ID.fullmatch(event_id):
         raise HTTPException(status_code=404, detail="No such event")
-    user = require_frigate_session(request)
+    user = authenticate(request, device)
     try:
         event = fetch_event(event_id)
     except Exception as e:
@@ -3992,12 +4105,17 @@ def not_a_person(event_id: str, request: Request) -> dict[str, Any]:
 
 
 @app.delete("/events/{event_id}/not_a_person")
-def undo_not_a_person(event_id: str, request: Request) -> dict[str, Any]:
-    """Takes a "not a person" back: the phantom spot goes. An example already filed stays, for the labelling screen to move."""
-    user = require_frigate_session(request)
+def undo_not_a_person(event_id: str, request: Request, device: str | None = None) -> dict[str, Any]:
+    """
+    Takes a "not a person" back, as it was given (cookie, or an install's secret): the phantom spot
+    goes, and so does the example it filed, out of the dataset before the next retrain.
+    """
+    user = authenticate(request, device)
     removed = unmark_phantom(event_id)
-    log.info("not a person taken back, by %s: %s (%s)", user, event_id, "removed" if removed else "wasn't marked")
-    return {"ok": True, "removed": removed}
+    unfiled = unfile_not_a_person(event_id)
+    log.info("not a person taken back, by %s: %s (%s%s)", user, event_id, "removed" if removed else "wasn't marked",
+             ", example unfiled" if unfiled else "")
+    return {"ok": True, "removed": removed, "unfiled": unfiled}
 
 
 @app.get("/phantoms")
