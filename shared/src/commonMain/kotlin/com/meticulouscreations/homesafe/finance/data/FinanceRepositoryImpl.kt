@@ -107,7 +107,11 @@ class FinanceRepositoryImpl(
             ?: return@withLock Result.failure(SheetUnavailableException(SheetProblem.SIGNED_OUT, "Not connected to the server"))
         relay.workbook(serverUrl, refresh).mapCatching { wb ->
             // Dozens of passes over a thousand-row grid: off the main thread.
-            withContext(Dispatchers.Default) { PersonalFinanceParser.parse(wb.title, wb.fetchedAt.toLong(), wb.grids(), wb.url) }
+            withContext(Dispatchers.Default) {
+                val grids = wb.grids()
+                PersonalFinanceParser.parse(wb.title, wb.fetchedAt.toLong(), grids, wb.url)
+                    .copy(charts = SheetChartReader.read(wb.charts, grids, wb.url))
+            }
         }.onSuccess { sheet = TimeSource.Monotonic.markNow() to it }
     }
 

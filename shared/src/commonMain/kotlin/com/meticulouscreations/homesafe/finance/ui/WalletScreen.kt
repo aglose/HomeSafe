@@ -105,6 +105,12 @@ internal fun WalletScreen(
 private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUiState) {
     item(key = "hero") { NetWorthHero(finance) }
     item(key = "quick") { QuickStats(finance) }
+    if (finance.charts.isNotEmpty()) {
+        item(key = "charts-h") { SectionHeader("Sheet charts", subtitle = "The charts in “${finance.title}”, live from the sheet") }
+        items(finance.charts.size, key = { "chart-${finance.charts[it].id}" }) { i ->
+            CascadeIn(i) { SheetChartCard(finance.charts[i], Modifier.padding(bottom = 12.dp)) }
+        }
+    }
     if (finance.accounts.isNotEmpty()) {
         item(key = "acct-h") { SectionHeader("Accounts", trailing = finance.totalAssets?.let(FinanceFormat::compactMoney)) }
         item(key = "acct") { CascadeIn(0) { AccountsBlock(finance) } }

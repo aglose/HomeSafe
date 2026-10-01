@@ -4646,6 +4646,11 @@ async def google_signal(camera: str, request: Request) -> Response:
 # no further than a 403. Frigate admins may read it, and so may any username FINANCE_USERS lists
 # (a household member whose Frigate login is a viewer).
 #
+# The sheet's own charts come along too, as Google describes them (what kind, stacked or not,
+# which ranges they plot) plus each plotted range's number format, which says whether an axis is
+# dates or money. The app draws them from the values it already has (SheetChartReader.kt), so a
+# chart added to the sheet shows up in the app with no change to either.
+#
 # Setup, once: switch on the Google Sheets API for the key's Cloud project, share the sheet with
 # the key's `client_email` (read-only), and set FINANCE_SHEET_ID (in finance.env on the box; the
 # repo is public). Until then the route says which step is missing (`error`) and who to share
@@ -4748,10 +4753,174 @@ def grid_titles(meta: dict[str, Any]) -> list[str]:
     ]
 
 
-def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, fetched_at: float) -> dict[str, Any]:
+def column_letters(index: int) -> str:
+    """A 0-based column as A1 letters: 0 → A, 25 → Z, 26 → AA."""
+    letters = ""
+    index += 1
+    while index > 0:
+        index, rem = divmod(index - 1, 26)
+        letters = chr(ord("A") + rem) + letters
+    return letters
+
+
+def chart_range(grid: dict[str, Any], titles: dict[int, str]) -> dict[str, Any] | None:
+    """
+    A chart's GridRange with its tab by title rather than id, 0-based and end-exclusive. A
+    missing end (a whole-column range like A2:A) stays None: the data runs to the tab's end.
+    """
+    title = titles.get(int(grid.get("sheetId", 0)))
+    if title is None:
+        return None
+    return {
+        "sheet": title,
+        "start_row": grid.get("startRowIndex", 0),
+        "end_row": grid.get("endRowIndex"),
+        "start_column": grid.get("startColumnIndex", 0),
+        "end_column": grid.get("endColumnIndex"),
+    }
+
+
+def chart_ranges(data: Any, titles: dict[int, str]) -> list[dict[str, Any]]:
+    """A ChartData's ranges, in order (Google lets one series run across several)."""
+    if not isinstance(data, dict):
+        return []
+    sources = data.get("sourceRange", {}).get("sources", [])
+    return [r for r in (chart_range(s, titles) for s in sources if isinstance(s, dict)) if r is not None]
+
+
+# The spec keys of the chart kinds that aren't a BasicChartSpec, as the app names them.
+_OTHER_CHART_KINDS = {
+    "bubbleChart": "BUBBLE",
+    "candlestickChart": "CANDLESTICK",
+    "orgChart": "ORG",
+    "histogramChart": "HISTOGRAM",
+    "waterfallChart": "WATERFALL",
+    "treemapChart": "TREEMAP",
+}
+
+
+def chart_payload(chart: dict[str, Any], tab: str, titles: dict[int, str], tab_gids: dict[str, int]) -> dict[str, Any]:
+    """
+    One embedded chart as the app draws it: its kind, the ranges for its domain (the x axis, or a
+    pie's labels) and each series, and where it sits. The values stay in the grid the payload
+    already carries; the app reads them from there.
+    """
+    spec = chart.get("spec", {}) if isinstance(chart.get("spec"), dict) else {}
+    anchor = chart.get("position", {}).get("overlayPosition", {}).get("anchorCell", {})
+    body: dict[str, Any] = {
+        "id": chart.get("chartId"),
+        "sheet": tab,
+        "gid": tab_gids.get(tab),
+        "title": spec.get("title", ""),
+        "subtitle": spec.get("subtitle", ""),
+        "anchor": {"row": anchor.get("rowIndex", 0), "column": anchor.get("columnIndex", 0)},
+        "stacked": "NOT_STACKED",
+        "header_count": None,
+        "domain": [],
+        "series": [],
+    }
+    if isinstance(spec.get("basicChart"), dict):
+        basic = spec["basicChart"]
+        body["kind"] = basic.get("chartType", "LINE")
+        body["stacked"] = basic.get("stackedType", "NOT_STACKED")
+        body["header_count"] = basic.get("headerCount")
+        domains = [d for d in basic.get("domains", []) if isinstance(d, dict)]
+        if domains:
+            body["domain"] = chart_ranges(domains[0].get("domain"), titles)
+            body["reversed"] = bool(domains[0].get("reversed", False))
+        body["series"] = [
+            {"ranges": chart_ranges(s.get("series"), titles), "type": s.get("type") or body["kind"], "axis": s.get("targetAxis", "LEFT_AXIS")}
+            for s in basic.get("series", [])
+            if isinstance(s, dict)
+        ]
+    elif isinstance(spec.get("pieChart"), dict):
+        pie = spec["pieChart"]
+        body["kind"] = "PIE"
+        body["domain"] = chart_ranges(pie.get("domain"), titles)
+        body["series"] = [{"ranges": chart_ranges(pie.get("series"), titles), "type": "PIE", "axis": "LEFT_AXIS"}]
+        body["pie_hole"] = pie.get("pieHole", 0)
+    elif isinstance(spec.get("scorecardChart"), dict):
+        body["kind"] = "SCORECARD"
+        body["series"] = [{"ranges": chart_ranges(spec["scorecardChart"].get("keyValueData"), titles), "type": "SCORECARD", "axis": "LEFT_AXIS"}]
+    else:
+        body["kind"] = next((name for key, name in _OTHER_CHART_KINDS.items() if key in spec), "OTHER")
+    body["series"] = [s for s in body["series"] if s["ranges"]]
+    return body
+
+
+def sheet_charts(meta: dict[str, Any]) -> list[dict[str, Any]]:
+    """Every embedded chart in the workbook, tab by tab and top to bottom, left to right within one."""
+    sheets = [s for s in meta.get("sheets", []) if isinstance(s, dict)]
+    titles = {int(s.get("properties", {}).get("sheetId", 0)): s.get("properties", {}).get("title", "") for s in sheets}
+    tab_gids = {title: gid for gid, title in titles.items()}
+    charts = []
+    for sheet in sheets:
+        tab = sheet.get("properties", {}).get("title", "")
+        placed = [chart_payload(c, tab, titles, tab_gids) for c in sheet.get("charts", []) if isinstance(c, dict)]
+        charts += sorted(placed, key=lambda c: (c["anchor"]["row"], c["anchor"]["column"]))
+    return charts
+
+
+# Each plotted range's number format is read from one cell: its second, so a header row (which
+# isn't counted until the app decides whether there is one) doesn't answer for the data.
+_MAX_FORMAT_PROBES = 60
+
+
+def format_probe(r: dict[str, Any]) -> tuple[str, int, int]:
+    """The cell of range `r` whose number format stands for the range: its second cell down a column, or along a row."""
+    rows = None if r["end_row"] is None else r["end_row"] - r["start_row"]
+    columns = None if r["end_column"] is None else r["end_column"] - r["start_column"]
+    if rows == 1 and columns != 1:
+        return r["sheet"], r["start_row"], r["start_column"] + 1
+    return r["sheet"], r["start_row"] + (0 if rows == 1 else 1), r["start_column"]
+
+
+def format_probes(charts: list[dict[str, Any]]) -> list[tuple[str, int, int]]:
+    """The distinct cells whose formats the charts need: each domain's and each series' first range."""
+    cells: list[tuple[str, int, int]] = []
+    for chart in charts:
+        for ranges in [chart["domain"]] + [s["ranges"] for s in chart["series"]]:
+            if ranges:
+                cell = format_probe(ranges[0])
+                if cell not in cells:
+                    cells.append(cell)
+    return cells[:_MAX_FORMAT_PROBES]
+
+
+def cell_a1(cell: tuple[str, int, int]) -> str:
+    sheet, row, column = cell
+    return f"{sheet_range(sheet)}!{column_letters(column)}{row + 1}"
+
+
+def cell_formats(grid: dict[str, Any]) -> dict[tuple[str, int, int], dict[str, str]]:
+    """The number formats in a `spreadsheets.get` answer for the probe cells, by (tab, row, column)."""
+    found: dict[tuple[str, int, int], dict[str, str]] = {}
+    for sheet in grid.get("sheets", []):
+        title = sheet.get("properties", {}).get("title", "")
+        for data in sheet.get("data", []):
+            row0, col0 = data.get("startRow", 0), data.get("startColumn", 0)
+            for i, row in enumerate(data.get("rowData", [])):
+                for j, value in enumerate(row.get("values", [])):
+                    fmt = value.get("effectiveFormat", {}).get("numberFormat") if isinstance(value, dict) else None
+                    if isinstance(fmt, dict) and fmt.get("type"):
+                        found[(title, row0 + i, col0 + j)] = {"type": fmt["type"], "pattern": fmt.get("pattern", "")}
+    return found
+
+
+def with_formats(charts: list[dict[str, Any]], formats: dict[tuple[str, int, int], dict[str, str]]) -> list[dict[str, Any]]:
+    """The charts with each domain's and series' number format (None when the cell has none, or wasn't read)."""
+    for chart in charts:
+        chart["domain_format"] = formats.get(format_probe(chart["domain"][0])) if chart["domain"] else None
+        for series in chart["series"]:
+            series["format"] = formats.get(format_probe(series["ranges"][0]))
+    return charts
+
+
+def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, fetched_at: float, formats: dict[tuple[str, int, int], dict[str, str]] | None = None) -> dict[str, Any]:
     """
     The workbook as the app reads it: each grid tab's rows of raw values and its merged ranges
-    (0-based, end-exclusive). `values` holds one range per grid tab, in order.
+    (0-based, end-exclusive), and the workbook's charts. `values` holds one range per grid tab,
+    in order.
     """
     ranges = values.get("valueRanges", [])
     sheets = []
@@ -4773,6 +4942,7 @@ def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, f
         "fetched_at": fetched_at,
         "url": f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit",
         "sheets": sheets,
+        "charts": with_formats(sheet_charts(meta), formats or {}),
     }
 
 
@@ -4798,6 +4968,28 @@ def _google_json(response: Any) -> Any:
         return {}
 
 
+def chart_formats(session: Any, meta: dict[str, Any]) -> dict[tuple[str, int, int], dict[str, str]]:
+    """
+    The number formats of the cells the charts plot (see `format_probe`), in one more call. Only
+    a nicety — without them the app guesses dates and money from the values — so a failure here
+    is logged and the sheet is served without them.
+    """
+    cells = format_probes(sheet_charts(meta))
+    if not cells:
+        return {}
+    try:
+        params = [("ranges", cell_a1(c)) for c in cells]
+        params.append(("fields", "sheets(properties(title),data(startRow,startColumn,rowData(values(effectiveFormat(numberFormat)))))"))
+        answer = session.get(f"{SHEETS_API}/{FINANCE_SHEET_ID}", params=params, timeout=15)
+        if answer.status_code != 200:
+            log.warning("finance: chart formats unavailable (%s)", answer.status_code)
+            return {}
+        return cell_formats(answer.json())
+    except Exception as e:
+        log.warning("finance: chart formats unavailable: %s", e)
+        return {}
+
+
 def read_finance_sheet() -> dict[str, Any]:
     """Asks Google for the whole workbook. Raises HTTPException with the app's problem on failure."""
     session = finance_google()
@@ -4805,7 +4997,7 @@ def read_finance_sheet() -> dict[str, Any]:
     try:
         meta = session.get(
             f"{SHEETS_API}/{FINANCE_SHEET_ID}",
-            params={"fields": "properties.title,sheets(properties(title,sheetType),merges)"},
+            params={"fields": "properties.title,sheets(properties(sheetId,title,sheetType),merges,charts(chartId,spec,position))"},
             timeout=15,
         )
         if meta.status_code != 200:
@@ -4816,7 +5008,7 @@ def read_finance_sheet() -> dict[str, Any]:
         values = session.get(f"{SHEETS_API}/{FINANCE_SHEET_ID}/values:batchGet", params=params, timeout=20)
         if values.status_code != 200:
             raise HTTPException(*sheet_problem(values.status_code, _google_json(values), account))
-        return sheet_payload(meta.json(), values.json(), FINANCE_SHEET_ID, time.time())
+        return sheet_payload(meta.json(), values.json(), FINANCE_SHEET_ID, time.time(), chart_formats(session, meta.json()))
     except HTTPException:
         raise
     except Exception as e:
