@@ -40,6 +40,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
+/** Notifications switched on, as on any phone that gets alerts at all. */
+private val ON = AlertSettings.DEFAULT.copy(pushNotificationsEnabled = true)
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class DeviceRegistrarTest {
 
@@ -58,7 +61,7 @@ class DeviceRegistrarTest {
     }
 
     private class FakeSettings : SettingsRepository {
-        val settings = MutableStateFlow(AlertSettings.DEFAULT)
+        val settings = MutableStateFlow(ON)
         override fun observeSettings(): Flow<AlertSettings> = settings
         override suspend fun updateSettings(settings: AlertSettings) {
             this.settings.value = settings
@@ -134,7 +137,7 @@ class DeviceRegistrarTest {
         settle()
         assertEquals(1, h.posts.size)
 
-        h.settings.settings.value = AlertSettings.DEFAULT.copy(quietFamiliarPeople = true)
+        h.settings.settings.value = ON.copy(quietFamiliarPeople = true)
         settle()
         assertEquals(2, h.posts.size)
         assertTrue(""""quiet_familiar":true""" in h.posts[1], h.posts[1])
@@ -154,7 +157,7 @@ class DeviceRegistrarTest {
         assertTrue("quiet_start" !in first && "only_away" !in first, "off: nothing to say, and an older relay reads that as off too")
         assertTrue(""""tz":""" in first && """"utc_offset":""" in first, first)
 
-        h.settings.settings.value = AlertSettings.DEFAULT.copy(quietHours = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 7 * 60))
+        h.settings.settings.value = ON.copy(quietHours = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 7 * 60))
         settle()
         assertEquals(2, h.posts.size)
         assertTrue(""""quiet_start":1320""" in h.posts[1] && """"quiet_end":420""" in h.posts[1], h.posts[1])
@@ -172,6 +175,26 @@ class DeviceRegistrarTest {
         settle()
         assertEquals(4, h.posts.size)
         assertTrue("quiet_start" !in h.posts[3], "switched off: the window is kept on the phone, not sent")
+    }
+
+    @Test
+    fun theNotificationsSwitchOffTakesTheTokenOffTheRelayAndOnPutsItBack() = runTest {
+        val h = Harness(this, FakeConnection("http://192.168.68.55:8971"))
+        h.registrar.start()
+        settle()
+        assertTrue(h.registrar.pushRegistered.value)
+
+        h.settings.settings.value = ON.copy(pushNotificationsEnabled = false)
+        settle()
+        assertEquals(2, h.posts.size)
+        assertTrue(""""token":null""" in h.posts[1], "off: the relay keeps this install but has nowhere to push")
+        assertFalse(h.registrar.pushRegistered.value, "so the in-app poller isn't told the relay has it covered")
+
+        h.settings.settings.value = ON
+        settle()
+        assertEquals(3, h.posts.size)
+        assertTrue(""""token":"fcm-1"""" in h.posts[2], h.posts[2])
+        assertTrue(h.registrar.pushRegistered.value)
     }
 
     @Test

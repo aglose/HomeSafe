@@ -93,6 +93,7 @@ class HomeViewModelTest {
         )
         var setAwayCalls = mutableListOf<Boolean>()
         override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+        override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> = Result.success(Unit)
         override suspend fun setHome(home: HomeLocation?): Result<Unit> = Result.success(Unit)
         override suspend fun removeDevice(deviceId: String): Result<Unit> = Result.success(Unit)
         override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int): Result<Unit> {

@@ -16,9 +16,9 @@ twenty times between 12:39 and 13:37 on the 28th without moving.
 | | Someone home | Everyone away |
 | --- | --- | --- |
 | A household car arrives or leaves | Sounds, once each way | Sounds (loud channel) |
-| A person on the Front Yard | Sounds at once, then updates quietly until the yard has been empty 10 min | Sounds, as before |
-| A person with a household car coming or going | Folded into the car's notification | Sounds, as before |
-| Front Door, Backyard, unnamed cars, animals | Kept for a summary (`notify_log`, route `digest`) | Sounds, as before |
+| A person on the Front Yard | Sounds at once, then updates quietly until the yard has been empty 10 min | Sounds on the loud channel, one per visit |
+| A person with a household car coming or going | Folded into the car's notification | Sounds on the loud channel, one per visit |
+| Front Door, Backyard, unnamed cars, animals | In the next summary | Sounds on the loud channel, one per visit |
 
 - **Front Yard** is `INSTANT_PERSON_CAMERAS` (default `hikvision_1`). The first person sounds; any
   person on that camera before it has been empty of people for `YARD_QUIET_SECONDS` (600) lands on
@@ -39,15 +39,27 @@ twenty times between 12:39 and 13:37 on the 28th without moving.
     `CAR_NAME_WAIT_SECONDS` (180).
   - Wording: "Sarah's Car arrived home · Front Yard · away 3h 10m", "Andrew's Tesla left · Front Yard · home 45m".
   - A car the memory has never seen before starts where the memory has it, silently.
-- Quiet hours and "only strangers" still apply per phone, as before.
+- **Summaries.** At `DIGEST_HOURS` (default 9, 12, 15, 18, 21 on the household's clock, taken from
+  the phones' time zones) whatever went to the summary since the last one is told as one quiet
+  notification, replacing the last: "Since 12:00 PM: 5 visits" / "Front Door: Sarah, 1 unknown
+  person · Backyard: 1 unknown person, dog · Front Yard: Sarah's Car, 1 unknown car". Alerts on one
+  camera within 5 minutes of each other are one visit. Nothing kept, no summary. A slot the relay
+  slept through is covered by the next. The push is `summary=1`, `silent=1`, `notif_id=summary`
+  with no moment to open; Android posts it on its own low-importance "Summaries" channel.
+- **Away, grouped.** Every alert and every person detection goes through the same visits the old
+  rules used for ordinary alerts: the first of a camera's run sounds on the loud channel ("Away ·
+  Front Door"), more of the same updates it quietly, something new in it sounds again. Replayed
+  over 2026-09-26 to 29 as if nobody had been home, 970 pushes become 220 that sound — though most
+  of those days' traffic was the household itself, which isn't there when everyone's away.
+- Quiet hours and "only strangers" still apply per phone to everything but away pushes.
 
 ## Rolling out: `NOTIFY_POLICY`
 
 | Value | Pushes | Logs to `notify_log` |
 | --- | --- | --- |
 | `legacy` | the old rules | nothing |
-| `shadow` | the old rules | what the new rules would do, and what the old ones did (`<review>:legacy`) |
-| `v2` | the new rules while someone is home; the old ones while everyone is away | what it did |
+| `shadow` | the old rules | what the new rules would do at home, the summaries they'd send, and what the old rules did (`<review>:legacy`) |
+| `v2` | the new rules, home and away, and the summaries | what it did |
 
 Replaying 2026-09-26 to 29 through the new rules (car presence without the live spot check, which
 can't be asked about the past): the 806 alerts pushed become 54 sounding Front Yard pushes, 149

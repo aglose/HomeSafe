@@ -93,6 +93,7 @@ class AlertRulesUiTest {
         overview: ServerOverview? = server(),
         alertVolume: AlertVolume? = null,
         testNotificationSent: Boolean = false,
+        relayPushes: Boolean = false,
     ) = SettingsUiState(
         overview = overview,
         alerts = alerts,
@@ -100,6 +101,7 @@ class AlertRulesUiTest {
         notificationPermission = NotificationPermission.GRANTED,
         testNotificationSent = testNotificationSent,
         alertVolume = alertVolume,
+        relayPushes = relayPushes,
     )
 
     private fun runAlerts(
@@ -236,6 +238,30 @@ class AlertRulesUiTest {
             onNodeWithText("Stay quiet while anyone's home, and hear only the Away alerts once the house is empty.").assertIsDisplayed()
             switchFor("Only when everyone's away").assertIsOff().performClick()
             assertEquals(true, asked)
+        }
+    }
+
+    @Test
+    fun aPhoneTheRelayPushesToIsToldTheRelaysPolicyInsteadOfTheZoneRules() {
+        var volumeAsked = 0
+        runAlerts(alertsOn(relayPushes = true), onLoadVolume = { volumeAsked++ }) {
+            // The rules only drive the in-app poller, which is off here: offering them would mislead.
+            onAllNodesWithText("What to hear about").assertCountEquals(0)
+            onAllNodesWithText("People + vehicles").assertCountEquals(0)
+            onAllNodesWithText("Fine-tune by zone").assertCountEquals(0)
+            onNodeWithText("What you'll hear about").assertIsDisplayed()
+            onNodeWithText(
+                "While someone's home: household cars arriving and leaving, and people on the Front Yard, right away; " +
+                    "everything else in a summary a few times a day. While everyone's away: everything.",
+            ).assertIsDisplayed()
+            // Everything else in the section stays.
+            onNodeWithText("Only when everyone's away").assertExists()
+            onNodeWithText("Quiet hours").assertExists()
+            onNodeWithText("Only strangers").assertExists()
+            onNodeWithText("Send test notification").assertExists()
+            onNodeWithText("Alerts come from the HomeSafe relay on the Frigate box, so they arrive even when HomeSafe is closed.").assertExists()
+            mainClock.advanceTimeBy(SETTLE_MS)
+            assertEquals(0, volumeAsked, "no rules showing, so no noise estimate")
         }
     }
 

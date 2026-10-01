@@ -62,6 +62,8 @@ class PresenceAutomationImplTest {
             return Result.success(Unit)
         }
 
+        override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> = Result.success(Unit)
+
         override suspend fun setHome(home: HomeLocation?): Result<Unit> {
             homeSet += home
             return Result.success(Unit)

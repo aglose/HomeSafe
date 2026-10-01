@@ -126,6 +126,7 @@ fun SettingsTabContent(
         AwaySection(
             state = state,
             onAway = viewModel::setAway,
+            onDecides = viewModel::setDecidesPresence,
             onAutomatic = viewModel::setAutomaticPresence,
             onRequestLocation = viewModel::requestLocationAccess,
             onSetHomeHere = viewModel::setHomeHere,
@@ -338,14 +339,15 @@ private fun CameraPipelineRows(
 }
 
 /**
- * Away mode: this phone's "I'm away" switch, the household's phones, automatic presence, and
- * what happens once the last one leaves. The relay on the Frigate box keeps the answer, so both
- * phones see the same thing.
+ * Away mode: this phone's "I'm away" switch, whether this phone alone decides (the relay's
+ * presence authority), the household's phones, automatic presence, and what happens once the
+ * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
  */
 @Composable
-private fun AwaySection(
+internal fun AwaySection(
     state: SettingsUiState,
     onAway: (Boolean) -> Unit,
+    onDecides: (Boolean) -> Unit,
     onAutomatic: (Boolean) -> Unit,
     onRequestLocation: () -> Unit,
     onSetHomeHere: () -> Unit,
@@ -356,12 +358,15 @@ private fun AwaySection(
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
         val switchEnabled = !state.awayBusy && !relayUnreachable
         val me = state.presence.thisDevice
+        // The name of another phone deciding alone; null when it is this one, or when every counting phone votes.
+        val otherDecider = state.presence.decidingDevice?.takeIf { !it.isThisDevice }?.let(::presenceDeviceName)
         // A debug install may still flip its own switch — the relay simply doesn't count it.
         val thisDeviceCounts = me?.countsForAway != false
         SettingsToggleRow(
             title = "I'm away",
             description = when {
                 relayUnreachable -> "The push relay on the Frigate box can't be reached, so presence can't be changed right now."
+                !thisDeviceCounts && otherDecider != null -> "$otherDecider decides whether the house is empty, so this switch only speaks for this phone."
                 !thisDeviceCounts -> "This is a debug build, so its switch doesn't decide whether the house is empty."
                 me?.pendingAway == true -> "This phone has left home; it counts as away in a few minutes unless it comes back."
                 state.thisDeviceAway -> "This phone counts as out of the house."
@@ -370,6 +375,18 @@ private fun AwaySection(
             checked = state.thisDeviceAway,
             enabled = switchEnabled,
             onCheckedChange = onAway,
+        )
+        SettingsToggleRow(
+            title = "This phone decides home/away",
+            description = when {
+                state.thisDeviceDecides -> "On — only this phone's location says whether the house is empty. Every phone still gets notifications."
+                otherDecider != null -> "$otherDecider decides now. Turn this on to make it this phone instead. Every phone still gets notifications."
+                else -> "Only this phone's location says whether the house is empty. Every phone still gets notifications."
+            },
+            checked = state.thisDeviceDecides,
+            // An older relay lists no ids, and has no presence authority to set either.
+            enabled = !state.decidesBusy && !relayUnreachable && me?.id != null,
+            onCheckedChange = onDecides,
         )
         if (state.presence.devices.isNotEmpty()) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
@@ -530,8 +547,10 @@ private fun OtherDevicesToggle(count: Int, counted: Int, expanded: Boolean, onTo
 
 /**
  * "Google Pixel 10 Pro XL", then "away since 4:12 PM" / "home" / "leaving…", when the relay last
- * heard from it, and whether it counts. A debug install is greyed out and says so: it hears the
- * alerts but doesn't get a vote. Every row but this phone's has a remove button.
+ * heard from it, and whether it counts. The phone that decides home/away alone says so. A debug
+ * install is greyed out and says so: it hears the alerts but doesn't get a vote. Under a deciding
+ * phone the others' dots are greyed too — their switches don't count — but they are still the
+ * household's phones, named as such. Every row but this phone's has a remove button.
  */
 @Composable
 private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, removing: Boolean, onRemove: () -> Unit) {
@@ -545,7 +564,8 @@ private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, r
         "this phone".takeIf { device.isThisDevice },
         status,
         device.lastSeenEpochSeconds?.takeIf { !device.isThisDevice }?.let { formatLastSeen(it, nowEpochSeconds) },
-        "debug, not counted".takeIf { !device.countsForAway },
+        "decides home/away".takeIf { device.decides },
+        "debug, not counted".takeIf { !device.countsForAway && device.isTestInstall },
     ).joinToString(" · ")
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulsingDot(
@@ -562,7 +582,7 @@ private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, r
             Text(
                 text = presenceDeviceName(device),
                 style = MaterialTheme.typography.bodyMedium,
-                color = if (device.countsForAway) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (device.isTestInstall) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
             )
             SettingsCaption(details)
         }

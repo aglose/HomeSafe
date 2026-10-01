@@ -13,7 +13,8 @@ data class PresenceDevice(
     /**
      * Whether the relay lets this phone's switch decide [HouseholdPresence.everyoneAway]. False for
      * debug installs (emulators, a test build beside the real app) — they still get pushes, they
-     * just can't declare the house empty or hold away mode open.
+     * just can't declare the house empty or hold away mode open. While there is a presence
+     * authority, true for that one phone alone (see [decides]).
      */
     val countsForAway: Boolean = true,
     /**
@@ -28,7 +29,23 @@ data class PresenceDevice(
      * app reading presence, which it does about once a minute while open. Null from an older relay.
      */
     val lastSeenEpochSeconds: Double? = null,
-)
+    /** "release" or "debug", as the install registered itself; null from an older relay. */
+    val build: String? = null,
+    /**
+     * This phone is the household's presence authority ([HouseholdPresence.authorityDeviceId]): its
+     * switch alone says whether the house is empty. Every phone still gets its notifications.
+     */
+    val decides: Boolean = false,
+) {
+    /**
+     * A test build — an Android debug install, an emulator — rather than a phone someone carries.
+     * iPhones are never one, while there is no iOS release channel: the relay's own rule for who
+     * votes when nobody decides alone. An older relay doesn't say the build, so there it is simply
+     * whatever doesn't count.
+     */
+    val isTestInstall: Boolean
+        get() = build?.let { !it.equals("release", ignoreCase = true) && !platform.equals("ios", ignoreCase = true) } ?: !countsForAway
+}
 
 /** Where home is, for the geofence every phone draws. Household state, kept by the relay. */
 data class HomeLocation(
@@ -60,11 +77,19 @@ data class HouseholdPresence(
     val everyoneAway: Boolean,
     /** The household's home, or null until someone has set it from a phone standing in it. */
     val home: HomeLocation? = null,
+    /**
+     * The one install whose switch alone decides [everyoneAway] — the presence authority — or null
+     * while every counting phone votes (and from an older relay). See `docs/away-mode.md`.
+     */
+    val authorityDeviceId: String? = null,
 ) {
-    /** The phones the relay actually counts — release installs (and, for now, any iPhone). */
+    /** The phones the relay actually counts — the authority alone, or else release installs (and, for now, any iPhone). */
     val countingDevices: List<PresenceDevice> get() = devices.filter { it.countsForAway }
 
     val thisDevice: PresenceDevice? get() = devices.firstOrNull { it.isThisDevice }
+
+    /** The presence authority's entry, if there is one and the relay listed it. */
+    val decidingDevice: PresenceDevice? get() = devices.firstOrNull { it.decides }
 
     companion object {
         val EMPTY = HouseholdPresence(devices = emptyList(), everyoneAway = false)
@@ -73,11 +98,11 @@ data class HouseholdPresence(
 
 /**
  * The Settings list of the household's devices, split the way a person reads it: [primary] is
- * the phones that decide away mode and are in use — this phone always among them, even as a
- * debug build, since its switch is right above — counted ones first. [others] is what folds away
- * behind "N other devices": debug installs, and anything not heard from in [STALE_AFTER_SECONDS],
- * which is what a reinstalled app leaves behind. Those are listed counted first, then most
- * recently seen first, so the long-dead ones sink to the bottom.
+ * the household's phones in use — this phone always among them, even as a debug build, since its
+ * switch is right above — the one that decides alone first, then the rest that aren't test
+ * installs. [others] is what folds away behind "N other devices": test installs, and anything not
+ * heard from in [STALE_AFTER_SECONDS], which is what a reinstalled app leaves behind. Those are
+ * listed counted first, then most recently seen first, so the long-dead ones sink to the bottom.
  */
 data class HouseholdDeviceList(
     val primary: List<PresenceDevice>,
@@ -96,9 +121,11 @@ data class HouseholdDeviceList(
         fun of(devices: List<PresenceDevice>, nowEpochSeconds: Double): HouseholdDeviceList {
             fun stale(device: PresenceDevice): Boolean =
                 device.lastSeenEpochSeconds?.let { nowEpochSeconds - it > STALE_AFTER_SECONDS } ?: false
-            val (primary, others) = devices.partition { it.isThisDevice || (it.countsForAway && !stale(it)) }
+            // A presence authority leaves every other phone uncounted, but a phone someone carries
+            // is still the household's; only test installs and stale rows fold away.
+            val (primary, others) = devices.partition { it.isThisDevice || it.decides || (!it.isTestInstall && !stale(it)) }
             return HouseholdDeviceList(
-                primary = primary.sortedWith(compareBy({ !it.countsForAway }, { !it.isThisDevice })),
+                primary = primary.sortedWith(compareBy({ !it.decides }, { it.isTestInstall }, { !it.isThisDevice })),
                 others = others.sortedWith(compareBy({ !it.countsForAway }, { -(it.lastSeenEpochSeconds ?: 0.0) })),
             )
         }

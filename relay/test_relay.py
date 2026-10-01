@@ -2682,6 +2682,117 @@ class CarPresenceTest(_FakeFrigate):
         self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM notify_log WHERE route='car'").fetchone()[0]))
 
 
+class SummaryTest(_FakeFrigate):
+    """What stayed quiet while someone was home, told a few times a day."""
+
+    # 2026-09-29 12:00 UTC (the household's clock is UTC here: no phone has said its zone).
+    NOON = 1790683200.0
+
+    def setUp(self):
+        super().setUp()
+        self._policy, self._hours = relay.NOTIFY_POLICY, relay.DIGEST_HOURS
+        relay.NOTIFY_POLICY, relay.DIGEST_HOURS = "v2", [9, 12, 15, 18, 21]
+        relay.HOUSEHOLD_CARS = {"andrews_tesla": {}, "sarahs_car": {}}
+        self.pushes = []
+
+    def tearDown(self):
+        relay.NOTIFY_POLICY, relay.DIGEST_HOURS = self._policy, self._hours
+        super().tearDown()
+
+    def push(self, title, body, data, **kwargs):
+        self.pushes.append((title, body, data))
+        return {"sent": 1}
+
+    def kept(self, rid, start, objects, sub_labels=(), camera="amcrest_1", at=None):
+        item = review(rid, start, objects, sub_labels, camera=camera, zones=())
+        relay.with_db(lambda c: c.execute("DELETE FROM notify_log WHERE key=?", (rid,)))
+        relay.log_decision(rid, "home", "digest", camera, "", "", start, rid + "-e", item)
+        relay.with_db(lambda c: (c.execute("UPDATE notify_log SET at=? WHERE key=?", (at or start + 5, rid)), c.commit()))
+
+    def test_the_slot_is_the_latest_hour_passed(self):
+        self.assertEqual(self.NOON, relay.digest_slot(self.NOON, None))
+        self.assertEqual(self.NOON, relay.digest_slot(self.NOON + 3 * 3600 - 1, None))
+        self.assertEqual(self.NOON - 3 * 3600, relay.digest_slot(self.NOON - 1, None))
+        self.assertEqual(self.NOON - 15 * 3600, relay.digest_slot(self.NOON - 12 * 3600, None), "past midnight: last night's 9 PM")
+
+    def test_the_first_slot_starts_the_summaries_and_the_next_tells_what_was_kept(self):
+        relay.summarise(self.NOON + 10, push=self.push)
+        self.assertEqual([], self.pushes)
+        self.kept("a", self.NOON + 600, ["person"], ["sarah"])
+        self.kept("b", self.NOON + 700, ["person"])  # the same visit as a: still Sarah's
+        self.kept("c", self.NOON + 3600, ["person"])
+        self.kept("d", self.NOON + 4000, ["person"], camera="hikvision_2")
+        self.kept("e", self.NOON + 4100, ["dog"], camera="hikvision_2")
+        self.kept("f", self.NOON + 5000, ["car"], camera="hikvision_1")
+        self.kept("g", self.NOON + 6000, ["car"], ["sarahs_car"], camera="hikvision_1")
+        relay.summarise(self.NOON + 3 * 3600 + 20, push=self.push)
+        self.assertEqual(
+            [("Since 12:00 PM UTC: 5 visits",
+              "Front Door: Sarah, 1 unknown person · Backyard: 1 unknown person, dog · Front Yard: Sarah's Car, 1 unknown car",
+              {"notif_id": "summary", "summary": "1", "silent": "1"})],
+            self.pushes,
+        )
+        relay.summarise(self.NOON + 3 * 3600 + 40, push=self.push)
+        self.assertEqual(1, len(self.pushes), "once a slot")
+
+    def test_a_summary_of_only_named_people_skips_the_phones_that_want_strangers(self):
+        familiar = []
+        push = lambda title, body, data, **kwargs: familiar.append(kwargs.get("familiar")) or {"sent": 1}
+        relay.summarise(self.NOON + 10, push=push)
+        self.kept("a", self.NOON + 600, ["person"], ["sarah"])
+        self.kept("b", self.NOON + 4000, ["person"], ["andrew"], camera="hikvision_2")
+        relay.summarise(self.NOON + 3 * 3600 + 10, push=push)
+        self.kept("c", self.NOON + 3 * 3600 + 600, ["person"], ["sarah"])
+        self.kept("d", self.NOON + 3 * 3600 + 700, ["dog"], camera="hikvision_2")
+        relay.summarise(self.NOON + 6 * 3600 + 10, push=push)
+        self.kept("e", self.NOON + 6 * 3600 + 600, ["person"])
+        relay.summarise(self.NOON + 9 * 3600 + 10, push=push)
+        self.assertEqual([True, False, False], familiar, "family only; family and a dog; a stranger")
+
+    def test_nothing_kept_no_summary(self):
+        relay.summarise(self.NOON + 10, push=self.push)
+        relay.summarise(self.NOON + 3 * 3600 + 10, push=self.push)
+        self.assertEqual([], self.pushes)
+
+    def test_a_slot_slept_through_is_told_by_the_next(self):
+        relay.summarise(self.NOON + 10, push=self.push)
+        self.kept("a", self.NOON + 600, ["person"])
+        relay.summarise(self.NOON + 3 * 3600 + relay.DIGEST_LATE_SECONDS + 1, push=self.push)
+        self.assertEqual([], self.pushes)
+        self.kept("b", self.NOON + 4 * 3600, ["person"], camera="hikvision_2")
+        relay.summarise(self.NOON + 6 * 3600 + 5, push=self.push)
+        self.assertEqual([("Since 12:00 PM UTC: 2 visits", "Front Door: 1 unknown person · Backyard: 1 unknown person")],
+                         [(t, b) for t, b, _ in self.pushes])
+
+    def test_shadow_only_logs_the_summary(self):
+        relay.NOTIFY_POLICY = "shadow"
+        relay.summarise(self.NOON + 10, push=self.push)
+        self.kept("a", self.NOON + 600, ["person"])
+        relay.summarise(self.NOON + 3 * 3600 + 10, push=self.push)
+        self.assertEqual([], self.pushes)
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM notify_log WHERE route='summary'").fetchone()[0]))
+
+    def test_the_log_from_before_the_summary_gains_its_columns(self):
+        import sqlite3
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = os.path.join(directory, "relay.db")
+            old = sqlite3.connect(path)
+            old.execute("CREATE TABLE notify_log (key TEXT PRIMARY KEY, at REAL, policy TEXT, mode TEXT, route TEXT,"
+                        " camera TEXT, title TEXT, body TEXT, start REAL, event_id TEXT)")
+            old.commit()
+            old.close()
+            real, relay.DB_PATH = relay.DB_PATH, path
+            try:
+                conn = relay.db()
+                columns = [row[1] for row in conn.execute("PRAGMA table_info(notify_log)")]
+                conn.close()
+            finally:
+                relay.DB_PATH = real
+            self.assertEqual(["labels", "names"], columns[-2:])
+
+
 class FinanceSheet(unittest.TestCase):
     """The budget sheet route: Google's refusals as setup steps, the payload, who may read it, and its cache."""
 

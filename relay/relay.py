@@ -275,8 +275,13 @@ def db() -> sqlite3.Connection:
     # old rules did, "legacy-sound", "legacy-silent", "legacy-away".
     conn.execute(
         "CREATE TABLE IF NOT EXISTS notify_log (key TEXT PRIMARY KEY, at REAL, policy TEXT, mode TEXT, route TEXT,"
-        " camera TEXT, title TEXT, body TEXT, start REAL, event_id TEXT)"
+        " camera TEXT, title TEXT, body TEXT, start REAL, event_id TEXT, labels TEXT, names TEXT)"
     )
+    # `labels`/`names` (JSON lists: the review's labels, and the names put to its faces and cars)
+    # came with the summary; a notify_log from before it gains them here.
+    if not {"labels", "names"} <= {row[1] for row in conn.execute("PRAGMA table_info(notify_log)")}:
+        conn.execute("ALTER TABLE notify_log ADD COLUMN labels TEXT")
+        conn.execute("ALTER TABLE notify_log ADD COLUMN names TEXT")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -1263,7 +1268,8 @@ class Followups:
 #   notification rather than sounding on their own (`folded_into_car`);
 # - everything else — the Front Door, the Backyard, unnamed cars, animals — is kept for a summary
 #   (`notify_log`, route "digest").
-# While everyone is away, the old rules stand: every alert, and every person escalated.
+# While everyone is away: under "v2" every alert and person detection, grouped into visits and
+# loud (see `poll_forever`); otherwise the old rules — every alert, and every person escalated.
 #
 # NOTIFY_POLICY: "legacy" pushes by the old rules only; "shadow" pushes by the old rules and logs
 # what this policy would have done, to compare the two; "v2" pushes by this policy.
@@ -1277,10 +1283,14 @@ FOLD_NAME_WAIT_SECONDS = 20.0
 
 
 def log_decision(key: str, mode: str, route: str, camera: str, title: str = "", body: str = "",
-                 start: float | None = None, event_id: str | None = None) -> None:
+                 start: float | None = None, event_id: str | None = None, item: dict[str, Any] | None = None) -> None:
+    """One decision into `notify_log`; with the review `item`, its labels and names too, for the summary."""
+    labels = json.dumps(review_labels(item)) if item else None
+    names = json.dumps(review_names(item)) if item else None
     with_db(lambda c: (c.execute(
-        "INSERT OR REPLACE INTO notify_log VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (key, time.time(), NOTIFY_POLICY, mode, route, camera, title, body, start, event_id),
+        "INSERT OR REPLACE INTO notify_log (key, at, policy, mode, route, camera, title, body, start, event_id, labels, names)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+        (key, time.time(), NOTIFY_POLICY, mode, route, camera, title, body, start, event_id, labels, names),
     ), c.commit()))
 
 
@@ -1609,8 +1619,136 @@ def tell_home(item: dict[str, Any], route: str, run: dict[str, Any] | None, zone
             result = (push or broadcast)(title, body, data, familiar=is_recognised_person(item))
         sent_body = body if route in ("instant", "update") else f"({route})"
         with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), sent_body)), c.commit()))
-    log_decision(rid, "home", route, camera, title, body, float(item.get("start_time") or 0), event_id)
+    log_decision(rid, "home", route, camera, title, body, float(item.get("start_time") or 0), event_id, item)
     log.info("alert %s at home (%s): %s -> %s: %s | %s", rid, NOTIFY_POLICY, route, title, body, result)
+
+
+# ---------------------------------------------------------------- summaries
+
+# What stayed quiet while someone was home (route "digest" in `notify_log`) is told a few times a
+# day, at DIGEST_HOURS on the household's clock, as one quiet notification that replaces the last:
+# "Since 12:00 PM: 5 visits" / "Front Door: Sarah, 2 unknown people · Backyard: dog · Front Yard:
+# 1 unknown car". Alerts on one camera no more than DIGEST_VISIT_GAP_SECONDS apart are one visit.
+# Nothing to tell, no summary. Under "shadow" it is only logged (route "summary").
+DIGEST_HOURS = sorted({int(h) for h in os.environ.get("DIGEST_HOURS", "9,12,15,18,21").split(",") if h.strip().isdigit() and 0 <= int(h) < 24})
+DIGEST_KEY = "digest_until"
+DIGEST_VISIT_GAP_SECONDS = 300.0
+# A slot this long gone (the relay was down through it) is folded into the next one rather than sent late.
+DIGEST_LATE_SECONDS = 1800.0
+ANIMAL_LABELS = {"dog", "cat", "bird", "horse", "sheep", "cow", "bear", "deer", "raccoon", "squirrel", "rabbit", "fox", "skunk"}
+
+
+def digest_slot(now: float, zone: ZoneInfo | None) -> float | None:
+    """The latest DIGEST_HOURS slot at or before `now`, on the household's clock (UTC when unknown)."""
+    local = datetime.fromtimestamp(now, zone or timezone.utc)
+    midnight = local.replace(hour=0, minute=0, second=0, microsecond=0)
+    slots = [(midnight - timedelta(days=d)).replace(hour=h).timestamp() for d in (0, 1) for h in DIGEST_HOURS]
+    past = [t for t in slots if t <= now]
+    return max(past) if past else None
+
+
+def digest_rows(after: float, until: float) -> list[dict[str, Any]]:
+    """The alerts kept for the summary that were decided in (after, until], oldest first."""
+    rows = with_db(lambda c: c.execute(
+        "SELECT camera, start, labels, names FROM notify_log WHERE route='digest' AND at>? AND at<=? ORDER BY start",
+        (after, until),
+    ).fetchall())
+    return [{"camera": c, "start": float(st or 0), "labels": json.loads(lb or "[]"), "names": json.loads(nm or "[]")} for c, st, lb, nm in rows]
+
+
+def digest_visits(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rows as visits: per camera, alerts no more than DIGEST_VISIT_GAP_SECONDS apart, with everything they saw."""
+    visits: list[dict[str, Any]] = []
+    last: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        visit = last.get(row["camera"])
+        if visit is None or row["start"] - visit["end"] > DIGEST_VISIT_GAP_SECONDS:
+            visit = last[row["camera"]] = {"camera": row["camera"], "start": row["start"], "end": row["start"], "labels": [], "names": []}
+            visits.append(visit)
+        visit["end"] = row["start"]
+        visit["labels"] = unique(visit["labels"] + row["labels"])
+        visit["names"] = unique(visit["names"] + row["names"])
+    return visits
+
+
+def plural(count: int, one: str, many: str) -> str:
+    return f"{count} {one if count == 1 else many}"
+
+
+def digest_text(visits: list[dict[str, Any]], since: float, zone: ZoneInfo | None) -> tuple[str, str]:
+    """
+    The summary's title and body: each camera in the order it was first busy, and on it who (by
+    name, else how many visits had someone unknown), which cars (the same), and any animals.
+    """
+    by_camera: dict[str, list[dict[str, Any]]] = {}
+    for visit in visits:
+        by_camera.setdefault(visit["camera"], []).append(visit)
+    parts = []
+    for camera, seen in by_camera.items():
+        people: list[str] = []
+        cars: list[str] = []
+        strangers = unknown_cars = 0
+        others: list[str] = []
+        for visit in seen:
+            labels, names = visit["labels"], visit["names"]
+            car_named = car_names(labels, names)
+            faces = [n for n in names if n not in car_named]
+            if "person" in labels:
+                people += faces
+                strangers += not faces
+            if "car" in labels:
+                cars += car_named
+                unknown_cars += not car_named
+            others += [label for label in labels if label not in ("person", "car")]
+        words = [display_name(n) for n in unique(people)]
+        if strangers:
+            words.append(plural(strangers, "unknown person", "unknown people"))
+        words += [display_name(n) for n in unique(cars)]
+        if unknown_cars:
+            words.append(plural(unknown_cars, "unknown car", "unknown cars"))
+        words += [f"{label} ×{others.count(label)}" if others.count(label) > 1 else label for label in unique(others)]
+        parts.append(f"{camera_name(camera)}: {', '.join(words) or plural(len(seen), 'visit', 'visits')}")
+    return f"Since {clock_text(since, zone)}: {plural(len(visits), 'visit', 'visits')}", " · ".join(parts)
+
+
+def only_familiar(visits: list[dict[str, Any]]) -> bool:
+    """
+    Whether a summary is nothing but people Frigate put a name to — every visit people alone, and
+    each one named — so a phone that asked for strangers only isn't sent it. Anything else in it
+    (a stranger, a car, an animal) is news to that phone too.
+    """
+    def named_people_only(visit: dict[str, Any]) -> bool:
+        faces = [n for n in visit["names"] if n not in car_names(visit["labels"], visit["names"])]
+        return visit["labels"] == ["person"] and bool(faces)
+
+    return bool(visits) and all(named_people_only(v) for v in visits)
+
+
+def summarise(now: float | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
+    """At each DIGEST_HOURS slot: tells what was kept for the summary since the last one."""
+    if NOTIFY_POLICY == "legacy" or not DIGEST_HOURS:
+        return
+    now = time.time() if now is None else now
+    zone = household_zone()
+    slot = digest_slot(now, zone)
+    until = state_get(DIGEST_KEY)
+    if slot is None or (until is not None and slot <= float(until)):
+        return
+    if until is None:
+        state_set(DIGEST_KEY, slot)
+        return  # the first slot this relay has seen: the summaries start from here
+    if now - slot > DIGEST_LATE_SECONDS:
+        return  # slept through it: the next slot covers this one's time too
+    state_set(DIGEST_KEY, slot)
+    visits = digest_visits(digest_rows(float(until), slot))
+    if not visits:
+        return
+    title, body = digest_text(visits, float(until), zone)
+    result: Any = "not pushed"
+    if NOTIFY_POLICY == "v2":
+        result = (push or broadcast)(title, body, {"notif_id": "summary", "summary": "1", "silent": "1"}, familiar=only_familiar(visits))
+    log_decision(f"summary:{int(slot)}", "home", "summary", "", title, body, float(until))
+    log.info("summary (%s): %s | %s -> %s", NOTIFY_POLICY, title, body, result)
 
 
 def poll_forever() -> None:
@@ -1632,7 +1770,8 @@ def poll_forever() -> None:
             # and the normal pass below then finds it already in `sent`. ----
             promote_pending()
             since = away_since()
-            if since is not None:
+            # Under "v2" the away items go through the visits below instead, grouped and loud.
+            if since is not None and NOTIFY_POLICY != "v2":
                 for item in away_items(since):
                     if was_sent(item["id"]):
                         continue
@@ -1642,7 +1781,15 @@ def poll_forever() -> None:
             # ---- end away mode ----
             mode = "home" if since is None else "away"
             policy = NOTIFY_POLICY in ("shadow", "v2") and mode == "home"
+            # Under "v2", away is every alert and every person detection, each camera's run of them
+            # one visit: the first sounds on the loud channel, more of the same updates it quietly,
+            # and something new in it (a stranger after the family, a second car) sounds again.
+            grouped_away = NOTIFY_POLICY == "v2" and mode == "away"
             alerts = recent_alerts()
+            if grouped_away:
+                known = {item["id"] for item in alerts}
+                people = [item for item in away_items(since) if item["id"] not in known]
+                alerts = sorted(alerts + people, key=lambda item: float(item.get("start_time") or 0), reverse=True)
             visits.observe(alerts, time.time())
             yard.observe(alerts, time.time())
             for item in reversed(alerts):  # oldest first, so pushes arrive in order
@@ -1693,17 +1840,22 @@ def poll_forever() -> None:
                 if not sound:
                     data["silent"] = "1"
                 data.update(offers(item))
-                result = broadcast(title, body, data, familiar=is_recognised_person(item))
+                if grouped_away:
+                    title, data["away"] = f"Away · {title}", "1"
+                result = broadcast(title, body, data, away=grouped_away, familiar=is_recognised_person(item) and not grouped_away)
                 with_db(lambda c: (c.execute("INSERT OR REPLACE INTO sent VALUES (?,?,?)", (rid, time.time(), body)), c.commit()))
                 log.info("alert %s (visit %s, %s) -> %s: %s | %s", rid, visit.id, "sound" if sound else "silent", title, body, result)
                 if NOTIFY_POLICY == "shadow":
                     log_decision(f"{rid}:legacy", mode, "legacy-sound" if sound else "legacy-silent", item.get("camera", ""), title, body,
                                  float(item.get("start_time") or 0), data["event_id"])
-                followups.track(visit, body, data, time.time())
+                if not grouped_away:
+                    # A follow-up retells a visit as an ordinary push; an away visit's cars are told by car presence instead.
+                    followups.track(visit, body, data, time.time())
             followups.run(alerts, zones, time.time())
             if NOTIFY_POLICY in ("shadow", "v2"):
                 for change in cars.tick():
                     tell_car(change, mode)
+                summarise()
         except Exception as e:
             log.warning("poll error: %s", e)
         time.sleep(POLL_SECONDS)
