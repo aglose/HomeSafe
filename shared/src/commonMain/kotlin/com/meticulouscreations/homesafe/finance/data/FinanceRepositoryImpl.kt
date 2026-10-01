@@ -106,12 +106,15 @@ class FinanceRepositoryImpl(
         }
         val serverUrl = connectionRepository.currentServerUrl.value
             ?: return@withLock Result.failure(SheetUnavailableException(SheetProblem.SIGNED_OUT, "Not connected to the server"))
-        relay.workbook(serverUrl, refresh).mapCatching { wb ->
+        val workbook = relay.workbook(serverUrl, refresh).getOrElse { return@withLock Result.failure(it) }
+        // Not mapCatching: it would turn the Finance screen closing mid-parse (a cancellation)
+        // into a failed read, which would then show as a sync error.
+        suspendRunCatching {
             // Dozens of passes over a thousand-row grid: off the main thread.
             withContext(Dispatchers.Default) {
-                val grids = wb.grids()
-                val finance = PersonalFinanceParser.parse(wb.title, wb.fetchedAt.toLong(), grids, wb.url)
-                val charts = SheetChartReader.read(wb.charts, grids, wb.url)
+                val grids = workbook.grids()
+                val finance = PersonalFinanceParser.parse(workbook.title, workbook.fetchedAt.toLong(), grids, workbook.url)
+                val charts = SheetChartReader.read(workbook.charts, grids, workbook.url)
                 finance.copy(charts = charts, health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }))
             }
         }.onSuccess { sheet = TimeSource.Monotonic.markNow() to it }

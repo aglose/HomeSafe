@@ -531,6 +531,15 @@ class PersonalFinanceParserTest {
     }
 
     @Test
+    fun aRenamedFlowInLosesTheIncomeButNotTheDebtsBesideTheirOwnNames() {
+        val renamed = parseWith(sheetGrid("Home", homeCells + ("A5" to "Money In"), homeMerges))
+        val status = renamed.health.sections.associate { it.section to it.status }
+        assertEquals(SectionStatus.MISSING, status[SheetSection.INCOME])
+        assertEquals(SectionStatus.OK, status[SheetSection.DEBTS])
+        assertEquals(finance.debts, renamed.debts)
+    }
+
+    @Test
     fun anUndatedRowRightUnderTheHistoryIsReportedButFiguresFurtherDownAreNot() {
         val trailing = parseWith(sheetGrid("Home", homeCells + ("W64" to 701000.0), homeMerges))
         assertEquals(3, trailing.history.size)

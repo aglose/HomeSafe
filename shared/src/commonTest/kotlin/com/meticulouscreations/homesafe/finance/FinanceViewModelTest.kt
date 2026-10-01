@@ -137,6 +137,18 @@ class FinanceViewModelTest {
     }
 
     @Test
+    fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.slowSheet = CompletableDeferred()
+        val vm = FinanceViewModel(repo, clock)
+        vm.setActive(true)
+        runCurrent()
+        vm.setActive(false)
+        runCurrent()
+        assertNull(vm.uiState.value.sheetIssue)
+    }
+
+    @Test
     fun aFailedSyncKeepsTheLastReadAndSaysSo() = runTest(dispatcher) {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())

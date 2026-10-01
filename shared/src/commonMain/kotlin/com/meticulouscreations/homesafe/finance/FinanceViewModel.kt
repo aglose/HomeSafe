@@ -21,6 +21,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -232,6 +233,8 @@ class FinanceViewModel(
         repository.personalFinance(refresh)
             .onSuccess { f -> _uiState.update { it.copy(finance = f, financeLoading = false, sheetIssue = null) } }
             .onFailure { e ->
+                // A read cut short because Finance closed isn't a failed sync.
+                if (e is CancellationException) throw e
                 val issue = (e as? SheetUnavailableException)?.let { SheetIssue(it.problem, it.message.orEmpty(), it.serviceAccount, it.activationUrl) }
                     ?: SheetIssue(SheetProblem.OTHER, e.message ?: "Couldn't read the budget sheet", null, null)
                 _uiState.update { it.copy(financeLoading = false, sheetIssue = issue) }

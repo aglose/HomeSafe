@@ -218,14 +218,23 @@ object PersonalFinanceParser {
     /**
      * The debt block's title: a "Debt" cell with the people's names heading the columns to its
      * right, in its row or a row or two down — not, say, the history table's "Debt" column header.
+     * Without the people (their "Flow In" renamed), any words right beside it head the columns,
+     * as for the accounts.
      */
     private fun debtHeader(grid: SheetGrid, people: List<String>): DebtHeader? {
+        val historyRow = historyHeader(grid)?.first
         var from = 0
         while (true) {
             val (r0, c0) = grid.findLabel("Debt", rowsFrom = from) ?: return null
-            for (r in r0..r0 + 2) {
-                val found = (c0 + 1..c0 + HEADER_REACH).mapNotNull { col -> grid.text(r, col)?.takeIf { t -> people.any { it.equals(t, true) } }?.let { col to it } }
-                if (found.isNotEmpty()) return DebtHeader(c0, r, found)
+            if (r0 != historyRow) {
+                for (r in r0..r0 + 2) {
+                    val found = if (people.isNotEmpty()) {
+                        (c0 + 1..c0 + HEADER_REACH).mapNotNull { col -> grid.text(r, col)?.takeIf { t -> people.any { it.equals(t, true) } }?.let { col to it } }
+                    } else {
+                        (c0 + 1..c0 + 3).mapNotNull { col -> grid.text(r, col)?.takeIf { SheetGrid.parseLooseNumber(it) == null }?.let { col to it } }
+                    }
+                    if (found.isNotEmpty()) return DebtHeader(c0, r, found)
+                }
             }
             from = r0 + 1
         }
