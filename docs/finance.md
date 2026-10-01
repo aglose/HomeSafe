@@ -6,7 +6,7 @@ Robinhood's dark look: true black, one green for up and one orange-red for down.
 
 | Tab | What it shows | Where the data comes from |
 |---|---|---|
-| **Wallet** | Total assets over time, net worth, accounts by owner, allocation, monthly cash flow, debts, home equity, a mortgage planner, RSU/ESPP vesting, income and taxes by year, the last house sale, and the sheet's watchlist with live prices | The household budget sheet (Google Sheets), through the relay. Quotes from Yahoo Finance |
+| **Wallet** | Total assets over time, net worth, the sheet's own charts, accounts by owner, allocation, monthly cash flow, debts, home equity, a mortgage planner, RSU/ESPP vesting, income and taxes by year, the last house sale, and the sheet's watchlist with live prices | The household budget sheet (Google Sheets), through the relay. Quotes from Yahoo Finance |
 | **Markets** | S&P 500, Dow, Nasdaq, Russell 2000 and VIX, with live charts from 1 day to 5 years; 10-year yield, gold, oil, bitcoin and the dollar; the watchlist | Yahoo Finance's public chart endpoints, polled every 15 s while markets are open |
 | **Economy** | Inflation (CPI, core CPI, core PCE against the Fed's 2%), the Treasury yield curve now and in the past, 2/10/30-year yields, the real interest rate, key rates | FRED (the St. Louis Fed), keyless CSV downloads |
 | **Risk** | Twenty warning lights for a downturn or crisis, each against its own watch and danger line, blended into one 0–100 stress gauge | FRED |
@@ -22,6 +22,34 @@ The relay sends the sheet as it is: every tab's raw values and its merged ranges
 it with `PersonalFinanceParser`, which finds each block by its title ("Brokerage Accounts", "Flow
 Out", "Debt", "Future Holdings", the history table's "Date" row, and so on) rather than by cell
 address. Rows can be added, moved or removed. A block the parser can't find is left off the screen.
+
+### The sheet's own charts
+
+The charts in the sheet show up on the Wallet tab under **Sheet charts**, in the order they sit in
+the sheet, each drawn the finance app's way: a headline with the latest value and its change, lines
+and areas that scrub, bars that select by tap or slide, pies that highlight a slice. "Sheet ↗" opens
+the chart's tab in Google Sheets.
+
+Nothing is mapped by hand. The relay passes on what Google says about each chart: its kind, whether
+it stacks, the ranges it plots, and the number format of those cells (one extra call, for the
+formats). `SheetChartReader` then reads those ranges from the values it already has, the way Sheets
+does:
+
+- A range runs down a column, or along a row when it's one row high. Blank rows are dropped, so a
+  range left long for rows to come (`S61:S203`) is fine.
+- The header count is the chart's own setting. When the sheet leaves it to Google, a range that
+  starts with words has a header and one that starts with a number doesn't. With no header, the
+  label just above the range names the series.
+- The x axis is dates when the cells are formatted as dates. Without a format it's dates when every
+  value is a date serial between 1970 and 2099. Years like 2024 stay labels.
+- Values are money when the cells' format is currency or has a `$`, percentages when it's a percent.
+  Anything else is a plain number.
+- Lines, areas, stepped areas, scatter and combo charts are drawn as lines. Column and bar charts are
+  drawn as upright bars, green above zero and red below when there's one series. Pies become donuts
+  and scorecards a big number. Any other kind (a waterfall, a treemap) gets a card that links to it.
+
+So a chart added, edited or removed in the sheet changes the app on the next refresh, with no change
+to the app or the relay.
 
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add
@@ -69,8 +97,8 @@ sheet isn't shared, no id is configured, or the relay is older than this feature
   weight), `MarketCatalog`, and `FinanceRepository`.
 - `finance/data`: `YahooFinanceApi` and `FredApi` share their own `HttpClient`, so Frigate's
   session cookies never reach a third party. Also `FinanceRelayApi`, `SheetGrid` +
-  `PersonalFinanceParser`, and `FinanceRepositoryImpl`, which caches everything in memory and
-  shares in-flight loads between tabs.
+  `PersonalFinanceParser`, `SheetChartReader`, and `FinanceRepositoryImpl`, which caches
+  everything in memory and shares in-flight loads between tabs.
 - `FinanceViewModel` is activity-scoped and shared with the drawer's teaser card. It polls quotes
   only while the drawer or the app is on screen. Under the iOS 26 host, only the visible tab's
   composition counts as on screen.
@@ -78,7 +106,7 @@ sheet isn't shared, no id is configured, or the relay is older than this feature
   - `LineChart`: Robinhood scrubbing with haptic ticks, a morph between any two datasets, a
     draw-on reveal, danger zones and reference lines.
   - `RollingNumber`: odometer digits.
-  - `DonutChart` and `BarChart`.
+  - `DonutChart`, `BarChart`, and `GroupedBarChart` (several series side by side or stacked, for the sheet's charts).
   - Two runtime shaders, AGSL on Android and the same source as Skia effects elsewhere: the drifting
     aurora behind each headline (`AURORA_SHADER`) and the stress gauge's plasma ring
     (`STRESS_RING_SHADER`). Each has a plain fallback where shaders can't compile.

@@ -82,6 +82,8 @@ data class RelayWorkbook(
     @SerialName("fetched_at") val fetchedAt: Double = 0.0,
     val url: String? = null,
     val sheets: List<RelaySheet> = emptyList(),
+    /** The workbook's embedded charts; absent from a relay older than them. */
+    val charts: List<RelayChart> = emptyList(),
 ) {
     fun grids(): List<SheetGrid> = sheets.map { it.toGrid() }
 }
@@ -117,3 +119,50 @@ data class RelayMerge(
     @SerialName("start_column") val startColumn: Int,
     @SerialName("end_column") val endColumn: Int,
 )
+
+/**
+ * A chart as the relay describes it from Google's chart spec: its kind (Google's `chartType`, or
+ * `PIE`, `SCORECARD`, or the name of a kind the app doesn't draw), and the ranges it plots. The
+ * values themselves are in [RelayWorkbook.sheets]; `SheetChartReader` reads them from there.
+ */
+@Serializable
+data class RelayChart(
+    val id: Long? = null,
+    val sheet: String = "",
+    /** The tab's id, for a link straight to it (`#gid=`). */
+    val gid: Long? = null,
+    val title: String = "",
+    val subtitle: String = "",
+    val kind: String = "OTHER",
+    val stacked: String = "NOT_STACKED",
+    /** How many leading cells of each range are headers; null when the sheet leaves Google to guess. */
+    @SerialName("header_count") val headerCount: Int? = null,
+    val reversed: Boolean = false,
+    val domain: List<RelayRange> = emptyList(),
+    @SerialName("domain_format") val domainFormat: RelayNumberFormat? = null,
+    val series: List<RelayChartSeries> = emptyList(),
+)
+
+@Serializable
+data class RelayChartSeries(
+    val ranges: List<RelayRange> = emptyList(),
+    /** The series' own kind on a combo chart (`LINE`, `COLUMN`, `AREA`…). */
+    val type: String? = null,
+    /** `LEFT_AXIS` or `RIGHT_AXIS`: which vertical scale the series is drawn against. */
+    val axis: String = "LEFT_AXIS",
+    val format: RelayNumberFormat? = null,
+)
+
+/** A range of one tab, 0-based and end-exclusive; a null end runs to the edge of the tab's data. */
+@Serializable
+data class RelayRange(
+    val sheet: String,
+    @SerialName("start_row") val startRow: Int = 0,
+    @SerialName("end_row") val endRow: Int? = null,
+    @SerialName("start_column") val startColumn: Int = 0,
+    @SerialName("end_column") val endColumn: Int? = null,
+)
+
+/** A cell's number format as Google reports it: `type` is DATE, CURRENCY, PERCENT, NUMBER… */
+@Serializable
+data class RelayNumberFormat(val type: String = "", val pattern: String = "")

@@ -2747,6 +2747,77 @@ class FinanceSheet(unittest.TestCase):
         self.assertEqual({"start_row": 0, "end_row": 2, "start_column": 0, "end_column": 3}, body["sheets"][0]["merges"][1])
         self.assertEqual([], body["sheets"][1]["values"])
 
+    CHART_META = {
+        "properties": {"title": "Budget"},
+        "sheets": [
+            {"properties": {"sheetId": 0, "title": "Home", "sheetType": "GRID"}, "charts": [
+                {"chartId": 2, "position": {"overlayPosition": {"anchorCell": {"sheetId": 0, "rowIndex": 40, "columnIndex": 1}}},
+                 "spec": {"title": "Debt", "basicChart": {"chartType": "COLUMN", "domains": [{"domain": {"sourceRange": {"sources": [
+                     {"sheetId": 0, "startRowIndex": 60, "endRowIndex": 90, "startColumnIndex": 18, "endColumnIndex": 19}]}}}],
+                     "series": [{"series": {"sourceRange": {"sources": [{"sheetId": 0, "startRowIndex": 60, "endRowIndex": 90, "startColumnIndex": 25, "endColumnIndex": 26}]}}}]}}},
+                {"chartId": 1, "position": {"overlayPosition": {"anchorCell": {"sheetId": 0, "rowIndex": 10}}},
+                 "spec": {"title": "Assets", "basicChart": {"chartType": "AREA", "stackedType": "STACKED", "headerCount": 1, "domains": [{"domain": {"sourceRange": {"sources": [
+                     {"sheetId": 0, "startRowIndex": 59, "startColumnIndex": 18, "endColumnIndex": 19}]}}}],
+                     "series": [{"series": {"sourceRange": {"sources": [{"sheetId": 0, "startRowIndex": 59, "startColumnIndex": 23, "endColumnIndex": 24}]}}, "targetAxis": "RIGHT_AXIS"},
+                                {"series": {"sourceRange": {"sources": []}}}]}}},
+            ]},
+            {"properties": {"sheetId": 77, "title": "Forecasts", "sheetType": "GRID"}, "charts": [
+                {"chartId": 3, "spec": {"title": "Split", "pieChart": {"pieHole": 0.5,
+                    "domain": {"sourceRange": {"sources": [{"sheetId": 77, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 2, "endColumnIndex": 6}]}},
+                    "series": {"sourceRange": {"sources": [{"sheetId": 77, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 2, "endColumnIndex": 6}]}}}}},
+                {"chartId": 4, "spec": {"title": "Steps", "waterfallChart": {}}},
+                {"chartId": 5, "spec": {"basicChart": {"chartType": "LINE", "series": [{"series": {"sourceRange": {"sources": [
+                    {"sheetId": 99, "startRowIndex": 0, "endRowIndex": 5, "startColumnIndex": 0, "endColumnIndex": 1}]}}}]}}},
+            ]},
+        ],
+    }
+
+    def test_charts_are_read_tab_by_tab_and_top_to_bottom(self):
+        charts = relay.sheet_charts(self.CHART_META)
+        self.assertEqual([1, 2, 3, 4, 5], [c["id"] for c in charts])
+        self.assertEqual(["Home", "Home", "Forecasts", "Forecasts", "Forecasts"], [c["sheet"] for c in charts])
+        self.assertEqual([0, 0, 77, 77, 77], [c["gid"] for c in charts])
+
+    def test_a_basic_chart_names_its_ranges_by_tab_with_open_ends_kept(self):
+        assets = relay.sheet_charts(self.CHART_META)[0]
+        self.assertEqual(("AREA", "STACKED", 1), (assets["kind"], assets["stacked"], assets["header_count"]))
+        self.assertEqual([{"sheet": "Home", "start_row": 59, "end_row": None, "start_column": 18, "end_column": 19}], assets["domain"])
+        self.assertEqual(1, len(assets["series"]), "a series with no range is dropped")
+        self.assertEqual(("AREA", "RIGHT_AXIS"), (assets["series"][0]["type"], assets["series"][0]["axis"]))
+        self.assertEqual({"row": 10, "column": 0}, assets["anchor"])
+
+    def test_pies_other_kinds_and_ranges_on_unknown_tabs(self):
+        pie, waterfall, orphan = relay.sheet_charts(self.CHART_META)[2:]
+        self.assertEqual(("PIE", 0.5), (pie["kind"], pie["pie_hole"]))
+        self.assertEqual("Forecasts", pie["domain"][0]["sheet"])
+        self.assertEqual(("WATERFALL", []), (waterfall["kind"], waterfall["series"]))
+        self.assertEqual(("LINE", [], ""), (orphan["kind"], orphan["series"], orphan["title"]))
+
+    def test_each_range_is_probed_for_its_format_one_cell_past_its_start(self):
+        self.assertEqual(("Home", 61, 18), relay.format_probe({"sheet": "Home", "start_row": 60, "end_row": 90, "start_column": 18, "end_column": 19}))
+        self.assertEqual(("Home", 60, 3), relay.format_probe({"sheet": "Home", "start_row": 60, "end_row": 61, "start_column": 2, "end_column": 6}))
+        self.assertEqual(("Home", 60, 2), relay.format_probe({"sheet": "Home", "start_row": 60, "end_row": 61, "start_column": 2, "end_column": 3}))
+        self.assertEqual(("Home", 60, 2), relay.format_probe({"sheet": "Home", "start_row": 59, "end_row": None, "start_column": 2, "end_column": 3}))
+        cells = relay.format_probes(relay.sheet_charts(self.CHART_META))
+        self.assertEqual(len(cells), len(set(cells)), "a range two charts share is asked about once")
+        self.assertIn("'Home'!S61", [relay.cell_a1(c) for c in cells])
+        self.assertEqual(["A", "Z", "AA", "AZ", "BA"], [relay.column_letters(i) for i in (0, 25, 26, 51, 52)])
+
+    def test_formats_are_matched_back_to_the_ranges(self):
+        answer = {"sheets": [{"properties": {"title": "Home"}, "data": [
+            {"startRow": 60, "startColumn": 18, "rowData": [{"values": [{"effectiveFormat": {"numberFormat": {"type": "DATE", "pattern": "mmm-yy"}}}]}]},
+            {"startRow": 60, "startColumn": 23, "rowData": [{"values": [{"effectiveFormat": {"numberFormat": {"type": "CURRENCY"}}}]}]},
+            {"startRow": 61, "startColumn": 25, "rowData": [{"values": [{}]}]},
+        ]}]}
+        formats = relay.cell_formats(answer)
+        self.assertEqual({"type": "DATE", "pattern": "mmm-yy"}, formats[("Home", 60, 18)])
+        self.assertNotIn(("Home", 61, 25), formats)
+        values = {"valueRanges": [{"values": []}, {"values": []}]}
+        assets, debt = relay.sheet_payload(self.CHART_META, values, "abc", 1.0, formats)["charts"][:2]
+        self.assertEqual("DATE", assets["domain_format"]["type"])
+        self.assertEqual("CURRENCY", assets["series"][0]["format"]["type"])
+        self.assertIsNone(debt["series"][0]["format"])
+
     def test_only_admins_or_the_listed_users_may_read_it(self):
         saved = relay.FINANCE_USERS
         try:
@@ -2842,6 +2913,19 @@ class FinanceSheetRoute(unittest.TestCase):
             relay.get_finance_sheet(object(), self.response)
         self.assertEqual(502, caught.exception.status_code)
         self.assertNotIn("sheet123", caught.exception.detail["message"])
+
+    def test_charts_ask_for_their_formats_and_go_without_them_on_a_failure(self):
+        self.sheets.meta = (200, FinanceSheet.CHART_META)
+        self.sheets.values = (200, {"valueRanges": [{"values": []}, {"values": []}]})
+        body = relay.get_finance_sheet(object(), self.response)
+        self.assertEqual(3, len(self.sheets.calls))
+        _, params = self.sheets.calls[2]
+        self.assertIn(("ranges", "'Home'!S61"), params)
+        self.assertTrue(any(k == "fields" and "numberFormat" in v for k, v in params))
+        self.assertEqual(5, len(body["charts"]))
+        failing = _FakeSheets((200, FinanceSheet.CHART_META))
+        failing.get = lambda url, params=None, timeout=None: (_ for _ in ()).throw(ConnectionError("down"))
+        self.assertEqual({}, relay.chart_formats(failing, FinanceSheet.CHART_META))
 
     def test_no_sheet_configured(self):
         relay.FINANCE_SHEET_ID = ""
