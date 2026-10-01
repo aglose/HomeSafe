@@ -243,18 +243,20 @@ class PushRelayApi(private val httpClient: HttpClient) {
     /**
      * Someone saying [eventId], a person detection, was not a person: the relay keeps its box as a
      * phantom spot on its camera, so the same thing there isn't pushed again, and files the
-     * detection as a `none` example for the person classifier when there is one. A user action, so
-     * the session cookie. Answers the spot.
+     * detection as a phantom example for the person classifier when there is one. A user action:
+     * the session cookie in the app, or — for a notification's "Not a person" button, which may
+     * wake the app with no session — this install's [deviceId] and [secret]. Answers the spot.
      */
-    suspend fun markNotAPerson(serverUrl: String, eventId: String): Result<PhantomSpot> = runCatching {
-        val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
-        response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException("Relay kept no spot")
-    }
+    suspend fun markNotAPerson(serverUrl: String, eventId: String, deviceId: String? = null, secret: String? = null): Result<PhantomSpot> =
+        runCatching {
+            val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/not_a_person")) { asDevice(deviceId, secret) }
+            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+            response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException("Relay kept no spot")
+        }
 
-    /** Takes a [markNotAPerson] back: the phantom spot goes. */
-    suspend fun undoNotAPerson(serverUrl: String, eventId: String): Result<Unit> = runCatching {
-        val response = httpClient.delete(relayUrl(serverUrl, "/events/$eventId/not_a_person"))
+    /** Takes a [markNotAPerson] back, the same way it was given: the phantom spot goes, and the example it filed. */
+    suspend fun undoNotAPerson(serverUrl: String, eventId: String, deviceId: String? = null, secret: String? = null): Result<Unit> = runCatching {
+        val response = httpClient.delete(relayUrl(serverUrl, "/events/$eventId/not_a_person")) { asDevice(deviceId, secret) }
         if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
     }
 
@@ -267,6 +269,13 @@ class PushRelayApi(private val httpClient: HttpClient) {
 
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")
+    }
+
+    /** The install's own door, when there's an install to speak for; otherwise the session cookie alone. */
+    private fun HttpRequestBuilder.asDevice(deviceId: String?, secret: String?) {
+        if (deviceId == null) return
+        parameter("device", deviceId)
+        bearer(secret)
     }
 
     companion object {

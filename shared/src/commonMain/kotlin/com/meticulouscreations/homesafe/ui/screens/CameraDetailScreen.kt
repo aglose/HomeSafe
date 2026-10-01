@@ -83,6 +83,7 @@ import com.meticulouscreations.homesafe.ui.formatDuration
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
+import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
@@ -101,7 +102,7 @@ import kotlin.math.roundToInt
  *
  * [openedEventId] is that detection, when known. If its car is one the classifier didn't name,
  * the screen offers to tag it, and with [tagCarOnOpen] (a notification's "Tag car" button) opens
- * the picker straight away.
+ * the picker straight away. If it's a person nobody named, the screen offers "Not a person".
  *
  * [onClip] opens the clip editor around [anchorEpochSeconds] — the frame on screen, or "now" at
  * the live edge — with its splash landing at [originFraction] of the window (the scissors).
@@ -124,6 +125,8 @@ fun CameraDetailScreen(
     val viewModel = cameraDetailViewModel(cameraName)
     val tagViewModel: MomentCarTagViewModel = metroViewModel()
     val tagState by tagViewModel.uiState.collectAsStateWithLifecycle()
+    val personViewModel: LandedPersonViewModel = metroViewModel()
+    val personState by personViewModel.uiState.collectAsStateWithLifecycle()
     // Deliberately *not* collected here: `viewModel.playback`, which changes four times a
     // second while a recording plays (position polls) and on every pixel of a timeline drag.
     // Each piece of UI that needs it collects it itself (PlayerSurface, QuickActionsRow,
@@ -163,7 +166,10 @@ fun CameraDetailScreen(
         openAtEpochSeconds?.let(viewModel::playMoment)
     }
     LaunchedEffect(openedEventId) {
-        openedEventId?.let { tagViewModel.lookUp(it, openPicker = tagCarOnOpen) }
+        openedEventId?.let {
+            tagViewModel.lookUp(it, openPicker = tagCarOnOpen)
+            personViewModel.lookUp(it)
+        }
     }
     TagCarDialog(
         state = tagState,
@@ -268,6 +274,9 @@ fun CameraDetailScreen(
                 tagState.landed?.let { landed ->
                     TagCarPrompt(summary = landed.summary, taggedAs = tagState.tagged[landed.eventId], onTag = tagViewModel::openLanded)
                 }
+
+                // ... or when its person was one nobody named: was anyone there?
+                NotAPersonPrompt(state = personState, onMark = personViewModel::mark, onUndo = personViewModel::undo)
 
                 // Cars in view that a classifier still wants a name for. Polls and recomposes on
                 // its own, and takes no room when there's nothing to ask about.

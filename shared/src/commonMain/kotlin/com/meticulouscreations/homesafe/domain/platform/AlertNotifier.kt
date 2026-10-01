@@ -52,6 +52,12 @@ data class AlertNotification(
      */
     val offerCarTag: Boolean = false,
     /**
+     * The detection is a person nobody named, who may not be a person at all, so the notification
+     * offers to say so (the relay's `person_unnamed`). Android adds a "Not a person" button that
+     * marks it without opening the app; elsewhere a tap lands on the detection, which offers it.
+     */
+    val offerNotAPerson: Boolean = false,
+    /**
      * The relay's periodic summary (`summary=1`): what the cameras saw while someone was home,
      * gathered into one [body] that may run long. Posted quietly on its own low channel with the
      * whole text showing, no picture and no heads-up; it names no detection, so it has no

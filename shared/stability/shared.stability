@@ -1272,6 +1272,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPill(marking: 
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPrompt(state: com.meticulouscreations.homesafe.viewmodel.LandedPersonUiState, onMark: kotlin.Function0<kotlin.Unit>, onUndo: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onMark: STABLE (function type)
+    - onUndo: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.OtherDevicesToggle(count: kotlin.Int, counted: kotlin.Int, expanded: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
