@@ -42,7 +42,20 @@ class NarratorTest {
         assertTrue(Narrator.verdict(reading("cpi", 2.0)).contains("right around the Fed's 2% goal"))
         assertTrue(Narrator.verdict(reading("cpi", 3.0)).contains("a bit faster"))
         assertTrue(Narrator.verdict(reading("cpi", 4.0)).contains("well above"))
-        assertTrue(Narrator.verdict(reading("cpi", -0.5)).contains("falling"))
+        val deflation = Narrator.verdict(reading("cpi", -0.5))
+        assertTrue(deflation.startsWith("Prices are 0.5% lower than a year ago."), deflation)
+        assertTrue(deflation.contains("falling"))
+    }
+
+    @Test
+    fun fallingPricesAreNeverCalledNegativeRises() {
+        val r = mapOf("cpi" to reading("cpi", -1.0))
+        val mine = assertNotNull(Narrator.forYou("cpi", r, emptyMap(), FinanceFixtures.finance))
+        assertTrue(mine.startsWith("Prices are falling"), mine)
+        assertTrue(!mine.contains("-"), mine)
+        val briefing = Narrator.briefing(r, null, emptyMap())
+        assertTrue(briefing.items.first { it.topic == "Prices" }.sentence.contains("1.0% lower"))
+        assertTrue(Narrator.verdict(reading("corepce", -0.4)).contains("falling 0.4%"))
     }
 
     @Test

@@ -233,10 +233,15 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
         finance.runwayMonths?.let { m ->
             add(
                 CheckLine(
-                    m >= 6,
+                    // Passing from three months, the bottom of the rule it quotes; six gets the stronger word.
+                    m >= 3,
                     "Emergency fund",
                     "Your cash covers ${FinanceFormat.grouped(m, 1)} months of expenses.",
-                    if (m >= 6) "Comfortably past the 3–6 months planners suggest." else "Planners suggest 3–6 months; building cash first protects you against a layoff.",
+                    when {
+                        m >= 6 -> "Comfortably past the 3–6 months planners suggest."
+                        m >= 3 -> "Within the 3–6 months planners suggest; toward six is safer if one job carries the household."
+                        else -> "Planners suggest 3–6 months; building cash first protects you against a layoff."
+                    },
                     "runway",
                 ),
             )

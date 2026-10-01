@@ -260,6 +260,13 @@ internal fun PriceHeroAndChart(
                     modifier = Modifier.padding(horizontal = PageGutter, vertical = 6.dp),
                 )
             }
+            HowToRead(
+                if (range == ChartRange.DAY) {
+                    "The line is today's price, minute by minute. The dotted line is yesterday's close: above it (green) the day is up, below it (orange) the day is down. Drag along the chart to see the price at any moment, and pick a range to look further back."
+                } else {
+                    "The line is the price over ${rangeCaption(range).lowercase()}; it's green if it's higher now than at the start and orange if lower. Drag along the chart to see the price on any day."
+                },
+            )
         }
     }
 }

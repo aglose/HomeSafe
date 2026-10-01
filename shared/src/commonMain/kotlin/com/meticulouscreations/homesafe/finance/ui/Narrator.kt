@@ -107,10 +107,15 @@ object Narrator {
                     v <= 5 -> "That's well above the Fed's 2% goal."
                     else -> "That's far above the Fed's 2% goal — the kind that squeezes budgets."
                 }
-                "Prices are ${pct(v)} higher than a year ago. $vs"
+                // Deflation is said as prices lower, never "−0.5% higher".
+                (if (v >= 0) "Prices are ${pct(v)} higher than a year ago. " else "Prices are ${pct(abs(v))} lower than a year ago. ") + vs
             }
 
-            "corepce" -> "The Fed's preferred measure says prices are rising ${pct(v)} a year, against its 2% target."
+            "corepce" -> if (v >= 0) {
+                "The Fed's preferred measure says prices are rising ${pct(v)} a year, against its 2% target."
+            } else {
+                "The Fed's preferred measure says prices are falling ${pct(abs(v))} a year, below its 2% target."
+            }
 
             "unrate" -> "About ${FinanceFormat.grouped(v, 1)} out of every 100 people who want a job can't find one." +
                 if (v < 4.5) {
@@ -215,11 +220,20 @@ object Narrator {
         return when (id) {
             "cpi", "corecpi", "corepce" -> r?.let { inflation ->
                 val spend = finance?.monthlyExpenses
-                if (spend != null) {
-                    val more = spend * inflation / (100 + inflation)
-                    "If your ${FinanceFormat.money(spend, 0)} of monthly spending rose with prices, the same things would have cost about ${FinanceFormat.money(more, 0)} less a year ago. Raises below ${pct(inflation)} mean your pay buys less than it did."
-                } else {
-                    "Something that cost \$100 a year ago costs about ${FinanceFormat.money(100 + inflation, 2)} now. A raise smaller than ${pct(inflation)} means your pay buys less than it did."
+                when {
+                    inflation < 0 && spend != null -> {
+                        val less = spend * abs(inflation) / (100 + inflation)
+                        "Prices are falling: your ${FinanceFormat.money(spend, 0)} of monthly spending buys what would have cost about ${FinanceFormat.money(less, 0)} more a year ago."
+                    }
+
+                    inflation < 0 -> "Prices are falling: something that cost \$100 a year ago costs about ${FinanceFormat.money(100 + inflation, 2)} now."
+
+                    spend != null -> {
+                        val more = spend * inflation / (100 + inflation)
+                        "If your ${FinanceFormat.money(spend, 0)} of monthly spending rose with prices, the same things would have cost about ${FinanceFormat.money(more, 0)} less a year ago. Raises below ${pct(inflation)} mean your pay buys less than it did."
+                    }
+
+                    else -> "Something that cost \$100 a year ago costs about ${FinanceFormat.money(100 + inflation, 2)} now. A raise smaller than ${pct(inflation)} means your pay buys less than it did."
                 }
             }
 
@@ -261,7 +275,11 @@ object Narrator {
 
             "unrate", "sahm", "icsa" -> finance?.runwayMonths?.let { months ->
                 "Your cash would cover about ${FinanceFormat.grouped(months, 1)} months of expenses if a paycheck stopped" +
-                    if (months >= 6) " — a solid cushion." else " — planners suggest at least 3–6 months."
+                    when {
+                        months >= 6 -> " — a solid cushion."
+                        months >= 3 -> " — within the 3–6 months planners suggest."
+                        else -> " — planners suggest at least 3–6 months."
+                    }
             }
 
             "sp500", "vix" -> {
@@ -304,6 +322,7 @@ object Narrator {
                 "Prices",
                 Weather.of(r.signal),
                 when {
+                    v < 0 -> "Prices are falling (${pct(abs(v))} lower than a year ago) — rare, and usually a sign of a weak economy."
                     v <= 2.5 -> "Prices are rising at a normal pace (${pct(v)} a year)."
                     v <= 4 -> "Prices are still rising a little too fast (${pct(v)} a year vs the 2% goal)."
                     else -> "Prices are rising fast (${pct(v)} a year) — budgets are being squeezed."

@@ -10,7 +10,12 @@ import com.meticulouscreations.homesafe.finance.domain.HouseSale
 import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
+import com.meticulouscreations.homesafe.finance.domain.ParseNote
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.finance.domain.SectionHealth
+import com.meticulouscreations.homesafe.finance.domain.SectionStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetHealth
+import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
@@ -36,8 +41,9 @@ object PersonalFinanceParser {
         val oldHouse = sheets.firstOrNull { it.contains("Sold Price") }
 
         val people = home?.let(::people).orEmpty()
-        val accounts = home?.let { accounts(it) }.orEmpty() + home?.let(::cashAccounts).orEmpty()
-        return PersonalFinance(
+        val accounts = home?.let { accounts(it, people.map { p -> p.second }) }.orEmpty() + home?.let(::cashAccounts).orEmpty()
+        val notes = mutableListOf<ParseNote>()
+        val finance = PersonalFinance(
             title = title,
             fetchedAtEpochSeconds = fetchedAtEpochSeconds,
             sourceUrl = sourceUrl,
@@ -55,10 +61,55 @@ object PersonalFinanceParser {
             home = home?.let(::homeEquity),
             vesting = home?.let(::vesting).orEmpty(),
             watchlist = home?.let(::watchlist).orEmpty(),
-            history = home?.let(::history).orEmpty(),
+            history = home?.let { history(it, notes) }.orEmpty(),
             taxYears = forecasts?.let(::taxYears).orEmpty(),
             mortgagePlan = newHouse?.let(::mortgagePlan),
             oldHouse = oldHouse?.let(::houseSale),
+        )
+        val totals = listOfNotNull(finance.monthlyIncome, finance.monthlyExpenses, finance.netMonthly).size
+        if (totals in 1..2) notes += ParseNote(SheetSection.TOTALS, "Only $totals of the 3 monthly totals were found")
+        return finance.copy(health = SheetHealth(sectionHealth(finance, sheets), emptyList(), notes))
+    }
+
+    /**
+     * Each part of the sheet: read, found but empty (its title is there, nothing under it could be
+     * read), or missing (no title). A part's title is looked for on every tab, so a part moved to
+     * another tab that the parser doesn't read there still shows as empty rather than missing.
+     */
+    internal fun sectionHealth(f: PersonalFinance, sheets: List<SheetGrid>): List<SectionHealth> {
+        fun present(vararg labels: String) = labels.any { label -> sheets.any { it.contains(label) } }
+        fun plural(n: Int, one: String, many: String = one + "s") = if (n == 1) "1 $one" else "$n $many"
+        fun health(section: SheetSection, titled: Boolean, found: String?) = SectionHealth(
+            section,
+            when {
+                found != null -> SectionStatus.OK
+                titled -> SectionStatus.EMPTY
+                else -> SectionStatus.MISSING
+            },
+            found,
+        )
+        val invested = f.accounts.count { it.category != AccountCategory.CASH && it.category != AccountCategory.HOME }
+        val cash = f.accounts.count { it.category == AccountCategory.CASH }
+        val totals = listOfNotNull(f.monthlyIncome, f.monthlyExpenses, f.netMonthly).size
+        return listOf(
+            health(SheetSection.INCOME, present("Flow In"), f.income.size.takeIf { it > 0 }?.let { plural(it, "person", "people") }),
+            health(SheetSection.EXPENSES, present("Flow Out"), f.expenses.size.takeIf { it > 0 }?.let { plural(it, "line") }),
+            health(
+                SheetSection.TOTALS,
+                present("Monthly Combined Income", "Total Monthly Expenses", "Net Monthly Profit"),
+                totals.takeIf { it > 0 }?.let { if (it == 3) "all 3" else "$it of 3" },
+            ),
+            health(SheetSection.ACCOUNTS, present("Brokerage Accounts"), invested.takeIf { it > 0 }?.let { plural(it, "account") }),
+            health(SheetSection.CASH, present("Checking/Savings", "Cash"), cash.takeIf { it > 0 }?.let { plural(it, "balance") }),
+            health(SheetSection.TOTAL_ASSETS, present("Total Assets"), f.totalAssets?.let { "read" }),
+            health(SheetSection.DEBTS, present("Debt"), f.debts.size.takeIf { it > 0 }?.let { plural(it, "debt") }),
+            health(SheetSection.HOME, present("Home Asset"), f.home?.takeIf { it.equity != null || it.valueAdded != null }?.let { "read" }),
+            health(SheetSection.VESTING, present("Future Holdings"), f.vesting.size.takeIf { it > 0 }?.let { plural(it, "payout") }),
+            health(SheetSection.WATCHLIST, false, f.watchlist.size.takeIf { it > 0 }?.let { plural(it, "ticker") }),
+            health(SheetSection.HISTORY, present("Date"), f.history.size.takeIf { it > 0 }?.let { plural(it, "snapshot") }),
+            health(SheetSection.TAX_YEARS, present("Take Home"), f.taxYears.size.takeIf { it > 0 }?.let { plural(it, "year") }),
+            health(SheetSection.MORTGAGE, present("Mortgage Calculator"), f.mortgagePlan?.let { "read" }),
+            health(SheetSection.HOUSE_SALE, present("Sold Price"), f.oldHouse?.soldPrice?.let { "read" }),
         )
     }
 
@@ -88,9 +139,9 @@ object PersonalFinanceParser {
      * merged across both columns is a joint account. Two separate amounts are two accounts of
      * the same kind, one each.
      */
-    private fun accounts(grid: SheetGrid): List<Account> {
+    private fun accounts(grid: SheetGrid, people: List<String>): List<Account> {
         val (r0, c) = grid.findLabel("Brokerage Accounts") ?: return emptyList()
-        val personColumns = (c + 1..c + 3).mapNotNull { col -> grid.text(r0, col)?.let { col to it } }
+        val personColumns = headerColumns(grid, r0, c, people)
         if (personColumns.isEmpty()) return emptyList()
         val out = mutableListOf<Account>()
         forEachRowBelow(grid, r0, c) { r, label ->
@@ -105,6 +156,16 @@ object PersonalFinanceParser {
             }
         }
         return out
+    }
+
+    /**
+     * The people's columns in a block's header row, right of its title at [column]. With the
+     * people known (from "Flow In"), only their names count, looked for a few columns over so an
+     * inserted column doesn't lose them; otherwise the headings right beside the title.
+     */
+    private fun headerColumns(grid: SheetGrid, row: Int, column: Int, people: List<String>): List<Pair<Int, String>> {
+        if (people.isEmpty()) return (column + 1..column + 3).mapNotNull { col -> grid.text(row, col)?.let { col to it } }
+        return (column + 1..column + HEADER_REACH).mapNotNull { col -> grid.text(row, col)?.takeIf { t -> people.any { it.equals(t, true) } }?.let { col to it } }
     }
 
     /** "Checking/Savings" and a lone "Cash" line: money in the bank, shared. */
@@ -145,7 +206,7 @@ object PersonalFinanceParser {
         while (columns.isEmpty()) {
             val (r0, c0) = grid.findLabel("Debt", rowsFrom = from) ?: return emptyList()
             for (r in r0..r0 + 2) {
-                val found = (c0 + 1..c0 + 3).mapNotNull { col -> grid.text(r, col)?.takeIf { t -> people.any { it.equals(t, true) } }?.let { col to it } }
+                val found = (c0 + 1..c0 + HEADER_REACH).mapNotNull { col -> grid.text(r, col)?.takeIf { t -> people.any { it.equals(t, true) } }?.let { col to it } }
                 if (found.isNotEmpty()) {
                     columns += found
                     headerRow = r
@@ -219,7 +280,7 @@ object PersonalFinanceParser {
         val out = mutableListOf<VestEvent>()
         var r = typeHeader.first + 1
         var blanks = 0
-        while (r < grid.rowCount && blanks < 3) {
+        while (r < grid.rowCount && blanks <= BLOCK_GAP) {
             if (grid.isMergeTail(r, c)) {
                 r++
                 continue
@@ -279,7 +340,7 @@ object PersonalFinanceParser {
         return out.toList()
     }
 
-    private fun history(grid: SheetGrid): List<Snapshot> {
+    private fun history(grid: SheetGrid, notes: MutableList<ParseNote>): List<Snapshot> {
         val dateCell = grid.find { it == "date" }?.let { first ->
             // The history's "Date" heads a row that also has "Total Assets".
             var at: Pair<Int, Int>? = first
@@ -298,8 +359,24 @@ object PersonalFinanceParser {
         val assetsCol = col("Total Assets")
         val debtCol = col("Debt")
         val out = mutableListOf<Snapshot>()
+        val valueColumns = listOfNotNull(expensesCol, incomeCol, profitCol, assetsCol, debtCol)
+        var gap = 0
+        var undated = 0
+        var pendingUndated = 0
         for (r in hr + 1 until grid.rowCount) {
-            val serial = grid.number(r, dc) ?: break
+            // A blank row or two inside the table (or a row whose date was cleared) is skipped,
+            // not the table's end; a run of rows with no date is.
+            val serial = grid.number(r, dc)?.takeIf { it > 0 }
+            if (serial == null) {
+                if (valueColumns.any { grid.number(r, it) != null }) pendingUndated++
+                if (++gap > HISTORY_GAP) break
+                continue
+            }
+            // Undated rows count as skipped only once a dated row follows them: below the table's
+            // last date they're something else.
+            undated += pendingUndated
+            pendingUndated = 0
+            gap = 0
             out += Snapshot(
                 epochSeconds = sheetsSerialToEpochSeconds(serial),
                 monthlyExpenses = expensesCol?.let { grid.number(r, it) }?.let(::abs),
@@ -309,6 +386,7 @@ object PersonalFinanceParser {
                 debt = debtCol?.let { grid.number(r, it) }?.let(::abs),
             )
         }
+        if (undated > 0) notes += ParseNote(SheetSection.HISTORY, "$undated row${if (undated == 1) "" else "s"} in the history ${if (undated == 1) "has" else "have"} figures but no date, so ${if (undated == 1) "it was" else "they were"} left out")
         return out.sortedBy { it.epochSeconds }
     }
 
@@ -393,7 +471,7 @@ object PersonalFinanceParser {
      * Calls [row] for each labelled row under [headerRow] in [column], stopping at a "Total"
      * label or after [maxBlank] blank rows in a row.
      */
-    private inline fun forEachRowBelow(grid: SheetGrid, headerRow: Int, column: Int, maxBlank: Int = 2, row: (Int, String) -> Unit) {
+    private inline fun forEachRowBelow(grid: SheetGrid, headerRow: Int, column: Int, maxBlank: Int = BLOCK_GAP, row: (Int, String) -> Unit) {
         var blanks = 0
         var r = headerRow + 1
         while (r < grid.rowCount && blanks <= maxBlank) {
@@ -426,6 +504,15 @@ object PersonalFinanceParser {
             else -> AccountCategory.INVESTING
         }
     }
+
+    /** How far right of a block's title its people's columns may sit. */
+    private const val HEADER_REACH = 6
+
+    /** Blank rows a block may have inside it before it's taken to have ended. */
+    private const val BLOCK_GAP = 4
+
+    /** Rows without a date the history may have inside it before it's taken to have ended. */
+    private const val HISTORY_GAP = 4
 
     /** Google Sheets' serial day (days since 1899-12-30) → epoch seconds. */
     fun sheetsSerialToEpochSeconds(serial: Double): Long = ((serial - 25_569.0) * 86_400.0).toLong()

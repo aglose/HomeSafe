@@ -112,6 +112,9 @@ internal sealed interface FinanceDetail {
 
     /** The jargon buster. */
     data object Glossary : FinanceDetail
+
+    /** How the budget sheet's last sync went, part by part. */
+    data object SheetSync : FinanceDetail
 }
 
 /**
@@ -181,9 +184,16 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                     contentKey = { it },
                 ) { page ->
                     when (page) {
-                        FinanceTab.WALLET -> WalletScreen(state, listStates.getValue(FinanceTab.WALLET), padding, onOpenQuote = { details += FinanceDetail.QuotePage(it) }, onRetrySheet = viewModel::retrySheet)
+                        FinanceTab.WALLET -> WalletScreen(
+                            state,
+                            listStates.getValue(FinanceTab.WALLET),
+                            padding,
+                            onOpenQuote = { push(FinanceDetail.QuotePage(it)) },
+                            onRetrySheet = viewModel::retrySheet,
+                            onOpenSync = { push(FinanceDetail.SheetSync) },
+                        )
 
-                        FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { details += FinanceDetail.QuotePage(it) }
+                        FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { push(FinanceDetail.QuotePage(it)) }
 
                         FinanceTab.ECONOMY -> EconomyScreen(
                             state,
@@ -202,6 +212,8 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                         FinanceDetail.Connections -> ConnectionsScreen(state, detailPadding)
 
                         FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
+
+                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
                     }
                 }
             }
@@ -262,6 +274,7 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.let { Narrator.plainTitle(it.id) } ?: ""
     FinanceDetail.Connections -> "How it connects"
     FinanceDetail.Glossary -> "Jargon buster"
+    FinanceDetail.SheetSync -> "Sheet sync"
 }
 
 /**

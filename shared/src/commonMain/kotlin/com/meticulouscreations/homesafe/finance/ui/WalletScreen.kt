@@ -91,9 +91,11 @@ internal fun WalletScreen(
     contentPadding: PaddingValues,
     onOpenQuote: (String) -> Unit,
     onRetrySheet: () -> Unit,
+    onOpenSync: () -> Unit = {},
 ) {
     val finance = state.finance
     LazyColumn(state = listState, contentPadding = contentPadding) {
+        if (finance != null) item(key = "sync") { SheetSyncLine(state, onOpenSync, Modifier.padding(top = 4.dp)) }
         when {
             finance != null -> walletItems(finance, state)
             state.financeLoading -> item(key = "loading") { WalletSkeleton() }
@@ -109,6 +111,12 @@ private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUi
     item(key = "hero") { NetWorthHero(finance) }
     item(key = "quick") { QuickStats(finance) }
     item(key = "checkup") { CascadeIn(1) { MoneyCheckup(finance, state.readings[IndicatorCatalog.fedFunds.id]?.latest, Modifier.padding(top = 16.dp)) } }
+    if (finance.charts.isNotEmpty()) {
+        item(key = "charts-h") { SectionHeader("Sheet charts", subtitle = "The charts in “${finance.title}”, live from the sheet") }
+        items(finance.charts.size, key = { "chart-${finance.charts[it].id}" }) { i ->
+            CascadeIn(i) { SheetChartCard(finance.charts[i], Modifier.padding(bottom = 12.dp)) }
+        }
+    }
     if (finance.accounts.isNotEmpty()) {
         item(key = "acct-h") { SectionHeader("Accounts", trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") }
         item(key = "acct") { CascadeIn(0) { AccountsBlock(finance) } }
@@ -259,6 +267,10 @@ private fun NetWorthHero(finance: PersonalFinance) {
             RangeSelector(WalletRanges, range, { if (it == EconRange.MAX) "ALL" else it.label }, color, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
             Spacer(Modifier.height(10.dp))
             ChipRow(WalletMetric.entries, metric, { it.label }, color, { metric = it })
+            HowToRead(
+                "Each point is a check-in recorded in your budget sheet, joined into a line, with today's figure at the end. " +
+                    "Drag along it to see any check-in, pick a range above, and switch between total assets, debt and monthly profit with the buttons.",
+            )
         }
     }
 }
@@ -296,7 +308,7 @@ private fun QuickStats(finance: PersonalFinance) {
         finance.netMonthly?.let { net ->
             QuickCard("Left over" + (finance.savingsRate?.let { " · " + FinanceFormat.fractionPercent(it) } ?: ""), FinanceFormat.signedMoney(net, 0), colors.direction(net), "savingsrate")
         },
-        finance.runwayMonths?.let { QuickCard("Cash runway", FinanceFormat.grouped(it, 1) + " months", if (it >= 6) colors.gain else colors.watch, "runway") },
+        finance.runwayMonths?.let { QuickCard("Cash runway", FinanceFormat.grouped(it, 1) + " months", if (it >= 3) colors.gain else colors.watch, "runway") },
         QuickCard("Debt excl. mortgage", FinanceFormat.compactMoney(finance.consumerDebt), colors.textPrimary, "debt"),
     )
     LazyRow(
