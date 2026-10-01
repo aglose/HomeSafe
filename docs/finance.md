@@ -13,6 +13,37 @@ Robinhood's dark look: true black, one green for up and one orange-red for down.
 
 Tapping a quote or an indicator opens its own page, with its chart, an explanation and its stats.
 
+## Plain English
+
+The app assumes you've never read a financial page.
+
+- **ⓘ on everything.** Every section, chart, stat and indicator has an ⓘ that opens an explainer
+  sheet (`ExplainSheet`, content in `Explainers.kt`). It covers what the thing is in one sentence,
+  **Right now** (the live reading and which way it's been heading), **What it means for you** (in
+  the household's own dollars when the sheet has the numbers), why it matters, an everyday
+  comparison, what's normal, how it works, and chips for related ideas. Each chip turns the sheet
+  to that idea.
+- **Plain names.** Indicators lead with a plain name ("Long vs short-term borrowing costs"), with
+  the technical name small beneath. Each one gets a one-sentence verdict built from the current
+  reading (`Narrator.verdict`).
+- **Today's economic weather.** This card tops the Economy tab. Prices, jobs, borrowing, markets,
+  recession signs and government debt each get a sunny, cloudy or stormy sky and a sentence
+  (`Narrator.briefing`).
+- **How it all connects.** An interactive cause-and-effect map of ten parts of the economy with
+  live readings (`ConnectionsScreen`). Tap a part to light up what it pushes on and what pushes on
+  it. *Walk me through it* steps round the central loop: prices → the Fed → mortgages → home prices,
+  and the Fed → jobs → shoppers → prices.
+- **Stress scale.** Calm, elevated, high and severe are spelled out under the Risk gauge, with
+  what today's band means.
+- **Money checkup.** On Wallet: emergency fund, savings rate, costly debt, debt against what's
+  owned, and saving for later. Each gets a pass or a flag against a common rule of thumb, with a tip.
+- **Charts explain themselves.** Each one has a *How to read it* note. Past US recessions are
+  shaded on the economic charts (`Recessions.us`), so you can see what a warning sign did just
+  before each one. The Fed's 2% target always shows on the inflation chart.
+- **Jargon buster.** The ? in the top bar opens every term, grouped by topic and searchable.
+
+Every sentence comes from live numbers and rules of thumb, not forecasts, and none of it is advice.
+
 ## The budget sheet
 
 The sheet stays private. The phone holds no Google credential and the sheet is never published.

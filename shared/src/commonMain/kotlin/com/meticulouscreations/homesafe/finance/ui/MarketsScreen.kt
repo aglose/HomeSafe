@@ -22,6 +22,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,6 +42,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.Quote
@@ -85,7 +88,10 @@ internal fun MarketsScreen(
                 range = range,
                 onRange = { range = it },
                 onRequestHistory = onRequestHistory,
-                trailing = { MarketStatus(state.quotes[MarketCatalog.SP500.symbol]) },
+                trailing = {
+                    MarketStatus(state.quotes[MarketCatalog.SP500.symbol])
+                    Explainers.forSymbol(selected)?.let { InfoButton(it) }
+                },
             )
         }
         item(key = "indices") {
@@ -99,7 +105,7 @@ internal fun MarketsScreen(
                 }
             }
         }
-        item(key = "stats-h") { SectionHeader("Stats", trailing = MarketCatalog.lookup(selected).shortName) }
+        item(key = "stats-h") { SectionHeader("Stats", trailing = MarketCatalog.lookup(selected).shortName, info = "prevclose") }
         item(key = "stats") {
             val q = state.quotes[selected]
             val kind = MarketCatalog.lookup(selected).kind
@@ -121,7 +127,7 @@ internal fun MarketsScreen(
                 }
             }
         }
-        item(key = "macro-h") { SectionHeader("Macro", subtitle = "Rates, commodities, crypto and the dollar") }
+        item(key = "macro-h") { SectionHeader("Other big signals", subtitle = "Interest rates, gold, oil, crypto and the dollar — tap any to learn why it matters") }
         items(MarketCatalog.macro, key = { "macro-${it.symbol}" }) { meta ->
             QuoteRow(meta.symbol, state.quotes[meta.symbol], onClick = { onOpenQuote(meta.symbol) })
         }
@@ -245,6 +251,22 @@ internal fun PriceHeroAndChart(
             }
             Spacer(Modifier.height(10.dp))
             RangeSelector(PriceRanges, range, { it.label }, lineColor, onRange, Modifier.padding(horizontal = PageGutter - 4.dp))
+            // Today's move in a sentence, with a sense of whether it's a big day.
+            if (range == ChartRange.DAY && quote != null && scrub == null) {
+                Text(
+                    Narrator.quoteVerdict(symbol, quote),
+                    style = FinanceTheme.type.label,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(horizontal = PageGutter, vertical = 6.dp),
+                )
+            }
+            HowToRead(
+                if (range == ChartRange.DAY) {
+                    "The line is today's price, minute by minute. The dotted line is yesterday's close: above it (green) the day is up, below it (orange) the day is down. Drag along the chart to see the price at any moment, and pick a range to look further back."
+                } else {
+                    "The line is the price over ${rangeCaption(range).lowercase()}; it's green if it's higher now than at the start and orange if lower. Drag along the chart to see the price on any day."
+                },
+            )
         }
     }
 }
@@ -302,6 +324,10 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
             .padding(12.dp),
     ) {
         Text(meta.shortName, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1)
+        // What it is, in plain words ("Small companies").
+        Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }?.title?.takeIf { it != meta.shortName }?.let {
+            Text(it, style = FinanceTheme.type.micro, color = colors.textTertiary, maxLines = 1)
+        }
         Spacer(Modifier.height(2.dp))
         if (quote != null) {
             Text(FinanceFormat.price(quote.price, meta.kind), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
@@ -359,8 +385,25 @@ internal fun QuoteDetailScreen(
     val meta = MarketCatalog.lookup(symbol)
     val q = state.quotes[symbol]
     LazyColumn(contentPadding = contentPadding) {
-        item { PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory) }
-        if (meta.about.isNotEmpty()) {
+        item {
+            PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory, trailing = { Explainers.forSymbol(symbol)?.let { InfoButton(it) } })
+        }
+        val explainer = Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }
+        if (explainer != null) {
+            item { SectionHeader("What is it?", info = explainer.id) }
+            item {
+                Column(Modifier.padding(horizontal = PageGutter)) {
+                    Text(explainer.oneLiner, style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary)
+                    Spacer(Modifier.height(10.dp))
+                    Text("WHY IT MATTERS TO YOU", style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
+                    Spacer(Modifier.height(2.dp))
+                    Text(explainer.whyYou, style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
+                    Narrator.forYou(explainer.id, state.readings, state.quotes, state.finance)?.let { mine ->
+                        Callout("What it means for you", mine, FinanceTheme.colors.accent, Icons.Filled.Person)
+                    }
+                }
+            }
+        } else if (meta.about.isNotEmpty()) {
             item { SectionHeader("About") }
             item {
                 Text(

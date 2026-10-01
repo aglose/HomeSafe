@@ -1,0 +1,540 @@
+package com.meticulouscreations.homesafe.finance.domain
+
+import androidx.compose.runtime.Immutable
+
+/**
+ * One idea in the finance app explained for someone who has never read a financial page: what it
+ * is in a sentence, why it touches their own life, what's normal, how it works, and what it's
+ * tied to. Indicators share their id with [IndicatorCatalog]; everything else (a stock index, net
+ * worth, the yield curve as an idea) has an id of its own.
+ */
+@Immutable
+data class Explainer(
+    val id: String,
+    /** The plain name: "Long vs short-term borrowing costs", not "10Y−2Y". */
+    val title: String,
+    /** The name the news uses, shown small under the plain one. */
+    val technical: String = "",
+    val oneLiner: String,
+    /** "Think of it like…" — an everyday comparison. */
+    val analogy: String = "",
+    /** Why it matters to an ordinary household. */
+    val whyYou: String,
+    /** What a normal reading looks like. */
+    val normal: String = "",
+    /** A paragraph on how it works and what moves it. */
+    val howItWorks: String = "",
+    /** Other explainers it's tied to, by id. */
+    val related: List<String> = emptyList(),
+    val topic: ExplainerTopic,
+)
+
+/** How the glossary groups explainers. */
+enum class ExplainerTopic(val title: String) {
+    PRICES("Prices & inflation"),
+    JOBS("Jobs & growth"),
+    RATES("Interest rates & the Fed"),
+    MARKETS("Stocks & markets"),
+    CREDIT("Credit & stress"),
+    GOVERNMENT("Government & money"),
+    HOUSING("Housing"),
+    YOUR_MONEY("Your money"),
+}
+
+object Explainers {
+    private val all = listOf(
+        // ---------------------------------------------------------------- prices
+        Explainer(
+            id = "cpi", topic = ExplainerTopic.PRICES,
+            title = "Inflation", technical = "CPI, year over year",
+            oneLiner = "How much more the same groceries, rent, gas and haircuts cost than a year ago.",
+            analogy = "Think of it as a slow leak in your wallet: the same $100 buys a little less every month.",
+            whyYou = "When inflation runs faster than your raises, you're quietly getting poorer even if your paycheck grows. It's also the main thing that makes the Fed raise interest rates, which makes mortgages, car loans and credit cards cost more.",
+            normal = "About 2% a year is what the Federal Reserve aims for. 3% feels noticeable; 5% and above (like 2022) hurts.",
+            howItWorks = "The government checks the prices of a basket of roughly 80,000 things people buy every month and compares them with the same basket a year earlier. Prices rise when people want to buy more than businesses can supply, or when costs like oil and wages go up.",
+            related = listOf("corecpi", "corepce", "dff", "realrate", "mortgage"),
+        ),
+        Explainer(
+            id = "corecpi", topic = ExplainerTopic.PRICES,
+            title = "Inflation without food & gas", technical = "Core CPI",
+            oneLiner = "Inflation with the jumpiest prices — food and fuel — taken out, to show the trend underneath.",
+            analogy = "Like judging your weight by the weekly average instead of the day after Thanksgiving.",
+            whyYou = "Gas and egg prices swing wildly, but rent, insurance and services tend to keep climbing once they start. Core inflation tells you whether the price rises are sticking around.",
+            normal = "Close to 2–2.5% a year.",
+            howItWorks = "It's the same price survey as headline inflation, minus food and energy. Economists watch it because a spike in gas can fade in weeks, while rising rents and wages take years to cool.",
+            related = listOf("cpi", "corepce", "dff"),
+        ),
+        Explainer(
+            id = "corepce", topic = ExplainerTopic.PRICES,
+            title = "The Fed's inflation gauge", technical = "Core PCE",
+            oneLiner = "The particular inflation measure the Federal Reserve uses to decide whether to raise or cut rates.",
+            whyYou = "This is the number behind the Fed's decisions — and the Fed's decisions set what you pay to borrow and what you earn on savings.",
+            normal = "The Fed's target is exactly 2%.",
+            howItWorks = "PCE tracks what people actually spend, including things paid for on their behalf like employer health insurance, and it adjusts when people switch to cheaper products. It usually runs a little lower than CPI.",
+            related = listOf("cpi", "dff"),
+        ),
+        // ---------------------------------------------------------------- jobs & growth
+        Explainer(
+            id = "unrate", topic = ExplainerTopic.JOBS,
+            title = "Unemployment", technical = "Unemployment rate",
+            oneLiner = "Out of every 100 people who want a job, how many can't find one.",
+            whyYou = "It's the clearest sign of how safe jobs are. When it's low, raises come easier and switching jobs is less risky; when it climbs, layoffs spread and people cut back spending, which costs more jobs.",
+            normal = "3.5–5% is a healthy range. Above 6% usually means a recession.",
+            howItWorks = "Every month the government surveys about 60,000 households. People who have stopped looking for work don't count as unemployed, which is why this number can look better than the real picture in a slump.",
+            related = listOf("sahm", "icsa", "gdp", "umcsent"),
+        ),
+        Explainer(
+            id = "sahm", topic = ExplainerTopic.JOBS,
+            title = "Recession alarm (jobs)", technical = "Sahm rule",
+            oneLiner = "An alarm built from unemployment: how far it has climbed above its lowest point of the past year.",
+            analogy = "Like a smoke detector for the job market: it doesn't care how high unemployment is, only how fast it's rising.",
+            whyYou = "Unemployment rarely goes up just a little — once it starts rising it tends to snowball. This alarm has gone off at the start of every US recession since 1970.",
+            normal = "Below 0.3 is quiet. At 0.5 the alarm sounds.",
+            howItWorks = "Economist Claudia Sahm noticed that when the 3-month average unemployment rate is half a percentage point above its low from the past 12 months, a recession has almost always begun.",
+            related = listOf("unrate", "icsa", "recession"),
+        ),
+        Explainer(
+            id = "icsa", topic = ExplainerTopic.JOBS,
+            title = "New layoffs each week", technical = "Initial jobless claims",
+            oneLiner = "How many people signed up for unemployment benefits for the first time last week.",
+            whyYou = "It's the earliest hard data on layoffs — out every Thursday, months before layoffs show up in the unemployment rate.",
+            normal = "200,000–250,000 a week is normal for a country of 335 million. Above 300,000 for weeks on end means trouble.",
+            howItWorks = "Each state counts new claims and reports them weekly. The number is noisy around holidays, so look at the trend over a month rather than one week.",
+            related = listOf("unrate", "sahm"),
+        ),
+        Explainer(
+            id = "gdp", topic = ExplainerTopic.JOBS,
+            title = "Economic growth", technical = "Real GDP growth",
+            oneLiner = "How fast the total amount of stuff the country makes and sells grew last quarter, after inflation.",
+            analogy = "If the economy were a business, this would be its sales growth.",
+            whyYou = "A growing economy means businesses hire and pay more. When it shrinks, profits fall and companies cut jobs.",
+            normal = "About 2% a year is typical for the US. Below zero means the economy shrank.",
+            howItWorks = "GDP adds up everything spent in the country: people's shopping, business investment, government spending, and exports minus imports. Two shrinking quarters in a row is the textbook sign of a recession.",
+            related = listOf("unrate", "umcsent", "recession"),
+        ),
+        Explainer(
+            id = "umcsent", topic = ExplainerTopic.JOBS,
+            title = "How people feel about money", technical = "Consumer sentiment",
+            oneLiner = "A monthly survey asking people whether they feel good or bad about their finances and the economy.",
+            whyYou = "Household spending is about two-thirds of the economy. When people feel gloomy they hold off on big purchases, and that caution alone can slow things down.",
+            normal = "The long-run average is about 85. Below 60 is very gloomy.",
+            howItWorks = "The University of Michigan calls about 600 people a month. Feelings follow prices closely: high inflation drags sentiment down even when jobs are plentiful.",
+            related = listOf("cpi", "unrate", "gdp"),
+        ),
+        // ---------------------------------------------------------------- rates & the Fed
+        Explainer(
+            id = "dff", topic = ExplainerTopic.RATES,
+            title = "The Fed's interest rate", technical = "Federal funds rate",
+            oneLiner = "The interest rate the Federal Reserve sets — the starting point for nearly every other rate in the country.",
+            analogy = "It's the economy's gas pedal and brake. Lower rates speed it up; higher rates slow it down.",
+            whyYou = "When the Fed raises it, credit cards, car loans and mortgages get more expensive within weeks — and savings accounts pay more. When it cuts, borrowing gets cheaper and savings pay less.",
+            normal = "There's no fixed normal. It was near 0% after 2008 and in 2020, and above 5% in 2023.",
+            howItWorks = "The Fed raises rates when inflation runs too hot, to make borrowing pricier so people and businesses spend less. It cuts them when the economy is weak, to encourage borrowing, hiring and spending.",
+            related = listOf("cpi", "corepce", "mortgage", "dgs2", "realrate"),
+        ),
+        Explainer(
+            id = "realrate", topic = ExplainerTopic.RATES,
+            title = "Real interest rate", technical = "Fed funds minus inflation",
+            oneLiner = "The Fed's interest rate minus inflation: whether money sitting in savings grows faster than prices.",
+            whyYou = "Above zero, cash in a savings account roughly keeps up with prices, and borrowing is genuinely expensive. Below zero, savings lose buying power and debt is cheap.",
+            normal = "Around 0.5–1% is considered neutral — neither speeding the economy up nor slowing it.",
+            howItWorks = "A 5% rate sounds high, but if prices are rising 6% you're still losing ground. Subtracting inflation shows how tight or loose money really is.",
+            related = listOf("dff", "cpi"),
+        ),
+        Explainer(
+            id = "dgs10", topic = ExplainerTopic.RATES,
+            title = "Government's 10-year borrowing cost", technical = "10-year Treasury yield",
+            oneLiner = "The interest rate investors demand to lend the US government money for 10 years.",
+            whyYou = "Mortgage rates follow this number closely — usually staying about 1.5–2 points above it. When it rises, buying a house gets more expensive.",
+            normal = "Around 3.5–4.5% in recent decades; above 5% is high.",
+            howItWorks = "The government borrows by selling 'Treasuries' — IOUs. Investors buy them, and the rate they demand rises when they expect inflation, worry about how much the government owes, or when the Fed keeps rates high.",
+            related = listOf("treasuries", "mortgage", "yieldcurve", "debtgdp"),
+        ),
+        Explainer(
+            id = "dgs2",
+            topic = ExplainerTopic.RATES,
+            title = "Government's 2-year borrowing cost",
+            technical = "2-year Treasury yield",
+            oneLiner = "What investors charge to lend the government money for 2 years — basically their bet on where the Fed's rate is heading.",
+            whyYou = "If it's falling, markets expect the Fed to cut rates soon, which would make loans cheaper.",
+            normal = "It usually sits close to the Fed's rate.",
+            related = listOf("dff", "treasuries", "yieldcurve"),
+        ),
+        Explainer(
+            id = "dgs30",
+            topic = ExplainerTopic.RATES,
+            title = "Government's 30-year borrowing cost",
+            technical = "30-year Treasury yield",
+            oneLiner = "What investors charge to lend the government money for 30 years.",
+            whyYou = "It reflects long-term worries about inflation and government debt, and nudges long-term loans like mortgages.",
+            related = listOf("treasuries", "dgs10", "debtgdp"),
+        ),
+        Explainer(
+            id = "treasuries", topic = ExplainerTopic.RATES,
+            title = "Treasuries", technical = "US government bonds",
+            oneLiner = "IOUs the US government sells to borrow money. The interest they pay is called the yield.",
+            analogy = "Like a CD at the bank, except the borrower is the US government.",
+            whyYou = "Treasuries are considered the safest investment in the world, so their yields set the floor for every other loan — your mortgage, a company's bonds, even your savings account.",
+            howItWorks = "They come in lengths from 1 month to 30 years. Prices and yields move in opposite directions: when lots of people want to buy Treasuries (often when they're scared), prices rise and yields fall.",
+            related = listOf("dgs10", "yieldcurve", "dff"),
+        ),
+        Explainer(
+            id = "yieldcurve", topic = ExplainerTopic.RATES,
+            title = "The yield curve", technical = "Treasury yield curve",
+            oneLiner = "A line connecting what the government pays to borrow for 1 month, 1 year, 10 years and 30 years.",
+            analogy = "Normally a 10-year loan costs more than a 1-year loan — you want extra for tying your money up longer. So the line slopes up. When it slopes down, something is off.",
+            whyYou = "When short-term rates are higher than long-term rates (an 'inverted' curve), investors are betting the economy will weaken and the Fed will have to cut. That has happened before every US recession since 1970.",
+            normal = "Sloping upward: long-term rates 1–2 points above short-term ones.",
+            howItWorks = "Short-term rates follow the Fed. Long-term rates follow what investors expect for growth and inflation over many years. If the Fed is pushing hard against inflation while investors expect a slowdown, short rates end up above long ones.",
+            related = listOf("t10y2y", "t10y3m", "treasuries", "recession"),
+        ),
+        Explainer(
+            id = "t10y2y", topic = ExplainerTopic.RATES,
+            title = "Long vs short-term borrowing costs", technical = "Yield curve: 10-year minus 2-year",
+            oneLiner = "How much more the government pays to borrow for 10 years than for 2 years.",
+            analogy = "Above zero is normal. Below zero — 'inverted' — is like a weather vane spinning before a storm.",
+            whyYou = "Every US recession since 1970 came after this went below zero. It's not a stopwatch, though: the recession has come anywhere from 6 months to 2 years later, often just after the curve turns positive again.",
+            normal = "Between +0.5 and +2 points.",
+            related = listOf("yieldcurve", "t10y3m", "recession"),
+        ),
+        Explainer(
+            id = "t10y3m",
+            topic = ExplainerTopic.RATES,
+            title = "Long vs very-short borrowing costs",
+            technical = "Yield curve: 10-year minus 3-month",
+            oneLiner = "The 10-year rate minus the 3-month rate — the version of the yield curve the New York Fed uses to estimate recession odds.",
+            whyYou = "Like its cousin above, when this goes below zero it has reliably warned of recessions.",
+            normal = "Above +0.5 points.",
+            related = listOf("yieldcurve", "t10y2y", "recession"),
+        ),
+        // ---------------------------------------------------------------- housing
+        Explainer(
+            id = "mortgage", topic = ExplainerTopic.HOUSING,
+            title = "Mortgage rates", technical = "30-year fixed mortgage rate",
+            oneLiner = "The typical interest rate for a 30-year home loan.",
+            whyYou = "Each 1-point rise adds roughly $330 a month to the payment on a $500,000 loan. High rates price people out and keep owners from moving, so fewer homes come up for sale.",
+            normal = "Around 4–6% in most of the last 20 years. The record low was under 3% in 2021; above 7% is the highest since the early 2000s.",
+            howItWorks = "Lenders set mortgage rates a little above the 10-year Treasury yield, adding a margin for their risk and costs. The Fed doesn't set them directly, but its moves push Treasury yields around.",
+            related = listOf("dgs10", "dff", "homeprices"),
+        ),
+        Explainer(
+            id = "homeprices", topic = ExplainerTopic.HOUSING,
+            title = "Home prices", technical = "Case-Shiller national index, year over year",
+            oneLiner = "How much the price of a typical US home changed over the past year.",
+            whyYou = "For most families, their home is their biggest asset. Falling prices can trap owners who owe more than the house is worth — that's what lit the fuse in 2008.",
+            normal = "Rising 3–5% a year. Falling prices are rare and usually mean trouble.",
+            howItWorks = "The index tracks the same houses as they're resold, so it measures price changes rather than a mix of big and small homes. It runs about two months behind.",
+            related = listOf("mortgage", "realrate"),
+        ),
+        // ---------------------------------------------------------------- credit & stress
+        Explainer(
+            id = "hy", topic = ExplainerTopic.CREDIT,
+            title = "Risky companies' borrowing cost", technical = "High-yield (junk) bond spread",
+            oneLiner = "How much extra interest the shakiest companies pay to borrow, compared with the government.",
+            analogy = "It's the market's fear of bankruptcies, written as a number. It jumps when lenders get nervous.",
+            whyYou = "When it spikes, companies that need loans can't get them, so they cut jobs. It jumped to about 20 points in 2008 and 11 in March 2020.",
+            normal = "3–4.5 points is calm. Above 6 is stress.",
+            related = listOf("stlfsi", "vix", "ccdelinq"),
+        ),
+        Explainer(
+            id = "stlfsi",
+            topic = ExplainerTopic.CREDIT,
+            title = "Financial system stress",
+            technical = "St. Louis Fed Financial Stress Index",
+            oneLiner = "A single number blending 18 signs of strain in the financial system. Zero means normal.",
+            whyYou = "When the financial plumbing gets clogged — banks wary of lending to each other, investors fleeing to safety — loans dry up for everyone.",
+            normal = "Below zero is calmer than usual. Above 1 is real stress; 2008 reached about 5.",
+            related = listOf("hy", "vix"),
+        ),
+        Explainer(
+            id = "vix", topic = ExplainerTopic.MARKETS,
+            title = "Market fear gauge", technical = "VIX",
+            oneLiner = "How bumpy investors expect the stock market to be over the next month.",
+            analogy = "A turbulence forecast for your 401(k).",
+            whyYou = "A high VIX means big daily swings in your retirement account. It doesn't predict direction, but it spikes during sell-offs.",
+            normal = "Under 20 is calm. 20–30 is nervous. Above 30 is fear; it passed 80 in 2008 and 2020.",
+            howItWorks = "It's calculated from the prices of options — insurance contracts on the S&P 500. When investors rush to buy protection, those prices and the VIX go up.",
+            related = listOf("sp500", "hy", "stlfsi"),
+        ),
+        Explainer(
+            id = "ccdelinq",
+            topic = ExplainerTopic.CREDIT,
+            title = "Late credit card payments",
+            technical = "Credit card delinquency rate",
+            oneLiner = "The share of credit card balances that are at least 30 days overdue.",
+            whyYou = "It shows how stretched ordinary households are. When it climbs, people are running out of room — and spending tends to drop soon after.",
+            normal = "Around 2.5–3.5%. It hit about 6.8% in 2009.",
+            related = listOf("unrate", "dff", "umcsent"),
+        ),
+        // ---------------------------------------------------------------- government & money
+        Explainer(
+            id = "debtgdp", topic = ExplainerTopic.GOVERNMENT,
+            title = "National debt vs the economy", technical = "Federal debt to GDP",
+            oneLiner = "Everything the federal government owes, compared with everything the country produces in a year.",
+            analogy = "Like comparing a family's total debts to its yearly income.",
+            whyYou = "The more the government owes, the more of your tax dollars go to interest, and the more it has to borrow — which can push up interest rates on everyone's loans.",
+            normal = "It was about 60% in 2000 and passed 100% around 2013. The World War II peak was about 119%.",
+            related = listOf("interest", "dgs10", "dgs30"),
+        ),
+        Explainer(
+            id = "interest",
+            topic = ExplainerTopic.GOVERNMENT,
+            title = "Interest eating the tax dollar",
+            technical = "Federal interest outlays ÷ tax receipts",
+            oneLiner = "How many cents of every tax dollar go just to paying interest on the national debt.",
+            whyYou = "Money spent on interest can't go to roads, defense or Social Security. When interest takes a big bite, the government borrows more to cover it, which can spiral.",
+            normal = "About 10–15% for most of the 2000s. Above 30% would be the highest in modern history.",
+            related = listOf("debtgdp", "dgs10"),
+        ),
+        Explainer(
+            id = "m2",
+            topic = ExplainerTopic.GOVERNMENT,
+            title = "Amount of money around",
+            technical = "M2 money supply, year over year",
+            oneLiner = "How fast the total amount of cash and bank deposits in the economy is growing.",
+            whyYou = "Lots of new money tends to fuel inflation (2021 saw 25% growth). Money shrinking is rare and squeezes borrowers.",
+            normal = "Growing 4–7% a year.",
+            related = listOf("cpi", "dff"),
+        ),
+        Explainer(
+            id = "recession", topic = ExplainerTopic.JOBS,
+            title = "Recession", technical = "",
+            oneLiner = "A broad, lasting downturn: the economy shrinks, businesses cut jobs, and unemployment climbs.",
+            whyYou = "Recessions are when people lose jobs, home prices can fall, and investment accounts drop. They usually last under a year, but recovery can take longer.",
+            normal = "The US has had 4 recessions since 1990: 1990–91, 2001, 2007–09 and 2020. They're shaded on the charts in this app.",
+            howItWorks = "No single number decides it; a panel of economists makes the call, usually months after it starts. That's why this app watches the early-warning signs.",
+            related = listOf("sahm", "t10y2y", "gdp", "stress"),
+        ),
+        Explainer(
+            id = "stress", topic = ExplainerTopic.CREDIT,
+            title = "The stress gauge", technical = "This app's composite score",
+            oneLiner = "This app's 0–100 blend of 20 warning signs, from jobs to credit to inflation.",
+            whyYou = "It's a quick read on how many alarms are ringing at once. A single warning sign means little; several together have meant trouble in the past.",
+            normal = "0–30 calm · 30–50 elevated · 50–70 high · 70+ severe.",
+            howItWorks = "Each reading scores 0 when comfortably normal, 50 at its 'watch' line and 100 at its 'danger' line. The gauge averages them, counting the most reliable recession signals more heavily. It's a summary, not a forecast.",
+            related = listOf("recession", "t10y2y", "sahm", "hy"),
+        ),
+        // ---------------------------------------------------------------- markets
+        Explainer(
+            id = "sp500", topic = ExplainerTopic.MARKETS,
+            title = "The stock market", technical = "S&P 500",
+            oneLiner = "The combined value of the 500 biggest US companies. When people say 'the market', they usually mean this.",
+            whyYou = "Most 401(k)s and index funds track it, so when it moves, your retirement savings likely move with it.",
+            normal = "Over the long run it has gained about 10% a year on average — but with drops of 20% or more every few years.",
+            howItWorks = "Bigger companies count for more, so a handful of tech giants move it a lot. Stocks rise on expectations of higher profits and fall when investors expect trouble or when interest rates rise.",
+            related = listOf("vix", "dff", "dow", "nasdaq"),
+        ),
+        Explainer(
+            id = "dow",
+            topic = ExplainerTopic.MARKETS,
+            title = "The Dow",
+            technical = "Dow Jones Industrial Average",
+            oneLiner = "30 big, well-known US companies. The oldest stock index, and the one quoted on the evening news.",
+            whyYou = "It's a quick pulse check, but with only 30 companies it's less representative than the S&P 500.",
+            related = listOf("sp500"),
+        ),
+        Explainer(
+            id = "nasdaq",
+            topic = ExplainerTopic.MARKETS,
+            title = "Tech stocks",
+            technical = "Nasdaq Composite",
+            oneLiner = "Thousands of companies listed on the Nasdaq exchange, heavy in technology.",
+            whyYou = "It swings more than the S&P 500 in both directions, and it's especially sensitive to interest rates.",
+            related = listOf("sp500", "dff"),
+        ),
+        Explainer(
+            id = "russell",
+            topic = ExplainerTopic.MARKETS,
+            title = "Small companies",
+            technical = "Russell 2000",
+            oneLiner = "2,000 smaller US companies.",
+            whyYou = "Small companies borrow more and sell mostly in the US, so they're often first to feel a slowing economy or rising rates.",
+            related = listOf("sp500", "dff"),
+        ),
+        Explainer(
+            id = "gold",
+            topic = ExplainerTopic.MARKETS,
+            title = "Gold",
+            technical = "Gold futures",
+            oneLiner = "The price of an ounce of gold.",
+            whyYou = "People buy gold when they lose faith in currencies, governments or stocks. A surging gold price is a sign of worry.",
+            related = listOf("dollar", "cpi"),
+        ),
+        Explainer(
+            id = "oil",
+            topic = ExplainerTopic.MARKETS,
+            title = "Oil",
+            technical = "WTI crude oil",
+            oneLiner = "The price of a barrel of US crude oil.",
+            whyYou = "Oil feeds straight into gas prices, shipping and airfare. Big oil price spikes came before most US recessions since the 1970s.",
+            related = listOf("cpi"),
+        ),
+        Explainer(
+            id = "bitcoin",
+            topic = ExplainerTopic.MARKETS,
+            title = "Bitcoin",
+            technical = "BTC",
+            oneLiner = "The largest cryptocurrency, trading 24 hours a day.",
+            whyYou = "It's very volatile and often moves first when investors' appetite for risk changes.",
+            related = listOf("vix"),
+        ),
+        Explainer(
+            id = "dollar",
+            topic = ExplainerTopic.MARKETS,
+            title = "The dollar",
+            technical = "US Dollar Index",
+            oneLiner = "How strong the dollar is against six other major currencies.",
+            whyYou = "A strong dollar makes foreign trips and imports cheaper, but hurts US companies that sell abroad.",
+            related = listOf("gold"),
+        ),
+        Explainer(
+            id = "range52w",
+            topic = ExplainerTopic.MARKETS,
+            title = "52-week range",
+            technical = "",
+            oneLiner = "The lowest and highest prices of the past year, with a dot showing where it is today.",
+            whyYou = "It tells you at a glance whether today's price is near a record or near a low.",
+            related = listOf("sp500"),
+        ),
+        Explainer(
+            id = "prevclose",
+            topic = ExplainerTopic.MARKETS,
+            title = "Previous close & today's change",
+            technical = "",
+            oneLiner = "Yesterday's final price. Today's gain or loss — the green or orange number — is measured from it.",
+            whyYou = "The dotted line on the day's chart is yesterday's close: above it the day is up, below it the day is down.",
+            related = listOf("sp500"),
+        ),
+        Explainer(
+            id = "volume",
+            topic = ExplainerTopic.MARKETS,
+            title = "Volume",
+            technical = "",
+            oneLiner = "How many shares changed hands today.",
+            whyYou = "A big move on heavy volume is more meaningful than one on a quiet day.",
+            related = listOf("sp500"),
+        ),
+        // ---------------------------------------------------------------- your money
+        Explainer(
+            id = "totalassets",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Total assets",
+            technical = "",
+            oneLiner = "Everything you own that's worth money: investment and retirement accounts, cash, and the equity in your home.",
+            whyYou = "It's the size of your financial cushion. The chart shows how it has grown at each check-in recorded in your sheet.",
+            related = listOf("networth", "allocation"),
+        ),
+        Explainer(
+            id = "networth", topic = ExplainerTopic.YOUR_MONEY,
+            title = "Net worth", technical = "",
+            oneLiner = "What you own minus what you owe.",
+            analogy = "If you sold everything and paid off every debt today, it's what you'd have left.",
+            whyYou = "It's the single best measure of financial progress. Growing it steadily — by saving, investing and paying down debt — matters more than any one month.",
+            howItWorks = "Here it's your total assets minus your debts other than the mortgage. Your home counts as the equity you've built in it, so its mortgage is already accounted for.",
+            related = listOf("totalassets", "debt"),
+        ),
+        Explainer(
+            id = "allocation",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Where your money sits",
+            technical = "Asset allocation",
+            oneLiner = "How your money is split between retirement accounts, other investments, cash, college savings and home equity.",
+            whyYou = "The mix decides how much a stock market drop hurts you and how quickly you could get at your money in an emergency. Retirement and college accounts carry penalties for early withdrawal; cash doesn't.",
+            related = listOf("networth", "runway"),
+        ),
+        Explainer(
+            id = "cashflow",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Monthly cash flow",
+            technical = "",
+            oneLiner = "What comes in each month, where it goes, and what's left.",
+            whyYou = "What's left over is what builds wealth. The bar shows your take-home pay split into your expenses, with the white sliver being what you keep.",
+            related = listOf("savingsrate"),
+        ),
+        Explainer(
+            id = "savingsrate",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Savings rate",
+            technical = "",
+            oneLiner = "The share of your take-home pay left over after monthly expenses.",
+            whyYou = "A common rule of thumb is to save 15–20% of income for retirement and goals. Contributions taken out before your paycheck (like a 401(k)) are on top of this.",
+            related = listOf("cashflow", "runway"),
+        ),
+        Explainer(
+            id = "runway",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Cash runway",
+            technical = "Emergency fund",
+            oneLiner = "How many months your cash could cover your monthly expenses if income stopped.",
+            whyYou = "It's your buffer against a layoff or a big surprise bill. Planners usually suggest 3–6 months, more if income is uneven or one job carries the household.",
+            related = listOf("unrate", "sahm", "allocation"),
+        ),
+        Explainer(
+            id = "debt",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Debt",
+            technical = "",
+            oneLiner = "What you owe, the interest rate on each loan, and how it has changed over time.",
+            whyYou = "Paying off a loan is a guaranteed return equal to its interest rate. Loans charging more than what safe savings pay (roughly the Fed's rate) are usually worth paying down first.",
+            related = listOf("dff", "networth"),
+        ),
+        Explainer(
+            id = "homeequity",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Home equity",
+            technical = "",
+            oneLiner = "The part of your home you actually own: its value minus what's left on the mortgage.",
+            whyYou = "It grows as you pay down the loan and as home prices rise, but you can only spend it by selling or borrowing against it.",
+            related = listOf("homeprices", "mortgage"),
+        ),
+        Explainer(
+            id = "mortgageplanner",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Mortgage planner",
+            technical = "",
+            oneLiner = "Try a home price, down payment and rate, and see the full monthly cost against what your budget can carry.",
+            whyYou = "The monthly payment includes more than the loan: property tax, insurance and HOA dues add up. The bars compare it with the room your sheet says you'll have at each point in your plan.",
+            related = listOf("mortgage", "cashflow"),
+        ),
+        Explainer(
+            id = "vesting",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Vesting",
+            technical = "RSUs & ESPP",
+            oneLiner = "Company stock you earn over time (RSUs) or buy at a discount (ESPP), paid out on set dates.",
+            whyYou = "It's real money on a schedule, but it arrives as company stock and is taxed as income — the 'after tax' figure is what you'd likely keep.",
+            related = listOf("taxes"),
+        ),
+        Explainer(
+            id = "taxes",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = "Effective tax rate",
+            technical = "",
+            oneLiner = "The share of your total income that went to federal, state and local taxes.",
+            whyYou = "It's lower than your top tax bracket because only the income above each threshold is taxed at the higher rate.",
+            related = listOf("vesting"),
+        ),
+    )
+
+    private val byId = all.associateBy { it.id }
+
+    fun byId(id: String): Explainer? = byId[id]
+
+    /** Everything, by topic and then title, for the glossary. */
+    val glossary: List<Explainer> get() = all.sortedWith(compareBy({ it.topic.ordinal }, { it.title }))
+
+    /** Which explainer a market symbol has. */
+    fun forSymbol(symbol: String): String? = when (symbol) {
+        MarketCatalog.SP500.symbol -> "sp500"
+        MarketCatalog.DOW.symbol -> "dow"
+        MarketCatalog.NASDAQ.symbol -> "nasdaq"
+        MarketCatalog.RUSSELL.symbol -> "russell"
+        MarketCatalog.VIX.symbol -> "vix"
+        MarketCatalog.TEN_YEAR.symbol -> "dgs10"
+        MarketCatalog.GOLD.symbol -> "gold"
+        MarketCatalog.OIL.symbol -> "oil"
+        MarketCatalog.BITCOIN.symbol -> "bitcoin"
+        MarketCatalog.DOLLAR.symbol -> "dollar"
+        else -> null
+    }
+}

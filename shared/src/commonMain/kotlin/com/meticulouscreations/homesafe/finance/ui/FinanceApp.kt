@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Public
@@ -106,6 +107,12 @@ internal sealed interface FinanceDetail {
 
     data class IndicatorPage(val id: String) : FinanceDetail
 
+    /** How it all connects: the cause-and-effect map. */
+    data object Connections : FinanceDetail
+
+    /** The jargon buster. */
+    data object Glossary : FinanceDetail
+
     /** How the budget sheet's last sync went, part by part. */
     data object SheetSync : FinanceDetail
 }
@@ -128,6 +135,12 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
+    // The explainer sheet up, by explainer id, and whether the "tap ⓘ" tip has been put away.
+    var explaining by rememberSaveable { mutableStateOf<String?>(null) }
+    var tipDismissed by rememberSaveable { mutableStateOf(false) }
+    fun push(detail: FinanceDetail) {
+        if (details.lastOrNull() != detail) details += detail
+    }
 
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
     BackHandler(enabled = active) {
@@ -139,7 +152,8 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     // every state change (a quote poll, each economic reading as it arrives).
     val fontFamily = albertSansFontFamily()
     val type = remember(fontFamily) { FinanceTypography(fontFamily) }
-    CompositionLocalProvider(LocalFinancePalette provides palette, LocalFinanceTypography provides type) {
+    val openExplainer: (String) -> Unit = remember { { id -> explaining = id } }
+    CompositionLocalProvider(LocalFinancePalette provides palette, LocalFinanceTypography provides type, LocalExplainer provides openExplainer) {
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val padding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 104.dp)
@@ -174,20 +188,30 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             state,
                             listStates.getValue(FinanceTab.WALLET),
                             padding,
-                            onOpenQuote = { details += FinanceDetail.QuotePage(it) },
+                            onOpenQuote = { push(FinanceDetail.QuotePage(it)) },
                             onRetrySheet = viewModel::retrySheet,
-                            onOpenSync = { details += FinanceDetail.SheetSync },
+                            onOpenSync = { push(FinanceDetail.SheetSync) },
                         )
 
-                        FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { details += FinanceDetail.QuotePage(it) }
+                        FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { push(FinanceDetail.QuotePage(it)) }
 
-                        FinanceTab.ECONOMY -> EconomyScreen(state, listStates.getValue(FinanceTab.ECONOMY), padding) { details += FinanceDetail.IndicatorPage(it) }
+                        FinanceTab.ECONOMY -> EconomyScreen(
+                            state,
+                            listStates.getValue(FinanceTab.ECONOMY),
+                            padding,
+                            onOpenIndicator = { push(FinanceDetail.IndicatorPage(it)) },
+                            onOpenConnections = { push(FinanceDetail.Connections) },
+                        )
 
-                        FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { details += FinanceDetail.IndicatorPage(it) }
+                        FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }
 
                         is FinanceDetail.QuotePage -> QuoteDetailScreen(page.symbol, state, detailPadding, viewModel::requestHistory)
 
                         is FinanceDetail.IndicatorPage -> IndicatorDetailScreen(page.id, state, detailPadding)
+
+                        FinanceDetail.Connections -> ConnectionsScreen(state, detailPadding)
+
+                        FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
 
                         FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
                     }
@@ -200,7 +224,31 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                 refreshing = state.refreshing,
                 onBack = { if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose() },
                 onRefresh = viewModel::refresh,
+                onGlossary = { push(FinanceDetail.Glossary) },
             )
+
+            // The one-time nudge, floating above the tabs' nav until it's put away.
+            ExplainTip(
+                visible = !tipDismissed && details.isEmpty(),
+                onDismiss = { tipDismissed = true },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(bottom = 84.dp),
+            )
+
+            explaining?.let { id ->
+                ExplainSheet(
+                    id = id,
+                    state = state,
+                    onDismiss = { explaining = null },
+                    onNavigate = { explaining = it },
+                    onOpenChart = {
+                        explaining = null
+                        push(FinanceDetail.IndicatorPage(it))
+                    },
+                )
+            }
 
             AnimatedVisibility(
                 visible = details.isEmpty(),
@@ -223,7 +271,9 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
 
 private fun titleOf(detail: FinanceDetail): String = when (detail) {
     is FinanceDetail.QuotePage -> MarketCatalog.lookup(detail.symbol).shortName
-    is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.shortTitle ?: ""
+    is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.let { Narrator.plainTitle(it.id) } ?: ""
+    FinanceDetail.Connections -> "How it connects"
+    FinanceDetail.Glossary -> "Jargon buster"
     FinanceDetail.SheetSync -> "Sheet sync"
 }
 
@@ -251,7 +301,7 @@ private fun financeTransition(from: Any, to: Any): ContentTransform {
 }
 
 @Composable
-private fun FinanceTopBar(title: String, isDetail: Boolean, refreshing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
+private fun FinanceTopBar(title: String, isDetail: Boolean, refreshing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit, onGlossary: () -> Unit) {
     val colors = FinanceTheme.colors
     Box(
         Modifier
@@ -272,6 +322,9 @@ private fun FinanceTopBar(title: String, isDetail: Boolean, refreshing: Boolean,
         }
         AnimatedContent(title, modifier = Modifier.align(Alignment.Center), transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "title") { t ->
             Text(t, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+        }
+        IconButton(onClick = onGlossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp).testTag("finance_glossary")) {
+            Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = "Jargon buster", tint = colors.textSecondary)
         }
         IconButton(onClick = onRefresh, modifier = Modifier.align(Alignment.CenterEnd)) {
             if (refreshing) {

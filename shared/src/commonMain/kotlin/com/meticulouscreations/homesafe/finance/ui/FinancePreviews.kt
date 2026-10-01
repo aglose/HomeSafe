@@ -24,6 +24,7 @@ import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
+import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
 import com.meticulouscreations.homesafe.finance.domain.HouseSale
 import com.meticulouscreations.homesafe.finance.domain.IncomeLine
@@ -327,7 +328,7 @@ private fun FinanceMarketsPreview() {
 @Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceEconomyPreview() {
-    FinanceStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding) {} }
+    FinanceStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, onOpenIndicator = {}) }
 }
 
 @Preview(widthDp = 412, heightDp = 1500)
@@ -353,5 +354,27 @@ private fun FinanceSheetSetupPreview() {
             {},
             {},
         )
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceConnectionsPreview() {
+    FinanceStage { ConnectionsScreen(FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FinanceGlossaryPreview() {
+    FinanceStage { GlossaryScreen(previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 1200)
+@Composable
+private fun FinanceExplainerPreview() {
+    FinanceStage {
+        Box(Modifier.background(FinancePalette().surfaceRaised)) {
+            ExplainerBody(Explainers.byId("cpi")!!, FinanceFixtures.state, {}, {})
+        }
     }
 }
