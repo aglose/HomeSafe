@@ -982,7 +982,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeStatusHeader(headli
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenMoments: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.HomeTabContent(sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, zoomState: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, onCameraClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>, onOpenMoments: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function1<@[ParameterName(name = \, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1268,6 +1268,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPill(marking: 
   restartable: true
   params:
     - marking: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPrompt(state: com.meticulouscreations.homesafe.viewmodel.LandedPersonUiState, onMark: kotlin.Function0<kotlin.Unit>, onUndo: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onMark: STABLE (function type)
+    - onUndo: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

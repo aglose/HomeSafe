@@ -51,6 +51,12 @@ data class AlertNotification(
      * lands one tap from the tag.
      */
     val offerCarTag: Boolean = false,
+    /**
+     * The detection is a person nobody named, who may not be a person at all, so the notification
+     * offers to say so (the relay's `person_unnamed`). Android adds a "Not a person" button that
+     * marks it without opening the app; elsewhere a tap lands on the detection, which offers it.
+     */
+    val offerNotAPerson: Boolean = false,
 )
 
 /**

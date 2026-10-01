@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
+import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
@@ -38,6 +39,7 @@ class AppGraphViewModelWiringTest {
                 AppShellViewModel::class,
                 FaceLibraryViewModel::class,
                 MomentCarTagViewModel::class,
+                LandedPersonViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )

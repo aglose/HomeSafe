@@ -38,6 +38,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             silent = message.data["silent"] == "1",
             // The relay marks an alert about a car the classifier didn't name (car_unnamed=1), for a "Tag car" button.
             offerCarTag = message.data["car_unnamed"] == "1",
+            // And one about a person nobody named (person_unnamed=1), for a "Not a person" button.
+            offerNotAPerson = message.data["person_unnamed"] == "1",
         )
         AlertNotificationPoster.ensureChannels(this)
         // Already off the main thread: Firebase calls this on its own worker.
