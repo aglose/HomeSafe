@@ -52,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
@@ -60,17 +61,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -109,6 +115,41 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     // Same arrangement for Settings, which drills into a classifier's labelling screen.
     val settingsBackStack: SnapshotStateList<Any> = mutableStateListOf(SettingsHomeRoute)
 
+    /** Whether the drawer the top bar's menu button opens is out. */
+    var drawerOpen by mutableStateOf(false)
+
+    /** Whether the finance app is up over the shell (opened from the drawer). */
+    var financeOpen by mutableStateOf(false)
+        private set
+
+    /** Where the drawer's Finance card was, in the shell's coordinates: where the finance app grows from. */
+    var financeOrigin by mutableStateOf(Offset.Zero)
+        private set
+
+    /** True once the finance app fully covers the shell, which then stops drawing (and streaming) what's under it. */
+    var financeCovering by mutableStateOf(false)
+
+    /**
+     * The tab whose composition opened the finance app. Under the iOS 26 host every tab draws the
+     * shell's overlays, and only this one should build the app.
+     */
+    var financeHost by mutableStateOf<TopLevelRoute?>(null)
+        private set
+
+    fun openFinance(origin: Offset, from: TopLevelRoute) {
+        financeOrigin = origin
+        financeHost = from
+        financeOpen = true
+        drawerOpen = false
+    }
+
+    fun closeFinance() {
+        financeOpen = false
+        // The shell comes back as the app starts closing — and if a tab switch takes the
+        // overlay away before it can say so itself (a notification tap), it still comes back.
+        financeCovering = false
+    }
+
     /** The tab that is up, as far as Compose knows; under a native tab bar the bar itself is the truth. */
     val selectedTab: TopLevelRoute get() = topLevel.topLevelKey
 
@@ -128,10 +169,12 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
 
     /**
      * Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which
-     * wants every pixel for the frame, nor the clip editor, which is full screen.
+     * wants every pixel for the frame, nor the clip editor, which is full screen, nor while the
+     * finance app (which has its own) is up, nor under the drawer — under iOS 26's native bar
+     * that would stay on top of the drawer's scrim and switch tabs behind it.
      */
     fun showsBottomNav(tab: TopLevelRoute): Boolean =
-        !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
+        !financeOpen && !drawerOpen && !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
 
     /**
      * A tap on [tab] in the bottom nav, which follows Material's bottom navigation behaviour on
@@ -185,6 +228,9 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     fun openMoment(link: MomentDeepLink) = openDetection(link.cameraName, link.startEpochSeconds, link.eventId, link.tagCar)
 
     private fun openDetection(cameraName: String, startEpochSeconds: Double, eventId: String, tagCar: Boolean) {
+        // A notification tap lands on the camera whatever was over the shell.
+        drawerOpen = false
+        closeFinance()
         val route = CameraDetailRoute(
             cameraName = cameraName,
             warmStreamUrl = null,
@@ -229,10 +275,12 @@ fun FrigateAppShell() {
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
         showBottomNav = nav.showsBottomNav(nav.selectedTab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
-        overlay = { CardZoomOverlay(nav, cardZoom) },
+        overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
+        contentCovered = nav.financeCovering,
+        contentObscured = nav.drawerOpen || nav.financeOpen,
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -274,10 +322,12 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
         showBottomNav = nav.showsBottomNav(tab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
-        overlay = { CardZoomOverlay(nav, cardZoom) },
+        overlay = { ShellOverlays(nav, cardZoom, tab) },
+        contentCovered = nav.financeCovering,
+        contentObscured = nav.drawerOpen || nav.financeOpen,
     ) {
         TabContent(tab, nav, cardZoom)
     }
@@ -295,6 +345,44 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
         TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces, openServer ->
             SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer, scrollToTopRequests = scrollToTop)
         }
+    }
+}
+
+/**
+ * Everything the shell draws over its tabs and bars: the pinched camera card's layer, the drawer,
+ * and the finance app. The finance state is only polled while this composition is on screen —
+ * under the iOS 26 host each tab has its own, and only the visible one may run it.
+ */
+// Overlays, not a laid-out element: each piece fills the scaffold's layer itself.
+@Suppress("ktlint:compose:modifier-missing-check")
+@Composable
+private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
+    CardZoomOverlay(nav, cardZoom)
+    val finance: FinanceViewModel = metroViewModel()
+    val financeState by finance.uiState.collectAsStateWithLifecycle()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
+    LaunchedEffect(visible, nav.drawerOpen, nav.financeOpen) {
+        finance.setActive(visible && (nav.drawerOpen || nav.financeOpen), full = nav.financeOpen)
+    }
+    ShellDrawer(
+        open = nav.drawerOpen,
+        selectedTab = tab,
+        finance = financeState,
+        onSelectTab = { route ->
+            nav.drawerOpen = false
+            nav.selectTab(route)
+        },
+        onOpenFinance = { origin -> nav.openFinance(origin, tab) },
+        onClose = { nav.drawerOpen = false },
+    )
+    if (nav.financeHost == tab) {
+        FinanceOverlay(
+            open = nav.financeOpen,
+            origin = nav.financeOrigin,
+            onClose = nav::closeFinance,
+            onCovering = { nav.financeCovering = it },
+        )
     }
 }
 
@@ -330,7 +418,10 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * Under a native tab bar ([LocalNativeTabBar]) the floating nav is left out: the platform's bar
  * sits where it would, and [bottomNavClearance] already keeps the content clear of it.
  *
- * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into.
+ * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into,
+ * the drawer, and the finance app. [contentCovered] says an overlay hides everything beneath it;
+ * [contentObscured] that one is over it (the drawer's scrim, or the finance app opening), so it
+ * leaves the accessibility tree.
  */
 @Composable
 internal fun ShellScaffold(
@@ -340,40 +431,49 @@ internal fun ShellScaffold(
     onSelectTab: (TopLevelRoute) -> Unit,
     overlay: @Composable () -> Unit = {},
     showBottomNav: Boolean = true,
+    contentCovered: Boolean = false,
+    contentObscured: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    // While an overlay covers the whole shell (the finance app) the tab content isn't drawn at
+    // all, so its live players stop; its saveable state is kept here and comes back with it.
+    val saveableState = rememberSaveableStateHolder()
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
     ) {
-        content()
+        // Under the drawer or the finance app the shell is out of reach for screen readers too,
+        // so focus can't wander behind the scrim to a camera or the menu button.
+        Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
+            if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { content() }
 
-        // Fades over the nested screen's own header, which is the same height in the same
-        // place, so the hand-over is a dissolve between two rows and nothing else moves.
-        AnimatedVisibility(
-            visible = showTopBar,
-            modifier = Modifier.align(Alignment.TopCenter),
-            enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
-            exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)),
-        ) {
-            topBar()
-        }
-
-        // Slips away rather than vanishing when a full-screen page (the clip editor, car
-        // tagging) takes over, so the tap that opened it isn't answered by a blink.
-        if (!LocalNativeTabBar.current) {
+            // Fades over the nested screen's own header, which is the same height in the same
+            // place, so the hand-over is a dissolve between two rows and nothing else moves.
             AnimatedVisibility(
-                visible = showBottomNav,
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp),
-                enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) + slideInVertically(tween(NAV_TRANSITION_MS, easing = NavEnterEasing)) { it / 2 },
-                exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutVertically(tween(NAV_TRANSITION_MS / 2)) { it / 2 },
+                visible = showTopBar && !contentCovered,
+                modifier = Modifier.align(Alignment.TopCenter),
+                enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
+                exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)),
             ) {
-                BottomNavBar(selected = selectedTab, onSelect = onSelectTab)
+                topBar()
+            }
+
+            // Slips away rather than vanishing when a full-screen page (the clip editor, car
+            // tagging) takes over, so the tap that opened it isn't answered by a blink.
+            if (!LocalNativeTabBar.current) {
+                AnimatedVisibility(
+                    visible = showBottomNav,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .navigationBarsPadding()
+                        .padding(bottom = 16.dp),
+                    enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) + slideInVertically(tween(NAV_TRANSITION_MS, easing = NavEnterEasing)) { it / 2 },
+                    exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutVertically(tween(NAV_TRANSITION_MS / 2)) { it / 2 },
+                ) {
+                    BottomNavBar(selected = selectedTab, onSelect = onSelectTab)
+                }
             }
         }
 
@@ -400,9 +500,12 @@ internal fun ShellSkeleton() {
     }
 }
 
-/** [appVersion] is what the route badge shows when tapped; unused until there is a route to badge. */
+/**
+ * [appVersion] is what the route badge shows when tapped; unused until there is a route to badge.
+ * [onMenu] opens the drawer.
+ */
 @Composable
-internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String) {
+internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String, onMenu: () -> Unit = {}) {
     // A Box, not a Row: the title is centred on the screen regardless of what sits at the ends,
     // so it doesn't shift when the status icon becomes the (wider) route badge — which is also
     // the moment the sign-in skeleton's bar dissolves into the real one.
@@ -414,7 +517,7 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
             .statusBarsPadding()
             .padding(horizontal = 24.dp, vertical = 12.dp),
     ) {
-        IconButton(onClick = {}, modifier = Modifier.size(48.dp).align(Alignment.CenterStart)) {
+        IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
             Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
         }
         Text(

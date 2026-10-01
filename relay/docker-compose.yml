@@ -58,10 +58,14 @@ services:
     # Google Home endpoints answer 404.
     # PRESENCE_DEVICE, the device_id of the phone whose away switch alone decides away mode (see
     # docs/away-mode.md, "The presence authority"), only on the box: the repo is public.
+    # FINANCE_SHEET_ID, the household budget sheet the app's finance section reads (relay.py,
+    # "finance"; docs/finance.md), only on the box too. Without it /finance/sheet says so.
     env_file:
       - path: google-home.env
         required: false
       - path: presence.env
+        required: false
+      - path: finance.env
         required: false
       # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
       - path: tesla.env

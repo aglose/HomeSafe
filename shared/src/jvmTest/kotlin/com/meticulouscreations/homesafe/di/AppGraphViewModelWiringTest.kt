@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
@@ -40,6 +41,7 @@ class AppGraphViewModelWiringTest {
                 FaceLibraryViewModel::class,
                 MomentCarTagViewModel::class,
                 LandedPersonViewModel::class,
+                FinanceViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )
