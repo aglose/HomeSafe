@@ -52,7 +52,8 @@ class IosShell {
     /**
      * Set by Swift: called on the main thread with whether the native tab bar belongs on screen,
      * and straight away with the current answer. Only Home drills into a full-screen screen, and
-     * the bar can't be used to leave Home while it is hidden, so Home's stack decides.
+     * the bar can't be used to leave Home while it is hidden, so Home's stack decides — along with
+     * the drawer and the finance app, which are the shell's on every tab and hide it everywhere.
      */
     var onTabBarVisibilityChange: ((Boolean) -> Unit)? = null
         set(value) {

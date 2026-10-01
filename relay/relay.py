@@ -4630,3 +4630,231 @@ async def google_signal(camera: str, request: Request) -> Response:
     if GOOGLE_LOG_SDP:
         log.info("google signal: %s offer:\n%s\nanswer:\n%s", camera, body["sdp"], sdp)
     return json_response({"action": "answer", "sdp": sdp}, headers=cors)
+
+
+# ---------------------------------------------------------------- finance
+#
+# The app's finance section shows the household's budget sheet, a Google Sheet private to the
+# household's own Google accounts. The phone never holds a Google credential and the sheet is
+# never made public: the relay reads it with a Google service account (by default the same key
+# that sends pushes) which the sheet is shared with as a viewer, and hands it to a signed-in app.
+# The sheet is returned as it is — every grid tab's raw values and merged ranges — and the app
+# makes sense of it (PersonalFinanceParser.kt), so reorganising the sheet never needs a relay
+# change.
+#
+# It's the household's money, not the cameras: a Frigate *viewer* account (a sitter, a guest) gets
+# no further than a 403. Only Frigate admins may read it, or — when FINANCE_USERS is set — only the
+# Frigate usernames it lists.
+#
+# Setup, once: switch on the Google Sheets API for the key's Cloud project, share the sheet with
+# the key's `client_email` (read-only), and set FINANCE_SHEET_ID (in finance.env on the box; the
+# repo is public). Until then the route says which step is missing (`error`) and who to share
+# with (`service_account`), and the app shows that.
+
+FINANCE_SHEET_ID = os.environ.get("FINANCE_SHEET_ID", "").strip()
+FINANCE_SHEET_KEY = os.environ.get("FINANCE_SHEET_KEY", KEY_FILE)
+FINANCE_USERS = {u.strip() for u in os.environ.get("FINANCE_USERS", "").split(",") if u.strip()}
+SHEETS_API = "https://sheets.googleapis.com/v4/spreadsheets"
+SHEETS_SCOPE = "https://www.googleapis.com/auth/spreadsheets.readonly"
+# The sheet changes by hand a few times a month; a minute's cache keeps tab-hopping in the app
+# from hitting Google every time, and a pull to refresh (?refresh=true) skips it.
+FINANCE_CACHE_SECONDS = 60
+# ...but not more than once every few seconds however hard someone pulls, and a failure is
+# answered from memory for as long, so an outage or a missing setup step isn't asked of Google
+# by every request.
+FINANCE_MIN_REFRESH_SECONDS = 5
+# How long a request waits behind another one already asking Google before it gives up on it.
+FINANCE_LOCK_SECONDS = 10
+
+_finance_lock = threading.Lock()
+_finance_cache: dict[str, Any] = {"at": 0.0, "body": None, "failed_at": 0.0, "failure": None}
+_finance_google: dict[str, Any] = {"session": None, "account": None}
+
+
+def finance_may_read(profile: dict[str, Any]) -> bool:
+    """Whether Frigate's `/api/profile` answer is someone allowed the household's finances."""
+    if FINANCE_USERS:
+        return str(profile.get("username", "")) in FINANCE_USERS
+    return profile.get("role") == "admin"
+
+
+def require_finance_user(request: Request) -> str:
+    """A signed-in Frigate user who may read the finances (see "finance"); their username."""
+    cookie = request.headers.get("cookie")
+    if not cookie:
+        raise HTTPException(status_code=401, detail="Frigate session cookie required")
+    try:
+        r = requests.get(f"{FRIGATE_AUTH}/api/profile", headers={"Cookie": cookie}, timeout=5)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Frigate unreachable: {e}")
+    if r.status_code != 200:
+        raise HTTPException(status_code=401, detail="Frigate rejected the session")
+    try:
+        profile = r.json()
+    except ValueError:
+        profile = {}
+    if not isinstance(profile, dict) or not finance_may_read(profile):
+        raise HTTPException(403, {"error": "not_allowed", "message": "This account can't see the household's finances"})
+    return str(profile.get("username", "?"))
+
+
+def sheet_range(title: str) -> str:
+    """A whole tab as an A1 range: the title quoted, any quote in it doubled."""
+    return "'" + title.replace("'", "''") + "'"
+
+
+def sheet_problem(status: int, body: Any, account: str | None) -> tuple[int, dict[str, Any]]:
+    """
+    Google's refusal as the app's setup problem: the Sheets API switched off for the key's
+    project, the sheet not shared with the key, or no such sheet. The status is what the relay
+    answers (503 for a setup step, 502 for anything else Google said).
+    """
+    error = body.get("error") if isinstance(body, dict) else None
+    if not isinstance(error, dict):
+        error = {"message": str(error)} if error else {}
+    message = str(error.get("message", "")) or f"Google answered {status}"
+    details = [d for d in error.get("details", []) if isinstance(d, dict)]
+    reasons = {str(d.get("reason", "")) for d in details}
+    reasons |= {str(e.get("reason", "")) for e in error.get("errors", []) if isinstance(e, dict)}
+    reasons.discard("")
+    detail: dict[str, Any] = {"message": message, "service_account": account}
+    if status == 403 and (reasons & {"SERVICE_DISABLED", "accessNotConfigured"} or "has not been used" in message or "is disabled" in message):
+        detail["error"] = "api_disabled"
+        for d in details:
+            url = d.get("metadata", {}).get("activationUrl") if isinstance(d.get("metadata"), dict) else None
+            if url:
+                detail["activation_url"] = url
+        if "activation_url" not in detail:
+            found = re.search(r"https://console\.developers\.google\.com/\S+", message)
+            if found:
+                detail["activation_url"] = found.group(0).rstrip(".")
+        return 503, detail
+    # A plain permission refusal is the sheet not shared with the key. A 403 with a reason of its
+    # own (a suspended project, a scope or an org policy) isn't, and sharing wouldn't help.
+    if status == 403 and not (reasons - {"PERMISSION_DENIED", "forbidden"}):
+        detail["error"] = "not_shared"
+        return 503, detail
+    if status == 404:
+        detail["error"] = "not_found"
+        return 503, detail
+    detail["error"] = "google_error"
+    return 502, detail
+
+
+def grid_titles(meta: dict[str, Any]) -> list[str]:
+    """The tabs that hold cells. A chart on a tab of its own has none, and asking for its values fails the whole read."""
+    return [
+        s.get("properties", {}).get("title", "")
+        for s in meta.get("sheets", [])
+        if s.get("properties", {}).get("sheetType", "GRID") == "GRID"
+    ]
+
+
+def sheet_payload(meta: dict[str, Any], values: dict[str, Any], sheet_id: str, fetched_at: float) -> dict[str, Any]:
+    """
+    The workbook as the app reads it: each grid tab's rows of raw values and its merged ranges
+    (0-based, end-exclusive). `values` holds one range per grid tab, in order.
+    """
+    ranges = values.get("valueRanges", [])
+    sheets = []
+    grids = [s for s in meta.get("sheets", []) if s.get("properties", {}).get("sheetType", "GRID") == "GRID"]
+    for i, sheet in enumerate(grids):
+        rows = ranges[i].get("values", []) if i < len(ranges) else []
+        merges = [
+            {
+                "start_row": m.get("startRowIndex", 0),
+                "end_row": m.get("endRowIndex", 0),
+                "start_column": m.get("startColumnIndex", 0),
+                "end_column": m.get("endColumnIndex", 0),
+            }
+            for m in sheet.get("merges", [])
+        ]
+        sheets.append({"title": sheet.get("properties", {}).get("title", ""), "values": rows, "merges": merges})
+    return {
+        "title": meta.get("properties", {}).get("title", ""),
+        "fetched_at": fetched_at,
+        "url": f"https://docs.google.com/spreadsheets/d/{sheet_id}/edit",
+        "sheets": sheets,
+    }
+
+
+def finance_google() -> Any:
+    """The read-only Sheets session, made on first use from FINANCE_SHEET_KEY."""
+    if _finance_google["session"] is None:
+        if not os.path.exists(FINANCE_SHEET_KEY):
+            raise HTTPException(503, {"error": "no_key", "message": "The relay has no service-account key to read the sheet with"})
+        try:
+            creds = service_account.Credentials.from_service_account_file(FINANCE_SHEET_KEY, scopes=[SHEETS_SCOPE])
+        except (ValueError, KeyError) as e:
+            log.warning("finance: %s isn't a service-account key: %s", FINANCE_SHEET_KEY, e)
+            raise HTTPException(503, {"error": "no_key", "message": "The relay's key isn't a service-account key"}) from e
+        _finance_google["account"] = creds.service_account_email
+        _finance_google["session"] = AuthorizedSession(creds)
+    return _finance_google["session"]
+
+
+def _google_json(response: Any) -> Any:
+    try:
+        return response.json()
+    except ValueError:
+        return {}
+
+
+def read_finance_sheet() -> dict[str, Any]:
+    """Asks Google for the whole workbook. Raises HTTPException with the app's problem on failure."""
+    session = finance_google()
+    account = _finance_google["account"]
+    try:
+        meta = session.get(
+            f"{SHEETS_API}/{FINANCE_SHEET_ID}",
+            params={"fields": "properties.title,sheets(properties(title,sheetType),merges)"},
+            timeout=15,
+        )
+        if meta.status_code != 200:
+            raise HTTPException(*sheet_problem(meta.status_code, _google_json(meta), account))
+        titles = grid_titles(meta.json())
+        params = [("ranges", sheet_range(t)) for t in titles]
+        params += [("valueRenderOption", "UNFORMATTED_VALUE"), ("dateTimeRenderOption", "SERIAL_NUMBER"), ("majorDimension", "ROWS")]
+        values = session.get(f"{SHEETS_API}/{FINANCE_SHEET_ID}/values:batchGet", params=params, timeout=20)
+        if values.status_code != 200:
+            raise HTTPException(*sheet_problem(values.status_code, _google_json(values), account))
+        return sheet_payload(meta.json(), values.json(), FINANCE_SHEET_ID, time.time())
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Unreachable, or the key refused when the session swapped it for a token (revoked, or
+        # the clock is off): either way Google never answered. The detail stays in the log.
+        log.warning("finance: couldn't read the sheet: %s", e)
+        raise HTTPException(502, {"error": "google_error", "message": "Couldn't reach Google", "service_account": account}) from e
+
+
+@app.get("/finance/sheet")
+def get_finance_sheet(request: Request, refresh: bool = False) -> dict[str, Any]:
+    """The household budget workbook (see "finance"), every grid tab. A Frigate admin (or FINANCE_USERS)."""
+    require_finance_user(request)
+    if not FINANCE_SHEET_ID:
+        raise HTTPException(503, {"error": "not_configured", "message": "FINANCE_SHEET_ID isn't set on the relay"})
+    if not _finance_lock.acquire(timeout=FINANCE_LOCK_SECONDS):
+        # Someone else's read is still waiting on Google: answer what there is rather than queue.
+        if _finance_cache["body"] is not None:
+            return _finance_cache["body"]
+        raise HTTPException(503, {"error": "google_error", "message": "Google is slow to answer; try again shortly"})
+    try:
+        now = time.time()
+        cached = _finance_cache["body"]
+        age = now - _finance_cache["at"]
+        if cached is not None and (age < FINANCE_MIN_REFRESH_SECONDS or (not refresh and age < FINANCE_CACHE_SECONDS)):
+            return cached
+        failure = _finance_cache["failure"]
+        if failure is not None and now - _finance_cache["failed_at"] < FINANCE_MIN_REFRESH_SECONDS:
+            raise HTTPException(*failure)
+        try:
+            body = read_finance_sheet()
+        except HTTPException as e:
+            log.warning("finance: sheet unavailable (%s): %s", e.status_code, (e.detail or {}).get("error") if isinstance(e.detail, dict) else e.detail)
+            _finance_cache.update(failed_at=now, failure=(e.status_code, e.detail))
+            raise
+        _finance_cache.update(at=now, body=body, failed_at=0.0, failure=None)
+        return body
+    finally:
+        _finance_lock.release()
