@@ -8,8 +8,12 @@ asks Tesla at exactly those moments:
   and well away confirms it without the parking-spot check.
 - **Arrival:** near home confirms it at once, without waiting for the vision model. Well away
   means the classifier gave the name to some other car, so the arrival is turned down.
-- **Asleep, unlinked, or out of calls:** the camera decides, exactly as before. The relay never
-  wakes a car.
+- **Asleep at a departure:** the departure is turned down. A car that drove off 10 minutes ago is
+  awake, still driving or only just parked, and a Tesla takes longer than that to sleep. On
+  2026-09-30 the camera made up five departures of the parked Tesla, and Tesla had it asleep at
+  every one.
+- **Asleep at an arrival, unlinked, or out of calls:** the camera decides, exactly as before. The
+  relay never wakes a car.
 
 "Near" is within the home radius (Settings → Home) plus 50 m; "away" is more than 250 m past it.
 

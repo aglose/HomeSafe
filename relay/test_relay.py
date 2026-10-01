@@ -2858,7 +2858,7 @@ class TeslaTest(CarPresenceTest):
         self.assertEqual("away", relay.tesla_verdict("sarahs_car"))
         relay._tesla_answers.clear()
         self.where = {"VIN_A": "asleep", "VIN_S": (37.4238, -122.0841)}  # ~200 m: past the margin, short of away
-        self.assertIsNone(relay.tesla_verdict("andrews_tesla"))
+        self.assertEqual("asleep", relay.tesla_verdict("andrews_tesla"))
         self.assertIsNone(relay.tesla_verdict("sarahs_car"))
         self.assertIsNone(relay.tesla_verdict("yayas_car"), "not a Tesla")
 
@@ -2934,9 +2934,27 @@ class TeslaTest(CarPresenceTest):
 
     def test_a_car_tesla_cant_see_falls_back_to_the_camera(self):
         self.tick(self.T)
-        self.where = {"VIN_A": "asleep"}
+        self.where = {}  # Tesla answers 404: the car isn't on the linked account
         self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
         self.assertEqual([("andrews_tesla", "left", None)], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+
+    def test_a_car_asleep_ten_minutes_after_it_left_never_left(self):
+        # 2026-09-30: the camera lost the parked Tesla five times; Tesla had it asleep each time.
+        self.tick(self.T)
+        self.where = {"VIN_A": "asleep"}
+        self.seen("go", "andrews_tesla", "left", self.T + 100, self.T + 130)
+        self.assertEqual([], self.tick(self.T + 130 + relay.CAR_LEFT_CONFIRM_SECONDS))
+        self.assertTrue(self.cars.cars["andrews_tesla"]["here"])
+        self.assertEqual("go", self.cars.cars["andrews_tesla"]["skip"], "turned down for good")
+
+    def test_a_car_asleep_at_an_arrival_leaves_it_to_the_camera(self):
+        relay.OLLAMA = "http://ollama"
+        self.tick(self.T)
+        self.where = {"VIN_S": "asleep"}
+        self.seen("in", "sarahs_car", "parked", self.T + 500, self.T + 540)
+        self.assertEqual([], self.tick(self.T + 545), "the name waits for the vision model, as without Tesla")
+        relay._tesla_answers.clear()
+        self.assertEqual([("sarahs_car", "is home", None)], self.tick(self.T + 500 + relay.CAR_NAME_WAIT_SECONDS))
 
     def test_account_by_the_tokens_subject(self):
         self.assertEqual("andrew", relay.jwt_subject(_jwt("andrew")))

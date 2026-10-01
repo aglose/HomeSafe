@@ -1392,7 +1392,9 @@ def home_route(item: dict[str, Any], yard: YardWatch, now: float) -> tuple[str, 
 #   CAR_NAME_WAIT_SECONDS, since the classifier calls passing cars "Andrew's Tesla".
 # - Where a car is one of TESLA_CARS and Tesla can say where it is (see "Tesla"), that decides
 #   instead: near home confirms an arrival at once and turns a departure down; well away confirms a
-#   departure without the spot check, and turns an arrival down (another car given its name).
+#   departure without the spot check, and turns an arrival down (another car given its name). A
+#   car Tesla has asleep turns a departure down too (it would be awake had it just driven off);
+#   for an arrival, asleep says nothing and the camera decides.
 # The state is kept in `state` under CAR_PRESENCE_KEY; a car first heard of starts where the
 # vehicle memory has it, silently, so a deploy never replays the day.
 CAR_PRESENCE_KEY = "car_presence"
@@ -1551,10 +1553,14 @@ class CarPresence:
             return None  # seen again within the window: that was the tracker, not the car
         if now < confirmed_at:
             return None
+        # A car that drove off CAR_LEFT_CONFIRM_SECONDS ago is awake — still driving, or only just
+        # parked, and a Tesla takes longer than that to sleep. Asleep, it never went: on 2026-09-30
+        # Tesla had Andrew's car asleep at each of the five departures the camera made up that day.
         verdict = tesla_verdict(name, now)
-        if verdict == "home" or (verdict is None and spot_still_taken(gone["camera"], name)):
+        if verdict in ("home", "asleep") or (verdict is None and spot_still_taken(gone["camera"], name)):
+            reason = {"home": "Tesla has the car at home", "asleep": "Tesla has the car asleep, so it never drove off"}
             log.info("car presence: %s's departure %s turned down, %s", name, gone["event_id"],
-                     "Tesla has the car at home" if verdict else "a car still stands in its spot")
+                     reason.get(verdict, "a car still stands in its spot"))
             car["skip"], car["dirty"] = gone["event_id"], True
             return None
         return self.change(name, car, gone_at, gone)
@@ -4950,8 +4956,9 @@ def tesla_location(vin: str) -> dict[str, Any] | None:
 def tesla_verdict(name: str, now: float | None = None) -> str | None:
     """
     "home" or "away" by where Tesla says the car is against the household's home (see HOME_KEY);
-    None when Tesla can't say (not one of TESLA_CARS, not linked, asleep, a stale fix, no home set,
-    or somewhere in between). One answer per car per TESLA_CACHE_SECONDS.
+    "asleep" when the car is (it won't say where, and isn't woken to); None when Tesla can't say
+    (not one of TESLA_CARS, not linked, a stale fix, no home set, or somewhere in between). One
+    answer per car per TESLA_CACHE_SECONDS.
     """
     vin = TESLA_CARS.get(name)
     home = state_get(HOME_KEY)
@@ -4970,7 +4977,8 @@ def tesla_verdict(name: str, now: float | None = None) -> str | None:
             verdict = "home" if d <= radius + TESLA_HOME_MARGIN_METRES else "away" if d > radius + TESLA_AWAY_METRES else None
             log.info("tesla: %s is %.0f m from home -> %s", name, d, verdict)
         elif where and where.get("asleep"):
-            log.info("tesla: %s is asleep; the camera decides", name)
+            verdict = "asleep"
+            log.info("tesla: %s is asleep", name)
     except Exception as e:
         log.warning("tesla: asking where %s is failed: %s", name, e)
     _tesla_answers[name] = (now, verdict)
