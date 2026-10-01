@@ -67,6 +67,9 @@ services:
         required: false
       - path: finance.env
         required: false
+      # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
+      - path: tesla.env
+        required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
       # relay.db, and the vehicle memory's picture of each household car (data/vehicles/).
