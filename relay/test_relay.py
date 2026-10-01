@@ -2682,5 +2682,184 @@ class CarPresenceTest(_FakeFrigate):
         self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM notify_log WHERE route='car'").fetchone()[0]))
 
 
+class FinanceSheet(unittest.TestCase):
+    """The budget sheet route: Google's refusals as setup steps, the payload, who may read it, and its cache."""
+
+    ACCOUNT = "relay@example.iam.gserviceaccount.com"
+
+    def test_a_disabled_api_says_so_with_the_link_to_enable_it(self):
+        body = {"error": {"code": 403, "message": "Google Sheets API has not been used in project 123 before or it is disabled.", "status": "PERMISSION_DENIED",
+                          "details": [{"@type": "type.googleapis.com/google.rpc.Help", "links": []},
+                                      {"reason": "SERVICE_DISABLED", "metadata": {"activationUrl": "https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=123"}}]}}
+        status, detail = relay.sheet_problem(403, body, self.ACCOUNT)
+        self.assertEqual(503, status)
+        self.assertEqual("api_disabled", detail["error"])
+        self.assertIn("project=123", detail["activation_url"])
+        self.assertEqual(self.ACCOUNT, detail["service_account"])
+
+    def test_the_link_is_found_in_the_message_when_google_leaves_out_the_details(self):
+        body = {"error": {"message": "Sheets API is disabled. Enable it by visiting https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=9 then retry."}}
+        _, detail = relay.sheet_problem(403, body, None)
+        self.assertEqual("api_disabled", detail["error"])
+        self.assertEqual("https://console.developers.google.com/apis/api/sheets.googleapis.com/overview?project=9", detail["activation_url"])
+
+    def test_a_sheet_not_shared_with_the_key_names_the_account_to_share_with(self):
+        body = {"error": {"code": 403, "message": "The caller does not have permission", "status": "PERMISSION_DENIED"}}
+        status, detail = relay.sheet_problem(403, body, self.ACCOUNT)
+        self.assertEqual((503, "not_shared", self.ACCOUNT), (status, detail["error"], detail["service_account"]))
+
+    def test_a_403_for_another_reason_is_not_called_unshared(self):
+        body = {"error": {"code": 403, "message": "Request had insufficient authentication scopes.", "details": [{"reason": "ACCESS_TOKEN_SCOPE_INSUFFICIENT"}]}}
+        status, detail = relay.sheet_problem(403, body, None)
+        self.assertEqual((502, "google_error"), (status, detail["error"]))
+
+    def test_missing_sheets_and_odd_bodies(self):
+        self.assertEqual("not_found", relay.sheet_problem(404, {}, None)[1]["error"])
+        self.assertEqual((502, "google_error"), (relay.sheet_problem(500, "not json", None)[0], relay.sheet_problem(500, "not json", None)[1]["error"]))
+        status, detail = relay.sheet_problem(500, {"error": "backend down"}, None)
+        self.assertEqual((502, "backend down"), (status, detail["message"]))
+
+    def test_tab_titles_are_quoted_as_ranges(self):
+        self.assertEqual("'Home'", relay.sheet_range("Home"))
+        self.assertEqual("'Form Responses 1'", relay.sheet_range("Form Responses 1"))
+        self.assertEqual("'Alex''s'", relay.sheet_range("Alex's"))
+
+    META = {
+        "properties": {"title": "Budget"},
+        "sheets": [
+            {"properties": {"title": "Home", "sheetType": "GRID"}, "merges": [{"startRowIndex": 5, "endRowIndex": 6, "startColumnIndex": 9, "endColumnIndex": 11}, {"endRowIndex": 2, "endColumnIndex": 3}]},
+            {"properties": {"title": "Chart1", "sheetType": "OBJECT"}},
+            {"properties": {"title": "Empty"}},
+        ],
+    }
+
+    def test_chart_tabs_are_left_out_of_the_read(self):
+        self.assertEqual(["Home", "Empty"], relay.grid_titles(self.META))
+
+    def test_the_payload_pairs_each_grid_tab_with_its_values_and_merges(self):
+        values = {"valueRanges": [{"range": "Home!A1:Z9", "values": [["Flow In", "Alex"], [], ["Rent", -4321.5]]}, {"range": "Empty!A1"}]}
+        body = relay.sheet_payload(self.META, values, "abc", 1000.0)
+        self.assertEqual("Budget", body["title"])
+        self.assertEqual("https://docs.google.com/spreadsheets/d/abc/edit", body["url"])
+        self.assertEqual(["Home", "Empty"], [s["title"] for s in body["sheets"]])
+        self.assertEqual([["Flow In", "Alex"], [], ["Rent", -4321.5]], body["sheets"][0]["values"])
+        self.assertEqual({"start_row": 5, "end_row": 6, "start_column": 9, "end_column": 11}, body["sheets"][0]["merges"][0])
+        self.assertEqual({"start_row": 0, "end_row": 2, "start_column": 0, "end_column": 3}, body["sheets"][0]["merges"][1])
+        self.assertEqual([], body["sheets"][1]["values"])
+
+    def test_only_admins_or_the_listed_users_may_read_it(self):
+        saved = relay.FINANCE_USERS
+        try:
+            relay.FINANCE_USERS = set()
+            self.assertTrue(relay.finance_may_read({"username": "alex", "role": "admin"}))
+            self.assertFalse(relay.finance_may_read({"username": "sitter", "role": "viewer"}))
+            self.assertFalse(relay.finance_may_read({}))
+            relay.FINANCE_USERS = {"alex"}
+            self.assertTrue(relay.finance_may_read({"username": "alex", "role": "viewer"}), "a listed viewer may")
+            self.assertTrue(relay.finance_may_read({"username": "sam", "role": "admin"}), "an admin still may")
+            self.assertFalse(relay.finance_may_read({"username": "sitter", "role": "viewer"}))
+        finally:
+            relay.FINANCE_USERS = saved
+
+
+class _GoogleResponse:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+
+    def json(self):
+        return self._body
+
+
+class _FakeSheets:
+    """Stands in for the AuthorizedSession: answers the metadata and values calls, counting them."""
+
+    def __init__(self, meta=(200, None), values=(200, None)):
+        self.meta, self.values, self.calls = meta, values, []
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append((url, params))
+        status, body = self.values if url.endswith(":batchGet") else self.meta
+        if isinstance(body, Exception):
+            raise body
+        return _GoogleResponse(status, body)
+
+
+class FinanceSheetRoute(unittest.TestCase):
+    META = {"properties": {"title": "Budget"}, "sheets": [{"properties": {"title": "Home"}}, {"properties": {"title": "Chart", "sheetType": "OBJECT"}}]}
+    VALUES = {"valueRanges": [{"values": [["Flow In", "Alex"]]}]}
+
+    def setUp(self):
+        self.response = types.SimpleNamespace(headers={})
+        self.saved = (relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, dict(relay._finance_cache))
+        relay.FINANCE_SHEET_ID = "sheet123"
+        relay.require_finance_user = lambda request: "alex"
+        relay._finance_cache.update(at=0.0, body=None, failed_at=0.0, failure=None)
+        self.sheets = _FakeSheets((200, self.META), (200, self.VALUES))
+        relay.finance_google = lambda: self.sheets
+        relay._finance_google["account"] = "relay@example.iam.gserviceaccount.com"
+
+    def tearDown(self):
+        relay.FINANCE_SHEET_ID, relay.require_finance_user, relay.finance_google, cache = self.saved
+        relay._finance_cache.clear()
+        relay._finance_cache.update(cache)
+
+    def test_reads_only_the_grid_tabs_unformatted(self):
+        body = relay.get_finance_sheet(object(), self.response)
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
+        self.assertEqual([["Flow In", "Alex"]], body["sheets"][0]["values"])
+        meta_url, meta_params = self.sheets.calls[0]
+        self.assertTrue(meta_url.endswith("/sheet123"))
+        self.assertIn("sheetType", meta_params["fields"])
+        _, params = self.sheets.calls[1]
+        self.assertIn(("ranges", "'Home'"), params)
+        self.assertNotIn(("ranges", "'Chart'"), params)
+        self.assertIn(("valueRenderOption", "UNFORMATTED_VALUE"), params)
+
+    def test_a_minute_of_cache_that_a_refresh_skips_but_not_within_seconds(self):
+        relay.get_finance_sheet(object(), self.response)
+        relay.get_finance_sheet(object(), self.response)
+        self.assertEqual(2, len(self.sheets.calls))
+        relay.get_finance_sheet(object(), self.response, refresh=True)
+        self.assertEqual(2, len(self.sheets.calls), "a refresh within the minimum interval is served from memory")
+        relay._finance_cache["at"] -= relay.FINANCE_MIN_REFRESH_SECONDS + 1
+        relay.get_finance_sheet(object(), self.response, refresh=True)
+        self.assertEqual(4, len(self.sheets.calls))
+
+    def test_a_failure_is_answered_from_memory_for_a_few_seconds(self):
+        self.sheets.meta = (403, {"error": {"message": "The caller does not have permission", "status": "PERMISSION_DENIED"}})
+        for _ in range(3):
+            with self.assertRaises(relay.HTTPException) as caught:
+                relay.get_finance_sheet(object(), self.response)
+            self.assertEqual("not_shared", caught.exception.detail["error"])
+        self.assertEqual(1, len(self.sheets.calls))
+        relay._finance_cache["failed_at"] -= relay.FINANCE_MIN_REFRESH_SECONDS + 1
+        self.sheets.meta = (200, self.META)
+        self.assertEqual("Budget", relay.get_finance_sheet(object(), self.response)["title"])
+
+    def test_an_unreachable_google_is_a_502_without_the_details(self):
+        self.sheets.meta = (200, ConnectionError("https://sheets.googleapis.com/v4/spreadsheets/sheet123 refused"))
+        with self.assertRaises(relay.HTTPException) as caught:
+            relay.get_finance_sheet(object(), self.response)
+        self.assertEqual(502, caught.exception.status_code)
+        self.assertNotIn("sheet123", caught.exception.detail["message"])
+
+    def test_no_sheet_configured(self):
+        relay.FINANCE_SHEET_ID = ""
+        with self.assertRaises(relay.HTTPException) as caught:
+            relay.get_finance_sheet(object(), self.response)
+        self.assertEqual((503, "not_configured"), (caught.exception.status_code, caught.exception.detail["error"]))
+
+    def test_a_read_stuck_on_google_is_not_queued_behind(self):
+        relay._finance_cache.update(at=time.time() - 3600, body={"title": "stale"})
+        saved = relay.FINANCE_LOCK_SECONDS
+        relay.FINANCE_LOCK_SECONDS = 0.05
+        relay._finance_lock.acquire()
+        try:
+            self.assertEqual("stale", relay.get_finance_sheet(object(), self.response)["title"])
+        finally:
+            relay._finance_lock.release()
+            relay.FINANCE_LOCK_SECONDS = saved
+
+
 if __name__ == "__main__":
     unittest.main()
