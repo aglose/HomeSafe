@@ -1395,6 +1395,8 @@ def home_route(item: dict[str, Any], yard: YardWatch, now: float) -> tuple[str, 
 #   departure without the spot check, and turns an arrival down (another car given its name). A
 #   car Tesla has asleep turns a departure down too (it would be awake had it just driven off);
 #   for an arrival, asleep says nothing and the camera decides.
+# - And every TESLA_CHECK_SECONDS Tesla is asked about each of its cars whatever the camera saw:
+#   a car parked at the curb arrives and leaves outside the camera's car zones (Sarah's, 2026-10-01).
 # The state is kept in `state` under CAR_PRESENCE_KEY; a car first heard of starts where the
 # vehicle memory has it, silently, so a deploy never replays the day.
 CAR_PRESENCE_KEY = "car_presence"
@@ -1515,6 +1517,7 @@ class CarPresence:
         for name, car in list(self.cars.items()):
             rows = car_sightings(name, float(car["since"]))
             change = self.departure(name, car, rows, now) if car["here"] else self.arrival(name, car, rows, now)
+            change = change or self.tesla_check(name, car, now)
             if change:
                 changes.append(change)
         if changes or any(car.get("dirty") for car in self.cars.values()):
@@ -1565,19 +1568,36 @@ class CarPresence:
             return None
         return self.change(name, car, gone_at, gone)
 
-    def change(self, name: str, car: dict[str, Any], at: float, row: dict[str, Any]) -> dict[str, Any]:
+    def tesla_check(self, name: str, car: dict[str, Any], now: float) -> dict[str, Any] | None:
+        """
+        Every TESLA_CHECK_SECONDS, asks Tesla where a car the camera hasn't settled is: one parked at
+        the curb comes and goes out of the camera's car zones, so only Tesla sees it. Recorded home
+        and Tesla has it well away, it left; recorded away and Tesla has it near home, it is home.
+        Asleep or unsure, nothing changes.
+        """
+        if name not in TESLA_CARS or now - float(car.get("checked") or 0) < TESLA_CHECK_SECONDS:
+            return None
+        car["checked"], car["dirty"] = now, True
+        verdict = tesla_verdict(name, now)
+        if verdict == ("away" if car["here"] else "home"):
+            log.info("car presence: %s %s, by Tesla's check", name, "left" if car["here"] else "is home")
+            return self.change(name, car, now, {"camera": car.get("camera") or "", "event_id": "", "movement": "parked"}, via="tesla")
+        return None
+
+    def change(self, name: str, car: dict[str, Any], at: float, row: dict[str, Any], via: str = "camera") -> dict[str, Any]:
         here = not car["here"]
         was = at - float(car["since"]) if car.get("known") else None
-        self.cars[name] = {"here": here, "since": at, "camera": row["camera"], "skip": None, "known": True}
+        self.cars[name] = {"here": here, "since": at, "camera": row["camera"], "skip": None, "known": True, "checked": car.get("checked")}
         movement = "left" if not here else "arrived" if row["movement"] == "arrived" else "is home"
-        return {"name": name, "movement": movement, "camera": row["camera"], "event_id": row["event_id"], "at": at, "was": was}
+        return {"name": name, "movement": movement, "camera": row["camera"], "event_id": row["event_id"], "at": at, "was": was, "via": via}
 
 
 def car_sentence(change: dict[str, Any]) -> tuple[str, str]:
     """ "Sarah's Car arrived home", "Front Yard · away 3h 10m"; "Andrew's Tesla left", "Front Yard · home 5h"."""
     subject = display_name(change["name"])
     title = {"arrived": f"{subject} arrived home", "is home": f"{subject} is home"}.get(change["movement"], f"{subject} left")
-    body = camera_name(change["camera"])
+    # One Tesla's check found, not a camera: the curb, out of the camera's car zones.
+    body = "Seen by Tesla" if change.get("via") == "tesla" else camera_name(change["camera"])
     if change.get("was") is not None:
         body += f" · {'home' if change['movement'] == 'left' else 'away'} {span_text(change['was'])}"
     return title, body
@@ -4840,6 +4860,9 @@ TESLA_HOME_MARGIN_METRES = 50.0
 TESLA_AWAY_METRES = 250.0
 # One answer per car is reused this long; a location older than TESLA_STALE_SECONDS says nothing.
 TESLA_CACHE_SECONDS = 60.0
+# How often car presence asks Tesla about each car whatever the camera saw (see `CarPresence.tesla_check`):
+# two cars every half hour is ~100 calls a day, ~$6 a month, inside the credit.
+TESLA_CHECK_SECONDS = float(os.environ.get("TESLA_CHECK_SECONDS", "1800"))
 TESLA_STALE_SECONDS = 600.0
 TESLA_LINK_SECONDS = 900
 TESLA_CALLS_KEY = "tesla_calls"

@@ -15,13 +15,20 @@ asks Tesla at exactly those moments:
 - **Asleep at an arrival, unlinked, or out of calls:** the camera decides, exactly as before. The
   relay never wakes a car.
 
+- **Every half hour, whatever the camera saw:** the relay asks about each car once. A car recorded
+  home that Tesla has well away has left; one recorded away that Tesla has near home is home. This
+  catches the curb: a car parked in the street comes and goes outside the camera's driveway zone,
+  so only Tesla sees it. Those notifications say "Seen by Tesla" in place of the camera, and can be
+  up to half an hour late. `TESLA_CHECK_SECONDS` sets the interval (default 1800).
+
 "Near" is within the home radius (Settings → Home) plus 50 m; "away" is more than 250 m past it.
 
 ## Cost
 
 Personal accounts get a $10 monthly credit, and a location request costs $0.002 (500 per $1). The
-relay asks at most once a minute per car, only when the camera saw something, and never more than
-`TESLA_CALLS_PER_DAY` (200) times a day. Expect a few dozen calls a day, well under a dollar a month.
+relay asks at most once a minute per car when the camera saw something, plus once per car every half
+hour, and never more than `TESLA_CALLS_PER_DAY` (200) times a day. For two cars that's about 100
+half-hourly calls and a few dozen more a day: roughly $6–7 a month, inside the $10 credit.
 
 ## Setup (once)
 

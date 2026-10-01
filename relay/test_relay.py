@@ -2648,6 +2648,10 @@ class CarPresenceTest(_FakeFrigate):
         self.seen("in", "sarahs_car", "arrived", self.T + 500, self.T + 540, how="not")
         self.assertEqual([], self.tick(self.T + 1000))
 
+    def test_only_a_car_tesla_knows_is_checked(self):
+        self.tick(self.T)
+        self.assertEqual("andrews_tesla" in relay.TESLA_CARS, self.cars.cars["andrews_tesla"].get("checked") is not None)
+
     def test_a_car_first_heard_of_starts_silently(self):
         self.tick(self.T)
         relay.save_vehicle({"camera": "hikvision_1", "name": "yayas_car", "here": 1, "spot": None,
@@ -2955,6 +2959,37 @@ class TeslaTest(CarPresenceTest):
         self.assertEqual([], self.tick(self.T + 545), "the name waits for the vision model, as without Tesla")
         relay._tesla_answers.clear()
         self.assertEqual([("sarahs_car", "is home", None)], self.tick(self.T + 500 + relay.CAR_NAME_WAIT_SECONDS))
+
+    def test_a_car_leaving_from_the_curb_is_found_by_the_half_hourly_check(self):
+        # 2026-10-01: Sarah's car parked in the street, out of the driveway zone, where the camera can't see it come or go.
+        self.cars.cars = None
+        relay.state_set(relay.CAR_PRESENCE_KEY, {"sarahs_car": {"here": True, "since": self.T - 3600, "camera": "hikvision_1", "skip": None, "known": True}})
+        self.where = {"VIN_A": self.NEAR, "VIN_S": self.NEAR}
+        self.assertEqual([], self.tick(self.T))
+        self.where["VIN_S"] = self.FAR
+        relay._tesla_answers.clear()
+        self.assertEqual([], self.tick(self.clock + relay.TESLA_CHECK_SECONDS - 60), "not asked again before the half hour")
+        changes = self.cars.tick(self.clock + relay.TESLA_CHECK_SECONDS)
+        self.assertEqual([("sarahs_car", "left", "tesla")], [(c["name"], c["movement"], c["via"]) for c in changes])
+        title, body = relay.car_sentence(changes[0])
+        self.assertEqual("Sarah's Car left", title)
+        self.assertTrue(body.startswith("Seen by Tesla · home 1h "), body)
+
+    def test_a_car_parking_at_the_curb_is_found_home_by_the_check(self):
+        self.where = {"VIN_S": self.FAR}
+        self.assertEqual([], self.tick(self.T))
+        self.assertFalse(self.cars.cars["sarahs_car"]["here"])
+        self.where["VIN_S"] = self.NEAR
+        relay._tesla_answers.clear()
+        self.assertEqual([("sarahs_car", "is home", None)], self.tick(self.clock + relay.TESLA_CHECK_SECONDS))
+
+    def test_the_check_changes_nothing_while_tesla_agrees_sleeps_or_is_unsure(self):
+        self.where = {"VIN_A": "asleep", "VIN_S": (37.4238, -122.0841)}  # asleep; ~200 m, in between
+        self.assertEqual([], self.tick(self.T))
+        relay._tesla_answers.clear()
+        self.assertEqual([], self.tick(self.clock + relay.TESLA_CHECK_SECONDS))
+        self.assertEqual({"andrews_tesla": True, "sarahs_car": False}, {n: c["here"] for n, c in self.cars.cars.items()})
+        self.assertEqual(4, len(self.tesla_calls), "each car once a half hour")
 
     def test_account_by_the_tokens_subject(self):
         self.assertEqual("andrew", relay.jwt_subject(_jwt("andrew")))
