@@ -344,7 +344,7 @@ private fun CameraPipelineRows(
  * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
  */
 @Composable
-private fun AwaySection(
+internal fun AwaySection(
     state: SettingsUiState,
     onAway: (Boolean) -> Unit,
     onDecides: (Boolean) -> Unit,

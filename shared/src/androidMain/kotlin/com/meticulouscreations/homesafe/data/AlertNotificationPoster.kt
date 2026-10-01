@@ -140,7 +140,8 @@ object AlertNotificationPoster {
         }
         if (dropped) return@withContext
         val postedAt = if (!isUpdate) {
-            remembered ?: now
+            // A visit keeps the time it began; each summary replaces the last under the one id, but is news of its own time.
+            if (notification.summary) now else remembered ?: now
         } else {
             val showing = active(context, notification.id)
             when {

@@ -1729,6 +1729,19 @@ def digest_text(visits: list[dict[str, Any]], since: float, zone: ZoneInfo | Non
     return f"Since {clock_text(since, zone)}: {plural(len(visits), 'visit', 'visits')}", " · ".join(parts)
 
 
+def only_familiar(visits: list[dict[str, Any]]) -> bool:
+    """
+    Whether a summary is nothing but people Frigate put a name to — every visit people alone, and
+    each one named — so a phone that asked for strangers only isn't sent it. Anything else in it
+    (a stranger, a car, an animal) is news to that phone too.
+    """
+    def named_people_only(visit: dict[str, Any]) -> bool:
+        faces = [n for n in visit["names"] if n not in car_names(visit["labels"], visit["names"])]
+        return visit["labels"] == ["person"] and bool(faces)
+
+    return bool(visits) and all(named_people_only(v) for v in visits)
+
+
 def summarise(now: float | None = None, push: Callable[..., dict[str, int]] | None = None) -> None:
     """At each DIGEST_HOURS slot: tells what was kept for the summary since the last one."""
     if NOTIFY_POLICY == "legacy" or not DIGEST_HOURS:
@@ -1751,7 +1764,7 @@ def summarise(now: float | None = None, push: Callable[..., dict[str, int]] | No
     title, body = digest_text(visits, float(until), zone)
     result: Any = "not pushed"
     if NOTIFY_POLICY == "v2":
-        result = (push or broadcast)(title, body, {"notif_id": "summary", "summary": "1", "silent": "1"})
+        result = (push or broadcast)(title, body, {"notif_id": "summary", "summary": "1", "silent": "1"}, familiar=only_familiar(visits))
     log_decision(f"summary:{int(slot)}", "home", "summary", "", title, body, float(until))
     log.info("summary (%s): %s | %s -> %s", NOTIFY_POLICY, title, body, result)
 
@@ -1853,7 +1866,9 @@ def poll_forever() -> None:
                 if NOTIFY_POLICY == "shadow":
                     log_decision(f"{rid}:legacy", mode, "legacy-sound" if sound else "legacy-silent", item.get("camera", ""), title, body,
                                  float(item.get("start_time") or 0), data["event_id"])
-                followups.track(visit, body, data, time.time())
+                if not grouped_away:
+                    # A follow-up retells a visit as an ordinary push; an away visit's cars are told by car presence instead.
+                    followups.track(visit, body, data, time.time())
             followups.run(alerts, zones, time.time())
             if NOTIFY_POLICY in ("shadow", "v2"):
                 for change in cars.tick():
