@@ -61,9 +61,13 @@ data class ChartLine(
 @Immutable
 data class ChartZone(val from: Double?, val to: Double?, val color: Color, val label: String = "")
 
-/** A horizontal reference line (the Fed's 2% target, 0% inversion). */
+/** A horizontal reference line (the Fed's 2% target, 0% inversion); [always] keeps it in view however far the data is. */
 @Immutable
-data class ChartRule(val value: Double, val color: Color, val label: String = "")
+data class ChartRule(val value: Double, val color: Color, val label: String = "", val always: Boolean = false)
+
+/** A stretch of time to shade behind the lines (a recession), for time-axis charts. */
+@Immutable
+data class ChartPeriod(val start: Long, val end: Long, val label: String)
 
 /** How a chart writes values and times on its axis, when it shows one. */
 @Immutable
@@ -98,6 +102,7 @@ fun LineChart(
     live: Boolean = false,
     axis: ChartAxis? = null,
     fitZones: Boolean = false,
+    periods: List<ChartPeriod> = emptyList(),
     contentDescription: String = "",
     onScrub: (Int?) -> Unit = {},
 ) {
@@ -193,7 +198,20 @@ fun LineChart(
         val plotH = bottom - top
         fun y(n: Float) = top + n * plotH
 
-        // Zones and rules first, behind the lines.
+        // Shaded periods first (recessions), so a reader can see what the line did around them.
+        if (geo.timeMax > geo.timeMin) {
+            periods.forEach { p ->
+                if (p.end < geo.timeMin || p.start > geo.timeMax) return@forEach
+                val x0 = ((p.start - geo.timeMin).toDouble() / (geo.timeMax - geo.timeMin) * w).toFloat().coerceIn(0f, w)
+                val x1 = ((p.end - geo.timeMin).toDouble() / (geo.timeMax - geo.timeMin) * w).toFloat().coerceIn(0f, w)
+                val bandW = (x1 - x0).coerceAtLeast(2.dp.toPx())
+                drawRect(colors.textSecondary.copy(alpha = 0.13f), Offset(x0, top), Size(bandW, plotH))
+                val label = textMeasurer.measure(p.label, TextStyle(color = colors.textSecondary, fontSize = 9.sp))
+                if (x0 + label.size.width < w) drawText(label, topLeft = Offset(x0 + 2.dp.toPx(), top))
+            }
+        }
+
+        // Zones and rules next, behind the lines.
         geo.zones.forEachIndexed { i, (a, b) ->
             val zone = zones.getOrNull(i) ?: return@forEachIndexed
             val y0 = y(minOf(a, b)).coerceIn(0f, bottom)
@@ -361,7 +379,7 @@ private fun geometryOf(lines: List<ChartLine>, baseline: Double?, zones: List<Ch
         // A reference line pulls the range out to it only if it's near the data, so a 2% target
         // doesn't flatten a chart of 30% inflation (or vice versa).
         val span = (hi - lo).coerceAtLeast(1e-9)
-        if (r.value in (lo - span * 0.6)..(hi + span * 0.6)) {
+        if (r.always || r.value in (lo - span * 0.6)..(hi + span * 0.6)) {
             lo = minOf(lo, r.value)
             hi = maxOf(hi, r.value)
         }

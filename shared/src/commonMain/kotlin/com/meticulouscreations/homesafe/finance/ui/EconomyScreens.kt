@@ -22,6 +22,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.outlined.Lightbulb
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -41,10 +45,12 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
+import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorGroup
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
+import com.meticulouscreations.homesafe.finance.domain.Recessions
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.Signal
 import com.meticulouscreations.homesafe.finance.domain.Thresholds
@@ -53,6 +59,7 @@ import com.meticulouscreations.homesafe.finance.ui.components.AuroraBackground
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.ChartAxis
 import com.meticulouscreations.homesafe.finance.ui.components.ChartLine
+import com.meticulouscreations.homesafe.finance.ui.components.ChartPeriod
 import com.meticulouscreations.homesafe.finance.ui.components.ChartRule
 import com.meticulouscreations.homesafe.finance.ui.components.ChartZone
 import com.meticulouscreations.homesafe.finance.ui.components.LineChart
@@ -81,13 +88,25 @@ internal fun Series.within(range: EconRange): Series {
 private val econAxis = ChartAxis(formatValue = { FinanceFormat.grouped(it, 1) + "%" }, formatTime = { FinanceFormat.monthYear(it) })
 
 @Composable
-internal fun EconomyScreen(state: FinanceUiState, listState: LazyListState, contentPadding: PaddingValues, onOpenIndicator: (String) -> Unit) {
+internal fun EconomyScreen(
+    state: FinanceUiState,
+    listState: LazyListState,
+    contentPadding: PaddingValues,
+    onOpenIndicator: (String) -> Unit,
+    onOpenConnections: () -> Unit = {},
+) {
     val colors = FinanceTheme.colors
+    val briefing = remember(state.readings, state.quotes) { Narrator.briefing(state.readings, state.stress, state.quotes) }
     LazyColumn(state = listState, contentPadding = contentPadding) {
+        item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing, Modifier.padding(top = 8.dp)) } }
+        item(key = "connect") { CascadeIn(1) { ConnectionsEntryCard(onOpenConnections, Modifier.padding(top = 12.dp)) } }
+        item(key = "inflation-h") { SectionHeader("Inflation", subtitle = "How much more things cost than a year ago", info = "cpi") }
         item(key = "inflation") { InflationBlock(state) }
-        item(key = "curve-h") { SectionHeader("Treasury yield curve", subtitle = "What the government pays to borrow, from 1 month to 30 years") }
+        item(key = "curve-h") {
+            SectionHeader("The yield curve", subtitle = "What the government pays to borrow, from 1 month (left) to 30 years (right)", info = "yieldcurve")
+        }
         item(key = "curve") { CascadeIn(0) { YieldCurveBlock(state) } }
-        item(key = "yields-h") { SectionHeader("Treasury yields", subtitle = "2-, 10- and 30-year, daily") }
+        item(key = "yields-h") { SectionHeader("Government borrowing costs", subtitle = "2, 10 and 30 years — mortgages follow the 10-year", info = "treasuries") }
         item(key = "yields") {
             CascadeIn(1) {
                 OverlayBlock(
@@ -98,10 +117,11 @@ internal fun EconomyScreen(state: FinanceUiState, listState: LazyListState, cont
                     ),
                     rules = emptyList(),
                     defaultRange = EconRange.Y5,
+                    howToRead = "Higher lines mean borrowing costs more for everyone. Grey bands are past recessions.",
                 )
             }
         }
-        item(key = "real-h") { SectionHeader("Real interest rate", subtitle = "The Fed's rate against inflation: above zero, money is tight") }
+        item(key = "real-h") { SectionHeader("Is your cash keeping up?", subtitle = "The Fed's rate against inflation: above zero, savings beat rising prices", info = "realrate") }
         item(key = "real") {
             CascadeIn(2) {
                 val ff = state.readings[IndicatorCatalog.fedFunds.id]
@@ -120,11 +140,12 @@ internal fun EconomyScreen(state: FinanceUiState, listState: LazyListState, cont
                         lines = listOf(Triple("Fed funds", ff, colors.accent), Triple("CPI inflation", cpi, colors.loss)),
                         rules = listOf(ChartRule(0.0, colors.textTertiary)),
                         defaultRange = EconRange.Y10,
+                        howToRead = "When the yellow line (the Fed's rate) is above the red one (inflation), cash in savings grows faster than prices.",
                     )
                 }
             }
         }
-        item(key = "rates-h") { SectionHeader("Key rates") }
+        item(key = "rates-h") { SectionHeader("Key rates", subtitle = "Tap any for the full story", info = "dff") }
         item(key = "rates") {
             val rates = listOf(IndicatorCatalog.fedFunds, IndicatorCatalog.twoYear, IndicatorCatalog.tenYear, IndicatorCatalog.thirtyYear, IndicatorCatalog.mortgage, IndicatorCatalog.corePce)
             Column {
@@ -161,7 +182,7 @@ private fun InflationBlock(state: FinanceUiState) {
         AuroraBackground(tint, Modifier.matchParentSize(), secondary = colors.watch, intensity = if (cpi != null) 1f else 0.3f)
         Column(Modifier.padding(top = 16.dp)) {
             HeroNumber(
-                caption = "Inflation · prices over the past year",
+                caption = "Prices vs a year ago",
                 value = value?.let { FinanceFormat.grouped(it, 2) + "%" } ?: "—",
                 change = changeText,
                 changeColor = tint,
@@ -176,9 +197,10 @@ private fun InflationBlock(state: FinanceUiState) {
                 )
                 LineChart(
                     lines = lines,
-                    rules = listOf(ChartRule(2.0, colors.accent, "Fed target 2%")),
+                    rules = listOf(ChartRule(2.0, colors.accent, "Fed target 2%", always = true)),
                     timeAxis = true,
                     axis = econAxis,
+                    periods = recessionBands,
                     contentDescription = "Inflation chart",
                     onScrub = { scrub = it },
                     modifier = Modifier.fillMaxWidth().height(230.dp),
@@ -189,6 +211,10 @@ private fun InflationBlock(state: FinanceUiState) {
                         Triple(line.label, v?.let { FinanceFormat.grouped(it, 2) + "%" } ?: "—", line.color)
                     },
                 )
+                cpi?.let { r ->
+                    Text(Narrator.verdict(r), style = FinanceTheme.type.body, color = colors.textPrimary.copy(alpha = 0.88f), modifier = Modifier.padding(horizontal = PageGutter))
+                }
+                HowToRead("Each line is how much prices rose over the previous 12 months. Red counts everything; yellow and blue leave out jumpy food and gas prices. The dashed line is the Fed's 2% goal, and grey bands are past recessions.")
             } else {
                 Shimmer(Modifier.fillMaxWidth().height(230.dp).padding(horizontal = PageGutter), corner = 14.dp)
             }
@@ -301,12 +327,19 @@ private fun YieldCurveBlock(state: FinanceUiState) {
         }
         Spacer(Modifier.height(10.dp))
         ChipRow(CurveCompare.entries, compare, { "vs " + it.label }, colors.accent, { compare = it })
+        HowToRead(
+            if (inverted) {
+                "Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more. Right now short-term rates are higher than long-term ones, an upside-down shape that has come before every recession since 1970."
+            } else {
+                "Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more — and it does today. If the left end ever rises above the right, that's a classic recession warning. The dashed line is the curve as it was before."
+            },
+        )
     }
 }
 
 /** Several readings overlaid on one chart with their own range row, and a legend that follows the finger. */
 @Composable
-private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, rules: List<ChartRule>, defaultRange: EconRange) {
+private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, rules: List<ChartRule>, defaultRange: EconRange, howToRead: String? = null) {
     var range by rememberSaveable { mutableStateOf(defaultRange) }
     var scrub by remember { mutableStateOf<Int?>(null) }
     val present = remember(lines, range) {
@@ -323,6 +356,7 @@ private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, 
             rules = rules,
             timeAxis = true,
             axis = econAxis,
+            periods = recessionBands,
             onScrub = { scrub = it },
             modifier = Modifier.fillMaxWidth().height(200.dp),
         )
@@ -333,6 +367,20 @@ private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, 
             } + listOfNotNull(at?.let { Triple(FinanceFormat.date(it), "", FinanceTheme.colors.textTertiary) }),
         )
         RangeSelector(EconRange.entries, range, { it.label }, FinanceTheme.colors.accent, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+        if (howToRead != null) HowToRead(howToRead)
+    }
+}
+
+/** The past US recessions, shaded on every economic chart. */
+internal val recessionBands = Recessions.us.map { ChartPeriod(it.startEpochSeconds, it.endEpochSeconds, it.label) }
+
+/** A small "how to read this chart" note under a chart. */
+@Composable
+internal fun HowToRead(text: String, modifier: Modifier = Modifier) {
+    Column(modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp)) {
+        Text("HOW TO READ IT", style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
+        Spacer(Modifier.height(2.dp))
+        Text(text, style = FinanceTheme.type.label, color = FinanceTheme.colors.textSecondary)
     }
 }
 
@@ -348,7 +396,7 @@ internal fun IndicatorRow(indicator: Indicator, reading: IndicatorReading?, fail
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(indicator.shortTitle, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+            Text(Narrator.plainTitle(indicator.id), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
             val change = reading?.yearChange
             Text(
                 when {
@@ -405,7 +453,10 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
                     Box(Modifier.size(260.dp), contentAlignment = Alignment.Center) {
                         StressRing(level.toFloat(), Modifier.matchParentSize())
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("STRESS", style = FinanceTheme.type.micro, color = colors.textSecondary)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("STRESS", style = FinanceTheme.type.micro, color = colors.textSecondary)
+                                InfoButton("stress", size = 14.dp)
+                            }
                             RollingNumber(stress?.score?.roundToInt()?.toString() ?: "0", FinanceTheme.type.hero, colors.textPrimary)
                             Text(stress?.label ?: "Reading the gauges…", style = FinanceTheme.type.bodyStrong, color = tint)
                         }
@@ -420,12 +471,22 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
                     if (state.economyLoading) {
                         Text("${readings.size} of ${IndicatorCatalog.radar.size} readings in", style = FinanceTheme.type.micro, color = colors.textTertiary)
                     }
+                    Spacer(Modifier.height(16.dp))
+                    StressScale(stress)
                 }
             }
         }
+        item(key = "risk-read") {
+            HowToRead(
+                "Each card below is one warning sign that has turned before past downturns. The big number is today's reading, " +
+                    "the sentence says what it means, and the colored bar shows where it sits between calm (green), worth watching (amber) and danger (red). " +
+                    "One sign on its own means little — trouble has come when many light up together.",
+                Modifier.padding(top = 8.dp),
+            )
+        }
         val flashing = readings.filter { it.signal == Signal.DANGER || it.signal == Signal.WATCH }.sortedByDescending { it.stress ?: 0.0 }
         if (flashing.isNotEmpty()) {
-            item(key = "flash-h") { SectionHeader("Flashing now", subtitle = "Readings past their watch or danger line") }
+            item(key = "flash-h") { SectionHeader("Flashing now", subtitle = "Signs past their 'watch' or 'danger' line — tap one to see why") }
             item(key = "flash") {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal = PageGutter),
@@ -444,7 +505,7 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
                         ) {
                             Box(Modifier.size(7.dp).clip(CircleShape).background(c))
                             Spacer(Modifier.width(6.dp))
-                            Text(r.indicator.shortTitle, style = FinanceTheme.type.label, color = colors.textPrimary)
+                            Text(Narrator.plainTitle(r.indicator.id), style = FinanceTheme.type.label, color = colors.textPrimary)
                             Spacer(Modifier.width(6.dp))
                             Text(r.latest?.let { FinanceFormat.indicator(it, r.indicator.unit) } ?: "", style = FinanceTheme.type.label, color = c)
                         }
@@ -463,11 +524,11 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
             }
         }
         item(key = "how") {
-            SectionHeader("How the gauge works")
+            SectionHeader("How the gauge works", info = "stress")
             Text(
-                "Each reading scores 0 when it's comfortably calm, 50 at its watch line and 100 at its danger line, and the gauge is their weighted average — " +
-                    "the yield curve, the Sahm rule, junk bond spreads and the Fed's stress index count most. The lines are rules of thumb drawn from past " +
-                    "recessions and crises, not forecasts. Nothing here is financial advice.",
+                "Each sign scores 0 when it's comfortably calm, 50 at its 'watch' line and 100 at its 'danger' line, and the gauge averages them — " +
+                    "the most reliable recession alarms (the yield curve, the jobs alarm, risky companies' borrowing costs and financial stress) count the most. " +
+                    "The lines are rules of thumb from past recessions and crises, not forecasts. Nothing here is financial advice.",
                 style = FinanceTheme.type.body,
                 color = colors.textSecondary,
                 modifier = Modifier.padding(horizontal = PageGutter),
@@ -482,10 +543,14 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
     val colors = FinanceTheme.colors
     FinanceCard(onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(indicator.title, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Column(Modifier.weight(1f)) {
+                Text(Narrator.plainTitle(indicator.id), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+                Text(indicator.title, style = FinanceTheme.type.micro, color = colors.textTertiary)
+            }
             if (reading != null) SignalChip(reading.signal)
+            InfoButton(indicator.id)
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(8.dp))
         when {
             reading != null && reading.latest != null -> {
                 Row(verticalAlignment = Alignment.Bottom) {
@@ -503,6 +568,8 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
                     }
                     Sparkline(reading.history.within(EconRange.Y5), colors.signal(reading.signal).takeIf { reading.signal != null } ?: colors.cool, Modifier.width(110.dp).height(40.dp))
                 }
+                Spacer(Modifier.height(8.dp))
+                VerdictText(reading)
                 indicator.thresholds?.let { th ->
                     Spacer(Modifier.height(12.dp))
                     ThresholdTrack(th, reading.latest!!, reading.history.within(EconRange.Y10))
@@ -577,7 +644,7 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                 AuroraBackground(tint, Modifier.matchParentSize(), intensity = if (reading != null) 1f else 0.3f)
                 Column(Modifier.padding(top = 12.dp)) {
                     HeroNumber(
-                        caption = indicator.title,
+                        caption = Narrator.plainTitle(indicator.id) + " · " + indicator.title,
                         value = (shown?.second ?: reading?.latest)?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—",
                         change = when {
                             shown != null -> FinanceFormat.date(shown.first)
@@ -585,7 +652,10 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                             else -> " "
                         },
                         changeColor = tint,
-                        trailing = { if (reading != null && indicator.thresholds != null) SignalChip(reading.signal) },
+                        trailing = {
+                            if (reading != null && indicator.thresholds != null) SignalChip(reading.signal)
+                            InfoButton(indicator.id)
+                        },
                     )
                     Spacer(Modifier.height(12.dp))
                     if (series != null && series.size > 1) {
@@ -596,6 +666,7 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                             timeAxis = true,
                             axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { FinanceFormat.monthYear(it) }),
                             fitZones = true,
+                            periods = recessionBands,
                             contentDescription = "${indicator.title} chart",
                             onScrub = { scrub = it },
                             modifier = Modifier.fillMaxWidth().height(260.dp),
@@ -605,14 +676,42 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                     }
                     Spacer(Modifier.height(8.dp))
                     RangeSelector(EconRange.entries, range, { it.label }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+                    HowToRead(
+                        buildString {
+                            append("Drag along the chart to see any past reading. ")
+                            if (indicator.thresholds != null) append("The amber band is where it's worth watching and the red band is the danger zone. ")
+                            if (indicator.referenceLine != null && indicator.referenceLabel.isNotEmpty()) append("The dashed line marks ${indicator.referenceLabel.lowercase()}. ")
+                            append("Grey bands are past recessions — see what this did just before them.")
+                        },
+                    )
                 }
             }
         }
+        val explainer = Explainers.byId(id)
+        item {
+            Column(Modifier.padding(horizontal = PageGutter)) {
+                if (reading?.latest != null) {
+                    Callout("Right now", Narrator.rightNow(reading), tint, Icons.AutoMirrored.Filled.TrendingUp)
+                }
+                Narrator.forYou(id, state.readings, state.quotes, state.finance)?.let { mine ->
+                    Callout("What it means for you", mine, colors.accent, Icons.Filled.Person)
+                }
+                explainer?.analogy?.takeIf { it.isNotEmpty() }?.let { Callout("An everyday comparison", it, colors.violet, Icons.Outlined.Lightbulb) }
+            }
+        }
         item { SectionHeader("Why it matters") }
-        item { Text(indicator.why, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        item { Text(explainer?.whyYou ?: indicator.why, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        explainer?.normal?.takeIf { it.isNotEmpty() }?.let { normal ->
+            item { SectionHeader("What's normal") }
+            item { Text(normal, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        }
         if (indicator.dangerNote.isNotEmpty()) {
             item { SectionHeader("The danger line") }
             item { Text(indicator.dangerNote, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        }
+        explainer?.howItWorks?.takeIf { it.isNotEmpty() }?.let { how ->
+            item { SectionHeader("How it works") }
+            item { Text(how, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
         }
         if (reading != null && reading.latest != null) {
             val h = reading.history

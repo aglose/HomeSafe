@@ -140,6 +140,10 @@ data class PersonalFinance(
     val taxYears: List<TaxYear>,
     val mortgagePlan: MortgagePlan?,
     val oldHouse: HouseSale?,
+    /** The sheet's own charts, in the order they sit in it. */
+    val charts: List<SheetChart> = emptyList(),
+    /** How this read of the sheet went, part by part (see [SheetHealth]). */
+    val health: SheetHealth = SheetHealth.Unchecked,
 ) {
     /** Everything owed but the mortgage (see [Debt.isMortgage]): what net worth subtracts. */
     val consumerDebt: Double get() = debts.filterNot { it.isMortgage }.sumOf { it.balance }

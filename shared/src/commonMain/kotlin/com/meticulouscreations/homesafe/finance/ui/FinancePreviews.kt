@@ -1,9 +1,12 @@
 package com.meticulouscreations.homesafe.finance.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -15,8 +18,13 @@ import com.meticulouscreations.homesafe.finance.SheetIssue
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
+import com.meticulouscreations.homesafe.finance.domain.ChartDomain
+import com.meticulouscreations.homesafe.finance.domain.ChartHealth
+import com.meticulouscreations.homesafe.finance.domain.ChartStacking
+import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
+import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
 import com.meticulouscreations.homesafe.finance.domain.HouseSale
 import com.meticulouscreations.homesafe.finance.domain.IncomeLine
@@ -26,10 +34,18 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
+import com.meticulouscreations.homesafe.finance.domain.ParseNote
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Quote
+import com.meticulouscreations.homesafe.finance.domain.SectionHealth
+import com.meticulouscreations.homesafe.finance.domain.SectionStatus
 import com.meticulouscreations.homesafe.finance.domain.Series
+import com.meticulouscreations.homesafe.finance.domain.SheetChart
+import com.meticulouscreations.homesafe.finance.domain.SheetChartKind
+import com.meticulouscreations.homesafe.finance.domain.SheetChartSeries
+import com.meticulouscreations.homesafe.finance.domain.SheetHealth
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
+import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
@@ -184,6 +200,62 @@ internal object FinanceFixtures {
             listOf(AffordabilityPoint("Spring 2027", 11_100.0, 5_900.0), AffordabilityPoint("Fall 2028", 9_800.0, 7_200.0), AffordabilityPoint("Fall 2031", 8_100.0, 8_900.0)),
         ),
         oldHouse = HouseSale(512_000.0, 689_000.0, 61_400.0, 0.17, 233_000.0),
+        charts = sheetCharts(),
+    )
+
+    /** Made-up stand-ins for the kinds of chart the sheet has: an area over dates, bars, a stack by year, a pie. */
+    private fun sheetCharts(): List<SheetChart> {
+        val dates = ChartDomain.Dates((0 until 24).map { NOW - (23 - it) * 91L * DAY })
+        val years = ChartDomain.Categories((2018..2025).map { it.toString() })
+        val assets = (0 until 24).map { 140_000.0 + it * 31_000.0 + sin(it / 2.0) * 15_000 }
+        val gross = listOf(118_000.0, 131_500.0, 147_200.0, 163_900.0, 171_400.0, 186_300.0, 194_700.0, 208_100.0)
+        fun chart(id: Long, tab: String, title: String, kind: SheetChartKind, domain: ChartDomain, vararg series: SheetChartSeries, stacking: ChartStacking = ChartStacking.NONE) =
+            SheetChart(id, tab, title, "", kind, stacking, domain, series.toList(), "https://docs.google.com/spreadsheets/d/example/edit#gid=$id")
+        fun money(label: String, values: List<Double?>, kind: SheetChartKind) = SheetChartSeries(label, values, kind, ChartValueFormat.MONEY)
+        return listOf(
+            chart(1, "Home", "Total Assets", SheetChartKind.AREA, dates, money("Total Assets", assets, SheetChartKind.AREA)),
+            chart(2, "Home", "Total Debt", SheetChartKind.COLUMN, dates, money("Debt", (0 until 24).map { -64_000.0 + it * 2_400.0 }, SheetChartKind.COLUMN)),
+            chart(3, "Home", "Quarterly Assets Change", SheetChartKind.LINE, dates, money("Net change", listOf<Double?>(null) + (1 until 24).map { assets[it] - assets[it - 1] }, SheetChartKind.LINE)),
+            chart(4, "Forecasts", "Income", SheetChartKind.COLUMN, years, money("Alex", gross.map { it * 0.6 }, SheetChartKind.COLUMN), money("Sam", gross.map { it * 0.4 }, SheetChartKind.COLUMN)),
+            chart(
+                5,
+                "Forecasts",
+                "Combined Total Income",
+                SheetChartKind.AREA,
+                years,
+                money("Taxes Paid", gross.map { it * 0.27 }, SheetChartKind.AREA),
+                money("Take Home", gross.map { it * 0.73 }, SheetChartKind.AREA),
+                stacking = ChartStacking.STACKED,
+            ),
+            chart(
+                7,
+                "Forecasts",
+                "Invested and its share",
+                SheetChartKind.COMBO,
+                years,
+                money("Invested", gross.map { it * 0.14 }, SheetChartKind.COLUMN),
+                SheetChartSeries("Of take-home", (0 until 8).map { 0.12 + it * 0.012 }, SheetChartKind.LINE, ChartValueFormat.PERCENT, rightAxis = true),
+            ),
+            chart(6, "Home", "Spending", SheetChartKind.PIE, ChartDomain.Categories(listOf("Housing", "Food", "Transport", "Childcare", "Other")), money("Monthly", listOf(4_200.0, 1_300.0, 650.0, 1_900.0, 880.0), SheetChartKind.PIE)),
+        )
+    }
+
+    /** A sync after some reorganising: one title renamed, one block emptied, a row without a date, a chart on a deleted tab. */
+    val troubledHealth = SheetHealth(
+        sections = SheetSection.entries.map { section ->
+            when (section) {
+                SheetSection.EXPENSES -> SectionHealth(section, SectionStatus.MISSING, null)
+                SheetSection.VESTING -> SectionHealth(section, SectionStatus.EMPTY, null)
+                SheetSection.HISTORY -> SectionHealth(section, SectionStatus.OK, "25 snapshots")
+                else -> SectionHealth(section, SectionStatus.OK, "read")
+            }
+        },
+        charts = listOf(
+            ChartHealth("Total Assets", "Home", null),
+            ChartHealth("Total Debt", "Home", null),
+            ChartHealth("Income", "Forecasts", "It plots “Forecasts”, which the sheet no longer has"),
+        ),
+        notes = listOf(ParseNote(SheetSection.HISTORY, "1 row in the history has figures but no date, so it was left out")),
     )
 
     val state = FinanceUiState(
@@ -213,6 +285,40 @@ private fun FinanceWalletPreview() {
     FinanceStage { WalletScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, {}, {}) }
 }
 
+@Preview(widthDp = 412, heightDp = 3100)
+@Composable
+private fun FinanceSheetChartsPreview() {
+    FinanceStage {
+        Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FinanceFixtures.finance.charts.forEach { SheetChartCard(it) }
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FinanceSheetSyncPreview() {
+    FinanceStage {
+        SheetSyncScreen(
+            FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)),
+            previewPadding,
+            onSyncNow = {},
+        )
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 200)
+@Composable
+private fun FinanceSheetSyncLinesPreview() {
+    FinanceStage {
+        Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SheetSyncLine(FinanceFixtures.state, onOpen = {})
+            SheetSyncLine(FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)), onOpen = {})
+            SheetSyncLine(FinanceFixtures.state.copy(sheetIssue = SheetIssue(SheetProblem.OTHER, "Google didn't answer", null, null)), onOpen = {})
+        }
+    }
+}
+
 @Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceMarketsPreview() {
@@ -222,7 +328,7 @@ private fun FinanceMarketsPreview() {
 @Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceEconomyPreview() {
-    FinanceStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding) {} }
+    FinanceStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, onOpenIndicator = {}) }
 }
 
 @Preview(widthDp = 412, heightDp = 1500)
@@ -248,5 +354,27 @@ private fun FinanceSheetSetupPreview() {
             {},
             {},
         )
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceConnectionsPreview() {
+    FinanceStage { ConnectionsScreen(FinanceFixtures.state, previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FinanceGlossaryPreview() {
+    FinanceStage { GlossaryScreen(previewPadding) }
+}
+
+@Preview(widthDp = 412, heightDp = 1200)
+@Composable
+private fun FinanceExplainerPreview() {
+    FinanceStage {
+        Box(Modifier.background(FinancePalette().surfaceRaised)) {
+            ExplainerBody(Explainers.byId("cpi")!!, FinanceFixtures.state, {}, {})
+        }
     }
 }

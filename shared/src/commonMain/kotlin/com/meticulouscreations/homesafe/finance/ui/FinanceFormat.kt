@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
 import kotlin.math.pow
@@ -135,6 +136,20 @@ object FinanceFormat {
     fun dateTime(epochSeconds: Long, offsetSeconds: Int): String {
         val d = local(epochSeconds, offsetSeconds)
         return "${MONTHS[d.month.ordinal]} ${d.day}, ${time(epochSeconds, offsetSeconds)}"
+    }
+
+    /** The device's UTC offset at [epochSeconds], for writing a time in the household's own clock. */
+    fun localOffsetSeconds(epochSeconds: Long): Int = TimeZone.currentSystemDefault().offsetAt(Instant.fromEpochSeconds(epochSeconds)).totalSeconds
+
+    /** How long ago a sync was: "just now", "4 min ago", "3 h ago", then the date. */
+    fun ago(nowEpochSeconds: Long, thenEpochSeconds: Long): String {
+        val s = (nowEpochSeconds - thenEpochSeconds).coerceAtLeast(0)
+        return when {
+            s < 60 -> "just now"
+            s < 3_600 -> "${s / 60} min ago"
+            s < 36 * 3_600 -> "${s / 3_600} h ago"
+            else -> date(thenEpochSeconds, localOffsetSeconds(thenEpochSeconds))
+        }
     }
 
     /** "in 3 days", "in 4 months", "2 months ago". */

@@ -392,3 +392,20 @@ data class StressScore(val score: Double, val counted: Int, val dangers: Int, va
         }
     }
 }
+
+/** A stretch of time to shade on a chart, e.g. a recession. */
+@Immutable
+data class Period(val startEpochSeconds: Long, val endEpochSeconds: Long, val label: String)
+
+/** The US recessions since 1990, as the National Bureau of Economic Research dates them (peak to trough). */
+object Recessions {
+    private const val DAY = 86_400L
+
+    // Epoch days of each month's first day, so no date library is needed here.
+    val us: List<Period> = listOf(
+        Period(7486 * DAY, 7729 * DAY, "1990–91"),
+        Period(11382 * DAY, 11627 * DAY, "2001"),
+        Period(13848 * DAY, 14396 * DAY, "2008"),
+        Period(18293 * DAY, 18353 * DAY, "COVID"),
+    )
+}
