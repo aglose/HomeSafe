@@ -56,6 +56,8 @@ data class SheetChartSeries(
     val values: List<Double?>,
     val kind: SheetChartKind,
     val format: ChartValueFormat,
+    /** Drawn against the chart's second (right-hand) scale, as a combo of money and a rate is. */
+    val rightAxis: Boolean = false,
 )
 
 /**
@@ -76,6 +78,15 @@ data class SheetChart(
     /** The chart's tab in Google Sheets, when the relay gave the sheet's address. */
     val sourceUrl: String?,
 ) {
+    /** Whether some series are drawn against the right-hand scale and some against the left. */
+    val isDualAxis: Boolean get() = series.any { it.rightAxis } && series.any { !it.rightAxis }
+
+    /** The points from oldest to newest: a date axis by its dates (the sheet may run it backwards), labels in order. */
+    val chronological: List<Int> get() = when (val d = domain) {
+        is ChartDomain.Dates -> d.epochSeconds.indices.sortedBy { d.epochSeconds[it] }
+        is ChartDomain.Categories -> d.labels.indices.toList()
+    }
+
     /** Whether there's anything to draw: a kind the app draws, and a value somewhere. */
     val isDrawable: Boolean get() = kind != SheetChartKind.OTHER && series.any { s -> s.values.any { it != null } }
 }

@@ -89,7 +89,8 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
 
             chart.kind == SheetChartKind.SCORECARD -> Headline(chart, selected = null)
 
-            chart.kind.isBars && chart.series.all { it.kind.isBars } -> {
+            // Bars share one scale, so a chart with a second scale is drawn as lines (below).
+            chart.kind.isBars && chart.series.all { it.kind.isBars } && !chart.isDualAxis -> {
                 Headline(chart, selected)
                 GroupedBarChart(
                     labels = pointLabels(chart, short = true),
@@ -114,77 +115,89 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
     }
 }
 
-/** The lines (or stacked areas) of a line, area, combo or scatter chart, scrubbable. */
+/**
+ * The lines (or stacked areas) of a line, area, combo or scatter chart, scrubbable. A chart with
+ * series on both of the sheet's scales gets a second, shorter chart for the right-hand one, so
+ * neither group is flattened against the other's range.
+ */
 @Composable
 private fun LineBody(chart: SheetChart, selected: Int?, onSelect: (Int?) -> Unit) {
-    val palette = FinanceTheme.colors.categorical
-    val plot = remember(chart) { linePlot(chart) }
+    val split = chart.isDualAxis && chart.stacking == ChartStacking.NONE
     Column {
         Headline(chart, selected)
-        LineChart(
-            lines = plot.lines.mapIndexed { i, s ->
-                val series = plot.order[i]
-                ChartLine(
-                    series = s,
-                    color = palette[series % palette.size],
-                    fill = chart.kind == SheetChartKind.AREA || chart.kind == SheetChartKind.STEPPED_AREA || chart.stacking != ChartStacking.NONE,
-                    width = if (i == 0) 3f else 2f,
-                )
-            },
-            timeAxis = chart.domain is ChartDomain.Dates,
-            axis = ChartAxis(
-                formatValue = { v -> if (chart.stacking == ChartStacking.PERCENT) FinanceFormat.percent(v, 0) else formatValue(v, chart.series.first().format, compact = true) },
-                formatTime = { t ->
-                    when (val d = chart.domain) {
-                        is ChartDomain.Dates -> shortMonthYear(t)
-                        is ChartDomain.Categories -> d.labels.getOrNull(t.toInt()).orEmpty()
-                    }
-                },
-            ),
-            contentDescription = chart.title,
-            onScrub = { i -> onSelect(i?.let { plot.points.getOrNull(it) }) },
-            modifier = Modifier.fillMaxWidth().height(190.dp),
-        )
+        LinePanel(chart, rightAxis = if (split) false else null, onSelect, Modifier.fillMaxWidth().height(190.dp))
+        if (split) {
+            Text("Right scale", style = FinanceTheme.type.micro, color = FinanceTheme.colors.textTertiary, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+            LinePanel(chart, rightAxis = true, onSelect, Modifier.fillMaxWidth().height(110.dp))
+        }
         SeriesLegend(chart, selected)
     }
 }
 
-/**
- * A chart's lines as the [LineChart] takes them: the scrubbed line first, then the rest. Stacked
- * series are drawn as running totals (each line the top of its band), the total first; a
- * percent stack as each band's share of the total.
- */
-private class LinePlot(val lines: List<Series>, val order: List<Int>, val points: IntArray)
+/** One scale's lines: the series on [rightAxis]'s side, or all of them when it's null. */
+@Composable
+private fun LinePanel(chart: SheetChart, rightAxis: Boolean?, onSelect: (Int?) -> Unit, modifier: Modifier = Modifier) {
+    val palette = FinanceTheme.colors.categorical
+    val plot = remember(chart, rightAxis) { linePlot(chart, chart.series.indices.filter { rightAxis == null || chart.series[it].rightAxis == rightAxis }) }
+    val format = chart.series[plot.order.min()].format
+    LineChart(
+        lines = plot.lines.mapIndexed { i, s ->
+            val series = plot.order[i]
+            ChartLine(
+                series = s,
+                color = palette[series % palette.size],
+                fill = chart.kind == SheetChartKind.AREA || chart.kind == SheetChartKind.STEPPED_AREA || chart.stacking != ChartStacking.NONE,
+                width = if (i == 0) 3f else 2f,
+            )
+        },
+        timeAxis = plot.timeAxis,
+        axis = ChartAxis(
+            formatValue = { v -> if (chart.stacking == ChartStacking.PERCENT) FinanceFormat.percent(v, 0) else formatValue(v, format, compact = true) },
+            formatTime = { t -> if (plot.timeAxis) shortMonthYear(t) else pointLabel(chart, t.toInt(), short = true) },
+        ),
+        contentDescription = chart.title,
+        onScrub = { i -> onSelect(i?.let { plot.points.getOrNull(it) }) },
+        modifier = modifier,
+    )
+}
 
-private fun linePlot(chart: SheetChart): LinePlot {
+/**
+ * Some of a chart's series ([members]) as the [LineChart] takes them: the scrubbed line first,
+ * then the rest. Stacked series are drawn as running totals (each line the top of its band), the
+ * total first; a percent stack as each band's share of the total. Dates are placed by time, unless
+ * the sheet runs them backwards; then, like labels, the points are evenly spaced in the sheet's order.
+ */
+private class LinePlot(val lines: List<Series>, val order: List<Int>, val points: IntArray, val timeAxis: Boolean)
+
+private fun linePlot(chart: SheetChart, members: List<Int>): LinePlot {
     val n = chart.domain.size
-    val count = chart.series.size
-    val drawn: List<List<Double?>> = if (chart.stacking == ChartStacking.NONE || count < 2) {
-        chart.series.map { it.values }
+    val stacked = chart.stacking != ChartStacking.NONE && members.size > 1
+    val drawn: Map<Int, List<Double?>> = if (!stacked) {
+        members.associateWith { chart.series[it].values }
     } else {
-        val running = chart.series.indices.map { s ->
-            (0 until n).map { i ->
-                if (chart.series.all { it.values.getOrNull(i) == null }) null else (0..s).sumOf { chart.series[it].values.getOrNull(i) ?: 0.0 }
+        val running = members.mapIndexed { k, s ->
+            s to (0 until n).map { i ->
+                if (members.all { chart.series[it].values.getOrNull(i) == null }) null else (0..k).sumOf { chart.series[members[it]].values.getOrNull(i) ?: 0.0 }
             }
-        }
+        }.toMap()
         if (chart.stacking == ChartStacking.PERCENT) {
-            running.map { line -> line.mapIndexed { i, v -> v?.let { total -> running.last()[i]?.takeIf { it != 0.0 }?.let { total / it * 100 } } } }
+            val total = running.getValue(members.last())
+            running.mapValues { (_, line) -> line.mapIndexed { i, v -> v?.let { part -> total[i]?.takeIf { it != 0.0 }?.let { part / it * 100 } } } }
         } else {
             running
         }
     }
     // The total leads a stack; otherwise the sheet's first series does.
-    val order = if (chart.stacking != ChartStacking.NONE && count > 1) chart.series.indices.reversed().toList() else chart.series.indices.toList()
-    val x: (Int) -> Long = when (val d = chart.domain) {
-        is ChartDomain.Dates -> { i -> d.epochSeconds[i] }
-        is ChartDomain.Categories -> { i -> i.toLong() }
-    }
-    val lines = order.map { s -> Series.of((0 until n).mapNotNull { i -> drawn[s].getOrNull(i)?.let { x(i) to it } }) }
-    val points = (0 until n).filter { drawn[order.first()].getOrNull(it) != null }.toIntArray()
-    return LinePlot(lines, order, points)
+    val order = if (stacked) members.reversed() else members
+    val dates = chart.domain as? ChartDomain.Dates
+    val timeAxis = dates != null && dates.epochSeconds.zipWithNext().all { (a, b) -> a <= b }
+    val x: (Int) -> Long = if (timeAxis) { i -> dates!!.epochSeconds[i] } else { i -> i.toLong() }
+    val lines = order.map { s -> Series.of((0 until n).mapNotNull { i -> drawn.getValue(s).getOrNull(i)?.let { x(i) to it } }) }
+    val points = (0 until n).filter { drawn.getValue(order.first()).getOrNull(it) != null }.toIntArray()
+    return LinePlot(lines, order, points, timeAxis)
 }
 
-/** The value at the selected point — or the latest — big, with its change since the chart's first point. */
+/** The value at the selected point — or the latest — big, with its change since the earliest. */
 @Composable
 private fun Headline(chart: SheetChart, selected: Int?) {
     val colors = FinanceTheme.colors
@@ -195,7 +208,7 @@ private fun Headline(chart: SheetChart, selected: Int?) {
     } else {
         chart.series.first().values.getOrNull(i)
     }
-    val indices = (0 until chart.domain.size).filter { valueAt(it) != null }
+    val indices = chart.chronological.filter { valueAt(it) != null }
     val point = selected?.takeIf { valueAt(it) != null } ?: indices.lastOrNull() ?: return
     val value = valueAt(point) ?: return
     val first = indices.first()
@@ -235,7 +248,7 @@ private fun SeriesLegend(chart: SheetChart, selected: Int?) {
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         chart.series.forEachIndexed { i, s ->
-            val at = selected ?: s.values.indexOfLast { it != null }
+            val at = selected ?: chart.chronological.lastOrNull { s.values.getOrNull(it) != null } ?: -1
             LegendDot(s.label, s.values.getOrNull(at)?.let { formatValue(it, s.format, compact = true) } ?: "—", palette[i % palette.size])
         }
     }

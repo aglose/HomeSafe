@@ -243,6 +243,16 @@ private fun com.meticulouscreations.homesafe.finance.ui.LineBody(chart: com.meti
     - onSelect: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.LinePanel(chart: com.meticulouscreations.homesafe.finance.domain.SheetChart, rightAxis: kotlin.Boolean?, onSelect: kotlin.Function1<kotlin.Int?, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - chart: STABLE (marked @Stable or @Immutable)
+    - rightAxis: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.MarketStatus(sp: com.meticulouscreations.homesafe.finance.domain.Quote?): kotlin.Unit
   skippable: true
   restartable: true

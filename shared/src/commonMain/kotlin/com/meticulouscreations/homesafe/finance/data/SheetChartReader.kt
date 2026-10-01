@@ -76,11 +76,9 @@ object SheetChartReader {
 
         val format = if (ownAxis) chart.domainFormat else null
         val dates = kind != SheetChartKind.PIE && kept.isNotEmpty() && domain != null && isDates(format, kept.map { domain.getOrNull(it) })
-        if (dates) {
-            kept = kept.sortedBy { (domain[it] as CellValue.Number).value }
-        } else if (chart.reversed) {
-            kept = kept.reversed()
-        }
+        // Dates in date order, whatever order the rows are in; then the sheet's "reverse" setting.
+        if (dates) kept = kept.sortedBy { (domain[it] as CellValue.Number).value }
+        if (chart.reversed) kept = kept.reversed()
         val axis = if (dates) {
             ChartDomain.Dates(kept.map { epochOfSerial((domain[it] as CellValue.Number).value) })
         } else {
@@ -93,6 +91,7 @@ object SheetChartReader {
                 values = kept.map { values[s].getOrNull(it) },
                 kind = spec.type?.let(::kindOf)?.takeUnless { it == SheetChartKind.OTHER } ?: kind,
                 format = formatOf(spec.format),
+                rightAxis = spec.axis.equals("RIGHT_AXIS", ignoreCase = true),
             )
         }
         var domainOut: ChartDomain = axis

@@ -112,7 +112,7 @@ class SheetChartReaderTest {
                "domain": [{"sheet": "F", "start_row": 0, "end_row": 3, "start_column": 0, "end_column": 1}],
                "series": [
                  {"ranges": [{"sheet": "F", "start_row": 0, "end_row": 3, "start_column": 1, "end_column": 2}], "type": "COLUMN", "format": {"type": "NUMBER", "pattern": "$#,##0"}},
-                 {"ranges": [{"sheet": "F", "start_row": 0, "end_row": 3, "start_column": 2, "end_column": 3}], "type": "LINE", "format": {"type": "PERCENT"}}
+                 {"ranges": [{"sheet": "F", "start_row": 0, "end_row": 3, "start_column": 2, "end_column": 3}], "type": "LINE", "axis": "RIGHT_AXIS", "format": {"type": "PERCENT"}}
                ]}
             ]}
             """,
@@ -122,6 +122,27 @@ class SheetChartReaderTest {
         assertEquals(listOf(ChartValueFormat.MONEY, ChartValueFormat.PERCENT), chart.series.map { it.format })
         assertEquals(ChartDomain.Categories(listOf("2025", "2024")), chart.domain, "a reversed axis runs backwards")
         assertEquals(listOf(75.0, 70.0), chart.series[1].values)
+        assertEquals(listOf(false, true), chart.series.map { it.rightAxis })
+        assertTrue(chart.isDualAxis)
+    }
+
+    @Test
+    fun aReversedDateAxisRunsNewestFirstButReadsOldestToNewest() {
+        val chart = read(
+            """
+            {"sheets": [$history], "charts": [
+              {"sheet": "Home", "title": "Assets", "kind": "COLUMN", "reversed": true,
+               "domain": [{"sheet": "Home", "start_row": 2, "end_row": 5, "start_column": 0, "end_column": 1}],
+               "domain_format": {"type": "DATE"},
+               "series": [{"ranges": [{"sheet": "Home", "start_row": 2, "end_row": 5, "start_column": 1, "end_column": 2}]}]}
+            ]}
+            """,
+        ).single()
+        val dates = assertIs<ChartDomain.Dates>(chart.domain)
+        assertEquals(listOf(1_696_118_400L, 1_687_478_400L, 1_678_838_400L), dates.epochSeconds)
+        assertEquals(listOf(250_000.0, 220_000.0, 200_000.0), chart.series.single().values)
+        assertEquals(listOf(2, 1, 0), chart.chronological, "oldest to newest, for the headline's change")
+        assertFalse(chart.isDualAxis)
     }
 
     @Test

@@ -220,6 +220,15 @@ internal object FinanceFixtures {
                 money("Take Home", gross.map { it * 0.73 }, SheetChartKind.AREA),
                 stacking = ChartStacking.STACKED,
             ),
+            chart(
+                7,
+                "Forecasts",
+                "Invested and its share",
+                SheetChartKind.COMBO,
+                years,
+                money("Invested", gross.map { it * 0.14 }, SheetChartKind.COLUMN),
+                SheetChartSeries("Of take-home", (0 until 8).map { 0.12 + it * 0.012 }, SheetChartKind.LINE, ChartValueFormat.PERCENT, rightAxis = true),
+            ),
             chart(6, "Home", "Spending", SheetChartKind.PIE, ChartDomain.Categories(listOf("Housing", "Food", "Transport", "Childcare", "Other")), money("Monthly", listOf(4_200.0, 1_300.0, 650.0, 1_900.0, 880.0), SheetChartKind.PIE)),
         )
     }
@@ -251,7 +260,7 @@ private fun FinanceWalletPreview() {
     FinanceStage { WalletScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, {}, {}) }
 }
 
-@Preview(widthDp = 412, heightDp = 2600)
+@Preview(widthDp = 412, heightDp = 3100)
 @Composable
 private fun FinanceSheetChartsPreview() {
     FinanceStage {

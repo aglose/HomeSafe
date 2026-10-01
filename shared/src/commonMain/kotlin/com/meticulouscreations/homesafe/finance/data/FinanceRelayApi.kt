@@ -148,6 +148,8 @@ data class RelayChartSeries(
     val ranges: List<RelayRange> = emptyList(),
     /** The series' own kind on a combo chart (`LINE`, `COLUMN`, `AREA`…). */
     val type: String? = null,
+    /** `LEFT_AXIS` or `RIGHT_AXIS`: which vertical scale the series is drawn against. */
+    val axis: String = "LEFT_AXIS",
     val format: RelayNumberFormat? = null,
 )
 

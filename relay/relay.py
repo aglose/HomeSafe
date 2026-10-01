@@ -4970,9 +4970,10 @@ def _google_json(response: Any) -> Any:
 
 def chart_formats(session: Any, meta: dict[str, Any]) -> dict[tuple[str, int, int], dict[str, str]]:
     """
-    The number formats of the cells the charts plot (see `format_probe`), in one more call. Only
-    a nicety — without them the app guesses dates and money from the values — so a failure here
-    is logged and the sheet is served without them.
+    The number formats of the cells the charts plot (see `format_probe`), in one more call.
+    Without them the app still finds date axes from the values (date serials), but writes every
+    value as a plain number rather than money or a percentage. So a failure here is logged and
+    the sheet is served without them.
     """
     cells = format_probes(sheet_charts(meta))
     if not cells:
