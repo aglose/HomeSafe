@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Signal
@@ -49,10 +50,13 @@ internal val PageGutter = 20.dp
 
 /** A page section's heading, with an optional trailing note. */
 @Composable
-internal fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: String? = null, subtitle: String? = null) {
+internal fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: String? = null, subtitle: String? = null, info: String? = null) {
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = 28.dp, bottom = 10.dp)) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(title, style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary, modifier = Modifier.weight(1f))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(title, style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
+            // The ⓘ sits right after the title, where the question comes up.
+            if (info != null) InfoButton(info, Modifier.padding(start = 0.dp))
+            Spacer(Modifier.weight(1f))
             if (trailing != null) Text(trailing, style = FinanceTheme.type.label, color = FinanceTheme.colors.textSecondary)
         }
         if (subtitle != null) {
@@ -149,7 +153,9 @@ internal fun QuoteRow(symbol: String, quote: Quote?, onClick: () -> Unit, modifi
     ) {
         Column(Modifier.weight(1f)) {
             Text(meta.shortName, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
-            Text(if (meta.name != meta.shortName) meta.name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            // What it is in plain words where there's an explainer ("Government's 10-year borrowing cost"), else its full name.
+            val plain = Explainers.forSymbol(symbol)?.let { Explainers.byId(it)?.title }?.takeIf { it != meta.shortName }
+            Text(plain ?: if (meta.name != meta.shortName) meta.name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (quote != null) {
             Sparkline(quote.intraday, colors.direction(quote.change), Modifier.width(72.dp).height(30.dp), baseline = quote.previousClose)
@@ -201,7 +207,10 @@ internal fun RangeBar(low: Double, high: Double, current: Double, lowLabel: Stri
     val colors = FinanceTheme.colors
     val fraction = if (high > low) ((current - low) / (high - low)).toFloat().coerceIn(0f, 1f) else 0.5f
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp)) {
-        Text("52-week range", style = FinanceTheme.type.label, color = colors.textSecondary)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("52-week range", style = FinanceTheme.type.label, color = colors.textSecondary)
+            InfoButton("range52w", size = 15.dp)
+        }
         Spacer(Modifier.height(10.dp))
         BoxWithConstraints(Modifier.fillMaxWidth().height(16.dp)) {
             Box(

@@ -23,6 +23,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
@@ -105,19 +108,20 @@ internal fun WalletScreen(
 private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUiState) {
     item(key = "hero") { NetWorthHero(finance) }
     item(key = "quick") { QuickStats(finance) }
+    item(key = "checkup") { CascadeIn(1) { MoneyCheckup(finance, state.readings[IndicatorCatalog.fedFunds.id]?.latest, Modifier.padding(top = 16.dp)) } }
     if (finance.accounts.isNotEmpty()) {
-        item(key = "acct-h") { SectionHeader("Accounts", trailing = finance.totalAssets?.let(FinanceFormat::compactMoney)) }
+        item(key = "acct-h") { SectionHeader("Accounts", trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") }
         item(key = "acct") { CascadeIn(0) { AccountsBlock(finance) } }
-        item(key = "alloc-h") { SectionHeader("Allocation", subtitle = "Where the money sits") }
+        item(key = "alloc-h") { SectionHeader("Where your money sits", subtitle = "Tap a row to highlight it", info = "allocation") }
         item(key = "alloc") { CascadeIn(1) { AllocationBlock(finance.accounts) } }
     }
     if (finance.expenses.isNotEmpty()) {
-        item(key = "flow-h") { SectionHeader("Monthly cash flow", trailing = finance.netMonthly?.let { FinanceFormat.signedMoney(it, 0) + " / mo" }) }
+        item(key = "flow-h") { SectionHeader("Monthly cash flow", trailing = finance.netMonthly?.let { FinanceFormat.signedMoney(it, 0) + " / mo" }, info = "cashflow") }
         item(key = "flow") { CascadeIn(2) { CashFlowBlock(finance) } }
     }
     val flowHistory = finance.history.filter { it.monthlyExpenses != null && it.monthlyIncome != null }.takeLast(12)
     if (flowHistory.size > 2) {
-        item(key = "flowhist-h") { SectionHeader("Income vs spending", subtitle = "Each snapshot in the sheet's history") }
+        item(key = "flowhist-h") { SectionHeader("Income vs spending", subtitle = "Green: what came in · orange: what went out, at each check-in in your sheet", info = "savingsrate") }
         item(key = "flowhist") {
             CascadeIn(3) {
                 val colors = FinanceTheme.colors
@@ -150,23 +154,23 @@ private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUi
         }
     }
     if (finance.debts.isNotEmpty()) {
-        item(key = "debt-h") { SectionHeader("Debt", trailing = FinanceFormat.compactMoney(finance.consumerDebt) + " excl. mortgage") }
+        item(key = "debt-h") { SectionHeader("Debt", trailing = FinanceFormat.compactMoney(finance.consumerDebt) + " excl. mortgage", info = "debt") }
         item(key = "debt") { CascadeIn(4) { DebtBlock(finance) } }
     }
     finance.home?.let { home ->
-        item(key = "home-h") { SectionHeader("Home") }
+        item(key = "home-h") { SectionHeader("Home", info = "homeequity") }
         item(key = "home") { CascadeIn(5) { HomeBlock(home, finance.mortgageBalance) } }
     }
     finance.mortgagePlan?.let { plan ->
-        item(key = "mort-h") { SectionHeader("Mortgage planner", subtitle = "Seeded from the sheet's New House tab: drag to try a different house") }
+        item(key = "mort-h") { SectionHeader("Mortgage planner", subtitle = "Seeded from the sheet's New House tab: drag to try a different house", info = "mortgageplanner") }
         item(key = "mort") { CascadeIn(6) { MortgagePlanner(plan, state.readings[IndicatorCatalog.mortgage.id]?.latest) } }
     }
     if (finance.vesting.isNotEmpty()) {
-        item(key = "vest-h") { SectionHeader("Vesting", trailing = finance.vesting.sumOf { it.postTax ?: it.amount }.let { FinanceFormat.compactMoney(it) + " after tax" }) }
+        item(key = "vest-h") { SectionHeader("Vesting", trailing = finance.vesting.sumOf { it.postTax ?: it.amount }.let { FinanceFormat.compactMoney(it) + " after tax" }, info = "vesting") }
         item(key = "vest") { CascadeIn(7) { VestingBlock(finance) } }
     }
     if (finance.taxYears.isNotEmpty()) {
-        item(key = "tax-h") { SectionHeader("Income & taxes", subtitle = "Combined, by year") }
+        item(key = "tax-h") { SectionHeader("Income & taxes", subtitle = "Combined, by year — tap a year", info = "taxes") }
         item(key = "tax") { CascadeIn(8) { TaxBlock(finance) } }
     }
     finance.oldHouse?.takeIf { it.soldPrice != null }?.let { sale ->
@@ -226,6 +230,15 @@ private fun NetWorthHero(finance: PersonalFinance) {
                 value = shown?.let { FinanceFormat.money(it, 0) } ?: "—",
                 change = changeText,
                 changeColor = color,
+                trailing = {
+                    InfoButton(
+                        when (metric) {
+                            WalletMetric.ASSETS -> "totalassets"
+                            WalletMetric.DEBT -> "debt"
+                            WalletMetric.CASH_FLOW -> "cashflow"
+                        },
+                    )
+                },
             )
             Spacer(Modifier.height(12.dp))
             if (series.size > 1) {
@@ -274,15 +287,17 @@ private fun metricSeries(finance: PersonalFinance, metric: WalletMetric): Series
 @Composable
 private fun QuickStats(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
+    val open = LocalExplainer.current
+    // Each card is a figure and the explainer a tap on it opens.
     val cards = listOfNotNull(
-        finance.netWorth?.let { Triple("Net worth", FinanceFormat.compactMoney(it), colors.accent) },
-        finance.monthlyIncome?.let { Triple("Take-home / mo", FinanceFormat.money(it, 0), colors.gain) },
-        finance.monthlyExpenses?.let { Triple("Spending / mo", FinanceFormat.money(it, 0), colors.loss) },
+        finance.netWorth?.let { QuickCard("Net worth", FinanceFormat.compactMoney(it), colors.accent, "networth") },
+        finance.monthlyIncome?.let { QuickCard("Take-home / mo", FinanceFormat.money(it, 0), colors.gain, "cashflow") },
+        finance.monthlyExpenses?.let { QuickCard("Spending / mo", FinanceFormat.money(it, 0), colors.loss, "cashflow") },
         finance.netMonthly?.let { net ->
-            Triple("Left over" + (finance.savingsRate?.let { " · " + FinanceFormat.fractionPercent(it) } ?: ""), FinanceFormat.signedMoney(net, 0), colors.direction(net))
+            QuickCard("Left over" + (finance.savingsRate?.let { " · " + FinanceFormat.fractionPercent(it) } ?: ""), FinanceFormat.signedMoney(net, 0), colors.direction(net), "savingsrate")
         },
-        finance.runwayMonths?.let { Triple("Cash runway", FinanceFormat.grouped(it, 1) + " months", if (it >= 6) colors.gain else colors.watch) },
-        Triple("Debt excl. mortgage", FinanceFormat.compactMoney(finance.consumerDebt), colors.textPrimary),
+        finance.runwayMonths?.let { QuickCard("Cash runway", FinanceFormat.grouped(it, 1) + " months", if (it >= 6) colors.gain else colors.watch, "runway") },
+        QuickCard("Debt excl. mortgage", FinanceFormat.compactMoney(finance.consumerDebt), colors.textPrimary, "debt"),
     )
     LazyRow(
         contentPadding = PaddingValues(horizontal = PageGutter),
@@ -290,7 +305,7 @@ private fun QuickStats(finance: PersonalFinance) {
         modifier = Modifier.padding(top = 20.dp),
     ) {
         items(cards.size) { i ->
-            val (label, value, color) = cards[i]
+            val (label, value, color, explainerId) = cards[i]
             CascadeIn(i) {
                 Column(
                     Modifier
@@ -298,9 +313,13 @@ private fun QuickStats(finance: PersonalFinance) {
                         .clip(RoundedCornerShape(16.dp))
                         .background(FinanceTheme.colors.surface)
                         .border(1.dp, FinanceTheme.colors.hairline, RoundedCornerShape(16.dp))
+                        .clickable(onClickLabel = "Explain $label") { open(explainerId) }
                         .padding(14.dp),
                 ) {
-                    Text(label, style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(label, style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                        Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.size(13.dp))
+                    }
                     Spacer(Modifier.height(6.dp))
                     RollingNumber(value, FinanceTheme.type.bodyStrong, color)
                 }
@@ -308,6 +327,8 @@ private fun QuickStats(finance: PersonalFinance) {
         }
     }
 }
+
+private data class QuickCard(val label: String, val value: String, val color: Color, val explainerId: String)
 
 private fun categoryColor(category: AccountCategory, palette: FinancePalette): Color = palette.categorical[category.ordinal % palette.categorical.size]
 
