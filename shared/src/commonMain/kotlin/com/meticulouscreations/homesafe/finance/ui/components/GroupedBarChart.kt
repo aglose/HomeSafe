@@ -17,7 +17,6 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -62,6 +61,7 @@ fun GroupedBarChart(
         grow.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
     val haptics = LocalHapticFeedback.current
+    val currentFeel by rememberUpdatedState(FinanceTheme.chart.haptics)
     val currentOnSelect by rememberUpdatedState(onSelect)
     val currentSelected by rememberUpdatedState(selected)
     if (groups == 0 || series.isEmpty()) return
@@ -96,7 +96,7 @@ fun GroupedBarChart(
                 detectTapGestures { offset ->
                     val g = (offset.x / size.width * groups).toInt().coerceIn(0, groups - 1)
                     if (g != currentSelected) {
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                        haptics.chartTick(currentFeel)
                         currentOnSelect(g)
                     }
                 }
@@ -112,7 +112,7 @@ fun GroupedBarChart(
                     val g = (change.position.x / size.width * groups).toInt().coerceIn(0, groups - 1)
                     if (g != last) {
                         last = g
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                        haptics.chartTick(currentFeel)
                         currentOnSelect(g)
                     }
                 }
