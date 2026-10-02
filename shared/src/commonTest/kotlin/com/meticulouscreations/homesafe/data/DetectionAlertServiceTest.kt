@@ -19,6 +19,9 @@ import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.text.KeyedTextLoader
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -54,7 +57,7 @@ class DetectionAlertServiceTest {
         override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
@@ -187,6 +190,7 @@ class DetectionAlertServiceTest {
             timeZone = { TimeZone.UTC },
             previewWindowSeconds = 0.0,
             previewRetryDelaysMs = listOf(10, 10),
+            textLoader = KeyedTextLoader,
         )
     }
 
@@ -251,8 +255,8 @@ class DetectionAlertServiceTest {
         eventually("the new detection") { h.notifier.posted.singleOrNull()?.animation != null }
         val posted = h.notifier.posted.single()
         assertEquals("fresh", posted.id)
-        assertEquals("Person detected", posted.title)
-        assertTrue(posted.body.startsWith("Front Door · "), posted.body)
+        assertEquals("moments_title_detected(moments_label_person)", posted.title)
+        assertTrue(posted.body.startsWith("Front Door <common_dot_separator> "), posted.body)
         assertEquals(listOf<Byte>(1, 2, 3), posted.thumbnail!!.toList())
 
         settle()
@@ -332,7 +336,7 @@ class DetectionAlertServiceTest {
         h.pathById["lawn-car"] = listOf(0.5 to 0.2, 0.5 to 0.8, 0.5 to 0.9)
         h.events += Triple("lawn-car", "car", 1_000_002.0)
         eventually("the lawn car") { h.notifier.posted.map { it.id } == listOf("lawn-car") }
-        assertEquals("Car on the lawn", h.notifier.posted.single().title, "placed from its path, not from Frigate's empty tag list")
+        assertEquals("moments_title_on_zone(moments_label_car, lawn)", h.notifier.posted.single().title, "placed from its path, not from Frigate's empty tag list")
 
         h.events += Triple("stray", "cat", 1_000_003.0)   // no path, no zones: on a camera with zones, that's noise
         settle()
@@ -405,14 +409,14 @@ class DetectionAlertServiceTest {
         eventually("the escalated person") { h.notifier.posted.map { it.id } == listOf("intruder") }
         val urgent = h.notifier.posted.single()
         assertTrue(urgent.urgent, "away mode posts on the loud channel")
-        assertEquals("Away: Person in the driveway", urgent.title)
+        assertEquals("notif_away_title(moments_title_in_zone(moments_label_person, driveway))", urgent.title)
 
         h.events += Triple("dog", "dog", 1_000_003.0)   // animals stay off: away mode is about people
         h.zonesById["car"] = listOf("driveway")
         h.events += Triple("car", "car", 1_000_004.0)   // vehicles in the driveway follow the normal rules, not escalated
         eventually("the car") { h.notifier.posted.map { it.id } == listOf("intruder", "car") }
         assertFalse(h.notifier.posted.last().urgent)
-        assertEquals("Car in the driveway", h.notifier.posted.last().title)
+        assertEquals("moments_title_in_zone(moments_label_car, driveway)", h.notifier.posted.last().title)
 
         h.presenceRepo.everyoneAway(false)
         h.zonesById["home_again"] = listOf("driveway")
@@ -459,7 +463,7 @@ class DetectionAlertServiceTest {
         h.presenceRepo.everyoneAway(true)
         h.events += Triple("intruder", "person", 1_000_003.0)
         eventually("the away alert") { h.notifier.posted.map { it.id } == listOf("intruder") }
-        assertEquals("Away: Person detected", h.notifier.posted.single().title)
+        assertEquals("notif_away_title(moments_title_detected(moments_label_person))", h.notifier.posted.single().title)
     }
 
     /** A driveway spot and the jittery path a parked car produces there. */
@@ -570,7 +574,7 @@ class DetectionAlertServiceTest {
         h.cameraById["front-yard"] = "hikvision_1"
         h.events += Triple("front-yard", "car", 1_000_120.0)
         eventually("the car on the other camera") { h.notifier.posted.map { it.id } == listOf("first", "elsewhere", "front-yard") }
-        assertTrue(h.notifier.posted.last().body.startsWith("Front Yard · "), h.notifier.posted.last().body)
+        assertTrue(h.notifier.posted.last().body.startsWith("Front Yard <common_dot_separator> "), h.notifier.posted.last().body)
     }
 
     @Test
@@ -590,8 +594,8 @@ class DetectionAlertServiceTest {
         h.subLabelById["andrew"] = "andrew"
         h.events += Triple("andrew", "person", 1_000_001.0)
         eventually("Andrew") { h.notifier.posted.size == 1 }
-        assertEquals("Andrew detected", h.notifier.posted.single().title)
-        assertTrue(h.notifier.posted.single().body.endsWith(" · Andrew"), h.notifier.posted.single().body)
+        assertEquals("moments_title_detected(Andrew)", h.notifier.posted.single().title)
+        assertTrue(h.notifier.posted.single().body.endsWith(" <common_dot_separator> Andrew"), h.notifier.posted.single().body)
     }
 
     @Test

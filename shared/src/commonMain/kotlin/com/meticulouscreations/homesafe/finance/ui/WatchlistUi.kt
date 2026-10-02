@@ -66,6 +66,75 @@ import com.meticulouscreations.homesafe.finance.domain.LongRunStats
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.common_save
+import homesafe.shared.generated.resources.longrun_all_time_high
+import homesafe.shared.generated.resources.longrun_at_record
+import homesafe.shared.generated.resources.longrun_data_from
+import homesafe.shared.generated.resources.longrun_fine_print
+import homesafe.shared.generated.resources.longrun_from_high
+import homesafe.shared.generated.resources.longrun_history_failed
+import homesafe.shared.generated.resources.longrun_per_year
+import homesafe.shared.generated.resources.longrun_set_on
+import homesafe.shared.generated.resources.longrun_since_start
+import homesafe.shared.generated.resources.longrun_since_year
+import homesafe.shared.generated.resources.longrun_title
+import homesafe.shared.generated.resources.longrun_week_of
+import homesafe.shared.generated.resources.longrun_years
+import homesafe.shared.generated.resources.watchlist_add
+import homesafe.shared.generated.resources.watchlist_add_click
+import homesafe.shared.generated.resources.watchlist_editor_amount_held
+import homesafe.shared.generated.resources.watchlist_editor_cost_per_coin
+import homesafe.shared.generated.resources.watchlist_editor_cost_per_share
+import homesafe.shared.generated.resources.watchlist_editor_note
+import homesafe.shared.generated.resources.watchlist_editor_title
+import homesafe.shared.generated.resources.watchlist_holdings_note
+import homesafe.shared.generated.resources.watchlist_holdings_since_bought
+import homesafe.shared.generated.resources.watchlist_holdings_since_bought_percent
+import homesafe.shared.generated.resources.watchlist_holdings_title
+import homesafe.shared.generated.resources.watchlist_holdings_title_currency
+import homesafe.shared.generated.resources.watchlist_holdings_today
+import homesafe.shared.generated.resources.watchlist_holdings_today_percent
+import homesafe.shared.generated.resources.watchlist_position_add
+import homesafe.shared.generated.resources.watchlist_position_average_cost
+import homesafe.shared.generated.resources.watchlist_position_cost_basis
+import homesafe.shared.generated.resources.watchlist_position_edit
+import homesafe.shared.generated.resources.watchlist_position_entered
+import homesafe.shared.generated.resources.watchlist_position_held
+import homesafe.shared.generated.resources.watchlist_position_invite
+import homesafe.shared.generated.resources.watchlist_position_market_value
+import homesafe.shared.generated.resources.watchlist_position_not_entered
+import homesafe.shared.generated.resources.watchlist_position_own_some
+import homesafe.shared.generated.resources.watchlist_position_return_percent
+import homesafe.shared.generated.resources.watchlist_position_shares
+import homesafe.shared.generated.resources.watchlist_position_title
+import homesafe.shared.generated.resources.watchlist_position_today
+import homesafe.shared.generated.resources.watchlist_position_today_percent
+import homesafe.shared.generated.resources.watchlist_position_total_return
+import homesafe.shared.generated.resources.watchlist_search_add_symbol
+import homesafe.shared.generated.resources.watchlist_search_added
+import homesafe.shared.generated.resources.watchlist_search_clear
+import homesafe.shared.generated.resources.watchlist_search_description
+import homesafe.shared.generated.resources.watchlist_search_failed
+import homesafe.shared.generated.resources.watchlist_search_hint
+import homesafe.shared.generated.resources.watchlist_search_no_matches
+import homesafe.shared.generated.resources.watchlist_search_searching
+import homesafe.shared.generated.resources.watchlist_search_subtitle
+import homesafe.shared.generated.resources.watchlist_search_title
+import homesafe.shared.generated.resources.watchlist_status_added
+import homesafe.shared.generated.resources.watchlist_status_in_sheet
+import homesafe.shared.generated.resources.watchlist_status_not_added
+import homesafe.shared.generated.resources.watchlist_status_remove
+import homesafe.shared.generated.resources.watchlist_subtitle_app
+import homesafe.shared.generated.resources.watchlist_subtitle_sheet
+import homesafe.shared.generated.resources.watchlist_subtitle_sheet_and_app
+import homesafe.shared.generated.resources.watchlist_subtitle_suggestions
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Clock
 
 /** "+ Add", the watchlist header's button. */
@@ -76,27 +145,27 @@ internal fun AddSymbolButton(onClick: () -> Unit, modifier: Modifier = Modifier)
         modifier
             .clip(CircleShape)
             .background(colors.gain.copy(alpha = 0.14f))
-            .clickable(onClickLabel = "Add a stock, fund or coin", onClick = onClick)
+            .clickable(onClickLabel = stringResource(Res.string.watchlist_add_click), onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp)
             .testTag("finance_add_symbol"),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Filled.Add, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
         Spacer(Modifier.width(4.dp))
-        Text("Add", style = FinanceTheme.type.label, color = colors.gain)
+        Text(stringResource(Res.string.watchlist_add), style = FinanceTheme.type.label, color = colors.gain)
     }
 }
 
 /** What the watchlist's heading says about where its rows come from. */
-internal fun watchlistSubtitle(state: FinanceUiState): String {
+internal fun watchlistSubtitle(state: FinanceUiState): StringResource {
     val entries = state.watchEntries
     val fromSheet = entries.any { it.inSheet }
     val fromApp = entries.any { it.addedInApp }
     return when {
-        fromSheet && fromApp -> "Tickers marked “In sheet” come from your budget sheet; the rest you added here"
-        fromSheet -> "From your budget sheet. Add more here — they stay on this device"
-        fromApp -> "Added here, on this device"
-        else -> "A few to start with. Add your own stocks, funds or coins"
+        fromSheet && fromApp -> Res.string.watchlist_subtitle_sheet_and_app
+        fromSheet -> Res.string.watchlist_subtitle_sheet
+        fromApp -> Res.string.watchlist_subtitle_app
+        else -> Res.string.watchlist_subtitle_suggestions
     }
 }
 
@@ -125,29 +194,37 @@ internal fun HoldingsCard(holdings: Holdings, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     FinanceCard(modifier.padding(bottom = 6.dp)) {
         Text(
-            if (holdings.isUsd) "YOUR HOLDINGS" else "YOUR HOLDINGS IN ${holdings.currency.uppercase()}",
+            if (holdings.isUsd) {
+                stringResource(Res.string.watchlist_holdings_title)
+            } else {
+                stringResource(Res.string.watchlist_holdings_title_currency, holdings.currency.uppercase())
+            },
             style = FinanceTheme.type.micro,
             color = colors.textSecondary,
         )
         Spacer(Modifier.height(4.dp))
         Text(FinanceFormat.money(holdings.value, currency = holdings.currency), style = FinanceTheme.type.title, color = colors.textPrimary)
         Spacer(Modifier.height(2.dp))
+        val day = FinanceFormat.signedMoney(holdings.dayChange, currency = holdings.currency)
         Text(
-            "${FinanceFormat.signedMoney(holdings.dayChange, currency = holdings.currency)}${holdings.dayChangePercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} today",
+            holdings.dayChangePercent?.let { stringResource(Res.string.watchlist_holdings_today_percent, day, FinanceFormat.signedPercent(it)) }
+                ?: stringResource(Res.string.watchlist_holdings_today, day),
             style = FinanceTheme.type.label,
             color = colors.direction(holdings.dayChange),
         )
         val gain = holdings.totalGain
         if (gain != null) {
+            val gainText = FinanceFormat.signedMoney(gain, currency = holdings.currency)
             Text(
-                "${FinanceFormat.signedMoney(gain, currency = holdings.currency)}${holdings.totalGainPercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} since you bought",
+                holdings.totalGainPercent?.let { stringResource(Res.string.watchlist_holdings_since_bought_percent, gainText, FinanceFormat.signedPercent(it)) }
+                    ?: stringResource(Res.string.watchlist_holdings_since_bought, gainText),
                 style = FinanceTheme.type.label,
                 color = colors.direction(gain),
             )
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "${holdings.count} ${if (holdings.count == 1) "position" else "positions"} entered in the app. Not counted in net worth — the sheet's account balances already are.",
+            pluralStringResource(Res.plurals.watchlist_holdings_note, holdings.count, holdings.count),
             style = FinanceTheme.type.micro,
             color = colors.textTertiary,
         )
@@ -182,9 +259,9 @@ internal fun AddSymbolSheet(
     ) {
         Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
             Column(Modifier.padding(horizontal = 24.dp)) {
-                Text("Add to watchlist", style = type.title, color = colors.textPrimary)
+                Text(stringResource(Res.string.watchlist_search_title), style = type.title, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))
-                Text("Stocks, ETFs, mutual funds, crypto and indices — by ticker or name.", style = type.label, color = colors.textSecondary)
+                Text(stringResource(Res.string.watchlist_search_subtitle), style = type.label, color = colors.textSecondary)
                 Spacer(Modifier.height(14.dp))
                 Row(
                     Modifier
@@ -198,7 +275,8 @@ internal fun AddSymbolSheet(
                     Icon(Icons.Filled.Search, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
                     Box(Modifier.weight(1f)) {
-                        if (search.query.isEmpty()) Text("e.g. VTI, Apple, Vanguard, ETH", style = type.body, color = colors.textTertiary)
+                        if (search.query.isEmpty()) Text(stringResource(Res.string.watchlist_search_hint), style = type.body, color = colors.textTertiary)
+                        val searchDescription = stringResource(Res.string.watchlist_search_description)
                         BasicTextField(
                             value = search.query,
                             onValueChange = onQuery,
@@ -210,13 +288,13 @@ internal fun AddSymbolSheet(
                                 .fillMaxWidth()
                                 .focusRequester(focus)
                                 .testTag("finance_symbol_search")
-                                .semantics { contentDescription = "Search tickers" },
+                                .semantics { contentDescription = searchDescription },
                         )
                     }
                     if (search.query.isNotEmpty()) {
                         Icon(
                             Icons.Filled.Close,
-                            contentDescription = "Clear",
+                            contentDescription = stringResource(Res.string.watchlist_search_clear),
                             tint = colors.textSecondary,
                             modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onQuery("") },
                         )
@@ -238,11 +316,11 @@ internal fun AddSymbolSheet(
                         }
                     }
 
-                    search.loading -> Text("Searching…", style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
+                    search.loading -> Text(stringResource(Res.string.watchlist_search_searching), style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
 
-                    search.error != null -> Text("Couldn't search: ${search.error}", style = type.label, color = colors.loss, modifier = Modifier.padding(24.dp))
+                    search.error != null -> Text(stringResource(Res.string.watchlist_search_failed, search.error.resolve()), style = type.label, color = colors.loss, modifier = Modifier.padding(24.dp))
 
-                    search.query.isNotBlank() -> Text("Nothing matches “${search.query.trim()}”.", style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
+                    search.query.isNotBlank() -> Text(stringResource(Res.string.watchlist_search_no_matches, search.query.trim()), style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
                 }
             }
         }
@@ -255,10 +333,11 @@ private enum class MatchStatus { NEW, ADDED, IN_SHEET }
 private fun SymbolMatchRow(match: SymbolMatch, status: MatchStatus, onAdd: () -> Unit) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
+    val addLabel = stringResource(Res.string.watchlist_search_add_symbol, match.symbol)
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = status == MatchStatus.NEW, onClickLabel = "Add ${match.symbol}", onClick = onAdd)
+            .clickable(enabled = status == MatchStatus.NEW, onClickLabel = addLabel, onClick = onAdd)
             .padding(horizontal = 24.dp, vertical = 10.dp)
             .heightIn(min = 40.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -266,7 +345,7 @@ private fun SymbolMatchRow(match: SymbolMatch, status: MatchStatus, onAdd: () ->
         Column(Modifier.weight(1f)) {
             Text(match.symbol, style = type.bodyStrong, color = colors.textPrimary, maxLines = 1)
             Text(match.name, style = type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(listOfNotNull(match.typeLabel.takeIf { it.isNotBlank() }, match.exchange).joinToString(" · "), style = type.micro, color = colors.textTertiary, maxLines = 1)
+            Text(listOfNotNull(match.typeLabel.takeIf { it.isNotBlank() }, match.exchange).joinToString(stringResource(Res.string.common_dot_separator)), style = type.micro, color = colors.textTertiary, maxLines = 1)
         }
         Spacer(Modifier.width(12.dp))
         when (status) {
@@ -275,14 +354,14 @@ private fun SymbolMatchRow(match: SymbolMatch, status: MatchStatus, onAdd: () ->
             MatchStatus.ADDED -> Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Check, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Added", style = type.label, color = colors.gain)
+                Text(stringResource(Res.string.watchlist_search_added), style = type.label, color = colors.gain)
             }
 
             MatchStatus.NEW -> Box(
                 Modifier.size(32.dp).clip(CircleShape).background(colors.gain.copy(alpha = 0.16f)),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add ${match.symbol}", tint = colors.gain, modifier = Modifier.size(18.dp))
+                Icon(Icons.Filled.Add, contentDescription = addLabel, tint = colors.gain, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -306,18 +385,18 @@ internal fun WatchStatusRow(symbol: String, state: FinanceUiState, onFollow: () 
             inSheet -> {
                 SheetBadge()
                 Spacer(Modifier.width(8.dp))
-                Text("On your watchlist from the budget sheet", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                Text(stringResource(Res.string.watchlist_status_in_sheet), style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
             }
 
             added -> {
                 Icon(Icons.Filled.Check, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("On your watchlist", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
-                TextButton(onClick = onUnfollow) { Text("Remove", style = type.label, color = colors.loss) }
+                Text(stringResource(Res.string.watchlist_status_added), style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                TextButton(onClick = onUnfollow) { Text(stringResource(Res.string.watchlist_status_remove), style = type.label, color = colors.loss) }
             }
 
             else -> {
-                Text("Not on your watchlist", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                Text(stringResource(Res.string.watchlist_status_not_added), style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
                 AddSymbolButton(onFollow)
             }
         }
@@ -333,14 +412,16 @@ internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPositio
     val colors = FinanceTheme.colors
     val quote = state.quotes[symbol]
     val meta = state.meta(symbol)
+    val shortName = meta.shortName.resolve()
+    val crypto = meta.kind == InstrumentKind.CRYPTO
     val position = state.watchedSymbol(symbol)?.position
     var editing by rememberSaveable(symbol) { mutableStateOf(false) }
     Column {
         SectionHeader(
-            "Your position",
-            subtitle = if (position == null) null else "Entered on this device",
+            stringResource(Res.string.watchlist_position_title),
+            subtitle = if (position == null) null else stringResource(Res.string.watchlist_position_entered),
             action = if (position != null) {
-                { TextButton(onClick = { editing = true }) { Text("Edit", style = FinanceTheme.type.label, color = colors.gain) } }
+                { TextButton(onClick = { editing = true }) { Text(stringResource(Res.string.watchlist_position_edit), style = FinanceTheme.type.label, color = colors.gain) } }
             } else {
                 null
             },
@@ -349,38 +430,40 @@ internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPositio
             FinanceCard(onClick = { editing = true }) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Own some ${meta.shortName}?", style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
-                        Text("Enter your shares to see what they're worth and how they're doing.", style = FinanceTheme.type.label, color = colors.textSecondary)
+                        Text(stringResource(Res.string.watchlist_position_own_some, shortName), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+                        Text(stringResource(Res.string.watchlist_position_invite), style = FinanceTheme.type.label, color = colors.textSecondary)
                     }
                     Spacer(Modifier.width(12.dp))
-                    Icon(Icons.Filled.Add, contentDescription = "Add a position", tint = colors.gain)
+                    Icon(Icons.Filled.Add, contentDescription = stringResource(Res.string.watchlist_position_add), tint = colors.gain)
                 }
             }
         } else {
             val price = quote?.price
-            val unit = when {
-                meta.kind == InstrumentKind.CRYPTO -> meta.shortName
-                position.shares == 1.0 -> "share"
-                else -> "shares"
-            }
             StatGrid(
                 listOf(
-                    (if (meta.kind == InstrumentKind.CRYPTO) "Held" else "Shares") to "${FinanceFormat.shares(position.shares)} $unit",
-                    "Market value" to (price?.let { FinanceFormat.money(position.value(it), currency = meta.currency) } ?: "—"),
-                    "Average cost" to (position.costPerShare?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "Not entered"),
-                    "Cost basis" to (position.costPerShare?.let { FinanceFormat.money(it * position.shares, currency = meta.currency) } ?: "—"),
-                    "Today" to (quote?.let { FinanceFormat.signedMoney(position.dayChange(it), currency = meta.currency) } ?: "—"),
-                    "Today %" to (quote?.let { FinanceFormat.signedPercent(it.changePercent) } ?: "—"),
-                    "Total return" to (price?.let { position.totalGain(it) }?.let { FinanceFormat.signedMoney(it, currency = meta.currency) } ?: "—"),
-                    "Return %" to (price?.let { position.totalGainPercent(it) }?.let { FinanceFormat.signedPercent(it) } ?: "—"),
+                    stringResource(if (crypto) Res.string.watchlist_position_held else Res.string.watchlist_position_shares) to
+                        FinanceFormat.held(position.shares, meta.kind, shortName).resolve(),
+                    stringResource(Res.string.watchlist_position_market_value) to (price?.let { FinanceFormat.money(position.value(it), currency = meta.currency) } ?: "—"),
+                    stringResource(Res.string.watchlist_position_average_cost) to
+                        (position.costPerShare?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: stringResource(Res.string.watchlist_position_not_entered)),
+                    stringResource(Res.string.watchlist_position_cost_basis) to
+                        (position.costPerShare?.let { FinanceFormat.money(it * position.shares, currency = meta.currency) } ?: "—"),
+                    stringResource(Res.string.watchlist_position_today) to
+                        (quote?.let { FinanceFormat.signedMoney(position.dayChange(it), currency = meta.currency) } ?: "—"),
+                    stringResource(Res.string.watchlist_position_today_percent) to (quote?.let { FinanceFormat.signedPercent(it.changePercent) } ?: "—"),
+                    stringResource(Res.string.watchlist_position_total_return) to
+                        (price?.let { position.totalGain(it) }?.let { FinanceFormat.signedMoney(it, currency = meta.currency) } ?: "—"),
+                    stringResource(Res.string.watchlist_position_return_percent) to
+                        (price?.let { position.totalGainPercent(it) }?.let { FinanceFormat.signedPercent(it) } ?: "—"),
                 ),
             )
         }
     }
     if (editing) {
         PositionEditor(
-            symbol = meta.shortName,
-            unitLabel = if (meta.kind == InstrumentKind.CRYPTO) "Amount held (${meta.shortName})" else "Shares",
+            symbol = shortName,
+            unitLabel = if (crypto) stringResource(Res.string.watchlist_editor_amount_held, shortName) else stringResource(Res.string.watchlist_position_shares),
+            costLabel = stringResource(if (crypto) Res.string.watchlist_editor_cost_per_coin else Res.string.watchlist_editor_cost_per_share),
             initial = position,
             onSave = {
                 onSetPosition(it)
@@ -393,7 +476,7 @@ internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPositio
 
 /** Shares (or coins) and the average price paid for them; clearing the shares removes the position. */
 @Composable
-private fun PositionEditor(symbol: String, unitLabel: String, initial: Position?, onSave: (Position?) -> Unit, onDismiss: () -> Unit) {
+private fun PositionEditor(symbol: String, unitLabel: String, costLabel: String, initial: Position?, onSave: (Position?) -> Unit, onDismiss: () -> Unit) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     // Written out in full, never rounded: saving without an edit must leave the position as it was.
@@ -406,23 +489,23 @@ private fun PositionEditor(symbol: String, unitLabel: String, initial: Position?
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = colors.surfaceRaised,
-        title = { Text("Your $symbol", style = type.title, color = colors.textPrimary) },
+        title = { Text(stringResource(Res.string.watchlist_editor_title, symbol), style = type.title, color = colors.textPrimary) },
         text = {
             Column {
                 NumberField(unitLabel, shares, { shares = it }, error = !sharesOk, testTag = "finance_position_shares")
                 Spacer(Modifier.height(12.dp))
-                NumberField("Average cost per ${if (unitLabel == "Shares") "share" else "coin"} (optional)", cost, { cost = it }, error = !costOk, prefix = "$", testTag = "finance_position_cost")
+                NumberField(costLabel, cost, { cost = it }, error = !costOk, prefix = "$", testTag = "finance_position_cost")
                 Spacer(Modifier.height(10.dp))
-                Text("Kept on this device only. Leave shares empty to remove the position.", style = type.micro, color = colors.textTertiary)
+                Text(stringResource(Res.string.watchlist_editor_note), style = type.micro, color = colors.textTertiary)
             }
         },
         confirmButton = {
             TextButton(
                 enabled = sharesOk && costOk,
                 onClick = { onSave(sharesValue?.let { Position(it, costValue?.takeIf { cost.isNotBlank() }) }) },
-            ) { Text("Save", style = type.bodyStrong, color = if (sharesOk && costOk) colors.gain else colors.textTertiary) }
+            ) { Text(stringResource(Res.string.common_save), style = type.bodyStrong, color = if (sharesOk && costOk) colors.gain else colors.textTertiary) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = type.bodyStrong, color = colors.textSecondary) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel), style = type.bodyStrong, color = colors.textSecondary) } },
     )
 }
 
@@ -475,27 +558,33 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
     val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, Clock.System.now().epochSeconds) } }
     val gmt = history?.gmtOffsetSeconds ?: 0
     val dash = "—"
-    val since = stats?.let { "Since ${FinanceFormat.date(it.firstEpochSeconds + 12 * 3600, gmt).takeLast(4)}" } ?: "Since start"
+    val since = stats?.let { stringResource(Res.string.longrun_since_year, FinanceFormat.date(it.firstEpochSeconds + 12 * 3600, gmt).takeLast(4)) }
+        ?: stringResource(Res.string.longrun_since_start)
+    val atRecord = stringResource(Res.string.longrun_at_record)
+    val (recordLabel, recordValue) = recordWhen(stats, quote, gmt)
     Column {
-        SectionHeader("All time", trailing = stats?.let { "Data from ${FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt)}" })
+        SectionHeader(
+            stringResource(Res.string.longrun_title),
+            trailing = stats?.let { stringResource(Res.string.longrun_data_from, FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt)) },
+        )
         StatGrid(
             listOf(
-                "All-time high" to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind, meta.currency) } ?: dash),
-                recordWhen(stats, quote, gmt),
-                "From the high" to (stats?.let { if (it.fromHighPercent > -0.005) "At a record" else FinanceFormat.signedPercent(it.fromHighPercent) } ?: dash),
-                "Per year" to (stats?.perYearPercent?.let { FinanceFormat.signedPercent(it) } ?: dash),
-                "1 year" to (stats?.oneYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
-                "5 years" to (stats?.fiveYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
-                "10 years" to (stats?.tenYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                stringResource(Res.string.longrun_all_time_high) to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind, meta.currency) } ?: dash),
+                stringResource(recordLabel) to recordValue,
+                stringResource(Res.string.longrun_from_high) to (stats?.let { if (it.fromHighPercent > -0.005) atRecord else FinanceFormat.signedPercent(it.fromHighPercent) } ?: dash),
+                stringResource(Res.string.longrun_per_year) to (stats?.perYearPercent?.let { FinanceFormat.signedPercent(it) } ?: dash),
+                pluralStringResource(Res.plurals.longrun_years, 1, 1) to (stats?.oneYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                pluralStringResource(Res.plurals.longrun_years, 5, 5) to (stats?.fiveYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                pluralStringResource(Res.plurals.longrun_years, 10, 10) to (stats?.tenYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
                 since to (stats?.let { FinanceFormat.longRunPercent(it.sinceStartPercent) } ?: dash),
             ),
         )
+        val error = load?.error
         FinePrint(
-            if (load?.error != null && history == null) {
-                "Couldn't load the full history: ${load.error}"
+            if (error != null && history == null) {
+                stringResource(Res.string.longrun_history_failed, error.resolve())
             } else {
-                "Price changes only — dividends aren't included. “Per year” is the steady yearly rate that would " +
-                    "compound to the change since the start. The all-time high is the highest price ever traded, not just closed at."
+                stringResource(Res.string.longrun_fine_print)
             },
         )
     }
@@ -506,11 +595,11 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
  * weekly, stamped at the week's start, which is written from midday so no offset slips it back a
  * day); one set today is the quote's own moment, written in the exchange's clock as it is.
  */
-private fun recordWhen(stats: LongRunStats?, quote: Quote?, historyOffset: Int): Pair<String, String> {
-    val at = stats?.allTimeHighEpochSeconds ?: return "Set on" to "—"
+private fun recordWhen(stats: LongRunStats?, quote: Quote?, historyOffset: Int): Pair<StringResource, String> {
+    val at = stats?.allTimeHighEpochSeconds ?: return Res.string.longrun_set_on to "—"
     return if (stats.allTimeHighToday) {
-        "Set on" to FinanceFormat.date(at, quote?.gmtOffsetSeconds ?: historyOffset)
+        Res.string.longrun_set_on to FinanceFormat.date(at, quote?.gmtOffsetSeconds ?: historyOffset)
     } else {
-        "Week of" to FinanceFormat.date(at + 12 * 3600, historyOffset)
+        Res.string.longrun_week_of to FinanceFormat.date(at + 12 * 3600, historyOffset)
     }
 }

@@ -87,6 +87,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
@@ -103,6 +104,20 @@ import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_away_back
+import homesafe.shared.generated.resources.home_away_banner
+import homesafe.shared.generated.resources.home_badge_connecting
+import homesafe.shared.generated.resources.home_badge_disabled
+import homesafe.shared.generated.resources.home_badge_live
+import homesafe.shared.generated.resources.home_in_view_check
+import homesafe.shared.generated.resources.home_in_view_title
+import homesafe.shared.generated.resources.home_no_cameras
+import homesafe.shared.generated.resources.home_status_open_moments
+import homesafe.shared.generated.resources.home_status_refresh_action
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The "Home" tab's content: a summary of what is going on and the cameras reported by the
@@ -135,8 +150,8 @@ fun HomeTabContent(
         everyoneAway = everyoneAway,
         cameras = cameras,
         onAwayBack = viewModel::markBack,
-        statusHeadline = status.headline,
-        statusDetails = status.details,
+        statusHeadline = status.headline?.resolve(),
+        statusDetails = status.details?.resolve(),
         onStatusClick = onOpenMoments,
         inView = inView,
         // A parked car's card opens the camera watching it — where its own card would have gone.
@@ -246,7 +261,7 @@ internal fun HomeFeed(
             } else if (loadedCameras.isEmpty()) {
                 item {
                     Text(
-                        text = "No cameras found on this server.",
+                        text = stringResource(Res.string.home_no_cameras),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -284,18 +299,19 @@ private fun PullToRefreshUnderTopBar(refreshing: Boolean, onRefresh: (() -> Unit
 @Composable
 internal fun HomeStatusHeader(headline: String?, details: String?, onClick: () -> Unit, modifier: Modifier = Modifier, onRefresh: (() -> Unit)? = null) {
     val extraColors = LocalFrigateExtraColors.current
+    val refreshLabel = stringResource(Res.string.home_status_refresh_action)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClickLabel = "Open moments", onClick = onClick)
+            .clickable(onClickLabel = stringResource(Res.string.home_status_open_moments), onClick = onClick)
             .then(
                 if (onRefresh == null) {
                     Modifier
                 } else {
                     Modifier.semantics {
                         customActions = listOf(
-                            CustomAccessibilityAction("Refresh home") {
+                            CustomAccessibilityAction(refreshLabel) {
                                 onRefresh()
                                 true
                             },
@@ -381,13 +397,13 @@ private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> U
             modifier = Modifier
                 .heightIn(min = 48.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .clickable(onClickLabel = "Check and tag the cars in view", role = Role.Button, onClick = onCheck)
+                .clickable(onClickLabel = stringResource(Res.string.home_in_view_check), role = Role.Button, onClick = onCheck)
                 .testTag(IN_VIEW_CHECK_TEST_TAG),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                text = "In view now",
+                text = stringResource(Res.string.home_in_view_title),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -455,20 +471,20 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = presentation.title,
+                text = presentation.title.resolve(),
                 style = MaterialTheme.typography.labelLarge,
                 color = extraColors.textPrimary,
                 maxLines = 1,
             )
             Text(
-                text = listOfNotNull(presentation.placeLabel, presentation.sinceLabel).joinToString(" · "),
+                text = listOfNotNull(presentation.placeLabel, presentation.sinceLabel?.resolve()).joinToString(stringResource(Res.string.common_dot_separator)),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
             )
             presentation.lastSeenLabel?.let { lastSeen ->
                 Text(
-                    text = lastSeen,
+                    text = lastSeen.resolve(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -641,12 +657,12 @@ private fun AwayBanner(onBack: () -> Unit) {
     ) {
         PulsingDot(color = MaterialTheme.colorScheme.primary, size = 8.dp)
         Text(
-            text = "Away mode · nobody home · alerts escalated",
+            text = stringResource(Res.string.home_away_banner),
             style = MaterialTheme.typography.labelMedium,
             color = extraColors.textPrimary,
             modifier = Modifier.weight(1f),
         )
-        TextButton(onClick = onBack) { Text("I'm back") }
+        TextButton(onClick = onBack) { Text(stringResource(Res.string.home_away_back)) }
     }
 }
 
@@ -743,7 +759,7 @@ internal fun StatusBadge(
     textColor: Color,
     pillColor: Color,
 ) {
-    val label = statusBadgeLabel(enabled = enabled, status = status)
+    val label = stringResource(statusBadgeLabel(enabled = enabled, status = status))
     val statusColor = when {
         !enabled -> MaterialTheme.colorScheme.error
         status == LiveStreamStatus.Live -> MaterialTheme.colorScheme.secondary
@@ -773,11 +789,11 @@ internal fun StatusBadge(
 }
 
 /** The badge's word for a camera in this state. Separated out so it can be asserted directly. */
-internal fun statusBadgeLabel(enabled: Boolean, status: LiveStreamStatus): String = when {
-    !enabled -> "Disabled"
+internal fun statusBadgeLabel(enabled: Boolean, status: LiveStreamStatus): StringResource = when {
+    !enabled -> Res.string.home_badge_disabled
 
-    status == LiveStreamStatus.Connecting -> "Connecting"
+    status == LiveStreamStatus.Connecting -> Res.string.home_badge_connecting
 
     // Buffering is a stream that *is* up and has merely run dry; the dots carry that, not the word.
-    else -> "Live"
+    else -> Res.string.home_badge_live
 }

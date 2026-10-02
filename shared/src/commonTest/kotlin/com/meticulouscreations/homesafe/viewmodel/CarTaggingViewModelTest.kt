@@ -17,6 +17,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TagCarUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.cars_in_view_shown
+import homesafe.shared.generated.resources.cars_in_view_untracked
+import homesafe.shared.generated.resources.cars_retraining
+import homesafe.shared.generated.resources.cars_saved_for_training
+import homesafe.shared.generated.resources.cars_tagged
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -126,7 +133,7 @@ class CarTaggingViewModelTest {
         }
         override fun nameCar(eventId: String, subLabel: String) = fail("unused")
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
-        override fun observeError(): Flow<String?> = fail("unused")
+        override fun observeError(): Flow<UiText?> = fail("unused")
         override fun observePaging(): Flow<MomentsPaging> = fail("unused")
         override suspend fun loadOlder() = fail("unused")
         override fun showBefore(epochSeconds: Double?) = fail("unused")
@@ -274,7 +281,10 @@ class CarTaggingViewModelTest {
         val state = vm.uiState.value
         assertNull(state.selection)
         assertFalse(state.noticeIsError)
-        assertTrue(state.notice.orEmpty().contains("in view now"), state.notice)
+        assertEquals(
+            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_in_view_shown), UiText.of(Res.string.cars_retraining)),
+            state.notice,
+        )
         assertEquals("sarahs_car", state.trackedCars.first { it.eventId == unnamed.eventId }.subLabel, "the fresh frame shows the new name")
         assertEquals(2, repo.frameReads)
     }
@@ -295,7 +305,10 @@ class CarTaggingViewModelTest {
         assertTrue(repo.names.isEmpty())
         assertEquals(1, repo.trained)
         assertEquals(0, moments.nudges)
-        assertTrue(vm.uiState.value.notice.orEmpty().contains("isn't tracking"), vm.uiState.value.notice)
+        assertEquals(
+            UiText.of(Res.string.cars_tagged, "Sarah's Car", UiText.of(Res.string.cars_in_view_untracked), UiText.of(Res.string.cars_retraining)),
+            vm.uiState.value.notice,
+        )
     }
 
     @Test
@@ -342,6 +355,9 @@ class CarTaggingViewModelTest {
 
         assertEquals(1, repo.names.size)
         assertFalse(vm.uiState.value.noticeIsError)
-        assertTrue(vm.uiState.value.notice.orEmpty().contains("next training"), vm.uiState.value.notice)
+        assertEquals(
+            UiText.of(Res.string.cars_tagged, "Andrew's Tesla", UiText.of(Res.string.cars_in_view_shown), UiText.of(Res.string.cars_saved_for_training)),
+            vm.uiState.value.notice,
+        )
     }
 }

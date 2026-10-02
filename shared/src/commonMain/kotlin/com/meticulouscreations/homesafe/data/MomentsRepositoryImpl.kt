@@ -15,10 +15,14 @@ import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateEvent
 import com.meticulouscreations.homesafe.network.frigateEventClipDownloadUrl
 import com.meticulouscreations.homesafe.network.frigateEventClipUrl
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_load_detections
+import homesafe.shared.generated.resources.error_load_older_detections
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
@@ -90,7 +94,7 @@ class MomentsRepositoryImpl(
 ) : MomentsRepository {
 
     private val _moments = MutableStateFlow<List<MomentEvent>>(emptyList())
-    private val _error = MutableStateFlow<String?>(null)
+    private val _error = MutableStateFlow<UiText?>(null)
     private val _paging = MutableStateFlow(MomentsPaging())
 
     /** Which slice of the server's detections the feed is: where it opens and which camera it's on. */
@@ -194,7 +198,7 @@ class MomentsRepositoryImpl(
     override fun observeMoments(): Flow<List<MomentEvent>> =
         combine(_moments, namedByHand, poller.onStart { emit(Unit) }) { list, named, _ -> list.withNames(named) }
 
-    override fun observeError(): Flow<String?> = _error.asStateFlow()
+    override fun observeError(): Flow<UiText?> = _error.asStateFlow()
 
     override fun observePaging(): Flow<MomentsPaging> = _paging.asStateFlow()
 
@@ -469,7 +473,7 @@ class MomentsRepositoryImpl(
                     // The server is unreachable, but the next page down may already be on the
                     // device — an older page the feed has shown before is worth more than a message.
                     if (appendCachedOlder(target, oldest)) return true
-                    _error.value = failure.message ?: "Couldn't load older detections"
+                    _error.value = failure.errorText(Res.string.error_load_older_detections)
                 }
             return false
         } finally {
@@ -507,7 +511,7 @@ class MomentsRepositoryImpl(
     }
 
     override suspend fun getClipStream(eventId: String): RecordingStream {
-        val url = checkNotNull(connectionRepository.currentServerUrl.value) { "Not connected" }
+        val url = connectionRepository.currentServerUrl.value ?: throw notConnected()
         return RecordingStream(
             url = frigateEventClipUrl(url, eventId),
             headers = apiClient.sessionCookieHeader(url)?.let { mapOf("Cookie" to it) }.orEmpty(),
@@ -515,7 +519,7 @@ class MomentsRepositoryImpl(
     }
 
     override suspend fun getClipDownloadUrl(eventId: String): RecordingStream {
-        val url = checkNotNull(connectionRepository.currentServerUrl.value) { "Not connected" }
+        val url = connectionRepository.currentServerUrl.value ?: throw notConnected()
         return RecordingStream(
             url = frigateEventClipDownloadUrl(url, eventId),
             headers = apiClient.sessionCookieHeader(url)?.let { mapOf("Cookie" to it) }.orEmpty(),
@@ -579,7 +583,7 @@ class MomentsRepositoryImpl(
         val target = server.identity to window
         val events = apiClient.getEvents(server.url, limit = PAGE_SIZE, beforeEpochSeconds = window.before, cameras = window.cameras)
             .getOrElse {
-                _error.value = it.message ?: "Couldn't load detections"
+                _error.value = it.errorText(Res.string.error_load_detections)
                 return@withLock false
             }
         _error.value = null
@@ -629,7 +633,7 @@ class MomentsRepositoryImpl(
         }
         // What was read is on screen; a gap that couldn't be read is still a fetch that failed, and asks again soon.
         if (bridgeFailure != null) {
-            _error.value = bridgeFailure.message ?: "Couldn't load detections"
+            _error.value = bridgeFailure.errorText(Res.string.error_load_detections)
             return@withLock false
         }
         true

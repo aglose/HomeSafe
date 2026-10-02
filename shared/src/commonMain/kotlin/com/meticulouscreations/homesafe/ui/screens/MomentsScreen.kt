@@ -95,6 +95,9 @@ import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.VisitKind
 import com.meticulouscreations.homesafe.domain.model.shortLabel
+import com.meticulouscreations.homesafe.domain.model.whenAndWhere
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
@@ -109,11 +112,66 @@ import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.moments_category_all
+import homesafe.shared.generated.resources.moments_category_animals
+import homesafe.shared.generated.resources.moments_category_people
+import homesafe.shared.generated.resources.moments_category_vehicles
+import homesafe.shared.generated.resources.moments_close_clip
+import homesafe.shared.generated.resources.moments_download_clip
+import homesafe.shared.generated.resources.moments_download_failed
+import homesafe.shared.generated.resources.moments_downloaded
+import homesafe.shared.generated.resources.moments_empty_camera
+import homesafe.shared.generated.resources.moments_empty_error
+import homesafe.shared.generated.resources.moments_empty_filtered
+import homesafe.shared.generated.resources.moments_empty_filtered_on_camera
+import homesafe.shared.generated.resources.moments_empty_history
+import homesafe.shared.generated.resources.moments_empty_history_more
+import homesafe.shared.generated.resources.moments_empty_history_more_on_camera
+import homesafe.shared.generated.resources.moments_empty_history_on_camera
+import homesafe.shared.generated.resources.moments_empty_kind_animals
+import homesafe.shared.generated.resources.moments_empty_kind_detections
+import homesafe.shared.generated.resources.moments_empty_kind_people
+import homesafe.shared.generated.resources.moments_empty_kind_unfamiliar_animals
+import homesafe.shared.generated.resources.moments_empty_kind_unfamiliar_detections
+import homesafe.shared.generated.resources.moments_empty_kind_unfamiliar_people
+import homesafe.shared.generated.resources.moments_empty_kind_unfamiliar_vehicles
+import homesafe.shared.generated.resources.moments_empty_kind_vehicles
+import homesafe.shared.generated.resources.moments_empty_look_further
+import homesafe.shared.generated.resources.moments_empty_nothing
+import homesafe.shared.generated.resources.moments_feed_end
+import homesafe.shared.generated.resources.moments_feed_load_older
+import homesafe.shared.generated.resources.moments_filter_all_cameras
+import homesafe.shared.generated.resources.moments_filter_by_camera
+import homesafe.shared.generated.resources.moments_filter_by_type
+import homesafe.shared.generated.resources.moments_filter_selected
+import homesafe.shared.generated.resources.moments_filter_unfamiliar
+import homesafe.shared.generated.resources.moments_filter_unfamiliar_animals
+import homesafe.shared.generated.resources.moments_filter_unfamiliar_only
+import homesafe.shared.generated.resources.moments_filter_unfamiliar_people
+import homesafe.shared.generated.resources.moments_filter_unfamiliar_vehicles
+import homesafe.shared.generated.resources.moments_hide_clips
+import homesafe.shared.generated.resources.moments_hide_sightings
+import homesafe.shared.generated.resources.moments_history_back_to_latest
+import homesafe.shared.generated.resources.moments_history_from
+import homesafe.shared.generated.resources.moments_history_pick_day
+import homesafe.shared.generated.resources.moments_history_show
+import homesafe.shared.generated.resources.moments_live_badge
+import homesafe.shared.generated.resources.moments_not_a_person
+import homesafe.shared.generated.resources.moments_play_clip
+import homesafe.shared.generated.resources.moments_play_full_screen
+import homesafe.shared.generated.resources.moments_refresh_action
+import homesafe.shared.generated.resources.moments_show_clips
+import homesafe.shared.generated.resources.moments_show_sightings
+import homesafe.shared.generated.resources.moments_tag_this_car
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
@@ -135,13 +193,30 @@ private val THUMBNAIL_MIN_HEIGHT = 120.dp
 /** A folded entry's clip row: a touch target's height, which is what the tag button in some of them needs. */
 private val CLIP_ROW_MIN_HEIGHT = 48.dp
 
-private val MomentCategory.label: String
+private val MomentCategory.label: StringResource
     get() = when (this) {
-        MomentCategory.ALL -> "All events"
-        MomentCategory.PEOPLE -> "People"
-        MomentCategory.VEHICLES -> "Vehicles"
-        MomentCategory.ANIMALS -> "Animals"
+        MomentCategory.ALL -> Res.string.moments_category_all
+        MomentCategory.PEOPLE -> Res.string.moments_category_people
+        MomentCategory.VEHICLES -> Res.string.moments_category_vehicles
+        MomentCategory.ANIMALS -> Res.string.moments_category_animals
     }
+
+/** The category chip's label once "Unfamiliar only" is on: "Unfamiliar people", or just "Unfamiliar" for every kind. */
+private val MomentCategory.unfamiliarLabel: StringResource
+    get() = when (this) {
+        MomentCategory.ALL -> Res.string.moments_filter_unfamiliar
+        MomentCategory.PEOPLE -> Res.string.moments_filter_unfamiliar_people
+        MomentCategory.VEHICLES -> Res.string.moments_filter_unfamiliar_vehicles
+        MomentCategory.ANIMALS -> Res.string.moments_filter_unfamiliar_animals
+    }
+
+/** What an empty feed says it has none of: "detections", "unfamiliar people". */
+private fun MomentCategory.emptyKind(unfamiliarOnly: Boolean): StringResource = when (this) {
+    MomentCategory.ALL -> if (unfamiliarOnly) Res.string.moments_empty_kind_unfamiliar_detections else Res.string.moments_empty_kind_detections
+    MomentCategory.PEOPLE -> if (unfamiliarOnly) Res.string.moments_empty_kind_unfamiliar_people else Res.string.moments_empty_kind_people
+    MomentCategory.VEHICLES -> if (unfamiliarOnly) Res.string.moments_empty_kind_unfamiliar_vehicles else Res.string.moments_empty_kind_vehicles
+    MomentCategory.ANIMALS -> if (unfamiliarOnly) Res.string.moments_empty_kind_unfamiliar_animals else Res.string.moments_empty_kind_animals
+}
 
 private val MomentCategory.icon: ImageVector?
     get() = when (this) {
@@ -288,7 +363,7 @@ internal fun MomentsFeed(
                 onUnfamiliarOnlyChange = onUnfamiliarOnlyChange,
             )
             HistoryChip(
-                dayLabel = state.historyDay?.shortLabel(),
+                dayLabel = state.historyDay?.shortLabel()?.resolve(),
                 onClick = { pickingDay = true },
                 onClear = { onShowDay(null) },
             )
@@ -296,7 +371,7 @@ internal fun MomentsFeed(
 
         state.error?.let { message ->
             Text(
-                text = message,
+                text = message.resolve(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(start = 16.dp),
@@ -316,7 +391,7 @@ internal fun MomentsFeed(
                             category = state.selectedCategory,
                             unfamiliarOnly = state.unfamiliarOnly,
                             cameraLabel = state.selectedCamera?.displayName,
-                            historyDayLabel = state.historyDay?.shortLabel(),
+                            historyDayLabel = state.historyDay?.shortLabel()?.resolve(),
                             hasError = state.error != null,
                             hasOlder = state.hasOlder,
                             loadingOlder = state.loadingOlder,
@@ -470,10 +545,10 @@ private fun FeedEnd(hasOlder: Boolean, loadingOlder: Boolean, onLoadOlder: () ->
         when {
             loadingOlder -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
 
-            hasOlder -> TextButton(onClick = onLoadOlder) { Text("Load older moments") }
+            hasOlder -> TextButton(onClick = onLoadOlder) { Text(stringResource(Res.string.moments_feed_load_older)) }
 
             else -> Text(
-                text = "That's everything the server still has.",
+                text = stringResource(Res.string.moments_feed_end),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -496,22 +571,33 @@ private fun EmptyMoments(
     // The feed is deliberately quiet: on a camera with zones, a detection only appears when it
     // happened in a zone whose movement list includes it, or when Frigate recognised who or
     // what it was. Say so, rather than looking broken.
-    val kind = (if (unfamiliarOnly) "unfamiliar " else "") + if (category == MomentCategory.ALL) "detections" else category.label.lowercase()
-    val what = if (cameraLabel != null) "$kind on $cameraLabel" else kind
+    val kind = stringResource(category.emptyKind(unfamiliarOnly))
     val message = when {
-        hasError -> "Couldn't reach the server for detections."
+        hasError -> stringResource(Res.string.moments_empty_error)
 
         // A window into the past that came up empty is a different fact from a quiet feed: the
         // pages fetched so far had none, and there may be more below.
-        historyDayLabel != null && hasOlder -> "No $what in the most recent pages before $historyDayLabel."
+        historyDayLabel != null && hasOlder -> if (cameraLabel != null) {
+            stringResource(Res.string.moments_empty_history_more_on_camera, kind, cameraLabel, historyDayLabel)
+        } else {
+            stringResource(Res.string.moments_empty_history_more, kind, historyDayLabel)
+        }
 
-        historyDayLabel != null -> "No $what on or before $historyDayLabel that the server still has."
+        historyDayLabel != null -> if (cameraLabel != null) {
+            stringResource(Res.string.moments_empty_history_on_camera, kind, cameraLabel, historyDayLabel)
+        } else {
+            stringResource(Res.string.moments_empty_history, kind, historyDayLabel)
+        }
 
-        category != MomentCategory.ALL || unfamiliarOnly -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when they're recognised."
+        category != MomentCategory.ALL || unfamiliarOnly -> if (cameraLabel != null) {
+            stringResource(Res.string.moments_empty_filtered_on_camera, kind, cameraLabel)
+        } else {
+            stringResource(Res.string.moments_empty_filtered, kind)
+        }
 
-        cameraLabel != null -> "No $what to show. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
+        cameraLabel != null -> stringResource(Res.string.moments_empty_camera, cameraLabel)
 
-        else -> "Nothing to show yet. Detections appear here when they happen in a zone set to watch for them, or when Frigate recognises who or what they are."
+        else -> stringResource(Res.string.moments_empty_nothing)
     }
     Box(modifier = modifier.padding(bottom = bottomNavClearance()), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -525,7 +611,7 @@ private fun EmptyMoments(
             // the next page rather than leaving a wall the reader can't see past.
             when {
                 loadingOlder -> CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                hasOlder -> TextButton(onClick = onLoadOlder) { Text("Look further back") }
+                hasOlder -> TextButton(onClick = onLoadOlder) { Text(stringResource(Res.string.moments_empty_look_further)) }
             }
         }
     }
@@ -559,13 +645,13 @@ private fun HistoryChip(dayLabel: String?, onClick: () -> Unit, onClear: () -> U
     ) {
         Icon(
             imageVector = Icons.Filled.CalendarMonth,
-            contentDescription = if (selected) null else "Pick a day",
+            contentDescription = if (selected) null else stringResource(Res.string.moments_history_pick_day),
             tint = contentColor,
             modifier = Modifier.width(18.dp).aspectRatio(1f),
         )
         if (dayLabel != null) {
             Text(
-                text = "From $dayLabel",
+                text = stringResource(Res.string.moments_history_from, dayLabel),
                 style = MaterialTheme.typography.labelMedium,
                 color = contentColor,
             )
@@ -573,7 +659,7 @@ private fun HistoryChip(dayLabel: String?, onClick: () -> Unit, onClear: () -> U
         if (selected) {
             Icon(
                 imageVector = Icons.Filled.Close,
-                contentDescription = "Back to the latest moments",
+                contentDescription = stringResource(Res.string.moments_history_back_to_latest),
                 tint = contentColor,
                 modifier = Modifier
                     .clip(CircleShape)
@@ -616,9 +702,9 @@ private fun MomentDayPicker(initialDayUtcMillis: Long?, onPick: (LocalDate) -> U
                     onPick(Instant.fromEpochMilliseconds(millis).toLocalDateTime(TimeZone.UTC).date)
                 },
                 enabled = pickerState.selectedDateMillis != null,
-            ) { Text("Show") }
+            ) { Text(stringResource(Res.string.moments_history_show)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel)) } },
     ) {
         DatePicker(state = pickerState)
     }
@@ -635,13 +721,14 @@ private fun CameraFilterChip(
     selectedCameraLabel: String?,
     onSelect: (String?) -> Unit,
 ) {
+    val allCameras = stringResource(Res.string.moments_filter_all_cameras)
     FilterMenuChip(
-        label = selectedCameraLabel ?: "All cameras",
+        label = selectedCameraLabel ?: allCameras,
         icon = Icons.Filled.Videocam,
         active = selectedCameraName != null,
-        menuDescription = "Filter by camera",
+        menuDescription = stringResource(Res.string.moments_filter_by_camera),
     ) { dismiss ->
-        FilterMenuItem(label = "All cameras", icon = null, checked = selectedCameraName == null) {
+        FilterMenuItem(label = allCameras, icon = null, checked = selectedCameraName == null) {
             dismiss()
             onSelect(null)
         }
@@ -667,25 +754,20 @@ private fun CategoryFilterChip(
     onSelect: (MomentCategory) -> Unit,
     onUnfamiliarOnlyChange: (Boolean) -> Unit,
 ) {
-    val label = when {
-        !unfamiliarOnly -> selected.label
-        selected == MomentCategory.ALL -> "Unfamiliar"
-        else -> "Unfamiliar ${selected.label.lowercase()}"
-    }
     FilterMenuChip(
-        label = label,
+        label = stringResource(if (unfamiliarOnly) selected.unfamiliarLabel else selected.label),
         icon = selected.icon ?: Icons.Filled.PersonSearch.takeIf { unfamiliarOnly },
         active = selected != MomentCategory.ALL || unfamiliarOnly,
-        menuDescription = "Filter by type",
+        menuDescription = stringResource(Res.string.moments_filter_by_type),
     ) { dismiss ->
         MomentCategory.entries.forEach { category ->
-            FilterMenuItem(label = category.label, icon = category.icon, checked = category == selected) {
+            FilterMenuItem(label = stringResource(category.label), icon = category.icon, checked = category == selected) {
                 dismiss()
                 onSelect(category)
             }
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
-        FilterMenuItem(label = "Unfamiliar only", icon = Icons.Filled.PersonSearch, checked = unfamiliarOnly) {
+        FilterMenuItem(label = stringResource(Res.string.moments_filter_unfamiliar_only), icon = Icons.Filled.PersonSearch, checked = unfamiliarOnly) {
             dismiss()
             onUnfamiliarOnlyChange(!unfamiliarOnly)
         }
@@ -771,7 +853,7 @@ private fun FilterMenuItem(label: String, icon: ImageVector?, checked: Boolean, 
             { Icon(imageVector = it, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
         },
         trailingIcon = if (checked) {
-            { Icon(imageVector = Icons.Filled.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary) }
+            { Icon(imageVector = Icons.Filled.Check, contentDescription = stringResource(Res.string.moments_filter_selected), tint = MaterialTheme.colorScheme.primary) }
         } else {
             null
         },
@@ -780,14 +862,15 @@ private fun FilterMenuItem(label: String, icon: ImageVector?, checked: Boolean, 
 }
 
 @Composable
-private fun MomentDateHeader(dateGroup: String, dateSubLabel: String, onRefresh: () -> Unit) {
+private fun MomentDateHeader(dateGroup: UiText, dateSubLabel: UiText, onRefresh: () -> Unit) {
+    val refreshAction = stringResource(Res.string.moments_refresh_action)
     Row(
         // A heading, so a screen reader can jump between days; and where it offers the refresh the
         // pull gives everyone else, since a screen reader only offers the actions of the node it's on.
         modifier = Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
             heading()
             customActions = listOf(
-                CustomAccessibilityAction("Refresh moments") {
+                CustomAccessibilityAction(refreshAction) {
                     onRefresh()
                     true
                 },
@@ -796,9 +879,9 @@ private fun MomentDateHeader(dateGroup: String, dateSubLabel: String, onRefresh:
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = dateGroup, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = dateGroup.resolve(), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(
-            text = dateSubLabel.uppercase(),
+            text = dateSubLabel.resolve().uppercase(),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -822,7 +905,7 @@ private data class ClipPlayerState(
     val playingEventId: String? = null,
     val request: PlayerRequest? = null,
     val posterUrl: String? = null,
-    val error: String? = null,
+    val error: UiText? = null,
     val buffering: Boolean = false,
 )
 
@@ -859,7 +942,7 @@ private fun MomentCard(
     player: ClipPlayerState,
     isDownloading: Boolean,
     downloadSucceeded: Boolean,
-    downloadErrorMessage: String?,
+    downloadErrorMessage: UiText?,
     onPlay: (MomentEvent) -> Unit,
     onToggleClips: () -> Unit,
     onClipBuffering: (Boolean) -> Unit,
@@ -888,7 +971,7 @@ private fun MomentCard(
                 .height(IntrinsicSize.Min)
                 .clickable(
                     enabled = event.hasClip,
-                    onClickLabel = if (player.playingEventId == event.id) "Close clip" else "Play clip",
+                    onClickLabel = stringResource(if (player.playingEventId == event.id) Res.string.moments_close_clip else Res.string.moments_play_clip),
                 ) { onPlay(event) },
         ) {
             Box(
@@ -942,7 +1025,7 @@ private fun MomentCard(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         PulsingDot(color = MaterialTheme.colorScheme.error, size = 6.dp, pulsing = true)
-                        Text(text = "LIVE", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                        Text(text = stringResource(Res.string.moments_live_badge), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }
@@ -956,14 +1039,14 @@ private fun MomentCard(
                     // a car's name down to "Andrew's Tesla on the…". The time leads the line below
                     // instead, where a long place name gives way to it rather than the other way round.
                     Text(
-                        text = p.title,
+                        text = p.title.resolve(),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        text = "${p.timeLabel} · ${p.locationLabel}",
+                        text = p.whenAndWhere.resolve(),
                         style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -971,13 +1054,13 @@ private fun MomentCard(
                     )
                     p.sightingsLabel?.let {
                         Text(
-                            text = it,
+                            text = it.resolve(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.secondary,
                             maxLines = 1,
                         )
                     }
-                    p.clipCountLabel?.let { ClipsToggle(label = it, open = clipsOpen, onClick = onToggleClips) }
+                    p.clipCountLabel?.let { ClipsToggle(label = it.resolve(), open = clipsOpen, onClick = onToggleClips) }
                 }
                 // The badge and the clip's download share the card's bottom line, at opposite
                 // ends, where the download has room of its own instead of crowding the thumbnail.
@@ -994,7 +1077,7 @@ private fun MomentCard(
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                         ) {
                             Text(
-                                text = p.badgeLabel.uppercase(),
+                                text = p.badgeLabel.resolve().uppercase(),
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -1054,7 +1137,7 @@ private fun RoutineRow(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable(onClickLabel = if (clipsOpen) "Hide sightings" else "Show sightings", onClick = onToggleClips)
+                .clickable(onClickLabel = stringResource(if (clipsOpen) Res.string.moments_hide_sightings else Res.string.moments_show_sightings), onClick = onToggleClips)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -1072,14 +1155,14 @@ private fun RoutineRow(
             }
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
-                    text = p.title,
+                    text = p.title.resolve(),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    text = "${p.timeLabel} · ${p.locationLabel}",
+                    text = p.whenAndWhere.resolve(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1108,7 +1191,7 @@ private fun ClipsToggle(label: String, open: Boolean, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
-            .clickable(onClickLabel = if (open) "Hide clips" else "Show clips", onClick = onClick)
+            .clickable(onClickLabel = stringResource(if (open) Res.string.moments_hide_clips else Res.string.moments_show_clips), onClick = onClick)
             .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -1140,6 +1223,8 @@ private fun MomentClipList(
     onNotAPerson: (MomentEvent) -> Unit = {},
 ) {
     val anyTaggable = item.clips.any { it.canTagCar || it.canMarkNotPerson }
+    val playLabel = stringResource(Res.string.moments_play_clip)
+    val closeLabel = stringResource(Res.string.moments_close_clip)
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
         item.clips.forEach { clip ->
             val playing = clip.event.id == playingEventId
@@ -1147,7 +1232,7 @@ private fun MomentClipList(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable(enabled = clip.event.hasClip, onClickLabel = if (playing) "Close clip" else "Play clip") { onPlay(clip.event) }
+                    .clickable(enabled = clip.event.hasClip, onClickLabel = if (playing) closeLabel else playLabel) { onPlay(clip.event) }
                     .heightIn(min = CLIP_ROW_MIN_HEIGHT)
                     .padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -1159,9 +1244,9 @@ private fun MomentClipList(
                     tint = if (playing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )
-                Text(text = clip.timeLabel, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(text = clip.timeLabel.resolve(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(
-                    text = clip.title,
+                    text = clip.title.resolve(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -1169,7 +1254,7 @@ private fun MomentClipList(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = clip.durationLabel ?: "LIVE",
+                    text = clip.durationLabel ?: stringResource(Res.string.moments_live_badge),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1189,7 +1274,7 @@ private fun MomentClipList(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Sell,
-                            contentDescription = "Tag this car",
+                            contentDescription = stringResource(Res.string.moments_tag_this_car),
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(16.dp),
                         )
@@ -1208,7 +1293,7 @@ private fun MomentClipList(
                     ) {
                         Icon(
                             imageVector = Icons.Filled.PersonOff,
-                            contentDescription = "Not a person",
+                            contentDescription = stringResource(Res.string.moments_not_a_person),
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.size(16.dp),
                         )
@@ -1231,7 +1316,7 @@ private fun InlineClipPlayer(player: ClipPlayerState, onClipBuffering: (Boolean)
         // Error is checked before the player: an error that lands after the request was set
         // must win, or it would be masked behind a player that never paints a frame.
         when {
-            player.error != null -> Text(player.error, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+            player.error != null -> Text(player.error.resolve(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
 
             player.request != null -> {
                 // Keyed by event so collapsing and reopening, or scrolling the card away and
@@ -1290,7 +1375,7 @@ private fun FullScreenButton(onClick: () -> Unit, modifier: Modifier = Modifier)
     ) {
         Icon(
             imageVector = Icons.Filled.Fullscreen,
-            contentDescription = "Play full screen",
+            contentDescription = stringResource(Res.string.moments_play_full_screen),
             tint = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.size(20.dp),
         )
@@ -1302,7 +1387,7 @@ private fun FullScreenButton(onClick: () -> Unit, modifier: Modifier = Modifier)
 private fun DownloadButton(
     isDownloading: Boolean,
     succeeded: Boolean,
-    errorMessage: String?,
+    errorMessage: UiText?,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1325,21 +1410,21 @@ private fun DownloadButton(
 
             succeeded -> Icon(
                 imageVector = Icons.Filled.Check,
-                contentDescription = "Downloaded",
+                contentDescription = stringResource(Res.string.moments_downloaded),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )
 
             errorMessage != null -> Icon(
                 imageVector = Icons.Filled.ErrorOutline,
-                contentDescription = "Download failed: $errorMessage",
+                contentDescription = stringResource(Res.string.moments_download_failed, errorMessage.resolve()),
                 tint = MaterialTheme.colorScheme.error,
                 modifier = Modifier.size(16.dp),
             )
 
             else -> Icon(
                 imageVector = Icons.Filled.Download,
-                contentDescription = "Download clip",
+                contentDescription = stringResource(Res.string.moments_download_clip),
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(16.dp),
             )

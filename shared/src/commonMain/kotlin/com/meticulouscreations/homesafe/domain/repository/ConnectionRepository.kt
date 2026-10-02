@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.jetbrains.compose.resources.StringResource
 
 /** Manages the connection to a Frigate server: login, session state, route selection, history, and biometric credentials. */
 interface ConnectionRepository {
@@ -39,7 +40,7 @@ interface ConnectionRepository {
     val biometricLoginAvailable: Boolean
 
     /** Short user-facing name for the biometric method, e.g. "Face ID" or "fingerprint". */
-    val biometricDisplayName: String
+    val biometricDisplayName: StringResource
 
     /** True if credentials were previously saved for biometric login and are (still) present. */
     fun hasSavedBiometricCredentials(): Boolean

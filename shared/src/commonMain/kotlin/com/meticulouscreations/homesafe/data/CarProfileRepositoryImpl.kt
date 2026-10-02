@@ -4,7 +4,6 @@ import com.meticulouscreations.homesafe.domain.model.CarProfile
 import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.repository.CarProfileRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -31,5 +30,5 @@ class CarProfileRepositoryImpl(
     private fun serverUrlOrFailure(): Result<String> =
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
-            ?: Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: Result.failure(notConnected())
 }

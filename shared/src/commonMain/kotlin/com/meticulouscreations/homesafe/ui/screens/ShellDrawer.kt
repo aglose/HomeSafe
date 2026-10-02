@@ -80,6 +80,21 @@ import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinancePalette
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.shell_app_title
+import homesafe.shared.generated.resources.shell_drawer_cameras
+import homesafe.shared.generated.resources.shell_drawer_change_today
+import homesafe.shared.generated.resources.shell_drawer_close
+import homesafe.shared.generated.resources.shell_drawer_finance
+import homesafe.shared.generated.resources.shell_drawer_finance_subtitle
+import homesafe.shared.generated.resources.shell_drawer_market_disclaimer
+import homesafe.shared.generated.resources.shell_drawer_net_worth
+import homesafe.shared.generated.resources.shell_drawer_open_finance
+import homesafe.shared.generated.resources.shell_drawer_section_apps
+import homesafe.shared.generated.resources.shell_drawer_section_home_security
+import homesafe.shared.generated.resources.shell_menu
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 
 private val DrawerWidth = 304.dp
@@ -114,6 +129,7 @@ internal fun ShellDrawer(
     LaunchedEffect(open) { if (open) drag = 0f }
     val dragState = rememberDraggableState { delta -> drag = (drag + delta).coerceIn(-widthPx, 0f) }
 
+    val menuTitle = stringResource(Res.string.shell_menu)
     Box(Modifier.fillMaxSize().testTag("shell_drawer")) {
         // The scrim: the shell dims and a tap anywhere on it closes the drawer.
         Box(
@@ -121,7 +137,7 @@ internal fun ShellDrawer(
                 .fillMaxSize()
                 .graphicsLayer { alpha = progress * (1f + drag / widthPx) }
                 .background(Color.Black.copy(alpha = 0.6f))
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = "Close menu", onClick = onClose),
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = stringResource(Res.string.shell_drawer_close), onClick = onClose),
         )
         Column(
             Modifier
@@ -137,7 +153,7 @@ internal fun ShellDrawer(
                 .background(MaterialTheme.colorScheme.surfaceContainerLow)
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f), RoundedCornerShape(topEnd = 28.dp, bottomEnd = 28.dp))
                 .semantics {
-                    paneTitle = "Menu"
+                    paneTitle = menuTitle
                     isTraversalGroup = true
                 }
                 .statusBarsPadding()
@@ -145,21 +161,21 @@ internal fun ShellDrawer(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
             Text(
-                "PERCYSAFE",
+                stringResource(Res.string.shell_app_title),
                 style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
             )
-            DrawerLabel("Home security")
-            DrawerRow(Icons.Filled.Home, "Cameras", selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
-            DrawerRow(Icons.Filled.VideoLibrary, "Moments", selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
-            DrawerRow(Icons.Filled.Settings, "Settings", selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
+            DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
+            DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
+            DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
+            DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
             Spacer(Modifier.height(24.dp))
-            DrawerLabel("Apps")
+            DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
             FinanceDrawerCard(finance, onOpenFinance)
             Spacer(Modifier.weight(1f))
             Text(
-                "Market data is delayed and for information only.",
+                stringResource(Res.string.shell_drawer_market_disclaimer),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                 modifier = Modifier.padding(8.dp),
@@ -212,7 +228,7 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
             .clip(shape)
             .background(Brush.linearGradient(listOf(Color(0xFF07140A), Color(0xFF000000))))
             .border(1.dp, Brush.linearGradient(listOf(palette.gain.copy(alpha = 0.7f), palette.accent.copy(alpha = 0.2f))), shape)
-            .clickable(onClickLabel = "Open Finance") { onOpen(center) }
+            .clickable(onClickLabel = stringResource(Res.string.shell_drawer_open_finance)) { onOpen(center) }
             .testTag("drawer_finance")
             .padding(16.dp),
     ) {
@@ -222,17 +238,17 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                Text("Finance", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text("Markets & your money", maxLines = 1, style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                Text(stringResource(Res.string.shell_drawer_finance), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                Text(stringResource(Res.string.shell_drawer_finance_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
             }
             Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = palette.textSecondary)
         }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(Modifier.weight(1f)) {
-                Text("S&P 500", style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
+                Text(MarketCatalog.SP500.shortName.resolve(), style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
                 Text(sp?.let { FinanceFormat.grouped(it.price) } ?: "—", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text(sp?.let { FinanceFormat.signedPercent(it.changePercent) + " today" } ?: " ", style = MaterialTheme.typography.labelSmall, color = dir)
+                Text(sp?.let { stringResource(Res.string.shell_drawer_change_today, FinanceFormat.signedPercent(it.changePercent)) } ?: " ", style = MaterialTheme.typography.labelSmall, color = dir)
             }
             if (sp != null && sp.intraday.size > 1) {
                 Sparkline(sp.intraday, dir, Modifier.width(96.dp).height(40.dp), baseline = sp.previousClose)
@@ -240,7 +256,7 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
         }
         finance.finance?.netWorth?.let { nw ->
             Spacer(Modifier.height(10.dp))
-            Text("Net worth ${FinanceFormat.compactMoney(nw)}", style = MaterialTheme.typography.labelMedium, color = palette.accent)
+            Text(stringResource(Res.string.shell_drawer_net_worth, FinanceFormat.compactMoney(nw)), style = MaterialTheme.typography.labelMedium, color = palette.accent)
         }
     }
 }

@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.finance.domain
 
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+
 /** Why the budget sheet couldn't be read, each with its own fix on the setup card. */
 enum class SheetProblem {
     /** The relay has no sheet id configured (`FINANCE_SHEET_ID`). */
@@ -28,14 +31,19 @@ enum class SheetProblem {
     OTHER,
 }
 
+/**
+ * The sheet couldn't be read, for [problem]. [text] is what to tell the person (the relay's own
+ * explanation when it gave one, passed through as written); [technical], the status behind it.
+ */
 class SheetUnavailableException(
     val problem: SheetProblem,
-    message: String,
+    text: UiText,
+    technical: String? = null,
     /** The account the sheet must be shared with, when the relay knows it. */
     val serviceAccount: String? = null,
     /** Where to switch on the Sheets API, when Google said so. */
     val activationUrl: String? = null,
-) : Exception(message)
+) : LocalizedException(text, technical)
 
 /**
  * Market quotes and histories, FRED's economic series, and the household's budget sheet. Every

@@ -21,6 +21,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
+import com.meticulouscreations.homesafe.text.asUiText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -103,7 +104,7 @@ class FinanceViewModelTest {
         }
 
         /** What each read of the sheet answers; by default, not shared. */
-        var sheet: () -> Result<PersonalFinance> = { Result.failure(SheetUnavailableException(SheetProblem.NOT_SHARED, "share it")) }
+        var sheet: () -> Result<PersonalFinance> = { Result.failure(SheetUnavailableException(SheetProblem.NOT_SHARED, "share it".asUiText())) }
 
         /** When set, every read of the sheet waits on it: a relay that's slow to answer. */
         var slowSheet: CompletableDeferred<Result<PersonalFinance>>? = null
@@ -212,11 +213,11 @@ class FinanceViewModelTest {
         assertEquals(read, vm.uiState.value.finance)
         assertNull(vm.uiState.value.sheetIssue)
 
-        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.OTHER, "Google is down")) }
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.OTHER, "Google is down".asUiText())) }
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance, "the last read stays on screen")
-        assertEquals("Google is down", vm.uiState.value.sheetIssue?.message)
+        assertEquals("Google is down".asUiText(), vm.uiState.value.sheetIssue?.message)
 
         repo.sheet = { Result.success(read) }
         vm.retrySheet()
@@ -403,7 +404,7 @@ class FinanceViewModelTest {
         advanceTimeBy(301)
         runCurrent()
         assertTrue(vm.uiState.value.search.results.isEmpty(), "VTI mustn't be offered under \"tsla\"")
-        assertEquals("Yahoo answered 503", vm.uiState.value.search.error)
+        assertEquals("Yahoo answered 503".asUiText(), vm.uiState.value.search.error, "the failure as the server put it")
     }
 
     @Test

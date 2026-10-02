@@ -52,6 +52,22 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.layman_standing_title
+import homesafe.shared.generated.resources.layman_stress_calm
+import homesafe.shared.generated.resources.layman_stress_calm_detail
+import homesafe.shared.generated.resources.layman_stress_elevated
+import homesafe.shared.generated.resources.layman_stress_elevated_detail
+import homesafe.shared.generated.resources.layman_stress_high
+import homesafe.shared.generated.resources.layman_stress_high_detail
+import homesafe.shared.generated.resources.layman_stress_severe
+import homesafe.shared.generated.resources.layman_stress_severe_detail
+import homesafe.shared.generated.resources.layman_tip_dismiss
+import homesafe.shared.generated.resources.layman_tip_dismiss_label
+import homesafe.shared.generated.resources.layman_tip_text
+import homesafe.shared.generated.resources.layman_weather_title
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -65,7 +81,8 @@ import kotlin.math.sin
 internal fun WeatherGlyph(weather: Weather, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val colors = FinanceTheme.colors
     val time = rememberShaderClock()
-    Canvas(modifier.size(size).clearAndSetSemantics { contentDescription = weather.label }) {
+    val label = stringResource(weather.label)
+    Canvas(modifier.size(size).clearAndSetSemantics { contentDescription = label }) {
         val t = time.value
         when (weather) {
             Weather.SUNNY -> drawSun(colors.accent, center, this.size.minDimension * 0.22f, t)
@@ -142,14 +159,14 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
                 Spacer(Modifier.width(14.dp))
             }
             Column(Modifier.weight(1f)) {
-                Text(if (straight) "WHERE THE ECONOMY STANDS" else "TODAY'S ECONOMIC WEATHER", style = type.micro, color = colors.textSecondary)
-                Text(briefing.headline, style = if (straight) type.section else type.title, color = colors.textPrimary)
+                Text(stringResource(if (straight) Res.string.layman_standing_title else Res.string.layman_weather_title).uppercase(), style = type.micro, color = colors.textSecondary)
+                Text(briefing.headline.resolve(), style = if (straight) type.section else type.title, color = colors.textPrimary)
             }
             InfoButton("stress")
         }
-        if (briefing.summary.isNotEmpty()) {
+        briefing.summary?.let { summary ->
             Spacer(Modifier.height(6.dp))
-            Text(briefing.summary, style = type.label, color = colors.textSecondary)
+            Text(summary.resolve(), style = type.label, color = colors.textSecondary)
         }
         briefing.items.forEachIndexed { i, item ->
             Spacer(Modifier.height(10.dp))
@@ -162,13 +179,13 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
                     }
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(item.topic, style = type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f, fill = false))
+                            Text(stringResource(item.topic), style = type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f, fill = false))
                             if (straight && item.signal != null) {
                                 Spacer(Modifier.width(8.dp))
                                 SignalChip(item.signal)
                             }
                         }
-                        Text(item.sentence, style = type.label, color = colors.textSecondary)
+                        Text(item.sentence.resolve(), style = type.label, color = colors.textSecondary)
                     }
                     InfoButton(item.explainerId)
                 }
@@ -185,7 +202,12 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
 internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
-    val bands = listOf(Triple("Calm", 0.0 to 30.0, colors.gain), Triple("Elevated", 30.0 to 50.0, colors.watch), Triple("High", 50.0 to 70.0, Color(0xFFFF8A3D)), Triple("Severe", 70.0 to 100.0, colors.loss))
+    val bands = listOf(
+        Triple(Res.string.layman_stress_calm, 0.0 to 30.0, colors.gain),
+        Triple(Res.string.layman_stress_elevated, 30.0 to 50.0, colors.watch),
+        Triple(Res.string.layman_stress_high, 50.0 to 70.0, Color(0xFFFF8A3D)),
+        Triple(Res.string.layman_stress_severe, 70.0 to 100.0, colors.loss),
+    )
     val marker = remember { Animatable(0f) }
     LaunchedEffect(stress?.score) { marker.animateTo(((stress?.score ?: 0.0) / 100).toFloat(), tween(1100, easing = FastOutSlowInEasing)) }
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
@@ -208,18 +230,21 @@ internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
         }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
             bands.forEach { (label, range, c) ->
-                Text(label, style = type.micro, color = if (stress != null && stress.score >= range.first && stress.score < range.second + (if (range.second == 100.0) 1 else 0)) c else colors.textTertiary, modifier = Modifier.weight((range.second - range.first).toFloat()))
+                Text(stringResource(label), style = type.micro, color = if (stress != null && stress.score >= range.first && stress.score < range.second + (if (range.second == 100.0) 1 else 0)) c else colors.textTertiary, modifier = Modifier.weight((range.second - range.first).toFloat()))
             }
         }
         if (stress != null) {
             Spacer(Modifier.height(8.dp))
             Text(
-                when {
-                    stress.score < 30 -> "Calm: almost every warning light is off. The economy isn't showing the strains that have come before past downturns."
-                    stress.score < 50 -> "Elevated: a few warning lights are on — worth keeping an eye on, but most signs are still calm. Past recessions came with many lights on at once."
-                    stress.score < 70 -> "High: many warning lights are on at once, a pattern seen in the run-up to past downturns."
-                    else -> "Severe: most warning lights are flashing, as they did in 2008 and 2020."
-                },
+                stringResource(
+                    byStressBand(
+                        stress.score,
+                        calm = Res.string.layman_stress_calm_detail,
+                        elevated = Res.string.layman_stress_elevated_detail,
+                        high = Res.string.layman_stress_high_detail,
+                        severe = Res.string.layman_stress_severe_detail,
+                    ),
+                ),
                 style = type.body,
                 color = colors.textSecondary,
             )
@@ -247,13 +272,13 @@ internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modif
             Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "New to this? Tap ⓘ next to anything for a plain-English explanation, or ? at the top for the jargon buster.",
+                stringResource(Res.string.layman_tip_text),
                 style = FinanceTheme.type.label,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
             )
-            Box(Modifier.size(44.dp).clickable(onClickLabel = "Dismiss tip", onClick = onDismiss), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(44.dp).clickable(onClickLabel = stringResource(Res.string.layman_tip_dismiss_label), onClick = onDismiss), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(Res.string.layman_tip_dismiss), tint = colors.textSecondary, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -263,5 +288,5 @@ internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modif
 @Composable
 internal fun VerdictText(reading: IndicatorReading?, modifier: Modifier = Modifier) {
     if (reading?.latest == null) return
-    Text(Narrator.verdict(reading, LocalEconomyTone.current), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
+    Text(Narrator.verdict(reading, LocalEconomyTone.current).resolve(), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
 }

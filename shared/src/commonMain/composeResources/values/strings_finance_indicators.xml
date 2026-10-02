@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The economic indicators the finance app follows (finance/domain/Indicators.kt): their names,
+  why each matters, what its danger line means, the Risk tab's groups, signal and stress words,
+  and the Treasury curve's tenor labels. Indicator keys are indicator_<id>_<part>.
+-->
+<resources>
+    <!-- A reading's signal, on its chip -->
+    <string name="indicator_signal_calm">Calm</string>
+    <string name="indicator_signal_watch">Watch</string>
+    <string name="indicator_signal_danger">Danger</string>
+
+    <!-- The composite stress gauge's level -->
+    <string name="indicator_stress_calm">Calm</string>
+    <string name="indicator_stress_elevated">Elevated</string>
+    <string name="indicator_stress_high">High</string>
+    <string name="indicator_stress_severe">Severe</string>
+
+    <!-- How often readings arrive, as in "Updated: Weekly" -->
+    <string name="indicator_cadence_daily">Daily</string>
+    <string name="indicator_cadence_weekly">Weekly</string>
+    <string name="indicator_cadence_monthly">Monthly</string>
+    <string name="indicator_cadence_quarterly">Quarterly</string>
+
+    <!-- Risk tab groups: a heading and a one-line blurb -->
+    <string name="indicator_group_recession_title">Recession signals</string>
+    <string name="indicator_group_recession_blurb">The readings that have turned before past downturns.</string>
+    <string name="indicator_group_labor_title">Jobs beneath the headline</string>
+    <string name="indicator_group_labor_blurb">Underemployment, long searches and hiring: the slack the unemployment rate leaves out.</string>
+    <string name="indicator_group_credit_title">Credit &amp; market stress</string>
+    <string name="indicator_group_credit_blurb">Where cracks in the financial system show first.</string>
+    <string name="indicator_group_debt_title">Debt &amp; money</string>
+    <string name="indicator_group_debt_blurb">Whether the country's borrowing is getting away from it.</string>
+    <string name="indicator_group_inflation_title">Inflation &amp; rates</string>
+    <string name="indicator_group_inflation_blurb">What money costs, and what it's worth.</string>
+
+    <!-- Labels on a chart's dashed reference line -->
+    <string name="indicator_reference_inversion">Inversion</string>
+    <string name="indicator_reference_recession_trigger">Recession trigger</string>
+    <string name="indicator_reference_contraction">Contraction</string>
+    <string name="indicator_reference_normal">Normal</string>
+    <string name="indicator_reference_shrinking">Shrinking</string>
+    <string name="indicator_reference_fed_target">Fed target</string>
+    <string name="indicator_reference_losing_to_prices">Losing to prices</string>
+
+    <!-- Treasury maturities on the yield curve chart: M = months, Y = years -->
+    <string name="indicator_tenor_1m">1M</string>
+    <string name="indicator_tenor_3m">3M</string>
+    <string name="indicator_tenor_6m">6M</string>
+    <string name="indicator_tenor_1y">1Y</string>
+    <string name="indicator_tenor_2y">2Y</string>
+    <string name="indicator_tenor_3y">3Y</string>
+    <string name="indicator_tenor_5y">5Y</string>
+    <string name="indicator_tenor_7y">7Y</string>
+    <string name="indicator_tenor_10y">10Y</string>
+    <string name="indicator_tenor_20y">20Y</string>
+    <string name="indicator_tenor_30y">30Y</string>
+
+    <string name="indicator_t10y2y_title">Yield curve (10Y − 2Y)</string>
+    <string name="indicator_t10y2y_short_title">10Y−2Y</string>
+    <string name="indicator_t10y2y_why">Normally lenders want more to lock money up for ten years than for two. When the 2-year pays more — an inverted curve — markets are betting the Fed will have to cut because a slowdown is coming. Every US recession since 1970 was preceded by one.</string>
+    <string name="indicator_t10y2y_danger_note">Below 0% the curve is inverted. Recessions have tended to arrive 6–24 months after inversion, often just as the curve turns positive again.</string>
+
+    <string name="indicator_t10y3m_title">Yield curve (10Y − 3M)</string>
+    <string name="indicator_t10y3m_short_title">10Y−3M</string>
+    <string name="indicator_t10y3m_why">The New York Fed's preferred recession model uses this spread. It compares the 10-year yield with 3-month bills, which track the Fed's policy rate almost exactly.</string>
+    <string name="indicator_t10y3m_danger_note">Below 0% is inverted, the New York Fed model's strongest recession signal.</string>
+
+    <string name="indicator_sahm_title">Sahm rule</string>
+    <string name="indicator_sahm_short_title">Sahm</string>
+    <string name="indicator_sahm_why">How far the 3-month average unemployment rate has risen above its low of the past year. Unemployment rarely rises a little: once it starts climbing it tends to keep going.</string>
+    <string name="indicator_sahm_danger_note">At 0.5 points the rule has called every recession since 1970, usually within months of it starting.</string>
+
+    <string name="indicator_unrate_title">Unemployment rate</string>
+    <string name="indicator_unrate_short_title">Unemployment</string>
+    <string name="indicator_unrate_why">The share of people looking for work who can't find it. Jobs are what keep household spending — two thirds of the economy — going.</string>
+    <string name="indicator_unrate_danger_note">Above 5.5% layoffs are usually feeding on themselves.</string>
+
+    <string name="indicator_icsa_title">Initial jobless claims</string>
+    <string name="indicator_icsa_short_title">Jobless claims</string>
+    <string name="indicator_icsa_why">New unemployment filings each week: the fastest hard data on layoffs, out every Thursday.</string>
+    <string name="indicator_icsa_danger_note">Sustained readings over 300k have marked every recession of the past 50 years.</string>
+
+    <string name="indicator_gdp_title">Real GDP growth</string>
+    <string name="indicator_gdp_short_title">GDP growth</string>
+    <string name="indicator_gdp_why">How fast the economy grew last quarter after inflation, as an annual rate.</string>
+    <string name="indicator_gdp_danger_note">Two quarters in a row below zero is the textbook definition of a recession.</string>
+
+    <string name="indicator_umcsent_title">Consumer sentiment</string>
+    <string name="indicator_umcsent_short_title">Sentiment</string>
+    <string name="indicator_umcsent_why">The University of Michigan's monthly survey of how people feel about their finances and the economy. Gloomy households stop spending.</string>
+    <string name="indicator_umcsent_danger_note">Below 55 is the territory of 1980, 2008 and 2022.</string>
+
+    <string name="indicator_u6_title">Underemployment rate (U-6)</string>
+    <string name="indicator_u6_short_title">U-6</string>
+    <string name="indicator_u6_why">The broadest official jobless rate: the unemployed, plus people working part-time who want full-time work, plus people who want a job but have stopped looking. It runs about twice the headline rate.</string>
+    <string name="indicator_u6_danger_note">U-6 averaged 8.3% in 2007 and passed 9.5% in May 2008, five months into that recession; it peaked at 17.2% in 2010 and 22.9% in April 2020.</string>
+
+    <string name="indicator_slackgap_title">Hidden slack (U-6 minus U-3)</string>
+    <string name="indicator_slackgap_short_title">Hidden slack</string>
+    <string name="indicator_slackgap_why">The part of underemployment the headline rate doesn't count: involuntary part-timers and people who want work but aren't looking. When it widens, the job market is weaker than the headline says.</string>
+    <string name="indicator_slackgap_danger_note">The gap averaged 3.7 points in 2007 and passed 5 in October 2008; it peaked at 7.4 in 2011.</string>
+
+    <string name="indicator_primeepop_title">Prime-age employment rate (25–54)</string>
+    <string name="indicator_primeepop_short_title">Prime-age employed</string>
+    <string name="indicator_primeepop_why">The share of all 25-to-54-year-olds who have a job. It can't be flattered by people giving up the search, and the age band leaves out retirement and school, so it is the cleanest single read on how many people are working.</string>
+    <string name="indicator_primeepop_danger_note">It averaged 79.9% in 2007 and fell below 78.5% in October 2008, bottoming at 74.8% at the end of 2009 (69.6% in April 2020).</string>
+
+    <string name="indicator_longterm_title">Long-term unemployed (27+ weeks)</string>
+    <string name="indicator_longterm_short_title">Long-term jobless</string>
+    <string name="indicator_longterm_why">Of the people who are unemployed, the share who have been looking for more than six months. A rising share means jobs are getting harder to find even if layoffs haven't picked up.</string>
+    <string name="indicator_longterm_danger_note">It was about 18% in 2007 and passed 30% in 2009 on the way to 45% in 2010. It sat near 21% through 2019.</string>
+
+    <string name="indicator_insured_title">Insured unemployment rate (continuing claims)</string>
+    <string name="indicator_insured_short_title">Insured unemployment</string>
+    <string name="indicator_insured_why">People still collecting unemployment benefits each week, as a share of the jobs that insurance covers. New claims say how many are being laid off; this says how many are failing to find the next job. As a rate it compares fairly across decades, where the raw count grows with the workforce.</string>
+    <string name="indicator_insured_danger_note">It averaged 1.9% in 2007, crossed 2% in December 2007 as that recession began and 2.5% in August 2008, peaking at 5.0% in mid-2009. It sat near 1.2% through 2019.</string>
+
+    <string name="indicator_quits_title">Quits rate</string>
+    <string name="indicator_quits_short_title">Quits</string>
+    <string name="indicator_quits_why">The share of workers who quit their job each month. People quit when they're confident of finding something better, so it is workers' own vote on the job market.</string>
+    <string name="indicator_quits_danger_note">It was 2.1% in 2007 and fell under 1.8% in late 2008, bottoming at 1.2% in 2009. It peaked at 3.0% in 2021–22.</string>
+
+    <string name="indicator_openings_title">Job openings per unemployed person</string>
+    <string name="indicator_openings_short_title">Openings per seeker</string>
+    <string name="indicator_openings_why">Open jobs divided by people looking for one. Above 1 there are more jobs than job seekers; below 1 there aren't enough to go round.</string>
+    <string name="indicator_openings_danger_note">It averaged 0.66 in 2006–07, fell below 0.5 in May 2008 and bottomed at 0.15 in 2009. It peaked at 2.0 in 2022 and was 1.2 through 2019.</string>
+
+    <string name="indicator_realwages_title">Real weekly earnings growth</string>
+    <string name="indicator_realwages_short_title">Real pay</string>
+    <string name="indicator_realwages_why">How much more the typical full-time worker's weekly pay buys than a year ago, after inflation. Below zero, paychecks are losing to prices.</string>
+    <string name="indicator_realwages_danger_note">Below 0% the median full-time paycheck buys less than a year before, as through 2021–22. In recessions it can rise for a grim reason: lower-paid workers lose their jobs first, which lifts the median of those still working.</string>
+
+    <string name="indicator_temphelp_title">Temporary-help jobs, year over year</string>
+    <string name="indicator_temphelp_short_title">Temp jobs</string>
+    <string name="indicator_temphelp_why">Temp staff are the easiest workers to add and the first to let go, so temp-agency employment tends to turn before the rest of the job market.</string>
+    <string name="indicator_temphelp_danger_note">It turned negative in late 2000 and early 2007, months before the 2001 and 2008 recessions. It also fell through 2019 and by about 8% a year in 2023–24 with no recession following, so it is a lead, not a verdict.</string>
+
+    <string name="indicator_civpart_title">Labor force participation</string>
+    <string name="indicator_civpart_short_title">Participation</string>
+    <string name="indicator_civpart_why">The share of adults working or looking for work. It has drifted down since 2000 mostly because the population is ageing, so it has no warning lines; the prime-age employment rate is the cleaner read.</string>
+
+    <string name="indicator_hy_title">Junk bond spread</string>
+    <string name="indicator_hy_short_title">HY spread</string>
+    <string name="indicator_hy_why">The extra yield the riskiest companies pay over Treasuries. When lenders get scared of defaults this blows out, and companies that need to borrow can't.</string>
+    <string name="indicator_hy_danger_note">Over 6% credit markets are pricing a wave of defaults (2008 peaked near 20%; March 2020 at 11%).</string>
+
+    <string name="indicator_stlfsi_title">Financial stress index</string>
+    <string name="indicator_stlfsi_short_title">Stress index</string>
+    <string name="indicator_stlfsi_why">The St. Louis Fed's weekly blend of 18 market measures — rates, spreads, volatility. Zero is normal.</string>
+    <string name="indicator_stlfsi_danger_note">Above 1 the financial system is under real strain; 2008 hit 5.</string>
+
+    <string name="indicator_vix_title">VIX fear gauge</string>
+    <string name="indicator_vix_short_title">VIX</string>
+    <string name="indicator_vix_why">Expected stock market volatility over the next 30 days, from options prices.</string>
+    <string name="indicator_vix_danger_note">Above 30 the market is afraid; panics push it past 50.</string>
+
+    <string name="indicator_ccdelinq_title">Credit card delinquency</string>
+    <string name="indicator_ccdelinq_short_title">Card delinquency</string>
+    <string name="indicator_ccdelinq_why">The share of credit card balances at least 30 days late at US banks: how stretched households are.</string>
+    <string name="indicator_ccdelinq_danger_note">Above 4.5% households are falling behind as they did going into 2008.</string>
+
+    <string name="indicator_debtgdp_title">Federal debt to GDP</string>
+    <string name="indicator_debtgdp_short_title">Debt / GDP</string>
+    <string name="indicator_debtgdp_why">Everything the federal government owes, against a year of national output.</string>
+    <string name="indicator_debtgdp_danger_note">Over 125% the US is past its World War II peak (119% in 1946), and every rate rise lands on a bigger pile.</string>
+
+    <string name="indicator_interest_title">Interest as share of tax revenue</string>
+    <string name="indicator_interest_short_title">Interest burden</string>
+    <string name="indicator_interest_why">How much of every tax dollar goes to paying interest on the national debt. Money spent on interest can't be spent on anything else, and borrowing to pay it is how debt spirals start.</string>
+    <string name="indicator_interest_danger_note">Above 30% the government spends more on interest than on almost anything else.</string>
+
+    <string name="indicator_m2_title">Money supply growth (M2)</string>
+    <string name="indicator_m2_short_title">M2 growth</string>
+    <string name="indicator_m2_why">How fast the amount of money in the economy is growing. Booms run on it; it shrank for the first time since the 1930s in 2023.</string>
+    <string name="indicator_m2_danger_note">Below 0% money is draining out of the economy — deflationary, and hard on borrowers.</string>
+
+    <string name="indicator_cpi_title">Inflation (CPI)</string>
+    <string name="indicator_cpi_short_title">CPI</string>
+    <string name="indicator_cpi_why">How much prices rose over the past year, across everything a typical household buys.</string>
+    <string name="indicator_cpi_danger_note">Above 5% inflation is eating real incomes and forcing the Fed's hand.</string>
+
+    <string name="indicator_corecpi_title">Core inflation (CPI ex food &amp; energy)</string>
+    <string name="indicator_corecpi_short_title">Core CPI</string>
+    <string name="indicator_corecpi_why">Inflation without the swings of food and gas: the part that sticks.</string>
+
+    <string name="indicator_corepce_title">Core PCE inflation</string>
+    <string name="indicator_corepce_short_title">Core PCE</string>
+    <string name="indicator_corepce_why">The inflation measure the Federal Reserve actually targets at 2%.</string>
+
+    <string name="indicator_dff_title">Fed funds rate</string>
+    <string name="indicator_dff_short_title">Fed funds</string>
+    <string name="indicator_dff_why">The overnight rate the Federal Reserve sets. Every other interest rate in the country starts here.</string>
+
+    <string name="indicator_mortgage_title">30-year mortgage rate</string>
+    <string name="indicator_mortgage_short_title">Mortgage rate</string>
+    <string name="indicator_mortgage_why">Freddie Mac's weekly average 30-year fixed rate: what buying a house costs to finance.</string>
+    <string name="indicator_mortgage_danger_note">Above 7.5% housing affordability is at its worst since the 1980s.</string>
+
+    <string name="indicator_homeprices_title">Home prices (Case-Shiller)</string>
+    <string name="indicator_homeprices_short_title">Home prices</string>
+    <string name="indicator_homeprices_why">US home prices over the past year. Homes are most families' biggest asset; falling prices were the fuse in 2008.</string>
+    <string name="indicator_homeprices_danger_note">Prices down 5% or more on a year ago means falling household wealth and underwater mortgages.</string>
+
+    <string name="indicator_dgs10_title">10-year Treasury yield</string>
+    <string name="indicator_dgs10_short_title">10Y yield</string>
+    <string name="indicator_dgs10_why">The rate the world's safest borrower pays for ten years, and the anchor for mortgages and corporate debt. A disorderly surge means buyers are demanding more to hold US debt.</string>
+    <string name="indicator_dgs10_danger_note">Above 5.5% borrowing costs are at levels last seen before 2008.</string>
+
+    <string name="indicator_dgs2_title">2-year Treasury yield</string>
+    <string name="indicator_dgs2_short_title">2Y yield</string>
+    <string name="indicator_dgs2_why">Where markets expect the Fed's rate to be over the next two years.</string>
+
+    <string name="indicator_dgs30_title">30-year Treasury yield</string>
+    <string name="indicator_dgs30_short_title">30Y yield</string>
+    <string name="indicator_dgs30_why">The long bond: what investors want to lend to Washington for a generation.</string>
+</resources>

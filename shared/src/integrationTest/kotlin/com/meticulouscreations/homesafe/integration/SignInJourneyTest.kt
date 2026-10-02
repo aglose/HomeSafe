@@ -4,7 +4,6 @@ import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
-import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_CONNECT_TEST_TAG
@@ -41,7 +40,7 @@ class SignInJourneyTest {
         signIn.connect()
 
         signIn.awaitError("Login failed")
-        assertFalse(exists(hasText(ConnectionRoute.TAILSCALE.label)), "no shell behind a refused password")
+        assertFalse(exists(hasText("Tailscale")), "no shell behind a refused password")
         assertFalse(server.received { it.path == "/api/config" }, "nothing past the login is asked for")
     }
 
@@ -68,7 +67,7 @@ class SignInJourneyTest {
         awaitUntil("the form to be back and usable after the failed attempt", timeout = 30.seconds) {
             tapped.elapsedNow() > 4.seconds && exists(hasTestTag(SIGN_IN_CONNECT_TEST_TAG) and isEnabled())
         }
-        assertFalse(exists(hasText(ConnectionRoute.TAILSCALE.label)), "no shell without a server")
+        assertFalse(exists(hasText("Tailscale")), "no shell without a server")
         assertTrue(server.requests.isEmpty(), "the fake server was never involved: ${server.requests}")
     }
 
@@ -82,7 +81,7 @@ class SignInJourneyTest {
         // The skeleton is the shell's own chrome with a status icon where the route badge will go.
         awaitNode(hasContentDescription("Status"), "the skeleton's status icon")
         awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
-        assertFalse(exists(hasText(ConnectionRoute.TAILSCALE.label)), "not signed in yet")
+        assertFalse(exists(hasText("Tailscale")), "not signed in yet")
 
         shell.awaitSignedIn()
         shell.awaitCameraCard("back_yard", "Back Yard")

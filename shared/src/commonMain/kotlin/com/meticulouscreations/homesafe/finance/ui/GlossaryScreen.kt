@@ -33,7 +33,16 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.finance.domain.Explainer
 import com.meticulouscreations.homesafe.finance.domain.Explainers
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.explain_click_label
+import homesafe.shared.generated.resources.glossary_no_matches
+import homesafe.shared.generated.resources.glossary_search_description
+import homesafe.shared.generated.resources.glossary_search_hint
+import homesafe.shared.generated.resources.glossary_subtitle
+import homesafe.shared.generated.resources.glossary_title
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The jargon buster: every term the finance app uses, in plain words, grouped by topic and
@@ -46,15 +55,20 @@ internal fun GlossaryScreen(contentPadding: PaddingValues) {
     val open = LocalExplainer.current
     var query by rememberSaveable { mutableStateOf("") }
     val q = query.trim().lowercase()
-    val matches = Explainers.glossary.filter { e ->
-        q.isEmpty() || e.title.lowercase().contains(q) || e.technical.lowercase().contains(q) || e.oneLiner.lowercase().contains(q)
+    // The words are resources, so they're read in the reader's language first; search and the
+    // alphabetical order within each topic both work on what the reader sees.
+    val terms = Explainers.glossary
+        .map { e -> GlossaryTerm(e, stringResource(e.title), e.technical?.let { stringResource(it) }, stringResource(e.oneLiner)) }
+        .sortedWith(compareBy({ it.explainer.topic.ordinal }, { it.title }))
+    val matches = terms.filter { t ->
+        q.isEmpty() || t.title.lowercase().contains(q) || t.technical.orEmpty().lowercase().contains(q) || t.oneLiner.lowercase().contains(q)
     }
     LazyColumn(contentPadding = contentPadding) {
         item {
             Column(Modifier.padding(horizontal = PageGutter, vertical = 8.dp)) {
-                Text("Jargon buster", style = type.title, color = colors.textPrimary)
+                Text(stringResource(Res.string.glossary_title), style = type.title, color = colors.textPrimary)
                 Spacer(Modifier.height(4.dp))
-                Text("Every term in this app, in plain English. Tap one for the full story.", style = type.body, color = colors.textSecondary)
+                Text(stringResource(Res.string.glossary_subtitle), style = type.body, color = colors.textSecondary)
                 Spacer(Modifier.height(14.dp))
                 Row(
                     Modifier
@@ -67,28 +81,30 @@ internal fun GlossaryScreen(contentPadding: PaddingValues) {
                     Icon(Icons.Filled.Search, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
                     Box(Modifier.weight(1f)) {
-                        if (query.isEmpty()) Text("Search, e.g. \"yield curve\"", style = type.body, color = colors.textTertiary)
+                        if (query.isEmpty()) Text(stringResource(Res.string.glossary_search_hint), style = type.body, color = colors.textTertiary)
+                        val searchDescription = stringResource(Res.string.glossary_search_description)
                         BasicTextField(
                             value = query,
                             onValueChange = { query = it },
                             singleLine = true,
                             textStyle = type.body.copy(color = colors.textPrimary),
                             cursorBrush = SolidColor(colors.accent),
-                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Search terms" },
+                            modifier = Modifier.fillMaxWidth().semantics { contentDescription = searchDescription },
                         )
                     }
                 }
             }
         }
         var lastTopic: Any? = null
-        matches.forEach { e ->
+        matches.forEach { term ->
+            val e = term.explainer
             if (e.topic != lastTopic) {
                 lastTopic = e.topic
                 item(key = "topic-${e.topic.name}") {
                     Row(Modifier.padding(horizontal = PageGutter).padding(top = 22.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(topicColor(e.topic, colors)))
                         Spacer(Modifier.width(8.dp))
-                        Text(e.topic.title.uppercase(), style = type.micro, color = colors.textSecondary)
+                        Text(stringResource(e.topic.title).uppercase(), style = type.micro, color = colors.textSecondary)
                     }
                 }
             }
@@ -96,7 +112,7 @@ internal fun GlossaryScreen(contentPadding: PaddingValues) {
                 Row(
                     Modifier
                         .fillMaxWidth()
-                        .clickable(onClickLabel = "Explain ${e.title}") { open(e.id) }
+                        .clickable(onClickLabel = stringResource(Res.string.explain_click_label, term.title)) { open(e.id) }
                         .padding(horizontal = PageGutter, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -104,19 +120,22 @@ internal fun GlossaryScreen(contentPadding: PaddingValues) {
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Row(verticalAlignment = Alignment.Bottom) {
-                            Text(e.title, style = type.bodyStrong, color = colors.textPrimary)
-                            if (e.technical.isNotEmpty() && e.technical != e.title) {
+                            Text(term.title, style = type.bodyStrong, color = colors.textPrimary)
+                            if (term.technical != null && term.technical != term.title) {
                                 Spacer(Modifier.width(6.dp))
-                                Text(e.technical, style = type.micro, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(term.technical, style = type.micro, color = colors.textTertiary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             }
                         }
-                        Text(e.oneLiner, style = type.label, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(term.oneLiner, style = type.label, color = colors.textSecondary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
         }
         if (matches.isEmpty()) {
-            item { FinePrint("Nothing matches \"$query\".") }
+            item { FinePrint(stringResource(Res.string.glossary_no_matches, query)) }
         }
     }
 }
+
+/** An explainer's glossary words, read in the reader's language so they can be searched and sorted. */
+private data class GlossaryTerm(val explainer: Explainer, val title: String, val technical: String?, val oneLiner: String)

@@ -28,6 +28,8 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveServerOverviewUseC
 import com.meticulouscreations.homesafe.domain.usecase.ObserveSettingsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
@@ -42,6 +44,12 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_history_error
+import homesafe.shared.generated.resources.camera_span_12h
+import homesafe.shared.generated.resources.camera_span_1h
+import homesafe.shared.generated.resources.camera_span_24h
+import homesafe.shared.generated.resources.camera_span_3h
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -63,6 +71,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.time.Clock
@@ -145,11 +154,11 @@ internal fun snapshotEpochSeconds(epochSeconds: Double): Double =
 internal const val SNAPSHOT_STEP_SECONDS = 2.0
 
 /** How much history the timeline shows, ending at "now". */
-enum class TimelineSpan(val label: String, val seconds: Long, val tickSeconds: Long) {
-    ONE_HOUR("1h", 3_600, 900),
-    THREE_HOURS("3h", 10_800, 1_800),
-    TWELVE_HOURS("12h", 43_200, 7_200),
-    ONE_DAY("24h", 86_400, 14_400),
+enum class TimelineSpan(val label: StringResource, val seconds: Long, val tickSeconds: Long) {
+    ONE_HOUR(Res.string.camera_span_1h, 3_600, 900),
+    THREE_HOURS(Res.string.camera_span_3h, 10_800, 1_800),
+    TWELVE_HOURS(Res.string.camera_span_12h, 43_200, 7_200),
+    ONE_DAY(Res.string.camera_span_24h, 86_400, 14_400),
 }
 
 /**
@@ -183,7 +192,8 @@ data class PlaybackUiState(
     val hasAudio: Boolean = false,
     /** The user's saved live-stream choice ([PlaybackPreferences.quality]); see [planLiveJoin]. */
     val quality: StreamQuality = StreamQuality.AUTO,
-    val historyError: String? = null,
+    /** Why the timeline's recordings couldn't be loaded, ready to show; null when they could. */
+    val historyError: UiText? = null,
     val playerRequest: PlayerRequest? = null,
 ) {
     val isLive: Boolean get() = playlist == null
@@ -678,7 +688,7 @@ class CameraDetailViewModel(
                 _playback.update { it.copy(segments = loaded.segments, historyError = null) }
             }
             .onFailure { error ->
-                _playback.update { it.copy(historyError = error.message ?: "Couldn't load recordings") }
+                _playback.update { it.copy(historyError = error.userMessage(Res.string.camera_history_error)) }
             }
     }
 

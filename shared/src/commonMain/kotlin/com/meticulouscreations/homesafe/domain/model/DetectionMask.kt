@@ -1,5 +1,17 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.zones_layer_motion
+import homesafe.shared.generated.resources.zones_layer_motion_description
+import homesafe.shared.generated.resources.zones_layer_motion_inline
+import homesafe.shared.generated.resources.zones_layer_objects
+import homesafe.shared.generated.resources.zones_layer_objects_description
+import homesafe.shared.generated.resources.zones_layer_objects_inline
+import homesafe.shared.generated.resources.zones_layer_zones
+import homesafe.shared.generated.resources.zones_layer_zones_description
+import homesafe.shared.generated.resources.zones_layer_zones_inline
+import org.jetbrains.compose.resources.StringResource
+
 /**
  * A point in a camera's detect frame, as fractions of its width and height (0..1). Frigate
  * stores every mask and zone this way, so a polygon drawn on a phone-sized preview means the
@@ -68,16 +80,26 @@ data class MaskPolygon(val points: List<MaskPoint>) {
  * The three kinds of polygon Frigate supports on a camera: one that names an area, two that
  * make Frigate ignore an area. Listed in the order the editor shows them — zones first, because
  * that's what most people come here to draw. See each entry's [description].
+ *
+ * [label] names the layer on its chip, [inlineName] is how it reads inside a sentence ("Unsaved
+ * changes to zones"), and [isIgnoreArea] picks between the editor's "zone" and "ignore area"
+ * sentences.
  */
-enum class MaskLayer(val label: String, val noun: String, val description: String) {
+enum class MaskLayer(
+    val label: StringResource,
+    val inlineName: StringResource,
+    val description: StringResource,
+    val isIgnoreArea: Boolean,
+) {
     /**
      * Named areas. Frigate tags every tracked object with the zones it's in, which is what lets
      * an alert or a description say "in the driveway". Zones hide nothing.
      */
     ZONES(
-        label = "Zones",
-        noun = "zone",
-        description = "Named areas like the driveway or the lawn. Every detection is tagged with the zones it's in, so alerts can say where something happened. Zones never hide anything.",
+        label = Res.string.zones_layer_zones,
+        inlineName = Res.string.zones_layer_zones_inline,
+        description = Res.string.zones_layer_zones_description,
+        isIgnoreArea = false,
     ),
 
     /**
@@ -85,9 +107,10 @@ enum class MaskLayer(val label: String, val noun: String, val description: Strin
      * the polygon is discarded. This is the "never report objects here" tool.
      */
     OBJECT_MASK(
-        label = "Ignore objects",
-        noun = "ignore area",
-        description = "Anything detected with its feet inside this area is dropped as if it weren't there. Use it for a road or a neighbour's yard you never want alerts about.",
+        label = Res.string.zones_layer_objects,
+        inlineName = Res.string.zones_layer_objects_inline,
+        description = Res.string.zones_layer_objects_description,
+        isIgnoreArea = true,
     ),
 
     /**
@@ -96,9 +119,10 @@ enum class MaskLayer(val label: String, val noun: String, val description: Strin
      * elsewhere triggers a region covering the area — it's a false-positive and CPU saver.
      */
     MOTION_MASK(
-        label = "Ignore motion",
-        noun = "ignore area",
-        description = "Movement inside this area doesn't wake the detector. Use it for trees, flags and on-screen timestamps. It doesn't hide objects by itself.",
+        label = Res.string.zones_layer_motion,
+        inlineName = Res.string.zones_layer_motion_inline,
+        description = Res.string.zones_layer_motion_description,
+        isIgnoreArea = true,
     ),
 }
 

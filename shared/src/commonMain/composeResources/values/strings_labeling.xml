@@ -1,0 +1,234 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Teaching Frigate: the classifier labelling queue (labeling_), the face library (faces_), tagging
+  cars on a camera frame and what the relay's car check says (cars_), and the detection-zones editor
+  (zones_). Category, person, car and zone names are data and arrive as arguments.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Classifier labelling screen -->
+    <string name="labeling_subtitle">Teach Frigate what it's looking at</string>
+    <string name="labeling_refresh">Refresh</string>
+    <string name="labeling_load_failed">Couldn't load the classifier: %1$s</string>
+    <string name="labeling_queue_empty_title">Nothing waiting to be labelled</string>
+    <plurals name="labeling_queue_waiting">
+        <item quantity="one">%1$d waiting to be labelled</item>
+        <item quantity="other">%1$d waiting to be labelled</item>
+    </plurals>
+    <string name="labeling_queue_only_not_ours">Until you add a category above, the only thing to file these under is "Not ours".</string>
+    <string name="labeling_queue_empty_body">Frigate saves a crop every time this model looks at a %1$s. They'll show up here.</string>
+    <!-- Between the object labels a model runs on: "car or truck". -->
+    <string name="labeling_objects_or_separator"> or </string>
+    <plurals name="labeling_confident_more">
+        <item quantity="one">%1$d more the model is sure about</item>
+        <item quantity="other">%1$d more the model is sure about</item>
+    </plurals>
+    <string name="labeling_confident_body">Cars that aren't yours, and yours once their plate or looks confirmed it. A car you've never named looks the same to the model, so show them to teach it a new one.</string>
+    <string name="labeling_show">Show</string>
+    <string name="labeling_hide">Hide</string>
+    <string name="labeling_clear_count">Clear %1$d</string>
+    <string name="labeling_categories_title">Categories</string>
+    <!-- A category chip: its name and how many images are filed under it. -->
+    <string name="labeling_category_count">%1$s · %2$d</string>
+    <string name="labeling_new_category_label">New category, e.g. Ron and Judy's Mercedes</string>
+    <string name="labeling_add">Add</string>
+    <string name="labeling_not_ours_explainer">"Not ours" is for any %1$s you don't care about. It teaches the model what to ignore and never becomes a name.</string>
+    <!-- The category name for Frigate's reserved `none`: one of these objects, but not one of the household's. -->
+    <string name="labeling_not_ours">Not ours</string>
+    <string name="labeling_never_trained">Never trained</string>
+    <plurals name="labeling_new_since_training">
+        <item quantity="one">%1$d new since last training</item>
+        <item quantity="other">%1$d new since last training</item>
+    </plurals>
+    <string name="labeling_up_to_date">Up to date</string>
+    <string name="labeling_train_hint">Takes about half a minute on the server. Frigate switches to the new model when it's done.</string>
+    <string name="labeling_train_needs_two">Needs two categories with images before it can train.</string>
+    <string name="labeling_train">Train</string>
+    <string name="labeling_model_no_guess">Model hasn't guessed</string>
+    <string name="labeling_model_thinks_score">Model thinks: %1$s (%2$d%)</string>
+    <string name="labeling_model_thinks">Model thinks: %1$s</string>
+    <string name="labeling_frigate_calls_it">Frigate calls it %1$s</string>
+    <string name="labeling_filed_as">Filed as %1$s</string>
+    <string name="labeling_discard_crop">Discard this crop</string>
+    <string name="labeling_cars_title">What your cars look like</string>
+    <string name="labeling_cars_body">A 100% guess only counts once its plate, or its make, model and colour, match. The rest wait here for you.</string>
+    <string name="labeling_edit_car_action">Edit %1$s</string>
+    <string name="labeling_car_not_described">Not described yet</string>
+    <!-- What's on file for a car: its looks ("blue Tesla Model Y"), and that a plate is on file too. -->
+    <string name="labeling_car_looks_and_plate">%1$s · plate on file</string>
+    <string name="labeling_car_plate_on_file">plate on file</string>
+    <string name="labeling_car_describe">Describe</string>
+    <string name="labeling_car_edit">Edit</string>
+    <string name="labeling_profile_make">Make</string>
+    <string name="labeling_profile_any_make">Any make</string>
+    <string name="labeling_profile_model_label">Model, e.g. Model Y</string>
+    <string name="labeling_profile_colour">Colour</string>
+    <string name="labeling_profile_plate">Licence plate</string>
+    <string name="labeling_profile_plate_hint">Names the car whenever the camera can read it, even at night</string>
+    <string name="labeling_profile_forget">Forget</string>
+    <string name="labeling_plate_too_short">A plate needs at least %1$d letters or digits</string>
+    <string name="labeling_save_failed">Couldn't save: %1$s</string>
+    <string name="labeling_profile_forget_failed">Couldn't forget: %1$s</string>
+    <plurals name="labeling_cleared_confident">
+        <item quantity="one">Cleared %1$d crop the model was sure about</item>
+        <item quantity="other">Cleared %1$d crops the model was sure about</item>
+    </plurals>
+    <string name="labeling_clear_failed">Couldn't clear: %1$s</string>
+    <string name="labeling_category_added">Added category %1$s</string>
+    <string name="labeling_category_add_failed">Couldn't add category: %1$s</string>
+    <string name="labeling_train_failed">Couldn't train: %1$s</string>
+    <plurals name="labeling_trained">
+        <item quantity="one">Trained on %1$d image. Frigate is using the new model now.</item>
+        <item quantity="other">Trained on %1$d images. Frigate is using the new model now.</item>
+    </plurals>
+    <string name="labeling_training_slow">Training is taking longer than expected; pull to refresh in a minute.</string>
+
+    <!-- Labelling from the camera screen -->
+    <string name="labeling_live_title">On camera now</string>
+    <string name="labeling_live_body">Name a car while it's in view. The model learns it at the next training.</string>
+
+    <!-- Face library -->
+    <string name="faces_title">Faces</string>
+    <string name="faces_subtitle">Teach Frigate who's who</string>
+    <string name="faces_refresh">Refresh</string>
+    <string name="faces_load_failed">Couldn't load the face library: %1$s</string>
+    <string name="faces_queue_empty_title">No faces waiting</string>
+    <plurals name="faces_queue_waiting">
+        <item quantity="one">%1$d face waiting for a name</item>
+        <item quantity="other">%1$d faces waiting for a name</item>
+    </plurals>
+    <string name="faces_queue_empty_body">Frigate saves every face it gets a good look at, with its best guess. Walk past a camera facing it and check back in a minute.</string>
+    <string name="faces_people_title">People</string>
+    <string name="faces_people_empty">Nobody yet. Add the people who live here, then file their faces below as Frigate catches them.</string>
+    <!-- A person chip: their name and how many faces are registered for them. -->
+    <string name="faces_person_count">%1$s · %2$d</string>
+    <string name="faces_new_person_label">New person, e.g. Andrew</string>
+    <string name="faces_add">Add</string>
+    <string name="faces_explainer">A face is recognised the moment it's filed — no training step. Five to ten faces per person from different cameras, distances and lighting makes it dependable. Tap a name to see or prune their faces.</string>
+    <string name="faces_person_no_faces">%1$s has no faces yet. File one from the list below.</string>
+    <string name="faces_person_face_description">%1$s's face</string>
+    <string name="faces_remove_face">Remove this face</string>
+    <string name="faces_not_recognised">Frigate doesn't recognise this face</string>
+    <string name="faces_thinks_score">Frigate thinks: %1$s (%2$d%)</string>
+    <string name="faces_thinks">Frigate thinks: %1$s</string>
+    <string name="faces_filed_as">Filed as %1$s</string>
+    <string name="faces_add_person_first">Add a person above to file this face.</string>
+    <string name="faces_not_one_of_us">Not one of us</string>
+    <string name="faces_person_added">Added %1$s. File a face under them to start recognising.</string>
+    <string name="faces_add_failed">Couldn't add: %1$s</string>
+    <string name="faces_delete_failed">Couldn't delete: %1$s</string>
+    <string name="faces_save_failed">Couldn't save: %1$s</string>
+
+    <!-- Tagging cars on a camera frame -->
+    <string name="cars_title">Tag cars in view</string>
+    <string name="cars_new_frame">New frame</string>
+    <string name="cars_camera_frame">Camera frame</string>
+    <!-- Drawn over a box Frigate is tracking that it hasn't named. -->
+    <string name="cars_box_unnamed">Car · no name</string>
+    <string name="cars_how_to_tag">Tap a car Frigate has boxed, or drag a rectangle round one it missed.</string>
+    <string name="cars_tracking_none">Frigate isn't tracking any cars here right now.</string>
+    <plurals name="cars_tracking">
+        <item quantity="one">Frigate is tracking %1$d car here.</item>
+        <item quantity="other">Frigate is tracking %1$d cars here.</item>
+    </plurals>
+    <string name="cars_whose_car">Whose car is this?</string>
+    <string name="cars_selected_untracked">Frigate isn't tracking a car here, so this only teaches the model.</string>
+    <string name="cars_selected_unnamed">Frigate is tracking it but hasn't named it.</string>
+    <string name="cars_selected_named">Frigate calls it %1$s.</string>
+    <string name="cars_load_classifiers_failed">Couldn't load the classifiers: %1$s</string>
+    <string name="cars_no_car_classifier">This server has no classifier that runs on cars.</string>
+    <string name="cars_load_known_cars_failed">Couldn't load the known cars: %1$s</string>
+    <string name="cars_load_camera_failed">Couldn't load the camera: %1$s</string>
+    <string name="cars_unreadable_frame">The camera sent a picture the app can't read.</string>
+    <!-- After a tag: "Tagged as Sarah's Car." then what it did to In view now, then to training. -->
+    <string name="cars_tagged">Tagged as %1$s. %2$s %3$s</string>
+    <string name="cars_tagged_not_ours">Tagged as not ours. %1$s %2$s</string>
+    <string name="cars_in_view_untracked">Frigate isn't tracking a car there, so it can't show in view until it detects one.</string>
+    <string name="cars_in_view_rename_failed">Couldn't rename the tracked car; it'll show once the model recognises it.</string>
+    <string name="cars_in_view_removed">Taken off In view now.</string>
+    <string name="cars_in_view_shown">Showing as in view now.</string>
+    <string name="cars_retraining">Retraining now.</string>
+    <string name="cars_saved_for_training">Saved for the next training.</string>
+    <string name="cars_tag_failed">Couldn't save the tag: %1$s</string>
+
+    <!-- A car's colour, as the vision model names it; used inside sentences, so lower case in English. -->
+    <string name="cars_colour_white">white</string>
+    <string name="cars_colour_black">black</string>
+    <string name="cars_colour_grey">grey</string>
+    <string name="cars_colour_silver">silver</string>
+    <string name="cars_colour_red">red</string>
+    <string name="cars_colour_blue">blue</string>
+    <string name="cars_colour_green">green</string>
+    <string name="cars_colour_brown">brown</string>
+    <string name="cars_colour_beige">beige</string>
+    <string name="cars_colour_gold">gold</string>
+    <string name="cars_colour_yellow">yellow</string>
+    <string name="cars_colour_orange">orange</string>
+    <string name="cars_colour_purple">purple</string>
+    <!-- A colour (%1$s) and a make and model (%2$s, e.g. "Tesla Model Y"): "blue Tesla Model Y". -->
+    <string name="cars_looks_colour_car">%1$s %2$s</string>
+
+    <!-- What the relay's car check made of a crop the classifier named. %1$s/%2$s are car names or looks. -->
+    <string name="cars_check_unchecked">Sure it's %1$s, but not confirmed by its plate or looks yet</string>
+    <string name="cars_check_confirmed_plate">Confirmed by its plate</string>
+    <string name="cars_check_confirmed_plate_saw">Confirmed by its plate: looked like a %1$s</string>
+    <string name="cars_check_confirmed_looks">Confirmed by its looks</string>
+    <string name="cars_check_confirmed_looks_saw">Confirmed by its looks: looked like a %1$s</string>
+    <string name="cars_check_other_car_plate">Car check: %1$s by its plate, not %2$s</string>
+    <string name="cars_check_other_car_looks">Car check: %1$s by its looks, not %2$s</string>
+    <string name="cars_check_mismatch_saw">Car check: looked like a %1$s, not %2$s</string>
+    <string name="cars_check_mismatch">Car check: didn't look like it, not %1$s</string>
+    <string name="cars_check_unconfirmed_saw">Car check couldn't confirm %1$s: looked like a %2$s</string>
+    <string name="cars_check_unconfirmed_dark">Car check couldn't confirm %1$s: too dark to tell its colour</string>
+
+    <!-- Detection zones editor -->
+    <string name="zones_title">Detection zones</string>
+    <string name="zones_layer_zones">Zones</string>
+    <string name="zones_layer_objects">Ignore objects</string>
+    <string name="zones_layer_motion">Ignore motion</string>
+    <!-- The layers as they read inside "Unsaved changes to …". -->
+    <string name="zones_layer_zones_inline">zones</string>
+    <string name="zones_layer_objects_inline">ignore objects</string>
+    <string name="zones_layer_motion_inline">ignore motion</string>
+    <string name="zones_layer_zones_description">Named areas like the driveway or the lawn. Every detection is tagged with the zones it's in, so alerts can say where something happened. Zones never hide anything.</string>
+    <string name="zones_layer_objects_description">Anything detected with its feet inside this area is dropped as if it weren't there. Use it for a road or a neighbour's yard you never want alerts about.</string>
+    <string name="zones_layer_motion_description">Movement inside this area doesn't wake the detector. Use it for trees, flags and on-screen timestamps. It doesn't hide objects by itself.</string>
+    <!-- A layer chip: its name and how many shapes it has. -->
+    <string name="zones_layer_count">%1$s · %2$d</string>
+    <string name="zones_leave_title">Save your changes?</string>
+    <string name="zones_leave_body_zones">You've edited this camera's zones but haven't saved. Frigate only uses what's saved.</string>
+    <string name="zones_leave_body_ignore_areas">You've edited this camera's ignore areas but haven't saved. Frigate only uses what's saved.</string>
+    <string name="zones_save_and_leave">Save and leave</string>
+    <string name="zones_keep_editing">Keep editing</string>
+    <string name="zones_discard">Discard</string>
+    <string name="zones_refresh_frame">Refresh frame</string>
+    <string name="zones_add_zone">Add zone</string>
+    <string name="zones_add_ignore_area">Add ignore area</string>
+    <string name="zones_remove_corner">Remove corner</string>
+    <string name="zones_saving">Saving to Frigate…</string>
+    <string name="zones_save_failed">Couldn't save: %1$s</string>
+    <string name="zones_unsaved_one">Unsaved changes to %1$s</string>
+    <string name="zones_unsaved_two">Unsaved changes to %1$s and %2$s</string>
+    <string name="zones_unsaved_three">Unsaved changes to %1$s, %2$s and %3$s</string>
+    <string name="zones_saved_zones">Saved. Frigate is using the new zones now.</string>
+    <string name="zones_saved_ignore_areas">Saved. Frigate is using the new ignore areas now.</string>
+    <string name="zones_hint_place_corners">Tap the frame to place corners (at least three).</string>
+    <string name="zones_hint_keep_adding">Keep adding corners, or tap the first one (or Done) to close the shape.</string>
+    <string name="zones_hint_corner_minimum">A shape needs at least three corners. Drag this one, or tap a dot on an edge to add another.</string>
+    <string name="zones_hint_corner_selected">Drag this corner, or Remove corner. Tap a small dot on an edge to add one there.</string>
+    <string name="zones_hint_zone_selected">Drag corners to fit the area; tap a small dot on an edge to add a corner. Name it below.</string>
+    <string name="zones_hint_area_selected">Drag corners to fit the area; tap a small dot on an edge to add a corner. Delete removes the area.</string>
+    <string name="zones_hint_no_zones">No zones yet. Tap the frame to outline an area like the driveway.</string>
+    <string name="zones_hint_nothing_ignored">Nothing ignored yet. Tap the frame to outline an area.</string>
+    <string name="zones_hint_select_zone">Tap a zone to select it, or tap empty space to start a new one.</string>
+    <string name="zones_hint_select_ignore_area">Tap an ignore area to select it, or tap empty space to start a new one.</string>
+    <string name="zones_any_object">Any object</string>
+    <!-- Badge on a zone that hasn't been saved to Frigate yet. -->
+    <string name="zones_new_badge">NEW</string>
+    <string name="zones_name_label">Name</string>
+    <string name="zones_frigate_key">Frigate key: %1$s</string>
+    <string name="zones_counts_objects">Counts these objects</string>
+    <string name="zones_load_failed">Couldn't load detection zones: %1$s</string>
+    <!-- The name a newly drawn zone gets until it's renamed; also saved to Frigate if it never is. -->
+    <string name="zones_placeholder_name">Zone %1$d</string>
+</resources>

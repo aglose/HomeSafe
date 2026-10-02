@@ -68,15 +68,70 @@ import com.meticulouscreations.homesafe.domain.model.CarProfiles
 import com.meticulouscreations.homesafe.domain.model.ClassifierDataset
 import com.meticulouscreations.homesafe.domain.model.CropBox
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
+import com.meticulouscreations.homesafe.domain.model.carColourName
 import com.meticulouscreations.homesafe.domain.model.checkNote
 import com.meticulouscreations.homesafe.domain.model.makeName
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.common_save
+import homesafe.shared.generated.resources.labeling_add
+import homesafe.shared.generated.resources.labeling_car_describe
+import homesafe.shared.generated.resources.labeling_car_edit
+import homesafe.shared.generated.resources.labeling_car_looks_and_plate
+import homesafe.shared.generated.resources.labeling_car_not_described
+import homesafe.shared.generated.resources.labeling_car_plate_on_file
+import homesafe.shared.generated.resources.labeling_cars_body
+import homesafe.shared.generated.resources.labeling_cars_title
+import homesafe.shared.generated.resources.labeling_categories_title
+import homesafe.shared.generated.resources.labeling_category_count
+import homesafe.shared.generated.resources.labeling_clear_count
+import homesafe.shared.generated.resources.labeling_confident_body
+import homesafe.shared.generated.resources.labeling_confident_more
+import homesafe.shared.generated.resources.labeling_discard_crop
+import homesafe.shared.generated.resources.labeling_edit_car_action
+import homesafe.shared.generated.resources.labeling_filed_as
+import homesafe.shared.generated.resources.labeling_frigate_calls_it
+import homesafe.shared.generated.resources.labeling_hide
+import homesafe.shared.generated.resources.labeling_model_no_guess
+import homesafe.shared.generated.resources.labeling_model_thinks
+import homesafe.shared.generated.resources.labeling_model_thinks_score
+import homesafe.shared.generated.resources.labeling_never_trained
+import homesafe.shared.generated.resources.labeling_new_category_label
+import homesafe.shared.generated.resources.labeling_new_since_training
+import homesafe.shared.generated.resources.labeling_not_ours
+import homesafe.shared.generated.resources.labeling_not_ours_explainer
+import homesafe.shared.generated.resources.labeling_objects_or_separator
+import homesafe.shared.generated.resources.labeling_profile_any_make
+import homesafe.shared.generated.resources.labeling_profile_colour
+import homesafe.shared.generated.resources.labeling_profile_forget
+import homesafe.shared.generated.resources.labeling_profile_make
+import homesafe.shared.generated.resources.labeling_profile_model_label
+import homesafe.shared.generated.resources.labeling_profile_plate
+import homesafe.shared.generated.resources.labeling_profile_plate_hint
+import homesafe.shared.generated.resources.labeling_queue_empty_body
+import homesafe.shared.generated.resources.labeling_queue_empty_title
+import homesafe.shared.generated.resources.labeling_queue_only_not_ours
+import homesafe.shared.generated.resources.labeling_queue_waiting
+import homesafe.shared.generated.resources.labeling_refresh
+import homesafe.shared.generated.resources.labeling_show
+import homesafe.shared.generated.resources.labeling_subtitle
+import homesafe.shared.generated.resources.labeling_train
+import homesafe.shared.generated.resources.labeling_train_hint
+import homesafe.shared.generated.resources.labeling_train_needs_two
+import homesafe.shared.generated.resources.labeling_up_to_date
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Teach a Frigate classifier by labelling what it saw. Each queued crop shows the model's own
@@ -94,14 +149,14 @@ fun ClassifierLabelingScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Header(title = subLabelDisplayName(modelName), subtitle = "Teach Frigate what it's looking at", onBack = onBack, onRefresh = viewModel::load)
+        Header(title = subLabelDisplayName(modelName), subtitle = stringResource(Res.string.labeling_subtitle), onBack = onBack, onRefresh = viewModel::load)
 
         when {
             uiState.isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
 
-            uiState.loadError != null -> ErrorPanel(message = uiState.loadError.orEmpty(), onRetry = viewModel::load)
+            uiState.loadError != null -> ErrorPanel(message = uiState.loadError?.resolve().orEmpty(), onRetry = viewModel::load)
 
             else -> uiState.dataset?.let { data -> Body(uiState = uiState, data = data, viewModel = viewModel) }
         }
@@ -132,14 +187,14 @@ private fun Header(title: String, subtitle: String, onBack: () -> Unit, onRefres
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = MaterialTheme.colorScheme.primary)
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, textAlign = TextAlign.Center)
             Text(text = subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         IconButton(onClick = onRefresh) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.labeling_refresh), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -165,13 +220,17 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
         item(key = "queue-title", contentType = "title") {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = if (uncertain.isEmpty()) "Nothing waiting to be labelled" else "${uncertain.size} waiting to be labelled",
+                    text = if (uncertain.isEmpty()) {
+                        stringResource(Res.string.labeling_queue_empty_title)
+                    } else {
+                        pluralStringResource(Res.plurals.labeling_queue_waiting, uncertain.size, uncertain.size)
+                    },
                     style = MaterialTheme.typography.headlineSmall,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 if (categories.none { it != ClassifierDataset.NONE_CATEGORY }) {
                     Text(
-                        text = "Until you add a category above, the only thing to file these under is \"Not ours\".",
+                        text = stringResource(Res.string.labeling_queue_only_not_ours),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -181,7 +240,7 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
         if (data.queue.isEmpty()) {
             item(key = "queue-empty", contentType = "title") {
                 Text(
-                    text = "Frigate saves a crop every time this model looks at a ${data.model.objects.joinToString(" or ")}. They'll show up here.",
+                    text = stringResource(Res.string.labeling_queue_empty_body, objectsOr(data.model.objects)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -235,23 +294,23 @@ private fun Body(uiState: ClassifierLabelingUiState, data: ClassifierDataset, vi
 internal fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onToggle: () -> Unit, onClear: (() -> Unit)?) {
     Card {
         Text(
-            text = "$count more the model is sure about",
+            text = pluralStringResource(Res.plurals.labeling_confident_more, count, count),
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "Cars that aren't yours, and yours once their plate or looks confirmed it. A car you've never named looks the same to the model, so show them to teach it a new one.",
+            text = stringResource(Res.string.labeling_confident_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedButton(onClick = onToggle, enabled = !busy) { Text(if (expanded) "Hide" else "Show") }
+            OutlinedButton(onClick = onToggle, enabled = !busy) { Text(stringResource(if (expanded) Res.string.labeling_hide else Res.string.labeling_show)) }
             if (onClear != null) {
                 TextButton(onClick = onClear, enabled = !busy) {
                     if (busy) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                     } else {
-                        Text("Clear $count")
+                        Text(stringResource(Res.string.labeling_clear_count, count))
                     }
                 }
             }
@@ -263,25 +322,29 @@ internal fun ConfidentCropsRow(count: Int, expanded: Boolean, busy: Boolean, onT
 @Composable
 private fun CategoriesCard(uiState: ClassifierLabelingUiState, data: ClassifierDataset, viewModel: ClassifierLabelingViewModel) {
     Card {
-        Text(text = "Categories", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.labeling_categories_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             data.categories.forEach { category ->
-                Chip(label = "${categoryDisplayName(category)} · ${data.categoryCounts[category] ?: 0}", selected = false, onClick = {})
+                Chip(
+                    label = stringResource(Res.string.labeling_category_count, categoryDisplayName(category), data.categoryCounts[category] ?: 0),
+                    selected = false,
+                    onClick = {},
+                )
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = uiState.newCategoryDraft,
                 onValueChange = viewModel::setNewCategoryDraft,
-                label = { Text("New category, e.g. Ron and Judy's Mercedes") },
+                label = { Text(stringResource(Res.string.labeling_new_category_label)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences, imeAction = ImeAction.Done),
                 modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = viewModel::createCategory, enabled = uiState.newCategoryDraft.isNotBlank()) { Text("Add") }
+            OutlinedButton(onClick = viewModel::createCategory, enabled = uiState.newCategoryDraft.isNotBlank()) { Text(stringResource(Res.string.labeling_add)) }
         }
         Text(
-            text = "\"Not ours\" is for any ${data.model.objects.joinToString(" or ")} you don't care about. It teaches the model what to ignore and never becomes a name.",
+            text = stringResource(Res.string.labeling_not_ours_explainer, objectsOr(data.model.objects)),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -295,15 +358,18 @@ private fun TrainCard(uiState: ClassifierLabelingUiState, data: ClassifierDatase
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = when {
-                        !data.hasTrained -> "Never trained"
-                        data.newImagesSinceTraining > 0 -> "${data.newImagesSinceTraining} new since last training"
-                        else -> "Up to date"
+                        !data.hasTrained -> stringResource(Res.string.labeling_never_trained)
+
+                        data.newImagesSinceTraining > 0 ->
+                            pluralStringResource(Res.plurals.labeling_new_since_training, data.newImagesSinceTraining, data.newImagesSinceTraining)
+
+                        else -> stringResource(Res.string.labeling_up_to_date)
                     },
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 Text(
-                    text = if (data.canTrain) "Takes about half a minute on the server. Frigate switches to the new model when it's done." else "Needs two categories with images before it can train.",
+                    text = stringResource(if (data.canTrain) Res.string.labeling_train_hint else Res.string.labeling_train_needs_two),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -312,13 +378,13 @@ private fun TrainCard(uiState: ClassifierLabelingUiState, data: ClassifierDatase
                 if (uiState.isTraining) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
                 } else {
-                    Text("Train")
+                    Text(stringResource(Res.string.labeling_train))
                 }
             }
         }
         uiState.notice?.let {
             Text(
-                text = it,
+                text = it.resolve(),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (uiState.noticeIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
             )
@@ -377,19 +443,22 @@ internal fun CropCard(
                 val guess = crop.guessedCategory
                 Text(
                     text = when {
-                        guess == null || guess == ClassifierDataset.UNKNOWN_GUESS -> "Model hasn't guessed"
-                        crop.guessedScore != null -> "Model thinks: ${categoryDisplayName(guess)} (${(crop.guessedScore * 100).toInt()}%)"
-                        else -> "Model thinks: ${categoryDisplayName(guess)}"
+                        guess == null || guess == ClassifierDataset.UNKNOWN_GUESS -> stringResource(Res.string.labeling_model_no_guess)
+
+                        crop.guessedScore != null ->
+                            stringResource(Res.string.labeling_model_thinks_score, categoryDisplayName(guess), (crop.guessedScore * 100).toInt())
+
+                        else -> stringResource(Res.string.labeling_model_thinks, categoryDisplayName(guess))
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
                 )
                 knownAs?.let {
-                    Text(text = "Frigate calls it ${subLabelDisplayName(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                    Text(text = stringResource(Res.string.labeling_frigate_calls_it, subLabelDisplayName(it)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 }
                 crop.checkNote()?.let {
                     Text(
-                        text = it,
+                        text = it.resolve(),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (crop.isDoubted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.secondary,
                     )
@@ -400,7 +469,7 @@ internal fun CropCard(
                 if (decided != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-                        Text(text = "Filed as ${categoryDisplayName(decided)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                        Text(text = stringResource(Res.string.labeling_filed_as, categoryDisplayName(decided)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                     }
                 } else {
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -408,7 +477,7 @@ internal fun CropCard(
                             Chip(label = categoryDisplayName(category), selected = category == guess, onClick = { if (!busy) onLabel(category) })
                         }
                     }
-                    if (onDiscard != null) TextButton(onClick = onDiscard, enabled = !busy) { Text("Discard this crop") }
+                    if (onDiscard != null) TextButton(onClick = onDiscard, enabled = !busy) { Text(stringResource(Res.string.labeling_discard_crop)) }
                 }
             }
         }
@@ -424,32 +493,33 @@ internal fun CropCard(
 @Composable
 private fun CarProfilesCard(cars: List<String>, profiles: CarProfiles, onEdit: (String) -> Unit) {
     Card {
-        Text(text = "What your cars look like", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.labeling_cars_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
         Text(
-            text = "A 100% guess only counts once its plate, or its make, model and colour, match. The rest wait here for you.",
+            text = stringResource(Res.string.labeling_cars_body),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         (cars + profiles.profiles.map { it.name }).distinct().forEach { name ->
             val profile = profiles.profileOf(name)
+            val displayName = categoryDisplayName(name)
             Row(
-                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).clickable(onClickLabel = "Edit ${categoryDisplayName(name)}") { onEdit(name) }.padding(vertical = 6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClickLabel = stringResource(Res.string.labeling_edit_car_action, displayName)) { onEdit(name) }
+                    .padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text(text = categoryDisplayName(name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                    Text(text = displayName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
                     Text(
-                        text = when {
-                            profile.isEmpty -> "Not described yet"
-                            profile.plate.isNotBlank() -> listOf(profile.looks, "plate on file").filter { it.isNotBlank() }.joinToString(" · ")
-                            else -> profile.looks
-                        },
+                        text = profileSummary(profile).resolve(),
                         style = MaterialTheme.typography.bodySmall,
                         color = if (profile.isEmpty) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(text = if (profile.isEmpty) "Describe" else "Edit", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                Text(text = stringResource(if (profile.isEmpty) Res.string.labeling_car_describe else Res.string.labeling_car_edit), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             }
         }
     }
@@ -468,7 +538,7 @@ private fun CarProfileDialog(
     makes: List<String>,
     colours: List<String>,
     saving: Boolean,
-    error: String?,
+    error: UiText?,
     onChange: (CarProfile) -> Unit,
     onSave: () -> Unit,
     onDismiss: () -> Unit,
@@ -479,14 +549,15 @@ private fun CarProfileDialog(
         title = { Text(categoryDisplayName(draft.name)) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = "Make", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = stringResource(Res.string.labeling_profile_make), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 var makesOpen by remember { mutableStateOf(false) }
+                val anyMake = stringResource(Res.string.labeling_profile_any_make)
                 Box {
-                    OutlinedButton(onClick = { makesOpen = true }) { Text(draft.make.takeIf { it.isNotBlank() }?.let(::makeName) ?: "Any make") }
+                    OutlinedButton(onClick = { makesOpen = true }) { Text(draft.make.takeIf { it.isNotBlank() }?.let(::makeName) ?: anyMake) }
                     DropdownMenu(expanded = makesOpen, onDismissRequest = { makesOpen = false }) {
                         (listOf("") + makes).forEach { make ->
                             DropdownMenuItem(
-                                text = { Text(make.takeIf { it.isNotBlank() }?.let(::makeName) ?: "Any make") },
+                                text = { Text(make.takeIf { it.isNotBlank() }?.let(::makeName) ?: anyMake) },
                                 onClick = {
                                     makesOpen = false
                                     onChange(draft.copy(make = make))
@@ -498,16 +569,16 @@ private fun CarProfileDialog(
                 OutlinedTextField(
                     value = draft.model,
                     onValueChange = { onChange(draft.copy(model = it.take(CarProfile.MODEL_MAX_LENGTH))) },
-                    label = { Text("Model, e.g. Model Y") },
+                    label = { Text(stringResource(Res.string.labeling_profile_model_label)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Next),
                     modifier = Modifier.fillMaxWidth(),
                 )
-                Text(text = "Colour", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = stringResource(Res.string.labeling_profile_colour), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     colours.forEach { colour ->
                         Chip(
-                            label = colour.replaceFirstChar { it.uppercase() },
+                            label = carColourName(colour).resolve().replaceFirstChar { it.uppercase() },
                             selected = colour == draft.colour,
                             onClick = { onChange(draft.copy(colour = if (colour == draft.colour) "" else colour)) },
                         )
@@ -516,13 +587,13 @@ private fun CarProfileDialog(
                 OutlinedTextField(
                     value = draft.plate,
                     onValueChange = { onChange(draft.copy(plate = CarProfile.normalPlate(it))) },
-                    label = { Text("Licence plate") },
+                    label = { Text(stringResource(Res.string.labeling_profile_plate)) },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Done),
-                    supportingText = { Text("Names the car whenever the camera can read it, even at night") },
+                    supportingText = { Text(stringResource(Res.string.labeling_profile_plate_hint)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
-                error?.let { Text(text = it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                error?.let { Text(text = it.resolve(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
             }
         },
         confirmButton = {
@@ -530,14 +601,14 @@ private fun CarProfileDialog(
                 if (saving) {
                     CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
                 } else {
-                    Text("Save")
+                    Text(stringResource(Res.string.common_save))
                 }
             }
         },
         dismissButton = {
             Row {
-                onForget?.let { TextButton(onClick = it, enabled = !saving) { Text("Forget", color = MaterialTheme.colorScheme.error) } }
-                TextButton(onClick = onDismiss, enabled = !saving) { Text("Cancel") }
+                onForget?.let { TextButton(onClick = it, enabled = !saving) { Text(stringResource(Res.string.labeling_profile_forget), color = MaterialTheme.colorScheme.error) } }
+                TextButton(onClick = onDismiss, enabled = !saving) { Text(stringResource(Res.string.common_cancel)) }
             }
         },
     )
@@ -579,14 +650,30 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ErrorPanel(message: String, onRetry: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "Couldn't load the classifier: $message", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = onRetry) { Text("Retry") }
+        Text(text = message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = onRetry) { Text(stringResource(Res.string.common_retry)) }
     }
 }
 
 /** `none` reads as "Not ours"; everything else gets the same humanising as sub-labels in the feed. */
+@Composable
 internal fun categoryDisplayName(category: String): String =
-    if (category == ClassifierDataset.NONE_CATEGORY) "Not ours" else subLabelDisplayName(category)
+    if (category == ClassifierDataset.NONE_CATEGORY) stringResource(Res.string.labeling_not_ours) else subLabelDisplayName(category)
+
+/** The object labels a model runs on, as data: "car", or "car or truck". */
+@Composable
+private fun objectsOr(objects: List<String>): String = objects.joinToString(stringResource(Res.string.labeling_objects_or_separator))
+
+/** The line under a known car: what's on file for it, the plate only as "on file", or that nothing is. */
+private fun profileSummary(profile: CarProfile): UiText {
+    val looks = profile.looks
+    return when {
+        profile.isEmpty -> UiText.of(Res.string.labeling_car_not_described)
+        profile.plate.isNotBlank() && looks != null -> UiText.of(Res.string.labeling_car_looks_and_plate, looks)
+        profile.plate.isNotBlank() -> UiText.of(Res.string.labeling_car_plate_on_file)
+        else -> looks ?: UiText.Empty
+    }
+}
 
 /** Red, not the theme's error colour: it has to stand out against any car in any light. */
 private val SubjectFrameColor = Color(0xFFFF3B30)

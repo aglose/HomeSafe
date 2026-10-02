@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The home page, a camera's own screen, the app shell (top bar, bottom bar, drawer) and the
+  shared live-video components. Keys are prefixed home_, camera_, shell_ and player_.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The two summary lines at the top of the home page. -->
+    <string name="home_status_all_quiet">All quiet</string>
+    <!-- %1$s is a time, e.g. "6:56 PM" or "10:12 PM yesterday". -->
+    <string name="home_status_all_quiet_since">All quiet since %1$s</string>
+    <!-- %1$s is what was seen ("Person", "Sarah's Tesla"), %2$s the camera's name ("Backyard"). -->
+    <string name="home_status_subject_at_camera">%1$s at %2$s</string>
+    <!-- Leads the details line while the detection is still going on. -->
+    <string name="home_status_now">Now</string>
+    <string name="home_status_just_now">Just now</string>
+    <plurals name="home_status_minutes_ago">
+        <item quantity="one">%1$d min ago</item>
+        <item quantity="other">%1$d min ago</item>
+    </plurals>
+    <plurals name="home_cameras_on">
+        <item quantity="one">%1$d camera on</item>
+        <item quantity="other">%1$d cameras on</item>
+    </plurals>
+    <!-- %1$d cameras switched on out of %2$d (the plural follows %2$d). -->
+    <plurals name="home_cameras_some_on">
+        <item quantity="one">%1$d of %2$d camera on</item>
+        <item quantity="other">%1$d of %2$d cameras on</item>
+    </plurals>
+    <string name="home_presence_house_empty">House empty</string>
+    <string name="home_presence_you_are_away">You're away</string>
+    <string name="home_presence_everyone_home">Everyone home</string>
+    <!-- %1$d phones at home out of %2$d. -->
+    <string name="home_presence_some_home">%1$d of %2$d home</string>
+    <!-- Accessibility action on the summary: it opens the Moments feed. -->
+    <string name="home_status_refresh_action">Refresh home</string>
+    <string name="home_status_open_moments">Open moments</string>
+
+    <!-- The strip of cars parked in view, under the summary. -->
+    <string name="home_in_view_title">In view now</string>
+    <!-- Accessibility action on the strip's caption. -->
+    <string name="home_in_view_check">Check and tag the cars in view</string>
+
+    <string name="home_no_cameras">No cameras found on this server.</string>
+    <string name="home_away_banner">Away mode · nobody home · alerts escalated</string>
+    <string name="home_away_back">I'm back</string>
+
+    <!-- The pill in the corner of a camera card. -->
+    <string name="home_badge_disabled">Disabled</string>
+    <string name="home_badge_connecting">Connecting</string>
+    <string name="home_badge_live">Live</string>
+
+    <!-- A camera's own screen: the quick actions under the player. -->
+    <!-- Short names for the stream qualities, as a video player's menu would show them. -->
+    <string name="camera_quality_auto">Auto</string>
+    <string name="camera_quality_high">HD</string>
+    <string name="camera_quality_low">SD</string>
+    <string name="camera_quality_auto_description">Quick to start, then sharpens</string>
+    <string name="camera_quality_high_description">Full resolution, with the camera's sound</string>
+    <string name="camera_quality_low_description">Lighter on data, no sound</string>
+    <string name="camera_quality_menu_title">Video quality</string>
+    <!-- Accessibility description of the quality button; %1$s is the current quality, e.g. "HD". -->
+    <string name="camera_quality_button_description">Video quality: %1$s</string>
+    <!-- Accessibility description of the tick beside the quality in force. -->
+    <string name="camera_quality_selected">Selected</string>
+    <!-- The speaker button's caption. -->
+    <string name="camera_sound_muted">Muted</string>
+    <string name="camera_sound_on">Sound on</string>
+    <string name="camera_sound_turn_on">Turn sound on</string>
+    <string name="camera_sound_turn_off">Turn sound off</string>
+    <!-- The scissors button's caption: cut a clip of the video. -->
+    <string name="camera_action_clip">Clip</string>
+    <!-- %1$s is the camera's name. -->
+    <string name="camera_action_clip_description">Clip a video from %1$s</string>
+    <!-- One-line feedback under the quick actions after a tap. -->
+    <string name="camera_hint_single_quality">This camera has a single stream quality</string>
+    <string name="camera_hint_sound_on_no_audio">Sound on, but this stream has no audio</string>
+    <string name="camera_hint_sound_on">Sound on</string>
+    <string name="camera_hint_sound_off">Sound off</string>
+
+    <!-- A camera's own screen: the player and the page under it. -->
+    <!-- The pill on the player at the live edge. -->
+    <string name="camera_live">LIVE</string>
+    <!-- The same pill while watching a recording: a button back to the live edge. -->
+    <string name="camera_go_live">GO LIVE</string>
+    <!-- How far behind live the recording on screen is; %1$s is a duration such as "4:05". -->
+    <string name="camera_behind_live">-%1$s</string>
+    <string name="camera_play">Play</string>
+    <string name="camera_timeline">Timeline</string>
+    <!-- The timeline's span choices: one hour, three hours, twelve hours, a day. -->
+    <string name="camera_span_1h">1h</string>
+    <string name="camera_span_3h">3h</string>
+    <string name="camera_span_12h">12h</string>
+    <string name="camera_span_24h">24h</string>
+    <string name="camera_no_recordings">No recordings in this window yet</string>
+    <!-- %1$s is the reason, as the server or the platform gave it. -->
+    <string name="camera_history_error">Couldn't load recordings: %1$s</string>
+    <string name="camera_recent_activity">Recent Activity</string>
+    <string name="camera_recent_loading">Looking for recent detections…</string>
+    <string name="camera_recent_empty">No detections on this camera yet.</string>
+    <!-- On a recent detection's card; %1$s is the clip's length, e.g. "0:15". -->
+    <string name="camera_moment_clip_length">%1$s clip</string>
+    <!-- The camera screen's overflow menu. -->
+    <string name="camera_menu_detection_zones">Detection zones</string>
+    <string name="camera_menu_tag_cars">Tag cars in view</string>
+
+    <!-- The app shell: top bar, bottom tabs and the drawer. -->
+    <!-- The app's name as the top bar and the drawer spell it, in capitals. -->
+    <string name="shell_app_title">PERCYSAFE</string>
+    <!-- The bottom navigation tabs. -->
+    <string name="shell_tab_home">Home</string>
+    <string name="shell_tab_moments">Moments</string>
+    <string name="shell_tab_settings">Settings</string>
+    <!-- The top bar's menu button, and the drawer it opens, for screen readers. -->
+    <string name="shell_menu">Menu</string>
+    <!-- The top bar's connection-status icon before there is a connection, for screen readers. -->
+    <string name="shell_status">Status</string>
+    <!-- Accessibility action on the connection badge. -->
+    <string name="shell_show_version">Show the app version</string>
+    <!-- %1$s is the app's version, e.g. "1.4.2". -->
+    <string name="shell_app_version">Version %1$s</string>
+    <!-- Accessibility action on the scrim behind the drawer. -->
+    <string name="shell_drawer_close">Close menu</string>
+    <!-- Drawer section headings (shown in capitals). -->
+    <string name="shell_drawer_section_home_security">Home security</string>
+    <string name="shell_drawer_section_apps">Apps</string>
+    <!-- The drawer's entry for the Home tab, which is the camera list. -->
+    <string name="shell_drawer_cameras">Cameras</string>
+    <string name="shell_drawer_finance">Finance</string>
+    <string name="shell_drawer_finance_subtitle">Markets &amp; your money</string>
+    <!-- Accessibility action on the Finance card. -->
+    <string name="shell_drawer_open_finance">Open Finance</string>
+    <!-- %1$s is the S&amp;P 500's change, e.g. "+0.42%". -->
+    <string name="shell_drawer_change_today">%1$s today</string>
+    <!-- %1$s is an amount of money, e.g. "$1.2M". -->
+    <string name="shell_drawer_net_worth">Net worth %1$s</string>
+    <string name="shell_drawer_market_disclaimer">Market data is delayed and for information only.</string>
+    <!-- Pull-to-refresh, for screen readers: the action, and what is announced while it runs. -->
+    <string name="shell_refresh">Refresh</string>
+    <string name="shell_refreshing">Refreshing</string>
+
+    <!-- The live video player. -->
+    <!-- Shown in place of the video on a platform with no live player yet. -->
+    <string name="player_live_unavailable">Live view not yet available on this platform</string>
+</resources>

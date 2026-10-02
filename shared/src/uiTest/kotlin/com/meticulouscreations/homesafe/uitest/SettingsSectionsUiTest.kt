@@ -23,6 +23,7 @@ import com.meticulouscreations.homesafe.domain.model.GpuLoad
 import com.meticulouscreations.homesafe.domain.model.RetentionPolicy
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.AiFeaturesSection
 import com.meticulouscreations.homesafe.ui.screens.ServerSection
@@ -168,7 +169,7 @@ class SettingsSectionsUiTest {
     @Test
     fun aFailedFirstReadSaysWhyAndOffersARetry() {
         var retries = 0
-        runServer(SettingsUiState(overviewError = "timeout"), onRetry = { retries++ }) {
+        runServer(SettingsUiState(overviewError = "timeout".asUiText()), onRetry = { retries++ }) {
             onNodeWithText("Couldn't reach the server: timeout").assertIsDisplayed()
             onAllNodesWithText("Reading server stats…").assertCountEquals(0)
             onNodeWithText("Retry").performClick()
@@ -264,7 +265,7 @@ class SettingsSectionsUiTest {
 
     @Test
     fun aFailedRefreshKeepsTheLastReadingAndSaysSo() = runServer(
-        SettingsUiState(overview = overview(), overviewError = "HTTP 502"),
+        SettingsUiState(overview = overview(), overviewError = "HTTP 502".asUiText()),
     ) {
         onNodeWithText("0.16.0").assertIsDisplayed()
         onNodeWithText("Last refresh failed: HTTP 502").assertIsDisplayed()

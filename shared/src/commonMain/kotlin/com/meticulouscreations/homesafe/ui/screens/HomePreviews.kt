@@ -14,13 +14,25 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
+import com.meticulouscreations.homesafe.domain.model.labelName
+import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_cameras_on
+import homesafe.shared.generated.resources.home_presence_everyone_home
+import homesafe.shared.generated.resources.home_presence_house_empty
+import homesafe.shared.generated.resources.home_status_minutes_ago
+import homesafe.shared.generated.resources.home_status_subject_at_camera
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
 
 /*
  * The Home tab, drawn from fixtures. These are the previews every renderer shares: Android
@@ -91,7 +103,7 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
                 everyoneAway = everyoneAway,
                 cameras = cameras,
                 onAwayBack = {},
-                statusHeadline = if (cameras == null) null else "Person at Backyard",
+                statusHeadline = if (cameras == null) null else UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard").resolve(),
                 statusDetails = cameras?.let { previewStatusDetails(camerasOn = it.count { tile -> tile.camera.enabled }, everyoneAway = everyoneAway) },
                 inView = inView,
                 refreshing = refreshing,
@@ -109,10 +121,16 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
     }
 }
 
-private fun previewStatusDetails(camerasOn: Int, everyoneAway: Boolean): String {
-    val cameras = if (camerasOn == 1) "1 camera on" else "$camerasOn cameras on"
-    return "3 min ago · $cameras · ${if (everyoneAway) "Everyone away" else "Everyone home"}"
-}
+/** The details line as [com.meticulouscreations.homesafe.domain.model.homeStatus] words it, three minutes after a detection. */
+@Composable
+private fun previewStatusDetails(camerasOn: Int, everyoneAway: Boolean): String = UiText.Joined(
+    parts = listOf(
+        UiText.plural(Res.plurals.home_status_minutes_ago, 3),
+        UiText.plural(Res.plurals.home_cameras_on, camerasOn),
+        UiText.of(if (everyoneAway) Res.string.home_presence_house_empty else Res.string.home_presence_everyone_home),
+    ),
+    separator = UiText.of(Res.string.common_dot_separator),
+).resolve()
 
 /** A Pixel-sized phone in portrait, in dp. */
 private const val PHONE_WIDTH_DP = 412
@@ -122,26 +140,20 @@ private val previewTiles = listOf("front_door", "hikvision_2", "driveway").map {
     CameraTile(camera = Camera(name = name, enabled = name != "driveway"), streamUrl = null, posterUrl = null)
 }
 
+/** The day [previewInView]'s car arrived, so its card reads "since 3:33 PM" (in UTC) rather than naming the date. */
+private val PREVIEW_TODAY = LocalDate(2026, 9, 14)
+
 private val previewInView = listOf(
-    InViewItem(
-        subject = StationaryObject(
-            thumbnailEventId = "sighting-front_door",
-            cameraName = "front_door",
-            label = "car",
-            subLabel = "sarahs_tesla",
-            zones = listOf("driveway"),
-            firstSeenEpochSeconds = 1_789_400_000.0,
-            lastSeenEpochSeconds = 1_789_408_700.0,
-            seenRecently = true,
-            sightings = 4,
-            sinceIsKnown = true,
-        ),
-        presentation = StationaryObjectPresentation(
-            title = "Sarah's Tesla",
-            placeLabel = "Driveway",
-            sinceLabel = "since 3:33 PM",
-            lastSeenLabel = null,
-        ),
-        thumbnailUrl = null,
+    StationaryObject(
+        thumbnailEventId = "sighting-front_door",
+        cameraName = "front_door",
+        label = "car",
+        subLabel = "sarahs_tesla",
+        zones = listOf("driveway"),
+        firstSeenEpochSeconds = 1_789_400_000.0,
+        lastSeenEpochSeconds = 1_789_408_700.0,
+        seenRecently = true,
+        sightings = 4,
+        sinceIsKnown = true,
     ),
-)
+).map { subject -> InViewItem(subject = subject, presentation = subject.present(PREVIEW_TODAY, TimeZone.UTC), thumbnailUrl = null) }

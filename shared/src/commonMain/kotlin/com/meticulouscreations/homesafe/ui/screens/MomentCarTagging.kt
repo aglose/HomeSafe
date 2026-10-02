@@ -37,7 +37,27 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagUiState
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.common_done
+import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.moments_tag_car
+import homesafe.shared.generated.resources.moments_tag_car_add
+import homesafe.shared.generated.resources.moments_tag_car_loading
+import homesafe.shared.generated.resources.moments_tag_car_new_name_label
+import homesafe.shared.generated.resources.moments_tag_car_new_name_placeholder
+import homesafe.shared.generated.resources.moments_tag_car_none_known
+import homesafe.shared.generated.resources.moments_tag_car_saving
+import homesafe.shared.generated.resources.moments_tag_car_tag_as
+import homesafe.shared.generated.resources.moments_tag_car_tagged_as
+import homesafe.shared.generated.resources.moments_tag_car_title
+import homesafe.shared.generated.resources.moments_tag_car_title_done
+import homesafe.shared.generated.resources.moments_tag_car_unrecognised
+import homesafe.shared.generated.resources.moments_tag_this_car
+import org.jetbrains.compose.resources.stringResource
 
 /*
  * Tagging the car of a moment the classifier left as plain "Car" — in the Moments feed, on a
@@ -57,7 +77,7 @@ internal fun TagCarButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
         modifier = modifier
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.primaryContainer, CircleShape)
-            .clickable(onClickLabel = "Tag this car", onClick = onClick)
+            .clickable(onClickLabel = stringResource(Res.string.moments_tag_this_car), onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 5.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -69,7 +89,7 @@ internal fun TagCarButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier.size(12.dp),
         )
         Text(
-            text = "Tag car",
+            text = stringResource(Res.string.moments_tag_car),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
             color = MaterialTheme.colorScheme.onPrimaryContainer,
             maxLines = 1,
@@ -83,7 +103,7 @@ internal fun TagCarButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * ([taggedAs], a category key) instead of offering it again.
  */
 @Composable
-internal fun TagCarPrompt(summary: String, taggedAs: String?, onTag: () -> Unit, modifier: Modifier = Modifier) {
+internal fun TagCarPrompt(summary: UiText, taggedAs: String?, onTag: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(16.dp)
     Row(
         modifier = modifier
@@ -108,12 +128,16 @@ internal fun TagCarPrompt(summary: String, taggedAs: String?, onTag: () -> Unit,
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = if (taggedAs == null) "Frigate didn't recognise this car" else "Tagged as ${subLabelDisplayName(taggedAs)}",
+                text = if (taggedAs == null) {
+                    stringResource(Res.string.moments_tag_car_unrecognised)
+                } else {
+                    stringResource(Res.string.moments_tag_car_tagged_as, subLabelDisplayName(taggedAs))
+                },
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = summary,
+                text = summary.resolve(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
@@ -142,13 +166,13 @@ internal fun TagCarDialog(
     val target = state.target ?: return
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (state.done) "Car tagged" else "Whose car is this?") },
+        title = { Text(stringResource(if (state.done) Res.string.moments_tag_car_title_done else Res.string.moments_tag_car_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(text = target.summary, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = target.summary.resolve(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 state.notice?.let { notice ->
                     Text(
-                        text = notice,
+                        text = notice.resolve(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = if (state.noticeIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
                     )
@@ -157,19 +181,19 @@ internal fun TagCarDialog(
                     state.done -> Unit
 
                     state.loadError != null -> {
-                        Text(text = state.loadError, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                        OutlinedButton(onClick = onRetry) { Text("Retry") }
+                        Text(text = state.loadError.resolve(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+                        OutlinedButton(onClick = onRetry) { Text(stringResource(Res.string.common_retry)) }
                     }
 
                     state.isLoading -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                        Text(text = "Loading the known cars…", style = MaterialTheme.typography.bodyMedium)
+                        Text(text = stringResource(Res.string.moments_tag_car_loading), style = MaterialTheme.typography.bodyMedium)
                     }
 
                     else -> {
                         if (state.knownCars.isEmpty()) {
                             Text(
-                                text = "The classifier doesn't know any cars yet. Name this one below.",
+                                text = stringResource(Res.string.moments_tag_car_none_known),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
@@ -184,20 +208,20 @@ internal fun TagCarDialog(
                             OutlinedTextField(
                                 value = state.newCarDraft,
                                 onValueChange = onNewCarDraftChange,
-                                label = { Text("New car's name") },
-                                placeholder = { Text("e.g. Grandma's Van") },
+                                label = { Text(stringResource(Res.string.moments_tag_car_new_name_label)) },
+                                placeholder = { Text(stringResource(Res.string.moments_tag_car_new_name_placeholder)) },
                                 singleLine = true,
                                 enabled = !state.isSaving,
                                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
                                 keyboardActions = KeyboardActions(onDone = { if (state.newCarDraft.isNotBlank()) onTagAsNewCar() }),
                                 modifier = Modifier.weight(1f),
                             )
-                            OutlinedButton(onClick = onTagAsNewCar, enabled = state.newCarDraft.isNotBlank() && !state.isSaving) { Text("Add") }
+                            OutlinedButton(onClick = onTagAsNewCar, enabled = state.newCarDraft.isNotBlank() && !state.isSaving) { Text(stringResource(Res.string.moments_tag_car_add)) }
                         }
                         if (state.isSaving) {
                             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                Text(text = "Teaching the classifier…", style = MaterialTheme.typography.labelMedium)
+                                Text(text = stringResource(Res.string.moments_tag_car_saving), style = MaterialTheme.typography.labelMedium)
                             }
                         }
                     }
@@ -206,9 +230,9 @@ internal fun TagCarDialog(
         },
         confirmButton = {
             if (state.done) {
-                TextButton(onClick = onDismiss) { Text("Done") }
+                TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_done)) }
             } else {
-                TextButton(onClick = onDismiss, enabled = !state.isSaving) { Text("Cancel") }
+                TextButton(onClick = onDismiss, enabled = !state.isSaving) { Text(stringResource(Res.string.common_cancel)) }
             }
         },
     )
@@ -229,7 +253,7 @@ private fun KnownCarChip(label: String, onClick: () -> Unit) {
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest, CircleShape)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), CircleShape)
-            .clickable(onClickLabel = "Tag as $label", onClick = onClick)
+            .clickable(onClickLabel = stringResource(Res.string.moments_tag_car_tag_as, label), onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 10.dp),
     )
 }

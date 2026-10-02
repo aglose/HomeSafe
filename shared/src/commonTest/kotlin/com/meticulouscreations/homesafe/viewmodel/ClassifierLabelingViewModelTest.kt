@@ -20,6 +20,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUr
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TrainClassifierUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.labeling_clear_failed
+import homesafe.shared.generated.resources.labeling_cleared_confident
+import homesafe.shared.generated.resources.labeling_plate_too_short
+import homesafe.shared.generated.resources.labeling_profile_forget_failed
+import homesafe.shared.generated.resources.labeling_save_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -139,7 +146,7 @@ class ClassifierLabelingViewModelTest {
         vm.editProfile("andrews_tesla")
         vm.deleteProfile()
         advanceUntilIdle()
-        assertEquals("Couldn't forget: relay said no", vm.uiState.value.profileError)
+        assertEquals(UiText.of(Res.string.labeling_profile_forget_failed, "relay said no"), vm.uiState.value.profileError)
         assertEquals(listOf("andrews_tesla"), vm.uiState.value.carProfiles?.profiles?.map { it.name })
     }
 
@@ -175,7 +182,7 @@ class ClassifierLabelingViewModelTest {
         vm.saveProfile()
         advanceUntilIdle()
         assertTrue(cars.saved.isEmpty())
-        assertEquals("A plate needs at least 4 letters or digits", vm.uiState.value.profileError)
+        assertEquals(UiText.of(Res.string.labeling_plate_too_short, 4), vm.uiState.value.profileError)
     }
 
     @Test
@@ -187,7 +194,7 @@ class ClassifierLabelingViewModelTest {
         vm.saveProfile()
         advanceUntilIdle()
         assertEquals("andrews_tesla", vm.uiState.value.profileDraft?.name)
-        assertEquals("Couldn't save: relay said no", vm.uiState.value.profileError)
+        assertEquals(UiText.of(Res.string.labeling_save_failed, "relay said no"), vm.uiState.value.profileError)
         assertFalse(vm.uiState.value.isSavingProfile)
     }
 
@@ -231,7 +238,7 @@ class ClassifierLabelingViewModelTest {
         assertEquals(listOf(unsure), state.dataset?.queue, "the uncertain crop is untouched")
         assertTrue(state.busyFiles.isEmpty())
         assertFalse(state.showConfident, "nothing left to show")
-        assertEquals("Cleared 2 crops the model was sure about", state.notice)
+        assertEquals(UiText.plural(Res.plurals.labeling_cleared_confident, 2), state.notice)
         assertFalse(state.noticeIsError)
     }
 
@@ -257,7 +264,7 @@ class ClassifierLabelingViewModelTest {
         val state = vm.uiState.value
         assertEquals(3, state.dataset?.queue?.size, "nothing was dropped")
         assertTrue(state.busyFiles.isEmpty(), "the crops can be tried again")
-        assertEquals("Couldn't clear: server said no", state.notice)
+        assertEquals(UiText.of(Res.string.labeling_clear_failed, "server said no"), state.notice)
         assertTrue(state.noticeIsError)
     }
 

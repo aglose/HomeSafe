@@ -71,7 +71,22 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ClipMoment
 import com.meticulouscreations.homesafe.viewmodel.RecordedSpans
 import com.meticulouscreations.homesafe.viewmodel.TrimHandle
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.clip_trimmer_description
+import homesafe.shared.generated.resources.clip_trimmer_end_earlier
+import homesafe.shared.generated.resources.clip_trimmer_end_later
+import homesafe.shared.generated.resources.clip_trimmer_playhead_back
+import homesafe.shared.generated.resources.clip_trimmer_playhead_forward
+import homesafe.shared.generated.resources.clip_trimmer_scroll_earlier
+import homesafe.shared.generated.resources.clip_trimmer_scroll_later
+import homesafe.shared.generated.resources.clip_trimmer_start_earlier
+import homesafe.shared.generated.resources.clip_trimmer_start_later
+import homesafe.shared.generated.resources.clip_trimmer_state
+import homesafe.shared.generated.resources.clip_trimmer_zoom_in
+import homesafe.shared.generated.resources.clip_trimmer_zoom_out
 import kotlinx.coroutines.flow.collectLatest
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -197,6 +212,7 @@ fun ClipTrimmer(
                 .fillMaxWidth()
                 .height(STRIP_HEIGHT)
                 .clipTrimmerSemantics(
+                    words = clipTrimmerWords(range),
                     window = window,
                     range = range,
                     playheadEpochSeconds = playheadEpochSeconds,
@@ -610,6 +626,7 @@ internal fun filmstripSlotSeconds(windowSeconds: Double, framesAcross: Float): D
  * nudge from a screen reader is bounded and previewed exactly like a drag.
  */
 private fun Modifier.clipTrimmerSemantics(
+    words: ClipTrimmerWords,
     window: ClipWindow,
     range: ClipRange,
     playheadEpochSeconds: Double?,
@@ -622,10 +639,8 @@ private fun Modifier.clipTrimmerSemantics(
     onPan: (Double) -> Unit,
     onZoom: (factor: Double, focusEpochSeconds: Double) -> Unit,
 ): Modifier = semantics {
-    val start = formatClockTime(range.startEpochSeconds, withSeconds = true)
-    val end = formatClockTime(range.endEpochSeconds, withSeconds = true)
-    contentDescription = "Clip trimmer"
-    stateDescription = "From $start to $end, ${range.durationSeconds.roundToInt()} seconds"
+    contentDescription = words.description
+    stateDescription = words.state
 
     fun nudge(handle: TrimHandle, by: Double): Boolean {
         val from = if (handle == TrimHandle.START) range.startEpochSeconds else range.endEpochSeconds
@@ -645,28 +660,73 @@ private fun Modifier.clipTrimmerSemantics(
 
     val centre = (range.startEpochSeconds + range.endEpochSeconds) / 2
     customActions = listOf(
-        CustomAccessibilityAction("Start 1 second earlier") { nudge(TrimHandle.START, -ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("Start 1 second later") { nudge(TrimHandle.START, ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("End 1 second earlier") { nudge(TrimHandle.END, -ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("End 1 second later") { nudge(TrimHandle.END, ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("Playhead back 1 second") { scrub(-ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("Playhead forward 1 second") { scrub(ACCESSIBLE_STEP_SECONDS) },
-        CustomAccessibilityAction("Zoom in") {
+        CustomAccessibilityAction(words.startEarlier) { nudge(TrimHandle.START, -ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.startLater) { nudge(TrimHandle.START, ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.endEarlier) { nudge(TrimHandle.END, -ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.endLater) { nudge(TrimHandle.END, ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.playheadBack) { scrub(-ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.playheadForward) { scrub(ACCESSIBLE_STEP_SECONDS) },
+        CustomAccessibilityAction(words.zoomIn) {
             onZoom(ACCESSIBLE_ZOOM_FACTOR, centre)
             true
         },
-        CustomAccessibilityAction("Zoom out") {
+        CustomAccessibilityAction(words.zoomOut) {
             onZoom(1 / ACCESSIBLE_ZOOM_FACTOR, centre)
             true
         },
-        CustomAccessibilityAction("Scroll earlier") {
+        CustomAccessibilityAction(words.scrollEarlier) {
             onPan(-window.durationSeconds / 2)
             true
         },
-        CustomAccessibilityAction("Scroll later") {
+        CustomAccessibilityAction(words.scrollLater) {
             onPan(window.durationSeconds / 2)
             true
         },
+    )
+}
+
+/**
+ * What the trimmer's accessibility node says, read from the resources in the composition so the
+ * semantics block (which isn't composable) can use it: the node's name, the selection as clock
+ * times and a length, and every action's label.
+ */
+private class ClipTrimmerWords(
+    val description: String,
+    val state: String,
+    val startEarlier: String,
+    val startLater: String,
+    val endEarlier: String,
+    val endLater: String,
+    val playheadBack: String,
+    val playheadForward: String,
+    val zoomIn: String,
+    val zoomOut: String,
+    val scrollEarlier: String,
+    val scrollLater: String,
+)
+
+@Composable
+private fun clipTrimmerWords(range: ClipRange): ClipTrimmerWords {
+    val seconds = range.durationSeconds.roundToInt()
+    return ClipTrimmerWords(
+        description = stringResource(Res.string.clip_trimmer_description),
+        state = pluralStringResource(
+            Res.plurals.clip_trimmer_state,
+            seconds,
+            formatClockTime(range.startEpochSeconds, withSeconds = true),
+            formatClockTime(range.endEpochSeconds, withSeconds = true),
+            seconds,
+        ),
+        startEarlier = stringResource(Res.string.clip_trimmer_start_earlier),
+        startLater = stringResource(Res.string.clip_trimmer_start_later),
+        endEarlier = stringResource(Res.string.clip_trimmer_end_earlier),
+        endLater = stringResource(Res.string.clip_trimmer_end_later),
+        playheadBack = stringResource(Res.string.clip_trimmer_playhead_back),
+        playheadForward = stringResource(Res.string.clip_trimmer_playhead_forward),
+        zoomIn = stringResource(Res.string.clip_trimmer_zoom_in),
+        zoomOut = stringResource(Res.string.clip_trimmer_zoom_out),
+        scrollEarlier = stringResource(Res.string.clip_trimmer_scroll_earlier),
+        scrollLater = stringResource(Res.string.clip_trimmer_scroll_later),
     )
 }
 

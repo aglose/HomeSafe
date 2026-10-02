@@ -14,11 +14,15 @@ import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.SessionCheck
 import com.meticulouscreations.homesafe.network.swapUrlScheme
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.ui.components.LiveStartupMilestones
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_sign_in_failed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +45,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import org.jetbrains.compose.resources.StringResource
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -115,7 +120,7 @@ class ConnectionRepositoryImpl(
         }
 
     override val biometricLoginAvailable: Boolean = biometricCredentialStore.isAvailable()
-    override val biometricDisplayName: String = biometricCredentialStore.displayName()
+    override val biometricDisplayName: StringResource = biometricCredentialStore.displayName()
 
     /** The signed-in session's credentials, so an expired session can be renewed without asking. */
     private var sessionCredentials: SavedCredentials? = null
@@ -369,7 +374,7 @@ class ConnectionRepositoryImpl(
             }
 
             remoteError is FrigateResponseException || localUrl == null || !lanAnswers.await() ->
-                return@coroutineScope Result.failure(remoteError ?: IllegalStateException("Login failed"))
+                return@coroutineScope Result.failure(remoteError ?: LocalizedException(UiText.of(Res.string.error_sign_in_failed), technical = "Login failed"))
 
             else -> {
                 val workingLocal = loginResolvingScheme(localUrl, username, password)

@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
+import com.meticulouscreations.homesafe.text.UiText
 import kotlinx.coroutines.flow.Flow
 
 /** Exposes Frigate's detections (people, vehicles, animals, ...) for the Moments feed. */
@@ -22,7 +23,7 @@ interface MomentsRepository {
     fun observeMoments(): Flow<List<MomentEvent>>
 
     /** Whether the last fetch failed — surfaced so the feed can say so instead of looking empty. */
-    fun observeError(): Flow<String?>
+    fun observeError(): Flow<UiText?>
 
     /** Where the window sits and whether there is more of it below what's loaded. */
     fun observePaging(): Flow<MomentsPaging>

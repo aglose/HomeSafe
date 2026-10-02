@@ -31,6 +31,38 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.SectionHealth
 import com.meticulouscreations.homesafe.finance.domain.SectionStatus
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.fin_sheet_sync_chart_drawn
+import homesafe.shared.generated.resources.fin_sheet_sync_chart_not_drawn
+import homesafe.shared.generated.resources.fin_sheet_sync_charts_subtitle
+import homesafe.shared.generated.resources.fin_sheet_sync_charts_title
+import homesafe.shared.generated.resources.fin_sheet_sync_how
+import homesafe.shared.generated.resources.fin_sheet_sync_issue_fallback
+import homesafe.shared.generated.resources.fin_sheet_sync_issue_showing_last
+import homesafe.shared.generated.resources.fin_sheet_sync_last_read
+import homesafe.shared.generated.resources.fin_sheet_sync_line_failed
+import homesafe.shared.generated.resources.fin_sheet_sync_line_look
+import homesafe.shared.generated.resources.fin_sheet_sync_line_ok
+import homesafe.shared.generated.resources.fin_sheet_sync_note_whole_sheet
+import homesafe.shared.generated.resources.fin_sheet_sync_notes_title
+import homesafe.shared.generated.resources.fin_sheet_sync_now
+import homesafe.shared.generated.resources.fin_sheet_sync_open_action
+import homesafe.shared.generated.resources.fin_sheet_sync_open_sheet
+import homesafe.shared.generated.resources.fin_sheet_sync_section_empty_detail
+import homesafe.shared.generated.resources.fin_sheet_sync_section_missing_detail
+import homesafe.shared.generated.resources.fin_sheet_sync_section_not_found
+import homesafe.shared.generated.resources.fin_sheet_sync_section_nothing_read
+import homesafe.shared.generated.resources.fin_sheet_sync_sections_subtitle
+import homesafe.shared.generated.resources.fin_sheet_sync_sections_title
+import homesafe.shared.generated.resources.fin_sheet_sync_status_failed
+import homesafe.shared.generated.resources.fin_sheet_sync_status_look
+import homesafe.shared.generated.resources.fin_sheet_sync_status_ok
+import homesafe.shared.generated.resources.fin_sheet_sync_syncing
+import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Clock
 
 /** How the last sync of the budget sheet went, as one of three lights. */
@@ -62,17 +94,17 @@ internal fun SheetSyncLine(state: FinanceUiState, onOpen: () -> Unit, modifier: 
     val ago = FinanceFormat.ago(now, finance.fetchedAtEpochSeconds)
     val problems = finance.health.problemCount
     val text = when (light) {
-        SyncLight.FAILED -> "Couldn't sync · showing the sheet from $ago"
-        SyncLight.LOOK -> "Synced $ago · ${if (problems == 1) "1 thing needs" else "$problems things need"} a look"
-        SyncLight.OK -> "Synced $ago · everything read"
-    }
+        SyncLight.FAILED -> UiText.of(Res.string.fin_sheet_sync_line_failed, ago)
+        SyncLight.LOOK -> UiText.plural(Res.plurals.fin_sheet_sync_line_look, problems, problems, ago)
+        SyncLight.OK -> UiText.of(Res.string.fin_sheet_sync_line_ok, ago)
+    }.resolve()
     Row(
         modifier
             .padding(horizontal = PageGutter)
             // A 48 dp touch target around the slim pill, announced as a button.
             .minimumInteractiveComponentSize()
             .clip(RoundedCornerShape(50))
-            .clickable(role = Role.Button, onClickLabel = "Open sheet sync", onClick = onOpen)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fin_sheet_sync_open_action), onClick = onOpen)
             .background(if (light == SyncLight.OK) Color.Transparent else light.color().copy(alpha = 0.12f))
             .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -111,9 +143,9 @@ internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValue
                     Spacer(Modifier.width(10.dp))
                     Text(
                         when (light) {
-                            SyncLight.FAILED -> "The last sync didn't work"
-                            SyncLight.LOOK -> "Synced, but not everything was read"
-                            SyncLight.OK -> "Everything in the sheet was read"
+                            SyncLight.FAILED -> stringResource(Res.string.fin_sheet_sync_status_failed)
+                            SyncLight.LOOK -> stringResource(Res.string.fin_sheet_sync_status_look)
+                            SyncLight.OK -> stringResource(Res.string.fin_sheet_sync_status_ok)
                         },
                         style = FinanceTheme.type.bodyStrong,
                         color = colors.textPrimary,
@@ -123,62 +155,63 @@ internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValue
                 finance?.let { f ->
                     val t = f.fetchedAtEpochSeconds
                     Text(
-                        "Last read from Google ${FinanceFormat.ago(now, t)} (${FinanceFormat.dateTime(t, FinanceFormat.localOffsetSeconds(t))})",
+                        UiText.of(Res.string.fin_sheet_sync_last_read, FinanceFormat.ago(now, t), FinanceFormat.dateTime(t, FinanceFormat.localOffsetSeconds(t))).resolve(),
                         style = FinanceTheme.type.label,
                         color = colors.textSecondary,
                     )
                 }
                 state.sheetIssue?.let { issue ->
                     Spacer(Modifier.height(6.dp))
+                    val message = issue.message.takeUnless { it == UiText.Empty } ?: UiText.of(Res.string.fin_sheet_sync_issue_fallback)
                     Text(
-                        issue.message.ifBlank { "The relay couldn't read the sheet." } + if (finance != null) " The Wallet is showing the last read that worked." else "",
+                        (if (finance != null) UiText.of(Res.string.fin_sheet_sync_issue_showing_last, message) else message).resolve(),
                         style = FinanceTheme.type.label,
                         color = colors.loss,
                     )
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    PillButton(if (state.refreshing) "Syncing…" else "Sync now", colors.accent, onClick = onSyncNow)
-                    finance?.sourceUrl?.let { url -> PillButton("Open the sheet", colors.textSecondary, onClick = { uriHandler.openUri(url) }) }
+                    PillButton(stringResource(if (state.refreshing) Res.string.fin_sheet_sync_syncing else Res.string.fin_sheet_sync_now), colors.accent, onClick = onSyncNow)
+                    finance?.sourceUrl?.let { url -> PillButton(stringResource(Res.string.fin_sheet_sync_open_sheet), colors.textSecondary, onClick = { uriHandler.openUri(url) }) }
                 }
             }
         }
         if (health != null && health.sections.isNotEmpty()) {
-            item(key = "sections-h") { SectionHeader("What the app reads", subtitle = "Each part is found by its title, wherever it sits in the sheet") }
+            item(key = "sections-h") {
+                SectionHeader(stringResource(Res.string.fin_sheet_sync_sections_title), subtitle = stringResource(Res.string.fin_sheet_sync_sections_subtitle))
+            }
             // What needs a look first, then the rest in the sheet's order.
             items(health.sections.sortedBy { it.status == SectionStatus.OK }, key = { "s-${it.section.name}" }) { SectionRow(it) }
         }
         if (health != null && health.notes.isNotEmpty()) {
-            item(key = "notes-h") { SectionHeader("Left out") }
-            items(health.notes, key = { "n-${it.message}" }) { note ->
+            item(key = "notes-h") { SectionHeader(stringResource(Res.string.fin_sheet_sync_notes_title)) }
+            items(health.notes.size, key = { "n-$it" }) { i ->
+                val note = health.notes[i]
                 StatusRow(
                     color = colors.watch,
-                    title = note.section?.label ?: "Sheet",
+                    title = stringResource(note.section?.label ?: Res.string.fin_sheet_sync_note_whole_sheet),
                     trailing = null,
-                    detail = note.message,
+                    detail = note.message.resolve(),
                 )
             }
         }
         if (health != null && health.charts.isNotEmpty()) {
-            item(key = "charts-h") { SectionHeader("Charts", subtitle = "Every chart in the sheet; adding, changing or removing one shows on the next sync") }
+            item(key = "charts-h") {
+                SectionHeader(stringResource(Res.string.fin_sheet_sync_charts_title), subtitle = stringResource(Res.string.fin_sheet_sync_charts_subtitle))
+            }
             val charts = health.charts.sortedBy { it.problem == null }
             items(charts.size, key = { "c-$it" }) { i ->
                 val c = charts[i]
                 StatusRow(
                     color = if (c.problem == null) colors.gain else colors.watch,
-                    title = c.title,
-                    trailing = if (c.problem == null) "Drawn" else "Not drawn",
-                    detail = listOfNotNull(c.tab.takeIf { it.isNotBlank() }, c.problem).joinToString(" · "),
+                    title = c.title.resolve(),
+                    trailing = stringResource(if (c.problem == null) Res.string.fin_sheet_sync_chart_drawn else Res.string.fin_sheet_sync_chart_not_drawn),
+                    detail = UiText.Joined(listOfNotNull(c.tab.takeIf { it.isNotBlank() }?.asUiText(), c.problem), UiText.of(Res.string.common_dot_separator)).resolve(),
                 )
             }
         }
         item(key = "how") {
-            FinePrint(
-                "The app reads the sheet whenever Finance opens, every couple of minutes while it's open, and when you pull down. " +
-                    "Moving a part, or adding and removing rows and columns in it, is fine. Renaming a part's title is what loses it: " +
-                    "rename it back to the title this page shows, or have the app changed to look for the new one.",
-                Modifier.padding(top = 20.dp),
-            )
+            FinePrint(stringResource(Res.string.fin_sheet_sync_how), Modifier.padding(top = 20.dp))
         }
     }
 }
@@ -192,16 +225,16 @@ private fun SectionRow(health: SectionHealth) {
             SectionStatus.EMPTY -> colors.watch
             SectionStatus.MISSING -> colors.loss
         },
-        title = health.section.label,
+        title = stringResource(health.section.label),
         trailing = when (health.status) {
-            SectionStatus.OK -> health.found
-            SectionStatus.EMPTY -> "Nothing read"
-            SectionStatus.MISSING -> "Not found"
+            SectionStatus.OK -> health.found?.resolve()
+            SectionStatus.EMPTY -> stringResource(Res.string.fin_sheet_sync_section_nothing_read)
+            SectionStatus.MISSING -> stringResource(Res.string.fin_sheet_sync_section_not_found)
         },
         detail = when (health.status) {
             SectionStatus.OK -> null
-            SectionStatus.EMPTY -> "Its title is there, but nothing under it could be read. Looks for ${health.section.lookedFor}."
-            SectionStatus.MISSING -> "Looks for ${health.section.lookedFor}."
+            SectionStatus.EMPTY -> stringResource(Res.string.fin_sheet_sync_section_empty_detail, stringResource(health.section.lookedFor))
+            SectionStatus.MISSING -> stringResource(Res.string.fin_sheet_sync_section_missing_detail, stringResource(health.section.lookedFor))
         },
     )
 }

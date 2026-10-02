@@ -4,7 +4,6 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PhantomRepository
-import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -69,5 +68,5 @@ class PhantomRepositoryImpl(
     private fun connectionOrFailure(): Result<ActiveConnection> =
         connectionRepository.activeConnection.value
             ?.let { Result.success(it) }
-            ?: Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: Result.failure(notConnected())
 }

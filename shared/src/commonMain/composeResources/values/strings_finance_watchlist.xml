@@ -1,0 +1,123 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The finance watchlist: tickers added in the app, the add-a-symbol search, positions entered
+  against a ticker and the holdings card that sums them (WatchlistUi.kt, FinanceFormat.positionLine),
+  and a quote's "All time" block (the longrun_* keys). Tickers, company and fund names, currency
+  codes ("JPY") and amounts arrive already formatted ("$2,431.20", "+12.34%", "Sep 30, 2026").
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The watchlist's heading -->
+    <string name="watchlist_add">Add</string>
+    <!-- What tapping the watchlist's Add button does, for accessibility. -->
+    <string name="watchlist_add_click">Add a stock, fund or coin</string>
+    <string name="watchlist_subtitle_sheet_and_app">Tickers marked “In sheet” come from your budget sheet; the rest you added here</string>
+    <string name="watchlist_subtitle_sheet">From your budget sheet. Add more here — they stay on this device</string>
+    <string name="watchlist_subtitle_app">Added here, on this device</string>
+    <string name="watchlist_subtitle_suggestions">A few to start with. Add your own stocks, funds or coins</string>
+    <!-- A badge on a ticker the household's budget sheet names. -->
+    <string name="watchlist_in_sheet">In sheet</string>
+
+    <!-- The holdings card, above the watchlist's rows -->
+    <string name="watchlist_holdings_title">YOUR HOLDINGS</string>
+    <!-- %1$s is a currency code, e.g. "JPY". -->
+    <string name="watchlist_holdings_title_currency">YOUR HOLDINGS IN %1$s</string>
+    <!-- %1$s is today's change in money, e.g. "+$120.40". -->
+    <string name="watchlist_holdings_today">%1$s today</string>
+    <!-- %1$s is today's change in money, %2$s in percent, e.g. "+$120.40 (+1.20%) today". -->
+    <string name="watchlist_holdings_today_percent">%1$s (%2$s) today</string>
+    <!-- %1$s is the gain since buying, e.g. "+$1,204.00". -->
+    <string name="watchlist_holdings_since_bought">%1$s since you bought</string>
+    <!-- %1$s is the gain since buying in money, %2$s in percent. -->
+    <string name="watchlist_holdings_since_bought_percent">%1$s (%2$s) since you bought</string>
+    <plurals name="watchlist_holdings_note">
+        <item quantity="one">%1$d position entered in the app. Not counted in net worth — the sheet's account balances already are.</item>
+        <item quantity="other">%1$d positions entered in the app. Not counted in net worth — the sheet's account balances already are.</item>
+    </plurals>
+
+    <!-- What's held: "10 shares", "1 share". %1$s is the whole number of shares, formatted. -->
+    <plurals name="watchlist_shares">
+        <item quantity="one">%1$s share</item>
+        <item quantity="other">%1$s shares</item>
+    </plurals>
+    <!-- A fractional number of shares, e.g. "0.5 shares". -->
+    <string name="watchlist_shares_fraction">%1$s shares</string>
+    <!-- Coins held: %1$s is the amount, %2$s the coin's ticker, e.g. "0.25 BTC". -->
+    <string name="watchlist_coins">%1$s %2$s</string>
+
+    <!-- The add-a-symbol sheet -->
+    <string name="watchlist_search_title">Add to watchlist</string>
+    <string name="watchlist_search_subtitle">Stocks, ETFs, mutual funds, crypto and indices — by ticker or name.</string>
+    <string name="watchlist_search_hint">e.g. VTI, Apple, Vanguard, ETH</string>
+    <string name="watchlist_search_description">Search tickers</string>
+    <!-- Clears what was typed in the search box. -->
+    <string name="watchlist_search_clear">Clear</string>
+    <string name="watchlist_search_searching">Searching…</string>
+    <!-- %1$s is why the search failed. -->
+    <string name="watchlist_search_failed">Couldn't search: %1$s</string>
+    <string name="watchlist_search_unavailable">Search is unavailable</string>
+    <!-- %1$s is what was typed. -->
+    <string name="watchlist_search_no_matches">Nothing matches “%1$s”.</string>
+    <!-- %1$s is a ticker, e.g. "Add VTI". -->
+    <string name="watchlist_search_add_symbol">Add %1$s</string>
+    <!-- A search result already on the watchlist. -->
+    <string name="watchlist_search_added">Added</string>
+
+    <!-- A quote's page: where it stands with the watchlist -->
+    <string name="watchlist_status_in_sheet">On your watchlist from the budget sheet</string>
+    <string name="watchlist_status_added">On your watchlist</string>
+    <string name="watchlist_status_remove">Remove</string>
+    <string name="watchlist_status_not_added">Not on your watchlist</string>
+
+    <!-- A quote's page: the position held -->
+    <string name="watchlist_position_title">Your position</string>
+    <string name="watchlist_position_entered">Entered on this device</string>
+    <string name="watchlist_position_edit">Edit</string>
+    <!-- %1$s is the ticker, e.g. "Own some MSFT?". -->
+    <string name="watchlist_position_own_some">Own some %1$s?</string>
+    <string name="watchlist_position_invite">Enter your shares to see what they're worth and how they're doing.</string>
+    <string name="watchlist_position_add">Add a position</string>
+    <string name="watchlist_position_held">Held</string>
+    <string name="watchlist_position_shares">Shares</string>
+    <string name="watchlist_position_market_value">Market value</string>
+    <string name="watchlist_position_average_cost">Average cost</string>
+    <string name="watchlist_position_not_entered">Not entered</string>
+    <string name="watchlist_position_cost_basis">Cost basis</string>
+    <string name="watchlist_position_today">Today</string>
+    <string name="watchlist_position_today_percent">Today %</string>
+    <string name="watchlist_position_total_return">Total return</string>
+    <string name="watchlist_position_return_percent">Return %</string>
+
+    <!-- The position editor -->
+    <!-- %1$s is the ticker, e.g. "Your MSFT". -->
+    <string name="watchlist_editor_title">Your %1$s</string>
+    <!-- %1$s is the coin's ticker, e.g. "Amount held (BTC)". -->
+    <string name="watchlist_editor_amount_held">Amount held (%1$s)</string>
+    <string name="watchlist_editor_cost_per_share">Average cost per share (optional)</string>
+    <string name="watchlist_editor_cost_per_coin">Average cost per coin (optional)</string>
+    <string name="watchlist_editor_note">Kept on this device only. Leave shares empty to remove the position.</string>
+
+    <!-- A quote's "All time" block -->
+    <string name="longrun_title">All time</string>
+    <!-- %1$s is a month and year, e.g. "Data from Jan 1985". -->
+    <string name="longrun_data_from">Data from %1$s</string>
+    <string name="longrun_all_time_high">All-time high</string>
+    <!-- The all-time high was set today. -->
+    <string name="longrun_set_on">Set on</string>
+    <!-- The all-time high was set in the week starting on this date. -->
+    <string name="longrun_week_of">Week of</string>
+    <string name="longrun_from_high">From the high</string>
+    <string name="longrun_at_record">At a record</string>
+    <string name="longrun_per_year">Per year</string>
+    <!-- The change over the last 1, 5 and 10 years. -->
+    <plurals name="longrun_years">
+        <item quantity="one">%1$d year</item>
+        <item quantity="other">%1$d years</item>
+    </plurals>
+    <!-- %1$s is the year the history starts, e.g. "Since 1985". -->
+    <string name="longrun_since_year">Since %1$s</string>
+    <string name="longrun_since_start">Since start</string>
+    <!-- %1$s is why the history failed to load. -->
+    <string name="longrun_history_failed">Couldn't load the full history: %1$s</string>
+    <string name="longrun_fine_print">Price changes only — dividends aren't included. “Per year” is the steady yearly rate that would compound to the change since the start. The all-time high is the highest price ever traded, not just closed at.</string>
+</resources>

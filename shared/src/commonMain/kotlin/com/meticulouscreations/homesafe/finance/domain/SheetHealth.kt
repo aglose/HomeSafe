@@ -1,32 +1,63 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_section_accounts
+import homesafe.shared.generated.resources.fin_data_section_accounts_looked_for
+import homesafe.shared.generated.resources.fin_data_section_cash
+import homesafe.shared.generated.resources.fin_data_section_cash_looked_for
+import homesafe.shared.generated.resources.fin_data_section_debts
+import homesafe.shared.generated.resources.fin_data_section_debts_looked_for
+import homesafe.shared.generated.resources.fin_data_section_expenses
+import homesafe.shared.generated.resources.fin_data_section_expenses_looked_for
+import homesafe.shared.generated.resources.fin_data_section_history
+import homesafe.shared.generated.resources.fin_data_section_history_looked_for
+import homesafe.shared.generated.resources.fin_data_section_home
+import homesafe.shared.generated.resources.fin_data_section_home_looked_for
+import homesafe.shared.generated.resources.fin_data_section_house_sale
+import homesafe.shared.generated.resources.fin_data_section_house_sale_looked_for
+import homesafe.shared.generated.resources.fin_data_section_income
+import homesafe.shared.generated.resources.fin_data_section_income_looked_for
+import homesafe.shared.generated.resources.fin_data_section_mortgage
+import homesafe.shared.generated.resources.fin_data_section_mortgage_looked_for
+import homesafe.shared.generated.resources.fin_data_section_tax_years
+import homesafe.shared.generated.resources.fin_data_section_tax_years_looked_for
+import homesafe.shared.generated.resources.fin_data_section_total_assets
+import homesafe.shared.generated.resources.fin_data_section_total_assets_looked_for
+import homesafe.shared.generated.resources.fin_data_section_totals
+import homesafe.shared.generated.resources.fin_data_section_totals_looked_for
+import homesafe.shared.generated.resources.fin_data_section_vesting
+import homesafe.shared.generated.resources.fin_data_section_vesting_looked_for
+import homesafe.shared.generated.resources.fin_data_section_watchlist
+import homesafe.shared.generated.resources.fin_data_section_watchlist_looked_for
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * The parts of the budget sheet the app reads, each found by a title in the sheet rather than by
  * where it sits ([lookedFor] says what). Moving a part, or adding and removing rows in it, is
  * fine; renaming its title is what loses it, and the sync page says which title it needs.
  */
-enum class SheetSection(val label: String, val lookedFor: String) {
-    INCOME("Income", "a cell reading “Flow In” with each person's name to its right, and “Monthly Income” below"),
-    EXPENSES("Monthly spending", "a cell reading “Flow Out”, with an amount beside each line under it"),
-    TOTALS("Monthly totals", "cells reading “Monthly Combined Income”, “Total Monthly Expenses” and “Net Monthly Profit”, each with its number beside it"),
-    ACCOUNTS("Accounts", "a cell reading “Brokerage Accounts” with each person's name in its row"),
-    CASH("Cash", "a cell reading “Checking/Savings” (or “Cash”) with an amount beside it"),
-    TOTAL_ASSETS("Total assets", "a cell reading “Total Assets” with its number beside it"),
-    DEBTS("Debt", "a cell reading “Debt” with each person's name in the row below it, or in its own row"),
-    HOME("Home", "a cell reading “Home Asset” with “Total Equity” or “Deposit…” under it"),
-    VESTING("Vesting", "a cell reading “Future Holdings”, with a “Type” and an “Amount” heading just under it"),
-    WATCHLIST("Watchlist", "cells like “Live TSLA Price”"),
-    HISTORY("History", "a “Date” heading in the same row as “Total Assets”, with a date in each row under it"),
-    TAX_YEARS("Income & taxes", "a “Take Home” heading in the same row as “Year”, with a year in each row under it"),
-    MORTGAGE("Mortgage planner", "a cell reading “Mortgage Calculator” with “Home Price” under it"),
-    HOUSE_SALE("Last house sale", "a cell reading “Sold Price” with its number beside it"),
+enum class SheetSection(val label: StringResource, val lookedFor: StringResource) {
+    INCOME(Res.string.fin_data_section_income, Res.string.fin_data_section_income_looked_for),
+    EXPENSES(Res.string.fin_data_section_expenses, Res.string.fin_data_section_expenses_looked_for),
+    TOTALS(Res.string.fin_data_section_totals, Res.string.fin_data_section_totals_looked_for),
+    ACCOUNTS(Res.string.fin_data_section_accounts, Res.string.fin_data_section_accounts_looked_for),
+    CASH(Res.string.fin_data_section_cash, Res.string.fin_data_section_cash_looked_for),
+    TOTAL_ASSETS(Res.string.fin_data_section_total_assets, Res.string.fin_data_section_total_assets_looked_for),
+    DEBTS(Res.string.fin_data_section_debts, Res.string.fin_data_section_debts_looked_for),
+    HOME(Res.string.fin_data_section_home, Res.string.fin_data_section_home_looked_for),
+    VESTING(Res.string.fin_data_section_vesting, Res.string.fin_data_section_vesting_looked_for),
+    WATCHLIST(Res.string.fin_data_section_watchlist, Res.string.fin_data_section_watchlist_looked_for),
+    HISTORY(Res.string.fin_data_section_history, Res.string.fin_data_section_history_looked_for),
+    TAX_YEARS(Res.string.fin_data_section_tax_years, Res.string.fin_data_section_tax_years_looked_for),
+    MORTGAGE(Res.string.fin_data_section_mortgage, Res.string.fin_data_section_mortgage_looked_for),
+    HOUSE_SALE(Res.string.fin_data_section_house_sale, Res.string.fin_data_section_house_sale_looked_for),
 }
 
 /** Something the parser noticed while reading a part: rows it had to leave out, say. */
 @Immutable
-data class ParseNote(val section: SheetSection?, val message: String)
+data class ParseNote(val section: SheetSection?, val message: UiText)
 
 enum class SectionStatus {
     /** Found and read. */
@@ -44,11 +75,12 @@ data class SectionHealth(
     val section: SheetSection,
     val status: SectionStatus,
     /** What was read, as a phrase: "22 lines", "14 accounts". Null when nothing was. */
-    val found: String?,
+    val found: UiText?,
 )
 
+/** One of the sheet's charts: its [title] as the card shows it, its [tab], and why it can't be drawn when it can't. */
 @Immutable
-data class ChartHealth(val title: String, val tab: String, val problem: String?)
+data class ChartHealth(val title: UiText, val tab: String, val problem: UiText?)
 
 /**
  * How the last read of the sheet went, part by part and chart by chart. Built on every sync, so

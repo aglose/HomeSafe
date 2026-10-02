@@ -7,7 +7,6 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.performTextReplacement
-import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.FakeUser
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -62,7 +61,7 @@ internal class ShellRobot(private val journey: AppJourney) {
      * (the sign-in skeleton draws the same bar with a plain status icon), and the form is gone.
      */
     fun awaitSignedIn() {
-        journey.awaitNode(hasText(ConnectionRoute.TAILSCALE.label), "the Tailscale route badge")
+        journey.awaitNode(hasText("Tailscale"), "the Tailscale route badge")
         journey.awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
     }
 

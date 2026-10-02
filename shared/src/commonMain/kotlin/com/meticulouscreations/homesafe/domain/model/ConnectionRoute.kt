@@ -1,12 +1,17 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.connection_route_local_network
+import homesafe.shared.generated.resources.connection_route_tailscale
+import org.jetbrains.compose.resources.StringResource
+
 /** Which of the server's addresses the app is talking to right now. */
-enum class ConnectionRoute(val label: String) {
+enum class ConnectionRoute(val label: StringResource) {
     /** The server's private LAN address: same Wi-Fi, no VPN hop. The fast path for video. */
-    LOCAL_NETWORK("Local network"),
+    LOCAL_NETWORK(Res.string.connection_route_local_network),
 
     /** The server's Tailscale address: works from anywhere, at the cost of a WireGuard (and possibly relay) hop. */
-    TAILSCALE("Tailscale"),
+    TAILSCALE(Res.string.connection_route_tailscale),
 }
 
 /**

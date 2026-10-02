@@ -4,19 +4,163 @@ import androidx.compose.runtime.Immutable
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.Debt
+import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.checkup_debt_detail_costly
+import homesafe.shared.generated.resources.checkup_debt_detail_none_rated
+import homesafe.shared.generated.resources.checkup_debt_figure_loans
+import homesafe.shared.generated.resources.checkup_debt_figure_none
+import homesafe.shared.generated.resources.checkup_debt_item_fed
+import homesafe.shared.generated.resources.checkup_debt_item_fed_detail
+import homesafe.shared.generated.resources.checkup_debt_item_floor
+import homesafe.shared.generated.resources.checkup_debt_item_floor_detail
+import homesafe.shared.generated.resources.checkup_debt_item_not_loaded
+import homesafe.shared.generated.resources.checkup_debt_ledger_above
+import homesafe.shared.generated.resources.checkup_debt_ledger_line
+import homesafe.shared.generated.resources.checkup_debt_ledger_loans
+import homesafe.shared.generated.resources.checkup_debt_note
+import homesafe.shared.generated.resources.checkup_debt_rule
+import homesafe.shared.generated.resources.checkup_debt_step_add_rate
+import homesafe.shared.generated.resources.checkup_debt_step_all_below
+import homesafe.shared.generated.resources.checkup_debt_step_interest
+import homesafe.shared.generated.resources.checkup_debt_step_pay_first
+import homesafe.shared.generated.resources.checkup_debt_step_spare_clears
+import homesafe.shared.generated.resources.checkup_debt_step_spare_partial
+import homesafe.shared.generated.resources.checkup_debt_step_then
+import homesafe.shared.generated.resources.checkup_debt_unjudged
+import homesafe.shared.generated.resources.checkup_debt_whatif
+import homesafe.shared.generated.resources.checkup_debt_whatif_all_cleared
+import homesafe.shared.generated.resources.checkup_debt_whatif_paid_off
+import homesafe.shared.generated.resources.checkup_debt_whatif_saved
+import homesafe.shared.generated.resources.checkup_debt_whatif_still_costly
+import homesafe.shared.generated.resources.checkup_emergency_ledger_cash
+import homesafe.shared.generated.resources.checkup_emergency_ledger_months
+import homesafe.shared.generated.resources.checkup_emergency_ledger_spending
+import homesafe.shared.generated.resources.checkup_emergency_note
+import homesafe.shared.generated.resources.checkup_emergency_rule
+import homesafe.shared.generated.resources.checkup_emergency_step_beyond
+import homesafe.shared.generated.resources.checkup_emergency_step_short
+import homesafe.shared.generated.resources.checkup_emergency_step_short_away
+import homesafe.shared.generated.resources.checkup_emergency_step_six
+import homesafe.shared.generated.resources.checkup_emergency_step_stronger
+import homesafe.shared.generated.resources.checkup_emergency_step_stronger_away
+import homesafe.shared.generated.resources.checkup_emergency_step_target
+import homesafe.shared.generated.resources.checkup_emergency_step_top_up
+import homesafe.shared.generated.resources.checkup_emergency_step_trim
+import homesafe.shared.generated.resources.checkup_emergency_step_where
+import homesafe.shared.generated.resources.checkup_emergency_whatif
+import homesafe.shared.generated.resources.checkup_emergency_whatif_covered
+import homesafe.shared.generated.resources.checkup_emergency_whatif_past
+import homesafe.shared.generated.resources.checkup_emergency_whatif_short
+import homesafe.shared.generated.resources.checkup_emergency_whatif_within
+import homesafe.shared.generated.resources.checkup_gauge_months
+import homesafe.shared.generated.resources.checkup_item_apr
+import homesafe.shared.generated.resources.checkup_item_interest
+import homesafe.shared.generated.resources.checkup_item_no_rate
+import homesafe.shared.generated.resources.checkup_months
+import homesafe.shared.generated.resources.checkup_not_itemised
+import homesafe.shared.generated.resources.checkup_not_itemised_detail
+import homesafe.shared.generated.resources.checkup_op_divide
+import homesafe.shared.generated.resources.checkup_op_equals
+import homesafe.shared.generated.resources.checkup_op_minus
+import homesafe.shared.generated.resources.checkup_op_versus
+import homesafe.shared.generated.resources.checkup_priority_costly_debt
+import homesafe.shared.generated.resources.checkup_priority_debt_ratio
+import homesafe.shared.generated.resources.checkup_priority_emergency
+import homesafe.shared.generated.resources.checkup_priority_retirement
+import homesafe.shared.generated.resources.checkup_priority_savings
+import homesafe.shared.generated.resources.checkup_ratio_item_elsewhere
+import homesafe.shared.generated.resources.checkup_ratio_item_elsewhere_detail
+import homesafe.shared.generated.resources.checkup_ratio_ledger_owed
+import homesafe.shared.generated.resources.checkup_ratio_ledger_owned
+import homesafe.shared.generated.resources.checkup_ratio_ledger_result
+import homesafe.shared.generated.resources.checkup_ratio_rule
+import homesafe.shared.generated.resources.checkup_ratio_step_assets
+import homesafe.shared.generated.resources.checkup_ratio_step_from_income
+import homesafe.shared.generated.resources.checkup_ratio_step_from_savings
+import homesafe.shared.generated.resources.checkup_ratio_step_highest_rate
+import homesafe.shared.generated.resources.checkup_ratio_step_margin
+import homesafe.shared.generated.resources.checkup_ratio_step_mortgage
+import homesafe.shared.generated.resources.checkup_ratio_step_nothing_owed
+import homesafe.shared.generated.resources.checkup_ratio_whatif
+import homesafe.shared.generated.resources.checkup_ratio_whatif_all_paid
+import homesafe.shared.generated.resources.checkup_ratio_whatif_nothing_left
+import homesafe.shared.generated.resources.checkup_ratio_whatif_owed_vs_owned
+import homesafe.shared.generated.resources.checkup_ratio_whatif_still_owed
+import homesafe.shared.generated.resources.checkup_retirement_ledger_accounts
+import homesafe.shared.generated.resources.checkup_retirement_ledger_result
+import homesafe.shared.generated.resources.checkup_retirement_ledger_total
+import homesafe.shared.generated.resources.checkup_retirement_note
+import homesafe.shared.generated.resources.checkup_retirement_rule
+import homesafe.shared.generated.resources.checkup_retirement_step_401k
+import homesafe.shared.generated.resources.checkup_retirement_step_match
+import homesafe.shared.generated.resources.checkup_retirement_step_reach
+import homesafe.shared.generated.resources.checkup_retirement_step_reach_away
+import homesafe.shared.generated.resources.checkup_retirement_step_uneven
+import homesafe.shared.generated.resources.checkup_retirement_whatif
+import homesafe.shared.generated.resources.checkup_retirement_whatif_in_accounts
+import homesafe.shared.generated.resources.checkup_retirement_whatif_saved
+import homesafe.shared.generated.resources.checkup_savings_ledger_kept
+import homesafe.shared.generated.resources.checkup_savings_ledger_left_over
+import homesafe.shared.generated.resources.checkup_savings_ledger_other
+import homesafe.shared.generated.resources.checkup_savings_ledger_spending
+import homesafe.shared.generated.resources.checkup_savings_ledger_take_home
+import homesafe.shared.generated.resources.checkup_savings_rule
+import homesafe.shared.generated.resources.checkup_savings_step_401k
+import homesafe.shared.generated.resources.checkup_savings_step_above
+import homesafe.shared.generated.resources.checkup_savings_step_more_pay
+import homesafe.shared.generated.resources.checkup_savings_step_past_stretch
+import homesafe.shared.generated.resources.checkup_savings_step_reach
+import homesafe.shared.generated.resources.checkup_savings_step_stretch
+import homesafe.shared.generated.resources.checkup_savings_step_trim_expense
+import homesafe.shared.generated.resources.checkup_savings_whatif
+import homesafe.shared.generated.resources.checkup_savings_whatif_kept
+import homesafe.shared.generated.resources.checkup_savings_whatif_left_over
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.finance_wallet_accounts_title
+import homesafe.shared.generated.resources.finance_wallet_allocation_title
+import homesafe.shared.generated.resources.finance_wallet_cash_flow_title
+import homesafe.shared.generated.resources.finance_wallet_debt_title
+import homesafe.shared.generated.resources.finance_wallet_per_month
+import homesafe.shared.generated.resources.layman_checkup_debt_none
+import homesafe.shared.generated.resources.layman_checkup_debt_tip_costly
+import homesafe.shared.generated.resources.layman_checkup_debt_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_debt_title
+import homesafe.shared.generated.resources.layman_checkup_emergency_detail
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_short
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_solid
+import homesafe.shared.generated.resources.layman_checkup_emergency_title
+import homesafe.shared.generated.resources.layman_checkup_ratio_detail
+import homesafe.shared.generated.resources.layman_checkup_ratio_tip_high
+import homesafe.shared.generated.resources.layman_checkup_ratio_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_ratio_title
+import homesafe.shared.generated.resources.layman_checkup_retirement_detail
+import homesafe.shared.generated.resources.layman_checkup_retirement_tip_low
+import homesafe.shared.generated.resources.layman_checkup_retirement_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_retirement_title
+import homesafe.shared.generated.resources.layman_checkup_saving_detail
+import homesafe.shared.generated.resources.layman_checkup_saving_tip_low
+import homesafe.shared.generated.resources.layman_checkup_saving_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_saving_title
+import homesafe.shared.generated.resources.narrator_two_sentences
+import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
-/** A part of the Wallet page a checkup figure comes from, by its header's list key, to jump to. */
-internal enum class WalletSection(val key: String, val label: String) {
-    ACCOUNTS("acct-h", "Accounts"),
-    ALLOCATION("alloc-h", "Where your money sits"),
-    CASH_FLOW("flow-h", "Monthly cash flow"),
-    DEBT("debt-h", "Debt"),
+/** A part of the Wallet page a checkup figure comes from, by its header's list key, to jump to; [label] is the header's title. */
+internal enum class WalletSection(val key: String, val label: StringResource) {
+    ACCOUNTS("acct-h", Res.string.finance_wallet_accounts_title),
+    ALLOCATION("alloc-h", Res.string.finance_wallet_allocation_title),
+    CASH_FLOW("flow-h", Res.string.finance_wallet_cash_flow_title),
+    DEBT("debt-h", Res.string.finance_wallet_debt_title),
 }
 
 /** The checkup's lines, in the order the card lists them. */
@@ -30,7 +174,7 @@ internal enum class CheckKind {
 
 /** One thing that goes into a figure: an account, an expense, a loan. [flagged] marks the ones holding the check back. */
 @Immutable
-internal data class CheckItem(val label: String, val detail: String?, val amount: String, val flagged: Boolean = false)
+internal data class CheckItem(val label: UiText, val detail: UiText?, val amount: UiText, val flagged: Boolean = false)
 
 /**
  * A line of a check's working-out, read top to bottom like a sum on paper: [op] is the sign in
@@ -39,9 +183,9 @@ internal data class CheckItem(val label: String, val detail: String?, val amount
  */
 @Immutable
 internal data class CheckLedgerRow(
-    val op: String?,
-    val label: String,
-    val amount: String,
+    val op: StringResource?,
+    val label: StringResource,
+    val amount: UiText,
     val items: List<CheckItem> = emptyList(),
     val section: WalletSection? = null,
     val result: Boolean = false,
@@ -58,18 +202,18 @@ internal data class CheckGauge(
     val target: Double,
     val max: Double,
     val higherIsBetter: Boolean,
-    val targetLabel: String,
+    val targetLabel: UiText,
     val stretch: Double? = null,
-    val stretchLabel: String? = null,
+    val stretchLabel: UiText? = null,
 )
 
 /** What a what-if amount would make of the check: the new figure, whether it passes, and a line more. */
 @Immutable
-internal data class WhatIfOutcome(val headline: String, val ok: Boolean, val note: String?)
+internal data class WhatIfOutcome(val headline: UiText, val ok: Boolean, val note: UiText?)
 
 /** A slider over one lever that moves the check, from today's numbers: [outcome] answers for each amount. */
 @Immutable
-internal class WhatIf(val label: String, val max: Double, val step: Double, val outcome: (Double) -> WhatIfOutcome)
+internal class WhatIf(val label: StringResource, val max: Double, val step: Double, val outcome: (Double) -> WhatIfOutcome)
 
 /**
  * One line of the money checkup, with everything its breakdown shows: the figure and how it was
@@ -80,21 +224,21 @@ internal class WhatIf(val label: String, val max: Double, val step: Double, val 
 internal data class Check(
     val kind: CheckKind,
     val ok: Boolean,
-    val title: String,
+    val title: StringResource,
     /** The household's number, short: "7.1 months", "19.7%". */
-    val figure: String,
-    val detail: String,
-    val tip: String,
+    val figure: UiText,
+    val detail: UiText,
+    val tip: StringResource,
     /** The rule of thumb the figure is held to, in a sentence. */
-    val rule: String,
+    val rule: StringResource,
     val explainerId: String,
     val gauge: CheckGauge?,
     val ledger: List<CheckLedgerRow>,
     /** What would improve it, or keep it healthy, with the amounts worked out. */
-    val steps: List<String>,
+    val steps: List<UiText>,
     val whatIf: WhatIf?,
     /** What's counted and what isn't, in small print. */
-    val note: String? = null,
+    val note: StringResource? = null,
 )
 
 /** The whole checkup: its lines, and the order to work on the flagged ones. */
@@ -116,12 +260,12 @@ internal data class Checkup(val checks: List<Check>) {
 internal val CheckupPriority = listOf(CheckKind.EMERGENCY_FUND, CheckKind.COSTLY_DEBT, CheckKind.SAVINGS_RATE, CheckKind.RETIREMENT, CheckKind.DEBT_RATIO)
 
 /** Why a flagged line sits where it does in [CheckupPriority], for the "where to start" list. */
-internal fun priorityReason(kind: CheckKind): String = when (kind) {
-    CheckKind.EMERGENCY_FUND -> "A cash cushion comes first, so a surprise bill or a lost job doesn't land on a credit card."
-    CheckKind.COSTLY_DEBT -> "High-rate debt next: every dollar paid off earns its interest rate, guaranteed."
-    CheckKind.SAVINGS_RATE -> "Then the monthly gap between pay and spending — it's what pays for every other goal."
-    CheckKind.RETIREMENT -> "Then tax-advantaged retirement saving, where growth isn't taxed each year."
-    CheckKind.DEBT_RATIO -> "Overall debt falls as the rest fall into place."
+internal fun priorityReason(kind: CheckKind): StringResource = when (kind) {
+    CheckKind.EMERGENCY_FUND -> Res.string.checkup_priority_emergency
+    CheckKind.COSTLY_DEBT -> Res.string.checkup_priority_costly_debt
+    CheckKind.SAVINGS_RATE -> Res.string.checkup_priority_savings
+    CheckKind.RETIREMENT -> Res.string.checkup_priority_retirement
+    CheckKind.DEBT_RATIO -> Res.string.checkup_priority_debt_ratio
 }
 
 private const val EMERGENCY_MONTHS = 3.0
@@ -130,9 +274,10 @@ private const val SAVINGS_GOAL = 0.15
 private const val SAVINGS_STRETCH = 0.20
 private const val DEBT_RATIO_LINE = 0.25
 private const val RETIREMENT_SHARE = 0.25
+private const val COSTLY_DEBT_FLOOR = 5.0
 
 /** The rate a loan has to beat to be "costly": about what savings earn, never under 5%. */
-internal fun costlyDebtHurdle(fedRate: Double?): Double = (fedRate ?: 5.0).coerceAtLeast(5.0)
+internal fun costlyDebtHurdle(fedRate: Double?): Double = (fedRate ?: COSTLY_DEBT_FLOOR).coerceAtLeast(COSTLY_DEBT_FLOOR)
 
 /**
  * The household's checkup from the sheet, each line a common rule of thumb. A line whose inputs
@@ -151,22 +296,44 @@ internal fun moneyCheckup(finance: PersonalFinance, fedRate: Double?): Checkup =
 
 private fun money(v: Double) = FinanceFormat.money(v, 0)
 
-private fun months(m: Double) = FinanceFormat.grouped(m, 1) + " months"
+/** A month count with one decimal, as the number alone ("7.1"), for sentences that say "months" themselves. */
+private fun monthsNumber(m: Double) = FinanceFormat.grouped(m, 1)
+
+/** "7.1 months". */
+private fun months(m: Double): UiText = UiText.of(Res.string.checkup_months, monthsNumber(m))
+
+/** "3 mo", under a gauge's tick. */
+private fun gaugeMonths(m: Double): UiText = UiText.plural(Res.plurals.checkup_gauge_months, m.toInt())
 
 private fun pct(fraction: Double, decimals: Int = 0) = FinanceFormat.fractionPercent(fraction, decimals)
 
+/** An amount already formatted, as text: a figure, not words. */
+private fun figure(formatted: String): UiText = formatted.asUiText()
+
+/** "$1,240 / mo". */
+private fun perMonth(v: Double): UiText = UiText.of(Res.string.finance_wallet_per_month, money(v))
+
+/** Names from the sheet as a list: "Credit card, Car loan". */
+private fun names(list: List<String>): UiText = UiText.Joined(list.map { it.asUiText() }, UiText.of(Res.string.common_list_separator))
+
+private val dot: UiText = UiText.of(Res.string.common_dot_separator)
+
 private fun roundUp(v: Double, step: Double) = ceil(v / step) * step
 
-private fun accountItem(a: Account) = CheckItem(a.name, "${a.owner.label} · ${a.category.label}", money(a.balance))
+private fun accountItem(a: Account) = CheckItem(a.name, UiText.Joined(listOf(a.owner.label, UiText.of(a.category.label)), dot), figure(money(a.balance)))
 
 /**
  * The sheet's expense lines as items, plus a line for whatever of [total] they don't add up to
  * (the sheet's total can count spending it doesn't itemise), so the parts always make the figure.
  */
 private fun expenseItems(finance: PersonalFinance, total: Double): List<CheckItem> {
-    val items = finance.expenses.map { CheckItem(it.name, null, money(it.monthly) + " / mo") }
+    val items = finance.expenses.map { CheckItem(it.name.asUiText(), null, perMonth(it.monthly)) }
     val rest = total - finance.expenses.sumOf { it.monthly }
-    return if (finance.expenses.isNotEmpty() && abs(rest) >= 1) items + CheckItem("Not itemised in the sheet", "the sheet's total less the lines above", money(rest) + " / mo") else items
+    return if (finance.expenses.isNotEmpty() && abs(rest) >= 1) {
+        items + CheckItem(UiText.of(Res.string.checkup_not_itemised), UiText.of(Res.string.checkup_not_itemised_detail), perMonth(rest))
+    } else {
+        items
+    }
 }
 
 /** The smallest whole-dollar amount at least [v], so following a quoted amount always reaches the line. */
@@ -181,21 +348,23 @@ private fun rate(r: Double) = FinanceFormat.grouped(r, 2).trimEnd('0').trimEnd('
 private fun Debt.yearlyInterest(): Double? = apr?.let { balance * it / 100 }
 
 private fun debtItem(d: Debt, flagged: Boolean = false) = CheckItem(
-    d.name,
-    listOfNotNull(
-        d.owner.label,
-        d.apr?.let { "${rate(it)} APR" } ?: "rate not in the sheet",
-        d.yearlyInterest()?.let { "~${money(it)} interest a year" },
-    ).joinToString(" · "),
-    money(d.balance),
+    d.name.asUiText(),
+    UiText.Joined(
+        listOfNotNull(
+            d.owner.label,
+            d.apr?.let { UiText.of(Res.string.checkup_item_apr, rate(it)) } ?: UiText.of(Res.string.checkup_item_no_rate),
+            d.yearlyInterest()?.let { UiText.of(Res.string.checkup_item_interest, money(it)) },
+        ),
+        dot,
+    ),
+    figure(money(d.balance)),
     flagged,
 )
 
-/** "about N months" until [gap] is covered at [perMonth] a month, or null when nothing's left over. */
-private fun monthsAway(gap: Double, perMonth: Double?): String? {
+/** How many months (at least one) until [gap] is covered at [perMonth] a month, or null when nothing's left over. */
+private fun monthsAway(gap: Double, perMonth: Double?): Int? {
     if (perMonth == null || perMonth <= 0 || gap <= 0) return null
-    val n = ceil(gap / perMonth).toInt()
-    return if (n <= 1) "about a month" else "about $n months"
+    return ceil(gap / perMonth).toInt().coerceAtLeast(1)
 }
 
 /** Every account by category, biggest first, as items. */
@@ -203,7 +372,7 @@ private fun categoryItems(accounts: List<Account>): List<CheckItem> =
     accounts.groupBy { it.category }
         .map { (cat, list) -> cat to list.sumOf { it.balance } }
         .sortedByDescending { it.second }
-        .map { (cat, sum) -> CheckItem(cat.label, null, money(sum)) }
+        .map { (cat, sum) -> CheckItem(UiText.of(cat.label), null, figure(money(sum))) }
 
 private fun emergencyFund(finance: PersonalFinance): Check? {
     val spend = finance.monthlyExpenses?.takeIf { it > 0 } ?: return null
@@ -216,67 +385,89 @@ private fun emergencyFund(finance: PersonalFinance): Check? {
     val steps = buildList {
         when {
             m < EMERGENCY_MONTHS -> {
-                add("Set aside ${atLeast(toThree)} more to reach 3 months (${money(EMERGENCY_MONTHS * spend)} in all)." + (monthsAway(toThree, left)?.let { " Saving all of the ${money(left!!)} left over each month, that's $it away." } ?: ""))
-                add("Spending less shrinks the goal too: every ${money(100.0)} a month trimmed lowers a 3-month cushion by ${money(300.0)}.")
-                add("Keep it somewhere easy to reach that pays interest, like a high-yield savings account.")
+                val away = monthsAway(toThree, left)
+                add(
+                    if (away == null) {
+                        UiText.of(Res.string.checkup_emergency_step_short, atLeast(toThree), money(EMERGENCY_MONTHS * spend))
+                    } else {
+                        UiText.plural(Res.plurals.checkup_emergency_step_short_away, away, atLeast(toThree), money(EMERGENCY_MONTHS * spend), money(left!!), away)
+                    },
+                )
+                add(UiText.of(Res.string.checkup_emergency_step_trim, money(100.0), money(300.0)))
+                add(UiText.of(Res.string.checkup_emergency_step_where))
             }
 
             m < EMERGENCY_STRONG_MONTHS -> {
-                add("${atLeast(toSix)} more would reach the stronger 6-month cushion." + (monthsAway(toSix, left)?.let { " At ${money(left!!)} left over a month, $it." } ?: ""))
-                add("Toward six months matters most if one income carries the household or work is uncertain.")
+                val away = monthsAway(toSix, left)
+                add(
+                    if (away == null) {
+                        UiText.of(Res.string.checkup_emergency_step_stronger, atLeast(toSix))
+                    } else {
+                        UiText.plural(Res.plurals.checkup_emergency_step_stronger_away, away, atLeast(toSix), money(left!!), away)
+                    },
+                )
+                add(UiText.of(Res.string.checkup_emergency_step_six))
             }
 
             else -> {
                 val extra = -toSix
                 if (extra > spend) {
-                    add("About ${money(extra)} sits beyond a 6-month cushion — money that could earn more invested, or pay down costly debt.")
+                    add(UiText.of(Res.string.checkup_emergency_step_beyond, money(extra)))
                 } else {
-                    add("Keep it topped up as spending grows: each ${money(100.0)} a month of new spending adds ${money(600.0)} to a 6-month cushion.")
+                    add(UiText.of(Res.string.checkup_emergency_step_top_up, money(100.0), money(600.0)))
                 }
             }
         }
         finance.emergencyTarget?.takeIf { it > 0 }?.let { target ->
-            add("Your sheet's own emergency target is ${money(target)}: you have ${pct(cash / target)} of it.")
+            add(UiText.of(Res.string.checkup_emergency_step_target, money(target), pct(cash / target)))
         }
     }
     val cashAccounts = finance.accounts.filter { it.category == AccountCategory.CASH }.sortedByDescending { it.balance }
     return Check(
         kind = CheckKind.EMERGENCY_FUND,
         ok = ok,
-        title = "Emergency fund",
+        title = Res.string.layman_checkup_emergency_title,
         figure = months(m),
-        detail = "Your cash covers ${months(m)} of expenses.",
+        detail = UiText.of(Res.string.layman_checkup_emergency_detail, monthsNumber(m)),
         tip = when {
-            m >= EMERGENCY_STRONG_MONTHS -> "Comfortably past the 3–6 months planners suggest."
-            ok -> "Within the 3–6 months planners suggest; toward six is safer if one job carries the household."
-            else -> "Planners suggest 3–6 months; building cash first protects you against a layoff."
+            m >= EMERGENCY_STRONG_MONTHS -> Res.string.layman_checkup_emergency_tip_solid
+            ok -> Res.string.layman_checkup_emergency_tip_ok
+            else -> Res.string.layman_checkup_emergency_tip_short
         },
-        rule = "Planners suggest keeping 3 to 6 months of spending in cash. The checkup passes from 3.",
+        rule = Res.string.checkup_emergency_rule,
         explainerId = "runway",
-        gauge = CheckGauge(m, EMERGENCY_MONTHS, max(9.0, min(m * 1.15, 24.0)), higherIsBetter = true, targetLabel = "3 mo", stretch = EMERGENCY_STRONG_MONTHS, stretchLabel = "6 mo"),
+        gauge = CheckGauge(
+            m,
+            EMERGENCY_MONTHS,
+            max(9.0, min(m * 1.15, 24.0)),
+            higherIsBetter = true,
+            targetLabel = gaugeMonths(EMERGENCY_MONTHS),
+            stretch = EMERGENCY_STRONG_MONTHS,
+            stretchLabel = gaugeMonths(EMERGENCY_STRONG_MONTHS),
+        ),
         ledger = listOf(
-            CheckLedgerRow(null, "Cash in the bank", money(cash), cashAccounts.map(::accountItem), WalletSection.ACCOUNTS.takeIf { finance.accounts.isNotEmpty() }),
-            CheckLedgerRow("÷", "Spending each month", money(spend), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }),
-            CheckLedgerRow("=", "Months covered", months(m), result = true),
+            CheckLedgerRow(null, Res.string.checkup_emergency_ledger_cash, figure(money(cash)), cashAccounts.map(::accountItem), WalletSection.ACCOUNTS.takeIf { finance.accounts.isNotEmpty() }),
+            CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_emergency_ledger_spending, figure(money(spend)), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }),
+            CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_emergency_ledger_months, months(m), result = true),
         ),
         steps = steps,
         whatIf = WhatIf(
-            label = "Add to cash",
+            label = Res.string.checkup_emergency_whatif,
             max = roundUp(max(toSix, EMERGENCY_MONTHS * spend), 1000.0),
             step = 500.0,
         ) { x ->
             val m2 = (cash + x) / spend
             WhatIfOutcome(
-                "${months(m2)} covered",
+                UiText.of(Res.string.checkup_emergency_whatif_covered, monthsNumber(m2)),
                 m2 >= EMERGENCY_MONTHS,
                 when {
-                    m2 >= EMERGENCY_STRONG_MONTHS -> "Past the 6-month cushion."
-                    m2 >= EMERGENCY_MONTHS -> "Within the 3–6 month range."
-                    else -> "${money(EMERGENCY_MONTHS * spend - cash - x)} short of 3 months."
+                    m2 >= EMERGENCY_STRONG_MONTHS -> UiText.of(Res.string.checkup_emergency_whatif_past)
+                    m2 >= EMERGENCY_MONTHS -> UiText.of(Res.string.checkup_emergency_whatif_within)
+                    else -> UiText.of(Res.string.checkup_emergency_whatif_short, money(EMERGENCY_MONTHS * spend - cash - x))
                 },
             )
         },
-        note = "Only accounts the sheet names as cash (checking, savings) count: investments can be down just when you'd need them.",
+        note = Res.string.checkup_emergency_note,
     )
 }
 
@@ -289,50 +480,70 @@ private fun savingsRate(finance: PersonalFinance): Check? {
     val gap = SAVINGS_GOAL * income - net
     val steps = buildList {
         if (!ok) {
-            add("Keeping ${atLeast(gap)} more a month reaches 15%.")
+            add(UiText.of(Res.string.checkup_savings_step_reach, atLeast(gap)))
             finance.expenses.filter { it.monthly >= gap }.take(2).forEach { e ->
-                add("${e.name} is ${money(e.monthly)} a month — trimming it by ${pct(gap / e.monthly)} would cover that on its own.")
+                add(UiText.of(Res.string.checkup_savings_step_trim_expense, e.name, money(e.monthly), pct(gap / e.monthly)))
             }
-            add("More pay counts too: ${atLeast(gap / (1 - SAVINGS_GOAL))} more take-home a month, with spending held where it is, gets there.")
-            add("401(k) contributions taken from your paycheck aren't in take-home, so they count on top of this.")
+            add(UiText.of(Res.string.checkup_savings_step_more_pay, atLeast(gap / (1 - SAVINGS_GOAL))))
+            add(UiText.of(Res.string.checkup_savings_step_401k))
         } else {
-            add("You keep ${money(-gap)} a month more than the 15% line.")
+            add(UiText.of(Res.string.checkup_savings_step_above, money(-gap)))
             if (r < SAVINGS_STRETCH) {
-                add("${money(SAVINGS_STRETCH * income - net)} more a month reaches 20%, the stretch goal.")
+                add(UiText.of(Res.string.checkup_savings_step_stretch, money(SAVINGS_STRETCH * income - net)))
             } else {
-                add("Past the 20% stretch goal too — the gap is doing real work. Make sure it's being invested, not piling up in checking.")
+                add(UiText.of(Res.string.checkup_savings_step_past_stretch))
             }
         }
     }
     val ledger = buildList {
-        add(CheckLedgerRow(null, "Take-home pay", money(income), finance.income.map { CheckItem(it.person, null, money(it.monthly) + " / mo") }, WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
-        add(CheckLedgerRow("−", "Spending", money(spend), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
+        add(
+            CheckLedgerRow(
+                null,
+                Res.string.checkup_savings_ledger_take_home,
+                figure(money(income)),
+                finance.income.map { CheckItem(it.person.asUiText(), null, perMonth(it.monthly)) },
+                WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() },
+            ),
+        )
+        add(CheckLedgerRow(Res.string.checkup_op_minus, Res.string.checkup_savings_ledger_spending, figure(money(spend)), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
         // The sheet's own "left over" can differ from income less expenses (a line it adds or leaves out).
         val other = income - spend - net
-        if (abs(other) >= 1) add(CheckLedgerRow("−", "Other differences in the sheet", money(other)))
-        add(CheckLedgerRow("=", "Left over", FinanceFormat.signedMoney(net, 0)))
-        add(CheckLedgerRow("÷", "Take-home pay", money(income)))
-        add(CheckLedgerRow("=", "Kept each month", pct(r, 1), result = true))
+        if (abs(other) >= 1) add(CheckLedgerRow(Res.string.checkup_op_minus, Res.string.checkup_savings_ledger_other, figure(money(other))))
+        add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_left_over, figure(FinanceFormat.signedMoney(net, 0))))
+        add(CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_savings_ledger_take_home, figure(money(income))))
+        add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_kept, figure(pct(r, 1)), result = true))
     }
     return Check(
         kind = CheckKind.SAVINGS_RATE,
         ok = ok,
-        title = "Saving each month",
-        figure = pct(r, 1),
-        detail = "You keep ${pct(r, 1)} of take-home pay after expenses.",
-        tip = if (ok) "At or above the common 15% goal." else "The common goal is 15–20% (401(k) contributions taken from your paycheck count on top). Trimming a big recurring expense moves this most.",
-        rule = "A common goal is keeping 15% of take-home pay, with 20% a stretch. The checkup passes from 15%.",
+        title = Res.string.layman_checkup_saving_title,
+        figure = figure(pct(r, 1)),
+        detail = UiText.of(Res.string.layman_checkup_saving_detail, pct(r, 1)),
+        tip = if (ok) Res.string.layman_checkup_saving_tip_ok else Res.string.layman_checkup_saving_tip_low,
+        rule = Res.string.checkup_savings_rule,
         explainerId = "savingsrate",
-        gauge = CheckGauge(r.coerceAtLeast(0.0), SAVINGS_GOAL, max(0.35, r * 1.15), higherIsBetter = true, targetLabel = "15%", stretch = SAVINGS_STRETCH, stretchLabel = "20%"),
+        gauge = CheckGauge(
+            r.coerceAtLeast(0.0),
+            SAVINGS_GOAL,
+            max(0.35, r * 1.15),
+            higherIsBetter = true,
+            targetLabel = figure(pct(SAVINGS_GOAL)),
+            stretch = SAVINGS_STRETCH,
+            stretchLabel = figure(pct(SAVINGS_STRETCH)),
+        ),
         ledger = ledger,
         steps = steps,
         whatIf = WhatIf(
-            label = "Spend less each month",
+            label = Res.string.checkup_savings_whatif,
             max = roundUp(min(max(gap * 1.5, income * 0.1), spend.coerceAtLeast(100.0)), 100.0),
             step = 25.0,
         ) { x ->
             val r2 = (net + x) / income
-            WhatIfOutcome("${pct(r2, 1)} kept", r2 >= SAVINGS_GOAL, "${FinanceFormat.signedMoney(net + x, 0)} left over a month.")
+            WhatIfOutcome(
+                UiText.of(Res.string.checkup_savings_whatif_kept, pct(r2, 1)),
+                r2 >= SAVINGS_GOAL,
+                UiText.of(Res.string.checkup_savings_whatif_left_over, FinanceFormat.signedMoney(net + x, 0)),
+            )
         },
     )
 }
@@ -349,57 +560,73 @@ private fun costlyDebt(finance: PersonalFinance, fedRate: Double?): Check? {
     val ok = costly.isEmpty()
     val hurdleText = rate(hurdle)
     val interest = open.sumOf { it.yearlyInterest() ?: 0.0 }
-    val unjudged = if (unknown.isEmpty()) "" else " ${unknown.joinToString { it.name }} ${if (unknown.size == 1) "has" else "have"} no rate in the sheet, so ${if (unknown.size == 1) "it wasn't" else "they weren't"} judged."
+    val unjudged = if (unknown.isEmpty()) null else UiText.plural(Res.plurals.checkup_debt_unjudged, unknown.size, names(unknown.map { it.name }))
     val spare = finance.monthlyExpenses?.let { finance.liquidCash - EMERGENCY_MONTHS * it }
     val steps = buildList {
         if (!ok) {
             val first = costly.first()
-            add("Pay ${first.name} first — at ${rate(first.apr!!)} it costs about ${money(first.yearlyInterest()!!)} a year. Paying it off early is a guaranteed ${rate(first.apr)} return.")
-            if (costly.size > 1) add("Then ${costly.drop(1).joinToString { it.name }}: highest rate first saves the most interest.")
+            add(UiText.of(Res.string.checkup_debt_step_pay_first, first.name, rate(first.apr!!), money(first.yearlyInterest()!!)))
+            if (costly.size > 1) add(UiText.of(Res.string.checkup_debt_step_then, names(costly.drop(1).map { it.name })))
             if (spare != null && spare > 0) {
                 val costlyTotal = costly.sumOf { it.balance }
                 add(
                     if (spare >= costlyTotal) {
-                        "You have ${money(spare)} in cash beyond a 3-month cushion — enough to clear every loan above the line (${money(costlyTotal)}) and keep the cushion."
+                        UiText.of(Res.string.checkup_debt_step_spare_clears, money(spare), money(costlyTotal))
                     } else {
-                        "You have ${money(spare)} in cash beyond a 3-month cushion; putting it toward ${first.name} would leave ${money(costlyTotal - spare)} above the line."
+                        UiText.of(Res.string.checkup_debt_step_spare_partial, money(spare), first.name, money(costlyTotal - spare))
                     },
                 )
             }
         } else {
-            add("Every loan with a rate costs less than the $hurdleText line, so paying them on schedule is reasonable while savings earn about as much.")
+            add(UiText.of(Res.string.checkup_debt_step_all_below, hurdleText))
         }
-        if (interest > 0) add("Altogether your loans cost about ${money(interest)} a year in interest (${money(interest / 12)} a month).")
+        if (interest > 0) add(UiText.of(Res.string.checkup_debt_step_interest, money(interest), money(interest / 12)))
         if (unknown.isNotEmpty()) {
-            add("${unknown.joinToString { it.name }} ${if (unknown.size == 1) "has" else "have"} no rate in the sheet — add it to the name, like \"Car loan (APR 3.4%)\", so the checkup can judge ${if (unknown.size == 1) "it" else "them"}.")
+            add(UiText.plural(Res.plurals.checkup_debt_step_add_rate, unknown.size, names(unknown.map { it.name })))
         }
     }
     val maxApr = open.mapNotNull { it.apr }.maxOrNull()
+    val none = UiText.of(Res.string.checkup_debt_figure_none)
+    val verdict = when {
+        !ok -> UiText.of(Res.string.checkup_debt_detail_costly, hurdleText, names(costly.map { it.name }))
+        unknown.isEmpty() -> UiText.of(Res.string.layman_checkup_debt_none, hurdleText)
+        else -> UiText.of(Res.string.checkup_debt_detail_none_rated, hurdleText)
+    }
     return Check(
         kind = CheckKind.COSTLY_DEBT,
         ok = ok,
-        title = "Costly debt",
-        figure = if (ok) "None" else "${costly.size} loan${if (costly.size == 1) "" else "s"}",
-        detail = (if (ok) "None of your loans${if (unknown.isEmpty()) "" else " with a rate"} charge more than about $hurdleText." else "Charging more than $hurdleText: ${costly.joinToString { it.name }}.") + unjudged,
-        tip = if (ok) "Low-rate loans can be paid on schedule while savings earn about as much." else "Paying these down early is a guaranteed return equal to their rate — usually better than savings pay.",
-        rule = "A loan is costly when its rate beats what savings earn — about the Fed's rate, and never under 5%. The mortgage isn't counted.",
+        title = Res.string.layman_checkup_debt_title,
+        figure = if (ok) none else UiText.plural(Res.plurals.checkup_debt_figure_loans, costly.size),
+        detail = if (unjudged == null) verdict else UiText.of(Res.string.narrator_two_sentences, verdict, unjudged),
+        tip = if (ok) Res.string.layman_checkup_debt_tip_ok else Res.string.layman_checkup_debt_tip_costly,
+        rule = Res.string.checkup_debt_rule,
         explainerId = "debt",
-        gauge = maxApr?.let { CheckGauge(it, hurdle, max(hurdle * 2, it * 1.2), higherIsBetter = false, targetLabel = hurdleText) },
+        gauge = maxApr?.let { CheckGauge(it, hurdle, max(hurdle * 2, it * 1.2), higherIsBetter = false, targetLabel = figure(hurdleText)) },
         ledger = listOf(
-            CheckLedgerRow(null, "Loans you're paying", money(open.sumOf { it.balance }), open.map { debtItem(it, it in costly) }, WalletSection.DEBT),
+            CheckLedgerRow(null, Res.string.checkup_debt_ledger_loans, figure(money(open.sumOf { it.balance })), open.map { debtItem(it, it in costly) }, WalletSection.DEBT),
             CheckLedgerRow(
-                "vs",
-                "The costly line",
-                hurdleText,
+                Res.string.checkup_op_versus,
+                Res.string.checkup_debt_ledger_line,
+                figure(hurdleText),
                 listOf(
-                    CheckItem("Fed funds rate today", "roughly what savings accounts pay", fedRate?.let(::rate) ?: "not loaded"),
-                    CheckItem("Floor", "the line never drops below this", "5%"),
+                    CheckItem(
+                        UiText.of(Res.string.checkup_debt_item_fed),
+                        UiText.of(Res.string.checkup_debt_item_fed_detail),
+                        fedRate?.let { figure(rate(it)) } ?: UiText.of(Res.string.checkup_debt_item_not_loaded),
+                    ),
+                    CheckItem(UiText.of(Res.string.checkup_debt_item_floor), UiText.of(Res.string.checkup_debt_item_floor_detail), figure(rate(COSTLY_DEBT_FLOOR))),
                 ),
             ),
-            CheckLedgerRow("=", "Above the line", if (ok) "None" else "${costly.size} · ${money(costly.sumOf { it.balance })}", costly.map { debtItem(it, true) }, result = true),
+            CheckLedgerRow(
+                Res.string.checkup_op_equals,
+                Res.string.checkup_debt_ledger_above,
+                if (ok) none else UiText.Joined(listOf(figure(costly.size.toString()), figure(money(costly.sumOf { it.balance }))), dot),
+                costly.map { debtItem(it, true) },
+                result = true,
+            ),
         ),
         steps = steps,
-        whatIf = WhatIf(label = "Pay toward loans now, highest rate first", max = roundUp(open.sumOf { it.balance }, 500.0), step = 250.0) { x ->
+        whatIf = WhatIf(label = Res.string.checkup_debt_whatif, max = roundUp(open.sumOf { it.balance }, 500.0), step = 250.0) { x ->
             var left = x
             var saved = 0.0
             val cleared = mutableListOf<String>()
@@ -412,17 +639,17 @@ private fun costlyDebt(finance: PersonalFinance, fedRate: Double?): Check? {
             }
             val stillCostly = costly.count { it.name !in cleared }
             WhatIfOutcome(
-                "${money(saved)} a year less interest",
+                UiText.of(Res.string.checkup_debt_whatif_saved, money(saved)),
                 stillCostly == 0,
                 when {
-                    costly.isNotEmpty() && stillCostly == 0 -> "Every loan above the line is cleared."
-                    stillCostly > 0 -> "$stillCostly loan${if (stillCostly == 1) "" else "s"} still above the line."
-                    cleared.isNotEmpty() -> "${cleared.joinToString()} paid off."
+                    costly.isNotEmpty() && stillCostly == 0 -> UiText.of(Res.string.checkup_debt_whatif_all_cleared)
+                    stillCostly > 0 -> UiText.plural(Res.plurals.checkup_debt_whatif_still_costly, stillCostly)
+                    cleared.isNotEmpty() -> UiText.of(Res.string.checkup_debt_whatif_paid_off, names(cleared))
                     else -> null
                 },
             )
         },
-        note = "A loan's rate is read from its name in the sheet. Paying early only beats saving when the rate is higher than savings pay.",
+        note = Res.string.checkup_debt_note,
     )
 }
 
@@ -435,49 +662,56 @@ private fun debtRatio(finance: PersonalFinance): Check? {
     val fromSavings = (owed - DEBT_RATIO_LINE * assets) / (1 - DEBT_RATIO_LINE)
     val steps = buildList {
         if (!ok) {
-            add("Paying down ${over(fromSavings)} from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).")
-            add("Or ${over(owed - DEBT_RATIO_LINE * assets)} paid down from income over time, leaving savings where they are.")
-            open.firstOrNull { it.apr != null }?.let { add("Start with the highest-rate loan, ${open.maxBy { d -> d.apr ?: -1.0 }.name}, to save the most interest on the way.") }
+            add(UiText.of(Res.string.checkup_ratio_step_from_savings, over(fromSavings)))
+            add(UiText.of(Res.string.checkup_ratio_step_from_income, over(owed - DEBT_RATIO_LINE * assets)))
+            open.firstOrNull { it.apr != null }?.let { add(UiText.of(Res.string.checkup_ratio_step_highest_rate, open.maxBy { d -> d.apr ?: -1.0 }.name)) }
         } else if (owed == 0.0) {
-            add("Nothing owed besides the mortgage.")
+            add(UiText.of(Res.string.checkup_ratio_step_nothing_owed))
         } else {
-            add("A comfortable margin: debts would have to grow by ${money(DEBT_RATIO_LINE * assets - owed)} to reach the 25% line.")
-            add("Assets growing helps as much as debt shrinking — both move this the right way.")
+            add(UiText.of(Res.string.checkup_ratio_step_margin, money(DEBT_RATIO_LINE * assets - owed)))
+            add(UiText.of(Res.string.checkup_ratio_step_assets))
         }
         if (finance.mortgageBalance > 0) {
-            add("The mortgage (${money(finance.mortgageBalance)}) isn't counted: the house counts as the equity built in it rather than its full value, as the sheet does.")
+            add(UiText.of(Res.string.checkup_ratio_step_mortgage, money(finance.mortgageBalance)))
         }
     }
     val accountsSum = finance.accounts.sumOf { it.balance }
     val assetItems = categoryItems(finance.accounts) + listOfNotNull(
-        (assets - accountsSum).takeIf { finance.accounts.isNotEmpty() && abs(it) >= 1 }?.let { CheckItem("Elsewhere in the sheet's total", "not in the accounts list", money(it)) },
+        (assets - accountsSum).takeIf { finance.accounts.isNotEmpty() && abs(it) >= 1 }?.let {
+            CheckItem(UiText.of(Res.string.checkup_ratio_item_elsewhere), UiText.of(Res.string.checkup_ratio_item_elsewhere_detail), figure(money(it)))
+        },
     )
     return Check(
         kind = CheckKind.DEBT_RATIO,
         ok = ok,
-        title = "Debt vs what you own",
-        figure = pct(ratio),
-        detail = "You owe ${pct(ratio)} as much as you own (not counting the mortgage).",
-        tip = if (ok) "A comfortable margin." else "Over a quarter is worth bringing down.",
-        rule = "Owing under a quarter of what you own leaves room for a bad year. The mortgage is left out, as the sheet leaves it out of net worth.",
+        title = Res.string.layman_checkup_ratio_title,
+        figure = figure(pct(ratio)),
+        detail = UiText.of(Res.string.layman_checkup_ratio_detail, pct(ratio)),
+        tip = if (ok) Res.string.layman_checkup_ratio_tip_ok else Res.string.layman_checkup_ratio_tip_high,
+        rule = Res.string.checkup_ratio_rule,
         explainerId = "networth",
-        gauge = CheckGauge(ratio, DEBT_RATIO_LINE, max(0.5, ratio * 1.2), higherIsBetter = false, targetLabel = "25%"),
+        gauge = CheckGauge(ratio, DEBT_RATIO_LINE, max(0.5, ratio * 1.2), higherIsBetter = false, targetLabel = figure(pct(DEBT_RATIO_LINE))),
         ledger = listOf(
-            CheckLedgerRow(null, "Owed, not counting the mortgage", money(owed), open.map { debtItem(it) }, WalletSection.DEBT.takeIf { finance.debts.isNotEmpty() }),
-            CheckLedgerRow("÷", "What you own", money(assets), assetItems, WalletSection.ACCOUNTS.takeIf { finance.accounts.isNotEmpty() }),
-            CheckLedgerRow("=", "Owed for what you own", pct(ratio), result = true),
+            CheckLedgerRow(null, Res.string.checkup_ratio_ledger_owed, figure(money(owed)), open.map { debtItem(it) }, WalletSection.DEBT.takeIf { finance.debts.isNotEmpty() }),
+            CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_ratio_ledger_owned, figure(money(assets)), assetItems, WalletSection.ACCOUNTS.takeIf { finance.accounts.isNotEmpty() }),
+            CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_ratio_ledger_result, figure(pct(ratio)), result = true),
         ),
         steps = steps,
         // Paid from cash, so no more than is owed or than the cash there is.
         whatIf = min(owed, finance.liquidCash).takeIf { it > 0 }?.let { payable ->
-            WhatIf("Pay down from savings", payable, 250.0) { amount ->
+            WhatIf(Res.string.checkup_ratio_whatif, payable, 250.0) { amount ->
                 val x = amount.coerceIn(0.0, payable)
                 val left = assets - x
+                val stillOwed = UiText.of(Res.string.checkup_ratio_whatif_still_owed, money(owed - x))
                 if (left <= 0) {
-                    WhatIfOutcome("Nothing left owned", false, "${money(owed - x)} still owed.")
+                    WhatIfOutcome(UiText.of(Res.string.checkup_ratio_whatif_nothing_left), false, stillOwed)
                 } else {
                     val r2 = (owed - x) / left
-                    WhatIfOutcome("${pct(r2)} owed vs owned", r2 < DEBT_RATIO_LINE, if (x >= owed) "Every loan but the mortgage paid off." else "${money(owed - x)} still owed.")
+                    WhatIfOutcome(
+                        UiText.of(Res.string.checkup_ratio_whatif_owed_vs_owned, pct(r2)),
+                        r2 < DEBT_RATIO_LINE,
+                        if (x >= owed) UiText.of(Res.string.checkup_ratio_whatif_all_paid) else stillOwed,
+                    )
                 }
             }
         },
@@ -493,40 +727,51 @@ private fun retirement(finance: PersonalFinance): Check? {
     val toGoal = (RETIREMENT_SHARE * total - saved) / (1 - RETIREMENT_SHARE)
     val steps = buildList {
         if (!ok) {
-            add("Adding ${atLeast(toGoal)} to retirement accounts would reach 25%." + (monthsAway(toGoal, finance.netMonthly)?.let { " Putting all of the ${money(finance.netMonthly!!)} left over each month in, that's $it." } ?: ""))
-            add("A traditional 401(k) takes contributions before tax, so each ${money(100.0)} saved costs less than ${money(100.0)} of take-home.")
-            add("Take any employer match in full first — it's part of your pay.")
+            val away = monthsAway(toGoal, finance.netMonthly)
+            add(
+                if (away == null) {
+                    UiText.of(Res.string.checkup_retirement_step_reach, atLeast(toGoal))
+                } else {
+                    UiText.plural(Res.plurals.checkup_retirement_step_reach_away, away, atLeast(toGoal), money(finance.netMonthly!!), away)
+                },
+            )
+            add(UiText.of(Res.string.checkup_retirement_step_401k, money(100.0)))
+            add(UiText.of(Res.string.checkup_retirement_step_match))
         } else {
-            add("Tax-advantaged accounts are doing a lot of the work.")
+            add(UiText.of(Res.string.layman_checkup_retirement_tip_ok))
         }
-        val byPerson = finance.people.map { p -> p to accounts.filter { it.owner.label == p }.sumOf { it.balance } }
+        val byPerson = finance.people.map { p -> p to accounts.filter { it.owner == Owner.Person(p) }.sumOf { it.balance } }
         if (byPerson.size >= 2) {
             val (low, high) = byPerson.minBy { it.second } to byPerson.maxBy { it.second }
             if (high.second > 0 && low.second < high.second * 0.5) {
-                add("${low.first} has ${money(low.second)} in retirement accounts to ${high.first}'s ${money(high.second)} — worth checking both are getting any employer match.")
+                add(UiText.of(Res.string.checkup_retirement_step_uneven, low.first, money(low.second), high.first, money(high.second)))
             }
         }
     }
     return Check(
         kind = CheckKind.RETIREMENT,
         ok = ok,
-        title = "Saving for later",
-        figure = pct(share),
-        detail = "${pct(share)} of what you own is in retirement accounts.",
-        tip = if (ok) "Tax-advantaged accounts are doing a lot of the work." else "Retirement accounts grow tax-free or tax-deferred; topping them up is often the cheapest way to invest.",
-        rule = "With a quarter or more of what you own in retirement accounts, tax-free growth is doing a good share of the work.",
+        title = Res.string.layman_checkup_retirement_title,
+        figure = figure(pct(share)),
+        detail = UiText.of(Res.string.layman_checkup_retirement_detail, pct(share)),
+        tip = if (ok) Res.string.layman_checkup_retirement_tip_ok else Res.string.layman_checkup_retirement_tip_low,
+        rule = Res.string.checkup_retirement_rule,
         explainerId = "allocation",
-        gauge = CheckGauge(share, RETIREMENT_SHARE, 1.0, higherIsBetter = true, targetLabel = "25%"),
+        gauge = CheckGauge(share, RETIREMENT_SHARE, 1.0, higherIsBetter = true, targetLabel = figure(pct(RETIREMENT_SHARE))),
         ledger = listOf(
-            CheckLedgerRow(null, "Retirement accounts", money(saved), accounts.map(::accountItem), WalletSection.ACCOUNTS),
-            CheckLedgerRow("÷", "Everything in your accounts", money(total), categoryItems(finance.accounts), WalletSection.ALLOCATION),
-            CheckLedgerRow("=", "Saved for later", pct(share), result = true),
+            CheckLedgerRow(null, Res.string.checkup_retirement_ledger_accounts, figure(money(saved)), accounts.map(::accountItem), WalletSection.ACCOUNTS),
+            CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_retirement_ledger_total, figure(money(total)), categoryItems(finance.accounts), WalletSection.ALLOCATION),
+            CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_retirement_ledger_result, figure(pct(share)), result = true),
         ),
         steps = steps,
-        whatIf = WhatIf("Add to retirement accounts", roundUp(max(toGoal * 1.5, total * 0.1), 1000.0), 500.0) { x ->
+        whatIf = WhatIf(Res.string.checkup_retirement_whatif, roundUp(max(toGoal * 1.5, total * 0.1), 1000.0), 500.0) { x ->
             val s2 = (saved + x) / (total + x)
-            WhatIfOutcome("${pct(s2)} saved for later", s2 >= RETIREMENT_SHARE, "${money(saved + x)} in retirement accounts.")
+            WhatIfOutcome(
+                UiText.of(Res.string.checkup_retirement_whatif_saved, pct(s2)),
+                s2 >= RETIREMENT_SHARE,
+                UiText.of(Res.string.checkup_retirement_whatif_in_accounts, money(saved + x)),
+            )
         },
-        note = "Retirement accounts are told apart by their names in the sheet (401(k), IRA, Roth…). Home equity counts toward what you own.",
+        note = Res.string.checkup_retirement_note,
     )
 }

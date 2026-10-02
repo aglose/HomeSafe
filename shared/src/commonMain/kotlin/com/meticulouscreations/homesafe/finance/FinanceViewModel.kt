@@ -27,10 +27,18 @@ import com.meticulouscreations.homesafe.finance.domain.WatchEntry
 import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
 import com.meticulouscreations.homesafe.finance.domain.YieldCurve
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_chart
+import homesafe.shared.generated.resources.fin_data_error_markets
+import homesafe.shared.generated.resources.fin_data_error_sheet
+import homesafe.shared.generated.resources.watchlist_search_unavailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -41,24 +49,25 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
 import kotlin.time.Clock
 
 /** Why the sheet isn't showing, flattened from [SheetUnavailableException] for the UI. */
 @Immutable
-data class SheetIssue(val problem: SheetProblem, val message: String, val serviceAccount: String?, val activationUrl: String?)
+data class SheetIssue(val problem: SheetProblem, val message: UiText, val serviceAccount: String?, val activationUrl: String?)
 
 /** The add-a-symbol search: what was typed, and what Yahoo matched it with. */
 @Immutable
-data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: String? = null)
+data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: UiText? = null)
 
 /** A price history being fetched for one symbol and range. */
 @Immutable
-data class ChartLoad(val history: PriceHistory? = null, val loading: Boolean = true, val error: String? = null)
+data class ChartLoad(val history: PriceHistory? = null, val loading: Boolean = true, val error: UiText? = null)
 
 @Immutable
 data class FinanceUiState(
     val quotes: Map<String, Quote> = emptyMap(),
-    val quotesError: String? = null,
+    val quotesError: UiText? = null,
     val quotesUpdatedEpochSeconds: Long? = null,
     /** Keyed by [chartKey]. */
     val charts: Map<String, ChartLoad> = emptyMap(),
@@ -107,6 +116,13 @@ data class FinanceUiState(
 
     /** How to show [symbol], from its quote, else from what was saved when it was added (see [MarketCatalog.lookup]). */
     fun meta(symbol: String): MarketSymbol = watchedSymbol(symbol).let { w -> MarketCatalog.lookup(symbol, quotes[symbol], w?.name, w?.kind) }
+
+    /**
+     * The name to keep for [symbol] when it's followed from the app: Yahoo's name for it (data), else
+     * the ticker. A catalog symbol's name is copy in the reader's language, looked up again whenever
+     * it's shown, so it is never stored.
+     */
+    fun nameToSave(symbol: String): String = (meta(symbol).name as? UiText.Verbatim)?.value ?: symbol
 
     val stress: StressScore? get() = StressScore.of(readings.values.filter { it.indicator in IndicatorCatalog.radar })
 
@@ -250,7 +266,7 @@ class FinanceViewModel(
                 .onSuccess { h -> _uiState.update { s -> s.copy(charts = s.charts + (key to ChartLoad(h, loading = false))) } }
                 .onFailure { e ->
                     _uiState.update { s ->
-                        s.copy(charts = s.charts + (key to ChartLoad(s.charts[key]?.history, loading = false, error = e.message ?: "Couldn't load the chart")))
+                        s.copy(charts = s.charts + (key to ChartLoad(s.charts[key]?.history, loading = false, error = e.shownAs(Res.string.fin_data_error_chart))))
                     }
                 }
         }
@@ -274,7 +290,7 @@ class FinanceViewModel(
                 .onFailure { e ->
                     if (e is CancellationException) throw e
                     // The last query's matches go: left up, they'd pass for this one's.
-                    _uiState.update { s -> s.copy(search = s.search.copy(results = emptyList(), loading = false, error = e.message ?: "Search is unavailable")) }
+                    _uiState.update { s -> s.copy(search = s.search.copy(results = emptyList(), loading = false, error = e.shownAs(Res.string.watchlist_search_unavailable))) }
                 }
         }
     }
@@ -314,7 +330,7 @@ class FinanceViewModel(
 
                 else -> {
                     val meta = s.meta(symbol)
-                    val base = existing ?: WatchedSymbol(symbol, meta.name, meta.kind, clock.now().epochSeconds)
+                    val base = existing ?: WatchedSymbol(symbol, s.nameToSave(symbol), meta.kind, clock.now().epochSeconds)
                     watchlistRepository.save(base.copy(position = position))
                 }
             }
@@ -339,7 +355,7 @@ class FinanceViewModel(
                     s.copy(quotes = s.quotes + list.associateBy { it.symbol }, quotesError = null, quotesUpdatedEpochSeconds = clock.now().epochSeconds)
                 }
             }
-            .onFailure { e -> _uiState.update { it.copy(quotesError = e.message ?: "Markets are unreachable") } }
+            .onFailure { e -> _uiState.update { it.copy(quotesError = e.shownAs(Res.string.fin_data_error_markets)) } }
     }
 
     /** The sheet now and then every couple of minutes, each read finishing before the next wait starts. */
@@ -386,8 +402,8 @@ class FinanceViewModel(
             .onFailure { e ->
                 // A read cut short because Finance closed isn't a failed sync.
                 if (e is CancellationException) throw e
-                val issue = (e as? SheetUnavailableException)?.let { SheetIssue(it.problem, it.message.orEmpty(), it.serviceAccount, it.activationUrl) }
-                    ?: SheetIssue(SheetProblem.OTHER, e.message ?: "Couldn't read the budget sheet", null, null)
+                val issue = (e as? SheetUnavailableException)?.let { SheetIssue(it.problem, it.text, it.serviceAccount, it.activationUrl) }
+                    ?: SheetIssue(SheetProblem.OTHER, e.shownAs(Res.string.fin_data_error_sheet), null, null)
                 _uiState.update { it.copy(financeLoading = false, sheetIssue = issue) }
             }
         // The sheet may have named tickers the quotes haven't covered yet.
@@ -398,6 +414,13 @@ class FinanceViewModel(
         pollJob?.cancel()
         searchJob?.cancel()
     }
+
+    /**
+     * What to show for a failed fetch: the app's own words when the failure is one it understands,
+     * the platform's or server's message as written when there is one, and [fallback] otherwise.
+     */
+    private fun Throwable.shownAs(fallback: StringResource): UiText =
+        if (this !is LocalizedException && message.isNullOrBlank()) UiText.of(fallback) else userMessage()
 
     internal companion object {
         const val EXPLAIN_TIP = "explain_tip"

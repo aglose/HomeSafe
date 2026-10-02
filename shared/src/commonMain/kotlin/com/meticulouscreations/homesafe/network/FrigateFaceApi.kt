@@ -1,6 +1,9 @@
 package com.meticulouscreations.homesafe.network
 
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_load_faces
+import homesafe.shared.generated.resources.error_request_failed
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -25,7 +28,7 @@ class FrigateFaceApi(private val httpClient: HttpClient) {
     /** Folder name -> image files. Includes [TRAIN_FOLDER] for the attempts waiting to be filed. `{}` until the first face is seen. */
     suspend fun getFaces(serverUrl: String): Result<Map<String, List<String>>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/faces")
-        check(response.status.isSuccess()) { "Couldn't load faces: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_faces)
         response.body()
     }
 
@@ -48,7 +51,7 @@ class FrigateFaceApi(private val httpClient: HttpClient) {
         }
         val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
         if (!response.status.isSuccess() || result?.success == false) {
-            throw FrigateResponseException(result?.message ?: "Request failed: ${response.status}")
+            throw responseFailure(result?.message, response.status, Res.string.error_request_failed)
         }
     }
 
@@ -63,7 +66,7 @@ class FrigateFaceApi(private val httpClient: HttpClient) {
         // Frigate answers `create` with success=false and "Successfully created face folder." on the
         // happy path (a long-standing quirk), so a 2xx is trusted over the body's flag there.
         if (!response.status.isSuccess()) {
-            throw FrigateResponseException(result?.message ?: "Request failed: ${response.status}")
+            throw responseFailure(result?.message, response.status, Res.string.error_request_failed)
         }
     }
 

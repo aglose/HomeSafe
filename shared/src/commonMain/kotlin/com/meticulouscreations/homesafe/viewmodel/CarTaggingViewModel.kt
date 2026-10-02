@@ -19,6 +19,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TagCarUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -26,6 +28,21 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.cars_in_view_removed
+import homesafe.shared.generated.resources.cars_in_view_rename_failed
+import homesafe.shared.generated.resources.cars_in_view_shown
+import homesafe.shared.generated.resources.cars_in_view_untracked
+import homesafe.shared.generated.resources.cars_load_camera_failed
+import homesafe.shared.generated.resources.cars_load_classifiers_failed
+import homesafe.shared.generated.resources.cars_load_known_cars_failed
+import homesafe.shared.generated.resources.cars_no_car_classifier
+import homesafe.shared.generated.resources.cars_retraining
+import homesafe.shared.generated.resources.cars_saved_for_training
+import homesafe.shared.generated.resources.cars_tag_failed
+import homesafe.shared.generated.resources.cars_tagged
+import homesafe.shared.generated.resources.cars_tagged_not_ours
+import homesafe.shared.generated.resources.cars_unreadable_frame
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -47,7 +64,7 @@ data class CarTaggingUiState(
     /** The launch of the screen this state belongs to (see [CarTaggingViewModel.open]); null before the first. */
     val launch: Long? = null,
     val isLoading: Boolean = true,
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     /** The classifier a tag teaches: the server's first enabled one that runs on cars. */
     val modelName: String? = null,
     /** What can be tagged: the model's categories, `none` ("Not ours") last. */
@@ -61,7 +78,7 @@ data class CarTaggingUiState(
     val selectedEventId: String? = null,
     val isSaving: Boolean = false,
     /** What the last tag did, or why it failed. */
-    val notice: String? = null,
+    val notice: UiText? = null,
     val noticeIsError: Boolean = false,
 ) {
     val selectedCar: TrackedObject? get() = selectedEventId?.let { id -> trackedCars.firstOrNull { it.eventId == id } }
@@ -121,14 +138,14 @@ class CarTaggingViewModel(
         _uiState.update { it.copy(isLoading = it.frame == null, loadError = null) }
         loadJob = viewModelScope.launch {
             val model = model ?: run {
-                val models = getClassifierModelsUseCase().getOrElse { e -> return@launch fail(launch, "Couldn't load the classifiers: ${e.message}") }
+                val models = getClassifierModelsUseCase().getOrElse { e -> return@launch fail(launch, e.userMessage(Res.string.cars_load_classifiers_failed)) }
                 models.carClassifier()
-                    ?: return@launch fail(launch, "This server has no classifier that runs on cars.")
+                    ?: return@launch fail(launch, UiText.of(Res.string.cars_no_car_classifier))
             }
             if (_uiState.value.launch != launch) return@launch
             this@CarTaggingViewModel.model = model
             if (_uiState.value.categories.isEmpty()) {
-                val dataset = getClassifierDatasetUseCase(model.name).getOrElse { e -> return@launch fail(launch, "Couldn't load the known cars: ${e.message}") }
+                val dataset = getClassifierDatasetUseCase(model.name).getOrElse { e -> return@launch fail(launch, e.userMessage(Res.string.cars_load_known_cars_failed)) }
                 updateFor(launch) { it.copy(modelName = model.name, categories = dataset.categories) }
             }
             refreshFrame(model, launch)
@@ -172,22 +189,28 @@ class CarTaggingViewModel(
         tagJob = viewModelScope.launch {
             tagCarUseCase(CarTag(model.name, category, frame.jpeg, box, state.selectedEventId))
                 .onSuccess { outcome ->
-                    val name = categoryName(category)
-                    val inView = when {
-                        state.selectedEventId == null -> "Frigate isn't tracking a car there, so it can't show in view until it detects one."
-                        !outcome.namedInView -> "Couldn't rename the tracked car; it'll show once the model recognises it."
-                        category == NONE -> "Taken off In view now."
-                        else -> "Showing as in view now."
+                    val inView = UiText.of(
+                        when {
+                            state.selectedEventId == null -> Res.string.cars_in_view_untracked
+                            !outcome.namedInView -> Res.string.cars_in_view_rename_failed
+                            category == NONE -> Res.string.cars_in_view_removed
+                            else -> Res.string.cars_in_view_shown
+                        },
+                    )
+                    val training = UiText.of(if (outcome.trainingStarted) Res.string.cars_retraining else Res.string.cars_saved_for_training)
+                    val notice = if (category == NONE) {
+                        UiText.of(Res.string.cars_tagged_not_ours, inView, training)
+                    } else {
+                        UiText.of(Res.string.cars_tagged, subLabelDisplayName(category), inView, training)
                     }
-                    val training = if (outcome.trainingStarted) "Retraining now." else "Saved for the next training."
                     updateFor(launch) {
-                        it.copy(isSaving = false, notice = "Tagged as $name. $inView $training", noticeIsError = false, selection = null, selectedEventId = null)
+                        it.copy(isSaving = false, notice = notice, noticeIsError = false, selection = null, selectedEventId = null)
                     }
                     // The frame again, so the name just given shows on the car's box.
                     refreshFrame(model, launch, keepNotice = true)
                 }
                 .onFailure { e ->
-                    updateFor(launch) { it.copy(isSaving = false, notice = "Couldn't save the tag: ${e.message}", noticeIsError = true) }
+                    updateFor(launch) { it.copy(isSaving = false, notice = e.userMessage(Res.string.cars_tag_failed), noticeIsError = true) }
                 }
         }
     }
@@ -198,8 +221,8 @@ class CarTaggingViewModel(
             val tracked = async { getTrackedObjectsUseCase(cameraName) }
             frame.await() to tracked.await()
         }
-        val jpeg = frameResult.getOrElse { e -> return fail(launch, "Couldn't load the camera: ${e.message}") }
-        val (width, height) = jpegSize(jpeg) ?: return fail(launch, "The camera sent a picture the app can't read.")
+        val jpeg = frameResult.getOrElse { e -> return fail(launch, e.userMessage(Res.string.cars_load_camera_failed)) }
+        val (width, height) = jpegSize(jpeg) ?: return fail(launch, UiText.of(Res.string.cars_unreadable_frame))
         // A failed read of the tracked cars still leaves a frame to draw a rectangle on.
         val cars = trackedResult.getOrElse { emptyList() }.filter { it.label in model.objects && it.box != null }
         updateFor(launch) {
@@ -217,7 +240,7 @@ class CarTaggingViewModel(
     }
 
     /** With a frame already up, a failed reload is a notice over it rather than an error in place of it. */
-    private fun fail(launch: Long?, message: String) = updateFor(launch) {
+    private fun fail(launch: Long?, message: UiText) = updateFor(launch) {
         if (it.frame != null) it.copy(isLoading = false, notice = message, noticeIsError = true) else it.copy(isLoading = false, loadError = message)
     }
 
@@ -228,9 +251,6 @@ class CarTaggingViewModel(
      */
     private inline fun updateFor(launch: Long?, change: (CarTaggingUiState) -> CarTaggingUiState) =
         _uiState.update { if (it.launch == launch) change(it) else it }
-
-    private fun categoryName(category: String): String =
-        if (category == NONE) "not ours" else subLabelDisplayName(category)
 
     private companion object {
         const val NONE = ClassifierDataset.NONE_CATEGORY

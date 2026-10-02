@@ -1,5 +1,21 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_cameras_on
+import homesafe.shared.generated.resources.home_cameras_some_on
+import homesafe.shared.generated.resources.home_presence_everyone_home
+import homesafe.shared.generated.resources.home_presence_house_empty
+import homesafe.shared.generated.resources.home_presence_some_home
+import homesafe.shared.generated.resources.home_presence_you_are_away
+import homesafe.shared.generated.resources.home_status_all_quiet
+import homesafe.shared.generated.resources.home_status_all_quiet_since
+import homesafe.shared.generated.resources.home_status_just_now
+import homesafe.shared.generated.resources.home_status_minutes_ago
+import homesafe.shared.generated.resources.home_status_now
+import homesafe.shared.generated.resources.home_status_subject_at_camera
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -14,8 +30,8 @@ import kotlinx.datetime.TimeZone
  * never stored.
  */
 data class HomeStatus(
-    val headline: String?,
-    val details: String?,
+    val headline: UiText?,
+    val details: UiText?,
 )
 
 /**
@@ -43,8 +59,8 @@ fun homeStatus(
     val headline = when {
         !momentsLoaded -> null
         recent != null -> recent.summaryTitle()
-        latestMoment == null -> "All quiet"
-        else -> "All quiet since ${dayQualifiedClockLabel(latestMoment.lastActiveEpochSeconds, today, timeZone)}"
+        latestMoment == null -> UiText.of(Res.string.home_status_all_quiet)
+        else -> UiText.of(Res.string.home_status_all_quiet_since, dayQualifiedClockLabel(latestMoment.lastActiveEpochSeconds, today, timeZone))
     }
     val parts = listOfNotNull(
         recent?.let { activityAgeLabel(it, nowEpochSeconds) },
@@ -53,7 +69,7 @@ fun homeStatus(
     )
     return HomeStatus(
         headline = headline,
-        details = parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")?.replaceFirstChar(Char::uppercase),
+        details = parts.takeIf { it.isNotEmpty() }?.let { UiText.Joined(it, separator = UiText.of(Res.string.common_dot_separator)) },
     )
 }
 
@@ -62,13 +78,17 @@ fun homeStatus(
  * is, whatever the others say, since that is what its owner most wants confirmed; "House empty"
  * once the relay has declared it so. Null until the relay has answered, or when no phone counts.
  */
-internal fun presenceLabel(presence: HouseholdPresence): String? {
-    if (presence.everyoneAway) return "House empty"
-    if (presence.thisDevice?.away == true) return "You're away"
+internal fun presenceLabel(presence: HouseholdPresence): UiText? {
+    if (presence.everyoneAway) return UiText.of(Res.string.home_presence_house_empty)
+    if (presence.thisDevice?.away == true) return UiText.of(Res.string.home_presence_you_are_away)
     val counting = presence.countingDevices
     if (counting.isEmpty()) return null
     val home = counting.count { !it.away }
-    return if (home == counting.size) "Everyone home" else "$home of ${counting.size} home"
+    return if (home == counting.size) {
+        UiText.of(Res.string.home_presence_everyone_home)
+    } else {
+        UiText.of(Res.string.home_presence_some_home, home, counting.size)
+    }
 }
 
 /**
@@ -76,26 +96,38 @@ internal fun presenceLabel(presence: HouseholdPresence): String? {
  * own pill reports once it is playing. Null for a server with no cameras, which the grid below
  * already says in so many words.
  */
-internal fun camerasOnLabel(cameras: List<Camera>): String? {
+internal fun camerasOnLabel(cameras: List<Camera>): UiText? {
     if (cameras.isEmpty()) return null
     val on = cameras.count { it.enabled }
-    val noun = if (cameras.size == 1) "camera" else "cameras"
-    return if (on == cameras.size) "${cameras.size} $noun on" else "$on of ${cameras.size} $noun on"
+    return if (on == cameras.size) {
+        UiText.plural(Res.plurals.home_cameras_on, cameras.size)
+    } else {
+        UiText.plural(Res.plurals.home_cameras_some_on, cameras.size, on, cameras.size)
+    }
 }
 
-/** "Person on the front lawn" / "Sarah's Tesla in the driveway" / "Person at Backyard" (the camera, when it was in no zone). */
-private fun MomentEvent.summaryTitle(): String {
-    val subject = subLabel?.takeIf { isRecognized }?.let { subLabelDisplayName(it) }
-        ?: label.lowercase().replaceFirstChar { it.uppercase() }
+/**
+ * "Person on the front lawn" / "Sarah's Tesla in the driveway" (worded as the feed words them, see
+ * [detectionTitle]) / "Person at Backyard" (the camera, when it was in no zone).
+ */
+private fun MomentEvent.summaryTitle(): UiText {
+    val subject = subLabel?.takeIf { isRecognized }?.let { subLabelDisplayName(it).asUiText() } ?: labelName(label)
     val place = zones.lastOrNull { it.isNotBlank() }
-    return if (place != null) "$subject ${zonePhrase(place)}" else "$subject at $cameraDisplayName"
+    return if (place != null) {
+        detectionTitle(subject, place)
+    } else {
+        UiText.of(Res.string.home_status_subject_at_camera, subject, cameraDisplayName)
+    }
 }
 
-/** "now" while Frigate is still tracking it, then "just now" and "3 min ago". */
-private fun activityAgeLabel(moment: MomentEvent, nowEpochSeconds: Double): String {
-    if (moment.isInProgress) return "now"
-    val minutes = ((nowEpochSeconds - moment.lastActiveEpochSeconds) / 60).toLong()
-    return if (minutes < 1) "just now" else "$minutes min ago"
+/**
+ * "Now" while Frigate is still tracking it, then "Just now" and "3 min ago". Capitalised in the
+ * strings themselves: when there is an age, it always leads the line.
+ */
+private fun activityAgeLabel(moment: MomentEvent, nowEpochSeconds: Double): UiText {
+    if (moment.isInProgress) return UiText.of(Res.string.home_status_now)
+    val minutes = ((nowEpochSeconds - moment.lastActiveEpochSeconds) / 60).toInt()
+    return if (minutes < 1) UiText.of(Res.string.home_status_just_now) else UiText.plural(Res.plurals.home_status_minutes_ago, minutes)
 }
 
 /** When the detection was last known to be going on: its end, or its start while it is still in progress. */

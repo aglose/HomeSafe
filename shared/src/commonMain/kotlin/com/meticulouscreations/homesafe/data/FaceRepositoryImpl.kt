@@ -6,7 +6,6 @@ import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.FaceRepository
 import com.meticulouscreations.homesafe.network.FrigateFaceApi
-import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.frigateFaceImageUrl
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -44,7 +43,7 @@ class FaceRepositoryImpl(
     private fun serverUrlOrFailure(): Result<String> =
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
-            ?: Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: Result.failure(notConnected())
 }
 
 /** Splits Frigate's folder map into people and the attempts queue; people sort by name, attempts newest first. */

@@ -16,6 +16,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
@@ -62,20 +63,20 @@ class MomentsFiltersUiTest {
         MomentItem(
             event = event,
             presentation = MomentPresentation(
-                title = "Person on the porch",
-                timeLabel = "6:55 PM",
+                title = "Person on the porch".asUiText(),
+                timeLabel = "6:55 PM".asUiText(),
                 durationLabel = "0:12",
-                dateGroup = "Today",
-                dateSubLabel = "Sep 14",
-                badgeLabel = "person",
-                locationLabel = "Front Door · Porch",
+                dateGroup = "Today".asUiText(),
+                dateSubLabel = "Sep 14".asUiText(),
+                badgeLabel = "person".asUiText(),
+                locationLabel = "Front Door · Porch".asUiText(),
                 sightingsLabel = null,
             ),
             thumbnailUrl = null,
         )
     }
 
-    private val oneDay = listOf(MomentGroup("Today", "Sep 14", listOf(porchCard)))
+    private val oneDay = listOf(MomentGroup("Today".asUiText(), "Sep 14".asUiText(), listOf(porchCard)))
 
     private fun runFeed(
         state: MomentsUiState,
@@ -247,13 +248,13 @@ class MomentsFiltersUiTest {
     }
 
     @Test
-    fun anUnreachableServerSaysSoInPlaceOfTheEmptyFeed() = runFeed(MomentsUiState(error = "Connection refused")) {
+    fun anUnreachableServerSaysSoInPlaceOfTheEmptyFeed() = runFeed(MomentsUiState(error = "Connection refused".asUiText())) {
         onNodeWithText("Connection refused").assertIsDisplayed()
         onNodeWithText("Couldn't reach the server for detections.").assertIsDisplayed()
     }
 
     @Test
-    fun anErrorAboveLoadedMomentsLeavesThemInPlace() = runFeed(MomentsUiState(groups = oneDay, error = "Couldn't refresh: timed out")) {
+    fun anErrorAboveLoadedMomentsLeavesThemInPlace() = runFeed(MomentsUiState(groups = oneDay, error = "Couldn't refresh: timed out".asUiText())) {
         onNodeWithText("Couldn't refresh: timed out").assertIsDisplayed()
         onNodeWithText("Person on the porch").assertIsDisplayed()
         onAllNodesWithText("Couldn't reach the server for detections.").assertCountEquals(0)

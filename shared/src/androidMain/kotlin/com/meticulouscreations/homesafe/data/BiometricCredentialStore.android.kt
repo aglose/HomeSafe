@@ -10,8 +10,16 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_fingerprint
+import homesafe.shared.generated.resources.biometric_needs_app_open
+import homesafe.shared.generated.resources.biometric_no_saved_login
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.Json
+import org.jetbrains.compose.resources.StringResource
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -27,7 +35,10 @@ private const val PREF_CIPHERTEXT = "ciphertext"
 private const val PREF_IV = "iv"
 private const val GCM_TAG_LENGTH_BITS = 128
 
-/** Thrown when a `BiometricPrompt` flow fails or is cancelled by the user. */
+/** Nothing was saved for biometric sign-in, or what was is gone. */
+private fun noSavedLogin() = LocalizedException(UiText.of(Res.string.biometric_no_saved_login), technical = "No saved biometric credentials")
+
+/** Thrown when a `BiometricPrompt` flow fails or is cancelled by the user; the message is the platform's own, already in the reader's language. */
 class BiometricAuthException(message: String) : Exception(message)
 
 /**
@@ -55,7 +66,7 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
         BiometricManager.from(activity)
             .canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
 
-    override fun displayName(): String = "fingerprint"
+    override fun displayName(): StringResource = Res.string.biometric_name_fingerprint
 
     override fun hasSavedCredentials(): Boolean =
         prefs.contains(PREF_CIPHERTEXT) && prefs.contains(PREF_IV)
@@ -66,8 +77,8 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
         }
         val authenticatedCipher = authenticate(
             cipher = cipher,
-            title = "Enable biometric sign-in",
-            subtitle = "Confirm your fingerprint or face to save this login",
+            title = activity.getString(R.string.biometric_enable_title),
+            subtitle = activity.getString(R.string.biometric_enable_subtitle),
         )
         val plaintext = json.encodeToString(SavedCredentials.serializer(), credentials).encodeToByteArray()
         val ciphertext = authenticatedCipher.doFinal(plaintext)
@@ -79,17 +90,17 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
 
     override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> = runCatching {
         val ciphertext = prefs.getString(PREF_CIPHERTEXT, null)?.let { Base64.decode(it, Base64.NO_WRAP) }
-            ?: error("No saved biometric credentials")
+            ?: throw noSavedLogin()
         val iv = prefs.getString(PREF_IV, null)?.let { Base64.decode(it, Base64.NO_WRAP) }
-            ?: error("No saved biometric credentials")
+            ?: throw noSavedLogin()
 
         val cipher = Cipher.getInstance(TRANSFORMATION).apply {
             init(Cipher.DECRYPT_MODE, getOrCreateSecretKey(), GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv))
         }
         val authenticatedCipher = authenticate(
             cipher = cipher,
-            title = "Sign in with biometrics",
-            subtitle = "Use your fingerprint or face to sign in to HomeSafe",
+            title = activity.getString(R.string.biometric_sign_in_title),
+            subtitle = activity.getString(R.string.biometric_sign_in_subtitle),
         )
         val plaintext = authenticatedCipher.doFinal(ciphertext)
         json.decodeFromString(SavedCredentials.serializer(), plaintext.decodeToString())
@@ -153,7 +164,7 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
             val promptInfo = BiometricPrompt.PromptInfo.Builder()
                 .setTitle(title)
                 .setSubtitle(subtitle)
-                .setNegativeButtonText("Cancel")
+                .setNegativeButtonText(activity.getString(R.string.biometric_cancel))
                 .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_STRONG)
                 .build()
 
@@ -169,12 +180,15 @@ private class AndroidBiometricCredentialStore(private val activity: FragmentActi
 /** For a graph built with no Activity (a background receiver): there is nobody to show a prompt to. */
 private class HeadlessBiometricCredentialStore : BiometricCredentialStore {
     override fun isAvailable(): Boolean = false
-    override fun displayName(): String = "fingerprint"
+    override fun displayName(): StringResource = Res.string.biometric_name_fingerprint
     override fun hasSavedCredentials(): Boolean = false
     override suspend fun save(credentials: SavedCredentials): Result<Unit> =
-        Result.failure(UnsupportedOperationException("Biometric login needs the app open"))
+        Result.failure(needsTheAppOpen())
     override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> =
-        Result.failure(UnsupportedOperationException("Biometric login needs the app open"))
+        Result.failure(needsTheAppOpen())
+
+    private fun needsTheAppOpen() =
+        LocalizedException(UiText.of(Res.string.biometric_needs_app_open), technical = "Biometric login needs the app open")
     override fun clear() = Unit
 }
 

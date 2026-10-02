@@ -19,6 +19,8 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraMomentsBetwe
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RecordingClipSave
 import com.meticulouscreations.homesafe.domain.usecase.SaveRecordingClipUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
 import com.meticulouscreations.homesafe.ui.components.VideoSource
@@ -29,6 +31,12 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.clip_load_recordings_failed
+import homesafe.shared.generated.resources.clip_not_connected
+import homesafe.shared.generated.resources.clip_nothing_recorded
+import homesafe.shared.generated.resources.clip_open_recording_failed
+import homesafe.shared.generated.resources.clip_play_recording_failed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,7 +70,9 @@ sealed interface ClipSaveState {
     data class Saving(val progress: ClipDownloadProgress = ClipDownloadProgress.Preparing) : ClipSaveState
 
     data object Saved : ClipSaveState
-    data class Failed(val message: String) : ClipSaveState
+
+    /** [message] is why, often in the server's own words; the editor says "Couldn't save: …" around it. */
+    data class Failed(val message: UiText) : ClipSaveState
 }
 
 /**
@@ -85,9 +95,9 @@ data class ClipMoment(
     val endEpochSeconds: Double,
     val category: MomentCategory,
     /** "Person in the porch", as the Moments feed would title it. */
-    val title: String,
+    val title: UiText,
     /** "8:42 AM". */
-    val timeLabel: String,
+    val timeLabel: UiText,
 )
 
 @Immutable
@@ -95,7 +105,7 @@ data class ClipEditorUiState(
     /** The first history read and playlist are still on their way. */
     val isLoading: Boolean = true,
     /** Why there is nothing to clip (no connection, nothing recorded here); null while fine. */
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     /** The clippable history: nothing before [earliestEpochSeconds] or after [latestEpochSeconds] can be selected. */
     val earliestEpochSeconds: Double = 0.0,
     val latestEpochSeconds: Double = 0.0,
@@ -187,12 +197,12 @@ class ClipEditorViewModel(
 
         val history = getRecordingHistoryUseCase(server, cameraName, afterEpochSeconds = reachStart - SEGMENT_PADDING_SECONDS, beforeEpochSeconds = reachEnd)
             .getOrElse { error ->
-                _uiState.update { it.copy(isLoading = false, loadError = error.message ?: "Couldn't load recordings") }
+                _uiState.update { it.copy(isLoading = false, loadError = error.userMessage(Res.string.clip_load_recordings_failed)) }
                 return
             }
         val segments = history.segments.filter { it.endEpochSeconds > reachStart && it.startEpochSeconds < reachEnd }
         if (segments.isEmpty()) {
-            _uiState.update { it.copy(isLoading = false, loadError = "Nothing was recorded around this moment") }
+            _uiState.update { it.copy(isLoading = false, loadError = UiText.of(Res.string.clip_nothing_recorded)) }
             return
         }
         val loaded = RecordingPlaylist(segments)
@@ -203,7 +213,7 @@ class ClipEditorViewModel(
 
         val stream = runCatching { getRecordingStreamUseCase(server, cameraName, loaded) }
             .getOrElse { error ->
-                _uiState.update { it.copy(isLoading = false, loadError = error.message ?: "Couldn't open the recording") }
+                _uiState.update { it.copy(isLoading = false, loadError = error.userMessage(Res.string.clip_open_recording_failed)) }
                 return
             }
         playlist = loaded
@@ -332,7 +342,7 @@ class ClipEditorViewModel(
     }
 
     fun onPlaybackError() {
-        _uiState.update { it.copy(loadError = "Couldn't play this recording", isBuffering = false) }
+        _uiState.update { it.copy(loadError = UiText.of(Res.string.clip_play_recording_failed), isBuffering = false) }
     }
 
     private fun seekTo(epochSeconds: Double, playWhenReady: Boolean) {
@@ -508,7 +518,7 @@ class ClipEditorViewModel(
         val server = serverUrl.value
         if (state.save is ClipSaveState.Saving) return
         if (server == null) {
-            _uiState.update { it.copy(save = ClipSaveState.Failed("Not connected to the server")) }
+            _uiState.update { it.copy(save = ClipSaveState.Failed(UiText.of(Res.string.clip_not_connected))) }
             return
         }
         saveJob?.cancel()

@@ -11,6 +11,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.player_live_unavailable
+import org.jetbrains.compose.resources.stringResource
 
 /** What the player should be playing. */
 @Immutable
@@ -201,7 +204,7 @@ fun CameraStreamPlayer(
 internal fun LiveViewUnavailablePlaceholder(modifier: Modifier = Modifier) {
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Text(
-            text = "Live view not yet available on this platform",
+            text = stringResource(Res.string.player_live_unavailable),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

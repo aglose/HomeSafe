@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Android-only words the shared module shows outside Compose: notification channels, the
+  notification buttons and confirmations, and the system biometric prompt. These are Android
+  string resources (read with context.getString), so unlike composeResources an apostrophe is
+  escaped as \'. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="notif_channel_detections_name">Detections</string>
+    <string name="notif_channel_detections_description">A person, vehicle, or animal seen by one of your cameras</string>
+    <string name="notif_channel_away_name">Away alerts</string>
+    <string name="notif_channel_away_description">A person on any camera while nobody is home</string>
+    <string name="notif_channel_summaries_name">Summaries</string>
+    <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
+    <string name="notif_action_tag_car">Tag car</string>
+    <string name="notif_action_not_a_person">Not a person</string>
+    <string name="notif_action_undo">Undo</string>
+    <string name="notif_action_try_again">Try again</string>
+    <string name="notif_marking_not_a_person_title">Marking as not a person…</string>
+    <string name="notif_marked_not_a_person_title">Marked not a person</string>
+    <string name="notif_marked_not_a_person_body">%1$s won\'t alert for this again, and HomeSafe learns from it.</string>
+    <string name="notif_mark_failed_title">Couldn\'t mark it not a person</string>
+    <string name="notif_undo_failed_title">Couldn\'t undo it</string>
+    <string name="notif_reason_timeout">The server didn\'t answer in time.</string>
+    <string name="notif_reason_unreachable">The server couldn\'t be reached.</string>
+    <string name="biometric_enable_title">Enable biometric sign-in</string>
+    <string name="biometric_enable_subtitle">Confirm your fingerprint or face to save this login</string>
+    <string name="biometric_sign_in_title">Sign in with biometrics</string>
+    <string name="biometric_sign_in_subtitle">Use your fingerprint or face to sign in to HomeSafe</string>
+    <string name="biometric_cancel">Cancel</string>
+</resources>

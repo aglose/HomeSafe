@@ -75,7 +75,45 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.Explainers
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.checkup_all_checks
+import homesafe.shared.generated.resources.checkup_all_pass
+import homesafe.shared.generated.resources.checkup_card_footer
+import homesafe.shared.generated.resources.checkup_card_score_click
+import homesafe.shared.generated.resources.checkup_how_scored
+import homesafe.shared.generated.resources.checkup_how_to_improve
+import homesafe.shared.generated.resources.checkup_how_worked_out
+import homesafe.shared.generated.resources.checkup_keeping_healthy
+import homesafe.shared.generated.resources.checkup_ledger_empty
+import homesafe.shared.generated.resources.checkup_ledger_go_to
+import homesafe.shared.generated.resources.checkup_ledger_hide
+import homesafe.shared.generated.resources.checkup_ledger_see_in_wallet
+import homesafe.shared.generated.resources.checkup_ledger_show
+import homesafe.shared.generated.resources.checkup_looking_healthy
+import homesafe.shared.generated.resources.checkup_more
+import homesafe.shared.generated.resources.checkup_open_click
+import homesafe.shared.generated.resources.checkup_overview_body
+import homesafe.shared.generated.resources.checkup_plain_english
+import homesafe.shared.generated.resources.checkup_ring_description
+import homesafe.shared.generated.resources.checkup_ring_score
+import homesafe.shared.generated.resources.checkup_row_click
+import homesafe.shared.generated.resources.checkup_see_section
+import homesafe.shared.generated.resources.checkup_start_here
+import homesafe.shared.generated.resources.checkup_start_here_click
+import homesafe.shared.generated.resources.checkup_tap_a_line
+import homesafe.shared.generated.resources.checkup_try_it
+import homesafe.shared.generated.resources.checkup_whatif_footer
+import homesafe.shared.generated.resources.checkup_where_to_start
+import homesafe.shared.generated.resources.checkup_your_lines
+import homesafe.shared.generated.resources.layman_checkup_disclaimer
+import homesafe.shared.generated.resources.layman_checkup_healthy
+import homesafe.shared.generated.resources.layman_checkup_score
+import homesafe.shared.generated.resources.layman_checkup_title
+import homesafe.shared.generated.resources.layman_checkup_worth_a_look
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /**
@@ -94,16 +132,20 @@ internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifi
         Row(
             Modifier
                 .fillMaxWidth()
-                .clickable(role = Role.Button, onClickLabel = "See how the checkup is scored") { onOpen(null) }
+                .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_card_score_click)) { onOpen(null) }
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CheckupRing(checkup, Modifier.size(64.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("MONEY CHECKUP", style = type.micro, color = colors.textSecondary)
-                Text("${checkup.passed} of ${checkup.checks.size} looking healthy", style = type.title, color = if (all) colors.gain else colors.textPrimary)
-                Text("How it's scored", style = type.label, color = colors.accent)
+                Text(stringResource(Res.string.layman_checkup_title).uppercase(), style = type.micro, color = colors.textSecondary)
+                Text(
+                    pluralStringResource(Res.plurals.layman_checkup_score, checkup.checks.size, checkup.passed, checkup.checks.size),
+                    style = type.title,
+                    color = if (all) colors.gain else colors.textPrimary,
+                )
+                Text(stringResource(Res.string.checkup_how_scored), style = type.label, color = colors.accent)
             }
             Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(18.dp))
         }
@@ -115,7 +157,7 @@ internal fun MoneyCheckup(checkup: Checkup, onOpen: (CheckKind?) -> Unit, modifi
             CheckRow(check, onClick = { onOpen(check.kind) })
         }
         Text(
-            "Common rules of thumb, not financial advice. Tap a line to see how it's worked out.",
+            stringResource(Res.string.checkup_card_footer),
             style = type.micro,
             color = colors.textTertiary,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 14.dp),
@@ -131,8 +173,9 @@ private fun CheckupRing(checkup: Checkup, modifier: Modifier = Modifier) {
     LaunchedEffect(Unit) { sweep.animateTo(1f, tween(900, easing = FastOutSlowInEasing)) }
     val n = checkup.checks.size
     val oks = checkup.checks.map { it.ok }
+    val description = pluralStringResource(Res.plurals.checkup_ring_description, n, checkup.passed, n)
     Box(
-        modifier.clearAndSetSemantics { contentDescription = "${checkup.passed} of $n checks healthy" },
+        modifier.clearAndSetSemantics { contentDescription = description },
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.matchParentSize()) {
@@ -148,7 +191,7 @@ private fun CheckupRing(checkup: Checkup, modifier: Modifier = Modifier) {
                 if (drawn > 0f) drawArc(if (ok) colors.gain else colors.watch, start, drawn, false, Offset(inset, inset), arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
             }
         }
-        Text("${checkup.passed}/$n", style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+        Text(stringResource(Res.string.checkup_ring_score, checkup.passed, n), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
     }
 }
 
@@ -156,22 +199,23 @@ private fun CheckupRing(checkup: Checkup, modifier: Modifier = Modifier) {
 @Composable
 private fun StartHere(check: Check, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
+    val title = stringResource(check.title)
     Row(
         modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(colors.watch.copy(alpha = 0.10f))
             .border(1.dp, colors.watch.copy(alpha = 0.35f), RoundedCornerShape(14.dp))
-            .clickable(role = Role.Button, onClickLabel = "See the ${check.title} breakdown", onClick = onClick)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_start_here_click, title), onClick = onClick)
             .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Icon(Icons.Filled.Flag, contentDescription = null, tint = colors.watch, modifier = Modifier.size(18.dp))
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text("START HERE · ${check.title.uppercase()}", style = FinanceTheme.type.micro, color = colors.watch)
+            Text(stringResource(Res.string.checkup_start_here, title).uppercase(), style = FinanceTheme.type.micro, color = colors.watch)
             Spacer(Modifier.height(2.dp))
-            Text(check.steps.firstOrNull() ?: check.tip, style = FinanceTheme.type.label, color = colors.textPrimary)
+            Text(check.steps.firstOrNull()?.resolve() ?: stringResource(check.tip), style = FinanceTheme.type.label, color = colors.textPrimary)
         }
         Spacer(Modifier.width(8.dp))
         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = colors.watch, modifier = Modifier.size(16.dp))
@@ -182,10 +226,11 @@ private fun StartHere(check: Check, onClick: () -> Unit, modifier: Modifier = Mo
 private fun CheckRow(check: Check, onClick: () -> Unit) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
+    val title = stringResource(check.title)
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(role = Role.Button, onClickLabel = "See how ${check.title} is worked out", onClick = onClick)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_row_click, title), onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -193,16 +238,16 @@ private fun CheckRow(check: Check, onClick: () -> Unit) {
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(check.title, style = type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f))
-                Text(check.figure, style = type.bodyStrong, color = if (check.ok) colors.gain else colors.watch)
+                Text(title, style = type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                Text(check.figure.resolve(), style = type.bodyStrong, color = if (check.ok) colors.gain else colors.watch)
             }
-            Text(check.detail, style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
+            Text(check.detail.resolve(), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
             check.gauge?.let {
                 Spacer(Modifier.height(8.dp))
                 CheckGaugeBar(it, check.ok, compact = true)
             }
             Spacer(Modifier.height(6.dp))
-            Text(check.tip, style = type.label, color = colors.textSecondary)
+            Text(stringResource(check.tip), style = type.label, color = colors.textSecondary)
         }
         // The ⓘ the tip promises: here it opens the working-out, which links on to the plain-English explainer.
         Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
@@ -216,7 +261,7 @@ private fun StatusIcon(ok: Boolean, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     Icon(
         if (ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-        contentDescription = if (ok) "Healthy" else "Worth a look",
+        contentDescription = stringResource(if (ok) Res.string.layman_checkup_healthy else Res.string.layman_checkup_worth_a_look),
         tint = if (ok) colors.gain else colors.watch,
         modifier = modifier,
     )
@@ -260,8 +305,8 @@ internal fun CheckGaugeBar(gauge: CheckGauge, ok: Boolean, modifier: Modifier = 
             Spacer(Modifier.height(4.dp))
             Box(Modifier.fillMaxWidth()) {
                 Text("0", style = FinanceTheme.type.micro, color = colors.textTertiary)
-                GaugeLabel(gauge.targetLabel, tick, colors.textPrimary)
-                if (stretch != null && gauge.stretchLabel != null) GaugeLabel(gauge.stretchLabel, stretch, colors.textSecondary)
+                GaugeLabel(gauge.targetLabel.resolve(), tick, colors.textPrimary)
+                if (stretch != null && gauge.stretchLabel != null) GaugeLabel(gauge.stretchLabel.resolve(), stretch, colors.textSecondary)
             }
         }
     }
@@ -338,45 +383,49 @@ private fun CheckupOverview(checkup: Checkup, onPage: (CheckKind?) -> Unit) {
             CheckupRing(checkup, Modifier.size(56.dp))
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("Money checkup", style = type.title, color = colors.textPrimary)
-                Text("${checkup.passed} of ${checkup.checks.size} looking healthy", style = type.label, color = colors.textSecondary)
+                Text(stringResource(Res.string.layman_checkup_title), style = type.title, color = colors.textPrimary)
+                Text(
+                    pluralStringResource(Res.plurals.layman_checkup_score, checkup.checks.size, checkup.passed, checkup.checks.size),
+                    style = type.label,
+                    color = colors.textSecondary,
+                )
             }
         }
         Spacer(Modifier.height(14.dp))
         Text(
-            "Each line holds one of your numbers against a common rule of thumb, using the figures in your budget sheet. " +
-                "A line passes when your number is on the healthy side of its line; the score is how many pass. " +
-                "The lines aren't weighted, so the order to work on them is below.",
+            stringResource(Res.string.checkup_overview_body),
             style = type.body,
             color = colors.textPrimary.copy(alpha = 0.88f),
         )
-        SheetHeading("Your lines")
+        SheetHeading(stringResource(Res.string.checkup_your_lines))
         checkup.checks.forEach { check ->
+            val title = stringResource(check.title)
             Row(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .clickable(role = Role.Button, onClickLabel = "Open ${check.title}") { onPage(check.kind) }
+                    .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_open_click, title)) { onPage(check.kind) }
                     .padding(vertical = 10.dp, horizontal = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 StatusIcon(check.ok, Modifier.size(20.dp))
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(check.title, style = type.bodyStrong, color = colors.textPrimary)
-                    Text(check.rule, style = type.label, color = colors.textSecondary)
+                    Text(title, style = type.bodyStrong, color = colors.textPrimary)
+                    Text(stringResource(check.rule), style = type.label, color = colors.textSecondary)
                 }
                 Spacer(Modifier.width(10.dp))
-                Text(check.figure, style = type.bodyStrong, color = if (check.ok) colors.gain else colors.watch)
+                Text(check.figure.resolve(), style = type.bodyStrong, color = if (check.ok) colors.gain else colors.watch)
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = colors.textTertiary, modifier = Modifier.padding(start = 6.dp).size(14.dp))
             }
         }
         val toFix = checkup.toFix
-        SheetHeading(if (toFix.isEmpty()) "Keeping it healthy" else "Where to start")
+        SheetHeading(stringResource(if (toFix.isEmpty()) Res.string.checkup_keeping_healthy else Res.string.checkup_where_to_start))
         if (toFix.isEmpty()) {
-            Text("Every line passes. Open any of them to see how much room you have and what would change it.", style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
+            Text(stringResource(Res.string.checkup_all_pass), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
         }
         toFix.forEachIndexed { i, check ->
+            val title = stringResource(check.title)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -384,26 +433,26 @@ private fun CheckupOverview(checkup: Checkup, onPage: (CheckKind?) -> Unit) {
                     .clip(RoundedCornerShape(14.dp))
                     .background(colors.surface)
                     .border(1.dp, colors.hairline, RoundedCornerShape(14.dp))
-                    .clickable(role = Role.Button, onClickLabel = "Open ${check.title}") { onPage(check.kind) }
+                    .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_open_click, title)) { onPage(check.kind) }
                     .padding(12.dp),
                 verticalAlignment = Alignment.Top,
             ) {
                 Box(Modifier.size(24.dp).clip(CircleShape).background(colors.watch.copy(alpha = 0.18f)), contentAlignment = Alignment.Center) {
-                    Text("${i + 1}", style = type.micro, color = colors.watch)
+                    Text((i + 1).toString(), style = type.micro, color = colors.watch)
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(check.title, style = type.bodyStrong, color = colors.textPrimary)
-                    Text(priorityReason(check.kind), style = type.label, color = colors.textSecondary)
+                    Text(title, style = type.bodyStrong, color = colors.textPrimary)
+                    Text(stringResource(priorityReason(check.kind)), style = type.label, color = colors.textSecondary)
                     check.steps.firstOrNull()?.let {
                         Spacer(Modifier.height(4.dp))
-                        Text(it, style = type.label, color = colors.textPrimary)
+                        Text(it.resolve(), style = type.label, color = colors.textPrimary)
                     }
                 }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Common rules of thumb, not financial advice.", style = type.micro, color = colors.textTertiary)
+        Text(stringResource(Res.string.layman_checkup_disclaimer), style = type.micro, color = colors.textTertiary)
     }
 }
 
@@ -414,66 +463,67 @@ private fun CheckDetail(check: Check, checkup: Checkup, onPage: (CheckKind?) -> 
     val type = FinanceTheme.type
     Column {
         val tone = if (check.ok) colors.gain else colors.watch
+        val allChecks = stringResource(Res.string.checkup_all_checks)
         Row(verticalAlignment = Alignment.CenterVertically) {
             Box(
                 Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .clickable(role = Role.Button, onClickLabel = "All checks") { onPage(null) },
+                    .clickable(role = Role.Button, onClickLabel = allChecks) { onPage(null) },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "All checks", tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = allChecks, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
             }
             Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text(check.title, style = type.title, color = colors.textPrimary)
-                Text(if (check.ok) "Looking healthy" else "Worth a look", style = type.label, color = tone)
+                Text(stringResource(check.title), style = type.title, color = colors.textPrimary)
+                Text(stringResource(if (check.ok) Res.string.checkup_looking_healthy else Res.string.layman_checkup_worth_a_look), style = type.label, color = tone)
             }
             StatusIcon(check.ok, Modifier.size(28.dp))
         }
         Spacer(Modifier.height(16.dp))
-        Text(check.figure, style = type.hero, color = tone)
-        Text(check.detail, style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
+        Text(check.figure.resolve(), style = type.hero, color = tone)
+        Text(check.detail.resolve(), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
         check.gauge?.let {
             Spacer(Modifier.height(14.dp))
             CheckGaugeBar(it, check.ok)
         }
         Spacer(Modifier.height(10.dp))
-        Text(check.rule, style = type.label, color = colors.textSecondary)
+        Text(stringResource(check.rule), style = type.label, color = colors.textSecondary)
 
-        SheetHeading("How it's worked out")
-        Text("Tap a line to see what's in it.", style = type.label, color = colors.textTertiary, modifier = Modifier.padding(bottom = 4.dp))
+        SheetHeading(stringResource(Res.string.checkup_how_worked_out))
+        Text(stringResource(Res.string.checkup_tap_a_line), style = type.label, color = colors.textTertiary, modifier = Modifier.padding(bottom = 4.dp))
         check.ledger.forEach { row -> LedgerRow(row, check.ok, onJump) }
         check.note?.let {
             Spacer(Modifier.height(8.dp))
-            Text(it, style = type.micro, color = colors.textTertiary)
+            Text(stringResource(it), style = type.micro, color = colors.textTertiary)
         }
 
-        SheetHeading(if (check.ok) "Keeping it healthy" else "How to improve it")
+        SheetHeading(stringResource(if (check.ok) Res.string.checkup_keeping_healthy else Res.string.checkup_how_to_improve))
         check.steps.forEach { step ->
             Row(Modifier.padding(vertical = 5.dp), verticalAlignment = Alignment.Top) {
                 Icon(Icons.Outlined.Lightbulb, contentDescription = null, tint = colors.accent, modifier = Modifier.padding(top = 2.dp).size(16.dp))
                 Spacer(Modifier.width(10.dp))
-                Text(step, style = type.body, color = colors.textPrimary)
+                Text(step.resolve(), style = type.body, color = colors.textPrimary)
             }
         }
 
         check.whatIf?.let { whatIf ->
-            SheetHeading("Try it")
+            SheetHeading(stringResource(Res.string.checkup_try_it))
             WhatIfCard(whatIf, check.kind)
         }
 
-        SheetHeading("More")
+        SheetHeading(stringResource(Res.string.checkup_more))
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val open = LocalExplainer.current
-            Explainers.byId(check.explainerId)?.let { e -> SheetChip("Plain English: ${e.title}", colors.cool) { open(e.id) } }
-            check.ledger.mapNotNull { it.section }.distinct().forEach { s -> SheetChip("See ${s.label}", colors.accent) { onJump(s) } }
+            Explainers.byId(check.explainerId)?.let { e -> SheetChip(stringResource(Res.string.checkup_plain_english, stringResource(e.title)), colors.cool) { open(e.id) } }
+            check.ledger.mapNotNull { it.section }.distinct().forEach { s -> SheetChip(stringResource(Res.string.checkup_see_section, stringResource(s.label)), colors.accent) { onJump(s) } }
             checkup.checks.filter { it.kind != check.kind }.forEach { other ->
-                SheetChip(other.title, if (other.ok) colors.gain else colors.watch) { onPage(other.kind) }
+                SheetChip(stringResource(other.title), if (other.ok) colors.gain else colors.watch) { onPage(other.kind) }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text("Common rules of thumb, not financial advice.", style = type.micro, color = colors.textTertiary)
+        Text(stringResource(Res.string.layman_checkup_disclaimer), style = type.micro, color = colors.textTertiary)
     }
 }
 
@@ -488,20 +538,22 @@ private fun LedgerRow(row: CheckLedgerRow, ok: Boolean, onJump: (WalletSection) 
     var open by remember(row) { mutableStateOf(false) }
     val expandable = row.items.isNotEmpty() || row.section != null
     val turn by animateFloatAsState(if (open) 180f else 0f, tween(200), label = "ledgerChevron")
+    val label = stringResource(row.label)
+    val toggleLabel = stringResource(if (open) Res.string.checkup_ledger_hide else Res.string.checkup_ledger_show, label)
     Column(Modifier.fillMaxWidth().animateContentSize()) {
         if (row.result) Hairline(Modifier.padding(vertical = 4.dp))
         Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
-                .let { m -> if (expandable) m.clickable(role = Role.Button, onClickLabel = if (open) "Hide ${row.label}" else "Show what's in ${row.label}") { open = !open } else m }
+                .let { m -> if (expandable) m.clickable(role = Role.Button, onClickLabel = toggleLabel) { open = !open } else m }
                 .semantics(mergeDescendants = true) {}
                 .padding(vertical = 9.dp, horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(row.op ?: "", style = type.bodyStrong, color = colors.textSecondary, textAlign = TextAlign.Center, modifier = Modifier.width(26.dp))
-            Text(row.label, style = if (row.result) type.bodyStrong else type.body, color = colors.textPrimary, modifier = Modifier.weight(1f))
-            Text(row.amount, style = type.bodyStrong, color = if (row.result) (if (ok) colors.gain else colors.watch) else colors.textPrimary)
+            Text(row.op?.let { stringResource(it) }.orEmpty(), style = type.bodyStrong, color = colors.textSecondary, textAlign = TextAlign.Center, modifier = Modifier.width(26.dp))
+            Text(label, style = if (row.result) type.bodyStrong else type.body, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Text(row.amount.resolve(), style = type.bodyStrong, color = if (row.result) (if (ok) colors.gain else colors.watch) else colors.textPrimary)
             if (expandable) {
                 Icon(Icons.Filled.ExpandMore, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.padding(start = 4.dp).size(18.dp).rotate(turn))
             } else {
@@ -518,7 +570,7 @@ private fun LedgerRow(row: CheckLedgerRow, ok: Boolean, onJump: (WalletSection) 
                     .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 if (row.items.isEmpty()) {
-                    Text("Nothing in the sheet for this yet.", style = type.label, color = colors.textSecondary, modifier = Modifier.padding(vertical = 6.dp))
+                    Text(stringResource(Res.string.checkup_ledger_empty), style = type.label, color = colors.textSecondary, modifier = Modifier.padding(vertical = 6.dp))
                 }
                 row.items.forEachIndexed { i, item ->
                     if (i > 0) Hairline()
@@ -528,23 +580,24 @@ private fun LedgerRow(row: CheckLedgerRow, ok: Boolean, onJump: (WalletSection) 
                             Spacer(Modifier.width(8.dp))
                         }
                         Column(Modifier.weight(1f)) {
-                            Text(item.label, style = type.label, color = if (item.flagged) colors.watch else colors.textPrimary)
-                            item.detail?.let { Text(it, style = type.micro, color = colors.textSecondary) }
+                            Text(item.label.resolve(), style = type.label, color = if (item.flagged) colors.watch else colors.textPrimary)
+                            item.detail?.let { Text(it.resolve(), style = type.micro, color = colors.textSecondary) }
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(item.amount, style = type.label, color = colors.textPrimary)
+                        Text(item.amount.resolve(), style = type.label, color = colors.textPrimary)
                     }
                 }
                 row.section?.let { section ->
+                    val sectionTitle = stringResource(section.label)
                     Row(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable(role = Role.Button, onClickLabel = "Go to ${section.label}") { onJump(section) }
+                            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.checkup_ledger_go_to, sectionTitle)) { onJump(section) }
                             .padding(vertical = 10.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("See ${section.label} in your wallet", style = type.bodyStrong, color = colors.accent, modifier = Modifier.weight(1f))
+                        Text(stringResource(Res.string.checkup_ledger_see_in_wallet, sectionTitle), style = type.bodyStrong, color = colors.accent, modifier = Modifier.weight(1f))
                         Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
                     }
                 }
@@ -572,7 +625,7 @@ private fun WhatIfCard(whatIf: WhatIf, kind: CheckKind) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Outlined.Tune, contentDescription = null, tint = colors.accent, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
-            Text(whatIf.label, style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+            Text(stringResource(whatIf.label), style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
             Text(FinanceFormat.money(amount.toDouble(), 0), style = type.bodyStrong, color = colors.textPrimary)
         }
         Slider(
@@ -584,11 +637,11 @@ private fun WhatIfCard(whatIf: WhatIf, kind: CheckKind) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusIcon(outcome.ok, Modifier.size(18.dp))
             Spacer(Modifier.width(8.dp))
-            Text(outcome.headline, style = type.bodyStrong, color = tone)
+            Text(outcome.headline.resolve(), style = type.bodyStrong, color = tone)
         }
-        outcome.note?.let { Text(it, style = type.label, color = colors.textSecondary, modifier = Modifier.padding(start = 26.dp, top = 2.dp)) }
+        outcome.note?.let { Text(it.resolve(), style = type.label, color = colors.textSecondary, modifier = Modifier.padding(start = 26.dp, top = 2.dp)) }
         Spacer(Modifier.height(6.dp))
-        Text("Starts from your numbers today. Nothing here changes your sheet.", style = type.micro, color = colors.textTertiary)
+        Text(stringResource(Res.string.checkup_whatif_footer), style = type.micro, color = colors.textTertiary)
     }
 }
 

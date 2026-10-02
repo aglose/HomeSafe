@@ -57,11 +57,14 @@ import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_close
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * A quick look at one camera from the Home list: pinch a card and its video lifts out into a
@@ -354,7 +357,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             IconButton(onClick = state::close) {
-                Icon(Icons.Filled.Close, contentDescription = "Close", tint = extraColors.textPrimary)
+                Icon(Icons.Filled.Close, contentDescription = stringResource(Res.string.common_close), tint = extraColors.textPrimary)
             }
         }
     }

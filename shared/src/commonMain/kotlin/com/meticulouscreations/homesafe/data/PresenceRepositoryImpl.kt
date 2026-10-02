@@ -69,16 +69,16 @@ class PresenceRepositoryImpl(
     }
 
     override suspend fun refresh(): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         return fetch(url)
     }
 
     override suspend fun setThisDeviceAway(away: Boolean, source: PresenceSource, dwellSeconds: Int): Result<Unit> {
         val urls = candidateUrls()
-        if (urls.isEmpty()) return Result.failure(IllegalStateException("Not connected"))
+        if (urls.isEmpty()) return Result.failure(notConnected())
         val deviceId = identity.deviceId()
         val secret = identity.secret()
-        var last: Result<HouseholdPresence> = Result.failure(IllegalStateException("Not connected"))
+        var last: Result<HouseholdPresence> = Result.failure(notConnected())
         for (url in urls) {
             last = relayApi.setPresence(url, deviceId, secret, away, source.wire, dwellSeconds)
             if (last.isSuccess) break
@@ -87,7 +87,7 @@ class PresenceRepositoryImpl(
     }
 
     override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         val deviceId = identity.deviceId()
         val secret = identity.secret()
         val answer = if (decides) relayApi.setPresenceAuthority(url, deviceId, secret) else relayApi.clearPresenceAuthority(url, deviceId, secret)
@@ -95,12 +95,12 @@ class PresenceRepositoryImpl(
     }
 
     override suspend fun setHome(home: HomeLocation?): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         return relayApi.setHome(url, home, identity.deviceId()).map { _presence.value = it }
     }
 
     override suspend fun removeDevice(deviceId: String): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         return relayApi.removeDevice(url, deviceId).onSuccess {
             // Gone from the list at once; the re-read after it is only for what else changed.
             _presence.update { it.copy(devices = it.devices.filterNot { device -> device.id == deviceId }) }

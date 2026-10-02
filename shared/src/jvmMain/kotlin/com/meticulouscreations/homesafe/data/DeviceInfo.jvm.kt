@@ -11,7 +11,7 @@ private class DesktopDeviceInfo : DeviceInfo {
     override val build = "debug"
 
     /** Only ever run from a local build, which has no release number to show. */
-    override val appVersion = "development build"
+    override val appVersion = "dev"
 }
 
 actual fun createDeviceInfo(platformContext: PlatformContext): DeviceInfo = DesktopDeviceInfo()

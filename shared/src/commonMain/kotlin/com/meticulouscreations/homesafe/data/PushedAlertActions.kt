@@ -32,7 +32,7 @@ class PushedAlertActions(
     private suspend fun onEachServer(call: suspend (url: String, deviceId: String, secret: String?) -> Result<Unit>): Result<Unit> {
         val deviceId = identity.deviceId()
         val secret = identity.secret()
-        var last: Result<Unit> = Result.failure(IllegalStateException("No server to ask"))
+        var last: Result<Unit> = Result.failure(noServerToAsk())
         for (url in candidateUrls()) {
             last = call(url, deviceId, secret)
             if (last.isSuccess) break

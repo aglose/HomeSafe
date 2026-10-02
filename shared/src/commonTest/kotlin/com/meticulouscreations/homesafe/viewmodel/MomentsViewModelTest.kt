@@ -36,6 +36,13 @@ import com.meticulouscreations.homesafe.domain.usecase.RefreshPhantomSpotsUseCas
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
+import homesafe.shared.generated.resources.moments_clip_count
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
+import homesafe.shared.generated.resources.moments_title_came_and_went
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -85,7 +92,7 @@ class MomentsViewModelTest {
         /** While set, a refresh waits on it: the server still thinking. */
         var refreshAnswer: CompletableDeferred<Unit>? = null
         override fun observeMoments(): Flow<List<MomentEvent>> = camera.map { c -> events.filter { c == null || it.cameraName == c } }
-        override fun observeError(): Flow<String?> = flowOf(null)
+        override fun observeError(): Flow<UiText?> = flowOf(null)
         override fun observePaging(): Flow<MomentsPaging> = flowOf(MomentsPaging())
         override suspend fun loadOlder() = Unit
         override fun showBefore(epochSeconds: Double?) {
@@ -127,7 +134,7 @@ class MomentsViewModelTest {
         override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
@@ -310,7 +317,7 @@ class MomentsViewModelTest {
         harness.viewModel.markNotAPerson(person)
         testScheduler.runCurrent()
         assertEquals(listOf("a", "b", "c", "d"), harness.viewModel.uiState.value.ids)
-        assertEquals("Relay answered 502", harness.viewModel.notAPersonState.value.error)
+        assertEquals(UiText.of(Res.string.moments_not_a_person_mark_failed, "Relay answered 502"), harness.viewModel.notAPersonState.value.error)
         harness.viewModel.dismissNotAPerson()
         assertEquals(NotAPersonUiState(), harness.viewModel.notAPersonState.value)
     }
@@ -407,9 +414,9 @@ class MomentsViewModelTest {
         assertEquals("p0", visit.key)
         assertEquals("p0", visit.event.id, "the card plays the visit's first clip")
         assertEquals(listOf("p0", "p1", "p2", "p3", "p4"), visit.clips.map { it.event.id })
-        assertEquals("5 clips", visit.presentation.clipCountLabel)
+        assertEquals(UiText.plural(Res.plurals.moments_clip_count, 5), visit.presentation.clipCountLabel)
         assertEquals("http://frigate.test:8971/thumb/p0", visit.thumbnailUrl)
-        assertEquals("Andrew's Tesla came and went 3×", items[1].presentation.title)
+        assertEquals(UiText.plural(Res.plurals.moments_title_came_and_went, 3, "Andrew's Tesla".asUiText(), 3), items[1].presentation.title)
     }
 
     @Test
@@ -429,7 +436,7 @@ class MomentsViewModelTest {
         val visit = state(Harness(events = withLater).viewModel).groups.flatMap { it.items }.single()
         assertEquals(VisitKind.VISIT, visit.kind)
         assertEquals(listOf("a", "e"), visit.clips.map { it.event.id }, "one row per stretch of footage, playing the clip that covers it")
-        assertEquals("2 clips", visit.presentation.clipCountLabel)
+        assertEquals(UiText.plural(Res.plurals.moments_clip_count, 2), visit.presentation.clipCountLabel)
     }
 
     @Test

@@ -20,6 +20,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.tone_settings_caption
+import homesafe.shared.generated.resources.tone_settings_title
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * How the finance app's Economy and Risk tabs talk: straight talk (the numbers, their lines and
@@ -28,8 +32,8 @@ import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
  */
 @Composable
 internal fun EconomyToneSection(tone: EconomyTone, onTone: (EconomyTone) -> Unit) {
-    SettingsSection(title = "Economy commentary", icon = Icons.Filled.Public) {
-        SettingsCaption("How Finance describes the economy. The readings, charts and warning lines are the same in both.")
+    SettingsSection(title = stringResource(Res.string.tone_settings_title), icon = Icons.Filled.Public) {
+        SettingsCaption(stringResource(Res.string.tone_settings_caption))
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             EconomyTone.entries.forEach { option ->
                 Row(
@@ -43,8 +47,8 @@ internal fun EconomyToneSection(tone: EconomyTone, onTone: (EconomyTone) -> Unit
                     // The row handles the click, so the button only shows the choice.
                     RadioButton(selected = option == tone, onClick = null, modifier = Modifier.padding(top = 2.dp))
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(option.label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-                        Text(option.blurb, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(stringResource(option.label), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+                        Text(stringResource(option.blurb), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }

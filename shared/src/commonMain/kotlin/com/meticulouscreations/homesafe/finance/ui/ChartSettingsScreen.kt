@@ -40,6 +40,21 @@ import com.meticulouscreations.homesafe.finance.ui.components.ChartLine
 import com.meticulouscreations.homesafe.finance.ui.components.LineChart
 import com.meticulouscreations.homesafe.finance.ui.components.RangeSelector
 import com.meticulouscreations.homesafe.finance.ui.components.chartTick
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.chart_style_fine_print
+import homesafe.shared.generated.resources.chart_style_page_intro
+import homesafe.shared.generated.resources.chart_style_page_title
+import homesafe.shared.generated.resources.chart_style_preview
+import homesafe.shared.generated.resources.chart_style_preview_chart_description
+import homesafe.shared.generated.resources.chart_style_preview_point
+import homesafe.shared.generated.resources.chart_style_reset
+import homesafe.shared.generated.resources.chart_style_section_haptics
+import homesafe.shared.generated.resources.chart_style_section_line
+import homesafe.shared.generated.resources.chart_style_section_look
+import homesafe.shared.generated.resources.chart_style_tile_description
+import homesafe.shared.generated.resources.chart_style_tile_use
+import homesafe.shared.generated.resources.finance_change_with_percent
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.sin
 
 /**
@@ -55,14 +70,14 @@ internal fun ChartSettingsScreen(style: ChartStyle, contentPadding: PaddingValue
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.testTag("chart_settings")) {
         item {
             Column(Modifier.padding(horizontal = PageGutter, vertical = 8.dp)) {
-                Text("Charts", style = type.title, color = colors.textPrimary)
+                Text(stringResource(Res.string.chart_style_page_title), style = type.title, color = colors.textPrimary)
                 Spacer(Modifier.height(4.dp))
-                Text("How every chart in Finance looks and feels. Drag the chart below to try it.", style = type.body, color = colors.textSecondary)
+                Text(stringResource(Res.string.chart_style_page_intro), style = type.body, color = colors.textSecondary)
             }
         }
         item { PreviewCard() }
 
-        item { SectionHeader("Look", subtitle = style.shader.blurb) }
+        item { SectionHeader(stringResource(Res.string.chart_style_section_look), subtitle = stringResource(style.shader.blurb)) }
         item {
             Column(Modifier.padding(horizontal = PageGutter), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 ChartShader.entries.chunked(2).forEach { row ->
@@ -76,17 +91,17 @@ internal fun ChartSettingsScreen(style: ChartStyle, contentPadding: PaddingValue
             }
         }
 
-        item { SectionHeader("Line", subtitle = style.sharpness.blurb) }
+        item { SectionHeader(stringResource(Res.string.chart_style_section_line), subtitle = stringResource(style.sharpness.blurb)) }
         item {
-            RangeSelector(LineSharpness.entries, style.sharpness, { it.label }, colors.gain, { onChange(style.copy(sharpness = it)) }, Modifier.padding(horizontal = PageGutter - 4.dp))
+            RangeSelector(LineSharpness.entries, style.sharpness, { stringResource(it.label) }, colors.gain, { onChange(style.copy(sharpness = it)) }, Modifier.padding(horizontal = PageGutter - 4.dp))
         }
 
-        item { SectionHeader("Haptics", subtitle = style.haptics.blurb) }
+        item { SectionHeader(stringResource(Res.string.chart_style_section_haptics), subtitle = stringResource(style.haptics.blurb)) }
         item {
             RangeSelector(
                 ChartHaptics.entries,
                 style.haptics,
-                { it.label },
+                { stringResource(it.label) },
                 colors.gain,
                 { feel ->
                     onChange(style.copy(haptics = feel))
@@ -101,7 +116,7 @@ internal fun ChartSettingsScreen(style: ChartStyle, contentPadding: PaddingValue
             Spacer(Modifier.height(24.dp))
             if (style != ChartStyle.DEFAULT) {
                 Text(
-                    "Back to the defaults",
+                    stringResource(Res.string.chart_style_reset),
                     style = type.bodyStrong,
                     color = colors.gain,
                     modifier = Modifier
@@ -111,7 +126,7 @@ internal fun ChartSettingsScreen(style: ChartStyle, contentPadding: PaddingValue
                         .padding(horizontal = 8.dp, vertical = 10.dp),
                 )
             }
-            FinePrint("These apply to every chart in Finance: the markets, the economy, your wallet and the sheet's own charts.")
+            FinePrint(stringResource(Res.string.chart_style_fine_print))
         }
     }
 }
@@ -130,10 +145,14 @@ private fun PreviewCard() {
     val color = colors.direction(change)
     FinanceCard(padding = 0.dp, modifier = Modifier.padding(top = 12.dp)) {
         Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 14.dp)) {
-            Text(if (at == null) "Preview" else "Point ${at + 1} of ${series.size}", style = type.label, color = colors.textSecondary)
+            Text(
+                if (at == null) stringResource(Res.string.chart_style_preview) else stringResource(Res.string.chart_style_preview_point, at + 1, series.size),
+                style = type.label,
+                color = colors.textSecondary,
+            )
             Text(FinanceFormat.money(shown), style = type.title, color = colors.textPrimary)
             Text(
-                FinanceFormat.signedMoney(change) + " (" + FinanceFormat.signedPercent(change / open * 100) + ")",
+                stringResource(Res.string.finance_change_with_percent, FinanceFormat.signedMoney(change), FinanceFormat.signedPercent(change / open * 100)),
                 style = type.label,
                 color = color,
             )
@@ -142,7 +161,7 @@ private fun PreviewCard() {
         LineChart(
             lines = listOf(ChartLine(series, color, fill = true)),
             baseline = open,
-            contentDescription = "Preview chart",
+            contentDescription = stringResource(Res.string.chart_style_preview_chart_description),
             onScrub = { scrub = it },
             modifier = Modifier.fillMaxWidth().height(180.dp).testTag("chart_settings_preview"),
         )
@@ -156,6 +175,9 @@ private fun ShaderTile(shader: ChartShader, style: ChartStyle, selected: Boolean
     val colors = FinanceTheme.colors
     val shape = RoundedCornerShape(14.dp)
     val series = remember { previewSeries() }
+    val lookName = stringResource(shader.label)
+    val description = stringResource(Res.string.chart_style_tile_description, lookName)
+    val useLabel = stringResource(Res.string.chart_style_tile_use, lookName)
     Box(
         modifier
             .clip(shape)
@@ -173,7 +195,7 @@ private fun ShaderTile(shader: ChartShader, style: ChartStyle, selected: Boolean
                 )
             }
             Text(
-                shader.label,
+                lookName,
                 style = FinanceTheme.type.bodyStrong,
                 color = if (selected) colors.textPrimary else colors.textSecondary,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -184,10 +206,10 @@ private fun ShaderTile(shader: ChartShader, style: ChartStyle, selected: Boolean
             Modifier
                 .matchParentSize()
                 .semantics {
-                    contentDescription = "${shader.label} chart look"
+                    contentDescription = description
                     this.selected = selected
                 }
-                .clickable(role = Role.RadioButton, onClickLabel = "Use ${shader.label}", onClick = onClick),
+                .clickable(role = Role.RadioButton, onClickLabel = useLabel, onClick = onClick),
         )
     }
 }

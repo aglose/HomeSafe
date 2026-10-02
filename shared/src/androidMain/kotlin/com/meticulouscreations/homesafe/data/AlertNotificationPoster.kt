@@ -87,13 +87,13 @@ object AlertNotificationPoster {
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Detections", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "A person, vehicle, or animal seen by one of your cameras"
+            NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_detections_name), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = context.getString(R.string.notif_channel_detections_description)
             },
         )
         manager.createNotificationChannel(
-            NotificationChannel(AWAY_CHANNEL_ID, "Away alerts", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "A person on any camera while nobody is home"
+            NotificationChannel(AWAY_CHANNEL_ID, context.getString(R.string.notif_channel_away_name), NotificationManager.IMPORTANCE_HIGH).apply {
+                description = context.getString(R.string.notif_channel_away_description)
                 setSound(
                     RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                     AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build(),
@@ -102,8 +102,8 @@ object AlertNotificationPoster {
             },
         )
         manager.createNotificationChannel(
-            NotificationChannel(SUMMARY_CHANNEL_ID, "Summaries", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "A few times a day: what the cameras saw while someone was home"
+            NotificationChannel(SUMMARY_CHANNEL_ID, context.getString(R.string.notif_channel_summaries_name), NotificationManager.IMPORTANCE_LOW).apply {
+                description = context.getString(R.string.notif_channel_summaries_description)
             },
         )
     }
@@ -191,8 +191,8 @@ object AlertNotificationPoster {
             .setAutoCancel(true)
             .setContentIntent(openIntent(context, notification))
             .apply {
-                tagCarIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, "Tag car", it) }
-                notAPersonIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, "Not a person", it) }
+                tagCarIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, context.getString(R.string.notif_action_tag_car), it) }
+                notAPersonIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, context.getString(R.string.notif_action_not_a_person), it) }
                 if (largeIcon != null) setLargeIcon(largeIcon)
                 if (picture != null) {
                     setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?))
@@ -273,7 +273,7 @@ object AlertNotificationPoster {
         synchronized(firstPosted) { firstPosted.remove(id) }
         synchronized(running) { running.remove(id)?.cancel() }
         cancel(context, id)
-        confirm(context, id, target, "Marking as not a person…", cameraDisplayName(target.cameraName), action = null)
+        confirm(context, id, target, context.getString(R.string.notif_marking_not_a_person_title), cameraDisplayName(target.cameraName), action = null)
     }
 
     /** The relay has the mark: this spot won't alert again, and Undo takes it back. */
@@ -282,21 +282,28 @@ object AlertNotificationPoster {
             context = context,
             id = id,
             target = target,
-            title = "Marked not a person",
-            body = "${cameraDisplayName(target.cameraName)} won't alert for this again, and HomeSafe learns from it.",
-            action = "Undo" to NotAPersonReceiver.ACTION_UNDO,
+            title = context.getString(R.string.notif_marked_not_a_person_title),
+            body = context.getString(R.string.notif_marked_not_a_person_body, cameraDisplayName(target.cameraName)),
+            action = context.getString(R.string.notif_action_undo) to NotAPersonReceiver.ACTION_UNDO,
         )
 
     /** The mark didn't reach the relay; [reason] says why, and the button tries again. */
     fun showNotAPersonFailed(context: Context, id: String, target: MomentDeepLink, reason: String) =
-        confirm(context, id, target, "Couldn't mark it not a person", reason, action = "Try again" to NotAPersonReceiver.ACTION_MARK)
+        confirm(
+            context,
+            id,
+            target,
+            context.getString(R.string.notif_mark_failed_title),
+            reason,
+            action = context.getString(R.string.notif_action_try_again) to NotAPersonReceiver.ACTION_MARK,
+        )
 
     /** Undo landed: nothing left to say. */
     fun clearNotAPerson(context: Context, id: String) = cancel(context, confirmTag(id))
 
     /** Undo didn't reach the relay: the mark stands, and the button is still there. */
     fun showUndoFailed(context: Context, id: String, target: MomentDeepLink, reason: String) =
-        confirm(context, id, target, "Couldn't undo it", reason, action = "Undo" to NotAPersonReceiver.ACTION_UNDO)
+        confirm(context, id, target, context.getString(R.string.notif_undo_failed_title), reason, action = context.getString(R.string.notif_action_undo) to NotAPersonReceiver.ACTION_UNDO)
 
     private fun confirm(context: Context, id: String, target: MomentDeepLink, title: String, body: String, action: Pair<String, String>?) {
         if (!canPost(context)) return

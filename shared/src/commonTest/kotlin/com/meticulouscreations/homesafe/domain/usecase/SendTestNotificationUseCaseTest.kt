@@ -3,9 +3,10 @@ package com.meticulouscreations.homesafe.domain.usecase
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.text.KeyedTextLoader
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 class SendTestNotificationUseCaseTest {
 
@@ -21,14 +22,15 @@ class SendTestNotificationUseCaseTest {
     }
 
     @Test
-    fun postsOneTextOnlyNotificationStraightToTheNotifier() {
+    fun postsOneTextOnlyNotificationStraightToTheNotifier() = runTest {
         val notifier = FakeNotifier()
 
-        SendTestNotificationUseCase(notifier)()
+        SendTestNotificationUseCase(notifier, KeyedTextLoader)()
 
         val posted = notifier.posted.single()
         assertEquals(SendTestNotificationUseCase.TEST_NOTIFICATION_ID, posted.id)
-        assertTrue(posted.title.isNotBlank() && posted.body.isNotBlank())
+        assertEquals("settings_test_notification_title", posted.title)
+        assertEquals("settings_test_notification_body", posted.body)
         assertEquals(null, posted.thumbnail)
     }
 }

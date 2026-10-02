@@ -92,16 +92,32 @@ import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.finance_close
+import homesafe.shared.generated.resources.finance_refresh
+import homesafe.shared.generated.resources.finance_refreshing
+import homesafe.shared.generated.resources.finance_tab_economy
+import homesafe.shared.generated.resources.finance_tab_markets
+import homesafe.shared.generated.resources.finance_tab_risk
+import homesafe.shared.generated.resources.finance_tab_wallet
+import homesafe.shared.generated.resources.finance_title_chart_settings
+import homesafe.shared.generated.resources.finance_title_connections
+import homesafe.shared.generated.resources.finance_title_glossary
+import homesafe.shared.generated.resources.finance_title_sheet_sync
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /** The finance app's four tabs, in bottom-nav order. */
-enum class FinanceTab(val label: String, val icon: ImageVector) {
-    WALLET("Wallet", Icons.Filled.AccountBalanceWallet),
-    MARKETS("Markets", Icons.AutoMirrored.Filled.ShowChart),
-    ECONOMY("Economy", Icons.Filled.Public),
-    RISK("Risk", Icons.Filled.Radar),
+enum class FinanceTab(val label: StringResource, val icon: ImageVector) {
+    WALLET(Res.string.finance_tab_wallet, Icons.Filled.AccountBalanceWallet),
+    MARKETS(Res.string.finance_tab_markets, Icons.AutoMirrored.Filled.ShowChart),
+    ECONOMY(Res.string.finance_tab_economy, Icons.Filled.Public),
+    RISK(Res.string.finance_tab_risk, Icons.Filled.Radar),
 }
 
 /** A page pushed over the tabs. */
@@ -246,7 +262,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             viewModel::requestHistory,
                             onFollow = { symbol ->
                                 val meta = state.meta(symbol)
-                                viewModel.addSymbol(SymbolMatch(symbol, meta.name, meta.kind, typeLabel = "", exchange = null))
+                                viewModel.addSymbol(SymbolMatch(symbol, state.nameToSave(symbol), meta.kind, typeLabel = "", exchange = null))
                             },
                             onUnfollow = viewModel::removeSymbol,
                             onSetPosition = viewModel::setPosition,
@@ -266,7 +282,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             }
 
             FinanceTopBar(
-                title = details.lastOrNull()?.let { titleOf(it) } ?: tab.label,
+                title = details.lastOrNull()?.let { titleOf(it) } ?: stringResource(tab.label),
                 isDetail = details.isNotEmpty(),
                 refreshing = state.refreshing,
                 onBack = { if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose() },
@@ -331,13 +347,14 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     }
 }
 
+@Composable
 private fun titleOf(detail: FinanceDetail): String = when (detail) {
-    is FinanceDetail.QuotePage -> MarketCatalog.lookup(detail.symbol).shortName
-    is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.let { Narrator.plainTitle(it.id) } ?: ""
-    FinanceDetail.Connections -> "How it connects"
-    FinanceDetail.Glossary -> "Jargon buster"
-    FinanceDetail.SheetSync -> "Sheet sync"
-    FinanceDetail.ChartSettings -> "Chart settings"
+    is FinanceDetail.QuotePage -> MarketCatalog.lookup(detail.symbol).shortName.resolve()
+    is FinanceDetail.IndicatorPage -> IndicatorCatalog.byId(detail.id)?.let { Narrator.plainTitle(it.id).resolve() } ?: ""
+    FinanceDetail.Connections -> stringResource(Res.string.finance_title_connections)
+    FinanceDetail.Glossary -> stringResource(Res.string.finance_title_glossary)
+    FinanceDetail.SheetSync -> stringResource(Res.string.finance_title_sheet_sync)
+    FinanceDetail.ChartSettings -> stringResource(Res.string.finance_title_chart_settings)
 }
 
 /**
@@ -386,7 +403,7 @@ private fun FinanceTopBar(
             AnimatedContent(isDetail, label = "backIcon") { detail ->
                 Icon(
                     if (detail) Icons.AutoMirrored.Filled.ArrowBack else Icons.Filled.Close,
-                    contentDescription = if (detail) "Back" else "Close finance",
+                    contentDescription = stringResource(if (detail) Res.string.common_back else Res.string.finance_close),
                     tint = colors.textPrimary,
                 )
             }
@@ -397,11 +414,11 @@ private fun FinanceTopBar(
         // On the tabs only: their titles are short enough to leave room for a third button.
         if (!isDetail) {
             IconButton(onClick = onChartSettings, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 88.dp).testTag("finance_chart_settings")) {
-                Icon(Icons.Filled.Tune, contentDescription = "Chart settings", tint = colors.textSecondary)
+                Icon(Icons.Filled.Tune, contentDescription = stringResource(Res.string.finance_title_chart_settings), tint = colors.textSecondary)
             }
         }
         IconButton(onClick = onGlossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp).testTag("finance_glossary")) {
-            Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = "Jargon buster", tint = colors.textSecondary)
+            Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = stringResource(Res.string.finance_title_glossary), tint = colors.textSecondary)
         }
         IconButton(onClick = onRefresh, modifier = Modifier.align(Alignment.CenterEnd)) {
             if (refreshing) {
@@ -409,9 +426,9 @@ private fun FinanceTopBar(
                 // recomposition per frame when not.
                 val spin = rememberInfiniteTransition(label = "refreshSpin")
                 val angle = spin.animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "angle")
-                Icon(Icons.Filled.Refresh, contentDescription = "Refreshing", tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refreshing), tint = colors.gain, modifier = Modifier.graphicsLayer { rotationZ = angle.value })
             } else {
-                Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = colors.textSecondary)
+                Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.finance_refresh), tint = colors.textSecondary)
             }
         }
     }
@@ -446,7 +463,7 @@ private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Uni
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(t.icon, contentDescription = null, tint = if (isSelected) colors.gain else colors.textSecondary, modifier = Modifier.size(22.dp))
-                Text(t.label, style = FinanceTheme.type.micro, color = if (isSelected) colors.gain else colors.textSecondary)
+                Text(stringResource(t.label), style = FinanceTheme.type.micro, color = if (isSelected) colors.gain else colors.textSecondary)
             }
         }
     }

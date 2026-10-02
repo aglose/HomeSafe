@@ -61,10 +61,28 @@ import com.meticulouscreations.homesafe.domain.model.SeenBox
 import com.meticulouscreations.homesafe.domain.model.boxBetween
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.viewmodel.CameraFrame
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.cars_box_unnamed
+import homesafe.shared.generated.resources.cars_camera_frame
+import homesafe.shared.generated.resources.cars_how_to_tag
+import homesafe.shared.generated.resources.cars_new_frame
+import homesafe.shared.generated.resources.cars_selected_named
+import homesafe.shared.generated.resources.cars_selected_unnamed
+import homesafe.shared.generated.resources.cars_selected_untracked
+import homesafe.shared.generated.resources.cars_title
+import homesafe.shared.generated.resources.cars_tracking
+import homesafe.shared.generated.resources.cars_tracking_none
+import homesafe.shared.generated.resources.cars_whose_car
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.common_retry
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.random.Random
 
 /**
@@ -104,12 +122,12 @@ fun CarTaggingScreen(cameraName: String, onBack: () -> Unit, modifier: Modifier 
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Text(
-                        text = uiState.loadError.orEmpty(),
+                        text = uiState.loadError?.resolve().orEmpty(),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.error,
                         textAlign = TextAlign.Center,
                     )
-                    OutlinedButton(onClick = viewModel::load) { Text("Retry") }
+                    OutlinedButton(onClick = viewModel::load) { Text(stringResource(Res.string.common_retry)) }
                 }
 
                 else -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
@@ -130,10 +148,10 @@ private fun Header(cameraName: String, refreshing: Boolean, onBack: () -> Unit, 
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = MaterialTheme.colorScheme.primary)
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Tag cars in view", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            Text(text = stringResource(Res.string.cars_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
             Text(
                 text = cameraDisplayName(cameraName),
                 style = MaterialTheme.typography.labelMedium,
@@ -142,7 +160,7 @@ private fun Header(cameraName: String, refreshing: Boolean, onBack: () -> Unit, 
             )
         }
         IconButton(onClick = onRefresh, enabled = !refreshing) {
-            Icon(Icons.Filled.Refresh, contentDescription = "New frame", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.cars_new_frame), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -159,8 +177,9 @@ private fun FrameEditor(frame: CameraFrame, uiState: CarTaggingUiState, onTap: (
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = MaterialTheme.typography.labelSmall.merge(TextStyle(color = Color.White))
     val selectedColor = MaterialTheme.colorScheme.primary
+    val unnamedLabel = stringResource(Res.string.cars_box_unnamed)
     Box(modifier = Modifier.padding(horizontal = 8.dp).aspectRatio(frame.width.toFloat() / frame.height)) {
-        AsyncImage(model = frame.jpeg, contentDescription = "Camera frame", contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
+        AsyncImage(model = frame.jpeg, contentDescription = stringResource(Res.string.cars_camera_frame), contentScale = ContentScale.FillBounds, modifier = Modifier.fillMaxSize())
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
@@ -202,7 +221,7 @@ private fun FrameEditor(frame: CameraFrame, uiState: CarTaggingUiState, onTap: (
                     size = rect.size,
                     style = Stroke(width = (if (selected) 3.dp else 2.dp).toPx()),
                 )
-                val name = car.subLabel?.takeIf { it.isNotBlank() }?.let(::subLabelDisplayName) ?: "Car · no name"
+                val name = car.subLabel?.takeIf { it.isNotBlank() }?.let(::subLabelDisplayName) ?: unnamedLabel
                 val text = textMeasurer.measure(name, labelStyle)
                 val pad = 4.dp.toPx()
                 val labelTop = (rect.top - text.size.height - 2 * pad).takeIf { it >= 0f } ?: rect.top
@@ -237,7 +256,7 @@ private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCanc
     ) {
         uiState.notice?.let { notice ->
             Text(
-                text = notice,
+                text = notice.resolve(),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (uiState.noticeIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
             )
@@ -245,16 +264,12 @@ private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCanc
         if (uiState.selection == null) {
             val tracked = uiState.trackedCars.size
             Text(
-                text = "Tap a car Frigate has boxed, or drag a rectangle round one it missed.",
+                text = stringResource(Res.string.cars_how_to_tag),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
-                text = when (tracked) {
-                    0 -> "Frigate isn't tracking any cars here right now."
-                    1 -> "Frigate is tracking 1 car here."
-                    else -> "Frigate is tracking $tracked cars here."
-                },
+                text = if (tracked == 0) stringResource(Res.string.cars_tracking_none) else pluralStringResource(Res.plurals.cars_tracking, tracked, tracked),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -263,12 +278,12 @@ private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCanc
         val car = uiState.selectedCar
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(text = "Whose car is this?", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+                Text(text = stringResource(Res.string.cars_whose_car), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
                 Text(
                     text = when {
-                        car == null -> "Frigate isn't tracking a car here, so this only teaches the model."
-                        car.subLabel.isNullOrBlank() -> "Frigate is tracking it but hasn't named it."
-                        else -> "Frigate calls it ${subLabelDisplayName(car.subLabel)}."
+                        car == null -> stringResource(Res.string.cars_selected_untracked)
+                        car.subLabel.isNullOrBlank() -> stringResource(Res.string.cars_selected_unnamed)
+                        else -> stringResource(Res.string.cars_selected_named, subLabelDisplayName(car.subLabel))
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -277,7 +292,7 @@ private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCanc
             if (uiState.isSaving) {
                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
             } else {
-                TextButton(onClick = onCancel) { Text("Cancel") }
+                TextButton(onClick = onCancel) { Text(stringResource(Res.string.common_cancel)) }
             }
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {

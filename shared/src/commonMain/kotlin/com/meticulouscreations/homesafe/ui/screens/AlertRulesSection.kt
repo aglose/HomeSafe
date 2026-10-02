@@ -37,7 +37,71 @@ import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.QuietHours
 import com.meticulouscreations.homesafe.domain.model.matchingPreset
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.alerts_caption_poller
+import homesafe.shared.generated.resources.alerts_caption_relay
+import homesafe.shared.generated.resources.alerts_category_animals
+import homesafe.shared.generated.resources.alerts_category_people
+import homesafe.shared.generated.resources.alerts_category_vehicles
+import homesafe.shared.generated.resources.alerts_chip_noisy
+import homesafe.shared.generated.resources.alerts_custom
+import homesafe.shared.generated.resources.alerts_custom_description
+import homesafe.shared.generated.resources.alerts_fine_tune
+import homesafe.shared.generated.resources.alerts_hide_zones
+import homesafe.shared.generated.resources.alerts_loading_cameras
+import homesafe.shared.generated.resources.alerts_no_cameras
+import homesafe.shared.generated.resources.alerts_noisy_hint_day
+import homesafe.shared.generated.resources.alerts_noisy_hint_week
+import homesafe.shared.generated.resources.alerts_notifications
+import homesafe.shared.generated.resources.alerts_notifications_blocked
+import homesafe.shared.generated.resources.alerts_notifications_off
+import homesafe.shared.generated.resources.alerts_notifications_on_poller
+import homesafe.shared.generated.resources.alerts_notifications_on_relay
+import homesafe.shared.generated.resources.alerts_notifications_unsupported
+import homesafe.shared.generated.resources.alerts_only_strangers
+import homesafe.shared.generated.resources.alerts_only_strangers_faces_off
+import homesafe.shared.generated.resources.alerts_only_strangers_faces_unknown
+import homesafe.shared.generated.resources.alerts_only_strangers_off
+import homesafe.shared.generated.resources.alerts_only_strangers_on
+import homesafe.shared.generated.resources.alerts_only_when_away
+import homesafe.shared.generated.resources.alerts_only_when_away_off
+import homesafe.shared.generated.resources.alerts_only_when_away_on
+import homesafe.shared.generated.resources.alerts_open_notification_settings
+import homesafe.shared.generated.resources.alerts_place_anywhere
+import homesafe.shared.generated.resources.alerts_place_anywhere_else
+import homesafe.shared.generated.resources.alerts_preset_everything
+import homesafe.shared.generated.resources.alerts_preset_everything_description
+import homesafe.shared.generated.resources.alerts_preset_people_driveway_cars
+import homesafe.shared.generated.resources.alerts_preset_people_driveway_cars_description
+import homesafe.shared.generated.resources.alerts_preset_people_only
+import homesafe.shared.generated.resources.alerts_preset_people_only_description
+import homesafe.shared.generated.resources.alerts_preset_people_vehicles
+import homesafe.shared.generated.resources.alerts_preset_people_vehicles_description
+import homesafe.shared.generated.resources.alerts_quiet_from_button
+import homesafe.shared.generated.resources.alerts_quiet_from_title
+import homesafe.shared.generated.resources.alerts_quiet_hours
+import homesafe.shared.generated.resources.alerts_quiet_hours_empty
+import homesafe.shared.generated.resources.alerts_quiet_hours_off
+import homesafe.shared.generated.resources.alerts_quiet_hours_on
+import homesafe.shared.generated.resources.alerts_quiet_set
+import homesafe.shared.generated.resources.alerts_quiet_to_button
+import homesafe.shared.generated.resources.alerts_quiet_until_title
+import homesafe.shared.generated.resources.alerts_relay_policy
+import homesafe.shared.generated.resources.alerts_relay_what_youll_hear
+import homesafe.shared.generated.resources.alerts_send_test
+import homesafe.shared.generated.resources.alerts_test_sent
+import homesafe.shared.generated.resources.alerts_time_am
+import homesafe.shared.generated.resources.alerts_time_pm
+import homesafe.shared.generated.resources.alerts_title
+import homesafe.shared.generated.resources.alerts_what_to_hear
+import homesafe.shared.generated.resources.alerts_zones_caption
+import homesafe.shared.generated.resources.common_cancel
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /**
@@ -65,11 +129,11 @@ internal fun AlertsSection(
     onOpenSettings: () -> Unit,
     onSendTest: () -> Unit,
 ) {
-    SettingsSection(title = "Alerts", icon = Icons.Filled.Notifications) {
+    SettingsSection(title = stringResource(Res.string.alerts_title), icon = Icons.Filled.Notifications) {
         if (!state.notificationsSupported) {
             SettingsToggleRow(
-                title = "Notifications",
-                description = "Not available on this platform. Use the Android or iOS app for alerts.",
+                title = stringResource(Res.string.alerts_notifications),
+                description = stringResource(Res.string.alerts_notifications_unsupported),
                 checked = false,
                 enabled = false,
                 onCheckedChange = {},
@@ -78,30 +142,28 @@ internal fun AlertsSection(
         }
         val blocked = state.notificationPermission == NotificationPermission.DENIED
         SettingsToggleRow(
-            title = "Notifications",
-            description = when {
-                blocked -> "Blocked in system settings. Allow notifications for HomeSafe to turn this on."
-                state.pushNotificationsActive && state.relayPushes -> "On — from the HomeSafe relay, even while HomeSafe is closed."
-                state.pushNotificationsActive -> "On — a notification for each new detection while HomeSafe is running."
-                else -> "Get a notification when a camera sees something."
-            },
+            title = stringResource(Res.string.alerts_notifications),
+            description = stringResource(
+                when {
+                    blocked -> Res.string.alerts_notifications_blocked
+                    state.pushNotificationsActive && state.relayPushes -> Res.string.alerts_notifications_on_relay
+                    state.pushNotificationsActive -> Res.string.alerts_notifications_on_poller
+                    else -> Res.string.alerts_notifications_off
+                },
+            ),
             checked = state.pushNotificationsActive,
             enabled = !blocked,
             onCheckedChange = onPushNotifications,
         )
         if (blocked) {
-            OutlinedButton(onClick = onOpenSettings) { Text("Open notification settings") }
+            OutlinedButton(onClick = onOpenSettings) { Text(stringResource(Res.string.alerts_open_notification_settings)) }
         }
         if (state.pushNotificationsActive) {
             val alerts = state.alerts
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             SettingsToggleRow(
-                title = "Only when everyone's away",
-                description = if (alerts.onlyWhenAway) {
-                    "On — quiet while anyone's home. Once every phone is away, each person seen notifies on the Away alerts channel."
-                } else {
-                    "Stay quiet while anyone's home, and hear only the Away alerts once the house is empty."
-                },
+                title = stringResource(Res.string.alerts_only_when_away),
+                description = stringResource(if (alerts.onlyWhenAway) Res.string.alerts_only_when_away_on else Res.string.alerts_only_when_away_off),
                 checked = alerts.onlyWhenAway,
                 onCheckedChange = onOnlyWhenAway,
             )
@@ -124,18 +186,14 @@ internal fun AlertsSection(
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                 val faces = state.overview?.faceRecognitionEnabled
                 SettingsToggleRow(
-                    title = "Only strangers",
-                    description = when (faces) {
-                        true -> if (alerts.quietFamiliarPeople) {
-                            "On — people Frigate recognises come and go quietly. Anyone it can't place still notifies."
-                        } else {
-                            "Skip the notification when Frigate recognises the person. Name faces under Recognition below."
-                        }
-
-                        false -> "Needs face recognition, which is off in Frigate's config."
-
-                        null -> "Needs face recognition on the server."
-                    },
+                    title = stringResource(Res.string.alerts_only_strangers),
+                    description = stringResource(
+                        when (faces) {
+                            true -> if (alerts.quietFamiliarPeople) Res.string.alerts_only_strangers_on else Res.string.alerts_only_strangers_off
+                            false -> Res.string.alerts_only_strangers_faces_off
+                            null -> Res.string.alerts_only_strangers_faces_unknown
+                        },
+                    ),
                     checked = faces == true && alerts.quietFamiliarPeople,
                     enabled = faces == true,
                     onCheckedChange = onQuietFamiliar,
@@ -143,17 +201,10 @@ internal fun AlertsSection(
             }
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onSendTest) { Text("Send test notification") }
-                if (state.testNotificationSent) SettingsCaption("Sent")
+                OutlinedButton(onClick = onSendTest) { Text(stringResource(Res.string.alerts_send_test)) }
+                if (state.testNotificationSent) SettingsCaption(stringResource(Res.string.alerts_test_sent))
             }
-            SettingsCaption(
-                if (state.relayPushes) {
-                    "Alerts come from the HomeSafe relay on the Frigate box, so they arrive even when HomeSafe is closed."
-                } else {
-                    "HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. " +
-                        "Frigate has no push service for phones, so nothing arrives once the system stops the app."
-                },
-            )
+            SettingsCaption(stringResource(if (state.relayPushes) Res.string.alerts_caption_relay else Res.string.alerts_caption_poller))
         }
     }
 }
@@ -171,11 +222,11 @@ private fun AlertRules(
 ) {
     val cameras = state.overview?.cameras?.filter { it.enabled }
     if (cameras == null) {
-        SettingsCaption("Loading cameras…")
+        SettingsCaption(stringResource(Res.string.alerts_loading_cameras))
         return
     }
     if (cameras.isEmpty()) {
-        SettingsCaption("No cameras on this server.")
+        SettingsCaption(stringResource(Res.string.alerts_no_cameras))
         return
     }
     // Asked once per visit; the view model reads the server at most once however often this runs.
@@ -184,25 +235,25 @@ private fun AlertRules(
     val preset = state.alerts.matchingPreset(places)
     var expanded by rememberSaveable { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "What to hear about", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.alerts_what_to_hear), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
         AlertPresetChips(
             offered = AlertPreset.offeredFor(places),
             selected = preset,
             onPreset = onPreset,
         )
-        SettingsCaption(preset?.let(::presetDescription) ?: "Custom — tuned place by place below.")
+        SettingsCaption(stringResource(preset?.let(::presetDescription) ?: Res.string.alerts_custom_description))
         noisiestRuleHint(state.alerts, cameras, state.alertVolume)?.let { hint ->
-            Text(text = hint, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
+            Text(text = hint.resolve(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.tertiary)
         }
         // A custom set of rules is only readable as the grid, so it's always shown then.
         val showGrid = expanded || preset == null
         if (preset != null) {
             TextButton(onClick = { expanded = !expanded }) {
-                Text(if (expanded) "Hide zones" else "Fine-tune by zone")
+                Text(stringResource(if (expanded) Res.string.alerts_hide_zones else Res.string.alerts_fine_tune))
             }
         }
         if (showGrid) {
-            SettingsCaption("Zones come from each camera's detection zones.")
+            SettingsCaption(stringResource(Res.string.alerts_zones_caption))
             cameras.forEach { camera ->
                 CameraAlertZones(camera = camera, alerts = state.alerts, volume = state.alertVolume, onZoneCategory = onZoneCategory)
             }
@@ -217,11 +268,8 @@ private fun AlertRules(
 @Composable
 private fun RelayAlertPolicy() {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(text = "What you'll hear about", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
-        SettingsCaption(
-            "While someone's home: household cars arriving and leaving, and people on the Front Yard, right away; " +
-                "everything else in a summary a few times a day. While everyone's away: everything.",
-        )
+        Text(text = stringResource(Res.string.alerts_relay_what_youll_hear), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface)
+        SettingsCaption(stringResource(Res.string.alerts_relay_policy))
     }
 }
 
@@ -234,12 +282,12 @@ private fun AlertPresetChips(offered: List<AlertPreset>, selected: AlertPreset?,
             FilterChip(
                 selected = preset == selected,
                 onClick = { onPreset(preset) },
-                label = { Text(presetLabel(preset)) },
+                label = { Text(stringResource(presetLabel(preset))) },
                 colors = alertChipColors(),
             )
         }
         if (selected == null) {
-            FilterChip(selected = true, onClick = {}, enabled = false, label = { Text("Custom") }, colors = alertChipColors())
+            FilterChip(selected = true, onClick = {}, enabled = false, label = { Text(stringResource(Res.string.alerts_custom)) }, colors = alertChipColors())
         }
     }
 }
@@ -256,22 +304,22 @@ private fun QuietHoursRows(enabled: Boolean, startMinute: Int, endMinute: Int, o
     var editing by rememberSaveable { mutableStateOf<Boolean?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SettingsToggleRow(
-            title = "Quiet hours",
+            title = stringResource(Res.string.alerts_quiet_hours),
             description = if (enabled) {
-                "On — nothing from ${formatMinuteOfDay(startMinute)} to ${formatMinuteOfDay(endMinute)}. Away alerts still come through."
+                stringResource(Res.string.alerts_quiet_hours_on, formatMinuteOfDay(startMinute), formatMinuteOfDay(endMinute))
             } else {
-                "Silence ordinary alerts overnight. Away alerts still come through."
+                stringResource(Res.string.alerts_quiet_hours_off)
             },
             checked = enabled,
             onCheckedChange = { onChange(window.copy(enabled = it)) },
         )
         if (enabled) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = { editing = true }) { Text("From ${formatMinuteOfDay(startMinute)}") }
-                OutlinedButton(onClick = { editing = false }) { Text("To ${formatMinuteOfDay(endMinute)}") }
+                OutlinedButton(onClick = { editing = true }) { Text(stringResource(Res.string.alerts_quiet_from_button, formatMinuteOfDay(startMinute))) }
+                OutlinedButton(onClick = { editing = false }) { Text(stringResource(Res.string.alerts_quiet_to_button, formatMinuteOfDay(endMinute))) }
             }
             if (startMinute == endMinute) {
-                SettingsCaption("The window starts where it ends, so it's empty. Pick a different end time.", error = true)
+                SettingsCaption(stringResource(Res.string.alerts_quiet_hours_empty), error = true)
             }
         }
     }
@@ -280,16 +328,16 @@ private fun QuietHoursRows(enabled: Boolean, startMinute: Int, endMinute: Int, o
     val pickerState = rememberTimePickerState(initialHour = initial / 60, initialMinute = initial % 60, is24Hour = false)
     AlertDialog(
         onDismissRequest = { editing = null },
-        title = { Text(if (start) "Quiet from" else "Quiet until") },
+        title = { Text(stringResource(if (start) Res.string.alerts_quiet_from_title else Res.string.alerts_quiet_until_title)) },
         text = { TimePicker(state = pickerState) },
         confirmButton = {
             TextButton(onClick = {
                 val minute = pickerState.hour * 60 + pickerState.minute
                 onChange(if (start) window.copy(startMinute = minute) else window.copy(endMinute = minute))
                 editing = null
-            }) { Text("Set") }
+            }) { Text(stringResource(Res.string.alerts_quiet_set)) }
         },
-        dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(Res.string.common_cancel)) } },
     )
 }
 
@@ -312,15 +360,16 @@ private fun CameraAlertZones(
         alertPlacesOf(camera).forEach { (place, label) ->
             val chosen = alerts.categoriesFor(place)
             Column(modifier = Modifier.padding(start = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = label.resolve(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ALERT_CATEGORIES.forEach { (category, name) ->
+                    ALERT_CATEGORIES.forEach { (category, nameRes) ->
                         val selected = category in chosen
                         val perDay = volume?.perDay(place, category) ?: 0.0
+                        val name = stringResource(nameRes)
                         FilterChip(
                             selected = selected,
                             onClick = { onZoneCategory(place, category, !selected) },
-                            label = { Text(if (perDay >= AlertVolume.NOISY_PER_DAY) "$name · ~${perDay.roundToInt()}/day" else name) },
+                            label = { Text(if (perDay >= AlertVolume.NOISY_PER_DAY) stringResource(Res.string.alerts_chip_noisy, name, perDay.roundToInt()) else name) },
                             colors = alertChipColors(),
                         )
                     }
@@ -340,54 +389,61 @@ private fun alertChipColors() = FilterChipDefaults.filterChipColors(
 )
 
 /** A camera's places with the name each goes by on screen; the same order as [SettingsUiState.alertPlaces]. */
-private fun alertPlacesOf(camera: CameraPipeline): List<Pair<AlertZone, String>> =
-    camera.zones.map { AlertZone(camera.name, it.name) to it.displayName } +
-        (AlertZone(camera.name, null) to if (camera.zones.isEmpty()) "Anywhere" else "Anywhere else")
+private fun alertPlacesOf(camera: CameraPipeline): List<Pair<AlertZone, UiText>> =
+    camera.zones.map { AlertZone(camera.name, it.name) to it.displayName.asUiText() } +
+        (AlertZone(camera.name, null) to UiText.of(if (camera.zones.isEmpty()) Res.string.alerts_place_anywhere else Res.string.alerts_place_anywhere_else))
 
 /**
  * "Front Yard · Street · Vehicles would have alerted about 280 times last week." — the loudest
  * rule that's switched on, if it's loud enough to be worth a word; null otherwise, or before the
  * estimate has arrived. When the sample ran out short of a week the rate is quoted per day.
  */
-private fun noisiestRuleHint(alerts: AlertSettings, cameras: List<CameraPipeline>, volume: AlertVolume?): String? {
+private fun noisiestRuleHint(alerts: AlertSettings, cameras: List<CameraPipeline>, volume: AlertVolume?): UiText? {
     volume ?: return null
     val loudest = cameras.flatMap { camera -> alertPlacesOf(camera).map { (place, label) -> Triple(camera, place, label) } }
-        .flatMap { (camera, place, label) -> alerts.categoriesFor(place).map { category -> Triple("${camera.displayName} · $label", category, volume.perDay(place, category)) } }
+        .flatMap { (camera, place, label) -> alerts.categoriesFor(place).map { category -> Triple(camera.displayName to label, category, volume.perDay(place, category)) } }
         .filter { (_, _, perDay) -> perDay >= AlertVolume.NOISY_PER_DAY }
         .maxByOrNull { (_, _, perDay) -> perDay }
         ?: return null
     val (where, category, perDay) = loudest
-    val name = ALERT_CATEGORIES.first { it.first == category }.second
-    val often = if (volume.days >= FULL_WEEK_DAYS) "about ${(perDay * 7).roundToInt()} times last week" else "about ${perDay.roundToInt()} times a day lately"
-    return "$where · $name would have alerted $often."
+    val (cameraName, place) = where
+    val name = UiText.of(ALERT_CATEGORIES.first { it.first == category }.second)
+    return if (volume.days >= FULL_WEEK_DAYS) {
+        val times = (perDay * 7).roundToInt()
+        UiText.plural(Res.plurals.alerts_noisy_hint_week, times, cameraName, place, name, times)
+    } else {
+        val times = perDay.roundToInt()
+        UiText.plural(Res.plurals.alerts_noisy_hint_day, times, cameraName, place, name, times)
+    }
 }
 
-private fun presetLabel(preset: AlertPreset): String = when (preset) {
-    AlertPreset.PEOPLE_ONLY -> "People only"
-    AlertPreset.PEOPLE_AND_DRIVEWAY_CARS -> "People + driveway cars"
-    AlertPreset.PEOPLE_AND_VEHICLES -> "People + vehicles"
-    AlertPreset.EVERYTHING -> "Everything"
+private fun presetLabel(preset: AlertPreset): StringResource = when (preset) {
+    AlertPreset.PEOPLE_ONLY -> Res.string.alerts_preset_people_only
+    AlertPreset.PEOPLE_AND_DRIVEWAY_CARS -> Res.string.alerts_preset_people_driveway_cars
+    AlertPreset.PEOPLE_AND_VEHICLES -> Res.string.alerts_preset_people_vehicles
+    AlertPreset.EVERYTHING -> Res.string.alerts_preset_everything
 }
 
-private fun presetDescription(preset: AlertPreset): String = when (preset) {
-    AlertPreset.PEOPLE_ONLY -> "People anywhere on any camera. Cars and animals stay quiet."
-    AlertPreset.PEOPLE_AND_DRIVEWAY_CARS -> "People anywhere, and cars only in zones named like a driveway, garage or parking spot — not passing traffic."
-    AlertPreset.PEOPLE_AND_VEHICLES -> "People and vehicles anywhere, street traffic included. The out-of-the-box rules."
-    AlertPreset.EVERYTHING -> "People, vehicles and animals anywhere."
+private fun presetDescription(preset: AlertPreset): StringResource = when (preset) {
+    AlertPreset.PEOPLE_ONLY -> Res.string.alerts_preset_people_only_description
+    AlertPreset.PEOPLE_AND_DRIVEWAY_CARS -> Res.string.alerts_preset_people_driveway_cars_description
+    AlertPreset.PEOPLE_AND_VEHICLES -> Res.string.alerts_preset_people_vehicles_description
+    AlertPreset.EVERYTHING -> Res.string.alerts_preset_everything_description
 }
 
 /** "10:00 PM" — minutes after midnight, on the same 12-hour clock as the rest of the app. */
+@Composable
 internal fun formatMinuteOfDay(minuteOfDay: Int): String {
     val hour = (minuteOfDay / 60) % 24
     val minute = minuteOfDay % 60
-    return "${(hour + 11) % 12 + 1}:${minute.toString().padStart(2, '0')} ${if (hour < 12) "AM" else "PM"}"
+    return stringResource(if (hour < 12) Res.string.alerts_time_am else Res.string.alerts_time_pm, (hour + 11) % 12 + 1, minute.toString().padStart(2, '0'))
 }
 
 /** A week's estimate, give or take the hour the sample might fall short by. */
 private const val FULL_WEEK_DAYS = 6.9
 
 private val ALERT_CATEGORIES = listOf(
-    MomentCategory.PEOPLE to "People",
-    MomentCategory.VEHICLES to "Vehicles",
-    MomentCategory.ANIMALS to "Animals",
+    MomentCategory.PEOPLE to Res.string.alerts_category_people,
+    MomentCategory.VEHICLES to Res.string.alerts_category_vehicles,
+    MomentCategory.ANIMALS to Res.string.alerts_category_animals,
 )

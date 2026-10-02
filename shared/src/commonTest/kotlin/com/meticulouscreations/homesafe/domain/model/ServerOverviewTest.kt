@@ -9,6 +9,19 @@ import com.meticulouscreations.homesafe.network.FrigateRetention
 import com.meticulouscreations.homesafe.network.FrigateServerConfig
 import com.meticulouscreations.homesafe.network.FrigateServerStats
 import com.meticulouscreations.homesafe.network.FrigateStorage
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.settings_duration_days
+import homesafe.shared.generated.resources.settings_duration_days_fraction
+import homesafe.shared.generated.resources.settings_duration_hours
+import homesafe.shared.generated.resources.settings_duration_minutes
+import homesafe.shared.generated.resources.settings_duration_pair
+import homesafe.shared.generated.resources.settings_duration_seconds
+import homesafe.shared.generated.resources.settings_percent
+import homesafe.shared.generated.resources.settings_size_gb
+import homesafe.shared.generated.resources.settings_size_mb
+import homesafe.shared.generated.resources.settings_size_tb
+import homesafe.shared.generated.resources.settings_value_missing
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -16,32 +29,38 @@ import kotlin.test.assertTrue
 
 class ServerOverviewTest {
 
+    private fun days(n: Int) = UiText.plural(Res.plurals.settings_duration_days, n)
+    private fun hours(n: Int) = UiText.plural(Res.plurals.settings_duration_hours, n)
+    private fun minutes(n: Int) = UiText.plural(Res.plurals.settings_duration_minutes, n)
+    private fun seconds(n: Int) = UiText.plural(Res.plurals.settings_duration_seconds, n)
+    private fun pair(first: UiText, second: UiText) = UiText.of(Res.string.settings_duration_pair, first, second)
+
     @Test
     fun uptimeReadsInTheTwoLargestUnits() {
-        assertEquals("2 days, 12 hours", formatUptime(2 * 86_400L + 12 * 3_600 + 59 * 60))
-        assertEquals("1 day, 0 hours", formatUptime(86_400))
-        assertEquals("3 hours, 5 minutes", formatUptime(3 * 3_600L + 5 * 60 + 40))
-        assertEquals("12 minutes", formatUptime(12 * 60L + 3))
-        assertEquals("40 seconds", formatUptime(40))
-        assertEquals("0 seconds", formatUptime(-5), "a clock skew never renders as negative")
+        assertEquals(pair(days(2), hours(12)), formatUptime(2 * 86_400L + 12 * 3_600 + 59 * 60))
+        assertEquals(pair(days(1), hours(0)), formatUptime(86_400))
+        assertEquals(pair(hours(3), minutes(5)), formatUptime(3 * 3_600L + 5 * 60 + 40))
+        assertEquals(minutes(12), formatUptime(12 * 60L + 3))
+        assertEquals(seconds(40), formatUptime(40))
+        assertEquals(seconds(0), formatUptime(-5), "a clock skew never renders as negative")
     }
 
     @Test
     fun megabytesRenderLikeFrigatesOwnUi() {
-        assertEquals("422.7 GB", formatMegabytes(422652.9))
-        assertEquals("451.3 GB", formatMegabytes(451335.9))
-        assertEquals("1.2 TB", formatMegabytes(1_200_000.0))
-        assertEquals("512 MB", formatMegabytes(512.0))
-        assertEquals("2 GB", formatMegabytes(2000.0), "no trailing .0")
+        assertEquals(UiText.of(Res.string.settings_size_gb, "422.7"), formatMegabytes(422652.9))
+        assertEquals(UiText.of(Res.string.settings_size_gb, "451.3"), formatMegabytes(451335.9))
+        assertEquals(UiText.of(Res.string.settings_size_tb, "1.2"), formatMegabytes(1_200_000.0))
+        assertEquals(UiText.of(Res.string.settings_size_mb, 512), formatMegabytes(512.0))
+        assertEquals(UiText.of(Res.string.settings_size_gb, "2"), formatMegabytes(2000.0), "no trailing .0")
     }
 
     @Test
     fun retentionAndPercentFormats() {
-        assertEquals("7 days", formatRetentionDays(7.0))
-        assertEquals("1 day", formatRetentionDays(1.0))
-        assertEquals("1.5 days", formatRetentionDays(1.5))
-        assertEquals("9%", formatPercent(9.4))
-        assertEquals("—", formatPercent(null))
+        assertEquals(days(7), formatRetentionDays(7.0))
+        assertEquals(days(1), formatRetentionDays(1.0))
+        assertEquals(UiText.of(Res.string.settings_duration_days_fraction, "1.5"), formatRetentionDays(1.5))
+        assertEquals(UiText.of(Res.string.settings_percent, 9), formatPercent(9.4))
+        assertEquals(UiText.of(Res.string.settings_value_missing), formatPercent(null))
     }
 
     @Test

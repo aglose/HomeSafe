@@ -21,8 +21,8 @@ class MaskEditorStateTest {
     )
 
     /** Explicit Add-then-tap, so corners can land inside an existing shape without selecting it. */
-    private fun MaskEditorState.drawTriangle(): MaskEditorState =
-        startDraft().tapAt(MaskPoint(0.5, 0.5)).tapAt(MaskPoint(0.7, 0.5)).tapAt(MaskPoint(0.7, 0.7)).finishDraft()
+    private fun MaskEditorState.drawTriangle(placeholderName: String? = null): MaskEditorState =
+        startDraft().tapAt(MaskPoint(0.5, 0.5)).tapAt(MaskPoint(0.7, 0.5)).tapAt(MaskPoint(0.7, 0.7)).finishDraft(placeholderName)
 
     @Test
     fun tappingEmptyCanvasStartsADraftAndKeepsAddingCorners() {
@@ -108,13 +108,17 @@ class MaskEditorStateTest {
 
     @Test
     fun finishingADraftOnTheZonesLayerCreatesAPlaceholderNamedZone() {
-        val state = MaskEditorState().switchLayer(MaskLayer.ZONES).drawTriangle()
+        val empty = MaskEditorState().switchLayer(MaskLayer.ZONES)
+        assertEquals(1, empty.nextZoneNumber)
+        val state = empty.drawTriangle(placeholderName = "Zone 1")
         val zone = assertNotNull(state.selectedShape?.zone)
         assertEquals("zone_1", zone.name)
-        assertEquals("Zone 1", zone.friendlyName)
+        assertEquals("Zone 1", zone.friendlyName, "the name the screen worded for it")
+        assertTrue(zone.isPlaceholderName)
         assertTrue(zone.objects.isEmpty(), "a new zone counts every object")
         assertEquals(setOf(MaskLayer.ZONES), state.dirtyLayers)
 
+        assertEquals(2, state.nextZoneNumber)
         val second = state.drawTriangle()
         assertEquals("zone_2", second.selectedShape?.zone?.name)
     }
@@ -124,6 +128,7 @@ class MaskEditorStateTest {
         val state = MaskEditorState().switchLayer(MaskLayer.ZONES).drawTriangle().renameSelectedZone("Front lawn!")
         val zone = assertNotNull(state.selectedShape?.zone)
         assertEquals("Front lawn!", zone.friendlyName)
+        assertFalse(zone.isPlaceholderName, "a typed name is the zone's own")
         assertEquals("front_lawn", zone.name)
         assertEquals(listOf(DetectionZone("front_lawn", "Front lawn!", zone.let { state.selectedShape!!.polygon })), state.zones())
     }

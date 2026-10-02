@@ -64,7 +64,48 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_connections_entry_body
+import homesafe.shared.generated.resources.fin_connections_entry_eyebrow
+import homesafe.shared.generated.resources.fin_connections_entry_title
+import homesafe.shared.generated.resources.fin_connections_fine_print
+import homesafe.shared.generated.resources.fin_connections_go_to_node
+import homesafe.shared.generated.resources.fin_connections_intro
+import homesafe.shared.generated.resources.fin_connections_link_bonds_mortgage
+import homesafe.shared.generated.resources.fin_connections_link_credit_jobs
+import homesafe.shared.generated.resources.fin_connections_link_debt_bonds
+import homesafe.shared.generated.resources.fin_connections_link_fed_credit
+import homesafe.shared.generated.resources.fin_connections_link_fed_jobs
+import homesafe.shared.generated.resources.fin_connections_link_fed_mortgage
+import homesafe.shared.generated.resources.fin_connections_link_fed_stocks
+import homesafe.shared.generated.resources.fin_connections_link_jobs_mood
+import homesafe.shared.generated.resources.fin_connections_link_mood_prices
+import homesafe.shared.generated.resources.fin_connections_link_mortgage_homes
+import homesafe.shared.generated.resources.fin_connections_link_prices_fed
+import homesafe.shared.generated.resources.fin_connections_link_stocks_mood
+import homesafe.shared.generated.resources.fin_connections_node_bonds
+import homesafe.shared.generated.resources.fin_connections_node_credit
+import homesafe.shared.generated.resources.fin_connections_node_debt
+import homesafe.shared.generated.resources.fin_connections_node_fed
+import homesafe.shared.generated.resources.fin_connections_node_homes
+import homesafe.shared.generated.resources.fin_connections_node_jobs
+import homesafe.shared.generated.resources.fin_connections_node_mood
+import homesafe.shared.generated.resources.fin_connections_node_mortgage
+import homesafe.shared.generated.resources.fin_connections_node_prices
+import homesafe.shared.generated.resources.fin_connections_node_stocks
+import homesafe.shared.generated.resources.fin_connections_pushed_by
+import homesafe.shared.generated.resources.fin_connections_pushes_on
+import homesafe.shared.generated.resources.fin_connections_show_node
+import homesafe.shared.generated.resources.fin_connections_stocks_today
+import homesafe.shared.generated.resources.fin_connections_title
+import homesafe.shared.generated.resources.fin_connections_tour_link
+import homesafe.shared.generated.resources.fin_connections_tour_start
+import homesafe.shared.generated.resources.fin_connections_tour_step
+import homesafe.shared.generated.resources.fin_connections_tour_stop
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -73,11 +114,11 @@ import kotlin.math.sin
 
 /** A part of the economy on the map, at ([x], [y]) as fractions of the map; [readingId] is the indicator it shows. */
 @Immutable
-internal data class EconNode(val id: String, val label: String, val explainerId: String, val readingId: String?, val x: Float, val y: Float)
+internal data class EconNode(val id: String, val label: StringResource, val explainerId: String, val readingId: String?, val x: Float, val y: Float)
 
 /** "[from] pushes on [to]", and why, in a sentence. */
 @Immutable
-internal data class EconLink(val from: String, val to: String, val why: String)
+internal data class EconLink(val from: String, val to: String, val why: StringResource)
 
 internal object EconomyMap {
     /**
@@ -85,16 +126,16 @@ internal object EconomyMap {
      * round the rim or across the open middle instead of through another part.
      */
     val nodes: List<EconNode> = listOf(
-        Triple("fed", "Fed rate", "dff"),
-        Triple("mortgage", "Mortgages", "mortgage"),
-        Triple("bonds", "Gov't rates", "dgs10"),
-        Triple("debt", "Gov't debt", "debtgdp"),
-        Triple("homes", "Homes", "homeprices"),
-        Triple("credit", "Credit", "hy"),
-        Triple("jobs", "Jobs", "unrate"),
-        Triple("mood", "Shoppers", "umcsent"),
-        Triple("prices", "Prices", "cpi"),
-        Triple("stocks", "Stocks", "sp500"),
+        Triple("fed", Res.string.fin_connections_node_fed, "dff"),
+        Triple("mortgage", Res.string.fin_connections_node_mortgage, "mortgage"),
+        Triple("bonds", Res.string.fin_connections_node_bonds, "dgs10"),
+        Triple("debt", Res.string.fin_connections_node_debt, "debtgdp"),
+        Triple("homes", Res.string.fin_connections_node_homes, "homeprices"),
+        Triple("credit", Res.string.fin_connections_node_credit, "hy"),
+        Triple("jobs", Res.string.fin_connections_node_jobs, "unrate"),
+        Triple("mood", Res.string.fin_connections_node_mood, "umcsent"),
+        Triple("prices", Res.string.fin_connections_node_prices, "cpi"),
+        Triple("stocks", Res.string.fin_connections_node_stocks, "sp500"),
     ).mapIndexed { i, (id, label, explainer) ->
         // Turned half a step so two parts share the top and two the bottom, rather than one
         // crowding its neighbours at each end of the tall ellipse.
@@ -110,18 +151,18 @@ internal object EconomyMap {
     }
 
     val links = listOf(
-        EconLink("prices", "fed", "When prices rise too fast, the Fed raises its rate to cool the economy down."),
-        EconLink("fed", "mortgage", "A higher Fed rate pushes up mortgage, car-loan and credit-card rates within weeks."),
-        EconLink("fed", "jobs", "When borrowing gets expensive, businesses slow hiring and put off expanding."),
-        EconLink("fed", "stocks", "Higher rates make safe savings more attractive than stocks, and make companies' borrowing cost more — so stock prices tend to fall."),
-        EconLink("fed", "credit", "Rate rises that come fast can strain borrowers who took out loans when money was cheap."),
-        EconLink("bonds", "mortgage", "Mortgage rates track the government's 10-year borrowing cost, usually 1.5–2 points above it."),
-        EconLink("mortgage", "homes", "Expensive loans mean fewer buyers can afford a house, which cools home prices."),
-        EconLink("jobs", "mood", "People with secure jobs and raises feel better about money — and spend more."),
-        EconLink("mood", "prices", "When everyone's out buying, businesses can raise prices. When shoppers pull back, prices cool."),
-        EconLink("stocks", "mood", "When their 401(k)s are up, people feel richer and spend more."),
-        EconLink("credit", "jobs", "When companies can't borrow, they cut costs — and that usually means jobs."),
-        EconLink("debt", "bonds", "The more the government borrows, the more it may have to pay lenders to keep buying its debt."),
+        EconLink("prices", "fed", Res.string.fin_connections_link_prices_fed),
+        EconLink("fed", "mortgage", Res.string.fin_connections_link_fed_mortgage),
+        EconLink("fed", "jobs", Res.string.fin_connections_link_fed_jobs),
+        EconLink("fed", "stocks", Res.string.fin_connections_link_fed_stocks),
+        EconLink("fed", "credit", Res.string.fin_connections_link_fed_credit),
+        EconLink("bonds", "mortgage", Res.string.fin_connections_link_bonds_mortgage),
+        EconLink("mortgage", "homes", Res.string.fin_connections_link_mortgage_homes),
+        EconLink("jobs", "mood", Res.string.fin_connections_link_jobs_mood),
+        EconLink("mood", "prices", Res.string.fin_connections_link_mood_prices),
+        EconLink("stocks", "mood", Res.string.fin_connections_link_stocks_mood),
+        EconLink("credit", "jobs", Res.string.fin_connections_link_credit_jobs),
+        EconLink("debt", "bonds", Res.string.fin_connections_link_debt_bonds),
     )
 
     /** "Walk me through it": the loop at the heart of it, one link at a time. */
@@ -165,10 +206,10 @@ internal fun ConnectionsScreen(state: FinanceUiState, contentPadding: PaddingVal
     LazyColumn(contentPadding = contentPadding) {
         item {
             Column(Modifier.padding(horizontal = PageGutter, vertical = 8.dp)) {
-                Text("How it all connects", style = type.title, color = colors.textPrimary)
+                Text(stringResource(Res.string.fin_connections_title), style = type.title, color = colors.textPrimary)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Nothing in the economy moves on its own. Tap any part to see what it pushes on and what pushes on it. Colors show today's reading: green calm, amber worth watching, orange-red a warning.",
+                    stringResource(Res.string.fin_connections_intro),
                     style = type.body,
                     color = colors.textSecondary,
                 )
@@ -183,7 +224,7 @@ internal fun ConnectionsScreen(state: FinanceUiState, contentPadding: PaddingVal
                 ) {
                     Icon(if (touring) Icons.Filled.Stop else Icons.Filled.PlayArrow, contentDescription = null, tint = if (touring) colors.loss else colors.accent, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text(if (touring) "Stop the walkthrough" else "Walk me through it", style = type.bodyStrong, color = if (touring) colors.loss else colors.accent)
+                    Text(stringResource(if (touring) Res.string.fin_connections_tour_stop else Res.string.fin_connections_tour_start), style = type.bodyStrong, color = if (touring) colors.loss else colors.accent)
                 }
             }
         }
@@ -211,7 +252,7 @@ internal fun ConnectionsScreen(state: FinanceUiState, contentPadding: PaddingVal
                 }
             }
         }
-        item { FinePrint("A simplified picture: real economies have many more links, and effects can take months to show up.") }
+        item { FinePrint(stringResource(Res.string.fin_connections_fine_print)) }
     }
 }
 
@@ -292,6 +333,7 @@ private fun EconomyMapView(state: FinanceUiState, selected: String, highlight: E
             val scale by animateFloatAsState(if (isActive) 1.08f else 1f, tween(220), label = "nodeScale")
             val signal = node.readingId?.let { state.readings[it]?.signal }
             val value = nodeValue(node, state)
+            val label = stringResource(node.label)
             val dot = when {
                 node.id == "stocks" -> state.quotes[MarketCatalog.SP500.symbol]?.let { colors.direction(it.change) } ?: colors.textTertiary
                 else -> colors.signal(signal).takeIf { signal != null } ?: colors.cool
@@ -308,7 +350,7 @@ private fun EconomyMapView(state: FinanceUiState, selected: String, highlight: E
                     .clip(RoundedCornerShape(14.dp))
                     .background(if (isActive) colors.surfaceRaised else colors.surface)
                     .border(1.5.dp, border, RoundedCornerShape(14.dp))
-                    .clickable(role = Role.Button, onClickLabel = "Show ${node.label}") { onSelect(node.id) }
+                    .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fin_connections_show_node, label)) { onSelect(node.id) }
                     .semantics { this.selected = isActive }
                     .padding(horizontal = 6.dp, vertical = 4.dp),
             ) {
@@ -316,7 +358,7 @@ private fun EconomyMapView(state: FinanceUiState, selected: String, highlight: E
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(7.dp).clip(CircleShape).background(dot))
                         Spacer(Modifier.width(5.dp))
-                        Text(node.label, style = FinanceTheme.type.micro, color = colors.textPrimary, maxLines = 1, textAlign = TextAlign.Center)
+                        Text(label, style = FinanceTheme.type.micro, color = colors.textPrimary, maxLines = 1, textAlign = TextAlign.Center)
                     }
                     if (value != null) Text(value, style = FinanceTheme.type.label, color = dot, maxLines = 1)
                 }
@@ -326,8 +368,12 @@ private fun EconomyMapView(state: FinanceUiState, selected: String, highlight: E
 }
 
 /** A node's reading, short: "3.4%", "+0.6% today". */
+@Composable
 private fun nodeValue(node: EconNode, state: FinanceUiState): String? {
-    if (node.id == "stocks") return state.quotes[MarketCatalog.SP500.symbol]?.let { FinanceFormat.signedPercent(it.changePercent) + " today" }
+    if (node.id == "stocks") {
+        val quote = state.quotes[MarketCatalog.SP500.symbol] ?: return null
+        return stringResource(Res.string.fin_connections_stocks_today, FinanceFormat.signedPercent(quote.changePercent))
+    }
     val r = node.readingId?.let { state.readings[it] } ?: return null
     val v = r.latest ?: return null
     return FinanceFormat.indicator(v, r.indicator.unit)
@@ -339,15 +385,16 @@ private fun NodePanel(id: String, state: FinanceUiState, onFollow: (String) -> U
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     val node = EconomyMap.node(id)
+    val label = stringResource(node.label)
     val reading = node.readingId?.let { state.readings[it] }
     val verdict = when {
-        reading?.latest != null -> Narrator.verdict(reading, state.tone)
-        node.id == "stocks" -> state.quotes[MarketCatalog.SP500.symbol]?.let { Narrator.quoteVerdict(MarketCatalog.SP500.symbol, it) }
+        reading?.latest != null -> Narrator.verdict(reading, state.tone).resolve()
+        node.id == "stocks" -> state.quotes[MarketCatalog.SP500.symbol]?.let { Narrator.quoteVerdict(MarketCatalog.SP500.symbol, it).resolve() }
         else -> null
     }
     FinanceCard(Modifier.padding(top = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(node.label, style = type.section, color = colors.textPrimary, modifier = Modifier.weight(1f))
+            Text(label, style = type.section, color = colors.textPrimary, modifier = Modifier.weight(1f))
             InfoButton(node.explainerId)
         }
         if (verdict != null) {
@@ -357,10 +404,10 @@ private fun NodePanel(id: String, state: FinanceUiState, onFollow: (String) -> U
         val out = EconomyMap.links.filter { it.from == id }
         val inbound = EconomyMap.links.filter { it.to == id }
         if (out.isNotEmpty()) {
-            LinkGroup("${node.label} pushes on", out, colors.accent, outgoing = true, onFollow)
+            LinkGroup(stringResource(Res.string.fin_connections_pushes_on, label), out, colors.accent, outgoing = true, onFollow)
         }
         if (inbound.isNotEmpty()) {
-            LinkGroup("What pushes on ${node.label.lowercase()}", inbound, colors.cool, outgoing = false, onFollow)
+            LinkGroup(stringResource(Res.string.fin_connections_pushed_by, label), inbound, colors.cool, outgoing = false, onFollow)
         }
     }
 }
@@ -374,20 +421,21 @@ private fun LinkGroup(title: String, links: List<EconLink>, color: Color, outgoi
         Text(title.uppercase(), style = type.micro, color = color)
         links.forEach { link ->
             val other = EconomyMap.node(if (outgoing) link.to else link.from)
+            val otherLabel = stringResource(other.label)
             Row(
                 Modifier
                     .fillMaxWidth()
                     .padding(top = 8.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(onClickLabel = "Go to ${other.label}") { onFollow(other.id) }
+                    .clickable(onClickLabel = stringResource(Res.string.fin_connections_go_to_node, otherLabel)) { onFollow(other.id) }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.Top,
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = color, modifier = Modifier.size(16.dp).padding(top = 2.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(other.label, style = type.bodyStrong, color = colors.textPrimary)
-                    Text(link.why, style = type.label, color = colors.textSecondary)
+                    Text(otherLabel, style = type.bodyStrong, color = colors.textPrimary)
+                    Text(stringResource(link.why), style = type.label, color = colors.textSecondary)
                 }
             }
         }
@@ -400,11 +448,15 @@ private fun TourCaption(link: EconLink, step: Int) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     FinanceCard(Modifier.padding(bottom = 8.dp)) {
-        Text("STEP ${step + 1} OF ${EconomyMap.tour.size}", style = type.micro, color = colors.accent)
+        Text(stringResource(Res.string.fin_connections_tour_step, step + 1, EconomyMap.tour.size), style = type.micro, color = colors.accent)
         Spacer(Modifier.height(4.dp))
-        Text("${EconomyMap.node(link.from).label} → ${EconomyMap.node(link.to).label}", style = type.section, color = colors.textPrimary)
+        Text(
+            stringResource(Res.string.fin_connections_tour_link, stringResource(EconomyMap.node(link.from).label), stringResource(EconomyMap.node(link.to).label)),
+            style = type.section,
+            color = colors.textPrimary,
+        )
         Spacer(Modifier.height(4.dp))
-        Text(link.why, style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
+        Text(stringResource(link.why), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
     }
 }
 
@@ -416,10 +468,10 @@ internal fun ConnectionsEntryCard(onOpen: () -> Unit, modifier: Modifier = Modif
     FinanceCard(modifier, onClick = onOpen) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("HOW IT ALL CONNECTS", style = type.micro, color = colors.accent)
-                Text("Why does the Fed raising rates change your mortgage — and your job?", style = type.bodyStrong, color = colors.textPrimary)
+                Text(stringResource(Res.string.fin_connections_entry_eyebrow), style = type.micro, color = colors.accent)
+                Text(stringResource(Res.string.fin_connections_entry_title), style = type.bodyStrong, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))
-                Text("An interactive map of cause and effect, with today's readings.", style = type.label, color = colors.textSecondary)
+                Text(stringResource(Res.string.fin_connections_entry_body), style = type.label, color = colors.textSecondary)
             }
             Spacer(Modifier.width(12.dp))
             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = colors.accent)

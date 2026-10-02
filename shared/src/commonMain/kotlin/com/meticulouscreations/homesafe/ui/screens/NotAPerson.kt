@@ -34,9 +34,26 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.domain.model.summary
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonUiState
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_ok
+import homesafe.shared.generated.resources.common_undo
+import homesafe.shared.generated.resources.moments_not_a_person
+import homesafe.shared.generated.resources.moments_not_a_person_mark_action
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
+import homesafe.shared.generated.resources.moments_not_a_person_marked
+import homesafe.shared.generated.resources.moments_not_a_person_marked_on_camera
+import homesafe.shared.generated.resources.moments_not_a_person_question
+import homesafe.shared.generated.resources.moments_not_a_person_wont_alert
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import org.jetbrains.compose.resources.stringResource
 
 /*
  * Marking a person detection "Not a person": the detector saw someone in clutter by the door. The
@@ -61,7 +78,7 @@ internal fun NotAPersonButton(onClick: () -> Unit, modifier: Modifier = Modifier
                 interactionSource = interaction,
                 indication = null,
                 enabled = !marking,
-                onClickLabel = "Mark as not a person",
+                onClickLabel = stringResource(Res.string.moments_not_a_person_mark_action),
                 role = Role.Button,
                 onClick = onClick,
             ),
@@ -91,7 +108,7 @@ private fun NotAPersonPill(marking: Boolean, modifier: Modifier = Modifier) {
             )
         }
         Text(
-            text = "Not a person",
+            text = stringResource(Res.string.moments_not_a_person),
             style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
@@ -120,15 +137,15 @@ internal fun NotAPersonBar(state: NotAPersonUiState, onUndo: () -> Unit, onDismi
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = if (marked != null) "Marked not a person. Its spot on ${marked.cameraDisplayName} won't alert again." else "Couldn't mark it: $error",
+            text = if (marked != null) stringResource(Res.string.moments_not_a_person_marked_on_camera, marked.cameraDisplayName) else error?.resolve().orEmpty(),
             style = MaterialTheme.typography.bodySmall,
             color = if (marked != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
             modifier = Modifier.weight(1f).padding(vertical = 12.dp),
         )
         if (marked != null) {
-            TextButton(onClick = onUndo) { Text("Undo") }
+            TextButton(onClick = onUndo) { Text(stringResource(Res.string.common_undo)) }
         } else {
-            TextButton(onClick = onDismiss) { Text("OK") }
+            TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_ok)) }
         }
     }
 }
@@ -165,16 +182,16 @@ internal fun NotAPersonPrompt(state: LandedPersonUiState, onMark: () -> Unit, on
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = if (state.marked) "Marked not a person" else "Was anyone there?",
+                text = stringResource(if (state.marked) Res.string.moments_not_a_person_marked else Res.string.moments_not_a_person_question),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             val error = state.error
             Text(
                 text = when {
-                    error != null -> error
-                    state.marked -> "${state.cameraDisplayName} won't alert for this again."
-                    else -> state.summary
+                    error != null -> error.resolve()
+                    state.marked -> stringResource(Res.string.moments_not_a_person_wont_alert, state.cameraDisplayName)
+                    else -> state.summary.resolve()
                 },
                 style = MaterialTheme.typography.labelSmall,
                 color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -183,12 +200,15 @@ internal fun NotAPersonPrompt(state: LandedPersonUiState, onMark: () -> Unit, on
             )
         }
         if (state.marked) {
-            TextButton(onClick = onUndo, enabled = !state.isSaving) { Text("Undo") }
+            TextButton(onClick = onUndo, enabled = !state.isSaving) { Text(stringResource(Res.string.common_undo)) }
         } else {
             NotAPersonButton(onClick = onMark, marking = state.isSaving)
         }
     }
 }
+
+/** The day the previews are set on: the morning after [previewMarked]. */
+private val PREVIEW_DAY = LocalDate(2026, 9, 30)
 
 private val previewMarked = MomentEvent(
     id = "1790655519.294717-p1",
@@ -218,12 +238,12 @@ private fun NotAPersonButtonPreview() {
 @Preview(name = "Not a person prompt", widthDp = 360)
 @Composable
 private fun NotAPersonPromptPreview() {
-    val asking = LandedPersonUiState(eventId = previewMarked.id, summary = "Person at the front door · 4:23 PM", cameraDisplayName = "Front Door")
+    val asking = LandedPersonUiState(eventId = previewMarked.id, summary = previewMarked.present(PREVIEW_DAY, TimeZone.UTC).summary, cameraDisplayName = "Front Door")
     FrigateTheme {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             NotAPersonPrompt(state = asking, onMark = {}, onUndo = {})
             NotAPersonPrompt(state = asking.copy(marked = true), onMark = {}, onUndo = {})
-            NotAPersonPrompt(state = asking.copy(error = "Relay answered 502 Bad Gateway"), onMark = {}, onUndo = {})
+            NotAPersonPrompt(state = asking.copy(error = UiText.of(Res.string.moments_not_a_person_mark_failed, "Relay answered 502 Bad Gateway")), onMark = {}, onUndo = {})
         }
     }
 }
@@ -235,7 +255,7 @@ private fun NotAPersonBarPreview() {
     FrigateTheme {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             NotAPersonBar(state = NotAPersonUiState(marked = previewMarked), onUndo = {}, onDismiss = {})
-            NotAPersonBar(state = NotAPersonUiState(error = "Relay answered 502 Bad Gateway"), onUndo = {}, onDismiss = {})
+            NotAPersonBar(state = NotAPersonUiState(error = UiText.of(Res.string.moments_not_a_person_mark_failed, "Relay answered 502 Bad Gateway")), onUndo = {}, onDismiss = {})
         }
     }
 }

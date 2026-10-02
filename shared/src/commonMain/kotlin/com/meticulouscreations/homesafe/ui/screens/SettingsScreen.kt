@@ -64,11 +64,123 @@ import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.presence_allow_location
+import homesafe.shared.generated.resources.presence_allow_location_always
+import homesafe.shared.generated.resources.presence_allow_location_settings
+import homesafe.shared.generated.resources.presence_automatic
+import homesafe.shared.generated.resources.presence_automatic_needs_always
+import homesafe.shared.generated.resources.presence_automatic_needs_home
+import homesafe.shared.generated.resources.presence_automatic_off
+import homesafe.shared.generated.resources.presence_automatic_on
+import homesafe.shared.generated.resources.presence_automatic_unsupported
+import homesafe.shared.generated.resources.presence_caption
+import homesafe.shared.generated.resources.presence_clear_home
+import homesafe.shared.generated.resources.presence_decides
+import homesafe.shared.generated.resources.presence_decides_off
+import homesafe.shared.generated.resources.presence_decides_on
+import homesafe.shared.generated.resources.presence_decides_other
+import homesafe.shared.generated.resources.presence_detail_debug
+import homesafe.shared.generated.resources.presence_detail_decides
+import homesafe.shared.generated.resources.presence_detail_this_phone
+import homesafe.shared.generated.resources.presence_hide_other_devices
+import homesafe.shared.generated.resources.presence_home_not_set
+import homesafe.shared.generated.resources.presence_home_set
+import homesafe.shared.generated.resources.presence_im_away
+import homesafe.shared.generated.resources.presence_im_away_away
+import homesafe.shared.generated.resources.presence_im_away_debug
+import homesafe.shared.generated.resources.presence_im_away_home
+import homesafe.shared.generated.resources.presence_im_away_leaving
+import homesafe.shared.generated.resources.presence_im_away_other_decides
+import homesafe.shared.generated.resources.presence_im_away_relay_unreachable
+import homesafe.shared.generated.resources.presence_move_home_here
+import homesafe.shared.generated.resources.presence_nobody_home
+import homesafe.shared.generated.resources.presence_other_devices
+import homesafe.shared.generated.resources.presence_other_devices_counted
+import homesafe.shared.generated.resources.presence_other_devices_none_counted
+import homesafe.shared.generated.resources.presence_remove
+import homesafe.shared.generated.resources.presence_remove_body
+import homesafe.shared.generated.resources.presence_remove_device
+import homesafe.shared.generated.resources.presence_remove_title
+import homesafe.shared.generated.resources.presence_set_home_here
+import homesafe.shared.generated.resources.presence_show_other_devices
+import homesafe.shared.generated.resources.presence_status_away
+import homesafe.shared.generated.resources.presence_status_away_since
+import homesafe.shared.generated.resources.presence_status_home
+import homesafe.shared.generated.resources.presence_status_leaving
+import homesafe.shared.generated.resources.presence_title
+import homesafe.shared.generated.resources.presence_unnamed_device
+import homesafe.shared.generated.resources.settings_ai_caption
+import homesafe.shared.generated.resources.settings_ai_face_recognition
+import homesafe.shared.generated.resources.settings_ai_license_plates
+import homesafe.shared.generated.resources.settings_ai_loading
+import homesafe.shared.generated.resources.settings_ai_semantic_search
+import homesafe.shared.generated.resources.settings_ai_title
+import homesafe.shared.generated.resources.settings_camera_detections_per_second
+import homesafe.shared.generated.resources.settings_camera_disabled
+import homesafe.shared.generated.resources.settings_camera_fps
+import homesafe.shared.generated.resources.settings_camera_no_stats
+import homesafe.shared.generated.resources.settings_camera_skipped
+import homesafe.shared.generated.resources.settings_cameras_loading
+import homesafe.shared.generated.resources.settings_cameras_title
+import homesafe.shared.generated.resources.settings_cameras_viewer_read_only
+import homesafe.shared.generated.resources.settings_dismiss
+import homesafe.shared.generated.resources.settings_millis
+import homesafe.shared.generated.resources.settings_motion_detection
+import homesafe.shared.generated.resources.settings_motion_needed
+import homesafe.shared.generated.resources.settings_motion_off
+import homesafe.shared.generated.resources.settings_motion_on
+import homesafe.shared.generated.resources.settings_object_detection
+import homesafe.shared.generated.resources.settings_object_detection_off
+import homesafe.shared.generated.resources.settings_object_detection_on
+import homesafe.shared.generated.resources.settings_off
+import homesafe.shared.generated.resources.settings_on
+import homesafe.shared.generated.resources.settings_retention_alerts
+import homesafe.shared.generated.resources.settings_retention_caption
+import homesafe.shared.generated.resources.settings_retention_continuous
+import homesafe.shared.generated.resources.settings_retention_default
+import homesafe.shared.generated.resources.settings_retention_detections
+import homesafe.shared.generated.resources.settings_retention_motion
+import homesafe.shared.generated.resources.settings_server_connected_to
+import homesafe.shared.generated.resources.settings_server_cpu
+import homesafe.shared.generated.resources.settings_server_detector
+import homesafe.shared.generated.resources.settings_server_detector_input_size
+import homesafe.shared.generated.resources.settings_server_gpu
+import homesafe.shared.generated.resources.settings_server_gpu_busy
+import homesafe.shared.generated.resources.settings_server_gpu_decoder
+import homesafe.shared.generated.resources.settings_server_gpu_memory
+import homesafe.shared.generated.resources.settings_server_inference
+import homesafe.shared.generated.resources.settings_server_last_refresh_failed
+import homesafe.shared.generated.resources.settings_server_loading
+import homesafe.shared.generated.resources.settings_server_memory
+import homesafe.shared.generated.resources.settings_server_no_inference
+import homesafe.shared.generated.resources.settings_server_route_local
+import homesafe.shared.generated.resources.settings_server_route_tailscale_local_unreachable
+import homesafe.shared.generated.resources.settings_server_title
+import homesafe.shared.generated.resources.settings_server_unreachable
+import homesafe.shared.generated.resources.settings_server_update_available
+import homesafe.shared.generated.resources.settings_server_uptime
+import homesafe.shared.generated.resources.settings_server_version
+import homesafe.shared.generated.resources.settings_storage_loading
+import homesafe.shared.generated.resources.settings_storage_percent_used
+import homesafe.shared.generated.resources.settings_storage_recordings
+import homesafe.shared.generated.resources.settings_storage_title
+import homesafe.shared.generated.resources.settings_storage_total
+import homesafe.shared.generated.resources.settings_storage_unreported
+import homesafe.shared.generated.resources.settings_storage_used
+import homesafe.shared.generated.resources.settings_value_missing
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
@@ -146,63 +258,69 @@ fun SettingsTabContent(
             onDismissError = viewModel::dismissCameraError,
         )
         EconomyToneSection(tone = state.economyTone, onTone = viewModel::setEconomyTone)
-        ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError), onOpen = onOpenServer)
+        ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError).resolve(), onOpen = onOpenServer)
     }
 }
 
 @Composable
 internal fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
-    SettingsSection(title = "Server", icon = Icons.Filled.Dns) {
+    SettingsSection(title = stringResource(Res.string.settings_server_title), icon = Icons.Filled.Dns) {
         state.connection?.let { connection ->
-            SettingsCaption("Connected to ${connection.activeUrl}")
+            SettingsCaption(stringResource(Res.string.settings_server_connected_to, connection.activeUrl))
             SettingsCaption(
-                when (connection.route) {
-                    ConnectionRoute.LOCAL_NETWORK -> "Local network — direct over Wi-Fi, no VPN hop"
+                stringResource(
+                    when (connection.route) {
+                        ConnectionRoute.LOCAL_NETWORK -> Res.string.settings_server_route_local
 
-                    ConnectionRoute.TAILSCALE ->
-                        if (connection.localUrl == null) "Tailscale" else "Tailscale — the local address isn't reachable from here"
-                },
+                        ConnectionRoute.TAILSCALE ->
+                            if (connection.localUrl == null) ConnectionRoute.TAILSCALE.label else Res.string.settings_server_route_tailscale_local_unreachable
+                    },
+                ),
             )
         }
         val overview = state.overview
         when {
             overview == null && state.overviewError != null -> LoadFailedRow(state.overviewError, onRetry)
 
-            overview == null -> LoadingRow("Reading server stats…")
+            overview == null -> LoadingRow(stringResource(Res.string.settings_server_loading))
 
             else -> {
                 SettingsInfoGrid(
                     listOf(
-                        InfoItem("Version", overview.version.ifBlank { "—" }, note = overview.latestVersion?.takeIf { overview.updateAvailable }?.let { "Update available: $it" }),
-                        InfoItem("Uptime", formatUptime(overview.uptimeSeconds)),
-                        InfoItem("CPU", formatPercent(overview.cpuPercent)),
-                        InfoItem("Memory", formatPercent(overview.memoryPercent)),
+                        InfoItem(
+                            stringResource(Res.string.settings_server_version),
+                            overview.version.ifBlank { stringResource(Res.string.settings_value_missing) },
+                            note = overview.latestVersion?.takeIf { overview.updateAvailable }?.let { stringResource(Res.string.settings_server_update_available, it) },
+                        ),
+                        InfoItem(stringResource(Res.string.settings_server_uptime), formatUptime(overview.uptimeSeconds).resolve()),
+                        InfoItem(stringResource(Res.string.settings_server_cpu), formatPercent(overview.cpuPercent).resolve()),
+                        InfoItem(stringResource(Res.string.settings_server_memory), formatPercent(overview.memoryPercent).resolve()),
                     ),
                 )
                 overview.detector?.let { detector ->
-                    val model = listOfNotNull(
-                        detector.modelType,
-                        detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> "$w×$h" } },
-                    ).joinToString(" ")
+                    val inputSize = detector.inputWidth?.let { w -> detector.inputHeight?.let { h -> stringResource(Res.string.settings_server_detector_input_size, w, h) } }
+                    // The model's name and its input size are both data; a space is all that sits between them.
+                    val model = listOfNotNull(detector.modelType, inputSize).joinToString(" ")
                     InfoRow(
-                        label = "Detector",
-                        value = listOfNotNull(detector.type, model.takeIf { it.isNotBlank() }).joinToString(" · "),
-                        note = detector.inferenceMs?.let { "Inference ${formatMillis(it)} per frame" } ?: "No inference yet",
+                        label = stringResource(Res.string.settings_server_detector),
+                        value = listOfNotNull(detector.type, model.takeIf { it.isNotBlank() }).joinToString(stringResource(Res.string.common_dot_separator)),
+                        note = detector.inferenceMs?.let { stringResource(Res.string.settings_server_inference, formatMillis(it)) }
+                            ?: stringResource(Res.string.settings_server_no_inference),
                     )
                 }
                 overview.gpus.forEach { gpu ->
                     InfoRow(
-                        label = "GPU",
+                        label = stringResource(Res.string.settings_server_gpu),
                         value = gpu.name,
                         note = listOfNotNull(
-                            gpu.gpuPercent?.let { "${formatPercent(it)} busy" },
-                            gpu.memoryPercent?.let { "${formatPercent(it)} memory" },
-                            gpu.decoderPercent?.let { "${formatPercent(it)} decoder" },
-                        ).joinToString(" · ").ifBlank { null },
+                            gpu.gpuPercent?.let { UiText.of(Res.string.settings_server_gpu_busy, formatPercent(it)) },
+                            gpu.memoryPercent?.let { UiText.of(Res.string.settings_server_gpu_memory, formatPercent(it)) },
+                            gpu.decoderPercent?.let { UiText.of(Res.string.settings_server_gpu_decoder, formatPercent(it)) },
+                        ).takeIf { it.isNotEmpty() }?.let { UiText.Joined(it, UiText.of(Res.string.common_dot_separator)).resolve() },
                     )
                 }
                 if (state.overviewError != null) {
-                    SettingsCaption("Last refresh failed: ${state.overviewError}", error = true)
+                    SettingsCaption(stringResource(Res.string.settings_server_last_refresh_failed, state.overviewError.resolve()), error = true)
                 }
             }
         }
@@ -211,33 +329,33 @@ internal fun ServerSection(state: SettingsUiState, onRetry: () -> Unit) {
 
 @Composable
 internal fun StorageSection(overview: ServerOverview?) {
-    SettingsSection(title = "Storage & Retention", icon = Icons.Filled.Storage) {
+    SettingsSection(title = stringResource(Res.string.settings_storage_title), icon = Icons.Filled.Storage) {
         if (overview == null) {
-            LoadingRow("Reading disk usage…")
+            LoadingRow(stringResource(Res.string.settings_storage_loading))
             return@SettingsSection
         }
         val storage = overview.recordingsStorage
         if (storage == null) {
-            SettingsCaption("The server didn't report its recordings disk.")
+            SettingsCaption(stringResource(Res.string.settings_storage_unreported))
         } else {
             StorageUsageBar(
-                label = "Recordings (${storage.path})",
+                label = stringResource(Res.string.settings_storage_recordings, storage.path),
                 usedFraction = storage.usedFraction,
-                usedText = "${formatMegabytes(storage.usedMb)} used",
-                totalText = "${formatMegabytes(storage.totalMb)} total",
+                usedText = stringResource(Res.string.settings_storage_used, formatMegabytes(storage.usedMb).resolve()),
+                totalText = stringResource(Res.string.settings_storage_total, formatMegabytes(storage.totalMb).resolve()),
             )
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
         val retention = overview.retention
         SettingsInfoGrid(
             listOf(
-                InfoItem("Continuous", formatRetentionDays(retention.continuousDays)),
-                InfoItem("Motion", formatRetentionDays(retention.motionDays)),
-                InfoItem("Alerts", retention.alertDays?.let(::formatRetentionDays) ?: "Default"),
-                InfoItem("Detections", retention.detectionDays?.let(::formatRetentionDays) ?: "Default"),
+                InfoItem(stringResource(Res.string.settings_retention_continuous), formatRetentionDays(retention.continuousDays).resolve()),
+                InfoItem(stringResource(Res.string.settings_retention_motion), formatRetentionDays(retention.motionDays).resolve()),
+                InfoItem(stringResource(Res.string.settings_retention_alerts), retentionOrDefault(retention.alertDays)),
+                InfoItem(stringResource(Res.string.settings_retention_detections), retentionOrDefault(retention.detectionDays)),
             ),
         )
-        SettingsCaption("Frigate deletes recordings older than these on its own. Retention is set in its config.yml.")
+        SettingsCaption(stringResource(Res.string.settings_retention_caption))
     }
 }
 
@@ -248,14 +366,14 @@ private fun DetectionSection(
     onMotion: (String, Boolean) -> Unit,
     onDismissError: () -> Unit,
 ) {
-    SettingsSection(title = "Cameras", icon = Icons.Filled.PersonSearch) {
+    SettingsSection(title = stringResource(Res.string.settings_cameras_title), icon = Icons.Filled.PersonSearch) {
         val overview = state.overview
         if (overview == null) {
-            LoadingRow("Reading camera pipelines…")
+            LoadingRow(stringResource(Res.string.settings_cameras_loading))
             return@SettingsSection
         }
         if (!overview.canEditConfig) {
-            SettingsCaption("Signed in as a viewer: the switches below are read-only. An admin account can change them.")
+            SettingsCaption(stringResource(Res.string.settings_cameras_viewer_read_only))
         }
         overview.cameras.forEachIndexed { index, camera ->
             if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
@@ -269,8 +387,8 @@ private fun DetectionSection(
         }
         state.cameraError?.let { error ->
             Row(verticalAlignment = Alignment.CenterVertically) {
-                SettingsCaption(error, error = true, modifier = Modifier.weight(1f))
-                TextButton(onClick = onDismissError) { Text("Dismiss") }
+                SettingsCaption(error.resolve(), error = true, modifier = Modifier.weight(1f))
+                TextButton(onClick = onDismissError) { Text(stringResource(Res.string.settings_dismiss)) }
             }
         }
     }
@@ -279,15 +397,15 @@ private fun DetectionSection(
 /** What Frigate's config switches on beyond detection. Read-only: each needs a config.yml edit and a restart. */
 @Composable
 internal fun AiFeaturesSection(overview: ServerOverview?) {
-    SettingsSection(title = "AI Features", icon = Icons.Filled.AutoAwesome) {
+    SettingsSection(title = stringResource(Res.string.settings_ai_title), icon = Icons.Filled.AutoAwesome) {
         if (overview == null) {
-            LoadingRow("Reading the server's config…")
+            LoadingRow(stringResource(Res.string.settings_ai_loading))
             return@SettingsSection
         }
-        InfoRow(label = "Face recognition", value = onOff(overview.faceRecognitionEnabled))
-        InfoRow(label = "License plate recognition", value = onOff(overview.licensePlateRecognitionEnabled))
-        InfoRow(label = "Semantic search", value = onOff(overview.semanticSearchEnabled))
-        SettingsCaption("These AI features are set in Frigate's config.yml and need a Frigate restart to change.")
+        InfoRow(label = stringResource(Res.string.settings_ai_face_recognition), value = onOff(overview.faceRecognitionEnabled))
+        InfoRow(label = stringResource(Res.string.settings_ai_license_plates), value = onOff(overview.licensePlateRecognitionEnabled))
+        InfoRow(label = stringResource(Res.string.settings_ai_semantic_search), value = onOff(overview.semanticSearchEnabled))
+        SettingsCaption(stringResource(Res.string.settings_ai_caption))
     }
 }
 
@@ -312,26 +430,28 @@ private fun CameraPipelineRows(
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
             } else {
                 Text(
-                    text = cameraThroughput(camera),
+                    text = cameraThroughput(camera).resolve(),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
         SettingsToggleRow(
-            title = "Object detection",
-            description = if (camera.detectionEnabled) "Looking for people, vehicles, and animals." else "Off — no detections or alerts from this camera.",
+            title = stringResource(Res.string.settings_object_detection),
+            description = stringResource(if (camera.detectionEnabled) Res.string.settings_object_detection_on else Res.string.settings_object_detection_off),
             checked = camera.detectionEnabled,
             enabled = editable && !busy && camera.enabled,
             onCheckedChange = onDetection,
         )
         SettingsToggleRow(
-            title = "Motion detection",
-            description = when {
-                camera.detectionEnabled -> "Needed while object detection is on."
-                camera.motionEnabled -> "Records motion segments and feeds the detector."
-                else -> "Off — only continuous recording."
-            },
+            title = stringResource(Res.string.settings_motion_detection),
+            description = stringResource(
+                when {
+                    camera.detectionEnabled -> Res.string.settings_motion_needed
+                    camera.motionEnabled -> Res.string.settings_motion_on
+                    else -> Res.string.settings_motion_off
+                },
+            ),
             checked = camera.motionEnabled,
             enabled = editable && !busy && camera.enabled && !camera.detectionEnabled,
             onCheckedChange = onMotion,
@@ -355,34 +475,34 @@ internal fun AwaySection(
     onClearHome: () -> Unit,
     onRemoveDevice: (String) -> Unit,
 ) {
-    SettingsSection(title = "Away mode", icon = Icons.Filled.Home) {
+    SettingsSection(title = stringResource(Res.string.presence_title), icon = Icons.Filled.Home) {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
         val switchEnabled = !state.awayBusy && !relayUnreachable
         val me = state.presence.thisDevice
         // The name of another phone deciding alone; null when it is this one, or when every counting phone votes.
-        val otherDecider = state.presence.decidingDevice?.takeIf { !it.isThisDevice }?.let(::presenceDeviceName)
+        val otherDecider = state.presence.decidingDevice?.takeIf { !it.isThisDevice }?.let { presenceDeviceName(it) }
         // A debug install may still flip its own switch — the relay simply doesn't count it.
         val thisDeviceCounts = me?.countsForAway != false
         SettingsToggleRow(
-            title = "I'm away",
+            title = stringResource(Res.string.presence_im_away),
             description = when {
-                relayUnreachable -> "The push relay on the Frigate box can't be reached, so presence can't be changed right now."
-                !thisDeviceCounts && otherDecider != null -> "$otherDecider decides whether the house is empty, so this switch only speaks for this phone."
-                !thisDeviceCounts -> "This is a debug build, so its switch doesn't decide whether the house is empty."
-                me?.pendingAway == true -> "This phone has left home; it counts as away in a few minutes unless it comes back."
-                state.thisDeviceAway -> "This phone counts as out of the house."
-                else -> "This phone counts as home."
+                relayUnreachable -> stringResource(Res.string.presence_im_away_relay_unreachable)
+                !thisDeviceCounts && otherDecider != null -> stringResource(Res.string.presence_im_away_other_decides, otherDecider)
+                !thisDeviceCounts -> stringResource(Res.string.presence_im_away_debug)
+                me?.pendingAway == true -> stringResource(Res.string.presence_im_away_leaving)
+                state.thisDeviceAway -> stringResource(Res.string.presence_im_away_away)
+                else -> stringResource(Res.string.presence_im_away_home)
             },
             checked = state.thisDeviceAway,
             enabled = switchEnabled,
             onCheckedChange = onAway,
         )
         SettingsToggleRow(
-            title = "This phone decides home/away",
+            title = stringResource(Res.string.presence_decides),
             description = when {
-                state.thisDeviceDecides -> "On — only this phone's location says whether the house is empty. Every phone still gets notifications."
-                otherDecider != null -> "$otherDecider decides now. Turn this on to make it this phone instead. Every phone still gets notifications."
-                else -> "Only this phone's location says whether the house is empty. Every phone still gets notifications."
+                state.thisDeviceDecides -> stringResource(Res.string.presence_decides_on)
+                otherDecider != null -> stringResource(Res.string.presence_decides_other, otherDecider)
+                else -> stringResource(Res.string.presence_decides_off)
             },
             checked = state.thisDeviceDecides,
             // An older relay lists no ids, and has no presence authority to set either.
@@ -393,18 +513,15 @@ internal fun AwaySection(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
             PresenceDeviceList(state, onRemoveDevice)
             if (state.presence.everyoneAway) {
-                SettingsCaption("Nobody home — alerts are escalated on both phones.", error = true)
+                SettingsCaption(stringResource(Res.string.presence_nobody_home), error = true)
             }
         }
-        state.awayError?.let { SettingsCaption(it, error = true) }
+        state.awayError?.let { SettingsCaption(it.resolve(), error = true) }
 
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
         AutomaticPresenceRows(state, onAutomatic, onRequestLocation, onSetHomeHere, onClearHome)
 
-        SettingsCaption(
-            "When everyone is away, every person seen on any camera notifies loudly on both phones — " +
-                "on its own \"Away alerts\" channel, ignoring the zone rules above. Flip the switch back when you're home.",
-        )
+        SettingsCaption(stringResource(Res.string.presence_caption))
     }
 }
 
@@ -426,14 +543,16 @@ private fun AutomaticPresenceRows(
         val home = state.presence.home
         val access = state.locationAccess
         SettingsToggleRow(
-            title = "Automatic",
-            description = when {
-                !state.geofenceSupported -> "Not available on this platform. The switch above is manual here."
-                !state.automaticPresence -> "Let a geofence around home and your home Wi-Fi flip the switch for you."
-                access != LocationAccess.ALWAYS -> "Needs location set to \"Always\" so the fence can notice you leaving with the app closed."
-                home == null -> "Set where home is, from a phone standing in it."
-                else -> "Leaving home marks this phone away after a few minutes; arriving — by the fence, or by reaching your cameras over Wi-Fi — marks it home at once."
-            },
+            title = stringResource(Res.string.presence_automatic),
+            description = stringResource(
+                when {
+                    !state.geofenceSupported -> Res.string.presence_automatic_unsupported
+                    !state.automaticPresence -> Res.string.presence_automatic_off
+                    access != LocationAccess.ALWAYS -> Res.string.presence_automatic_needs_always
+                    home == null -> Res.string.presence_automatic_needs_home
+                    else -> Res.string.presence_automatic_on
+                },
+            ),
             checked = state.automaticPresence && state.geofenceSupported,
             enabled = state.geofenceSupported,
             onCheckedChange = onAutomatic,
@@ -442,26 +561,28 @@ private fun AutomaticPresenceRows(
             if (access != LocationAccess.ALWAYS) {
                 OutlinedButton(onClick = onRequestLocation) {
                     Text(
-                        when (access) {
-                            LocationAccess.WHILE_IN_USE -> "Allow location always"
-                            LocationAccess.DENIED -> "Allow location in system settings"
-                            else -> "Allow location"
-                        },
+                        stringResource(
+                            when (access) {
+                                LocationAccess.WHILE_IN_USE -> Res.string.presence_allow_location_always
+                                LocationAccess.DENIED -> Res.string.presence_allow_location_settings
+                                else -> Res.string.presence_allow_location
+                            },
+                        ),
                     )
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = onSetHomeHere, enabled = !state.homeBusy && access != LocationAccess.NOT_ASKED && access != LocationAccess.DENIED) {
-                    Text(if (home == null) "Set home here" else "Move home here")
+                    Text(stringResource(if (home == null) Res.string.presence_set_home_here else Res.string.presence_move_home_here))
                 }
                 if (home != null) {
-                    TextButton(onClick = onClearHome, enabled = !state.homeBusy) { Text("Clear") }
+                    TextButton(onClick = onClearHome, enabled = !state.homeBusy) { Text(stringResource(Res.string.presence_clear_home)) }
                 }
             }
             SettingsCaption(
-                if (home == null) "Home isn't set yet." else "Home is set — a ${home.radiusMeters.toInt()} m circle every phone in the household watches.",
+                if (home == null) stringResource(Res.string.presence_home_not_set) else stringResource(Res.string.presence_home_set, home.radiusMeters.toInt()),
             )
-            state.homeError?.let { SettingsCaption(it, error = true) }
+            state.homeError?.let { SettingsCaption(it.resolve(), error = true) }
         }
     }
 }
@@ -498,20 +619,15 @@ private fun PresenceDeviceList(state: SettingsUiState, onRemove: (String) -> Uni
     confirming?.let { device ->
         AlertDialog(
             onDismissRequest = { confirming = null },
-            title = { Text("Remove ${presenceDeviceName(device)}?") },
-            text = {
-                Text(
-                    "It stops getting alerts and no longer counts for away mode. " +
-                        "If HomeSafe is still installed on it, it comes back the next time the app opens.",
-                )
-            },
+            title = { Text(stringResource(Res.string.presence_remove_title, presenceDeviceName(device))) },
+            text = { Text(stringResource(Res.string.presence_remove_body)) },
             confirmButton = {
                 TextButton(onClick = {
                     confirming = null
                     device.id?.let(onRemove)
-                }) { Text("Remove", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(Res.string.presence_remove), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { confirming = null }) { Text("Cancel") } },
+            dismissButton = { TextButton(onClick = { confirming = null }) { Text(stringResource(Res.string.common_cancel)) } },
         )
     }
 }
@@ -526,21 +642,21 @@ private fun OtherDevicesToggle(count: Int, counted: Int, expanded: Boolean, onTo
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
-                text = if (count == 1) "1 other device" else "$count other devices",
+                text = pluralStringResource(Res.plurals.presence_other_devices, count, count),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
             SettingsCaption(
-                when (counted) {
-                    0 -> "Debug builds, and installs not heard from in a week. None of them count for away mode."
-                    1 -> "Debug builds, and installs not heard from in a week. One still counts for away mode — remove it if nobody uses it."
-                    else -> "Debug builds, and installs not heard from in a week. $counted still count for away mode — remove the ones nobody uses."
+                if (counted == 0) {
+                    stringResource(Res.string.presence_other_devices_none_counted)
+                } else {
+                    pluralStringResource(Res.plurals.presence_other_devices_counted, counted, counted)
                 },
             )
         }
         Icon(
             imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-            contentDescription = if (expanded) "Hide other devices" else "Show other devices",
+            contentDescription = stringResource(if (expanded) Res.string.presence_hide_other_devices else Res.string.presence_show_other_devices),
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
@@ -556,18 +672,21 @@ private fun OtherDevicesToggle(count: Int, counted: Int, expanded: Boolean, onTo
 @Composable
 private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, removing: Boolean, onRemove: () -> Unit) {
     val status = when {
-        device.away && device.updatedEpochSeconds != null -> "away since ${formatClockTime(device.updatedEpochSeconds)}"
-        device.away -> "away"
-        device.pendingAway -> "leaving…"
-        else -> "home"
+        device.away && device.updatedEpochSeconds != null -> UiText.of(Res.string.presence_status_away_since, formatClockTime(device.updatedEpochSeconds))
+        device.away -> UiText.of(Res.string.presence_status_away)
+        device.pendingAway -> UiText.of(Res.string.presence_status_leaving)
+        else -> UiText.of(Res.string.presence_status_home)
     }
-    val details = listOfNotNull(
-        "this phone".takeIf { device.isThisDevice },
-        status,
-        device.lastSeenEpochSeconds?.takeIf { !device.isThisDevice }?.let { formatLastSeen(it, nowEpochSeconds) },
-        "decides home/away".takeIf { device.decides },
-        "debug, not counted".takeIf { !device.countsForAway && device.isTestInstall },
-    ).joinToString(" · ")
+    val details = UiText.Joined(
+        listOfNotNull(
+            UiText.of(Res.string.presence_detail_this_phone).takeIf { device.isThisDevice },
+            status,
+            device.lastSeenEpochSeconds?.takeIf { !device.isThisDevice }?.let { formatLastSeen(it, nowEpochSeconds) },
+            UiText.of(Res.string.presence_detail_decides).takeIf { device.decides },
+            UiText.of(Res.string.presence_detail_debug).takeIf { !device.countsForAway && device.isTestInstall },
+        ),
+        separator = UiText.of(Res.string.common_dot_separator),
+    ).resolve()
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         PulsingDot(
             color = when {
@@ -592,14 +711,16 @@ private fun PresenceDeviceRow(device: PresenceDevice, nowEpochSeconds: Double, r
 
             // Removing this phone would only last until its next connect; an older relay sends no id to remove by.
             !device.isThisDevice && device.id != null -> IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Close, contentDescription = "Remove ${presenceDeviceName(device)}", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(Icons.Filled.Close, contentDescription = stringResource(Res.string.presence_remove_device, presenceDeviceName(device)), tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
 }
 
+/** The name the phone registered, else its platform ("Android"), else a placeholder. Both are data from the relay. */
+@Composable
 private fun presenceDeviceName(device: PresenceDevice): String =
-    device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { "Unnamed device" } }
+    device.name.ifBlank { device.platform.replaceFirstChar { it.uppercase() }.ifBlank { stringResource(Res.string.presence_unnamed_device) } }
 
 // ---- Building blocks ---------------------------------------------------------------------------
 
@@ -648,10 +769,10 @@ private fun LoadingRow(text: String) {
 }
 
 @Composable
-private fun LoadFailedRow(message: String, onRetry: () -> Unit) {
+private fun LoadFailedRow(message: UiText, onRetry: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        SettingsCaption("Couldn't reach the server: $message", error = true, modifier = Modifier.weight(1f))
-        TextButton(onClick = onRetry) { Text("Retry") }
+        SettingsCaption(stringResource(Res.string.settings_server_unreachable, message.resolve()), error = true, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRetry) { Text(stringResource(Res.string.common_retry)) }
     }
 }
 
@@ -706,7 +827,7 @@ private fun StorageUsageBar(label: String, usedFraction: Float, usedText: String
                 modifier = Modifier.weight(1f).padding(end = 12.dp),
             )
             Text(
-                text = "${(usedFraction * 100).roundToInt()}% used",
+                text = stringResource(Res.string.settings_storage_percent_used, (usedFraction * 100).roundToInt()),
                 style = MaterialTheme.typography.labelMedium,
                 color = if (usedFraction >= 0.9f) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -772,21 +893,28 @@ internal fun SettingsToggleRow(
     }
 }
 
-private fun onOff(enabled: Boolean) = if (enabled) "On" else "Off"
+@Composable
+private fun onOff(enabled: Boolean): String = stringResource(if (enabled) Res.string.settings_on else Res.string.settings_off)
+
+/** A retention period, or "Default" when Frigate's own default applies. */
+@Composable
+private fun retentionOrDefault(days: Double?): String =
+    days?.let { formatRetentionDays(it).resolve() } ?: stringResource(Res.string.settings_retention_default)
 
 /** "5.7 detections/s · 5 fps" — what the pipeline is doing right now; "Disabled" for a camera turned off in config. */
-private fun cameraThroughput(camera: CameraPipeline): String {
-    if (!camera.enabled) return "Disabled"
+private fun cameraThroughput(camera: CameraPipeline): UiText {
+    if (!camera.enabled) return UiText.of(Res.string.settings_camera_disabled)
     val parts = listOfNotNull(
-        camera.detectionFps?.takeIf { camera.detectionEnabled }?.let { "${it.format1()} detections/s" },
-        camera.cameraFps?.let { "${it.roundToInt()} fps" },
-        camera.skippedFps?.takeIf { it > 0 }?.let { "${it.format1()} skipped" },
+        camera.detectionFps?.takeIf { camera.detectionEnabled }?.let { UiText.of(Res.string.settings_camera_detections_per_second, it.format1()) },
+        camera.cameraFps?.let { UiText.of(Res.string.settings_camera_fps, it.roundToInt()) },
+        camera.skippedFps?.takeIf { it > 0 }?.let { UiText.of(Res.string.settings_camera_skipped, it.format1()) },
     )
-    return parts.joinToString(" · ").ifBlank { "No stats yet" }
+    return if (parts.isEmpty()) UiText.of(Res.string.settings_camera_no_stats) else UiText.Joined(parts, UiText.of(Res.string.common_dot_separator))
 }
 
 /** "6.8 ms" */
-private fun formatMillis(ms: Double): String = "${ms.format1()} ms"
+@Composable
+private fun formatMillis(ms: Double): String = stringResource(Res.string.settings_millis, ms.format1())
 
 private fun Double.format1(): String {
     val scaled = (this * 10).roundToInt()

@@ -3,16 +3,40 @@ package com.meticulouscreations.homesafe.finance.ui
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.Position
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.narrator_format_days_ago
+import homesafe.shared.generated.resources.narrator_format_hours_ago
+import homesafe.shared.generated.resources.narrator_format_in_days
+import homesafe.shared.generated.resources.narrator_format_in_months
+import homesafe.shared.generated.resources.narrator_format_in_years
+import homesafe.shared.generated.resources.narrator_format_just_now
+import homesafe.shared.generated.resources.narrator_format_minutes_ago
+import homesafe.shared.generated.resources.narrator_format_months_ago
+import homesafe.shared.generated.resources.narrator_format_points_change
+import homesafe.shared.generated.resources.narrator_format_today
+import homesafe.shared.generated.resources.narrator_format_unchanged
+import homesafe.shared.generated.resources.narrator_format_years_ago
+import homesafe.shared.generated.resources.watchlist_coins
+import homesafe.shared.generated.resources.watchlist_shares
+import homesafe.shared.generated.resources.watchlist_shares_fraction
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.time.Instant
 
-/** Number and date formatting for the finance screens; common code has no String.format. */
+/**
+ * Number and date formatting for the finance screens; common code has no String.format. Where a
+ * result carries words ("unchanged", "in 3 days", "just now") it is a [UiText] from the strings
+ * file; the numbers themselves are formatted here, US style.
+ */
 object FinanceFormat {
 
     /** 1234567.891 with 2 decimals → "1,234,567.89". */
@@ -96,14 +120,15 @@ object FinanceFormat {
         IndicatorUnit.RATIO -> grouped(value, 2) + "×"
     }
 
-    fun indicatorChange(value: Double, unit: IndicatorUnit): String {
+    /** "+1.50 pts", "−250K", "+0.02", or "unchanged" when the move rounds away. */
+    fun indicatorChange(value: Double, unit: IndicatorUnit): UiText {
         val decimals = if (unit == IndicatorUnit.THOUSANDS) 0 else 2
-        if (grouped(abs(value), decimals).all { it == '0' || it == '.' }) return "unchanged"
+        if (grouped(abs(value), decimals).all { it == '0' || it == '.' }) return UiText.of(Res.string.narrator_format_unchanged)
         val sign = if (value >= 0) "+" else "−"
-        return sign + when (unit) {
-            IndicatorUnit.PERCENT -> grouped(abs(value), 2) + " pts"
-            IndicatorUnit.THOUSANDS -> grouped(abs(value), 0) + "K"
-            else -> grouped(abs(value), 2)
+        return when (unit) {
+            IndicatorUnit.PERCENT -> UiText.of(Res.string.narrator_format_points_change, sign + grouped(abs(value), 2))
+            IndicatorUnit.THOUSANDS -> (sign + grouped(abs(value), 0) + "K").asUiText()
+            else -> (sign + grouped(abs(value), 2)).asUiText()
         }
     }
 
@@ -113,14 +138,24 @@ object FinanceFormat {
         return if ('.' in text) text.trimEnd('0').trimEnd('.') else text
     }
 
-    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
-    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null, currency: String? = null): String {
-        val held = shares(position.shares) + " " + when {
-            kind == InstrumentKind.CRYPTO && unit != null -> unit
-            position.shares == 1.0 -> "share"
-            else -> "shares"
+    /**
+     * What's held: "10 shares", "1 share", "0.5 shares", or "0.25 BTC" for a coin, whose [unit] is
+     * its ticker. A whole count picks its plural form; a fraction has a string of its own, since a
+     * plural is chosen by a whole number.
+     */
+    fun held(shares: Double, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null): UiText {
+        val amount = shares(shares)
+        return when {
+            kind == InstrumentKind.CRYPTO && unit != null -> UiText.of(Res.string.watchlist_coins, amount, unit)
+            shares == floor(shares) && shares <= Int.MAX_VALUE -> UiText.plural(Res.plurals.watchlist_shares, shares.toInt(), amount)
+            else -> UiText.of(Res.string.watchlist_shares_fraction, amount)
         }
-        return if (price == null) held else "$held · ${money(position.value(price), currency = currency)}"
+    }
+
+    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
+    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null, currency: String? = null): UiText {
+        val held = held(position.shares, kind, unit)
+        return if (price == null) held else UiText.Joined(listOf(held, money(position.value(price), currency = currency).asUiText()), UiText.of(Res.string.common_dot_separator))
     }
 
     /**
@@ -205,28 +240,33 @@ object FinanceFormat {
     fun localOffsetSeconds(epochSeconds: Long): Int = TimeZone.currentSystemDefault().offsetAt(Instant.fromEpochSeconds(epochSeconds)).totalSeconds
 
     /** How long ago a sync was: "just now", "4 min ago", "3 h ago", then the date. */
-    fun ago(nowEpochSeconds: Long, thenEpochSeconds: Long): String {
+    fun ago(nowEpochSeconds: Long, thenEpochSeconds: Long): UiText {
         val s = (nowEpochSeconds - thenEpochSeconds).coerceAtLeast(0)
         return when {
-            s < 60 -> "just now"
-            s < 3_600 -> "${s / 60} min ago"
-            s < 36 * 3_600 -> "${s / 3_600} h ago"
-            else -> date(thenEpochSeconds, localOffsetSeconds(thenEpochSeconds))
+            s < 60 -> UiText.of(Res.string.narrator_format_just_now)
+            s < 3_600 -> UiText.plural(Res.plurals.narrator_format_minutes_ago, (s / 60).toInt())
+            s < 36 * 3_600 -> UiText.plural(Res.plurals.narrator_format_hours_ago, (s / 3_600).toInt())
+            else -> date(thenEpochSeconds, localOffsetSeconds(thenEpochSeconds)).asUiText()
         }
     }
 
     /** "in 3 days", "in 4 months", "2 months ago". */
-    fun relativeDays(fromEpochSeconds: Long, toEpochSeconds: Long): String {
+    fun relativeDays(fromEpochSeconds: Long, toEpochSeconds: Long): UiText {
         // Rounded to the nearest day, so a payout 16 hours off is "in 1 day", not "today".
         val days = ((toEpochSeconds - fromEpochSeconds) / 86_400.0).let { if (it >= 0) it + 0.5 else it - 0.5 }.toLong()
         val a = abs(days)
-        fun plural(n: Long, unit: String) = if (n == 1L) "1 $unit" else "$n ${unit}s"
-        val text = when {
-            a == 0L -> return "today"
-            a < 45 -> plural(a, "day")
-            a < 365 * 2 -> plural((a / 30.4).roundToLong().coerceAtLeast(2), "month")
-            else -> plural((a / 365.25).roundToLong(), "year")
+        val future = days > 0
+        return when {
+            a == 0L -> UiText.of(Res.string.narrator_format_today)
+
+            a < 45 -> UiText.plural(if (future) Res.plurals.narrator_format_in_days else Res.plurals.narrator_format_days_ago, a.toInt())
+
+            a < 365 * 2 -> UiText.plural(
+                if (future) Res.plurals.narrator_format_in_months else Res.plurals.narrator_format_months_ago,
+                (a / 30.4).roundToLong().coerceAtLeast(2).toInt(),
+            )
+
+            else -> UiText.plural(if (future) Res.plurals.narrator_format_in_years else Res.plurals.narrator_format_years_ago, (a / 365.25).roundToLong().toInt())
         }
-        return if (days > 0) "in $text" else "$text ago"
     }
 }

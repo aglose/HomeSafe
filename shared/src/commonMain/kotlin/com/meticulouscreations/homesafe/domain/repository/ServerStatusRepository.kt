@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.domain.repository
 
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.text.UiText
 import kotlinx.coroutines.flow.Flow
 
 /** Live facts about the connected Frigate server, and the two per-camera switches it lets the app flip. */
@@ -9,7 +10,7 @@ interface ServerStatusRepository {
     fun observeOverview(): Flow<ServerOverview?>
 
     /** Whether the last poll failed — so the tab can say so instead of showing stale numbers silently. */
-    fun observeError(): Flow<String?>
+    fun observeError(): Flow<UiText?>
 
     suspend fun refresh()
 

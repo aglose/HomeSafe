@@ -1,6 +1,22 @@
 package com.meticulouscreations.homesafe.network
 
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_camera_not_on_server
+import homesafe.shared.generated.resources.error_load_camera_config
+import homesafe.shared.generated.resources.error_load_cameras
+import homesafe.shared.generated.resources.error_load_events
+import homesafe.shared.generated.resources.error_load_preview
+import homesafe.shared.generated.resources.error_load_profile
+import homesafe.shared.generated.resources.error_load_recordings
+import homesafe.shared.generated.resources.error_load_server_config
+import homesafe.shared.generated.resources.error_load_server_stats
+import homesafe.shared.generated.resources.error_load_thumbnail
+import homesafe.shared.generated.resources.error_login_failed
+import homesafe.shared.generated.resources.error_save_failed
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.cookies.AcceptAllCookiesStorage
@@ -25,11 +41,18 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** The server answered, but not with success — bad credentials, say. The transport itself was fine. */
-open class FrigateResponseException(message: String) : Exception(message)
+/**
+ * The server answered, but not with success — bad credentials, say. The transport itself was fine.
+ * [text] is what to tell the person; [technical] (the message) keeps the status for logs and for
+ * callers that look for one.
+ */
+open class FrigateResponseException(text: UiText, technical: String? = null) : LocalizedException(text, technical) {
+    /** The server's own explanation, which is its words rather than the app's, so it is shown as it was written. */
+    constructor(serverMessage: String) : this(serverMessage.asUiText(), serverMessage)
+}
 
 /** The server understood the login and turned it down: the username or password is wrong for this server. */
-class CredentialsRejectedException(message: String) : FrigateResponseException(message)
+class CredentialsRejectedException(text: UiText, technical: String? = null) : FrigateResponseException(text, technical)
 
 /** What a server made of the session cookies presented to it — see [FrigateApiClient.checkSession]. */
 sealed interface SessionCheck {
@@ -61,9 +84,10 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
             setBody(LoginRequest(user = username, password = password))
         }
         if (response.status.isSuccess()) return@runCatching
-        val message = "Login failed: ${response.status}"
+        val text = UiText.of(Res.string.error_login_failed, response.status.toString())
+        val technical = "Login failed: ${response.status}"
         val rejected = response.status == HttpStatusCode.Unauthorized || response.status == HttpStatusCode.Forbidden
-        throw if (rejected) CredentialsRejectedException(message) else FrigateResponseException(message)
+        throw if (rejected) CredentialsRejectedException(text, technical) else FrigateResponseException(text, technical)
     }
 
     /**
@@ -100,7 +124,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
 
     suspend fun getCameras(serverUrl: String): Result<List<FrigateCamera>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
-        check(response.status.isSuccess()) { "Couldn't load cameras: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_cameras)
         response.body<FrigateConfigResponse>()
             .cameras
             .map { (name, config) -> toFrigateCamera(name, config) }
@@ -135,9 +159,9 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
     /** [cameraName]'s detect resolution and current masks, from `/api/config`. */
     suspend fun getDetectionConfig(serverUrl: String, cameraName: String): Result<FrigateDetectionConfig> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
-        check(response.status.isSuccess()) { "Couldn't load camera config: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_camera_config)
         val config = response.body<FrigateConfigResponse>().cameras[cameraName]
-            ?: throw FrigateResponseException("Camera $cameraName isn't on this server")
+            ?: throw FrigateResponseException(UiText.of(Res.string.error_camera_not_on_server, cameraName), technical = "No camera $cameraName")
         FrigateDetectionConfig(
             cameraName = cameraName,
             detectWidth = config.detect?.width ?: DEFAULT_DETECT_WIDTH,
@@ -191,7 +215,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
         }
         val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
         if (!response.status.isSuccess() || result?.success == false) {
-            throw FrigateResponseException(result?.message ?: "Couldn't save: ${response.status}")
+            throw responseFailure(result?.message, response.status, Res.string.error_save_failed)
         }
     }
 
@@ -236,7 +260,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
         }
         val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
         if (!response.status.isSuccess() || result?.success == false) {
-            throw FrigateResponseException(result?.message ?: "Couldn't save: ${response.status}")
+            throw responseFailure(result?.message, response.status, Res.string.error_save_failed)
         }
     }
 
@@ -263,21 +287,21 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
             if (beforeEpochSeconds != null) parameter("before", formatEpochSeconds(beforeEpochSeconds))
             if (!cameras.isNullOrEmpty()) parameter("cameras", cameras.joinToString(","))
         }
-        check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_events)
         response.body<List<FrigateEvent>>()
     }
 
     /** What the server is doing right now — version, uptime, load, disk, detector and per-camera pipeline stats. */
     suspend fun getStats(serverUrl: String): Result<FrigateServerStats> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/stats")
-        check(response.status.isSuccess()) { "Couldn't load server stats: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_server_stats)
         response.body<FrigateStatsResponse>().toServerStats()
     }
 
     /** The server-wide config the Settings tab reports: retention, detector, AI features, and each camera's pipeline switches. */
     suspend fun getServerConfig(serverUrl: String): Result<FrigateServerConfig> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
-        check(response.status.isSuccess()) { "Couldn't load server config: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_server_config)
         val config = response.body<FrigateConfigResponse>()
         FrigateServerConfig(
             retention = FrigateRetention(
@@ -308,14 +332,14 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
     /** Whether the signed-in account may change config (`role == admin`). Viewers get 401s from `/api/config/set`. */
     suspend fun isAdmin(serverUrl: String): Result<Boolean> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/profile")
-        check(response.status.isSuccess()) { "Couldn't load profile: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_profile)
         response.body<FrigateProfileResponse>().role == "admin"
     }
 
     /** Raw bytes of a detection's thumbnail, for a notification's picture. */
     suspend fun getEventThumbnail(serverUrl: String, eventId: String): Result<ByteArray> = runCatching {
         val response = httpClient.get(frigateEventThumbnailUrl(serverUrl, eventId))
-        check(response.status.isSuccess()) { "No thumbnail: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_thumbnail)
         response.body<ByteArray>()
     }
 
@@ -325,7 +349,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
      */
     suspend fun getEventPreviewGif(serverUrl: String, eventId: String): Result<ByteArray> = runCatching {
         val response = httpClient.get(frigateEventPreviewGifUrl(serverUrl, eventId))
-        check(response.status.isSuccess()) { "No preview: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_preview)
         response.body<ByteArray>()
     }
 
@@ -340,7 +364,7 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
             parameter("after", formatEpochSeconds(afterEpochSeconds))
             parameter("before", formatEpochSeconds(beforeEpochSeconds))
         }
-        check(response.status.isSuccess()) { "Couldn't load recordings: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_recordings)
         response.body<List<FrigateRecording>>()
     }
 

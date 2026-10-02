@@ -24,7 +24,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.meticulouscreations.homesafe.MainActivity
-import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.FakeUser
@@ -166,16 +165,16 @@ class E2eDriver(val compose: ComposeTestRule, val server: FakeFrigateServer) {
 
     /** The real shell: the route badge replaces the skeleton's status icon, and the form is gone. */
     fun awaitSignedIn() {
-        awaitNode(hasText(ConnectionRoute.TAILSCALE.label), "the Tailscale route badge")
+        awaitNode(hasText("Tailscale"), "the Tailscale route badge")
         awaitGone(hasTestTag(SIGN_IN_CONNECT_TEST_TAG), "the sign-in form")
     }
 
     fun openTab(tab: TopLevelRoute) {
-        tap(hasTestTag(bottomNavTestTag(tab)), "the ${tab.label} tab")
+        tap(hasTestTag(bottomNavTestTag(tab)), "the $tab tab")
         awaitSelected(tab)
     }
 
-    fun awaitSelected(tab: TopLevelRoute) = awaitNode(hasTestTag(bottomNavTestTag(tab)) and isSelected(), "the ${tab.label} tab, selected")
+    fun awaitSelected(tab: TopLevelRoute) = awaitNode(hasTestTag(bottomNavTestTag(tab)) and isSelected(), "the $tab tab, selected")
 
     /**
      * Scrolls Home's camera list to [cameraName]'s card and waits for its [displayName]: a phone

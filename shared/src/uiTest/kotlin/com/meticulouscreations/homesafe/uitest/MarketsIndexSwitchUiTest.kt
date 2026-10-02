@@ -109,7 +109,7 @@ class MarketsIndexSwitchUiTest {
     }
 
     private fun assertSteady(tops: List<Float>) =
-        assertEquals(List(tops.size) { tops.first() }, tops, "the index cards' top with ${MarketCatalog.indices.joinToString { it.shortName }} up in turn")
+        assertEquals(List(tops.size) { tops.first() }, tops, "the index cards' top with ${MarketCatalog.indices.joinToString { it.symbol }} up in turn")
 
     @Test
     fun switchingIndicesNeverMovesThePageOnANarrowPhone() = assertSteady(cardTops(360.dp))

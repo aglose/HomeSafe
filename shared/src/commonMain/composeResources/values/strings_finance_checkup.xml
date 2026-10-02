@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The money checkup on the Wallet page: its lines, how each figure is worked out, what would move
+  it, and the what-ifs (MoneyCheckup.kt), and the card and breakdown sheet that show them
+  (CheckupUi.kt). The lines' titles, tips and one-sentence details are the layman_checkup_* keys in
+  strings_finance_narrator.xml. Amounts and percentages arrive already formatted ("$1,240", "15%");
+  account, loan and expense names are the household's own, from the sheet.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The card -->
+    <string name="checkup_card_score_click">See how the checkup is scored</string>
+    <string name="checkup_how_scored">How it's scored</string>
+    <string name="checkup_card_footer">Common rules of thumb, not financial advice. Tap a line to see how it's worked out.</string>
+    <!-- The ring's description for screen readers: %1$d healthy lines out of %2$d (the plural follows %2$d) -->
+    <plurals name="checkup_ring_description">
+        <item quantity="one">%1$d of %2$d checks healthy</item>
+        <item quantity="other">%1$d of %2$d checks healthy</item>
+    </plurals>
+    <!-- Inside the ring: %1$d healthy lines out of %2$d, e.g. "3/5" -->
+    <string name="checkup_ring_score">%1$d/%2$d</string>
+    <!-- Shown in capitals over the most pressing line's first step; %1$s the line's title, e.g. "Emergency fund" -->
+    <string name="checkup_start_here">Start here · %1$s</string>
+    <!-- Accessibility action; %1$s a line's title -->
+    <string name="checkup_start_here_click">See the %1$s breakdown</string>
+    <!-- Accessibility action; %1$s a line's title -->
+    <string name="checkup_row_click">See how %1$s is worked out</string>
+
+    <!-- The breakdown sheet: how it's scored -->
+    <string name="checkup_overview_body">Each line holds one of your numbers against a common rule of thumb, using the figures in your budget sheet. A line passes when your number is on the healthy side of its line; the score is how many pass. The lines aren't weighted, so the order to work on them is below.</string>
+    <string name="checkup_your_lines">Your lines</string>
+    <!-- Accessibility action; %1$s a line's title -->
+    <string name="checkup_open_click">Open %1$s</string>
+    <string name="checkup_keeping_healthy">Keeping it healthy</string>
+    <string name="checkup_where_to_start">Where to start</string>
+    <string name="checkup_all_pass">Every line passes. Open any of them to see how much room you have and what would change it.</string>
+
+    <!-- The breakdown sheet: one line -->
+    <string name="checkup_all_checks">All checks</string>
+    <string name="checkup_looking_healthy">Looking healthy</string>
+    <string name="checkup_how_worked_out">How it's worked out</string>
+    <string name="checkup_tap_a_line">Tap a line to see what's in it.</string>
+    <string name="checkup_how_to_improve">How to improve it</string>
+    <string name="checkup_try_it">Try it</string>
+    <string name="checkup_more">More</string>
+    <!-- A chip opening the explainer; %1$s its plain name, e.g. "Savings rate" -->
+    <string name="checkup_plain_english">Plain English: %1$s</string>
+    <!-- A chip; %1$s a Wallet section's title, e.g. "Monthly cash flow" -->
+    <string name="checkup_see_section">See %1$s</string>
+    <!-- Accessibility actions on a line of the sum; %1$s its label, e.g. "Cash in the bank" -->
+    <string name="checkup_ledger_hide">Hide %1$s</string>
+    <string name="checkup_ledger_show">Show what's in %1$s</string>
+    <string name="checkup_ledger_empty">Nothing in the sheet for this yet.</string>
+    <!-- %1$s a Wallet section's title, e.g. "Accounts" -->
+    <string name="checkup_ledger_go_to">Go to %1$s</string>
+    <!-- %1$s a Wallet section's title, e.g. "Accounts" -->
+    <string name="checkup_ledger_see_in_wallet">See %1$s in your wallet</string>
+    <string name="checkup_whatif_footer">Starts from your numbers today. Nothing here changes your sheet.</string>
+
+    <!-- The sign in front of a line of the sum, read top to bottom like a sum on paper -->
+    <string name="checkup_op_minus">−</string>
+    <string name="checkup_op_divide">÷</string>
+    <string name="checkup_op_equals">=</string>
+    <!-- Against: the loans set against the line they're judged by -->
+    <string name="checkup_op_versus">vs</string>
+
+    <!-- Shared by the lines -->
+    <!-- %1$s a number of months with one decimal, e.g. "4.5" -->
+    <string name="checkup_months">%1$s months</string>
+    <!-- Under the gauge's tick, short: "3 mo" -->
+    <plurals name="checkup_gauge_months">
+        <item quantity="one">%1$d mo</item>
+        <item quantity="other">%1$d mo</item>
+    </plurals>
+    <string name="checkup_not_itemised">Not itemised in the sheet</string>
+    <string name="checkup_not_itemised_detail">the sheet's total less the lines above</string>
+    <!-- A loan's rate, e.g. "22% APR" -->
+    <string name="checkup_item_apr">%1$s APR</string>
+    <string name="checkup_item_no_rate">rate not in the sheet</string>
+    <!-- %1$s an amount of money -->
+    <string name="checkup_item_interest">~%1$s interest a year</string>
+
+    <!-- Why a flagged line sits where it does in the order to work on them -->
+    <string name="checkup_priority_emergency">A cash cushion comes first, so a surprise bill or a lost job doesn't land on a credit card.</string>
+    <string name="checkup_priority_costly_debt">High-rate debt next: every dollar paid off earns its interest rate, guaranteed.</string>
+    <string name="checkup_priority_savings">Then the monthly gap between pay and spending — it's what pays for every other goal.</string>
+    <string name="checkup_priority_retirement">Then tax-advantaged retirement saving, where growth isn't taxed each year.</string>
+    <string name="checkup_priority_debt_ratio">Overall debt falls as the rest fall into place.</string>
+
+    <!-- Emergency fund. %1$s more to set aside, %2$s the 3-month total -->
+    <string name="checkup_emergency_step_short">Set aside %1$s more to reach 3 months (%2$s in all).</string>
+    <!-- %1$s more to set aside, %2$s the 3-month total, %3$s left over each month, %4$d months away (the plural follows %4$d) -->
+    <plurals name="checkup_emergency_step_short_away">
+        <item quantity="one">Set aside %1$s more to reach 3 months (%2$s in all). Saving all of the %3$s left over each month, that's about a month away.</item>
+        <item quantity="other">Set aside %1$s more to reach 3 months (%2$s in all). Saving all of the %3$s left over each month, that's about %4$d months away.</item>
+    </plurals>
+    <!-- %1$s trimmed a month, %2$s what that takes off the goal -->
+    <string name="checkup_emergency_step_trim">Spending less shrinks the goal too: every %1$s a month trimmed lowers a 3-month cushion by %2$s.</string>
+    <string name="checkup_emergency_step_where">Keep it somewhere easy to reach that pays interest, like a high-yield savings account.</string>
+    <string name="checkup_emergency_step_stronger">%1$s more would reach the stronger 6-month cushion.</string>
+    <!-- %1$s more to set aside, %2$s left over each month, %3$d months away (the plural follows %3$d) -->
+    <plurals name="checkup_emergency_step_stronger_away">
+        <item quantity="one">%1$s more would reach the stronger 6-month cushion. At %2$s left over a month, about a month.</item>
+        <item quantity="other">%1$s more would reach the stronger 6-month cushion. At %2$s left over a month, about %3$d months.</item>
+    </plurals>
+    <string name="checkup_emergency_step_six">Toward six months matters most if one income carries the household or work is uncertain.</string>
+    <string name="checkup_emergency_step_beyond">About %1$s sits beyond a 6-month cushion — money that could earn more invested, or pay down costly debt.</string>
+    <!-- %1$s new spending a month, %2$s what that adds to the goal -->
+    <string name="checkup_emergency_step_top_up">Keep it topped up as spending grows: each %1$s a month of new spending adds %2$s to a 6-month cushion.</string>
+    <!-- %1$s the sheet's target, %2$s a percentage of it -->
+    <string name="checkup_emergency_step_target">Your sheet's own emergency target is %1$s: you have %2$s of it.</string>
+    <string name="checkup_emergency_rule">Planners suggest keeping 3 to 6 months of spending in cash. The checkup passes from 3.</string>
+    <string name="checkup_emergency_ledger_cash">Cash in the bank</string>
+    <string name="checkup_emergency_ledger_spending">Spending each month</string>
+    <string name="checkup_emergency_ledger_months">Months covered</string>
+    <string name="checkup_emergency_whatif">Add to cash</string>
+    <!-- %1$s a number of months with one decimal, e.g. "4.5" -->
+    <string name="checkup_emergency_whatif_covered">%1$s months covered</string>
+    <string name="checkup_emergency_whatif_past">Past the 6-month cushion.</string>
+    <string name="checkup_emergency_whatif_within">Within the 3–6 month range.</string>
+    <string name="checkup_emergency_whatif_short">%1$s short of 3 months.</string>
+    <string name="checkup_emergency_note">Only accounts the sheet names as cash (checking, savings) count: investments can be down just when you'd need them.</string>
+
+    <!-- Saving each month -->
+    <string name="checkup_savings_step_reach">Keeping %1$s more a month reaches 15%.</string>
+    <!-- %1$s an expense's name from the sheet, e.g. "Rent", %2$s its monthly amount, %3$s a percentage -->
+    <string name="checkup_savings_step_trim_expense">%1$s is %2$s a month — trimming it by %3$s would cover that on its own.</string>
+    <string name="checkup_savings_step_more_pay">More pay counts too: %1$s more take-home a month, with spending held where it is, gets there.</string>
+    <string name="checkup_savings_step_401k">401(k) contributions taken from your paycheck aren't in take-home, so they count on top of this.</string>
+    <string name="checkup_savings_step_above">You keep %1$s a month more than the 15% line.</string>
+    <string name="checkup_savings_step_stretch">%1$s more a month reaches 20%, the stretch goal.</string>
+    <string name="checkup_savings_step_past_stretch">Past the 20% stretch goal too — the gap is doing real work. Make sure it's being invested, not piling up in checking.</string>
+    <string name="checkup_savings_ledger_take_home">Take-home pay</string>
+    <string name="checkup_savings_ledger_spending">Spending</string>
+    <string name="checkup_savings_ledger_other">Other differences in the sheet</string>
+    <string name="checkup_savings_ledger_left_over">Left over</string>
+    <string name="checkup_savings_ledger_kept">Kept each month</string>
+    <string name="checkup_savings_rule">A common goal is keeping 15% of take-home pay, with 20% a stretch. The checkup passes from 15%.</string>
+    <string name="checkup_savings_whatif">Spend less each month</string>
+    <!-- %1$s a percentage, e.g. "16.2%" -->
+    <string name="checkup_savings_whatif_kept">%1$s kept</string>
+    <!-- %1$s a signed amount, e.g. "+$1,240" -->
+    <string name="checkup_savings_whatif_left_over">%1$s left over a month.</string>
+
+    <!-- Costly debt -->
+    <string name="checkup_debt_figure_none">None</string>
+    <plurals name="checkup_debt_figure_loans">
+        <item quantity="one">%1$d loan</item>
+        <item quantity="other">%1$d loans</item>
+    </plurals>
+    <!-- %1$s a percentage, e.g. "5%" -->
+    <string name="checkup_debt_detail_none_rated">None of your loans with a rate charge more than about %1$s.</string>
+    <!-- %1$s a percentage, %2$s the loans' names as a list -->
+    <string name="checkup_debt_detail_costly">Charging more than %1$s: %2$s.</string>
+    <!-- %1$s the loans' names as a list; the plural follows how many loans -->
+    <plurals name="checkup_debt_unjudged">
+        <item quantity="one">%1$s has no rate in the sheet, so it wasn't judged.</item>
+        <item quantity="other">%1$s have no rate in the sheet, so they weren't judged.</item>
+    </plurals>
+    <!-- %1$s a loan's name, %2$s its rate, %3$s its interest a year -->
+    <string name="checkup_debt_step_pay_first">Pay %1$s first — at %2$s it costs about %3$s a year. Paying it off early is a guaranteed %2$s return.</string>
+    <!-- %1$s the loans' names as a list -->
+    <string name="checkup_debt_step_then">Then %1$s: highest rate first saves the most interest.</string>
+    <!-- %1$s spare cash, %2$s what the loans above the line add up to -->
+    <string name="checkup_debt_step_spare_clears">You have %1$s in cash beyond a 3-month cushion — enough to clear every loan above the line (%2$s) and keep the cushion.</string>
+    <!-- %1$s spare cash, %2$s a loan's name, %3$s what would be left owing -->
+    <string name="checkup_debt_step_spare_partial">You have %1$s in cash beyond a 3-month cushion; putting it toward %2$s would leave %3$s above the line.</string>
+    <!-- %1$s a percentage, e.g. "5%" -->
+    <string name="checkup_debt_step_all_below">Every loan with a rate costs less than the %1$s line, so paying them on schedule is reasonable while savings earn about as much.</string>
+    <!-- %1$s interest a year, %2$s a month -->
+    <string name="checkup_debt_step_interest">Altogether your loans cost about %1$s a year in interest (%2$s a month).</string>
+    <!-- %1$s the loans' names as a list; the plural follows how many loans. "Car loan (APR 3.4%)" is an example of a name in the sheet. -->
+    <plurals name="checkup_debt_step_add_rate">
+        <item quantity="one">%1$s has no rate in the sheet — add it to the name, like "Car loan (APR 3.4%)", so the checkup can judge it.</item>
+        <item quantity="other">%1$s have no rate in the sheet — add it to the name, like "Car loan (APR 3.4%)", so the checkup can judge them.</item>
+    </plurals>
+    <string name="checkup_debt_rule">A loan is costly when its rate beats what savings earn — about the Fed's rate, and never under 5%. The mortgage isn't counted.</string>
+    <string name="checkup_debt_ledger_loans">Loans you're paying</string>
+    <string name="checkup_debt_ledger_line">The costly line</string>
+    <string name="checkup_debt_item_fed">Fed funds rate today</string>
+    <string name="checkup_debt_item_fed_detail">roughly what savings accounts pay</string>
+    <string name="checkup_debt_item_not_loaded">not loaded</string>
+    <string name="checkup_debt_item_floor">Floor</string>
+    <string name="checkup_debt_item_floor_detail">the line never drops below this</string>
+    <string name="checkup_debt_ledger_above">Above the line</string>
+    <string name="checkup_debt_whatif">Pay toward loans now, highest rate first</string>
+    <!-- %1$s an amount of money -->
+    <string name="checkup_debt_whatif_saved">%1$s a year less interest</string>
+    <string name="checkup_debt_whatif_all_cleared">Every loan above the line is cleared.</string>
+    <plurals name="checkup_debt_whatif_still_costly">
+        <item quantity="one">%1$d loan still above the line.</item>
+        <item quantity="other">%1$d loans still above the line.</item>
+    </plurals>
+    <!-- %1$s the loans' names as a list -->
+    <string name="checkup_debt_whatif_paid_off">%1$s paid off.</string>
+    <string name="checkup_debt_note">A loan's rate is read from its name in the sheet. Paying early only beats saving when the rate is higher than savings pay.</string>
+
+    <!-- Debt vs what you own -->
+    <string name="checkup_ratio_step_from_savings">Paying down %1$s from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).</string>
+    <string name="checkup_ratio_step_from_income">Or %1$s paid down from income over time, leaving savings where they are.</string>
+    <!-- %1$s a loan's name -->
+    <string name="checkup_ratio_step_highest_rate">Start with the highest-rate loan, %1$s, to save the most interest on the way.</string>
+    <string name="checkup_ratio_step_nothing_owed">Nothing owed besides the mortgage.</string>
+    <string name="checkup_ratio_step_margin">A comfortable margin: debts would have to grow by %1$s to reach the 25% line.</string>
+    <string name="checkup_ratio_step_assets">Assets growing helps as much as debt shrinking — both move this the right way.</string>
+    <!-- %1$s what's left on the mortgage -->
+    <string name="checkup_ratio_step_mortgage">The mortgage (%1$s) isn't counted: the house counts as the equity built in it rather than its full value, as the sheet does.</string>
+    <string name="checkup_ratio_item_elsewhere">Elsewhere in the sheet's total</string>
+    <string name="checkup_ratio_item_elsewhere_detail">not in the accounts list</string>
+    <string name="checkup_ratio_rule">Owing under a quarter of what you own leaves room for a bad year. The mortgage is left out, as the sheet leaves it out of net worth.</string>
+    <string name="checkup_ratio_ledger_owed">Owed, not counting the mortgage</string>
+    <string name="checkup_ratio_ledger_owned">What you own</string>
+    <string name="checkup_ratio_ledger_result">Owed for what you own</string>
+    <string name="checkup_ratio_whatif">Pay down from savings</string>
+    <string name="checkup_ratio_whatif_nothing_left">Nothing left owned</string>
+    <string name="checkup_ratio_whatif_still_owed">%1$s still owed.</string>
+    <!-- %1$s a percentage, e.g. "21%" -->
+    <string name="checkup_ratio_whatif_owed_vs_owned">%1$s owed vs owned</string>
+    <string name="checkup_ratio_whatif_all_paid">Every loan but the mortgage paid off.</string>
+
+    <!-- Saving for later -->
+    <string name="checkup_retirement_step_reach">Adding %1$s to retirement accounts would reach 25%.</string>
+    <!-- %1$s to add, %2$s left over each month, %3$d months away (the plural follows %3$d) -->
+    <plurals name="checkup_retirement_step_reach_away">
+        <item quantity="one">Adding %1$s to retirement accounts would reach 25%. Putting all of the %2$s left over each month in, that's about a month.</item>
+        <item quantity="other">Adding %1$s to retirement accounts would reach 25%. Putting all of the %2$s left over each month in, that's about %3$d months.</item>
+    </plurals>
+    <!-- %1$s a round amount, e.g. "$100" -->
+    <string name="checkup_retirement_step_401k">A traditional 401(k) takes contributions before tax, so each %1$s saved costs less than %1$s of take-home.</string>
+    <string name="checkup_retirement_step_match">Take any employer match in full first — it's part of your pay.</string>
+    <!-- %1$s and %3$s people's names from the sheet, %2$s and %4$s what each has saved -->
+    <string name="checkup_retirement_step_uneven">%1$s has %2$s in retirement accounts to %3$s's %4$s — worth checking both are getting any employer match.</string>
+    <string name="checkup_retirement_rule">With a quarter or more of what you own in retirement accounts, tax-free growth is doing a good share of the work.</string>
+    <string name="checkup_retirement_ledger_accounts">Retirement accounts</string>
+    <string name="checkup_retirement_ledger_total">Everything in your accounts</string>
+    <string name="checkup_retirement_ledger_result">Saved for later</string>
+    <string name="checkup_retirement_whatif">Add to retirement accounts</string>
+    <!-- %1$s a percentage, e.g. "27%" -->
+    <string name="checkup_retirement_whatif_saved">%1$s saved for later</string>
+    <string name="checkup_retirement_whatif_in_accounts">%1$s in retirement accounts.</string>
+    <string name="checkup_retirement_note">Retirement accounts are told apart by their names in the sheet (401(k), IRA, Roth…). Home equity counts toward what you own.</string>
+</resources>
