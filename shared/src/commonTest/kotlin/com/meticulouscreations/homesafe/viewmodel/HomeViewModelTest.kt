@@ -391,9 +391,35 @@ class HomeViewModelTest {
         assertFalse(h.viewModel.refreshing.value, "the band shouldn't wait out every timeout on the way")
         assertEquals(0, h.moments.stationaryRefreshes, "the reconnect is still running behind it")
 
+        h.viewModel.refresh()
+        runCurrent()
+        assertEquals(1, h.connection.reconnects, "a pull while the last one's work still runs starts nothing new")
+        assertFalse(h.viewModel.refreshing.value)
+
         gate.complete(Unit)
         advanceUntilIdle()
         assertEquals(1, h.moments.stationaryRefreshes, "and finishes what it started")
+
+        h.viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(2, h.connection.reconnects, "once it has, the next pull runs")
+    }
+
+    @Test
+    fun presenceAndTheCarsAreAskedOnlyOnceTheRouteIsSettled() = runTest {
+        val h = Harness()
+        val gate = CompletableDeferred<Unit>()
+        h.connection.reconnectGate = gate
+
+        h.viewModel.refresh()
+        runCurrent()
+        assertEquals(0, h.presenceRepo.refreshes, "not on the address the reconnect may be about to move off")
+        assertEquals(0, h.moments.stationaryRefreshes)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, h.presenceRepo.refreshes)
+        assertEquals(1, h.moments.stationaryRefreshes)
     }
 
     @Test

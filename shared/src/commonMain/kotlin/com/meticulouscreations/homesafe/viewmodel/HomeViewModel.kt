@@ -27,6 +27,7 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -94,6 +95,9 @@ class HomeViewModel(
 
     private val _refreshing = MutableStateFlow(false)
 
+    /** The pull's work, which can outlast the band (see [refresh]); what stops two running at once. */
+    private var refreshWork: Job? = null
+
     /** True while a pull to refresh is running — what keeps the band open over the list. */
     val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
 
@@ -146,19 +150,23 @@ class HomeViewModel(
      * The band stays up while that runs, for at least [MIN_REFRESH_MS] (one sweep of its scan, so
      * a fast answer still reads as one) and at most [MAX_REFRESH_MS]: a server that isn't
      * answering shouldn't hold it open through every timeout on the way, so past that it closes
-     * and whatever is still running carries on behind it.
+     * and whatever is still running carries on behind it. Until that work has finished, another
+     * pull is ignored — the band closing is not the refresh finishing.
      */
     fun refresh() {
-        if (!_refreshing.compareAndSet(expect = false, update = true)) return
+        if (_refreshing.value || refreshWork?.isActive == true) return
+        _refreshing.value = true
         _reconnectRequests.update { it + 1 }
         val work = viewModelScope.launch {
+            // The route first: presence and the strip's poll both read the address in use when
+            // they start, and after leaving the house that is a dead LAN address until this moves it.
+            reconnectToServerUseCase()
             coroutineScope {
                 launch { refreshHouseholdPresenceUseCase() }
-                reconnectToServerUseCase()
+                refreshStationaryObjectsUseCase()
             }
-            // After the session check, so the strip's poll goes out on a session known to be good.
-            refreshStationaryObjectsUseCase()
         }
+        refreshWork = work
         viewModelScope.launch {
             try {
                 coroutineScope {
