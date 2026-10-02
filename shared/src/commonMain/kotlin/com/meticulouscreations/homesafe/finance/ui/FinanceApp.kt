@@ -59,6 +59,7 @@ import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -135,9 +136,17 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
     val scope = rememberCoroutineScope()
     val haptics = LocalHapticFeedback.current
-    // The explainer sheet up, by explainer id, and whether the "tap ⓘ" tip has been put away.
+    // The explainer sheet up, by explainer id.
     var explaining by rememberSaveable { mutableStateOf<String?>(null) }
-    var tipDismissed by rememberSaveable { mutableStateOf(false) }
+    // An opening of the app, counted toward the "tap ⓘ" tip's showings once: saved, so a
+    // recreated activity around the same opening doesn't count it again.
+    var openingCounted by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!openingCounted) {
+            openingCounted = true
+            viewModel.onAppOpened()
+        }
+    }
     fun push(detail: FinanceDetail) {
         if (details.lastOrNull() != detail) details += detail
     }
@@ -227,10 +236,10 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                 onGlossary = { push(FinanceDetail.Glossary) },
             )
 
-            // The one-time nudge, floating above the tabs' nav until it's put away.
+            // The first-openings nudge, floating above the tabs' nav until it's put away.
             ExplainTip(
-                visible = !tipDismissed && details.isEmpty(),
-                onDismiss = { tipDismissed = true },
+                visible = state.explainTipVisible && details.isEmpty(),
+                onDismiss = viewModel::dismissExplainTip,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
