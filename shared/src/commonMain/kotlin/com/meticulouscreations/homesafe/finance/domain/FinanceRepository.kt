@@ -54,6 +54,9 @@ interface FinanceRepository {
 
     suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory>
 
+    /** Tickers whose symbol or name matches [query], for adding to the watchlist. */
+    suspend fun searchSymbols(query: String): Result<List<SymbolMatch>>
+
     /** A FRED series from [startDate] on; cached for hours, since most of them move monthly. */
     suspend fun fredSeries(seriesId: String, startDate: String): Result<Series>
 

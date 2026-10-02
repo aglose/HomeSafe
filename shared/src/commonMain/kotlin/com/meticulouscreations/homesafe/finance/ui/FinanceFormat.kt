@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -47,13 +48,22 @@ object FinanceFormat {
         return (if (negative) "-" else "") + wholeText + fracText
     }
 
-    /** "$1,234,567.89"; [decimals] 0 for big round sums. */
-    fun money(value: Double, decimals: Int = 2): String =
-        (if (isNegative(value, decimals)) "-$" else "$") + grouped(abs(value), decimals)
+    /**
+     * "$1,234,567.89"; [decimals] 0 for big round sums. In a [currency] other than dollars, its
+     * code follows the amount instead ("1,234.00 JPY"), so a yen price never passes for dollars.
+     */
+    fun money(value: Double, decimals: Int = 2, currency: String? = null): String {
+        val sign = if (isNegative(value, decimals)) "-" else ""
+        return if (isDollars(currency)) "$sign$" + grouped(abs(value), decimals) else sign + grouped(abs(value), decimals) + " " + currency
+    }
 
-    /** "+$1,234.56" / "-$1,234.56". */
-    fun signedMoney(value: Double, decimals: Int = 2): String =
-        (if (isNegative(value, decimals)) "-$" else "+$") + grouped(abs(value), decimals)
+    /** "+$1,234.56" / "-$1,234.56", or "+1,234.56 JPY" in another [currency]. */
+    fun signedMoney(value: Double, decimals: Int = 2, currency: String? = null): String {
+        val sign = if (isNegative(value, decimals)) "-" else "+"
+        return if (isDollars(currency)) "$sign$" + grouped(abs(value), decimals) else sign + grouped(abs(value), decimals) + " " + currency
+    }
+
+    private fun isDollars(currency: String?): Boolean = currency == null || currency == "USD"
 
     /** Below zero once rounded to [decimals]; a loss too small to show isn't one. */
     private fun isNegative(value: Double, decimals: Int): Boolean = value < 0 && (abs(value) * 10.0.pow(decimals)).roundToLong() != 0L
@@ -83,19 +93,19 @@ object FinanceFormat {
     fun fractionPercent(fraction: Double, decimals: Int = 1): String = grouped(fraction * 100, decimals) + "%"
 
     /** A market price, written the way its kind is quoted. */
-    fun price(value: Double, kind: InstrumentKind): String = when (kind) {
+    fun price(value: Double, kind: InstrumentKind, currency: String? = null): String = when (kind) {
         InstrumentKind.INDEX -> grouped(value, 2)
         InstrumentKind.YIELD -> grouped(value, 3) + "%"
         InstrumentKind.CURRENCY -> grouped(value, 2)
-        InstrumentKind.CRYPTO -> money(value, if (value >= 1000) 2 else 4)
-        InstrumentKind.EQUITY, InstrumentKind.COMMODITY -> money(value, 2)
+        InstrumentKind.CRYPTO -> money(value, if (value >= 1000) 2 else 4, currency)
+        InstrumentKind.EQUITY, InstrumentKind.COMMODITY -> money(value, 2, currency)
     }
 
     /** A change in price, with sign, in the instrument's own terms. */
-    fun priceChange(value: Double, kind: InstrumentKind): String = when (kind) {
+    fun priceChange(value: Double, kind: InstrumentKind, currency: String? = null): String = when (kind) {
         InstrumentKind.INDEX, InstrumentKind.CURRENCY -> (if (isNegative(value, 2)) "−" else "+") + grouped(abs(value), 2)
         InstrumentKind.YIELD -> (if (isNegative(value, 3)) "−" else "+") + grouped(abs(value), 3)
-        else -> signedMoney(value)
+        else -> signedMoney(value, currency = currency)
     }
 
     fun indicator(value: Double, unit: IndicatorUnit): String = when (unit) {
@@ -116,6 +126,59 @@ object FinanceFormat {
             else -> (sign + grouped(abs(value), 2)).asUiText()
         }
     }
+
+    /** A share count as typed: "10", "0.5", "1,250.125" — up to six places, no trailing zeros. */
+    fun shares(value: Double): String {
+        val text = grouped(value, 6)
+        return if ('.' in text) text.trimEnd('0').trimEnd('.') else text
+    }
+
+    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
+    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null, currency: String? = null): String {
+        val held = shares(position.shares) + " " + when {
+            kind == InstrumentKind.CRYPTO && unit != null -> unit
+            position.shares == 1.0 -> "share"
+            else -> "shares"
+        }
+        return if (price == null) held else "$held · ${money(position.value(price), currency = currency)}"
+    }
+
+    /**
+     * [value] written out in full for editing, nothing rounded and no exponent: 0.12345678 stays
+     * 0.12345678 and 1.0E-8 becomes 0.00000001, so saving an untouched field changes nothing.
+     */
+    fun plainDecimal(value: Double): String {
+        val text = value.toString()
+        val e = text.indexOfFirst { it == 'E' || it == 'e' }
+        val plain = if (e < 0) {
+            text
+        } else {
+            val exponent = text.substring(e + 1).toInt()
+            val mantissa = text.substring(0, e)
+            val negative = mantissa.startsWith('-')
+            val digits = mantissa.removePrefix("-")
+            val point = digits.indexOf('.').let { if (it < 0) digits.length else it }
+            val all = digits.replace(".", "")
+            val newPoint = point + exponent
+            val body = when {
+                newPoint <= 0 -> "0." + "0".repeat(-newPoint) + all
+                newPoint >= all.length -> all + "0".repeat(newPoint - all.length)
+                else -> all.substring(0, newPoint) + "." + all.substring(newPoint)
+            }
+            (if (negative) "-" else "") + body
+        }
+        return if ('.' in plain) plain.trimEnd('0').trimEnd('.') else plain
+    }
+
+    /** A change that can run to thousands of percent over decades: "+12.34%", "+456.7%", "+43,210%". */
+    fun longRunPercent(value: Double): String = signedPercent(
+        value,
+        when {
+            abs(value) >= 1000 -> 0
+            abs(value) >= 100 -> 1
+            else -> 2
+        },
+    )
 
     /** "1.23B" shares or contracts. */
     fun volume(value: Double): String = when {

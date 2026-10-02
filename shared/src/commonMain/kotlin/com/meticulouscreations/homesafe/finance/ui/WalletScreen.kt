@@ -194,6 +194,7 @@ internal fun WalletScreen(
     onOpenQuote: (String) -> Unit,
     onRetrySheet: () -> Unit,
     onOpenSync: () -> Unit = {},
+    onAddSymbol: (() -> Unit)? = null,
 ) {
     val finance = state.finance
     val fedRate = state.readings[IndicatorCatalog.fedFunds.id]?.latest
@@ -225,10 +226,11 @@ internal fun WalletScreen(
         item(key = "watch-h") {
             SectionHeader(
                 stringResource(Res.string.finance_wallet_watchlist_title),
-                subtitle = stringResource(if (finance?.watchlist?.isNotEmpty() == true) Res.string.finance_wallet_watchlist_subtitle_sheet else Res.string.finance_wallet_watchlist_subtitle_live),
+                subtitle = watchlistSubtitle(state),
+                action = onAddSymbol?.let { add -> { AddSymbolButton(add) } },
             )
         }
-        items(state.watchlist, key = { "w-$it" }) { symbol -> QuoteRow(symbol, state.quotes[symbol], onClick = { onOpenQuote(symbol) }) }
+        watchlistItems(state, "w", onOpenQuote)
         if (finance != null) item(key = "source") { SourceFooter(finance) }
     }
     if (checkupOpen && checkup != null) {

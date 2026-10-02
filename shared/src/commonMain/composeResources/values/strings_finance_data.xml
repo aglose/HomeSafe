@@ -45,7 +45,7 @@
     <string name="fin_data_range_ytd">YTD</string>
     <string name="fin_data_range_1y">1Y</string>
     <string name="fin_data_range_5y">5Y</string>
-    <string name="fin_data_range_max">MAX</string>
+    <string name="fin_data_range_max">ALL</string>
 
     <!-- Whose an account or debt is, when it's both people's. -->
     <string name="fin_data_owner_joint">Joint</string>
