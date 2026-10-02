@@ -71,3 +71,14 @@ data class PlaybackPreferencesEntity(
     val quality: String,
     val soundOn: Boolean,
 )
+
+/**
+ * A singleton row (always [id] = 0) holding the finance app's preferences. Added in schema 14; a
+ * missing row means the defaults.
+ */
+@Entity
+data class FinancePreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    /** An `EconomyTone` name. Stored as text so an unknown value degrades to the default instead of failing to read. */
+    val economyTone: String,
+)

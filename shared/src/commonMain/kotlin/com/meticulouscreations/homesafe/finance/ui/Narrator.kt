@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.finance.ui
 
 import androidx.compose.runtime.Immutable
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
@@ -34,19 +35,31 @@ enum class Weather(val label: String) {
     }
 }
 
-/** One line of the economic weather report. [explainerId] is what its ⓘ opens. */
+/**
+ * One line of the economic report: a part of the economy, the worst [signal] among the readings it
+ * sums up, and a sentence. [explainerId] is what its ⓘ opens.
+ */
 @Immutable
-data class BriefingItem(val topic: String, val weather: Weather, val sentence: String, val explainerId: String)
+data class BriefingItem(val topic: String, val signal: Signal?, val sentence: String, val explainerId: String) {
+    val weather: Weather get() = Weather.of(signal)
+}
 
 @Immutable
-data class Briefing(val headline: String, val summary: String, val items: List<BriefingItem>)
+data class Briefing(val tone: EconomyTone, val headline: String, val summary: String, val items: List<BriefingItem>)
+
+/** A heading and a paragraph that put a reading in context, in the chosen tone. */
+@Immutable
+data class Perspective(val heading: String, val body: String)
 
 /**
  * Turns readings into sentences a person who never reads the business pages can follow: a
  * one-line verdict for each indicator, which way it's heading, what it means for this household's
- * own money (when the budget sheet is in), and a short weather report on the whole economy.
+ * own money (when the budget sheet is in), and a short report on the whole economy.
  *
- * Every sentence is built from the live numbers; nothing here predicts anything.
+ * Every sentence is built from the live numbers; nothing here predicts anything. What's said
+ * about them follows the [EconomyTone]: [EconomyTone.STRAIGHT] states each reading, where it sits
+ * against its watch and danger lines and its own history, and nothing it can't back with a
+ * number; [EconomyTone.BRIGHT_SIDE] says the same reading kindly and adds the upsides it brings.
  */
 object Narrator {
 
@@ -62,54 +75,74 @@ object Narrator {
         }
     }
 
-    private fun trendOf(r: IndicatorReading): Trend {
+    private fun noiseOf(r: IndicatorReading): Double {
         val th = r.indicator.thresholds
-        val noise = if (th != null) abs(th.danger - th.watch) * 0.2 else (abs(r.latest ?: 1.0) * 0.05).coerceAtLeast(0.05)
-        return trend(r.history, noise = noise)
+        return if (th != null) abs(th.danger - th.watch) * 0.2 else (abs(r.latest ?: 1.0) * 0.05).coerceAtLeast(0.05)
     }
+
+    private fun trendOf(r: IndicatorReading): Trend = trend(r.history, noise = noiseOf(r))
 
     private fun pct(v: Double, decimals: Int = 1) = FinanceFormat.grouped(v, decimals) + "%"
 
-    /** "and it's been climbing" / "and it's easing" — said in terms of whether that's good. */
-    private fun heading(r: IndicatorReading): String {
+    private fun value(r: IndicatorReading, v: Double) = FinanceFormat.indicator(v, r.indicator.unit)
+
+    /** A change in the reading's own units, written out for a sentence: "+0.40 points" for a rate, "+40K" for a count. */
+    private fun change(r: IndicatorReading, delta: Double): String =
+        FinanceFormat.indicatorChange(delta, r.indicator.unit).replace(" pts", " points")
+
+    /** "1.70 million" / "850,000", for a count held in thousands. */
+    private fun people(thousands: Double): String =
+        if (thousands >= 1000) FinanceFormat.grouped(thousands / 1000, 2) + " million" else FinanceFormat.grouped(thousands, 0) + ",000"
+
+    /**
+     * Which way it's been heading. Straight talk gives the six-month change and whether it's toward
+     * or away from the danger line; the bright side says it in words, kindly.
+     */
+    private fun heading(r: IndicatorReading, tone: EconomyTone): String {
         val t = trendOf(r)
         val worseUp = r.indicator.thresholds?.higherIsWorse
+        if (tone == EconomyTone.STRAIGHT) {
+            val time = r.history.lastTime ?: return ""
+            val now = r.latest ?: return ""
+            val then = r.history.valueAtOrBefore(time - 6 * 30L * Series.DAY_SECONDS) ?: return ""
+            val delta = now - then
+            val toward = when {
+                t == Trend.STEADY || worseUp == null -> ""
+                (delta > 0) == worseUp -> ", toward the danger line"
+                else -> ", away from the danger line"
+            }
+            val moved = change(r, delta)
+            return when {
+                moved == "unchanged" -> "Unchanged over six months."
+                t == Trend.STEADY -> "Little changed over six months ($moved)."
+                else -> "$moved over six months$toward."
+            }
+        }
         return when (t) {
-            Trend.STEADY -> "It's been about steady for six months."
+            Trend.STEADY -> "It's held about steady for six months."
 
-            Trend.RISING -> if (worseUp == false) {
-                "It's been improving over the past six months."
-            } else if (worseUp == true) {
-                "It's been climbing over the past six months — the wrong direction."
-            } else {
-                "It's been rising over the past six months."
+            Trend.RISING -> when (worseUp) {
+                false -> "It's been improving over the past six months — a good sign."
+                true -> "It's been climbing over the past six months, so it's one to keep an eye on."
+                null -> "It's been rising over the past six months."
             }
 
-            Trend.FALLING -> if (worseUp == true) {
-                "It's been easing over the past six months — a good sign."
-            } else if (worseUp == false) {
-                "It's been sliding over the past six months — the wrong direction."
-            } else {
-                "It's been falling over the past six months."
+            Trend.FALLING -> when (worseUp) {
+                true -> "It's been easing over the past six months — a good sign."
+                false -> "It's been slipping over the past six months, so it's one to keep an eye on."
+                null -> "It's been falling over the past six months."
             }
         }
     }
 
-    /** One plain sentence on what [r] says right now. */
-    fun verdict(r: IndicatorReading): String {
+    /** What the reading is, in plain words and with no judgement on it. */
+    fun fact(r: IndicatorReading): String {
         val v = r.latest ?: return "Waiting for the latest reading."
         return when (r.indicator.id) {
-            "cpi", "corecpi" -> {
-                val vs = when {
-                    v < 0 -> "Prices are actually falling."
-                    v <= 2.2 -> "That's right around the Fed's 2% goal."
-                    v <= 3.5 -> "That's a bit faster than the Fed's 2% goal."
-                    v <= 5 -> "That's well above the Fed's 2% goal."
-                    else -> "That's far above the Fed's 2% goal — the kind that squeezes budgets."
-                }
-                // Deflation is said as prices lower, never "−0.5% higher".
-                (if (v >= 0) "Prices are ${pct(v)} higher than a year ago. " else "Prices are ${pct(abs(v))} lower than a year ago. ") + vs
-            }
+            // Deflation is said as prices lower, never "−0.5% higher".
+            "cpi" -> if (v >= 0) "Prices are ${pct(v)} higher than a year ago." else "Prices are ${pct(abs(v))} lower than a year ago."
+
+            "corecpi" -> if (v >= 0) "Leaving out food and gas, prices are ${pct(v)} higher than a year ago." else "Leaving out food and gas, prices are ${pct(abs(v))} lower than a year ago."
 
             "corepce" -> if (v >= 0) {
                 "The Fed's preferred measure says prices are rising ${pct(v)} a year, against its 2% target."
@@ -117,83 +150,59 @@ object Narrator {
                 "The Fed's preferred measure says prices are falling ${pct(abs(v))} a year, below its 2% target."
             }
 
-            "unrate" -> "About ${FinanceFormat.grouped(v, 1)} out of every 100 people who want a job can't find one." +
-                if (v < 4.5) {
-                    " That's a solid job market."
-                } else if (v < 5.5) {
-                    " That's softening."
-                } else {
-                    " That's a weak job market."
-                }
+            "unrate" -> "About ${FinanceFormat.grouped(v, 1)} out of every 100 people who want a job can't find one."
 
-            "sahm" -> if (v >= 0.5) {
-                "The jobs alarm is ringing: unemployment is ${FinanceFormat.grouped(v, 2)} points above its low of the past year, past the 0.5 line that has marked every recession since 1970."
+            "sahm" -> "Unemployment's three-month average is ${FinanceFormat.grouped(v.coerceAtLeast(0.0), 2)} points above its low of the past year."
+
+            "icsa" -> "About ${FinanceFormat.grouped(v, 0)},000 people filed for unemployment for the first time last week."
+
+            "u6" -> "Counting part-timers who want full-time work and people who've stopped looking, ${pct(v)} of the workforce is underemployed."
+
+            "slackgap" -> "Underemployment runs ${FinanceFormat.grouped(v, 1)} points above the headline unemployment rate."
+
+            "primeepop" -> "${FinanceFormat.grouped(v, 1)} out of every 100 people aged 25 to 54 have a job."
+
+            "longterm" -> "${pct(v)} of unemployed people have been looking for more than six months."
+
+            "ccsa" -> "About ${people(v)} people are still collecting unemployment benefits."
+
+            "quits" -> "${pct(v)} of workers quit their job last month."
+
+            "openings" -> "There are ${FinanceFormat.grouped(v, 2)} open jobs for every unemployed person."
+
+            "realwages" -> if (v >= 0) {
+                "The typical full-time paycheck buys ${pct(v)} more than it did a year ago."
             } else {
-                "Unemployment is ${FinanceFormat.grouped(v.coerceAtLeast(0.0), 2)} points above its low of the past year — the alarm rings at 0.5."
+                "The typical full-time paycheck buys ${pct(abs(v))} less than it did a year ago."
             }
 
-            "icsa" -> "About ${FinanceFormat.grouped(v, 0)},000 people filed for unemployment for the first time last week." +
-                if (v < 250) {
-                    " That's a low, healthy level of layoffs."
-                } else if (v < 300) {
-                    " Layoffs are picking up."
-                } else {
-                    " That's a high level of layoffs."
-                }
+            "temphelp" -> if (v >= 0) "Temp agencies employ ${pct(v)} more people than a year ago." else "Temp agencies employ ${pct(abs(v))} fewer people than a year ago."
 
-            "gdp" -> if (v >= 0) {
-                "The economy grew at a ${pct(v)} yearly pace last quarter." + if (v >= 2) " That's healthy." else " That's sluggish."
-            } else {
-                "The economy shrank at a ${pct(abs(v))} yearly pace last quarter."
-            }
+            "civpart" -> "${pct(v)} of adults are working or looking for work."
 
-            "umcsent" -> "People's mood about money scores ${FinanceFormat.grouped(v, 0)}, against a long-run average of about 85." +
-                if (v < 60) {
-                    " That's very gloomy."
-                } else if (v < 80) {
-                    " That's below average."
-                } else {
-                    " That's upbeat."
-                }
+            "gdp" -> if (v >= 0) "The economy grew at a ${pct(v)} yearly pace last quarter." else "The economy shrank at a ${pct(abs(v))} yearly pace last quarter."
+
+            "umcsent" -> "People's mood about money scores ${FinanceFormat.grouped(v, 0)}, against a long-run average of about 85."
 
             "t10y2y", "t10y3m" -> if (v < 0) {
-                "Short-term borrowing costs more than long-term (by ${FinanceFormat.grouped(abs(v), 2)} points) — the upside-down pattern that has come before every recession since 1970."
+                "Short-term borrowing costs ${FinanceFormat.grouped(abs(v), 2)} points more than long-term: the curve is inverted."
             } else {
-                "Long-term borrowing costs ${FinanceFormat.grouped(v, 2)} points more than short-term — the normal, healthy shape."
+                "Long-term borrowing costs ${FinanceFormat.grouped(v, 2)} points more than short-term: the curve is not inverted."
             }
 
-            "hy" -> "Risky companies pay ${FinanceFormat.grouped(v, 1)} points more than the government to borrow." +
-                if (v < 4.5) {
-                    " Lenders are relaxed."
-                } else if (v < 6) {
-                    " Lenders are getting nervous."
-                } else {
-                    " Lenders are scared of defaults."
-                }
+            "hy" -> "Risky companies pay ${FinanceFormat.grouped(v, 1)} points more than the government to borrow."
 
-            "stlfsi" -> if (v <= 0) {
-                "The financial system is calmer than usual (${FinanceFormat.grouped(v, 2)}, where 0 is normal)."
-            } else {
-                "The financial system is under more strain than usual (${FinanceFormat.grouped(v, 2)}, where 0 is normal)."
-            }
+            "stlfsi" -> "The financial stress index reads ${FinanceFormat.grouped(v, 2)}, where 0 is normal."
 
-            "vix" -> "Investors expect " + (
-                if (v < 20) {
-                    "calm"
-                } else if (v < 30) {
-                    "choppy"
-                } else {
-                    "wild"
-                }
-                ) + " markets over the next month (fear gauge at ${FinanceFormat.grouped(v, 0)}; under 20 is calm)."
+            "vix" -> "The fear gauge is at ${FinanceFormat.grouped(v, 0)}; under 20 counts as calm."
 
-            "ccdelinq" -> "${pct(v)} of credit card balances are a month or more overdue." + if (v < 3.5) " Households are mostly keeping up." else " Households are falling behind."
+            "ccdelinq" -> "${pct(v)} of credit card balances are a month or more overdue."
 
             "debtgdp" -> "The government owes about \$${FinanceFormat.grouped(v, 0)} for every \$100 the country produces in a year."
 
             "interest" -> "About ${FinanceFormat.grouped(v, 0)} cents of every federal tax dollar now go to interest on the debt."
 
-            "m2" -> if (v >= 0) "The amount of money in the economy is growing ${pct(v)} a year." else "The amount of money in the economy is shrinking ${pct(abs(v))} a year — rare, and hard on borrowers."
+            "m2" -> if (v >= 0) "The amount of money in the economy is growing ${pct(v)} a year." else "The amount of money in the economy is shrinking ${pct(abs(v))} a year."
 
             "dff" -> "The Fed's interest rate is ${pct(v, 2)} — the starting point for credit cards, car loans and savings accounts."
 
@@ -207,12 +216,196 @@ object Narrator {
 
             "dgs30" -> "The government pays ${pct(v, 2)} to borrow for 30 years."
 
-            else -> "The latest reading is ${FinanceFormat.indicator(v, r.indicator.unit)}."
+            else -> "The latest reading is ${value(r, v)}."
         }
     }
 
+    /** Where the reading sits against its watch and danger lines, in numbers; null when it has none. */
+    fun standing(r: IndicatorReading): String? {
+        val v = r.latest ?: return null
+        val th = r.indicator.thresholds ?: return null
+        return when (th.signal(v)) {
+            Signal.DANGER -> "That's past the danger line of ${value(r, th.danger)}."
+            Signal.WATCH -> "That's past the watch line of ${value(r, th.watch)}; the danger line is ${value(r, th.danger)}."
+            Signal.CALM -> "That's inside the calm range; the watch line is ${value(r, th.watch)}."
+        }
+    }
+
+    /** A kind word on the reading, for the bright side: how it compares, with the good said first. */
+    private fun judgement(r: IndicatorReading): String? {
+        val v = r.latest ?: return null
+        val signal = r.signal
+        return when (r.indicator.id) {
+            "cpi", "corecpi" -> when {
+                v < 0 -> "Prices are actually falling, which stretches every dollar."
+                v <= 2.2 -> "That's right around the Fed's 2% goal."
+                v <= 3.5 -> "That's a bit faster than the Fed's 2% goal, and a long way below 2022's 9%."
+                v <= 5 -> "That's well above the Fed's 2% goal, though inflation has come down from higher before."
+                else -> "That's far above the Fed's 2% goal — the kind that squeezes budgets, and the kind the Fed acts hardest against."
+            }
+
+            "unrate" -> when {
+                v < 4.5 -> "That's a strong job market."
+                v < 5.5 -> "The job market is cooling, but ${FinanceFormat.grouped(100 - v, 1)} in 100 people who want work have it."
+                else -> "Jobs are harder to find right now; this is when a cash cushion earns its keep."
+            }
+
+            "sahm" -> if (v >= 0.5) "The jobs alarm has rung, which has marked the start of recessions — and every one since 1990 has ended within 18 months." else "The jobs alarm, which rings at 0.5, is quiet."
+
+            "icsa" -> when {
+                v < 250 -> "That's a low, healthy level of layoffs."
+                v < 300 -> "Layoffs have picked up a little from very low levels."
+                else -> "That's a high level of layoffs."
+            }
+
+            "t10y2y", "t10y3m" -> if (v < 0) "This upside-down pattern has come before recessions, but the lead can run to two years, and savers earn more on short-term deposits meanwhile." else "That's the normal, healthy shape."
+
+            "umcsent" -> when {
+                v < 60 -> "That's gloomy, but mood isn't money: sentiment was near 50 in June 2022 with unemployment at 3.6%."
+                v < 80 -> "That's below average — feelings often lag the numbers."
+                else -> "That's upbeat."
+            }
+
+            "gdp" -> when {
+                v >= 2 -> "That's healthy growth."
+                v >= 0 -> "That's slow, but still growth."
+                else -> "Every US recession since 1990 has ended within 18 months, and output went on to new highs after each."
+            }
+
+            "realwages" -> if (v >= 0) "That's a real raise, if the typical worker got one." else "Paychecks are trailing prices for now; after 2021–22's dip, real pay was growing again within 18 months."
+
+            "ccdelinq" -> "Put the other way, ${pct(100 - v)} of card balances are being paid on time."
+
+            else -> when (signal) {
+                Signal.CALM -> "That's comfortably on the calm side."
+                Signal.WATCH -> "That's worth watching, though it's short of the danger line."
+                Signal.DANGER -> "That's in the danger zone, which has been where things turn around before."
+                null -> null
+            }
+        }
+    }
+
+    /**
+     * One plain sentence on what [r] says right now. Straight talk adds where it stands against its
+     * lines; the bright side adds a kind word on it.
+     */
+    fun verdict(r: IndicatorReading, tone: EconomyTone): String {
+        if (r.latest == null) return "Waiting for the latest reading."
+        val second = when (tone) {
+            EconomyTone.STRAIGHT -> standing(r)
+            EconomyTone.BRIGHT_SIDE -> judgement(r)
+        }
+        return listOfNotNull(fact(r), second).joinToString(" ")
+    }
+
     /** The verdict with which way it's heading, for an explainer's "Right now". */
-    fun rightNow(r: IndicatorReading): String = verdict(r) + " " + heading(r)
+    fun rightNow(r: IndicatorReading, tone: EconomyTone): String = listOf(verdict(r, tone), heading(r, tone)).filter { it.isNotEmpty() }.joinToString(" ")
+
+    /**
+     * Today's reading against its own history: the share of past readings it's better or worse
+     * than, how long since it was last this high or low, and what it was a year ago. Only numbers.
+     */
+    fun record(r: IndicatorReading): String? {
+        val v = r.latest ?: return null
+        val h = r.history
+        val t = h.lastTime ?: return null
+        if (h.size < 8) return null
+        val since = FinanceFormat.monthYear(h.times.first())
+        val th = r.indicator.thresholds
+        val parts = mutableListOf<String>()
+        val others = h.size - 1
+        if (th != null) {
+            val better = (0 until others).count { i -> if (th.higherIsWorse) h.values[i] < v else h.values[i] > v }
+            val worse = (0 until others).count { i -> if (th.higherIsWorse) h.values[i] > v else h.values[i] < v }
+            parts += if (better >= worse) {
+                "Worse than ${better * 100 / others}% of readings since $since."
+            } else {
+                "Better than ${worse * 100 / others}% of readings since $since."
+            }
+        } else {
+            val lower = (0 until others).count { h.values[it] < v }
+            val higher = (0 until others).count { h.values[it] > v }
+            parts += if (lower >= higher) "Higher than ${lower * 100 / others}% of readings since $since." else "Lower than ${higher * 100 / others}% of readings since $since."
+        }
+        extreme(h, v, t)?.let { parts += it }
+        h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { parts += "A year ago it was ${value(r, it)}." }
+        return parts.joinToString(" ")
+    }
+
+    /** "The highest since Oct 2021." when today's reading hasn't been matched for over a year; null otherwise. */
+    private fun extreme(h: Series, v: Double, t: Long): String? {
+        fun lastAtLeastAs(higher: Boolean): Long? {
+            for (i in h.size - 2 downTo 0) if (if (higher) h.values[i] >= v else h.values[i] <= v) return h.times[i]
+            return null
+        }
+        val yearAgo = t - Series.YEAR_SECONDS
+        for (higher in listOf(true, false)) {
+            val word = if (higher) "highest" else "lowest"
+            val at = lastAtLeastAs(higher)
+            if (at == null) return "The $word in the record."
+            if (at < yearAgo) return "The $word since ${FinanceFormat.monthYear(at)}."
+        }
+        return null
+    }
+
+    /** The upsides a reading brings, or what tends to go right from here. Pragmatic, never advice. */
+    fun brightSide(r: IndicatorReading): String? {
+        val v = r.latest ?: return null
+        val worse = r.signal == Signal.WATCH || r.signal == Signal.DANGER
+        return when (r.indicator.id) {
+            "cpi", "corecpi", "corepce" -> when {
+                v < 0 -> "Falling prices stretch every dollar you've saved."
+                !worse -> "Inflation near the Fed's goal leaves it room to cut rates, which makes borrowing cheaper."
+                else -> "Inflation has come down fast before: from about 9% in mid-2022 to about 3% a year later. Meanwhile savings accounts and Treasury bills tend to pay more while it runs hot."
+            }
+
+            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "ccsa", "primeepop" -> if (!worse) {
+                "Most people who want work have it, and a tight job market is when raises and job switches come easiest."
+            } else {
+                "A cooling job market tends to bring the Fed to cut rates, which eases loan and card costs. Jobs have come back after every downturn: unemployment went from 14.8% in April 2020 to 3.6% by May 2022."
+            }
+
+            "quits", "openings" -> if (!worse) {
+                "Workers still have options: when people feel free to quit, pay tends to keep rising."
+            } else {
+                "Slower hiring takes pressure off prices, and it usually comes before rate cuts that help borrowers. Staying put also builds seniority while the market is choosier."
+            }
+
+            "realwages" -> if (v >= 0) "Paychecks are outrunning prices, so the typical worker can afford a little more than a year ago." else "The last time paychecks trailed prices, in 2021–22, real pay was growing again within 18 months."
+
+            "temphelp" -> if (v >= 0) "Businesses are adding temp staff, often the first step before permanent hiring." else "Temp jobs fell through 2023–24 with no recession following. On its own it's an early hint, not a verdict."
+
+            "civpart" -> "Much of the long slide since 2000 is baby boomers retiring rather than jobs disappearing, which is why the share of 25–54s with a job is the better gauge."
+
+            "gdp" -> if (!worse) "Growth means businesses are selling more, which is what pays for hiring and raises." else "Every US recession since 1990 lasted between 2 and 18 months, and the economy grew past its old peak after each."
+
+            "umcsent" -> "Mood isn't money: sentiment was near 50 in June 2022 while unemployment sat at 3.6%. Gloom tends to track prices more than jobs."
+
+            "t10y2y", "t10y3m" -> if (v < 0) "An inverted curve means short-term savings — high-yield accounts, CDs, Treasury bills — pay more than locking money away for years." else "A normal curve is what markets show when they expect steady growth."
+
+            "hy", "stlfsi", "vix" -> if (!worse) "Calm markets mean businesses can borrow to expand and hire." else "Market panics have tended to be short: 2020's stress faded within months once the Fed stepped in."
+
+            "ccdelinq" -> "${pct(100 - v)} of card balances are being paid on time."
+
+            "debtgdp", "interest" -> "Debt is easier to carry while the economy grows faster than its interest bill, and the US borrows in a currency it issues."
+
+            "m2" -> if (v >= 0) "Money growing at a steady pace keeps lending and spending going." else "The 2023 shrink followed record growth in 2020–21; the money supply stayed far above its pre-pandemic level."
+
+            "dff", "dgs2" -> "When the Fed's rate is high, savings accounts and CDs pay more; when it's cut, borrowing gets cheaper. Either way someone in the household gains."
+
+            "mortgage", "dgs10", "dgs30" -> if (!worse) "Financing is reasonable, which helps buyers and anyone refinancing." else "Higher rates have cooled bidding wars, giving buyers more room to negotiate, and today's savers and new bond buyers earn more."
+
+            "homeprices" -> if (v >= 0) "Rising prices build equity for homeowners." else "Falling prices bring homes within reach of more buyers."
+
+            else -> null
+        }
+    }
+
+    /** What the detail page and the explainer add under "Right now": the record (straight talk) or the bright side. */
+    fun perspective(r: IndicatorReading, tone: EconomyTone): Perspective? = when (tone) {
+        EconomyTone.STRAIGHT -> record(r)?.let { Perspective("On the record", it) }
+        EconomyTone.BRIGHT_SIDE -> brightSide(r)?.let { Perspective("The bright side", it) }
+    }
 
     /** What [id]'s reading means for this household, in dollars where the sheet allows; null when there's nothing useful to say. */
     fun forYou(id: String, readings: Map<String, IndicatorReading>, quotes: Map<String, Quote>, finance: PersonalFinance?): String? {
@@ -273,7 +466,7 @@ object Narrator {
                 "If your home tracked the national average, it's worth about ${FinanceFormat.money(abs(delta), 0)} ${if (delta >= 0) "more" else "less"} than a year ago."
             }
 
-            "unrate", "sahm", "icsa" -> finance?.runwayMonths?.let { months ->
+            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "ccsa", "openings" -> finance?.runwayMonths?.let { months ->
                 "Your cash would cover about ${FinanceFormat.grouped(months, 1)} months of expenses if a paycheck stopped" +
                     when {
                         months >= 6 -> " — a solid cushion."
@@ -311,21 +504,26 @@ object Narrator {
     }
 
     /**
-     * The economy in a handful of lines, each a part of it with its weather: prices, jobs,
-     * borrowing, markets, recession warnings and government debt. Missing readings are left out.
+     * The economy in a handful of lines, each a part of it with its signal: prices, jobs, the
+     * slack beneath the headline jobs number, borrowing, markets, recession warnings and
+     * government debt. Missing readings are left out. Straight talk leads with the numbers and
+     * the lines they're measured against; the bright side reads them as a weather report.
      */
-    fun briefing(readings: Map<String, IndicatorReading>, stress: StressScore?, quotes: Map<String, Quote>): Briefing {
+    fun briefing(readings: Map<String, IndicatorReading>, stress: StressScore?, quotes: Map<String, Quote>, tone: EconomyTone): Briefing {
+        val straight = tone == EconomyTone.STRAIGHT
         val items = mutableListOf<BriefingItem>()
         readings["cpi"]?.let { r ->
             val v = r.latest ?: return@let
             items += BriefingItem(
                 "Prices",
-                Weather.of(r.signal),
+                r.signal,
                 when {
-                    v < 0 -> "Prices are falling (${pct(abs(v))} lower than a year ago) — rare, and usually a sign of a weak economy."
+                    straight && v >= 0 -> "${pct(v)} higher than a year ago, against the Fed's 2% target."
+                    straight -> "${pct(abs(v))} lower than a year ago, against the Fed's 2% target."
+                    v < 0 -> "Prices are falling (${pct(abs(v))} lower than a year ago), so every dollar stretches further."
                     v <= 2.5 -> "Prices are rising at a normal pace (${pct(v)} a year)."
-                    v <= 4 -> "Prices are still rising a little too fast (${pct(v)} a year vs the 2% goal)."
-                    else -> "Prices are rising fast (${pct(v)} a year) — budgets are being squeezed."
+                    v <= 4 -> "Prices are rising a little faster than the 2% goal (${pct(v)} a year), well down from 2022."
+                    else -> "Prices are rising fast (${pct(v)} a year); savings rates tend to rise with them."
                 },
                 "cpi",
             )
@@ -334,15 +532,49 @@ object Narrator {
         if (jobs.isNotEmpty()) {
             val worst = jobs.maxByOrNull { it.stress ?: 0.0 }
             val un = readings["unrate"]?.latest
+            val u6 = readings["u6"]?.latest
+            val claims = readings["icsa"]?.latest
             items += BriefingItem(
                 "Jobs",
-                Weather.of(worst?.signal),
-                when (worst?.signal) {
-                    Signal.DANGER -> "The job market is weakening: layoffs are rising."
-                    Signal.WATCH -> "The job market is cooling off a little."
-                    else -> "Jobs are plentiful" + (un?.let { " — unemployment is ${pct(it)}." } ?: ".")
+                worst?.signal,
+                if (straight) {
+                    listOfNotNull(
+                        un?.let { "Unemployment ${pct(it)}" },
+                        u6?.let { "${pct(it)} counting the underemployed (U-6)" },
+                        claims?.let { "${FinanceFormat.grouped(it, 0)}K new claims a week" },
+                    ).joinToString("; ") + "."
+                } else {
+                    when (worst?.signal) {
+                        Signal.DANGER -> "Layoffs are rising — the time an emergency fund earns its keep."
+                        Signal.WATCH -> "The job market is cooling off a little" + (un?.let { ", though ${FinanceFormat.grouped(100 - it, 1)}% of the workforce is employed." } ?: ".")
+                        else -> "Jobs are plentiful" + (un?.let { " — unemployment is ${pct(it)}." } ?: ".")
+                    }
                 },
                 "unrate",
+            )
+        }
+        val slack = IndicatorCatalog.labor.mapNotNull { readings[it.id] }.filter { it.indicator.thresholds != null && it.latest != null }
+        if (slack.isNotEmpty()) {
+            val flashing = slack.filter { it.signal == Signal.WATCH || it.signal == Signal.DANGER }.sortedByDescending { it.stress ?: 0.0 }
+            val worst = flashing.firstOrNull()?.signal ?: Signal.CALM
+            val calm = slack.size - flashing.size
+            items += BriefingItem(
+                "Beneath the headline",
+                worst,
+                when {
+                    straight && flashing.isEmpty() -> "All ${slack.size} measures of hidden slack are inside their calm ranges."
+
+                    straight ->
+                        "${flashing.size} of ${slack.size} measures past a line: " +
+                            flashing.take(3).joinToString(", ") { "${plainTitle(it.indicator.id).lowercase()} ${value(it, it.latest!!)}" } + "."
+
+                    flashing.isEmpty() -> "Underemployment, long searches and hiring all look sound, so the headline isn't hiding weakness."
+
+                    else ->
+                        "$calm of ${slack.size} hidden-slack measures are calm; " +
+                            flashing.take(2).joinToString(" and ") { plainTitle(it.indicator.id).lowercase() } + " are the soft spots."
+                },
+                "u6",
             )
         }
         readings["mortgage"]?.let { r ->
@@ -350,17 +582,16 @@ object Narrator {
             val ff = readings["dff"]?.latest
             items += BriefingItem(
                 "Borrowing",
-                Weather.of(r.signal),
-                (
-                    if (v >= 6.5) {
-                        "Borrowing is expensive"
-                    } else if (v >= 5) {
-                        "Borrowing costs are moderate"
-                    } else {
-                        "Borrowing is cheap"
+                r.signal,
+                if (straight) {
+                    "30-year mortgages ${pct(v, 2)}" + (ff?.let { "; the Fed's rate ${pct(it, 2)}." } ?: ".")
+                } else {
+                    when {
+                        v >= 6.5 -> "Borrowing is pricey (mortgages around ${pct(v, 1)})" + (ff?.let { ", but savings pay close to the Fed's ${pct(it, 2)}." } ?: ".")
+                        v >= 5 -> "Borrowing costs are moderate — mortgages around ${pct(v, 1)}."
+                        else -> "Borrowing is cheap — mortgages around ${pct(v, 1)}."
                     }
-                    ) +
-                    " — mortgages around ${pct(v, 1)}" + (ff?.let { ", the Fed's rate ${pct(it, 2)}." } ?: "."),
+                },
                 "mortgage",
             )
         }
@@ -368,11 +599,15 @@ object Narrator {
         val sp = quotes[MarketCatalog.SP500.symbol]
         if (vix != null || sp != null) {
             val calm = (vix?.latest ?: 15.0) < 20
+            val today = sp?.let { "the S&P 500 is ${if (it.change >= 0) "up" else "down"} ${FinanceFormat.grouped(abs(it.changePercent), 2)}% today" }
             items += BriefingItem(
                 "Markets",
-                Weather.of(vix?.signal),
-                (if (calm) "Stock markets are calm" else "Stock markets are jittery") +
-                    (sp?.let { " — the S&P 500 is ${if (it.change >= 0) "up" else "down"} ${FinanceFormat.grouped(abs(it.changePercent), 2)}% today." } ?: "."),
+                vix?.signal,
+                if (straight) {
+                    listOfNotNull(vix?.latest?.let { "fear gauge ${FinanceFormat.grouped(it, 0)} (under 20 is calm)" }, today).joinToString("; ").replaceFirstChar { it.uppercase() } + "."
+                } else {
+                    (if (calm) "Stock markets are calm" else "Stock markets are jittery, which passes") + (today?.let { " — $it." } ?: ".")
+                },
                 "sp500",
             )
         }
@@ -388,42 +623,63 @@ object Narrator {
             }
             items += BriefingItem(
                 "Recession signs",
-                Weather.of(signal),
-                when {
-                    inverted && alarm -> "Both of the most reliable recession alarms are ringing."
-                    alarm -> "The jobs-based recession alarm is ringing."
-                    inverted -> "The yield curve is upside down, an early recession warning."
-                    else -> "The two most reliable recession alarms are quiet."
+                signal,
+                if (straight) {
+                    listOfNotNull(
+                        curve?.latest?.let { "Yield curve ${FinanceFormat.signedPercent(it)}" + if (it < 0) " (inverted)" else " (not inverted)" },
+                        sahm?.latest?.let { "jobs alarm ${FinanceFormat.grouped(it.coerceAtLeast(0.0), 2)} (rings at 0.50)" },
+                    ).joinToString("; ").replaceFirstChar { it.uppercase() } + "."
+                } else {
+                    when {
+                        inverted && alarm -> "Both of the most reliable recession alarms are ringing; every recession since 1990 has ended within 18 months."
+                        alarm -> "The jobs-based recession alarm is ringing, though it has rung early before."
+                        inverted -> "The yield curve is upside down, an early warning with a long and uneven lead."
+                        else -> "The two most reliable recession alarms are quiet."
+                    }
                 },
                 "recession",
             )
         }
         readings["interest"]?.let { r ->
             val v = r.latest ?: return@let
+            val debt = readings["debtgdp"]?.latest
             items += BriefingItem(
                 "Government debt",
-                Weather.of(r.signal),
-                "About ${FinanceFormat.grouped(v, 0)}¢ of every tax dollar goes to interest on the national debt" +
-                    if (v >= 20) " — a growing strain." else ".",
+                r.signal,
+                if (straight) {
+                    "${FinanceFormat.grouped(v, 0)}¢ of every tax dollar goes to interest" + (debt?.let { "; debt is ${pct(it, 0)} of a year's output." } ?: ".")
+                } else {
+                    "About ${FinanceFormat.grouped(v, 0)}¢ of every tax dollar goes to interest" + if (v >= 20) " — a slow-moving strain rather than a sudden one." else "."
+                },
                 "interest",
             )
         }
-        val dangers = items.count { it.weather == Weather.STORMY }
-        val clouds = items.count { it.weather == Weather.CLOUDY }
+        val dangers = items.count { it.signal == Signal.DANGER }
+        val watches = items.count { it.signal == Signal.WATCH }
+        val calms = items.size - dangers - watches
         val headline = when {
             items.isEmpty() -> "Gathering the latest readings…"
+            straight -> "$dangers in danger · $watches to watch · $calms calm"
             dangers >= 3 -> "Stormy"
             dangers >= 1 -> "Mixed, with a storm or two"
-            clouds >= 3 -> "Mostly cloudy"
-            clouds >= 1 -> "Partly cloudy"
+            watches >= 3 -> "Mostly cloudy"
+            watches >= 1 -> "Partly cloudy"
             else -> "Mostly sunny"
         }
         val summary = when {
             items.isEmpty() -> ""
-            stress == null -> "$dangers of ${items.size} areas are flashing red."
-            else -> "Overall stress is ${stress.label.lowercase()} (${FinanceFormat.grouped(stress.score, 0)} of 100): ${stress.dangers} warning signs in the danger zone and ${stress.watches} worth watching."
+
+            straight && stress != null ->
+                "Composite stress ${FinanceFormat.grouped(stress.score, 0)} of 100 (${stress.label.lowercase()}) across ${stress.counted} readings: " +
+                    "${stress.dangers} past a danger line, ${stress.watches} past a watch line."
+
+            straight -> "$dangers of ${items.size} areas are past a danger line."
+
+            stress == null -> "$calms of ${items.size} areas are calm."
+
+            else -> "Overall stress is ${stress.label.lowercase()} (${FinanceFormat.grouped(stress.score, 0)} of 100), and ${stress.counted - stress.dangers - stress.watches} of ${stress.counted} readings are calm."
         }
-        return Briefing(headline, summary, items)
+        return Briefing(tone, headline, summary, items)
     }
 
     /** The plain name for an indicator, falling back to its own title. */

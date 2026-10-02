@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.finance
 
 import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -15,6 +17,8 @@ import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -43,6 +47,16 @@ class FinanceViewModelTest {
 
     private val clock = object : Clock {
         override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000)
+    }
+
+    private class FakePreferences : FinancePreferencesRepository {
+        val tone = MutableStateFlow(EconomyTone.DEFAULT)
+
+        override fun observeEconomyTone(): Flow<EconomyTone> = tone
+
+        override suspend fun setEconomyTone(tone: EconomyTone) {
+            this.tone.value = tone
+        }
     }
 
     /** Counts what's asked of it; histories come from [histories] in the order they're asked for. */
@@ -84,7 +98,7 @@ class FinanceViewModelTest {
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.setActive(true, full = false)
         runCurrent()
         assertTrue(repo.quoteCalls >= 1)
@@ -105,7 +119,7 @@ class FinanceViewModelTest {
         val ticking = object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
         }
-        val vm = FinanceViewModel(repo, ticking)
+        val vm = FinanceViewModel(repo, ticking, FakePreferences())
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
@@ -126,7 +140,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val never = CompletableDeferred<Result<PersonalFinance>>()
         repo.slowSheet = never
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -140,7 +154,7 @@ class FinanceViewModelTest {
     fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
         val repo = FakeRepository()
         repo.slowSheet = CompletableDeferred()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.setActive(true)
         runCurrent()
         vm.setActive(false)
@@ -153,7 +167,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
         repo.sheet = { Result.success(read) }
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance)
@@ -174,7 +188,7 @@ class FinanceViewModelTest {
     @Test
     fun goingInactiveStopsThePolling() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -190,9 +204,27 @@ class FinanceViewModelTest {
     }
 
     @Test
+    fun theToneFollowsThePreferenceAndIsSavedWhenChanged() = runTest(dispatcher) {
+        val prefs = FakePreferences()
+        val vm = FinanceViewModel(FakeRepository(), clock, prefs)
+        runCurrent()
+        assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
+
+        vm.setTone(EconomyTone.BRIGHT_SIDE)
+        runCurrent()
+        assertEquals(EconomyTone.BRIGHT_SIDE, prefs.tone.value, "the choice is saved")
+        assertEquals(EconomyTone.BRIGHT_SIDE, vm.uiState.value.tone)
+
+        // A change made elsewhere (the Settings page) lands too.
+        prefs.tone.value = EconomyTone.STRAIGHT
+        runCurrent()
+        assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
+    }
+
+    @Test
     fun aRefreshEndsRefreshing() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         vm.refresh()
         assertTrue(vm.uiState.value.refreshing)
         runCurrent()
@@ -203,7 +235,7 @@ class FinanceViewModelTest {
     @Test
     fun aSlowOlderChartAnswerDoesNotReplaceANewerOne() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, clock, FakePreferences())
         val first = CompletableDeferred<PriceHistory>()
         val older = CompletableDeferred<PriceHistory>()
         val newer = CompletableDeferred<PriceHistory>()

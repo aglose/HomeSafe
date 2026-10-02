@@ -153,7 +153,12 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val fontFamily = albertSansFontFamily()
     val type = remember(fontFamily) { FinanceTypography(fontFamily) }
     val openExplainer: (String) -> Unit = remember { { id -> explaining = id } }
-    CompositionLocalProvider(LocalFinancePalette provides palette, LocalFinanceTypography provides type, LocalExplainer provides openExplainer) {
+    CompositionLocalProvider(
+        LocalFinancePalette provides palette,
+        LocalFinanceTypography provides type,
+        LocalExplainer provides openExplainer,
+        LocalEconomyTone provides state.tone,
+    ) {
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val padding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 104.dp)
@@ -201,6 +206,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             padding,
                             onOpenIndicator = { push(FinanceDetail.IndicatorPage(it)) },
                             onOpenConnections = { push(FinanceDetail.Connections) },
+                            onToneChange = viewModel::setTone,
                         )
 
                         FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }

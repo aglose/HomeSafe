@@ -8,6 +8,7 @@ class InMemorySettingsDao : SettingsDao {
     private val entity = MutableStateFlow<SettingsEntity?>(null)
     private val zoneRules = MutableStateFlow<List<AlertZoneRuleEntity>>(emptyList())
     private val playback = MutableStateFlow<PlaybackPreferencesEntity?>(null)
+    private val finance = MutableStateFlow<FinancePreferencesEntity?>(null)
 
     override fun observe(): Flow<SettingsEntity?> = entity
 
@@ -28,6 +29,12 @@ class InMemorySettingsDao : SettingsDao {
 
     override suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity) {
         playback.value = entity
+    }
+
+    override fun observeFinancePreferences(): Flow<FinancePreferencesEntity?> = finance
+
+    override suspend fun upsertFinancePreferences(entity: FinancePreferencesEntity) {
+        finance.value = entity
     }
 
     private var identity: DeviceIdentityEntity? = null

@@ -49,8 +49,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         PlaybackPreferencesEntity::class,
         DeviceIdentityEntity::class,
         MomentEventEntity::class,
+        FinancePreferencesEntity::class,
     ],
-    version = 13,
+    version = 14,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -73,6 +74,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 12 -> 13: quiet hours and "only when everyone's away" — four SettingsEntity columns,
         // all defaulting to off (the window defaults to 10 PM to 7 AM, unused until switched on).
         AutoMigration(from = 12, to = 13),
+        // 13 -> 14: the finance app's preferences — the Economy tab's tone
+        // ([FinancePreferencesEntity], a new table).
+        AutoMigration(from = 13, to = 14),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
