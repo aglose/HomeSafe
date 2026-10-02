@@ -24,6 +24,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.TableChart
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
@@ -33,11 +38,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Signal
 import com.meticulouscreations.homesafe.finance.ui.components.ChangePill
@@ -48,9 +56,16 @@ import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 /** Horizontal padding every finance page uses. */
 internal val PageGutter = 20.dp
 
-/** A page section's heading, with an optional trailing note. */
+/** A page section's heading, with an optional trailing note or [action] (a button) at its end. */
 @Composable
-internal fun SectionHeader(title: String, modifier: Modifier = Modifier, trailing: String? = null, subtitle: String? = null, info: String? = null) {
+internal fun SectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    trailing: String? = null,
+    subtitle: String? = null,
+    info: String? = null,
+    action: (@Composable () -> Unit)? = null,
+) {
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = 28.dp, bottom = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
@@ -58,6 +73,7 @@ internal fun SectionHeader(title: String, modifier: Modifier = Modifier, trailin
             if (info != null) InfoButton(info, Modifier.padding(start = 0.dp))
             Spacer(Modifier.weight(1f))
             if (trailing != null) Text(trailing, style = FinanceTheme.type.label, color = FinanceTheme.colors.textSecondary)
+            action?.invoke()
         }
         if (subtitle != null) {
             Spacer(Modifier.height(2.dp))
@@ -138,11 +154,20 @@ internal fun SignalChip(signal: Signal?, modifier: Modifier = Modifier) {
 
 /**
  * A watchlist row the way Robinhood draws one: symbol and name on the left, today's sparkline in
- * the middle, the price over a filled change pill on the right.
+ * the middle, the price over a filled change pill on the right. [inSheet] marks a ticker the
+ * budget sheet names; a [position] adds what's held and its worth under the name.
  */
 @Composable
-internal fun QuoteRow(symbol: String, quote: Quote?, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val meta = MarketCatalog.lookup(symbol)
+internal fun QuoteRow(
+    symbol: String,
+    quote: Quote?,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    inSheet: Boolean = false,
+    position: Position? = null,
+    fallbackName: String? = null,
+) {
+    val meta = MarketCatalog.lookup(symbol, quote, fallbackName)
     val colors = FinanceTheme.colors
     Row(
         modifier
@@ -152,10 +177,25 @@ internal fun QuoteRow(symbol: String, quote: Quote?, onClick: () -> Unit, modifi
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(meta.shortName, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(meta.shortName, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+                if (inSheet) {
+                    Spacer(Modifier.width(6.dp))
+                    SheetBadge()
+                }
+            }
             // What it is in plain words where there's an explainer ("Government's 10-year borrowing cost"), else its full name.
             val plain = Explainers.forSymbol(symbol)?.let { Explainers.byId(it)?.title }?.takeIf { it != meta.shortName }
             Text(plain ?: if (meta.name != meta.shortName) meta.name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (position != null) {
+                Text(
+                    FinanceFormat.positionLine(position, quote?.price, meta.kind, meta.shortName),
+                    style = FinanceTheme.type.label,
+                    color = colors.accent,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         if (quote != null) {
             Sparkline(quote.intraday, colors.direction(quote.change), Modifier.width(72.dp).height(30.dp), baseline = quote.previousClose)
@@ -189,14 +229,17 @@ internal fun HeroNumber(
 ) {
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(caption, style = FinanceTheme.type.label, color = FinanceTheme.colors.textSecondary, modifier = Modifier.weight(1f))
+            // One line whatever the name: "Dow Jones Industrial Average" beside the market-hours
+            // pill wrapped where "Nasdaq Composite" didn't. A long name shrinks a little instead.
+            OneLineText(caption, FinanceTheme.type.label, FinanceTheme.colors.textSecondary, Modifier.weight(1f))
             trailing?.invoke()
         }
         Spacer(Modifier.height(4.dp))
         RollingNumber(value, FinanceTheme.type.hero, FinanceTheme.colors.textPrimary)
         Spacer(Modifier.height(2.dp))
         AnimatedContent(change, transitionSpec = { fadeIn(tween(160)) togetherWith fadeOut(tween(120)) }, label = "heroChange") { text ->
-            Text(text, style = FinanceTheme.type.bodyStrong, color = changeColor)
+            // Likewise a scrubbed date and a long change on a narrow phone.
+            OneLineText(text, FinanceTheme.type.bodyStrong, changeColor)
         }
     }
 }
@@ -256,6 +299,39 @@ internal fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> String, co
                 Text(label(option), style = FinanceTheme.type.label, color = if (isSelected) color else FinanceTheme.colors.textSecondary)
             }
         }
+    }
+}
+
+/**
+ * [text] on one line at [style]'s size, stepping down to three-quarters of it when it wouldn't
+ * fit, then ending in an ellipsis: a line that keeps its height whatever it says.
+ */
+@Composable
+internal fun OneLineText(text: String, style: TextStyle, color: Color, modifier: Modifier = Modifier) {
+    BasicText(
+        text,
+        modifier = modifier,
+        style = style.copy(color = color),
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        autoSize = TextAutoSize.StepBased(minFontSize = style.fontSize * 0.75f, maxFontSize = style.fontSize, stepSize = 0.5.sp),
+    )
+}
+
+/** "In sheet": a ticker the household's budget sheet names, so it's followed from there. */
+@Composable
+internal fun SheetBadge(modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    Row(
+        modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(colors.cool.copy(alpha = 0.14f))
+            .padding(horizontal = 6.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.TableChart, contentDescription = null, tint = colors.cool, modifier = Modifier.size(11.dp))
+        Spacer(Modifier.width(3.dp))
+        Text("In sheet", style = FinanceTheme.type.micro, color = colors.cool, maxLines = 1)
     }
 }
 

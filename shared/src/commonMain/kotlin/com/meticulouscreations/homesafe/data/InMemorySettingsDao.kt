@@ -37,4 +37,18 @@ class InMemorySettingsDao : SettingsDao {
     override suspend fun upsertDeviceIdentity(entity: DeviceIdentityEntity) {
         identity = entity
     }
+
+    private val watched = MutableStateFlow<List<WatchedSymbolEntity>>(emptyList())
+
+    override fun observeWatchedSymbols(): Flow<List<WatchedSymbolEntity>> = watched
+
+    override suspend fun upsertWatchedSymbol(entity: WatchedSymbolEntity) {
+        watched.update { current ->
+            (current.filter { it.symbol != entity.symbol } + entity).sortedWith(compareBy({ it.addedAtEpochSeconds }, { it.symbol }))
+        }
+    }
+
+    override suspend fun deleteWatchedSymbol(symbol: String) {
+        watched.update { current -> current.filter { it.symbol != symbol } }
+    }
 }

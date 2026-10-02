@@ -3,7 +3,31 @@ package com.meticulouscreations.homesafe.finance.domain
 import androidx.compose.runtime.Immutable
 
 /** What kind of thing a symbol is, which decides how its price is written (points, dollars, a yield). */
-enum class InstrumentKind { INDEX, EQUITY, CRYPTO, COMMODITY, YIELD, CURRENCY }
+enum class InstrumentKind {
+    INDEX,
+    EQUITY,
+    CRYPTO,
+    COMMODITY,
+    YIELD,
+    CURRENCY,
+    ;
+
+    companion object {
+        /**
+         * Yahoo's `quoteType`/`instrumentType` ("EQUITY", "ETF", "MUTUALFUND", "CRYPTOCURRENCY",
+         * "FUTURE", …) as a kind; funds are priced in dollars a share, like a stock. Null when
+         * Yahoo didn't say or said something new.
+         */
+        fun fromYahoo(type: String?): InstrumentKind? = when (type?.uppercase()) {
+            "EQUITY", "ETF", "MUTUALFUND", "MONEYMARKET" -> EQUITY
+            "CRYPTOCURRENCY" -> CRYPTO
+            "INDEX" -> INDEX
+            "FUTURE" -> COMMODITY
+            "CURRENCY" -> CURRENCY
+            else -> null
+        }
+    }
+}
 
 /** A market symbol the app follows, as Yahoo Finance names it, with how to show it. */
 @Immutable
@@ -37,6 +61,10 @@ data class Quote(
     val sessionStartEpochSeconds: Long?,
     val sessionEndEpochSeconds: Long?,
     val intraday: Series,
+    /** The company's or fund's name ("Peloton Interactive, Inc."), when Yahoo gave one. */
+    val name: String? = null,
+    /** Yahoo's word for what it is ("EQUITY", "ETF", "MUTUALFUND", …); see [InstrumentKind.fromYahoo]. */
+    val instrumentType: String? = null,
 ) {
     val change: Double get() = price - previousClose
     val changePercent: Double get() = if (previousClose == 0.0) 0.0 else change / previousClose * 100.0
@@ -53,7 +81,11 @@ data class Quote(
     }
 }
 
-/** The ranges a price chart offers, Robinhood's row: what to ask Yahoo for each. */
+/**
+ * The ranges a price chart offers, Robinhood's row: what to ask Yahoo for each. Yahoo quietly
+ * thins `range=max` to monthly or quarterly bars (and the S&P's to 1985 on), so [MAX] is asked for
+ * by dates instead (see `YahooFinanceApi.history`), which honours the weekly interval.
+ */
 enum class ChartRange(val label: String, val yahooRange: String, val yahooInterval: String) {
     DAY("1D", "1d", "5m"),
     WEEK("1W", "5d", "15m"),
@@ -62,7 +94,7 @@ enum class ChartRange(val label: String, val yahooRange: String, val yahooInterv
     YEAR_TO_DATE("YTD", "ytd", "1d"),
     YEAR("1Y", "1y", "1d"),
     FIVE_YEARS("5Y", "5y", "1wk"),
-    MAX("MAX", "max", "1mo"),
+    MAX("ALL", "max", "1wk"),
 }
 
 /** A price history for one [range]: the points, and the close before it began (the baseline a 1D chart draws). */
@@ -73,9 +105,15 @@ data class PriceHistory(
     val series: Series,
     val baseline: Double?,
     val gmtOffsetSeconds: Int,
+    /** The highest price traded in the range (the bars' highs, not just their closes), and when. */
+    val highest: Double? = null,
+    val highestEpochSeconds: Long? = null,
 )
 
-/** Everything the Markets tab follows. Watchlist symbols come from the sheet when it names any. */
+/**
+ * Everything the Markets tab follows. The watchlist is the sheet's tickers plus any added in the
+ * app (see [WatchedSymbol]), or [defaultWatchlist] when there are neither.
+ */
 object MarketCatalog {
     val SP500 = MarketSymbol(
         "^GSPC",
@@ -151,15 +189,20 @@ object MarketCatalog {
     val indices = listOf(SP500, DOW, NASDAQ, RUSSELL, VIX)
     val macro = listOf(TEN_YEAR, GOLD, OIL, BITCOIN, DOLLAR)
 
-    /** The watchlist when the sheet names no tickers of its own. */
+    /** The watchlist when neither the sheet nor the app names any tickers. */
     val defaultWatchlist = listOf("TSLA", "NVDA", "AAPL", "BTC-USD")
 
     private val known = (indices + macro).associateBy { it.symbol }
 
-    fun lookup(symbol: String): MarketSymbol = known[symbol] ?: MarketSymbol(
+    /**
+     * How to show [symbol]: the catalog's own entry, or one made up from the ticker, named from
+     * its [quote] (Yahoo sends the company's name with the price) or [name] when there's one.
+     */
+    fun lookup(symbol: String, quote: Quote? = null, name: String? = null): MarketSymbol = known[symbol] ?: MarketSymbol(
         symbol = symbol,
-        name = symbol,
+        name = quote?.name ?: name ?: symbol,
         shortName = symbol.removeSuffix("-USD"),
-        kind = if (symbol.endsWith("-USD")) InstrumentKind.CRYPTO else InstrumentKind.EQUITY,
+        kind = InstrumentKind.fromYahoo(quote?.instrumentType)
+            ?: if (symbol.endsWith("-USD")) InstrumentKind.CRYPTO else InstrumentKind.EQUITY,
     )
 }

@@ -5,17 +5,23 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
+import com.meticulouscreations.homesafe.finance.domain.Holdings
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.StressScore
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.finance.domain.WatchEntry
+import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
+import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
 import com.meticulouscreations.homesafe.finance.domain.YieldCurve
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -36,6 +42,10 @@ import kotlin.time.Clock
 /** Why the sheet isn't showing, flattened from [SheetUnavailableException] for the UI. */
 @Immutable
 data class SheetIssue(val problem: SheetProblem, val message: String, val serviceAccount: String?, val activationUrl: String?)
+
+/** The add-a-symbol search: what was typed, and what Yahoo matched it with. */
+@Immutable
+data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: String? = null)
 
 /** A price history being fetched for one symbol and range. */
 @Immutable
@@ -59,9 +69,33 @@ data class FinanceUiState(
     val financeLoading: Boolean = true,
     val sheetIssue: SheetIssue? = null,
     val refreshing: Boolean = false,
+    /** Symbols followed from the app, oldest first (see [WatchedSymbol]). */
+    val watched: List<WatchedSymbol> = emptyList(),
+    val search: SymbolSearch = SymbolSearch(),
 ) {
-    val watchlist: List<String>
-        get() = finance?.watchlist?.takeIf { it.isNotEmpty() } ?: MarketCatalog.defaultWatchlist
+    /** The tickers the budget sheet names. */
+    val sheetSymbols: List<String> get() = finance?.watchlist.orEmpty()
+
+    /**
+     * The watchlist: the sheet's tickers in its order, then those added in the app, each with any
+     * position held; the suggestions when there are neither. A position entered against a sheet
+     * ticker rides on the sheet's row.
+     */
+    val watchEntries: List<WatchEntry>
+        get() {
+            val sheet = sheetSymbols
+            val byApp = watched.associateBy { it.symbol }
+            val entries = sheet.map { WatchEntry(it, inSheet = true, addedInApp = false, position = byApp[it]?.position) } +
+                watched.filter { it.symbol !in sheet }.map { WatchEntry(it.symbol, inSheet = false, addedInApp = true, position = it.position) }
+            return entries.ifEmpty { MarketCatalog.defaultWatchlist.map { WatchEntry(it, inSheet = false, addedInApp = false, position = null) } }
+        }
+
+    val watchlist: List<String> get() = watchEntries.map { it.symbol }
+
+    /** What's held across the watchlist, at the latest prices; null with no positions. */
+    val holdings: Holdings? get() = Holdings.of(watchEntries, quotes)
+
+    fun watchedSymbol(symbol: String): WatchedSymbol? = watched.firstOrNull { it.symbol == symbol }
 
     val stress: StressScore? get() = StressScore.of(readings.values.filter { it.indicator in IndicatorCatalog.radar })
 
@@ -91,6 +125,7 @@ data class FinanceUiState(
 @ContributesIntoMap(AppScope::class)
 class FinanceViewModel(
     private val repository: FinanceRepository,
+    private val watchlistRepository: WatchlistRepository,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -101,6 +136,18 @@ class FinanceViewModel(
     private var sheetPollJob: Job? = null
     private val chartTickets = HashMap<String, Int>()
     private var economyStarted = false
+    private var searchJob: Job? = null
+
+    init {
+        viewModelScope.launch {
+            watchlistRepository.observe().collect { list ->
+                val before = _uiState.value.watchlist
+                _uiState.update { it.copy(watched = list) }
+                // A symbol just added wants its quote now, not at the next poll.
+                if (pollJob?.isActive == true && _uiState.value.watchlist.any { it !in before }) fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
+            }
+        }
+    }
 
     /** The finance app came up ([full]) or only the drawer's teaser did; false when both are gone. */
     fun setActive(active: Boolean, full: Boolean = true) {
@@ -167,6 +214,70 @@ class FinanceViewModel(
                         s.copy(charts = s.charts + (key to ChartLoad(s.charts[key]?.history, loading = false, error = e.message ?: "Couldn't load the chart")))
                     }
                 }
+        }
+    }
+
+    /**
+     * Looks [query] up as it's typed: each keystroke replaces the last one's search, and only goes
+     * to Yahoo once typing pauses.
+     */
+    fun searchSymbols(query: String) {
+        searchJob?.cancel()
+        val q = query.trim()
+        _uiState.update { s ->
+            s.copy(search = SymbolSearch(query, results = if (q.isEmpty()) emptyList() else s.search.results, loading = q.isNotEmpty()))
+        }
+        if (q.isEmpty()) return
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            repository.searchSymbols(q)
+                .onSuccess { found -> _uiState.update { s -> s.copy(search = s.search.copy(results = found, loading = false, error = null)) } }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    _uiState.update { s -> s.copy(search = s.search.copy(loading = false, error = e.message ?: "Search is unavailable")) }
+                }
+        }
+    }
+
+    fun clearSearch() {
+        searchJob?.cancel()
+        _uiState.update { it.copy(search = SymbolSearch()) }
+    }
+
+    /** Follows [match] from the app. Already followed (or in the sheet), nothing changes. */
+    fun addSymbol(match: SymbolMatch) {
+        val s = _uiState.value
+        if (s.watchedSymbol(match.symbol) != null || match.symbol in s.sheetSymbols) return
+        viewModelScope.launch {
+            watchlistRepository.save(WatchedSymbol(match.symbol, match.name, match.kind, clock.now().epochSeconds))
+        }
+    }
+
+    /** Stops following [symbol] from the app, with any position entered for it. The sheet's tickers stay. */
+    fun removeSymbol(symbol: String) {
+        viewModelScope.launch { watchlistRepository.remove(symbol) }
+    }
+
+    /**
+     * Records the shares held in [symbol] (null: none). Holding one of the sheet's tickers keeps a
+     * row for it in the app, which goes again when the position is cleared; one added in the app
+     * stays followed either way.
+     */
+    fun setPosition(symbol: String, position: Position?) {
+        val s = _uiState.value
+        val existing = s.watchedSymbol(symbol)
+        viewModelScope.launch {
+            when {
+                position == null && existing == null -> Unit
+
+                position == null && symbol in s.sheetSymbols -> watchlistRepository.remove(symbol)
+
+                else -> {
+                    val meta = MarketCatalog.lookup(symbol, s.quotes[symbol])
+                    val base = existing ?: WatchedSymbol(symbol, meta.name, meta.kind, clock.now().epochSeconds)
+                    watchlistRepository.save(base.copy(position = position))
+                }
+            }
         }
     }
 
@@ -245,11 +356,13 @@ class FinanceViewModel(
 
     override fun onCleared() {
         pollJob?.cancel()
+        searchJob?.cancel()
     }
 
     private companion object {
         const val QUOTE_POLL_OPEN_MS = 15_000L
         const val QUOTE_POLL_CLOSED_MS = 60_000L
         const val SHEET_POLL_MS = 120_000L
+        const val SEARCH_DEBOUNCE_MS = 300L
     }
 }

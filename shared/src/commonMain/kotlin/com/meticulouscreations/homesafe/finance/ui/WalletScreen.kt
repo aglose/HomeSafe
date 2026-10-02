@@ -92,6 +92,7 @@ internal fun WalletScreen(
     onOpenQuote: (String) -> Unit,
     onRetrySheet: () -> Unit,
     onOpenSync: () -> Unit = {},
+    onAddSymbol: (() -> Unit)? = null,
 ) {
     val finance = state.finance
     LazyColumn(state = listState, contentPadding = contentPadding) {
@@ -101,8 +102,10 @@ internal fun WalletScreen(
             state.financeLoading -> item(key = "loading") { WalletSkeleton() }
             else -> item(key = "setup") { state.sheetIssue?.let { SheetSetupCard(it, onRetrySheet) } }
         }
-        item(key = "watch-h") { SectionHeader("Your watchlist", subtitle = if (finance?.watchlist?.isNotEmpty() == true) "The tickers your sheet tracks, live" else "Live prices") }
-        items(state.watchlist, key = { "w-$it" }) { symbol -> QuoteRow(symbol, state.quotes[symbol], onClick = { onOpenQuote(symbol) }) }
+        item(key = "watch-h") {
+            SectionHeader("Your watchlist", subtitle = watchlistSubtitle(state), action = onAddSymbol?.let { add -> { AddSymbolButton(add) } })
+        }
+        watchlistItems(state, "w", onOpenQuote)
         if (finance != null) item(key = "source") { SourceFooter(finance) }
     }
 }

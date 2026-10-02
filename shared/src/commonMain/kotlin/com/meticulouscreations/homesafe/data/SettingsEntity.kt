@@ -71,3 +71,19 @@ data class PlaybackPreferencesEntity(
     val quality: String,
     val soundOn: Boolean,
 )
+
+/**
+ * A symbol the finance app follows on its own, beside the budget sheet's tickers: added from the
+ * Markets tab's search, or holding a position entered against one of the sheet's. Added in
+ * schema 14. [kind] is an `InstrumentKind` name, as text so an unknown one degrades to a guess.
+ */
+@Entity
+data class WatchedSymbolEntity(
+    @PrimaryKey val symbol: String,
+    val name: String,
+    val kind: String,
+    val addedAtEpochSeconds: Long,
+    /** Shares held, when a position has been entered; null when only watching. */
+    val shares: Double? = null,
+    val costPerShare: Double? = null,
+)

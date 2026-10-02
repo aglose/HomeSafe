@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
+import com.meticulouscreations.homesafe.finance.domain.Position
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
@@ -96,6 +97,32 @@ object FinanceFormat {
             else -> grouped(abs(value), 2)
         }
     }
+
+    /** A share count as typed: "10", "0.5", "1,250.125" — up to six places, no trailing zeros. */
+    fun shares(value: Double): String {
+        val text = grouped(value, 6)
+        return if ('.' in text) text.trimEnd('0').trimEnd('.') else text
+    }
+
+    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
+    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null): String {
+        val held = shares(position.shares) + " " + when {
+            kind == InstrumentKind.CRYPTO && unit != null -> unit
+            position.shares == 1.0 -> "share"
+            else -> "shares"
+        }
+        return if (price == null) held else "$held · ${money(position.value(price))}"
+    }
+
+    /** A change that can run to thousands of percent over decades: "+12.34%", "+456.7%", "+43,210%". */
+    fun longRunPercent(value: Double): String = signedPercent(
+        value,
+        when {
+            abs(value) >= 1000 -> 0
+            abs(value) >= 100 -> 1
+            else -> 2
+        },
+    )
 
     /** "1.23B" shares or contracts. */
     fun volume(value: Double): String = when {

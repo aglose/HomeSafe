@@ -6,15 +6,24 @@ import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
+import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
+import com.meticulouscreations.homesafe.finance.domain.WatchlistRepository
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
@@ -59,6 +68,13 @@ class FinanceViewModelTest {
 
         override suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory> = Result.success(histories.removeFirst().await())
 
+        val searches = mutableListOf<String>()
+
+        override suspend fun searchSymbols(query: String): Result<List<SymbolMatch>> {
+            searches += query
+            return Result.success(listOf(SymbolMatch(query.uppercase(), "$query Inc.", InstrumentKind.EQUITY, "Equity", "NASDAQ")))
+        }
+
         override suspend fun fredSeries(seriesId: String, startDate: String): Result<Series> = Result.success(Series.Empty)
 
         override suspend fun indicator(indicator: Indicator): Result<IndicatorReading> {
@@ -79,12 +95,29 @@ class FinanceViewModelTest {
         }
     }
 
+    /** The device's own watchlist, in memory. */
+    private class FakeWatchlist : WatchlistRepository {
+        val rows = MutableStateFlow<List<WatchedSymbol>>(emptyList())
+
+        override fun observe(): Flow<List<WatchedSymbol>> = rows
+
+        override suspend fun save(symbol: WatchedSymbol) {
+            rows.update { list -> if (list.any { it.symbol == symbol.symbol }) list.map { if (it.symbol == symbol.symbol) symbol else it } else list + symbol }
+        }
+
+        override suspend fun remove(symbol: String) {
+            rows.update { list -> list.filter { it.symbol != symbol } }
+        }
+    }
+
+    private fun sheetNaming(vararg tickers: String) = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList()).copy(watchlist = tickers.toList())
+
     private fun history(price: Double) = PriceHistory("^GSPC", ChartRange.DAY, Series.of(listOf(1L to price, 2L to price)), null, 0)
 
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.setActive(true, full = false)
         runCurrent()
         assertTrue(repo.quoteCalls >= 1)
@@ -105,7 +138,7 @@ class FinanceViewModelTest {
         val ticking = object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
         }
-        val vm = FinanceViewModel(repo, ticking)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), ticking)
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
@@ -126,7 +159,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val never = CompletableDeferred<Result<PersonalFinance>>()
         repo.slowSheet = never
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -140,7 +173,7 @@ class FinanceViewModelTest {
     fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
         val repo = FakeRepository()
         repo.slowSheet = CompletableDeferred()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.setActive(true)
         runCurrent()
         vm.setActive(false)
@@ -153,7 +186,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
         repo.sheet = { Result.success(read) }
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance)
@@ -174,7 +207,7 @@ class FinanceViewModelTest {
     @Test
     fun goingInactiveStopsThePolling() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -192,7 +225,7 @@ class FinanceViewModelTest {
     @Test
     fun aRefreshEndsRefreshing() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         vm.refresh()
         assertTrue(vm.uiState.value.refreshing)
         runCurrent()
@@ -203,7 +236,7 @@ class FinanceViewModelTest {
     @Test
     fun aSlowOlderChartAnswerDoesNotReplaceANewerOne() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock)
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
         val first = CompletableDeferred<PriceHistory>()
         val older = CompletableDeferred<PriceHistory>()
         val newer = CompletableDeferred<PriceHistory>()
@@ -224,5 +257,97 @@ class FinanceViewModelTest {
         runCurrent()
 
         assertEquals(300.0, vm.uiState.value.chart("^GSPC", ChartRange.DAY)?.history?.series?.lastValue)
+    }
+
+    @Test
+    fun theWatchlistIsTheSheetsTickersThenTheAppsAndSuggestionsOnlyWhenThereAreNeither() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val watchlist = FakeWatchlist()
+        val vm = FinanceViewModel(repo, watchlist, clock)
+        runCurrent()
+        assertEquals(MarketCatalog.defaultWatchlist, vm.uiState.value.watchlist)
+        assertTrue(vm.uiState.value.watchEntries.all { it.isSuggestion })
+
+        vm.addSymbol(SymbolMatch("VTI", "Vanguard Total Stock Market", InstrumentKind.EQUITY, "ETF", "NYSEArca"))
+        runCurrent()
+        assertEquals(listOf("VTI"), vm.uiState.value.watchlist, "the suggestions give way to the first ticker added")
+
+        repo.sheet = { Result.success(sheetNaming("TSLA", "NVDA")) }
+        vm.retrySheet()
+        runCurrent()
+        val entries = vm.uiState.value.watchEntries
+        assertEquals(listOf("TSLA", "NVDA", "VTI"), entries.map { it.symbol })
+        assertEquals(listOf(true, true, false), entries.map { it.inSheet })
+        assertEquals(listOf(false, false, true), entries.map { it.addedInApp })
+    }
+
+    @Test
+    fun addingASheetTickerOrOneAlreadyAddedChangesNothing() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.sheet = { Result.success(sheetNaming("TSLA")) }
+        val watchlist = FakeWatchlist()
+        val vm = FinanceViewModel(repo, watchlist, clock)
+        vm.retrySheet()
+        runCurrent()
+        vm.addSymbol(SymbolMatch("TSLA", "Tesla", InstrumentKind.EQUITY, "Equity", null))
+        vm.addSymbol(SymbolMatch("ETH-USD", "Ethereum", InstrumentKind.CRYPTO, "Cryptocurrency", null))
+        runCurrent()
+        vm.addSymbol(SymbolMatch("ETH-USD", "Ethereum again", InstrumentKind.CRYPTO, "Cryptocurrency", null))
+        runCurrent()
+        assertEquals(listOf("ETH-USD"), watchlist.rows.value.map { it.symbol })
+        assertEquals("Ethereum", watchlist.rows.value.single().name)
+    }
+
+    @Test
+    fun aPositionOnASheetTickerGoesWhenClearedButAnAddedTickerStays() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        repo.sheet = { Result.success(sheetNaming("TSLA")) }
+        val watchlist = FakeWatchlist()
+        val vm = FinanceViewModel(repo, watchlist, clock)
+        vm.retrySheet()
+        runCurrent()
+
+        vm.setPosition("TSLA", Position(10.0, 200.0))
+        runCurrent()
+        assertEquals(Position(10.0, 200.0), vm.uiState.value.watchEntries.single { it.symbol == "TSLA" }.position)
+        assertEquals(listOf("TSLA"), vm.uiState.value.watchlist, "held on the sheet's row, not listed twice")
+
+        vm.setPosition("TSLA", null)
+        runCurrent()
+        assertTrue(watchlist.rows.value.isEmpty(), "nothing kept for a sheet ticker once its position is cleared")
+
+        vm.addSymbol(SymbolMatch("VTI", "Vanguard", InstrumentKind.EQUITY, "ETF", null))
+        runCurrent()
+        vm.setPosition("VTI", Position(3.0))
+        runCurrent()
+        vm.setPosition("VTI", null)
+        runCurrent()
+        assertEquals(listOf("VTI"), watchlist.rows.value.map { it.symbol }, "an added ticker stays followed")
+        assertNull(watchlist.rows.value.single().position)
+
+        vm.removeSymbol("VTI")
+        runCurrent()
+        assertTrue(watchlist.rows.value.isEmpty())
+    }
+
+    @Test
+    fun searchWaitsForTypingToPauseAndOnlyTheLastQueryGoes() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
+        vm.searchSymbols("v")
+        advanceTimeBy(100)
+        vm.searchSymbols("vt")
+        advanceTimeBy(100)
+        vm.searchSymbols("vti")
+        assertTrue(vm.uiState.value.search.loading)
+        advanceTimeBy(301)
+        runCurrent()
+        assertEquals(listOf("vti"), repo.searches)
+        assertEquals(listOf("VTI"), vm.uiState.value.search.results.map { it.symbol })
+        assertFalse(vm.uiState.value.search.loading)
+
+        vm.searchSymbols("  ")
+        assertTrue(vm.uiState.value.search.results.isEmpty(), "a cleared box clears the results")
+        assertFalse(vm.uiState.value.search.loading)
     }
 }

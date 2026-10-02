@@ -7,12 +7,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.finance.ChartLoad
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.SheetIssue
 import com.meticulouscreations.homesafe.finance.domain.Account
@@ -20,6 +22,7 @@ import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
 import com.meticulouscreations.homesafe.finance.domain.ChartDomain
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
+import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
@@ -31,11 +34,14 @@ import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.ParseNote
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.finance.domain.Position
+import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.SectionHealth
 import com.meticulouscreations.homesafe.finance.domain.SectionStatus
@@ -49,6 +55,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
+import com.meticulouscreations.homesafe.finance.domain.WatchedSymbol
 import com.meticulouscreations.homesafe.finance.domain.YieldCurve
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -111,6 +118,7 @@ internal object FinanceFixtures {
         quote("AMZN", 241.75, -2.6, 12),
         quote("GOOGL", 219.30, 1.4, 13),
         quote("ETH-USD", 4_105.20, -38.5, 14),
+        quote("VTI", 318.62, 1.9, 15),
     ).associateBy { it.symbol }
 
     private val endValues = mapOf(
@@ -265,6 +273,17 @@ internal object FinanceFixtures {
         finance = finance,
         financeLoading = false,
         quotesUpdatedEpochSeconds = NOW,
+        charts = listOf(MarketCatalog.SP500.symbol to 7_651.54, "MSFT" to 512.40).associate { (symbol, end) ->
+            val weeks = 52 * 30
+            val history = walk(weeks, end, end * 0.02, 7 * DAY, seed = symbol.length, drift = end / weeks / 2)
+            FinanceUiState.chartKey(symbol, ChartRange.MAX) to
+                ChartLoad(PriceHistory(symbol, ChartRange.MAX, history, null, -14_400, history.max() * 1.01, history.times[history.values.indexOfFirst { it == history.max() }]), loading = false)
+        },
+        // One ticker added in the app and a position held in one of the sheet's.
+        watched = listOf(
+            WatchedSymbol("VTI", "Vanguard Total Stock Market Index Fund ETF", InstrumentKind.EQUITY, NOW - 40 * DAY, Position(12.0, 241.30)),
+            WatchedSymbol("MSFT", "Microsoft Corporation", InstrumentKind.EQUITY, NOW - 90 * DAY, Position(8.0, 402.15)),
+        ),
     )
 }
 
@@ -319,10 +338,27 @@ private fun FinanceSheetSyncLinesPreview() {
     }
 }
 
+@Preview(widthDp = 412, heightDp = 900)
+@Composable
+private fun FinanceWatchlistPreview() {
+    FinanceStage {
+        LazyColumn(contentPadding = previewPadding) {
+            item { SectionHeader("Watchlist", subtitle = watchlistSubtitle(FinanceFixtures.state), action = { AddSymbolButton({}) }) }
+            watchlistItems(FinanceFixtures.state, "w") {}
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 2200)
+@Composable
+private fun FinanceQuoteWithPositionPreview() {
+    FinanceStage { QuoteDetailScreen("MSFT", FinanceFixtures.state, previewPadding, { _, _ -> }, {}, {}, { _, _ -> }) }
+}
+
 @Preview(widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceMarketsPreview() {
-    FinanceStage { MarketsScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, { _, _ -> }, {}) }
+    FinanceStage { MarketsScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, { _, _ -> }, {}, {}) }
 }
 
 @Preview(widthDp = 412, heightDp = 1500)

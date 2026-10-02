@@ -1,0 +1,497 @@
+package com.meticulouscreations.homesafe.finance.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.finance.FinanceUiState
+import com.meticulouscreations.homesafe.finance.SymbolSearch
+import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.Holdings
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
+import com.meticulouscreations.homesafe.finance.domain.LongRunStats
+import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.Position
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import kotlin.time.Clock
+
+/** "+ Add", the watchlist header's button. */
+@Composable
+internal fun AddSymbolButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(colors.gain.copy(alpha = 0.14f))
+            .clickable(onClickLabel = "Add a stock, fund or coin", onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .testTag("finance_add_symbol"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(4.dp))
+        Text("Add", style = FinanceTheme.type.label, color = colors.gain)
+    }
+}
+
+/** What the watchlist's heading says about where its rows come from. */
+internal fun watchlistSubtitle(state: FinanceUiState): String {
+    val entries = state.watchEntries
+    val fromSheet = entries.any { it.inSheet }
+    val fromApp = entries.any { it.addedInApp }
+    return when {
+        fromSheet && fromApp -> "Tickers marked “In sheet” come from your budget sheet; the rest you added here"
+        fromSheet -> "From your budget sheet. Add more here — they stay on this device"
+        fromApp -> "Added here, on this device"
+        else -> "A few to start with. Add your own stocks, funds or coins"
+    }
+}
+
+/**
+ * The watchlist's rows, with what's held summed up above them when anything is: the same on the
+ * Markets and Wallet tabs.
+ */
+internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: String, onOpenQuote: (String) -> Unit) {
+    val holdings = state.holdings
+    if (holdings != null) item(key = "$keyPrefix-holdings") { HoldingsCard(holdings) }
+    items(state.watchEntries, key = { "$keyPrefix-${it.symbol}" }) { entry ->
+        QuoteRow(
+            entry.symbol,
+            state.quotes[entry.symbol],
+            onClick = { onOpenQuote(entry.symbol) },
+            inSheet = entry.inSheet,
+            position = entry.position,
+            fallbackName = state.watchedSymbol(entry.symbol)?.name,
+        )
+    }
+}
+
+/** What the positions entered are worth together, today's move, and the gain since buying. */
+@Composable
+internal fun HoldingsCard(holdings: Holdings, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    FinanceCard(modifier.padding(bottom = 6.dp)) {
+        Text("YOUR HOLDINGS", style = FinanceTheme.type.micro, color = colors.textSecondary)
+        Spacer(Modifier.height(4.dp))
+        Text(FinanceFormat.money(holdings.value), style = FinanceTheme.type.title, color = colors.textPrimary)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            "${FinanceFormat.signedMoney(holdings.dayChange)}${holdings.dayChangePercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} today",
+            style = FinanceTheme.type.label,
+            color = colors.direction(holdings.dayChange),
+        )
+        val gain = holdings.totalGain
+        if (gain != null) {
+            Text(
+                "${FinanceFormat.signedMoney(gain)}${holdings.totalGainPercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} since you bought",
+                style = FinanceTheme.type.label,
+                color = colors.direction(gain),
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "${holdings.count} ${if (holdings.count == 1) "position" else "positions"} entered in the app. Not counted in net worth — the sheet's account balances already are.",
+            style = FinanceTheme.type.micro,
+            color = colors.textTertiary,
+        )
+    }
+}
+
+/**
+ * Search Yahoo for a stock, ETF, fund, coin or index and add it to the watchlist. The sheet's own
+ * tickers say so instead of offering to add them again.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AddSymbolSheet(
+    search: SymbolSearch,
+    sheetSymbols: List<String>,
+    addedSymbols: Set<String>,
+    onQuery: (String) -> Unit,
+    onAdd: (SymbolMatch) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val focus = remember { FocusRequester() }
+    LaunchedEffect(Unit) { focus.requestFocus() }
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = colors.surfaceRaised,
+        contentColor = colors.textPrimary,
+        scrimColor = Color.Black.copy(alpha = 0.6f),
+    ) {
+        Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding()) {
+            Column(Modifier.padding(horizontal = 24.dp)) {
+                Text("Add to watchlist", style = type.title, color = colors.textPrimary)
+                Spacer(Modifier.height(2.dp))
+                Text("Stocks, ETFs, mutual funds, crypto and indices — by ticker or name.", style = type.label, color = colors.textSecondary)
+                Spacer(Modifier.height(14.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(colors.surface)
+                        .border(1.dp, colors.hairline, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Filled.Search, contentDescription = null, tint = colors.textSecondary, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Box(Modifier.weight(1f)) {
+                        if (search.query.isEmpty()) Text("e.g. VTI, Apple, Vanguard, ETH", style = type.body, color = colors.textTertiary)
+                        BasicTextField(
+                            value = search.query,
+                            onValueChange = onQuery,
+                            singleLine = true,
+                            textStyle = type.body.copy(color = colors.textPrimary),
+                            cursorBrush = SolidColor(colors.accent),
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Search),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focus)
+                                .testTag("finance_symbol_search")
+                                .semantics { contentDescription = "Search tickers" },
+                        )
+                    }
+                    if (search.query.isNotEmpty()) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Clear",
+                            tint = colors.textSecondary,
+                            modifier = Modifier.size(20.dp).clip(CircleShape).clickable { onQuery("") },
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            // A fixed height, so the sheet doesn't resize under the finger as results come and go.
+            Box(Modifier.fillMaxWidth().height(380.dp)) {
+                when {
+                    search.results.isNotEmpty() -> LazyColumn(Modifier.fillMaxWidth()) {
+                        items(search.results, key = { it.symbol }) { match ->
+                            val status = when (match.symbol) {
+                                in sheetSymbols -> MatchStatus.IN_SHEET
+                                in addedSymbols -> MatchStatus.ADDED
+                                else -> MatchStatus.NEW
+                            }
+                            SymbolMatchRow(match, status) { onAdd(match) }
+                        }
+                    }
+
+                    search.loading -> Text("Searching…", style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
+
+                    search.error != null -> Text("Couldn't search: ${search.error}", style = type.label, color = colors.loss, modifier = Modifier.padding(24.dp))
+
+                    search.query.isNotBlank() -> Text("Nothing matches “${search.query.trim()}”.", style = type.label, color = colors.textSecondary, modifier = Modifier.padding(24.dp))
+                }
+            }
+        }
+    }
+}
+
+private enum class MatchStatus { NEW, ADDED, IN_SHEET }
+
+@Composable
+private fun SymbolMatchRow(match: SymbolMatch, status: MatchStatus, onAdd: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(enabled = status == MatchStatus.NEW, onClickLabel = "Add ${match.symbol}", onClick = onAdd)
+            .padding(horizontal = 24.dp, vertical = 10.dp)
+            .heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(match.symbol, style = type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            Text(match.name, style = type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(listOfNotNull(match.typeLabel.takeIf { it.isNotBlank() }, match.exchange).joinToString(" · "), style = type.micro, color = colors.textTertiary, maxLines = 1)
+        }
+        Spacer(Modifier.width(12.dp))
+        when (status) {
+            MatchStatus.IN_SHEET -> SheetBadge()
+
+            MatchStatus.ADDED -> Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Added", style = type.label, color = colors.gain)
+            }
+
+            MatchStatus.NEW -> Box(
+                Modifier.size(32.dp).clip(CircleShape).background(colors.gain.copy(alpha = 0.16f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add ${match.symbol}", tint = colors.gain, modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+/** Whether a kind can be owned in shares or coins (an index or a yield can't). */
+internal fun InstrumentKind.isHoldable(): Boolean = this == InstrumentKind.EQUITY || this == InstrumentKind.CRYPTO
+
+/**
+ * Where a quote's page stands with the watchlist: in the budget sheet, added in the app (with a
+ * way to take it off), or neither (with a way to add it).
+ */
+@Composable
+internal fun WatchStatusRow(symbol: String, state: FinanceUiState, onFollow: () -> Unit, onUnfollow: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    val inSheet = symbol in state.sheetSymbols
+    val added = state.watchedSymbol(symbol) != null && !inSheet
+    Row(modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        when {
+            inSheet -> {
+                SheetBadge()
+                Spacer(Modifier.width(8.dp))
+                Text("On your watchlist from the budget sheet", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+            }
+
+            added -> {
+                Icon(Icons.Filled.Check, contentDescription = null, tint = colors.gain, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("On your watchlist", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                TextButton(onClick = onUnfollow) { Text("Remove", style = type.label, color = colors.loss) }
+            }
+
+            else -> {
+                Text("Not on your watchlist", style = type.label, color = colors.textSecondary, modifier = Modifier.weight(1f))
+                AddSymbolButton(onFollow)
+            }
+        }
+    }
+}
+
+/**
+ * The quote page's "Your position": shares held, what they're worth, and the gain today and since
+ * buying — or an invitation to enter them.
+ */
+@Composable
+internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPosition: (Position?) -> Unit) {
+    val colors = FinanceTheme.colors
+    val quote = state.quotes[symbol]
+    val meta = MarketCatalog.lookup(symbol, quote)
+    val position = state.watchedSymbol(symbol)?.position
+    var editing by rememberSaveable(symbol) { mutableStateOf(false) }
+    Column {
+        SectionHeader(
+            "Your position",
+            subtitle = if (position == null) null else "Entered on this device",
+            action = if (position != null) {
+                { TextButton(onClick = { editing = true }) { Text("Edit", style = FinanceTheme.type.label, color = colors.gain) } }
+            } else {
+                null
+            },
+        )
+        if (position == null) {
+            FinanceCard(onClick = { editing = true }) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Own some ${meta.shortName}?", style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+                        Text("Enter your shares to see what they're worth and how they're doing.", style = FinanceTheme.type.label, color = colors.textSecondary)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Icon(Icons.Filled.Add, contentDescription = "Add a position", tint = colors.gain)
+                }
+            }
+        } else {
+            val price = quote?.price
+            val unit = when {
+                meta.kind == InstrumentKind.CRYPTO -> meta.shortName
+                position.shares == 1.0 -> "share"
+                else -> "shares"
+            }
+            StatGrid(
+                listOf(
+                    (if (meta.kind == InstrumentKind.CRYPTO) "Held" else "Shares") to "${FinanceFormat.shares(position.shares)} $unit",
+                    "Market value" to (price?.let { FinanceFormat.money(position.value(it)) } ?: "—"),
+                    "Average cost" to (position.costPerShare?.let { FinanceFormat.price(it, meta.kind) } ?: "Not entered"),
+                    "Cost basis" to (position.costPerShare?.let { FinanceFormat.money(it * position.shares) } ?: "—"),
+                    "Today" to (quote?.let { FinanceFormat.signedMoney(position.dayChange(it)) } ?: "—"),
+                    "Today %" to (quote?.let { FinanceFormat.signedPercent(it.changePercent) } ?: "—"),
+                    "Total return" to (price?.let { position.totalGain(it) }?.let { FinanceFormat.signedMoney(it) } ?: "—"),
+                    "Return %" to (price?.let { position.totalGainPercent(it) }?.let { FinanceFormat.signedPercent(it) } ?: "—"),
+                ),
+            )
+        }
+    }
+    if (editing) {
+        PositionEditor(
+            symbol = meta.shortName,
+            unitLabel = if (meta.kind == InstrumentKind.CRYPTO) "Amount held (${meta.shortName})" else "Shares",
+            initial = position,
+            onSave = {
+                onSetPosition(it)
+                editing = false
+            },
+            onDismiss = { editing = false },
+        )
+    }
+}
+
+/** Shares (or coins) and the average price paid for them; clearing the shares removes the position. */
+@Composable
+private fun PositionEditor(symbol: String, unitLabel: String, initial: Position?, onSave: (Position?) -> Unit, onDismiss: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    var shares by rememberSaveable { mutableStateOf(initial?.shares?.let(FinanceFormat::shares)?.replace(",", "").orEmpty()) }
+    var cost by rememberSaveable { mutableStateOf(initial?.costPerShare?.let { FinanceFormat.grouped(it, 2).replace(",", "") }.orEmpty()) }
+    val sharesValue = parseAmount(shares)
+    val costValue = parseAmount(cost)
+    val sharesOk = shares.isBlank() || (sharesValue != null && sharesValue > 0)
+    val costOk = cost.isBlank() || (costValue != null && costValue >= 0)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surfaceRaised,
+        title = { Text("Your $symbol", style = type.title, color = colors.textPrimary) },
+        text = {
+            Column {
+                NumberField(unitLabel, shares, { shares = it }, error = !sharesOk, testTag = "finance_position_shares")
+                Spacer(Modifier.height(12.dp))
+                NumberField("Average cost per ${if (unitLabel == "Shares") "share" else "coin"} (optional)", cost, { cost = it }, error = !costOk, prefix = "$", testTag = "finance_position_cost")
+                Spacer(Modifier.height(10.dp))
+                Text("Kept on this device only. Leave shares empty to remove the position.", style = type.micro, color = colors.textTertiary)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = sharesOk && costOk,
+                onClick = { onSave(sharesValue?.let { Position(it, costValue?.takeIf { cost.isNotBlank() }) }) },
+            ) { Text("Save", style = type.bodyStrong, color = if (sharesOk && costOk) colors.gain else colors.textTertiary) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel", style = type.bodyStrong, color = colors.textSecondary) } },
+    )
+}
+
+@Composable
+private fun NumberField(label: String, value: String, onChange: (String) -> Unit, error: Boolean, testTag: String, prefix: String? = null) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    Column {
+        Text(label, style = type.label, color = if (error) colors.loss else colors.textSecondary)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(colors.surface)
+                .border(1.dp, if (error) colors.loss else colors.hairline, RoundedCornerShape(10.dp))
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (prefix != null) Text(prefix, style = type.body, color = colors.textSecondary)
+            BasicTextField(
+                value = value,
+                onValueChange = { v -> onChange(v.filter { it.isDigit() || it == '.' || it == ',' }) },
+                singleLine = true,
+                textStyle = type.body.copy(color = colors.textPrimary),
+                cursorBrush = SolidColor(colors.accent),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth().testTag(testTag).semantics { contentDescription = label },
+            )
+        }
+    }
+}
+
+/** "1,250.5" → 1250.5; null when it isn't a number. */
+internal fun parseAmount(text: String): Double? = text.replace(",", "").replace("$", "").trim().takeIf { it.isNotEmpty() }?.toDoubleOrNull()
+
+/**
+ * The long view: the record high and how far below it the price is, what it's done over 1, 5 and
+ * 10 years, and since its first price on Yahoo. Laid out with dashes while the whole history
+ * loads, so switching between indices never changes the page's height.
+ */
+@Composable
+internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHistory: (String, ChartRange) -> Unit) {
+    val requestHistory by rememberUpdatedState(onRequestHistory)
+    LaunchedEffect(symbol) { requestHistory(symbol, ChartRange.MAX) }
+    val quote = state.quotes[symbol]
+    val meta = MarketCatalog.lookup(symbol, quote)
+    val load = state.chart(symbol, ChartRange.MAX)
+    val history = load?.history
+    val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, Clock.System.now().epochSeconds) } }
+    val gmt = history?.gmtOffsetSeconds ?: 0
+    val dash = "—"
+    val since = stats?.let { "Since ${FinanceFormat.date(it.firstEpochSeconds + 12 * 3600, gmt).takeLast(4)}" } ?: "Since start"
+    Column {
+        SectionHeader("All time", trailing = stats?.let { "Data from ${FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt)}" })
+        StatGrid(
+            listOf(
+                "All-time high" to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind) } ?: dash),
+                "Set on" to (stats?.allTimeHighEpochSeconds?.let { FinanceFormat.date(it + 12 * 3600, gmt) } ?: dash),
+                "From the high" to (stats?.let { if (it.fromHighPercent > -0.005) "At a record" else FinanceFormat.signedPercent(it.fromHighPercent) } ?: dash),
+                "Per year" to (stats?.perYearPercent?.let { FinanceFormat.signedPercent(it) } ?: dash),
+                "1 year" to (stats?.oneYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                "5 years" to (stats?.fiveYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                "10 years" to (stats?.tenYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
+                since to (stats?.let { FinanceFormat.longRunPercent(it.sinceStartPercent) } ?: dash),
+            ),
+        )
+        FinePrint(
+            if (load?.error != null && history == null) {
+                "Couldn't load the full history: ${load.error}"
+            } else {
+                "Price changes only — dividends aren't included. “Per year” is the steady yearly rate that would " +
+                    "compound to the change since the start. The all-time high is the highest price ever traded, not just closed at."
+            },
+        )
+    }
+}
