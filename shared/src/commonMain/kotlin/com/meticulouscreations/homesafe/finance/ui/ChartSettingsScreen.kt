@@ -26,6 +26,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -161,7 +163,8 @@ private fun ShaderTile(shader: ChartShader, style: ChartStyle, selected: Boolean
             .border(if (selected) 2.dp else 1.dp, if (selected) colors.gain else colors.hairline, shape)
             .testTag("chart_shader_${shader.name.lowercase()}"),
     ) {
-        Column {
+        // Hidden from screen readers: the overlay below is the control, and says the name itself.
+        Column(Modifier.clearAndSetSemantics {}) {
             // The tile's chart in this look (and the line as chosen), quiet: no buzz from here.
             CompositionLocalProvider(LocalChartStyle provides style.copy(shader = shader, haptics = ChartHaptics.OFF)) {
                 LineChart(
@@ -180,7 +183,10 @@ private fun ShaderTile(shader: ChartShader, style: ChartStyle, selected: Boolean
         Box(
             Modifier
                 .matchParentSize()
-                .semantics { this.selected = selected }
+                .semantics {
+                    contentDescription = "${shader.label} chart look"
+                    this.selected = selected
+                }
                 .clickable(role = Role.RadioButton, onClickLabel = "Use ${shader.label}", onClick = onClick),
         )
     }

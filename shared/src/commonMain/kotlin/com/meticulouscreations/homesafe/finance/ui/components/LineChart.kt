@@ -723,5 +723,11 @@ internal fun passedLandmark(s: Series, from: Int, to: Int, extremes: Extremes?, 
     val range = minOf(from, to)..maxOf(from, to)
     fun reached(i: Int) = i != from && i in range
     if (extremes != null && (reached(extremes.high) || reached(extremes.low))) return true
-    return baseline != null && (s.values[from] >= baseline) != (s.values[to] >= baseline)
+    if (baseline == null) return false
+    // Every step the finger skipped over, so a fast scrub that dips under the baseline and back
+    // between two frames still lands its thud.
+    for (i in range.first until range.last) {
+        if ((s.values[i] >= baseline) != (s.values[i + 1] >= baseline)) return true
+    }
+    return false
 }

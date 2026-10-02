@@ -126,4 +126,15 @@ class LineChartGeometryTest {
         assertTrue(passedLandmark(s, 3, 4, extremes, 5.0), "dropping through the baseline")
         assertFalse(passedLandmark(s, 0, 1, extremes, 5.0), "staying above it")
     }
+
+    @Test
+    fun aFastScrubThatDipsUnderTheBaselineAndBackStillCountsAsACrossing() {
+        // Both ends are above 5, but the finger skipped over 4.0 on the way.
+        val s = series(doubleArrayOf(6.0, 7.0, 4.0, 6.5, 8.0, 1.0))
+        val extremes = extremesOf(s)
+
+        assertTrue(passedLandmark(s, 1, 3, extremes, 5.0))
+        assertTrue(passedLandmark(s, 3, 1, extremes, 5.0), "and going back the other way")
+        assertFalse(passedLandmark(s, 0, 1, extremes, 5.0))
+    }
 }

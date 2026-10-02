@@ -298,7 +298,7 @@ data class Bar(val label: String, val value: Double, val color: Color, val secon
 /**
  * Vertical bars that grow up from the baseline one after another when they appear. A bar's
  * [Bar.secondary] is drawn as a wider ghost behind it (income behind take-home). Tapping a bar
- * selects it.
+ * selects it, with the chart settings' haptic tick when that's a change.
  */
 @Composable
 fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = null, onSelect: (Int) -> Unit = {}) {
@@ -311,6 +311,8 @@ fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = nu
     val minValue = bars.minOfOrNull { minOf(it.value, it.secondary ?: 0.0) }?.coerceAtMost(0.0) ?: 0.0
     val labelColor = FinanceTheme.colors.textTertiary
     val type = FinanceTheme.type
+    val haptics = LocalHapticFeedback.current
+    val feel = FinanceTheme.chart.haptics
     Column(modifier) {
         Canvas(Modifier.fillMaxWidth().weight(1f)) {
             val n = bars.size
@@ -352,7 +354,10 @@ fun BarChart(bars: List<Bar>, modifier: Modifier = Modifier, selected: Int? = nu
                     maxLines = 1,
                     modifier = Modifier
                         .weight(1f)
-                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onSelect(i) },
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                            if (i != selected) haptics.chartTick(feel)
+                            onSelect(i)
+                        },
                 )
             }
         }
