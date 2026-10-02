@@ -54,7 +54,7 @@
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsScreen.kt">
         <error line="196" column="5" source="compose:modifier-missing-check" />
-        <error line="753" column="14" source="compose:param-order-check" />
+        <error line="754" column="14" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
         <error line="96" column="5" source="compose:modifier-missing-check" />

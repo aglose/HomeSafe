@@ -106,6 +106,11 @@ import homesafe.shared.generated.resources.finance_econ_inflation_chart
 import homesafe.shared.generated.resources.finance_econ_inflation_how_to_read
 import homesafe.shared.generated.resources.finance_econ_inflation_subtitle
 import homesafe.shared.generated.resources.finance_econ_inflation_title
+import homesafe.shared.generated.resources.finance_econ_jobs_how_to_read
+import homesafe.shared.generated.resources.finance_econ_jobs_subtitle
+import homesafe.shared.generated.resources.finance_econ_jobs_title
+import homesafe.shared.generated.resources.finance_econ_jobs_u3
+import homesafe.shared.generated.resources.finance_econ_jobs_u6
 import homesafe.shared.generated.resources.finance_econ_rates_subtitle
 import homesafe.shared.generated.resources.finance_econ_rates_title
 import homesafe.shared.generated.resources.finance_econ_real_how_to_read
@@ -198,7 +203,7 @@ internal fun EconomyScreen(
     LazyColumn(state = listState, contentPadding = contentPadding) {
         item(key = "tone") {
             // The same choice as in Settings, where it's explained; here so the other voice is a tap away.
-            ChipRow(EconomyTone.entries, state.tone, { it.label }, colors.accent, onToneChange, Modifier.padding(top = 4.dp, bottom = 8.dp))
+            ChipRow(EconomyTone.entries, state.tone, { stringResource(it.label) }, colors.accent, onToneChange, Modifier.padding(top = 4.dp, bottom = 8.dp))
         }
         item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing) } }
         item(key = "connect") { CascadeIn(1) { ConnectionsEntryCard(onOpenConnections, Modifier.padding(top = 12.dp)) } }
@@ -207,7 +212,7 @@ internal fun EconomyScreen(
         }
         item(key = "inflation") { InflationBlock(state) }
         item(key = "jobs-h") {
-            SectionHeader("Jobs beneath the headline", subtitle = "The headline rate against the broadest one, which counts the underemployed", info = "u6")
+            SectionHeader(stringResource(Res.string.finance_econ_jobs_title), subtitle = stringResource(Res.string.finance_econ_jobs_subtitle), info = "u6")
         }
         item(key = "jobs") {
             CascadeIn(0) {
@@ -215,10 +220,10 @@ internal fun EconomyScreen(
                     val u3 = state.readings[IndicatorCatalog.unemployment.id]
                     val u6 = state.readings[IndicatorCatalog.u6.id]
                     OverlayBlock(
-                        lines = listOf(Triple("Unemployment (U-3)", u3, colors.cool), Triple("Underemployment (U-6)", u6, colors.loss)),
+                        lines = listOf(Triple(stringResource(Res.string.finance_econ_jobs_u3), u3, colors.cool), Triple(stringResource(Res.string.finance_econ_jobs_u6), u6, colors.loss)),
                         rules = emptyList(),
                         defaultRange = EconRange.Y10,
-                        howToRead = "The lower line is the rate the news quotes. The upper one adds people working part-time who want full-time hours and people who want a job but stopped looking. When the gap between them widens, the job market is weaker than the headline says. Grey bands are past recessions.",
+                        howToRead = stringResource(Res.string.finance_econ_jobs_how_to_read),
                     )
                     IndicatorCatalog.labor.forEach { ind ->
                         IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) }

@@ -54,6 +54,7 @@ import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.layman_standing_title
 import homesafe.shared.generated.resources.layman_stress_calm
 import homesafe.shared.generated.resources.layman_stress_calm_detail
 import homesafe.shared.generated.resources.layman_stress_elevated
@@ -65,7 +66,6 @@ import homesafe.shared.generated.resources.layman_stress_severe_detail
 import homesafe.shared.generated.resources.layman_tip_dismiss
 import homesafe.shared.generated.resources.layman_tip_dismiss_label
 import homesafe.shared.generated.resources.layman_tip_text
-import homesafe.shared.generated.resources.layman_standing_title
 import homesafe.shared.generated.resources.layman_weather_title
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
@@ -160,7 +160,7 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
             }
             Column(Modifier.weight(1f)) {
                 Text(stringResource(if (straight) Res.string.layman_standing_title else Res.string.layman_weather_title).uppercase(), style = type.micro, color = colors.textSecondary)
-                Text(stringResource(briefing.headline), style = if (straight) type.section else type.title, color = colors.textPrimary)
+                Text(briefing.headline.resolve(), style = if (straight) type.section else type.title, color = colors.textPrimary)
             }
             InfoButton("stress")
         }

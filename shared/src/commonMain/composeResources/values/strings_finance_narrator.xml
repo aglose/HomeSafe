@@ -47,57 +47,65 @@
 
     <!-- Two whole sentences of the narrator one after the other, e.g. a verdict and its trend -->
     <string name="narrator_two_sentences">%1$s %2$s</string>
+    <!-- A change in percentage points written out for a sentence. %1$s is signed, e.g. "+0.40" -->
+    <string name="narrator_change_points">%1$s points</string>
 
-    <!-- Which way a reading has moved over six months -->
-    <string name="narrator_trend_steady">It's been about steady for six months.</string>
-    <string name="narrator_trend_improving">It's been improving over the past six months.</string>
-    <string name="narrator_trend_climbing_worse">It's been climbing over the past six months — the wrong direction.</string>
+    <!-- Which way a reading has moved over six months, on the bright side -->
+    <string name="narrator_trend_steady">It's held about steady for six months.</string>
+    <string name="narrator_trend_improving">It's been improving over the past six months — a good sign.</string>
+    <string name="narrator_trend_climbing_worse">It's been climbing over the past six months, so it's one to keep an eye on.</string>
     <string name="narrator_trend_rising">It's been rising over the past six months.</string>
     <string name="narrator_trend_easing_better">It's been easing over the past six months — a good sign.</string>
-    <string name="narrator_trend_sliding_worse">It's been sliding over the past six months — the wrong direction.</string>
+    <string name="narrator_trend_sliding_worse">It's been slipping over the past six months, so it's one to keep an eye on.</string>
     <string name="narrator_trend_falling">It's been falling over the past six months.</string>
+    <!-- Which way a reading has moved over six months, in straight talk. %1$s is the change, e.g. "+0.40 points" or "−25K" -->
+    <string name="narrator_trend_straight_unchanged">Unchanged over six months.</string>
+    <string name="narrator_trend_straight_little_changed">Little changed over six months (%1$s).</string>
+    <string name="narrator_trend_straight_moved">%1$s over six months.</string>
+    <string name="narrator_trend_straight_toward">%1$s over six months, toward the danger line.</string>
+    <string name="narrator_trend_straight_away">%1$s over six months, away from the danger line.</string>
+    <string name="narrator_trend_straight_further_in">%1$s over six months, further into the danger zone.</string>
+    <string name="narrator_trend_straight_back_toward">%1$s over six months, back toward the danger line.</string>
 
-    <!-- One-line verdicts on each indicator. %1$s etc. are formatted numbers. -->
+    <!-- What each reading is, in plain words and with no judgement. %1$s etc. are formatted numbers. -->
     <string name="narrator_verdict_waiting">Waiting for the latest reading.</string>
-    <string name="narrator_verdict_cpi_falling">Prices are %1$s lower than a year ago. Prices are actually falling.</string>
-    <string name="narrator_verdict_cpi_on_goal">Prices are %1$s higher than a year ago. That's right around the Fed's 2% goal.</string>
-    <string name="narrator_verdict_cpi_above_goal">Prices are %1$s higher than a year ago. That's a bit faster than the Fed's 2% goal.</string>
-    <string name="narrator_verdict_cpi_well_above_goal">Prices are %1$s higher than a year ago. That's well above the Fed's 2% goal.</string>
-    <string name="narrator_verdict_cpi_far_above_goal">Prices are %1$s higher than a year ago. That's far above the Fed's 2% goal — the kind that squeezes budgets.</string>
+    <string name="narrator_fact_cpi_higher">Prices are %1$s higher than a year ago.</string>
+    <string name="narrator_fact_cpi_lower">Prices are %1$s lower than a year ago.</string>
+    <string name="narrator_fact_corecpi_higher">Leaving out food and gas, prices are %1$s higher than a year ago.</string>
+    <string name="narrator_fact_corecpi_lower">Leaving out food and gas, prices are %1$s lower than a year ago.</string>
     <string name="narrator_verdict_corepce_rising">The Fed's preferred measure says prices are rising %1$s a year, against its 2% target.</string>
     <string name="narrator_verdict_corepce_falling">The Fed's preferred measure says prices are falling %1$s a year, below its 2% target.</string>
-    <string name="narrator_verdict_unrate_solid">About %1$s out of every 100 people who want a job can't find one. That's a solid job market.</string>
-    <string name="narrator_verdict_unrate_softening">About %1$s out of every 100 people who want a job can't find one. That's softening.</string>
-    <string name="narrator_verdict_unrate_weak">About %1$s out of every 100 people who want a job can't find one. That's a weak job market.</string>
-    <string name="narrator_verdict_sahm_ringing">The jobs alarm is ringing: unemployment is %1$s points above its low of the past year, past the 0.5 line that has marked every recession since 1970.</string>
-    <string name="narrator_verdict_sahm_quiet">Unemployment is %1$s points above its low of the past year — the alarm rings at 0.5.</string>
+    <!-- %1$s a number with one decimal, e.g. "4.1" -->
+    <string name="narrator_fact_unrate">About %1$s out of every 100 people who want a job can't find one.</string>
+    <string name="narrator_fact_sahm">Unemployment's three-month average is %1$s points above its low of the past year.</string>
     <!-- %1$s is a number of people, e.g. "231,000" -->
-    <string name="narrator_verdict_icsa_low">About %1$s people filed for unemployment for the first time last week. That's a low, healthy level of layoffs.</string>
-    <string name="narrator_verdict_icsa_rising">About %1$s people filed for unemployment for the first time last week. Layoffs are picking up.</string>
-    <string name="narrator_verdict_icsa_high">About %1$s people filed for unemployment for the first time last week. That's a high level of layoffs.</string>
-    <string name="narrator_verdict_gdp_healthy">The economy grew at a %1$s yearly pace last quarter. That's healthy.</string>
-    <string name="narrator_verdict_gdp_sluggish">The economy grew at a %1$s yearly pace last quarter. That's sluggish.</string>
+    <string name="narrator_fact_icsa">About %1$s people filed for unemployment for the first time last week.</string>
+    <string name="narrator_fact_u6">Counting part-timers who want full-time work and people who've stopped looking, %1$s of the workforce is underemployed.</string>
+    <string name="narrator_fact_slackgap">Underemployment runs %1$s points above the headline unemployment rate.</string>
+    <string name="narrator_fact_primeepop">%1$s out of every 100 people aged 25 to 54 have a job.</string>
+    <string name="narrator_fact_longterm">%1$s of unemployed people have been looking for more than six months.</string>
+    <string name="narrator_fact_insured">%1$s of workers covered by unemployment insurance are still collecting benefits.</string>
+    <string name="narrator_fact_quits">%1$s of workers quit their job last month.</string>
+    <string name="narrator_fact_openings">There are %1$s open jobs for every unemployed person.</string>
+    <string name="narrator_fact_realwages_more">The typical full-time paycheck buys %1$s more than it did a year ago.</string>
+    <string name="narrator_fact_realwages_less">The typical full-time paycheck buys %1$s less than it did a year ago.</string>
+    <string name="narrator_fact_temphelp_more">Temp agencies employ %1$s more people than a year ago.</string>
+    <string name="narrator_fact_temphelp_fewer">Temp agencies employ %1$s fewer people than a year ago.</string>
+    <string name="narrator_fact_civpart">%1$s of adults are working or looking for work.</string>
+    <string name="narrator_fact_gdp_grew">The economy grew at a %1$s yearly pace last quarter.</string>
     <string name="narrator_verdict_gdp_shrank">The economy shrank at a %1$s yearly pace last quarter.</string>
-    <string name="narrator_verdict_umcsent_gloomy">People's mood about money scores %1$s, against a long-run average of about 85. That's very gloomy.</string>
-    <string name="narrator_verdict_umcsent_below">People's mood about money scores %1$s, against a long-run average of about 85. That's below average.</string>
-    <string name="narrator_verdict_umcsent_upbeat">People's mood about money scores %1$s, against a long-run average of about 85. That's upbeat.</string>
-    <string name="narrator_verdict_curve_inverted">Short-term borrowing costs more than long-term (by %1$s points) — the upside-down pattern that has come before every recession since 1970.</string>
-    <string name="narrator_verdict_curve_normal">Long-term borrowing costs %1$s points more than short-term — the normal, healthy shape.</string>
-    <string name="narrator_verdict_hy_relaxed">Risky companies pay %1$s points more than the government to borrow. Lenders are relaxed.</string>
-    <string name="narrator_verdict_hy_nervous">Risky companies pay %1$s points more than the government to borrow. Lenders are getting nervous.</string>
-    <string name="narrator_verdict_hy_scared">Risky companies pay %1$s points more than the government to borrow. Lenders are scared of defaults.</string>
-    <string name="narrator_verdict_stlfsi_calm">The financial system is calmer than usual (%1$s, where 0 is normal).</string>
-    <string name="narrator_verdict_stlfsi_strained">The financial system is under more strain than usual (%1$s, where 0 is normal).</string>
-    <string name="narrator_verdict_vix_calm">Investors expect calm markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
-    <string name="narrator_verdict_vix_choppy">Investors expect choppy markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
-    <string name="narrator_verdict_vix_wild">Investors expect wild markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
-    <string name="narrator_verdict_ccdelinq_keeping_up">%1$s of credit card balances are a month or more overdue. Households are mostly keeping up.</string>
-    <string name="narrator_verdict_ccdelinq_falling_behind">%1$s of credit card balances are a month or more overdue. Households are falling behind.</string>
+    <string name="narrator_fact_umcsent">People's mood about money scores %1$s, against a long-run average of about 85.</string>
+    <string name="narrator_fact_curve_inverted">Short-term borrowing costs %1$s points more than long-term: the curve is inverted.</string>
+    <string name="narrator_fact_curve_normal">Long-term borrowing costs %1$s points more than short-term: the curve is not inverted.</string>
+    <string name="narrator_fact_hy">Risky companies pay %1$s points more than the government to borrow.</string>
+    <string name="narrator_fact_stlfsi">The financial stress index reads %1$s, where 0 is normal.</string>
+    <string name="narrator_fact_vix">The fear gauge is at %1$s; under 20 counts as calm.</string>
+    <string name="narrator_fact_ccdelinq">%1$s of credit card balances are a month or more overdue.</string>
     <!-- %1$s is a whole number of dollars without the $ sign, e.g. "121" -->
     <string name="narrator_verdict_debtgdp">The government owes about $%1$s for every $100 the country produces in a year.</string>
     <string name="narrator_verdict_interest">About %1$s cents of every federal tax dollar now go to interest on the debt.</string>
     <string name="narrator_verdict_m2_growing">The amount of money in the economy is growing %1$s a year.</string>
-    <string name="narrator_verdict_m2_shrinking">The amount of money in the economy is shrinking %1$s a year — rare, and hard on borrowers.</string>
+    <string name="narrator_verdict_m2_shrinking">The amount of money in the economy is shrinking %1$s a year.</string>
     <string name="narrator_verdict_dff">The Fed's interest rate is %1$s — the starting point for credit cards, car loans and savings accounts.</string>
     <!-- %1$s is the mortgage rate, %2$s the monthly payment on a $500,000 loan -->
     <string name="narrator_verdict_mortgage">A typical 30-year mortgage costs %1$s. On a $500,000 loan that's about %2$s a month before taxes and insurance.</string>
@@ -107,6 +115,91 @@
     <string name="narrator_verdict_dgs2">The government pays %1$s to borrow for 2 years — roughly where investors expect the Fed's rate to be.</string>
     <string name="narrator_verdict_dgs30">The government pays %1$s to borrow for 30 years.</string>
     <string name="narrator_verdict_other">The latest reading is %1$s.</string>
+
+    <!-- Straight talk: where a reading sits against its watch and danger lines, e.g. "5.50%" -->
+    <string name="narrator_standing_danger">That's past the danger line of %1$s.</string>
+    <!-- %1$s the watch line, %2$s the danger line -->
+    <string name="narrator_standing_watch">That's past the watch line of %1$s; the danger line is %2$s.</string>
+    <!-- %1$s the watch line -->
+    <string name="narrator_standing_calm">That's inside the calm range; the watch line is %1$s.</string>
+
+    <!-- The bright side: a kind word on a reading, said after what it is -->
+    <string name="narrator_judgement_cpi_falling">Prices are actually falling, which stretches every dollar.</string>
+    <string name="narrator_judgement_cpi_on_goal">That's right around the Fed's 2% goal.</string>
+    <string name="narrator_judgement_cpi_above_goal">That's a bit faster than the Fed's 2% goal, and a long way below 2022's 9%.</string>
+    <string name="narrator_judgement_cpi_well_above_goal">That's well above the Fed's 2% goal, though inflation has come down from higher before.</string>
+    <string name="narrator_judgement_cpi_far_above_goal">That's far above the Fed's 2% goal — the kind that squeezes budgets, and the kind the Fed acts hardest against.</string>
+    <string name="narrator_judgement_unrate_strong">That's a strong job market.</string>
+    <!-- %1$s how many in 100 have work, with one decimal, e.g. "95.0" -->
+    <string name="narrator_judgement_unrate_cooling">The job market is cooling, but %1$s in 100 people who want work have it.</string>
+    <string name="narrator_judgement_unrate_harder">Jobs are harder to find right now; this is when a cash cushion earns its keep.</string>
+    <string name="narrator_judgement_sahm_ringing">The jobs alarm has rung, which has marked the start of recessions — and every one since 1990 has ended within 18 months.</string>
+    <string name="narrator_judgement_sahm_quiet">The jobs alarm, which rings at 0.5, is quiet.</string>
+    <string name="narrator_judgement_icsa_low">That's a low, healthy level of layoffs.</string>
+    <string name="narrator_judgement_icsa_rising">Layoffs have picked up a little from very low levels.</string>
+    <string name="narrator_judgement_icsa_high">That's a high level of layoffs.</string>
+    <string name="narrator_judgement_curve_inverted">This upside-down pattern has come before recessions, but the lead can run to two years, and savers earn more on short-term deposits meanwhile.</string>
+    <string name="narrator_judgement_curve_normal">That's the normal, healthy shape.</string>
+    <string name="narrator_judgement_umcsent_gloomy">That's gloomy, but mood isn't money: sentiment was near 50 in June 2022 with unemployment at 3.6%.</string>
+    <string name="narrator_judgement_umcsent_below">That's below average — feelings often lag the numbers.</string>
+    <string name="narrator_judgement_umcsent_upbeat">That's upbeat.</string>
+    <string name="narrator_judgement_gdp_healthy">That's healthy growth.</string>
+    <string name="narrator_judgement_gdp_slow">That's slow, but still growth.</string>
+    <string name="narrator_judgement_gdp_shrinking">Every US recession since 1990 has ended within 18 months, and output went on to new highs after each.</string>
+    <string name="narrator_judgement_realwages_raise">That's a real raise, if the typical worker got one.</string>
+    <string name="narrator_judgement_realwages_trailing">Paychecks are trailing prices for now; after 2021–22's dip, real pay was growing again within 18 months.</string>
+    <!-- %1$s the share paid on time, e.g. "96.9%" -->
+    <string name="narrator_judgement_ccdelinq">Put the other way, %1$s of card balances are being paid on time.</string>
+    <string name="narrator_judgement_calm">That's comfortably on the calm side.</string>
+    <string name="narrator_judgement_watch">That's worth watching, though it's short of the danger line.</string>
+    <string name="narrator_judgement_danger">That's in the danger zone, which has been where things turn around before.</string>
+
+    <!-- Straight talk: today's reading against its own history -->
+    <string name="narrator_perspective_record">On the record</string>
+    <!-- %1$d a whole percentage, %2$s the month the record starts, e.g. "Jan 1948" -->
+    <string name="narrator_record_worse_than">Worse than %1$d% of readings since %2$s.</string>
+    <string name="narrator_record_better_than">Better than %1$d% of readings since %2$s.</string>
+    <string name="narrator_record_higher_than">Higher than %1$d% of readings since %2$s.</string>
+    <string name="narrator_record_lower_than">Lower than %1$d% of readings since %2$s.</string>
+    <string name="narrator_record_highest_ever">The highest in the record.</string>
+    <string name="narrator_record_lowest_ever">The lowest in the record.</string>
+    <!-- %1$s a month, e.g. "Oct 2021" -->
+    <string name="narrator_record_highest_since">The highest since %1$s.</string>
+    <string name="narrator_record_lowest_since">The lowest since %1$s.</string>
+    <!-- %1$s the reading a year ago, e.g. "3.90%" -->
+    <string name="narrator_record_year_ago">A year ago it was %1$s.</string>
+
+    <!-- The bright side: the upsides a reading brings, or what tends to go right from here -->
+    <string name="narrator_perspective_bright_side">The bright side</string>
+    <string name="narrator_bright_prices_falling">Falling prices stretch every dollar you've saved.</string>
+    <string name="narrator_bright_prices_near_goal">Inflation near the Fed's goal leaves it room to cut rates, which makes borrowing cheaper.</string>
+    <string name="narrator_bright_prices_hot">Inflation has come down fast before: from about 9% in mid-2022 to about 3% a year later. Meanwhile savings accounts and Treasury bills tend to pay more while it runs hot.</string>
+    <string name="narrator_bright_jobs_tight">Most people who want work have it, and a tight job market is when raises and job switches come easiest.</string>
+    <string name="narrator_bright_jobs_cooling">A cooling job market tends to bring the Fed to cut rates, which eases loan and card costs. Jobs have come back after every downturn: unemployment went from 14.8% in April 2020 to 3.6% by May 2022.</string>
+    <string name="narrator_bright_hiring_options">Workers still have options: when people feel free to quit, pay tends to keep rising.</string>
+    <string name="narrator_bright_hiring_slower">Slower hiring takes pressure off prices, and it usually comes before rate cuts that help borrowers. Staying put also builds seniority while the market is choosier.</string>
+    <string name="narrator_bright_realwages_up">Paychecks are outrunning prices, so the typical worker can afford a little more than a year ago.</string>
+    <string name="narrator_bright_realwages_down">The last time paychecks trailed prices, in 2021–22, real pay was growing again within 18 months.</string>
+    <string name="narrator_bright_temphelp_up">Businesses are adding temp staff, often the first step before permanent hiring.</string>
+    <string name="narrator_bright_temphelp_down">Temp jobs fell through 2023–24 with no recession following. On its own it's an early hint, not a verdict.</string>
+    <string name="narrator_bright_civpart">Much of the long slide since 2000 is baby boomers retiring rather than jobs disappearing, which is why the share of 25–54s with a job is the better gauge.</string>
+    <string name="narrator_bright_gdp_growing">Growth means businesses are selling more, which is what pays for hiring and raises.</string>
+    <string name="narrator_bright_gdp_recession">Every US recession since 1990 lasted between 2 and 18 months, and the economy grew past its old peak after each.</string>
+    <string name="narrator_bright_umcsent">Mood isn't money: sentiment was near 50 in June 2022 while unemployment sat at 3.6%. Gloom tends to track prices more than jobs.</string>
+    <string name="narrator_bright_curve_inverted">An inverted curve means short-term savings — high-yield accounts, CDs, Treasury bills — pay more than locking money away for years.</string>
+    <string name="narrator_bright_curve_normal">A normal curve is what markets show when they expect steady growth.</string>
+    <string name="narrator_bright_markets_calm">Calm markets mean businesses can borrow to expand and hire.</string>
+    <string name="narrator_bright_markets_panic">Market panics have tended to be short: 2020's stress faded within months once the Fed stepped in.</string>
+    <!-- %1$s the share paid on time, e.g. "96.9%" -->
+    <string name="narrator_bright_ccdelinq">%1$s of card balances are being paid on time.</string>
+    <string name="narrator_bright_debt">Debt is easier to carry while the economy grows faster than its interest bill, and the US borrows in a currency it issues.</string>
+    <string name="narrator_bright_m2_growing">Money growing at a steady pace keeps lending and spending going.</string>
+    <string name="narrator_bright_m2_shrinking">The 2023 shrink followed record growth in 2020–21; the money supply stayed far above its pre-pandemic level.</string>
+    <string name="narrator_bright_fed_rate">When the Fed's rate is high, savings accounts and CDs pay more; when it's cut, borrowing gets cheaper. Either way someone in the household gains.</string>
+    <string name="narrator_bright_rates_reasonable">Financing is reasonable, which helps buyers and anyone refinancing.</string>
+    <string name="narrator_bright_rates_high">Higher rates have cooled bidding wars, giving buyers more room to negotiate, and today's savers and new bond buyers earn more.</string>
+    <string name="narrator_bright_homeprices_up">Rising prices build equity for homeowners.</string>
+    <string name="narrator_bright_homeprices_down">Falling prices bring homes within reach of more buyers.</string>
 
     <!-- What a reading means for this household -->
     <!-- %1$s monthly spending, %2$s how much more it would have cost a year ago -->
@@ -148,7 +241,7 @@
     <string name="narrator_quote_down_big">%1$s is down %2$s today — a big day. Most days move less than 1%.</string>
     <string name="narrator_quote_down_very_big">%1$s is down %2$s today — a very big day. Most days move less than 1%.</string>
 
-    <!-- The economic weather report -->
+    <!-- The economic report: a weather report on the bright side, the numbers in straight talk -->
     <string name="narrator_weather_sunny">Sunny</string>
     <string name="narrator_weather_partly_cloudy">Partly cloudy</string>
     <string name="narrator_weather_cloudy">Cloudy</string>
@@ -156,63 +249,148 @@
 
     <string name="narrator_topic_prices">Prices</string>
     <string name="narrator_topic_jobs">Jobs</string>
+    <!-- The measures of hidden slack beneath the headline unemployment rate -->
+    <string name="narrator_topic_slack">Beneath the headline</string>
     <string name="narrator_topic_borrowing">Borrowing</string>
     <string name="narrator_topic_markets">Markets</string>
     <string name="narrator_topic_recession">Recession signs</string>
     <string name="narrator_topic_debt">Government debt</string>
 
-    <string name="narrator_briefing_prices_falling">Prices are falling (%1$s lower than a year ago) — rare, and usually a sign of a weak economy.</string>
+    <!-- %1$s the inflation rate -->
+    <string name="narrator_briefing_prices_higher_straight">%1$s higher than a year ago, against the Fed's 2% target.</string>
+    <string name="narrator_briefing_prices_lower_straight">%1$s lower than a year ago, against the Fed's 2% target.</string>
+    <string name="narrator_briefing_prices_falling">Prices are falling (%1$s lower than a year ago), so every dollar stretches further.</string>
     <string name="narrator_briefing_prices_normal">Prices are rising at a normal pace (%1$s a year).</string>
-    <string name="narrator_briefing_prices_bit_fast">Prices are still rising a little too fast (%1$s a year vs the 2% goal).</string>
-    <string name="narrator_briefing_prices_fast">Prices are rising fast (%1$s a year) — budgets are being squeezed.</string>
-    <string name="narrator_briefing_jobs_weakening">The job market is weakening: layoffs are rising.</string>
+    <string name="narrator_briefing_prices_bit_fast">Prices are rising a little faster than the 2% goal (%1$s a year), well down from 2022.</string>
+    <string name="narrator_briefing_prices_fast">Prices are rising fast (%1$s a year); savings rates tend to rise with them.</string>
+
+    <!-- %1$s the unemployment rate -->
+    <string name="narrator_briefing_jobs_unrate_straight">Unemployment is %1$s.</string>
+    <!-- %1$s the U-6 rate -->
+    <string name="narrator_briefing_jobs_u6_straight">Counting the underemployed (U-6), it's %1$s.</string>
+    <!-- %1$s thousands of claims, e.g. "231" (said "231K") -->
+    <string name="narrator_briefing_jobs_claims_straight">New unemployment claims run %1$sK a week.</string>
+    <string name="narrator_briefing_jobs_weakening">Layoffs are rising — the time an emergency fund earns its keep.</string>
     <string name="narrator_briefing_jobs_cooling">The job market is cooling off a little.</string>
+    <!-- %1$s the share of the workforce employed, e.g. "95.9%" -->
+    <string name="narrator_briefing_jobs_cooling_rate">The job market is cooling off a little, though %1$s of the workforce is employed.</string>
     <!-- %1$s the unemployment rate -->
     <string name="narrator_briefing_jobs_plentiful_rate">Jobs are plentiful — unemployment is %1$s.</string>
     <string name="narrator_briefing_jobs_plentiful">Jobs are plentiful.</string>
-    <!-- %1$s the mortgage rate, %2$s the Fed's rate -->
-    <string name="narrator_briefing_borrowing_expensive_fed">Borrowing is expensive — mortgages around %1$s, the Fed's rate %2$s.</string>
-    <string name="narrator_briefing_borrowing_moderate_fed">Borrowing costs are moderate — mortgages around %1$s, the Fed's rate %2$s.</string>
-    <string name="narrator_briefing_borrowing_cheap_fed">Borrowing is cheap — mortgages around %1$s, the Fed's rate %2$s.</string>
-    <string name="narrator_briefing_borrowing_expensive">Borrowing is expensive — mortgages around %1$s.</string>
+
+    <!-- %1$d how many hidden-slack measures there are (the plural follows it) -->
+    <plurals name="narrator_briefing_slack_calm_straight">
+        <item quantity="one">The %1$d measure of hidden slack is inside its calm range.</item>
+        <item quantity="other">All %1$d measures of hidden slack are inside their calm ranges.</item>
+    </plurals>
+    <!-- %1$d measures past a watch or danger line, out of %2$d (the plural follows %2$d); %3$s lists them, e.g. "Long job searches (27.00%), Underemployment (8.10%)" -->
+    <plurals name="narrator_briefing_slack_past_straight">
+        <item quantity="one">%1$d of %2$d measure past a line: %3$s.</item>
+        <item quantity="other">%1$d of %2$d measures past a line: %3$s.</item>
+    </plurals>
+    <!-- One entry of the list above: %1$s the measure's name, %2$s its reading -->
+    <string name="narrator_briefing_slack_item">%1$s (%2$s)</string>
+    <string name="narrator_briefing_slack_sound">Underemployment, long searches and hiring all look sound, so the headline isn't hiding weakness.</string>
+    <!-- %1$d calm measures out of %2$d (the plural follows %2$d); %3$s the name of the one past a line -->
+    <plurals name="narrator_briefing_slack_soft_spot">
+        <item quantity="one">%1$d of %2$d hidden-slack measure is calm. The soft spot: %3$s.</item>
+        <item quantity="other">%1$d of %2$d hidden-slack measures are calm. The soft spot: %3$s.</item>
+    </plurals>
+    <!-- %1$d calm measures out of %2$d (the plural follows %2$d); %3$s and %4$s the names of the two furthest past a line -->
+    <plurals name="narrator_briefing_slack_soft_spots">
+        <item quantity="one">%1$d of %2$d hidden-slack measure is calm. The soft spots: %3$s and %4$s.</item>
+        <item quantity="other">%1$d of %2$d hidden-slack measures are calm. The soft spots: %3$s and %4$s.</item>
+    </plurals>
+
+    <!-- %1$s the 30-year mortgage rate, %2$s the Fed's rate -->
+    <string name="narrator_briefing_borrowing_straight_fed">30-year mortgages %1$s; the Fed's rate %2$s.</string>
+    <string name="narrator_briefing_borrowing_straight">30-year mortgages %1$s.</string>
+    <string name="narrator_briefing_borrowing_expensive_fed">Borrowing is pricey (mortgages around %1$s), but savings pay close to the Fed's %2$s.</string>
+    <string name="narrator_briefing_borrowing_expensive">Borrowing is pricey (mortgages around %1$s).</string>
     <string name="narrator_briefing_borrowing_moderate">Borrowing costs are moderate — mortgages around %1$s.</string>
     <string name="narrator_briefing_borrowing_cheap">Borrowing is cheap — mortgages around %1$s.</string>
+
+    <!-- %1$s the fear gauge (VIX), e.g. "16" -->
+    <string name="narrator_briefing_markets_fear_straight">The fear gauge is at %1$s (under 20 is calm).</string>
     <!-- %1$s the size of today's S&P 500 move, e.g. "0.84%" -->
+    <string name="narrator_briefing_markets_up_straight">The S&amp;P 500 is up %1$s today.</string>
+    <string name="narrator_briefing_markets_down_straight">The S&amp;P 500 is down %1$s today.</string>
     <string name="narrator_briefing_markets_calm_up">Stock markets are calm — the S&amp;P 500 is up %1$s today.</string>
     <string name="narrator_briefing_markets_calm_down">Stock markets are calm — the S&amp;P 500 is down %1$s today.</string>
     <string name="narrator_briefing_markets_calm">Stock markets are calm.</string>
-    <string name="narrator_briefing_markets_jittery_up">Stock markets are jittery — the S&amp;P 500 is up %1$s today.</string>
-    <string name="narrator_briefing_markets_jittery_down">Stock markets are jittery — the S&amp;P 500 is down %1$s today.</string>
-    <string name="narrator_briefing_markets_jittery">Stock markets are jittery.</string>
-    <string name="narrator_briefing_recession_both">Both of the most reliable recession alarms are ringing.</string>
-    <string name="narrator_briefing_recession_jobs">The jobs-based recession alarm is ringing.</string>
-    <string name="narrator_briefing_recession_curve">The yield curve is upside down, an early recession warning.</string>
+    <string name="narrator_briefing_markets_jittery_up">Stock markets are jittery, which passes — the S&amp;P 500 is up %1$s today.</string>
+    <string name="narrator_briefing_markets_jittery_down">Stock markets are jittery, which passes — the S&amp;P 500 is down %1$s today.</string>
+    <string name="narrator_briefing_markets_jittery">Stock markets are jittery, which passes.</string>
+
+    <!-- %1$s the 10-year minus 2-year spread, signed, e.g. "−0.42%" -->
+    <string name="narrator_briefing_recession_curve_inverted_straight">The yield curve is at %1$s (inverted).</string>
+    <string name="narrator_briefing_recession_curve_normal_straight">The yield curve is at %1$s (not inverted).</string>
+    <!-- %1$s the Sahm rule reading, e.g. "0.10" -->
+    <string name="narrator_briefing_recession_alarm_straight">The jobs alarm reads %1$s; it rings at 0.50.</string>
+    <string name="narrator_briefing_recession_both">Both of the most reliable recession alarms are ringing; every recession since 1990 has ended within 18 months.</string>
+    <string name="narrator_briefing_recession_jobs">The jobs-based recession alarm is ringing, though it has rung early before.</string>
+    <string name="narrator_briefing_recession_curve">The yield curve is upside down, an early warning with a long and uneven lead.</string>
     <string name="narrator_briefing_recession_quiet">The two most reliable recession alarms are quiet.</string>
-    <!-- %1$s a whole number of cents -->
-    <string name="narrator_briefing_debt_strain">About %1$s¢ of every tax dollar goes to interest on the national debt — a growing strain.</string>
-    <string name="narrator_briefing_debt">About %1$s¢ of every tax dollar goes to interest on the national debt.</string>
+
+    <!-- %1$s a whole number of cents, %2$s debt as a share of a year's output, e.g. "121%" -->
+    <string name="narrator_briefing_debt_straight_ratio">%1$s¢ of every tax dollar goes to interest; debt is %2$s of a year's output.</string>
+    <string name="narrator_briefing_debt_straight">%1$s¢ of every tax dollar goes to interest.</string>
+    <string name="narrator_briefing_debt_strain">About %1$s¢ of every tax dollar goes to interest — a slow-moving strain rather than a sudden one.</string>
+    <string name="narrator_briefing_debt">About %1$s¢ of every tax dollar goes to interest.</string>
 
     <string name="narrator_headline_gathering">Gathering the latest readings…</string>
+    <!-- Straight talk's headline: how many parts of the economy are past a danger line, past a watch line, and calm -->
+    <string name="narrator_headline_straight">%1$d in danger · %2$d to watch · %3$d calm</string>
     <string name="narrator_headline_stormy">Stormy</string>
     <string name="narrator_headline_mixed">Mixed, with a storm or two</string>
     <string name="narrator_headline_mostly_cloudy">Mostly cloudy</string>
     <string name="narrator_headline_partly_cloudy">Partly cloudy</string>
     <string name="narrator_headline_mostly_sunny">Mostly sunny</string>
 
-    <!-- %1$d areas flashing red, out of %2$d (the plural follows %2$d) -->
-    <plurals name="narrator_summary_red">
-        <item quantity="one">%1$d of %2$d area is flashing red.</item>
-        <item quantity="other">%1$d of %2$d areas are flashing red.</item>
+    <!-- Straight talk with the stress gauge: %1$s the score out of 100, %2$d readings counted (the plural follows it), %3$d past a danger line, %4$d past a watch line -->
+    <plurals name="narrator_summary_straight_calm">
+        <item quantity="one">Composite stress %1$s of 100 (calm) across %2$d reading: %3$d past a danger line, %4$d past a watch line.</item>
+        <item quantity="other">Composite stress %1$s of 100 (calm) across %2$d readings: %3$d past a danger line, %4$d past a watch line.</item>
     </plurals>
-    <plurals name="narrator_count_warning_signs">
-        <item quantity="one">%1$d warning sign</item>
-        <item quantity="other">%1$d warning signs</item>
+    <plurals name="narrator_summary_straight_elevated">
+        <item quantity="one">Composite stress %1$s of 100 (elevated) across %2$d reading: %3$d past a danger line, %4$d past a watch line.</item>
+        <item quantity="other">Composite stress %1$s of 100 (elevated) across %2$d readings: %3$d past a danger line, %4$d past a watch line.</item>
     </plurals>
-    <!-- %1$s the stress score out of 100, %2$s "4 warning signs", %3$d how many are worth watching -->
-    <string name="narrator_summary_stress_calm">Overall stress is calm (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
-    <string name="narrator_summary_stress_elevated">Overall stress is elevated (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
-    <string name="narrator_summary_stress_high">Overall stress is high (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
-    <string name="narrator_summary_stress_severe">Overall stress is severe (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
+    <plurals name="narrator_summary_straight_high">
+        <item quantity="one">Composite stress %1$s of 100 (high) across %2$d reading: %3$d past a danger line, %4$d past a watch line.</item>
+        <item quantity="other">Composite stress %1$s of 100 (high) across %2$d readings: %3$d past a danger line, %4$d past a watch line.</item>
+    </plurals>
+    <plurals name="narrator_summary_straight_severe">
+        <item quantity="one">Composite stress %1$s of 100 (severe) across %2$d reading: %3$d past a danger line, %4$d past a watch line.</item>
+        <item quantity="other">Composite stress %1$s of 100 (severe) across %2$d readings: %3$d past a danger line, %4$d past a watch line.</item>
+    </plurals>
+    <!-- Straight talk without the gauge: %1$d areas past a danger line, out of %2$d (the plural follows %2$d) -->
+    <plurals name="narrator_summary_straight_dangers">
+        <item quantity="one">%1$d of %2$d area is past a danger line.</item>
+        <item quantity="other">%1$d of %2$d areas are past a danger line.</item>
+    </plurals>
+    <!-- The bright side without the gauge: %1$d calm areas, out of %2$d (the plural follows %2$d) -->
+    <plurals name="narrator_summary_calm_areas">
+        <item quantity="one">%1$d of %2$d area is calm.</item>
+        <item quantity="other">%1$d of %2$d areas are calm.</item>
+    </plurals>
+    <!-- The bright side with the gauge: %1$s the score out of 100, %2$d calm readings out of %3$d (the plural follows %3$d) -->
+    <plurals name="narrator_summary_bright_calm">
+        <item quantity="one">Overall stress is calm (%1$s of 100), and %2$d of %3$d reading is calm.</item>
+        <item quantity="other">Overall stress is calm (%1$s of 100), and %2$d of %3$d readings are calm.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_elevated">
+        <item quantity="one">Overall stress is elevated (%1$s of 100), and %2$d of %3$d reading is calm.</item>
+        <item quantity="other">Overall stress is elevated (%1$s of 100), and %2$d of %3$d readings are calm.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_high">
+        <item quantity="one">Overall stress is high (%1$s of 100), and %2$d of %3$d reading is calm.</item>
+        <item quantity="other">Overall stress is high (%1$s of 100), and %2$d of %3$d readings are calm.</item>
+    </plurals>
+    <plurals name="narrator_summary_bright_severe">
+        <item quantity="one">Overall stress is severe (%1$s of 100), and %2$d of %3$d reading is calm.</item>
+        <item quantity="other">Overall stress is severe (%1$s of 100), and %2$d of %3$d readings are calm.</item>
+    </plurals>
 
     <!-- The explainer sheet. %1$s is the name of the idea, e.g. "Inflation" -->
     <string name="explain_click_label">Explain %1$s</string>

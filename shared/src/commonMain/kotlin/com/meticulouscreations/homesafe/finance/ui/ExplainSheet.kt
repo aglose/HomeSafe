@@ -335,8 +335,10 @@ internal fun Callout(heading: String, body: String, color: Color, icon: ImageVec
 @Composable
 internal fun PerspectiveCallout(perspective: Perspective, tone: EconomyTone, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
+    val heading = stringResource(perspective.heading)
+    val body = perspective.body.resolve()
     when (tone) {
-        EconomyTone.STRAIGHT -> Callout(perspective.heading, perspective.body, colors.cool, Icons.Filled.History, modifier)
-        EconomyTone.BRIGHT_SIDE -> Callout(perspective.heading, perspective.body, colors.gain, Icons.Outlined.WbSunny, modifier)
+        EconomyTone.STRAIGHT -> Callout(heading, body, colors.cool, Icons.Filled.History, modifier)
+        EconomyTone.BRIGHT_SIDE -> Callout(heading, body, colors.gain, Icons.Outlined.WbSunny, modifier)
     }
 }

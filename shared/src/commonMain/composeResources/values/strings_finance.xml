@@ -197,6 +197,12 @@
     <!-- Economy -->
     <string name="finance_econ_inflation_title">Inflation</string>
     <string name="finance_econ_inflation_subtitle">How much more things cost than a year ago</string>
+    <string name="finance_econ_jobs_title">Jobs beneath the headline</string>
+    <string name="finance_econ_jobs_subtitle">The headline rate against the broadest one, which counts the underemployed</string>
+    <!-- Chart line names -->
+    <string name="finance_econ_jobs_u3">Unemployment (U-3)</string>
+    <string name="finance_econ_jobs_u6">Underemployment (U-6)</string>
+    <string name="finance_econ_jobs_how_to_read">The lower line is the rate the news quotes. The upper one adds people working part-time who want full-time hours and people who want a job but stopped looking. When the gap between them widens, the job market is weaker than the headline says. Grey bands are past recessions.</string>
     <string name="finance_econ_curve_title">The yield curve</string>
     <string name="finance_econ_curve_subtitle">What the government pays to borrow, from 1 month (left) to 30 years (right)</string>
     <string name="finance_econ_yields_title">Government borrowing costs</string>

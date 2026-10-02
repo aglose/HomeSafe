@@ -25,6 +25,8 @@
     <!-- Risk tab groups: a heading and a one-line blurb -->
     <string name="indicator_group_recession_title">Recession signals</string>
     <string name="indicator_group_recession_blurb">The readings that have turned before past downturns.</string>
+    <string name="indicator_group_labor_title">Jobs beneath the headline</string>
+    <string name="indicator_group_labor_blurb">Underemployment, long searches and hiring: the slack the unemployment rate leaves out.</string>
     <string name="indicator_group_credit_title">Credit &amp; market stress</string>
     <string name="indicator_group_credit_blurb">Where cracks in the financial system show first.</string>
     <string name="indicator_group_debt_title">Debt &amp; money</string>
@@ -39,6 +41,7 @@
     <string name="indicator_reference_normal">Normal</string>
     <string name="indicator_reference_shrinking">Shrinking</string>
     <string name="indicator_reference_fed_target">Fed target</string>
+    <string name="indicator_reference_losing_to_prices">Losing to prices</string>
 
     <!-- Treasury maturities on the yield curve chart: M = months, Y = years -->
     <string name="indicator_tenor_1m">1M</string>
@@ -87,6 +90,55 @@
     <string name="indicator_umcsent_short_title">Sentiment</string>
     <string name="indicator_umcsent_why">The University of Michigan's monthly survey of how people feel about their finances and the economy. Gloomy households stop spending.</string>
     <string name="indicator_umcsent_danger_note">Below 55 is the territory of 1980, 2008 and 2022.</string>
+
+    <string name="indicator_u6_title">Underemployment rate (U-6)</string>
+    <string name="indicator_u6_short_title">U-6</string>
+    <string name="indicator_u6_why">The broadest official jobless rate: the unemployed, plus people working part-time who want full-time work, plus people who want a job but have stopped looking. It runs about twice the headline rate.</string>
+    <string name="indicator_u6_danger_note">U-6 averaged 8.3% in 2007 and passed 9.5% in May 2008, five months into that recession; it peaked at 17.2% in 2010 and 22.9% in April 2020.</string>
+
+    <string name="indicator_slackgap_title">Hidden slack (U-6 minus U-3)</string>
+    <string name="indicator_slackgap_short_title">Hidden slack</string>
+    <string name="indicator_slackgap_why">The part of underemployment the headline rate doesn't count: involuntary part-timers and people who want work but aren't looking. When it widens, the job market is weaker than the headline says.</string>
+    <string name="indicator_slackgap_danger_note">The gap averaged 3.7 points in 2007 and passed 5 in October 2008; it peaked at 7.4 in 2011.</string>
+
+    <string name="indicator_primeepop_title">Prime-age employment rate (25–54)</string>
+    <string name="indicator_primeepop_short_title">Prime-age employed</string>
+    <string name="indicator_primeepop_why">The share of all 25-to-54-year-olds who have a job. It can't be flattered by people giving up the search, and the age band leaves out retirement and school, so it is the cleanest single read on how many people are working.</string>
+    <string name="indicator_primeepop_danger_note">It averaged 79.9% in 2007 and fell below 78.5% in October 2008, bottoming at 74.8% at the end of 2009 (69.6% in April 2020).</string>
+
+    <string name="indicator_longterm_title">Long-term unemployed (27+ weeks)</string>
+    <string name="indicator_longterm_short_title">Long-term jobless</string>
+    <string name="indicator_longterm_why">Of the people who are unemployed, the share who have been looking for more than six months. A rising share means jobs are getting harder to find even if layoffs haven't picked up.</string>
+    <string name="indicator_longterm_danger_note">It was about 18% in 2007 and passed 30% in 2009 on the way to 45% in 2010. It sat near 21% through 2019.</string>
+
+    <string name="indicator_insured_title">Insured unemployment rate (continuing claims)</string>
+    <string name="indicator_insured_short_title">Insured unemployment</string>
+    <string name="indicator_insured_why">People still collecting unemployment benefits each week, as a share of the jobs that insurance covers. New claims say how many are being laid off; this says how many are failing to find the next job. As a rate it compares fairly across decades, where the raw count grows with the workforce.</string>
+    <string name="indicator_insured_danger_note">It averaged 1.9% in 2007, crossed 2% in December 2007 as that recession began and 2.5% in August 2008, peaking at 5.0% in mid-2009. It sat near 1.2% through 2019.</string>
+
+    <string name="indicator_quits_title">Quits rate</string>
+    <string name="indicator_quits_short_title">Quits</string>
+    <string name="indicator_quits_why">The share of workers who quit their job each month. People quit when they're confident of finding something better, so it is workers' own vote on the job market.</string>
+    <string name="indicator_quits_danger_note">It was 2.1% in 2007 and fell under 1.8% in late 2008, bottoming at 1.2% in 2009. It peaked at 3.0% in 2021–22.</string>
+
+    <string name="indicator_openings_title">Job openings per unemployed person</string>
+    <string name="indicator_openings_short_title">Openings per seeker</string>
+    <string name="indicator_openings_why">Open jobs divided by people looking for one. Above 1 there are more jobs than job seekers; below 1 there aren't enough to go round.</string>
+    <string name="indicator_openings_danger_note">It averaged 0.66 in 2006–07, fell below 0.5 in May 2008 and bottomed at 0.15 in 2009. It peaked at 2.0 in 2022 and was 1.2 through 2019.</string>
+
+    <string name="indicator_realwages_title">Real weekly earnings growth</string>
+    <string name="indicator_realwages_short_title">Real pay</string>
+    <string name="indicator_realwages_why">How much more the typical full-time worker's weekly pay buys than a year ago, after inflation. Below zero, paychecks are losing to prices.</string>
+    <string name="indicator_realwages_danger_note">Below 0% the median full-time paycheck buys less than a year before, as through 2021–22. In recessions it can rise for a grim reason: lower-paid workers lose their jobs first, which lifts the median of those still working.</string>
+
+    <string name="indicator_temphelp_title">Temporary-help jobs, year over year</string>
+    <string name="indicator_temphelp_short_title">Temp jobs</string>
+    <string name="indicator_temphelp_why">Temp staff are the easiest workers to add and the first to let go, so temp-agency employment tends to turn before the rest of the job market.</string>
+    <string name="indicator_temphelp_danger_note">It turned negative in late 2000 and early 2007, months before the 2001 and 2008 recessions. It also fell through 2019 and by about 8% a year in 2023–24 with no recession following, so it is a lead, not a verdict.</string>
+
+    <string name="indicator_civpart_title">Labor force participation</string>
+    <string name="indicator_civpart_short_title">Participation</string>
+    <string name="indicator_civpart_why">The share of adults working or looking for work. It has drifted down since 2000 mostly because the population is ageing, so it has no warning lines; the prime-age employment rate is the cleaner read.</string>
 
     <string name="indicator_hy_title">Junk bond spread</string>
     <string name="indicator_hy_short_title">HY spread</string>
