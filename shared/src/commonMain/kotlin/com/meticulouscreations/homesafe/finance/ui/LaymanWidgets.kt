@@ -47,6 +47,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
@@ -117,14 +118,17 @@ private fun DrawScope.drawCloud(color: Color, at: Offset, w: Float) {
 }
 
 /**
- * The economy as a weather report: one headline sky, a sentence of summary, and a line per part
- * of the economy — prices, jobs, borrowing, markets, recession signs, government debt — each with
- * its own sky and an ⓘ for what it means.
+ * The economy in a card: a headline, a sentence of summary, and a line per part of the economy —
+ * prices, jobs, the slack beneath the jobs headline, borrowing, markets, recession signs,
+ * government debt — each with an ⓘ for what it means. On the bright side it's a weather report,
+ * each line with its own sky; in straight talk each line carries its calm / watch / danger signal
+ * instead, since a sky is a judgement.
  */
 @Composable
 internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
+    val straight = briefing.tone == EconomyTone.STRAIGHT
     val sky = when {
         briefing.items.any { it.weather == Weather.STORMY } && briefing.items.count { it.weather == Weather.STORMY } >= 3 -> Weather.STORMY
         briefing.items.any { it.weather == Weather.STORMY || it.weather == Weather.CLOUDY } -> Weather.PARTLY_CLOUDY
@@ -133,11 +137,13 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
     }
     FinanceCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            WeatherGlyph(sky, size = 56.dp)
-            Spacer(Modifier.width(14.dp))
+            if (!straight) {
+                WeatherGlyph(sky, size = 56.dp)
+                Spacer(Modifier.width(14.dp))
+            }
             Column(Modifier.weight(1f)) {
-                Text("TODAY'S ECONOMIC WEATHER", style = type.micro, color = colors.textSecondary)
-                Text(briefing.headline, style = type.title, color = colors.textPrimary)
+                Text(if (straight) "WHERE THE ECONOMY STANDS" else "TODAY'S ECONOMIC WEATHER", style = type.micro, color = colors.textSecondary)
+                Text(briefing.headline, style = if (straight) type.section else type.title, color = colors.textPrimary)
             }
             InfoButton("stress")
         }
@@ -150,10 +156,18 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
             Hairline()
             CascadeIn(i) {
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    WeatherGlyph(item.weather, size = 30.dp)
-                    Spacer(Modifier.width(12.dp))
+                    if (!straight) {
+                        WeatherGlyph(item.weather, size = 30.dp)
+                        Spacer(Modifier.width(12.dp))
+                    }
                     Column(Modifier.weight(1f)) {
-                        Text(item.topic, style = type.bodyStrong, color = colors.textPrimary)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(item.topic, style = type.bodyStrong, color = colors.textPrimary, modifier = Modifier.weight(1f, fill = false))
+                            if (straight && item.signal != null) {
+                                Spacer(Modifier.width(8.dp))
+                                SignalChip(item.signal)
+                            }
+                        }
                         Text(item.sentence, style = type.label, color = colors.textSecondary)
                     }
                     InfoButton(item.explainerId)
@@ -249,5 +263,5 @@ internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modif
 @Composable
 internal fun VerdictText(reading: IndicatorReading?, modifier: Modifier = Modifier) {
     if (reading?.latest == null) return
-    Text(Narrator.verdict(reading), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
+    Text(Narrator.verdict(reading, LocalEconomyTone.current), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
 }

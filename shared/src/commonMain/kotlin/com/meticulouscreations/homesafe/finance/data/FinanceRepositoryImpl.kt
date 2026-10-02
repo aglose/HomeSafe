@@ -98,11 +98,7 @@ class FinanceRepositoryImpl(
         val parts = coroutineScope {
             indicator.fredIds.map { id -> async { fredSeries(id, start).getOrThrow() } }.awaitAll()
         }
-        var series = if (indicator.ratioPercent && parts.size == 2) {
-            parts[0].combine(parts[1]) { a, b -> if (b == 0.0) null else a / b * 100.0 }
-        } else {
-            parts.first()
-        }
+        var series = if (parts.size == 2) indicator.combine.apply(parts[0], parts[1]) else parts.first()
         if (indicator.transform == Transform.YEAR_OVER_YEAR) series = series.yearOverYearPercent()
         if (indicator.scale != 1.0) series = Series(series.times, DoubleArray(series.size) { series.values[it] * indicator.scale })
         IndicatorReading(indicator, series)

@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -94,14 +95,39 @@ internal fun EconomyScreen(
     contentPadding: PaddingValues,
     onOpenIndicator: (String) -> Unit,
     onOpenConnections: () -> Unit = {},
+    onToneChange: (EconomyTone) -> Unit = {},
 ) {
     val colors = FinanceTheme.colors
-    val briefing = remember(state.readings, state.quotes) { Narrator.briefing(state.readings, state.stress, state.quotes) }
+    val briefing = remember(state.readings, state.quotes, state.tone) { Narrator.briefing(state.readings, state.stress, state.quotes, state.tone) }
     LazyColumn(state = listState, contentPadding = contentPadding) {
-        item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing, Modifier.padding(top = 8.dp)) } }
+        item(key = "tone") {
+            // The same choice as in Settings, where it's explained; here so the other voice is a tap away.
+            ChipRow(EconomyTone.entries, state.tone, { it.label }, colors.accent, onToneChange, Modifier.padding(top = 4.dp, bottom = 8.dp))
+        }
+        item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing) } }
         item(key = "connect") { CascadeIn(1) { ConnectionsEntryCard(onOpenConnections, Modifier.padding(top = 12.dp)) } }
         item(key = "inflation-h") { SectionHeader("Inflation", subtitle = "How much more things cost than a year ago", info = "cpi") }
         item(key = "inflation") { InflationBlock(state) }
+        item(key = "jobs-h") {
+            SectionHeader("Jobs beneath the headline", subtitle = "The headline rate against the broadest one, which counts the underemployed", info = "u6")
+        }
+        item(key = "jobs") {
+            CascadeIn(0) {
+                Column {
+                    val u3 = state.readings[IndicatorCatalog.unemployment.id]
+                    val u6 = state.readings[IndicatorCatalog.u6.id]
+                    OverlayBlock(
+                        lines = listOf(Triple("Unemployment (U-3)", u3, colors.cool), Triple("Underemployment (U-6)", u6, colors.loss)),
+                        rules = emptyList(),
+                        defaultRange = EconRange.Y10,
+                        howToRead = "The lower line is the rate the news quotes. The upper one adds people working part-time who want full-time hours and people who want a job but stopped looking. When the gap between them widens, the job market is weaker than the headline says. Grey bands are past recessions.",
+                    )
+                    IndicatorCatalog.labor.forEach { ind ->
+                        IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) }
+                    }
+                }
+            }
+        }
         item(key = "curve-h") {
             SectionHeader("The yield curve", subtitle = "What the government pays to borrow, from 1 month (left) to 30 years (right)", info = "yieldcurve")
         }
@@ -152,7 +178,12 @@ internal fun EconomyScreen(
                 rates.forEach { ind -> IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) } }
             }
         }
-        item(key = "fine") { FinePrint("Economic data from the Federal Reserve Bank of St. Louis (FRED). Inflation is the change from a year earlier.") }
+        item(key = "fine") {
+            FinePrint(
+                "Economic data from the Federal Reserve Bank of St. Louis (FRED), from the Bureau of Labor Statistics and other agencies. Inflation is the change from a year earlier. " +
+                    "Watch and danger lines are rules of thumb from past downturns, not forecasts.",
+            )
+        }
     }
 }
 
@@ -212,7 +243,7 @@ private fun InflationBlock(state: FinanceUiState) {
                     },
                 )
                 cpi?.let { r ->
-                    Text(Narrator.verdict(r), style = FinanceTheme.type.body, color = colors.textPrimary.copy(alpha = 0.88f), modifier = Modifier.padding(horizontal = PageGutter))
+                    Text(Narrator.verdict(r, state.tone), style = FinanceTheme.type.body, color = colors.textPrimary.copy(alpha = 0.88f), modifier = Modifier.padding(horizontal = PageGutter))
                 }
                 HowToRead("Each line is how much prices rose over the previous 12 months. Red counts everything; yellow and blue leave out jumpy food and gas prices. The dashed line is the Fed's 2% goal, and grey bands are past recessions.")
             } else {
@@ -691,7 +722,8 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
         item {
             Column(Modifier.padding(horizontal = PageGutter)) {
                 if (reading?.latest != null) {
-                    Callout("Right now", Narrator.rightNow(reading), tint, Icons.AutoMirrored.Filled.TrendingUp)
+                    Callout("Right now", Narrator.rightNow(reading, state.tone), tint, Icons.AutoMirrored.Filled.TrendingUp)
+                    Narrator.perspective(reading, state.tone)?.let { PerspectiveCallout(it, state.tone) }
                 }
                 Narrator.forYou(id, state.readings, state.quotes, state.finance)?.let { mine ->
                     Callout("What it means for you", mine, colors.accent, Icons.Filled.Person)

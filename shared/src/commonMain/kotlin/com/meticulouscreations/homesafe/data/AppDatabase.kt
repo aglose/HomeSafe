@@ -51,8 +51,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         MomentEventEntity::class,
         ChartPreferencesEntity::class,
         WatchedSymbolEntity::class,
+        FinancePreferencesEntity::class,
     ],
-    version = 15,
+    version = 16,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -79,6 +80,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         AutoMigration(from = 13, to = 14),
         // 14 -> 15: the finance watchlist's own symbols and positions ([WatchedSymbolEntity], a new table).
         AutoMigration(from = 14, to = 15),
+        // 15 -> 16: the finance app's preferences — the Economy tab's tone
+        // ([FinancePreferencesEntity], a new table).
+        AutoMigration(from = 15, to = 16),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

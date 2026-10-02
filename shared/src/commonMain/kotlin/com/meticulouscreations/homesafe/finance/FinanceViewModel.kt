@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Holdings
 import com.meticulouscreations.homesafe.finance.domain.Indicator
@@ -76,6 +78,8 @@ data class FinanceUiState(
     /** Symbols followed from the app, oldest first (see [WatchedSymbol]). */
     val watched: List<WatchedSymbol> = emptyList(),
     val search: SymbolSearch = SymbolSearch(),
+    /** How the Economy and Risk tabs talk about the readings; chosen in Settings or on the Economy tab. */
+    val tone: EconomyTone = EconomyTone.DEFAULT,
 ) {
     /** The tickers the budget sheet names. */
     val sheetSymbols: List<String> get() = finance?.watchlist.orEmpty()
@@ -135,10 +139,22 @@ class FinanceViewModel(
     private val watchlistRepository: WatchlistRepository,
     private val clock: Clock,
     private val tips: FinanceTipLedger,
+    private val preferences: FinancePreferencesRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FinanceUiState())
     val uiState: StateFlow<FinanceUiState> = _uiState.asStateFlow()
+
+    init {
+        // A preference on the device, not something polled: followed for as long as the app lives,
+        // so a change made in Settings is in place when Finance next opens.
+        viewModelScope.launch { preferences.observeEconomyTone().collect { tone -> _uiState.update { it.copy(tone = tone) } } }
+    }
+
+    fun setTone(tone: EconomyTone) {
+        _uiState.update { it.copy(tone = tone) }
+        viewModelScope.launch { preferences.setEconomyTone(tone) }
+    }
 
     private var pollJob: Job? = null
     private var sheetPollJob: Job? = null

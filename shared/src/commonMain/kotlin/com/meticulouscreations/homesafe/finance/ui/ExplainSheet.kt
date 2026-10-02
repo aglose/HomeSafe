@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalGroceryStore
 import androidx.compose.material.icons.filled.Person
@@ -42,6 +43,7 @@ import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Lightbulb
+import androidx.compose.material.icons.outlined.WbSunny
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -49,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +62,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.Explainer
 import com.meticulouscreations.homesafe.finance.domain.ExplainerTopic
 import com.meticulouscreations.homesafe.finance.domain.Explainers
@@ -67,6 +71,9 @@ import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 
 /** Opens the plain-English explainer with this id. Provided by [FinanceApp]; a no-op elsewhere (previews). */
 val LocalExplainer = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/** The voice the narrated sentences take. Provided by [FinanceApp] from the user's choice; the default elsewhere (previews). */
+val LocalEconomyTone = compositionLocalOf { EconomyTone.DEFAULT }
 
 /**
  * The little ⓘ that sits beside a heading or a number: tap it for what this is, in plain words.
@@ -153,6 +160,7 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     val reading = state.readings[e.id]
+    val tone = state.tone
     val accent = topicColor(e.topic, colors)
     Column(
         Modifier
@@ -176,7 +184,7 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
         Text(e.oneLiner, style = type.body.copy(fontSize = type.section.fontSize, lineHeight = type.section.lineHeight), color = colors.textPrimary)
 
         val now = when {
-            reading != null && reading.latest != null -> Narrator.rightNow(reading)
+            reading != null && reading.latest != null -> Narrator.rightNow(reading, tone)
 
             e.id == "realrate" -> {
                 val ff = state.readings["dff"]?.latest
@@ -197,6 +205,7 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
         if (now != null) {
             Callout("Right now", now, colors.signal(reading?.signal).takeIf { reading?.signal != null } ?: colors.cool, Icons.AutoMirrored.Filled.TrendingUp)
         }
+        reading?.let { Narrator.perspective(it, tone) }?.let { PerspectiveCallout(it, tone) }
         Narrator.forYou(e.id, state.readings, state.quotes, state.finance)?.let { mine ->
             Callout("What it means for you", mine, colors.accent, Icons.Filled.Person)
         }
@@ -285,5 +294,15 @@ internal fun Callout(heading: String, body: String, color: Color, icon: ImageVec
         Spacer(Modifier.height(6.dp))
         Text(body, style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary)
         content()
+    }
+}
+
+/** What sits under "Right now": the reading's record against its own history (straight talk) or its bright side. */
+@Composable
+internal fun PerspectiveCallout(perspective: Perspective, tone: EconomyTone, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    when (tone) {
+        EconomyTone.STRAIGHT -> Callout(perspective.heading, perspective.body, colors.cool, Icons.Filled.History, modifier)
+        EconomyTone.BRIGHT_SIDE -> Callout(perspective.heading, perspective.body, colors.gain, Icons.Outlined.WbSunny, modifier)
     }
 }

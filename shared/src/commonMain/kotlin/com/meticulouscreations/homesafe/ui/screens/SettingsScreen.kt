@@ -77,8 +77,8 @@ import kotlin.time.ExperimentalTime
  * The "Settings" tab, everyday things first: this device's alert preferences, away mode, and
  * teaching the server faces and cars. Then the per-camera detection switches — rarely touched,
  * but a control rather than a readout, and one that decides whether a camera alerts at all, so
- * they stay on this page. Last, one row into what the server is and is doing (live, from its
- * stats and config), summarised in a line.
+ * they stay on this page. Then how the finance app talks about the economy. Last, one row into
+ * what the server is and is doing (live, from its stats and config), summarised in a line.
  */
 @Composable
 fun SettingsTabContent(
@@ -145,6 +145,7 @@ fun SettingsTabContent(
             onMotion = viewModel::setCameraMotion,
             onDismissError = viewModel::dismissCameraError,
         )
+        EconomyToneSection(tone = state.economyTone, onTone = viewModel::setEconomyTone)
         ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError), onOpen = onOpenServer)
     }
 }
