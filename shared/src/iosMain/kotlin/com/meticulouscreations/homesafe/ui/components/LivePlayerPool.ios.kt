@@ -48,6 +48,7 @@ import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.Foundation.timeIntervalSince1970
 import platform.UIKit.UIView
+import kotlin.time.TimeSource
 
 private const val HOLDER_POLL_INTERVAL_MS = 250L
 private const val PREFERRED_FORWARD_BUFFER_SECONDS = 3.0
@@ -127,6 +128,9 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     private var consecutiveFailures = 0
     private var retryJob: Job? = null
     private var idleStopJob: Job? = null
+
+    /** When the last [start] ran: how long the current attempt has had, for [reconnect]. */
+    private var startedAt = TimeSource.Monotonic.markNow()
     private var reportedErrorForItem: AVPlayerItem? = null
     private var endObserver: Any? = null
     private var failedObserver: Any? = null
@@ -213,6 +217,21 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         start(next, cold = needsColdStart || LivePlaybackPolicy.isColdSwap(current, next))
     }
 
+    /** A pull to refresh, from a binder whose picture reads [status]; see the Android holder's `reconnect`. */
+    fun reconnect(status: LiveStreamStatus) {
+        val current = source as? VideoSource.Live ?: return
+        if (activeBinders == 0) return
+        val sinceStart = startedAt.elapsedNow().inWholeMilliseconds
+        if (!LivePlaybackPolicy.shouldReconnect(status, sessionLost = needsColdStart, msSinceStart = sinceStart)) return
+        NSLog("HomeSafeLive: %s reconnecting on request", key ?: "-")
+        consecutiveFailures = 0
+        retryJob?.cancel()
+        retryJob = null
+        dropPeer()
+        dropStandby()
+        start(current, cold = true)
+    }
+
     fun setPlayWhenReady(value: Boolean) {
         requestedPlayWhenReady = value
         applyPlayWhenReady()
@@ -295,6 +314,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
     private fun start(toLoad: VideoSource, cold: Boolean) {
         LiveStartupMilestones.mark("live.start $key")
         needsColdStart = false
+        startedAt = TimeSource.Monotonic.markNow()
         joinJob?.cancel()
         joinJob = null
         val endpoint = (toLoad as? VideoSource.Live)?.webRtc

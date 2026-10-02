@@ -57,6 +57,12 @@ class ObserveStationaryObjectsUseCase(private val momentsRepository: MomentsRepo
     operator fun invoke(): Flow<List<StationaryObject>> = momentsRepository.observeStationaryObjects()
 }
 
+/** See [MomentsRepository.refreshStationaryObjects]: the in-view strip's poll, now rather than at its next turn. */
+@Inject
+class RefreshStationaryObjectsUseCase(private val momentsRepository: MomentsRepository) {
+    operator fun invoke() = momentsRepository.refreshStationaryObjects()
+}
+
 /** See [MomentsRepository.observeLatestMoment]: the newest detection on any camera, for the home page's summary. */
 @Inject
 class ObserveLatestMomentUseCase(private val momentsRepository: MomentsRepository) {

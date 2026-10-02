@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.node.Ref
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
 import androidx.lifecycle.compose.LifecycleStartEffect
@@ -84,6 +85,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    reconnectRequests: Int,
 ) {
     val holder = remember(playerKey) { HolderLease(playerKey) }.holder
     val player = holder.player
@@ -174,11 +176,14 @@ actual fun CameraStreamPlayer(
         }
     }
 
+    // What the poll below last reported, for a reconnect request to judge the picture by.
+    val reportedStatus = remember(holder) { Ref<LiveStreamStatus>() }
+    OnReconnectRequest(reconnectRequests) { holder.reconnect(reportedStatus.value ?: LiveStreamStatus.Connecting) }
+
     LaunchedEffect(holder) {
         // Tracks are KVO-only like the rest of the item's state (see LivePlayerHolder), so they
         // ride the same poll; reported only on change so the caller isn't recomposed four times a second.
         var reportedHasAudio: Boolean? = null
-        var reportedStatus: LiveStreamStatus? = null
         var steadyWebRtcPolls = 0
         while (isActive) {
             delay(POLL_INTERVAL_MS)
@@ -212,8 +217,8 @@ actual fun CameraStreamPlayer(
                 starved -> LiveStreamStatus.Buffering
                 else -> LiveStreamStatus.Live
             }
-            if (status != reportedStatus) {
-                reportedStatus = status
+            if (status != reportedStatus.value) {
+                reportedStatus.value = status
                 currentOnStreamStatusChanged(status)
             }
             if (currentSource is VideoSource.Recording && item != null) {

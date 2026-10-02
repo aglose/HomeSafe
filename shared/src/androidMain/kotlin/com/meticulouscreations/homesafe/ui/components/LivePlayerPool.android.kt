@@ -275,6 +275,9 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     private var retryJob: Job? = null
     private var idleStopJob: Job? = null
 
+    /** [SystemClock.elapsedRealtime] at the last [start]: how long the current attempt has had, for [reconnect]. */
+    private var startedAtMs = 0L
+
     private val listener = object : Player.Listener {
         override fun onRenderedFirstFrame() {
             consecutiveFailures = 0
@@ -319,6 +322,26 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         }
         // No live session (stopped idle, or failed) means whatever is on screen is stale too.
         start(next, cold = needsColdStart || LivePlaybackPolicy.isColdSwap(current, next))
+    }
+
+    /**
+     * A pull to refresh, from a binder whose picture reads [status]: start the live source over
+     * now, with a fresh failure budget, instead of at the end of whatever back-off it is waiting
+     * out — when [LivePlaybackPolicy.shouldReconnect] says it's stuck. The peer goes too, since a
+     * stalled one would otherwise be adopted straight back, and so does the standby: whatever
+     * took the picture away from one took it from the other.
+     */
+    fun reconnect(status: LiveStreamStatus) {
+        val current = source as? VideoSource.Live ?: return
+        if (activeBinders == 0) return
+        val sinceStart = SystemClock.elapsedRealtime() - startedAtMs
+        if (!LivePlaybackPolicy.shouldReconnect(status, sessionLost = needsColdStart, msSinceStart = sinceStart)) return
+        Log.d(LOG_TAG, "$key: reconnecting on request ($status, ${sinceStart}ms since the last start)")
+        consecutiveFailures = 0
+        retryJob?.cancel()
+        dropPeer()
+        dropStandby()
+        start(current, cold = true)
     }
 
     fun setPlayWhenReady(value: Boolean) {
@@ -407,6 +430,7 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     private fun start(toLoad: VideoSource, cold: Boolean) {
         LiveStartupMilestones.mark("live.start $key")
         needsColdStart = false
+        startedAtMs = SystemClock.elapsedRealtime()
         joinJob?.cancel()
         joinJob = null
         val endpoint = (toLoad as? VideoSource.Live)?.webRtc
