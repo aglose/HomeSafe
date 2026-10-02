@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -132,5 +133,24 @@ class FinanceFormatTest {
         val then = now - 36 * 3_600
         assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)), FinanceFormat.ago(now, then), "a day and a half on, the date")
         assertEquals("just now", FinanceFormat.ago(now, now + 600), "a clock a little ahead of the relay's isn't the future")
+    }
+
+    @Test
+    fun plainDecimalWritesEveryDigitAndNoExponent() {
+        assertEquals("0.12345678", FinanceFormat.plainDecimal(0.12345678))
+        assertEquals("0.0042", FinanceFormat.plainDecimal(0.0042))
+        assertEquals("0.00000001", FinanceFormat.plainDecimal(1e-8))
+        assertEquals("12", FinanceFormat.plainDecimal(12.0))
+        assertEquals("125000000000000000000", FinanceFormat.plainDecimal(1.25e20))
+        assertEquals(1e-8, FinanceFormat.plainDecimal(1e-8).toDouble())
+    }
+
+    @Test
+    fun moneyInAnotherCurrencyNamesItInsteadOfADollarSign() {
+        assertEquals("$1,234.50", FinanceFormat.money(1234.5))
+        assertEquals("$1,234.50", FinanceFormat.money(1234.5, currency = "USD"))
+        assertEquals("3,000.00 JPY", FinanceFormat.money(3000.0, currency = "JPY"))
+        assertEquals("-12.00 GBp", FinanceFormat.signedMoney(-12.0, currency = "GBp"))
+        assertEquals("+12.00 GBp", FinanceFormat.priceChange(12.0, InstrumentKind.EQUITY, "GBp"))
     }
 }

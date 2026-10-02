@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.finance.ui.components
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.withInfiniteAnimationFrameNanos
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
@@ -11,7 +12,6 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -29,9 +29,11 @@ internal fun rememberShaderClock(running: Boolean = true): State<Float> {
     val time = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(running) {
         if (!running) return@LaunchedEffect
-        val start = withFrameNanos { it } - (time.floatValue * 1e9f).toLong()
+        // An infinite animation's frames, so a UI test's idling (and anything else that waits for
+        // animations to settle) knows this one never will and doesn't wait on it.
+        val start = withInfiniteAnimationFrameNanos { it } - (time.floatValue * 1e9f).toLong()
         while (true) {
-            withFrameNanos { now -> time.floatValue = (now - start) / 1e9f }
+            withInfiniteAnimationFrameNanos { now -> time.floatValue = (now - start) / 1e9f }
         }
     }
     return time

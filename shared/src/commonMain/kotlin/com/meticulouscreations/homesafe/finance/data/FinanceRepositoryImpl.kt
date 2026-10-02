@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.finance.domain.Transform
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -48,6 +49,7 @@ class FinanceRepositoryImpl(
     private val unknownSymbols = TimedCache<String, Unit>()
     private val historyCache = TimedCache<Pair<String, ChartRange>, PriceHistory>()
     private val fredCache = TimedCache<String, Series>()
+    private val searchCache = TimedCache<String, List<SymbolMatch>>()
     private var sheet: Pair<TimeSource.Monotonic.ValueTimeMark, PersonalFinance>? = null
     private val sheetLock = Mutex()
 
@@ -76,6 +78,13 @@ class FinanceRepositoryImpl(
         val maxAge = if (range == ChartRange.DAY || range == ChartRange.WEEK) 30_000L else 10 * 60_000L
         historyCache.get(symbol to range, maxAge)?.let { return Result.success(it) }
         return historyCache.load(symbol to range) { yahoo.history(symbol, range) }
+    }
+
+    override suspend fun searchSymbols(query: String): Result<List<SymbolMatch>> {
+        val key = query.trim().lowercase()
+        if (key.isEmpty()) return Result.success(emptyList())
+        searchCache.get(key, SEARCH_MAX_AGE_MS)?.let { return Result.success(it) }
+        return searchCache.load(key) { yahoo.search(query.trim()) }
     }
 
     override suspend fun fredSeries(seriesId: String, startDate: String): Result<Series> {
@@ -125,6 +134,7 @@ class FinanceRepositoryImpl(
         const val FRED_MAX_AGE_MS = 3 * 60 * 60_000L
         const val SHEET_MAX_AGE_MS = 2 * 60_000L
         const val UNKNOWN_SYMBOL_MS = 10 * 60_000L
+        const val SEARCH_MAX_AGE_MS = 10 * 60_000L
     }
 }
 

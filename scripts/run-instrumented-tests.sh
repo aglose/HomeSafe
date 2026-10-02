@@ -41,6 +41,19 @@ if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
   echo "::endgroup::"
 fi
 
+if [ "$status" -ne 0 ]; then
+  # A run where every end-to-end test fails with "Waited for the root of the view hierarchy to
+  # have window focus" means something else held the screen: usually a system "isn't responding"
+  # or "keeps stopping" dialog on the emulator. Show what took focus and any ANRs, so a failure
+  # like that names its cause instead of looking like the app broke.
+  echo "::group::System dialogs, ANRs and window focus changes"
+  adb logcat -d -b main,system,crash -v time \
+    | grep -E "ANR in|not responding|isn't responding|keeps stopping|AppErrorDialog|FATAL EXCEPTION|Changing focus from|mCurrentFocus|focus-request" \
+    | tail -n 120
+  adb shell dumpsys window 2>/dev/null | grep -E "mCurrentFocus|mFocusedApp" || true
+  echo "::endgroup::"
+fi
+
 echo "::group::Last tests the runner started and finished"
 adb logcat -d -s TestRunner:I | grep -E "started:|finished:|failed:" | tail -n 40
 echo "::endgroup::"

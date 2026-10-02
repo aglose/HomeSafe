@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.Series
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -8,6 +9,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.Url
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.test.runTest
@@ -159,5 +161,67 @@ class MarketDataApisTest {
         val engine = MockEngine { respond("", HttpStatusCode.NotFound) }
         val result = YahooFinanceApi(client(engine)).history("NOPE", ChartRange.DAY)
         assertTrue(result.isFailure)
+    }
+
+    // ---- Names, whole histories and search ----------------------------------------------------
+
+    @Test
+    fun quotesCarryTheNameAndKindYahooSends() = runTest {
+        val body = """
+            {"spark":{"result":[{"symbol":"VTSAX","response":[{
+                "meta":{"regularMarketPrice":150.0,"previousClose":149.0,"longName":"Vanguard Total Stock Market Index Admiral","shortName":"Vanguard Total","instrumentType":"MUTUALFUND"},
+                "timestamp":[100],"indicators":{"quote":[{"close":[150.0]}]}
+            }]}]}}
+        """.trimIndent()
+        val quote = YahooFinanceApi(client(sparkEngine(body))).quotes(listOf("VTSAX")).getOrThrow().single()
+        assertEquals("Vanguard Total Stock Market Index Admiral", quote.name)
+        assertEquals(InstrumentKind.EQUITY, InstrumentKind.fromYahoo(quote.instrumentType), "a fund is priced like a stock")
+    }
+
+    @Test
+    fun theWholeHistoryIsAskedForByDatesWeeklyWithItsHighestHighAndNoBaseline() = runTest {
+        var asked: Url? = null
+        val engine = MockEngine { request ->
+            asked = request.url
+            respond(
+                """
+                {"chart":{"result":[{
+                    "meta":{"chartPreviousClose":17.66,"gmtoffset":-14400},
+                    "timestamp":[100,200,300],
+                    "indicators":{"quote":[{"close":[10.0,30.0,25.0],"high":[11.0,null,34.5]}]}
+                }]}}
+                """.trimIndent(),
+                HttpStatusCode.OK,
+                headersOf(HttpHeaders.ContentType, "application/json"),
+            )
+        }
+        val history = YahooFinanceApi(client(engine)).history("^GSPC", ChartRange.MAX).getOrThrow()
+        val url = asked!!
+        assertEquals(null, url.parameters["range"], "range=max comes back thinned to monthly bars")
+        assertTrue(url.parameters["period1"]!!.toLong() < 0, "from before 1970: the S&P goes back to 1927")
+        assertEquals("1wk", url.parameters["interval"])
+        assertEquals(34.5, history.highest)
+        assertEquals(300L, history.highestEpochSeconds)
+        assertEquals(null, history.baseline, "a whole history is measured from its own first price")
+    }
+
+    @Test
+    fun searchKeepsWhatCanBeQuotedAndNamesItsKind() = runTest {
+        val body = """
+            {"quotes":[
+                {"symbol":"VTI","shortname":"Vanguard Total","longname":"Vanguard Total Stock Market Index Fund ETF Shares","quoteType":"ETF","typeDisp":"ETF","exchDisp":"NYSEArca","isYahooFinance":true},
+                {"symbol":"BTC-USD","shortname":"Bitcoin USD","quoteType":"CRYPTOCURRENCY","typeDisp":"Cryptocurrency","exchDisp":"CCC","isYahooFinance":true},
+                {"symbol":"OPTION1","quoteType":"OPTION","isYahooFinance":true},
+                {"symbol":"PRIVATECO","shortname":"Private Co","quoteType":"EQUITY","isYahooFinance":false},
+                {"index":"news"}
+            ],"news":[]}
+        """.trimIndent()
+        val matches = YahooFinanceApi(client(sparkEngine(body))).search("vti").getOrThrow()
+        assertEquals(listOf("VTI", "BTC-USD"), matches.map { it.symbol })
+        assertEquals("Vanguard Total Stock Market Index Fund ETF Shares", matches[0].name, "the long name where there is one")
+        assertEquals(InstrumentKind.EQUITY, matches[0].kind)
+        assertEquals("NYSEArca", matches[0].exchange)
+        assertEquals(InstrumentKind.CRYPTO, matches[1].kind)
+        assertEquals("Bitcoin USD", matches[1].name)
     }
 }
