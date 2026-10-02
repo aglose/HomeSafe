@@ -19,8 +19,11 @@ import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
 import com.meticulouscreations.homesafe.finance.domain.ChartDomain
+import com.meticulouscreations.homesafe.finance.domain.ChartHaptics
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
+import com.meticulouscreations.homesafe.finance.domain.ChartShader
 import com.meticulouscreations.homesafe.finance.domain.ChartStacking
+import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
@@ -31,6 +34,7 @@ import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
+import com.meticulouscreations.homesafe.finance.domain.LineSharpness
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
@@ -376,6 +380,21 @@ private fun FinanceExplainerPreview() {
         Box(Modifier.background(FinancePalette().surfaceRaised)) {
             ExplainerBody(Explainers.byId("cpi")!!, FinanceFixtures.state, {}, {})
         }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceChartSettingsPreview() {
+    FinanceStage { ChartSettingsScreen(ChartStyle.DEFAULT, previewPadding) {} }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceChartSettingsSharpPreview() {
+    val style = ChartStyle(ChartShader.HALFTONE, LineSharpness.POINTS, ChartHaptics.STRONG)
+    FinanceStage {
+        CompositionLocalProvider(LocalChartStyle provides style) { ChartSettingsScreen(style, previewPadding) {} }
     }
 }
 
