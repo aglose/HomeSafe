@@ -33,6 +33,12 @@ interface SettingsDao {
     @Upsert
     suspend fun upsertChartPreferences(entity: ChartPreferencesEntity)
 
+    @Query("SELECT * FROM FinancePreferencesEntity WHERE id = 0")
+    fun observeFinancePreferences(): Flow<FinancePreferencesEntity?>
+
+    @Upsert
+    suspend fun upsertFinancePreferences(entity: FinancePreferencesEntity)
+
     @Query("SELECT * FROM DeviceIdentityEntity WHERE id = 0")
     suspend fun getDeviceIdentity(): DeviceIdentityEntity?
 

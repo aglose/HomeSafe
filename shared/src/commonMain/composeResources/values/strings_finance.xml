@@ -215,7 +215,7 @@
     <string name="finance_econ_real_how_to_read">When the yellow line (the Fed's rate) is above the red one (inflation), cash in savings grows faster than prices.</string>
     <string name="finance_econ_rates_title">Key rates</string>
     <string name="finance_econ_rates_subtitle">Tap any for the full story</string>
-    <string name="finance_econ_fine_print">Economic data from the Federal Reserve Bank of St. Louis (FRED). Inflation is the change from a year earlier.</string>
+    <string name="finance_econ_fine_print">Economic data from the Federal Reserve Bank of St. Louis (FRED), from the Bureau of Labor Statistics and other agencies. Inflation is the change from a year earlier. Watch and danger lines are rules of thumb from past downturns, not forecasts.</string>
     <!-- %1$s is a month, e.g. "CPI in Mar 2024". -->
     <string name="finance_econ_cpi_in">CPI in %1$s</string>
     <!-- %1$s is the change ("+0.20 pts"), %2$s the month of the reading. -->

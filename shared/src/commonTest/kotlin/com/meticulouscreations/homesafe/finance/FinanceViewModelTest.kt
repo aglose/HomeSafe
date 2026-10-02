@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.finance
 import com.meticulouscreations.homesafe.finance.data.InMemoryFinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -54,6 +56,16 @@ class FinanceViewModelTest {
 
     private val clock = object : Clock {
         override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000)
+    }
+
+    private class FakePreferences : FinancePreferencesRepository {
+        val tone = MutableStateFlow(EconomyTone.DEFAULT)
+
+        override fun observeEconomyTone(): Flow<EconomyTone> = tone
+
+        override suspend fun setEconomyTone(tone: EconomyTone) {
+            this.tone.value = tone
+        }
     }
 
     /** Counts what's asked of it; histories come from [histories] in the order they're asked for. */
@@ -126,7 +138,7 @@ class FinanceViewModelTest {
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true, full = false)
         runCurrent()
         assertTrue(repo.quoteCalls >= 1)
@@ -147,7 +159,7 @@ class FinanceViewModelTest {
         val ticking = object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
         }
-        val vm = FinanceViewModel(repo, FakeWatchlist(), ticking, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), ticking, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
@@ -168,7 +180,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val never = CompletableDeferred<Result<PersonalFinance>>()
         repo.slowSheet = never
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -182,7 +194,7 @@ class FinanceViewModelTest {
     fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
         val repo = FakeRepository()
         repo.slowSheet = CompletableDeferred()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         vm.setActive(false)
@@ -195,7 +207,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
         repo.sheet = { Result.success(read) }
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance)
@@ -216,7 +228,7 @@ class FinanceViewModelTest {
     @Test
     fun goingInactiveStopsThePolling() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -232,9 +244,27 @@ class FinanceViewModelTest {
     }
 
     @Test
+    fun theToneFollowsThePreferenceAndIsSavedWhenChanged() = runTest(dispatcher) {
+        val prefs = FakePreferences()
+        val vm = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, InMemoryFinanceTipLedger(), prefs)
+        runCurrent()
+        assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
+
+        vm.setTone(EconomyTone.BRIGHT_SIDE)
+        runCurrent()
+        assertEquals(EconomyTone.BRIGHT_SIDE, prefs.tone.value, "the choice is saved")
+        assertEquals(EconomyTone.BRIGHT_SIDE, vm.uiState.value.tone)
+
+        // A change made elsewhere (the Settings page) lands too.
+        prefs.tone.value = EconomyTone.STRAIGHT
+        runCurrent()
+        assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
+    }
+
+    @Test
     fun aRefreshEndsRefreshing() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.refresh()
         assertTrue(vm.uiState.value.refreshing)
         runCurrent()
@@ -245,7 +275,7 @@ class FinanceViewModelTest {
     @Test
     fun aSlowOlderChartAnswerDoesNotReplaceANewerOne() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         val first = CompletableDeferred<PriceHistory>()
         val older = CompletableDeferred<PriceHistory>()
         val newer = CompletableDeferred<PriceHistory>()
@@ -272,7 +302,7 @@ class FinanceViewModelTest {
     fun theWatchlistIsTheSheetsTickersThenTheAppsAndSuggestionsOnlyWhenThereAreNeither() = runTest(dispatcher) {
         val repo = FakeRepository()
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
         runCurrent()
         assertEquals(MarketCatalog.defaultWatchlist, vm.uiState.value.watchlist)
         assertTrue(vm.uiState.value.watchEntries.all { it.isSuggestion })
@@ -295,7 +325,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         repo.sheet = { Result.success(sheetNaming("TSLA")) }
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.retrySheet()
         runCurrent()
         vm.addSymbol(SymbolMatch("TSLA", "Tesla", InstrumentKind.EQUITY, "Equity", null))
@@ -312,7 +342,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         repo.sheet = { Result.success(sheetNaming("TSLA")) }
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.retrySheet()
         runCurrent()
 
@@ -342,7 +372,7 @@ class FinanceViewModelTest {
     @Test
     fun searchWaitsForTypingToPauseAndOnlyTheLastQueryGoes() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.searchSymbols("v")
         advanceTimeBy(100)
         vm.searchSymbols("vt")
@@ -363,7 +393,7 @@ class FinanceViewModelTest {
     @Test
     fun aFailedSearchClearsTheLastQuerysMatches() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.searchSymbols("vti")
         advanceTimeBy(301)
         runCurrent()
@@ -381,7 +411,7 @@ class FinanceViewModelTest {
     fun aSlowQuoteFetchDoesNotHoldUpTheNextWatchlistChange() = runTest(dispatcher) {
         val repo = FakeRepository()
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true, full = false)
         runCurrent()
         val slow = CompletableDeferred<Unit>()
@@ -401,7 +431,7 @@ class FinanceViewModelTest {
     @Test
     fun theNewToThisTipComesUpOnTheFirstTwoOpeningsOnlyEvenWhenPutAway() {
         val ledger = InMemoryFinanceTipLedger()
-        val first = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger)
+        val first = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences())
         assertFalse(first.uiState.value.explainTipVisible, "nothing shows before the app is opened")
 
         first.onAppOpened()
@@ -410,7 +440,7 @@ class FinanceViewModelTest {
         assertFalse(first.uiState.value.explainTipVisible)
 
         // A later launch: a new view model over the same install's ledger.
-        val second = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger)
+        val second = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences())
         second.onAppOpened()
         assertTrue(second.uiState.value.explainTipVisible, "put away the first time, it still has its second showing")
 

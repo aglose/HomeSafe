@@ -204,7 +204,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.EconomyMapView(state: co
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.EconomyScreen(state: com.meticulouscreations.homesafe.finance.FinanceUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onOpenIndicator: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenConnections: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.EconomyScreen(state: com.meticulouscreations.homesafe.finance.FinanceUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onOpenIndicator: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenConnections: kotlin.Function0<kotlin.Unit>, onToneChange: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -213,6 +213,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.EconomyScreen(state: co
     - contentPadding: STABLE (marked @Stable or @Immutable)
     - onOpenIndicator: STABLE (function type)
     - onOpenConnections: STABLE (function type)
+    - onToneChange: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.EconomyWeatherCard(briefing: com.meticulouscreations.homesafe.finance.ui.Briefing, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -610,6 +611,15 @@ private fun com.meticulouscreations.homesafe.finance.ui.OverlayBlock(lines: kotl
     - rules: RUNTIME (requires runtime check)
     - defaultRange: STABLE (class with no mutable properties)
     - howToRead: STABLE (class with no mutable properties)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.PerspectiveCallout(perspective: com.meticulouscreations.homesafe.finance.ui.Perspective, tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - perspective: STABLE (marked @Stable or @Immutable)
+    - tone: STABLE (class with no mutable properties)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.PieBody(chart: com.meticulouscreations.homesafe.finance.domain.SheetChart, selected: kotlin.Int?, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
@@ -1994,6 +2004,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.DrawerRow(icon: androidx
     - label: STABLE (String is immutable)
     - selected: STABLE (primitive type)
     - onClick: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneSection(tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - tone: STABLE (class with no mutable properties)
+    - onTone: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.EditorCanvas(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit

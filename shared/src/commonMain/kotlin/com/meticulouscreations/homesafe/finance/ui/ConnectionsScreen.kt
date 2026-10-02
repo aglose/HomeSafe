@@ -388,7 +388,7 @@ private fun NodePanel(id: String, state: FinanceUiState, onFollow: (String) -> U
     val label = stringResource(node.label)
     val reading = node.readingId?.let { state.readings[it] }
     val verdict = when {
-        reading?.latest != null -> Narrator.verdict(reading).resolve()
+        reading?.latest != null -> Narrator.verdict(reading, state.tone).resolve()
         node.id == "stocks" -> state.quotes[MarketCatalog.SP500.symbol]?.let { Narrator.quoteVerdict(MarketCatalog.SP500.symbol, it).resolve() }
         else -> null
     }

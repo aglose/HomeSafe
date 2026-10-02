@@ -40,6 +40,8 @@ import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDecidesPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
@@ -105,6 +107,8 @@ data class SettingsUiState(
      * per-zone rules (which only drive the in-app poller) decide nothing here.
      */
     val relayPushes: Boolean = false,
+    /** How the finance app's Economy and Risk tabs talk about the economy. */
+    val economyTone: EconomyTone = EconomyTone.DEFAULT,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -178,6 +182,7 @@ class SettingsViewModel(
     private val clearHomeUseCase: ClearHomeUseCase,
     private val estimateAlertVolumeUseCase: EstimateAlertVolumeUseCase,
     observeRelayPushUseCase: ObserveRelayPushUseCase,
+    private val financePreferences: FinancePreferencesRepository,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -223,7 +228,8 @@ class SettingsViewModel(
         presence,
         locationAccess,
         relayPushes,
-    ) { state, presence, access, pushed -> state.copy(presence = presence, locationAccess = access, relayPushes = pushed) }
+        financePreferences.observeEconomyTone(),
+    ) { state, presence, access, pushed, tone -> state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone) }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -300,6 +306,10 @@ class SettingsViewModel(
             val volume = estimateAlertVolumeUseCase().getOrNull()
             local.update { it.copy(alertVolume = volume) }
         }
+    }
+
+    fun setEconomyTone(tone: EconomyTone) {
+        viewModelScope.launch { financePreferences.setEconomyTone(tone) }
     }
 
     /** Familiar vs. stranger: skip notifications for people Frigate has put a name to. */

@@ -29,6 +29,7 @@ import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
@@ -381,10 +382,32 @@ private fun FinanceMarketsPreview() {
     FinanceStage { MarketsScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, { _, _ -> }, {}, {}) }
 }
 
-@Preview(widthDp = 412, heightDp = 1500)
+@Preview(name = "Economy · straight talk", widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceEconomyPreview() {
     FinanceStage { EconomyScreen(FinanceFixtures.state, rememberLazyListState(), previewPadding, onOpenIndicator = {}) }
+}
+
+@Preview(name = "Economy · bright side", widthDp = 412, heightDp = 1500)
+@Composable
+private fun FinanceEconomyBrightSidePreview() {
+    val state = FinanceFixtures.state.copy(tone = EconomyTone.BRIGHT_SIDE)
+    FinanceStage {
+        CompositionLocalProvider(LocalEconomyTone provides state.tone) {
+            EconomyScreen(state, rememberLazyListState(), previewPadding, onOpenIndicator = {})
+        }
+    }
+}
+
+@Preview(name = "Indicator · bright side", widthDp = 412, heightDp = 1200)
+@Composable
+private fun FinanceIndicatorBrightSidePreview() {
+    val state = FinanceFixtures.state.copy(tone = EconomyTone.BRIGHT_SIDE)
+    FinanceStage {
+        CompositionLocalProvider(LocalEconomyTone provides state.tone) {
+            IndicatorDetailScreen(IndicatorCatalog.longTerm.id, state, previewPadding)
+        }
+    }
 }
 
 @Preview(widthDp = 412, heightDp = 1500)

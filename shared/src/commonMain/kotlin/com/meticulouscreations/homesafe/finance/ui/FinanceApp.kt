@@ -194,6 +194,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
         LocalFinanceTypography provides type,
         LocalExplainer provides openExplainer,
         LocalChartStyle provides chartStyle,
+        LocalEconomyTone provides state.tone,
     ) {
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
@@ -249,6 +250,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             padding,
                             onOpenIndicator = { push(FinanceDetail.IndicatorPage(it)) },
                             onOpenConnections = { push(FinanceDetail.Connections) },
+                            onToneChange = viewModel::setTone,
                         )
 
                         FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }

@@ -252,6 +252,7 @@
 
     <!-- Plain-language widgets -->
     <string name="layman_weather_title">Today's economic weather</string>
+    <string name="layman_standing_title">Where the economy stands</string>
     <string name="layman_stress_calm">Calm</string>
     <string name="layman_stress_elevated">Elevated</string>
     <string name="layman_stress_high">High</string>
