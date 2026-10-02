@@ -711,14 +711,16 @@ class ConnectionRepositoryImplTest {
     fun aPullToRefreshAfterLeavingHomeMovesTheRouteAtOnce() = runTest {
         val h = Harness(this)
         h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
-        advanceUntilIdle()
+        eventually("the LAN address to be in use") { h.repository.currentServerUrl.value == localUrl }
 
         // Out of the house with no path event yet: the LAN address is still in use, and dead.
         h.frigate.localReachable = false
         h.repository.reconnect()
 
+        // The pull itself moves the route: it's on Tailscale the moment reconnect() returns.
         assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
-        assertEquals(serverUrl, h.repository.currentServerUrl.value)
+        // currentServerUrl is derived on the background scope, so it follows a moment later.
+        eventually("currentServerUrl to follow to Tailscale") { h.repository.currentServerUrl.value == serverUrl }
     }
 
     @Test

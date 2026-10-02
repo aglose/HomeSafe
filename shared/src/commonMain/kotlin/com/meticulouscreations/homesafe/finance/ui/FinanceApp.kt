@@ -91,6 +91,7 @@ import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import kotlinx.coroutines.launch
@@ -154,6 +155,9 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             viewModel.onAppOpened()
         }
     }
+    // The add-a-ticker search, up over whichever tab opened it.
+    var addingSymbol by rememberSaveable { mutableStateOf(false) }
+    val openAddSymbol: () -> Unit = remember { { addingSymbol = true } }
     fun push(detail: FinanceDetail) {
         if (details.lastOrNull() != detail) details += detail
     }
@@ -213,9 +217,16 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             onOpenQuote = { push(FinanceDetail.QuotePage(it)) },
                             onRetrySheet = viewModel::retrySheet,
                             onOpenSync = { push(FinanceDetail.SheetSync) },
+                            onAddSymbol = openAddSymbol,
                         )
 
-                        FinanceTab.MARKETS -> MarketsScreen(state, listStates.getValue(FinanceTab.MARKETS), padding, viewModel::requestHistory) { push(FinanceDetail.QuotePage(it)) }
+                        FinanceTab.MARKETS -> MarketsScreen(
+                            state,
+                            listStates.getValue(FinanceTab.MARKETS),
+                            padding,
+                            viewModel::requestHistory,
+                            onAddSymbol = openAddSymbol,
+                        ) { push(FinanceDetail.QuotePage(it)) }
 
                         FinanceTab.ECONOMY -> EconomyScreen(
                             state,
@@ -228,7 +239,18 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
 
                         FinanceTab.RISK -> RiskScreen(state, listStates.getValue(FinanceTab.RISK), padding) { push(FinanceDetail.IndicatorPage(it)) }
 
-                        is FinanceDetail.QuotePage -> QuoteDetailScreen(page.symbol, state, detailPadding, viewModel::requestHistory)
+                        is FinanceDetail.QuotePage -> QuoteDetailScreen(
+                            page.symbol,
+                            state,
+                            detailPadding,
+                            viewModel::requestHistory,
+                            onFollow = { symbol ->
+                                val meta = state.meta(symbol)
+                                viewModel.addSymbol(SymbolMatch(symbol, meta.name, meta.kind, typeLabel = "", exchange = null))
+                            },
+                            onUnfollow = viewModel::removeSymbol,
+                            onSetPosition = viewModel::setPosition,
+                        )
 
                         is FinanceDetail.IndicatorPage -> IndicatorDetailScreen(page.id, state, detailPadding)
 
@@ -262,6 +284,20 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                     .navigationBarsPadding()
                     .padding(bottom = 84.dp),
             )
+
+            if (addingSymbol) {
+                AddSymbolSheet(
+                    search = state.search,
+                    sheetSymbols = state.sheetSymbols,
+                    addedSymbols = remember(state.watched) { state.watched.mapTo(HashSet()) { it.symbol } },
+                    onQuery = viewModel::searchSymbols,
+                    onAdd = viewModel::addSymbol,
+                    onDismiss = {
+                        addingSymbol = false
+                        viewModel.clearSearch()
+                    },
+                )
+            }
 
             explaining?.let { id ->
                 ExplainSheet(

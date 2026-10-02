@@ -36,6 +36,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -45,6 +49,7 @@ import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.ui.components.AuroraBackground
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
@@ -57,6 +62,8 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import kotlinx.coroutines.delay
 import kotlin.time.Clock
 
+private val IndexSymbols = MarketCatalog.indices.map { it.symbol }
+
 /** The ranges the Markets tab and a quote's page offer. */
 internal val PriceRanges = listOf(
     ChartRange.DAY,
@@ -66,6 +73,7 @@ internal val PriceRanges = listOf(
     ChartRange.YEAR_TO_DATE,
     ChartRange.YEAR,
     ChartRange.FIVE_YEARS,
+    ChartRange.MAX,
 )
 
 @Composable
@@ -74,6 +82,7 @@ internal fun MarketsScreen(
     listState: LazyListState,
     contentPadding: PaddingValues,
     onRequestHistory: (String, ChartRange) -> Unit,
+    onAddSymbol: () -> Unit,
     onOpenQuote: (String) -> Unit,
 ) {
     var selected by rememberSaveable { mutableStateOf(MarketCatalog.SP500.symbol) }
@@ -88,6 +97,7 @@ internal fun MarketsScreen(
                 range = range,
                 onRange = { range = it },
                 onRequestHistory = onRequestHistory,
+                verdictPeers = IndexSymbols,
                 trailing = {
                     MarketStatus(state.quotes[MarketCatalog.SP500.symbol])
                     Explainers.forSymbol(selected)?.let { InfoButton(it) }
@@ -127,16 +137,15 @@ internal fun MarketsScreen(
                 }
             }
         }
+        item(key = "alltime") { LongRunSection(selected, state, onRequestHistory) }
         item(key = "macro-h") { SectionHeader("Other big signals", subtitle = "Interest rates, gold, oil, crypto and the dollar — tap any to learn why it matters") }
         items(MarketCatalog.macro, key = { "macro-${it.symbol}" }) { meta ->
             QuoteRow(meta.symbol, state.quotes[meta.symbol], onClick = { onOpenQuote(meta.symbol) })
         }
         item(key = "watch-h") {
-            SectionHeader("Watchlist", subtitle = if (state.finance?.watchlist?.isNotEmpty() == true) "From your budget sheet" else null)
+            SectionHeader("Watchlist", subtitle = watchlistSubtitle(state), action = { AddSymbolButton(onAddSymbol) })
         }
-        items(state.watchlist, key = { "watch-$it" }) { symbol ->
-            QuoteRow(symbol, state.quotes[symbol], onClick = { onOpenQuote(symbol) })
-        }
+        watchlistItems(state, "watch", onOpenQuote)
         item(key = "fine") {
             FinePrint(
                 (state.quotesError?.let { "Couldn't refresh: $it. " } ?: "") +
@@ -159,11 +168,13 @@ internal fun PriceHeroAndChart(
     onRange: (ChartRange) -> Unit,
     onRequestHistory: (String, ChartRange) -> Unit,
     modifier: Modifier = Modifier,
+    /** Symbols this one is switched between in place (the Markets tab's index cards); see the verdict below. */
+    verdictPeers: List<String> = emptyList(),
     trailing: @Composable (() -> Unit)? = null,
 ) {
     val colors = FinanceTheme.colors
-    val meta = MarketCatalog.lookup(symbol)
     val quote = state.quotes[symbol]
+    val meta = state.meta(symbol)
     val load = state.chart(symbol, range)
     val requestHistory by rememberUpdatedState(onRequestHistory)
 
@@ -205,10 +216,10 @@ internal fun PriceHeroAndChart(
             // slip back a day.
             val intraday = range == ChartRange.DAY || range == ChartRange.WEEK || range == ChartRange.MONTH
             val whenText = if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)
-            "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  $whenText"
+            "${FinanceFormat.priceChange(change, meta.kind, meta.currency)} (${FinanceFormat.signedPercent(changePct)})  $whenText"
         }
 
-        else -> "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  ${rangeCaption(range)}"
+        else -> "${FinanceFormat.priceChange(change, meta.kind, meta.currency)} (${FinanceFormat.signedPercent(changePct)})  ${rangeCaption(range)}"
     }
 
     val extent = if (range == ChartRange.DAY && series != null && series.size > 1) {
@@ -226,7 +237,7 @@ internal fun PriceHeroAndChart(
         Column(Modifier.padding(top = 12.dp)) {
             HeroNumber(
                 caption = meta.name,
-                value = shownValue?.let { FinanceFormat.price(it, meta.kind) } ?: "—",
+                value = shownValue?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—",
                 change = changeText,
                 changeColor = lineColor,
                 trailing = trailing,
@@ -251,14 +262,29 @@ internal fun PriceHeroAndChart(
             }
             Spacer(Modifier.height(10.dp))
             RangeSelector(PriceRanges, range, { it.label }, lineColor, onRange, Modifier.padding(horizontal = PageGutter - 4.dp))
-            // Today's move in a sentence, with a sense of whether it's a big day.
-            if (range == ChartRange.DAY && quote != null && scrub == null) {
-                Text(
-                    Narrator.quoteVerdict(symbol, quote),
-                    style = FinanceTheme.type.label,
-                    color = colors.textSecondary,
-                    modifier = Modifier.padding(horizontal = PageGutter, vertical = 6.dp),
-                )
+            // Today's move in a sentence, with a sense of whether it's a big day. Its slot is as
+            // tall as the longest of [verdictPeers]' sentences (the other index cards' symbols), so
+            // switching cards never changes its height and the page under it stays put; and it only
+            // fades while a finger scrubs rather than leaving.
+            if (range == ChartRange.DAY && quote != null) {
+                Box(
+                    Modifier
+                        .padding(horizontal = PageGutter, vertical = 6.dp)
+                        .graphicsLayer { alpha = if (scrub == null) 1f else 0f },
+                ) {
+                    verdictPeers.forEach { peer ->
+                        val peerQuote = state.quotes[peer]
+                        if (peer != symbol && peerQuote != null) {
+                            Text(
+                                Narrator.quoteVerdict(peer, peerQuote),
+                                style = FinanceTheme.type.label,
+                                color = Color.Transparent,
+                                modifier = Modifier.clearAndSetSemantics {},
+                            )
+                        }
+                    }
+                    Text(Narrator.quoteVerdict(symbol, quote), style = FinanceTheme.type.label, color = colors.textSecondary)
+                }
             }
             HowToRead(
                 if (range == ChartRange.DAY) {
@@ -321,6 +347,7 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
             .background(if (selected) dir.copy(alpha = 0.10f) else colors.surface)
             .border(1.dp, if (selected) dir.copy(alpha = 0.7f) else colors.hairline, shape)
             .clickable(onClick = onClick)
+            .testTag("finance_index_$symbol")
             .padding(12.dp),
     ) {
         Text(meta.shortName, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1)
@@ -330,7 +357,7 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
         }
         Spacer(Modifier.height(2.dp))
         if (quote != null) {
-            Text(FinanceFormat.price(quote.price, meta.kind), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            Text(FinanceFormat.price(quote.price, meta.kind, meta.currency), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
             Text(FinanceFormat.signedPercent(quote.changePercent), style = FinanceTheme.type.label, color = dir)
             Spacer(Modifier.height(8.dp))
             Sparkline(quote.intraday, dir, Modifier.fillMaxWidth().height(34.dp), baseline = quote.previousClose)
@@ -364,7 +391,7 @@ private fun TickerTape(quotes: Map<String, Quote>, onOpen: (String) -> Unit) {
             ) {
                 Text(meta.shortName, style = FinanceTheme.type.micro, color = colors.textSecondary)
                 Spacer(Modifier.width(6.dp))
-                Text(FinanceFormat.price(q.price, meta.kind), style = FinanceTheme.type.micro, color = colors.textPrimary)
+                Text(FinanceFormat.price(q.price, meta.kind, meta.currency), style = FinanceTheme.type.micro, color = colors.textPrimary)
                 Spacer(Modifier.width(4.dp))
                 Text(FinanceFormat.signedPercent(q.changePercent), style = FinanceTheme.type.micro, color = colors.direction(q.change))
             }
@@ -380,13 +407,20 @@ internal fun QuoteDetailScreen(
     state: FinanceUiState,
     contentPadding: PaddingValues,
     onRequestHistory: (String, ChartRange) -> Unit,
+    onFollow: (String) -> Unit,
+    onUnfollow: (String) -> Unit,
+    onSetPosition: (String, Position?) -> Unit,
 ) {
     var range by rememberSaveable(symbol) { mutableStateOf(ChartRange.DAY) }
-    val meta = MarketCatalog.lookup(symbol)
     val q = state.quotes[symbol]
+    val meta = state.meta(symbol)
     LazyColumn(contentPadding = contentPadding) {
         item {
             PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory, trailing = { Explainers.forSymbol(symbol)?.let { InfoButton(it) } })
+        }
+        item { WatchStatusRow(symbol, state, onFollow = { onFollow(symbol) }, onUnfollow = { onUnfollow(symbol) }) }
+        if (meta.kind.isHoldable()) {
+            item { PositionSection(symbol, state) { onSetPosition(symbol, it) } }
         }
         val explainer = Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }
         if (explainer != null) {
@@ -418,12 +452,12 @@ internal fun QuoteDetailScreen(
         item {
             StatGrid(
                 listOf(
-                    "Price" to (q?.price?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W high" to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W low" to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    "Price" to (q?.price?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "52W high" to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "52W low" to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
                     "Volume" to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
                     "Symbol" to symbol,
                 ),
@@ -432,8 +466,9 @@ internal fun QuoteDetailScreen(
         val hi = q?.fiftyTwoWeekHigh
         val lo = q?.fiftyTwoWeekLow
         if (q != null && hi != null && lo != null) {
-            item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind), FinanceFormat.price(hi, meta.kind)) }
+            item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind, meta.currency), FinanceFormat.price(hi, meta.kind, meta.currency)) }
         }
+        item { LongRunSection(symbol, state, onRequestHistory) }
         item { FinePrint("From Yahoo Finance; may be delayed up to 15 minutes. Not investment advice.") }
     }
 }

@@ -44,4 +44,13 @@ interface SettingsDao {
 
     @Upsert
     suspend fun upsertDeviceIdentity(entity: DeviceIdentityEntity)
+
+    @Query("SELECT * FROM WatchedSymbolEntity ORDER BY addedAtEpochSeconds, symbol")
+    fun observeWatchedSymbols(): Flow<List<WatchedSymbolEntity>>
+
+    @Upsert
+    suspend fun upsertWatchedSymbol(entity: WatchedSymbolEntity)
+
+    @Query("DELETE FROM WatchedSymbolEntity WHERE symbol = :symbol")
+    suspend fun deleteWatchedSymbol(symbol: String)
 }

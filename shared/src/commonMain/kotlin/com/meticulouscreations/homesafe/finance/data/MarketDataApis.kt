@@ -1,9 +1,11 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
+import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.network.FrigateResponseException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
@@ -76,20 +78,52 @@ class YahooFinanceApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpCli
 
     suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory> = suspendRunCatching {
         val response = httpClient.get("$BASE/v8/finance/chart/${symbol.encodeURLPathPart()}") {
-            parameter("range", range.yahooRange)
+            if (range == ChartRange.MAX) {
+                // By dates: `range=max` comes back thinned to monthly or quarterly bars (see ChartRange).
+                parameter("period1", EARLIEST)
+                parameter("period2", LATEST)
+            } else {
+                parameter("range", range.yahooRange)
+            }
             parameter("interval", range.yahooInterval)
             parameter("includePrePost", "false")
         }
         if (!response.status.isSuccess()) throw FrigateResponseException("Yahoo answered ${response.status}")
         val result = response.body<ChartEnvelope>().chart.result?.firstOrNull()
             ?: throw FrigateResponseException("Yahoo had no chart for $symbol")
-        val baseline = if (range == ChartRange.DAY) result.meta.previousClose ?: result.meta.chartPreviousClose else result.meta.chartPreviousClose
-        PriceHistory(symbol, range, result.series(), baseline, result.meta.gmtoffset ?: 0)
+        // A whole history's first bar has nothing before it, so there's no close to measure from.
+        val baseline = when (range) {
+            ChartRange.DAY -> result.meta.previousClose ?: result.meta.chartPreviousClose
+            ChartRange.MAX -> null
+            else -> result.meta.chartPreviousClose
+        }
+        val (high, highAt) = result.highest()
+        PriceHistory(symbol, range, result.series(), baseline, result.meta.gmtoffset ?: 0, high, highAt)
+    }
+
+    /**
+     * Tickers matching [query] — a ticker, a company or a fund's name — that the app can quote:
+     * stocks, ETFs, mutual funds, crypto, indices, futures and currencies, best match first.
+     */
+    suspend fun search(query: String): Result<List<SymbolMatch>> = suspendRunCatching {
+        val response = httpClient.get("$BASE/v1/finance/search") {
+            parameter("q", query)
+            parameter("quotesCount", SEARCH_MAX)
+            parameter("newsCount", 0)
+            parameter("listsCount", 0)
+        }
+        if (!response.status.isSuccess()) throw FrigateResponseException("Yahoo answered ${response.status}")
+        response.body<SearchEnvelope>().quotes.mapNotNull { it.toMatch() }
     }
 
     private companion object {
         const val BASE = "https://query1.finance.yahoo.com"
         const val SPARK_MAX = 20
+        const val SEARCH_MAX = 12
+
+        // 1900 to 2286: before any history Yahoo has, and after now for long enough.
+        const val EARLIEST = -2_208_988_800L
+        const val LATEST = 9_999_999_999L
     }
 }
 
@@ -122,6 +156,34 @@ class FredApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpClient) {
             }
             return Series(times.toLongArray(), values.toDoubleArray())
         }
+    }
+}
+
+@Serializable
+private data class SearchEnvelope(val quotes: List<SearchQuote> = emptyList())
+
+@Serializable
+private data class SearchQuote(
+    val symbol: String? = null,
+    val shortname: String? = null,
+    val longname: String? = null,
+    val quoteType: String? = null,
+    val typeDisp: String? = null,
+    val exchDisp: String? = null,
+    // Yahoo mixes in a few things it can't chart (private companies from its news partners).
+    val isYahooFinance: Boolean = true,
+) {
+    fun toMatch(): SymbolMatch? {
+        val s = symbol?.takeIf { it.isNotBlank() } ?: return null
+        val kind = InstrumentKind.fromYahoo(quoteType) ?: return null
+        if (!isYahooFinance) return null
+        return SymbolMatch(
+            symbol = s,
+            name = longname ?: shortname ?: s,
+            kind = kind,
+            typeLabel = typeDisp ?: quoteType.orEmpty().lowercase().replaceFirstChar { it.uppercase() },
+            exchange = exchDisp,
+        )
     }
 }
 
@@ -160,6 +222,22 @@ private data class ChartResult(
         return Series(t.toLongArray(), v.toDoubleArray())
     }
 
+    /** The highest bar high in the chart and when, or nulls when Yahoo sent no highs. */
+    fun highest(): Pair<Double?, Long?> {
+        val ts = timestamp.orEmpty()
+        val highs = indicators.quote.firstOrNull()?.high.orEmpty()
+        var best: Double? = null
+        var at: Long? = null
+        for (i in 0 until minOf(ts.size, highs.size)) {
+            val h = highs[i] ?: continue
+            if (best == null || h > best) {
+                best = h
+                at = ts[i]
+            }
+        }
+        return best to at
+    }
+
     fun toQuote(symbol: String): Quote? {
         val price = meta.regularMarketPrice ?: return null
         return Quote(
@@ -176,6 +254,9 @@ private data class ChartResult(
             sessionStartEpochSeconds = meta.currentTradingPeriod?.regular?.start,
             sessionEndEpochSeconds = meta.currentTradingPeriod?.regular?.end,
             intraday = series(),
+            name = meta.longName ?: meta.shortName,
+            instrumentType = meta.instrumentType,
+            currency = meta.currency,
         )
     }
 }
@@ -184,7 +265,7 @@ private data class ChartResult(
 private data class Indicators(val quote: List<QuoteBlock> = emptyList())
 
 @Serializable
-private data class QuoteBlock(val close: List<Double?> = emptyList())
+private data class QuoteBlock(val close: List<Double?> = emptyList(), val high: List<Double?> = emptyList())
 
 @Serializable
 private data class ChartMeta(
@@ -199,6 +280,10 @@ private data class ChartMeta(
     val regularMarketTime: Long? = null,
     val gmtoffset: Int? = null,
     val currentTradingPeriod: TradingPeriods? = null,
+    val longName: String? = null,
+    val shortName: String? = null,
+    val instrumentType: String? = null,
+    val currency: String? = null,
 )
 
 @Serializable

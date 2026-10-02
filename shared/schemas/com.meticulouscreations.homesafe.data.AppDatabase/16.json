@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 15,
-    "identityHash": "9ab9df09406ea7093508e7985eb2d0f3",
+    "version": 16,
+    "identityHash": "fc32cca3b187cf21bce390e31366f66c",
     "entities": [
       {
         "tableName": "ConnectionHistoryEntity",
@@ -465,11 +465,35 @@
             "symbol"
           ]
         }
+      },
+      {
+        "tableName": "FinancePreferencesEntity",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `economyTone` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "economyTone",
+            "columnName": "economyTone",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '9ab9df09406ea7093508e7985eb2d0f3')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fc32cca3b187cf21bce390e31366f66c')"
     ]
   }
 }
