@@ -19,21 +19,29 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
@@ -78,8 +86,26 @@ class HomeViewModel(
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
     observeLatestMomentUseCase: ObserveLatestMomentUseCase,
     private val setAwayUseCase: SetAwayUseCase,
+    private val reconnectToServerUseCase: ReconnectToServerUseCase,
+    private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
+    private val refreshStationaryObjectsUseCase: RefreshStationaryObjectsUseCase,
     private val clock: Clock,
 ) : ViewModel() {
+
+    private val _refreshing = MutableStateFlow(false)
+
+    /** True while a pull to refresh is running — what keeps the band open over the list. */
+    val refreshing: StateFlow<Boolean> = _refreshing.asStateFlow()
+
+    private val _reconnectRequests = MutableStateFlow(0)
+
+    /**
+     * Goes up by one on every pull to refresh; each camera card hands it to its player, which
+     * takes the change as a request to reconnect if its picture isn't moving (see
+     * `CameraStreamPlayer`'s `reconnectRequests`). A count rather than an event so a card
+     * composed later can tell an old request from a new one.
+     */
+    val reconnectRequests: StateFlow<Int> = _reconnectRequests.asStateFlow()
 
     /**
      * The household's cars standing in view of a camera right now — "Sarah's Tesla · Driveway ·
@@ -110,6 +136,40 @@ class HomeViewModel(
     val everyoneAway: StateFlow<Boolean> = observeHouseholdPresenceUseCase()
         .map { it.everyoneAway }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+    /**
+     * The page's pull to refresh. Every camera without moving video is told to reconnect now
+     * rather than when its back-off says ([reconnectRequests]), and everything the page reads is
+     * asked for again: the route, the session and the camera list ([ReconnectToServerUseCase]),
+     * who is home, and the cars in view — whose poll also brings the summary's latest moment.
+     *
+     * The band stays up while that runs, for at least [MIN_REFRESH_MS] (one sweep of its scan, so
+     * a fast answer still reads as one) and at most [MAX_REFRESH_MS]: a server that isn't
+     * answering shouldn't hold it open through every timeout on the way, so past that it closes
+     * and whatever is still running carries on behind it.
+     */
+    fun refresh() {
+        if (!_refreshing.compareAndSet(expect = false, update = true)) return
+        _reconnectRequests.update { it + 1 }
+        val work = viewModelScope.launch {
+            coroutineScope {
+                launch { refreshHouseholdPresenceUseCase() }
+                reconnectToServerUseCase()
+            }
+            // After the session check, so the strip's poll goes out on a session known to be good.
+            refreshStationaryObjectsUseCase()
+        }
+        viewModelScope.launch {
+            try {
+                coroutineScope {
+                    launch { delay(MIN_REFRESH_MS) }
+                    withTimeoutOrNull(MAX_REFRESH_MS) { work.join() }
+                }
+            } finally {
+                _refreshing.value = false
+            }
+        }
+    }
 
     /** "I'm back": marks this phone home, which ends away mode for the household. Failures leave the banner up. */
     fun markBack() {
@@ -179,5 +239,11 @@ class HomeViewModel(
 
         /** How often the summary's relative times are recomputed: "3 min ago" never has to be more precise than this. */
         const val STATUS_TICK_MS = 30_000L
+
+        /** The shortest a pull to refresh holds the band open: one sweep of its scan, as on the Moments tab. */
+        const val MIN_REFRESH_MS = 900L
+
+        /** The longest: about one request's timeout, after which the band closes on whatever has landed. */
+        const val MAX_REFRESH_MS = 8_000L
     }
 }

@@ -48,6 +48,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    reconnectRequests: Int,
 ) {
     val holder = remember(playerKey) { HolderLease(playerKey) }.holder
 
@@ -71,6 +72,8 @@ actual fun CameraStreamPlayer(
         else -> LiveStreamStatus.Live
     }
     LaunchedEffect(streamStatus) { currentOnStreamStatusChanged(streamStatus) }
+    val currentStreamStatus by rememberUpdatedState(streamStatus)
+    OnReconnectRequest(reconnectRequests) { holder.reconnect(currentStreamStatus) }
     LaunchedEffect(holder.isStalled) { currentOnBufferingChanged(holder.isStalled) }
     LaunchedEffect(holder.hasAudio) { currentOnAudioAvailabilityChanged(holder.hasAudio) }
     LaunchedEffect(holder.positionMs) {

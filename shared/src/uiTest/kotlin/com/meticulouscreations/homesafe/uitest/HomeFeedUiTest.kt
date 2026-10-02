@@ -1,8 +1,12 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.material3.Text
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -13,6 +17,8 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
@@ -259,5 +265,52 @@ class HomeFeedUiTest {
         onNodeWithText("I'm back").performClick()
 
         assertEquals(1, backTaps, "one tap on 'I'm back' should mark this device home exactly once")
+    }
+
+    @Test
+    fun pullingTheListDownFromTheTopAsksForARefresh() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var refreshes = 0
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = listOf(tile("front_door")),
+                    onAwayBack = {},
+                    modifier = Modifier.testTag("feed"),
+                    onRefresh = { refreshes++ },
+                ) { tile -> Text(tile.camera.displayName) }
+            }
+        }
+
+        onNodeWithTag("feed").performTouchInput { swipeDown(startY = top + 10f, endY = bottom, durationMillis = 400) }
+        mainClock.advanceTimeBy(1_000)
+
+        assertEquals(1, refreshes)
+    }
+
+    @Test
+    fun theRefreshIsOfferedToScreenReadersOnTheSummary() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        var refreshes = 0
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = emptyList(),
+                    onAwayBack = {},
+                    statusHeadline = "All quiet",
+                    statusDetails = "2 cameras on",
+                    onRefresh = { refreshes++ },
+                ) { }
+            }
+        }
+
+        val action = onNodeWithText("All quiet", useUnmergedTree = true).fetchSemanticsNode().let { node ->
+            generateSequence(node) { it.parent }.firstNotNullOf { n -> n.config.getOrNull(SemanticsActions.CustomActions)?.firstOrNull { it.label == "Refresh home" } }
+        }
+        action.action()
+
+        assertEquals(1, refreshes)
     }
 }

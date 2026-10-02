@@ -197,6 +197,24 @@ internal object LivePlaybackPolicy {
         val exponent = (consecutiveFailures - 1).coerceIn(0, 16)
         return min(FIRST_RETRY_DELAY_MS shl exponent, MAX_RETRY_DELAY_MS)
     }
+
+    /**
+     * How long a start gets before a pull to refresh may throw it away and start over. A cold
+     * join is about two seconds from go2rtc (see [WEBRTC_SIGNALING_TIMEOUT_MS]); a camera still
+     * without a moving picture well past that is stuck rather than slow.
+     */
+    const val RECONNECT_GRACE_MS = 4_000L
+
+    /**
+     * Whether a pull to refresh should start a live player over now, rather than leave it to its
+     * own retries. A player that has lost its session ([sessionLost]: it failed and is waiting out
+     * [retryDelayMs], however long that has grown) always is, even while its last frame still
+     * reads as [LiveStreamStatus.Live] — that frame is frozen. Otherwise only a player whose
+     * picture isn't moving, and whose last start is more than [RECONNECT_GRACE_MS] old: a pull
+     * right after the page opens must not cancel the joins that are about to land.
+     */
+    fun shouldReconnect(status: LiveStreamStatus, sessionLost: Boolean, msSinceStart: Long): Boolean =
+        sessionLost || (status != LiveStreamStatus.Live && msSinceStart >= RECONNECT_GRACE_MS)
 }
 
 /**

@@ -61,6 +61,26 @@ class LivePlaybackPolicyTest {
         assertEquals(250, LivePlaybackPolicy.retryDelayMs(0))
     }
 
+    @Test
+    fun aPullLeavesAMovingPictureAlone() {
+        assertFalse(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Live, sessionLost = false, msSinceStart = 60_000))
+    }
+
+    @Test
+    fun aPullRestartsALostSessionAtOnce_evenBehindAFrozenFrameThatStillReadsLive() {
+        assertTrue(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Live, sessionLost = true, msSinceStart = 0))
+        assertTrue(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Connecting, sessionLost = true, msSinceStart = 0))
+    }
+
+    @Test
+    fun aPullGivesAFreshStartItsGraceBeforeThrowingItAway() {
+        val grace = LivePlaybackPolicy.RECONNECT_GRACE_MS
+        assertFalse(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Connecting, sessionLost = false, msSinceStart = grace - 1))
+        assertTrue(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Connecting, sessionLost = false, msSinceStart = grace))
+        assertFalse(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Buffering, sessionLost = false, msSinceStart = grace - 1))
+        assertTrue(LivePlaybackPolicy.shouldReconnect(LiveStreamStatus.Buffering, sessionLost = false, msSinceStart = 10 * 60_000))
+    }
+
     private val gridEndpoint = WebRtcEndpoint("http://frigate:1984/api/webrtc?src=cam_sub", audio = false)
     private val fullEndpoint = WebRtcEndpoint("http://frigate:1984/api/webrtc?src=cam", audio = true)
     private val fullSilentEndpoint = WebRtcEndpoint("http://frigate:1984/api/webrtc?src=cam", audio = false)
