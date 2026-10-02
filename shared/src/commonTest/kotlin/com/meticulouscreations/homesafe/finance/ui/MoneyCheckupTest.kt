@@ -7,6 +7,31 @@ import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.checkup_debt_detail_costly
+import homesafe.shared.generated.resources.checkup_debt_detail_none_rated
+import homesafe.shared.generated.resources.checkup_debt_step_pay_first
+import homesafe.shared.generated.resources.checkup_debt_unjudged
+import homesafe.shared.generated.resources.checkup_debt_whatif_saved
+import homesafe.shared.generated.resources.checkup_emergency_step_short_away
+import homesafe.shared.generated.resources.checkup_months
+import homesafe.shared.generated.resources.checkup_not_itemised
+import homesafe.shared.generated.resources.checkup_ratio_item_elsewhere
+import homesafe.shared.generated.resources.checkup_ratio_step_from_savings
+import homesafe.shared.generated.resources.checkup_ratio_step_mortgage
+import homesafe.shared.generated.resources.checkup_ratio_whatif_still_owed
+import homesafe.shared.generated.resources.checkup_retirement_step_reach_away
+import homesafe.shared.generated.resources.checkup_retirement_step_uneven
+import homesafe.shared.generated.resources.checkup_savings_ledger_kept
+import homesafe.shared.generated.resources.checkup_savings_ledger_other
+import homesafe.shared.generated.resources.checkup_savings_ledger_spending
+import homesafe.shared.generated.resources.checkup_savings_step_reach
+import homesafe.shared.generated.resources.checkup_savings_step_trim_expense
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.finance_wallet_per_month
+import homesafe.shared.generated.resources.narrator_two_sentences
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -62,6 +87,9 @@ class MoneyCheckupTest {
 
     private fun check(kind: CheckKind) = checkup.byKind(kind)!!
 
+    /** Names from the sheet as the checkup lists them. */
+    private fun names(vararg names: String): UiText = UiText.Joined(names.map { it.asUiText() }, UiText.of(Res.string.common_list_separator))
+
     @Test
     fun listsEveryLineAndOrdersTheFlaggedOnesCushionFirst() {
         assertEquals(CheckKind.entries, checkup.checks.map { it.kind })
@@ -73,13 +101,14 @@ class MoneyCheckupTest {
     fun theEmergencyFundShowsTheCashAccountsAndHowFarFromThreeMonths() {
         val c = check(CheckKind.EMERGENCY_FUND)
         assertFalse(c.ok)
-        assertEquals("2.0 months", c.figure)
+        assertEquals(UiText.of(Res.string.checkup_months, "2.0"), c.figure)
         val cash = c.ledger.first()
-        assertEquals("$18,000", cash.amount)
-        assertEquals(listOf("Savings", "Checking"), cash.items.map { it.label }, "biggest first")
+        assertEquals("$18,000".asUiText(), cash.amount)
+        assertEquals(listOf("Savings".asUiText(), "Checking".asUiText()), cash.items.map { it.label }, "biggest first")
         assertEquals(WalletSection.ACCOUNTS, cash.section)
         assertEquals(WalletSection.CASH_FLOW, c.ledger[1].section)
-        assertEquals("Set aside $9,000 more to reach 3 months ($27,000 in all). Saving all of the $1,000 left over each month, that's about 9 months away.", c.steps.first())
+        // "Set aside $9,000 more to reach 3 months ($27,000 in all). Saving all of the $1,000 left over each month, that's about 9 months away."
+        assertEquals(UiText.plural(Res.plurals.checkup_emergency_step_short_away, 9, "$9,000", "$27,000", "$1,000", 9), c.steps.first())
         assertFalse(c.whatIf!!.outcome(8_500.0).ok)
         assertTrue(c.whatIf.outcome(9_000.0).ok)
     }
@@ -87,11 +116,11 @@ class MoneyCheckupTest {
     @Test
     fun theSavingsRateSaysHowMuchMoreAMonthReaches15Percent() {
         val c = check(CheckKind.SAVINGS_RATE)
-        assertEquals("10.0%", c.figure)
-        assertEquals("Keeping $500 more a month reaches 15%.", c.steps.first())
-        assertTrue(c.steps[1].startsWith("Rent is $4,000 a month — trimming it by 13%"), c.steps[1])
-        assertEquals("Kept each month", c.ledger.last().label)
-        assertTrue(c.ledger.none { it.label == "Other differences in the sheet" }, "income less spending is the sheet's left over")
+        assertEquals("10.0%".asUiText(), c.figure)
+        assertEquals(UiText.of(Res.string.checkup_savings_step_reach, "$500"), c.steps.first())
+        assertEquals(UiText.of(Res.string.checkup_savings_step_trim_expense, "Rent", "$4,000", "13%"), c.steps[1])
+        assertEquals(Res.string.checkup_savings_ledger_kept, c.ledger.last().label)
+        assertTrue(c.ledger.none { it.label == Res.string.checkup_savings_ledger_other }, "income less spending is the sheet's left over")
         assertFalse(c.whatIf!!.outcome(475.0).ok)
         assertTrue(c.whatIf.outcome(500.0).ok)
     }
@@ -99,21 +128,25 @@ class MoneyCheckupTest {
     @Test
     fun aSheetLeftOverThatDisagreesWithTheSumGetsItsOwnLine() {
         val c = moneyCheckup(household(netMonthly = 800.0), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
-        val other = c.ledger.single { it.label == "Other differences in the sheet" }
-        assertEquals("$200", other.amount)
+        val other = c.ledger.single { it.label == Res.string.checkup_savings_ledger_other }
+        assertEquals("$200".asUiText(), other.amount)
     }
 
     @Test
     fun costlyDebtFlagsOnlyTheLoansAboveTheLineAndPricesPayingThemOff() {
         val c = check(CheckKind.COSTLY_DEBT)
         assertFalse(c.ok)
-        assertEquals("Charging more than 5%: Credit card.", c.detail)
+        assertEquals(UiText.of(Res.string.checkup_debt_detail_costly, "5%", names("Credit card")), c.detail)
         val loans = c.ledger.first()
-        assertEquals(listOf("Credit card" to true, "Car loan" to false), loans.items.map { it.label to it.flagged }, "highest rate first, the mortgage left out")
-        assertTrue(c.steps.first().startsWith("Pay Credit card first — at 22% it costs about $1,100 a year."), c.steps.first())
+        assertEquals(
+            listOf("Credit card".asUiText() to true, "Car loan".asUiText() to false),
+            loans.items.map { it.label to it.flagged },
+            "highest rate first, the mortgage left out",
+        )
+        assertEquals(UiText.of(Res.string.checkup_debt_step_pay_first, "Credit card", "22%", "$1,100"), c.steps.first())
         val cleared = c.whatIf!!.outcome(5_000.0)
         assertTrue(cleared.ok)
-        assertEquals("$1,100 a year less interest", cleared.headline)
+        assertEquals(UiText.of(Res.string.checkup_debt_whatif_saved, "$1,100"), cleared.headline)
     }
 
     @Test
@@ -127,22 +160,22 @@ class MoneyCheckupTest {
     fun debtAgainstWhatYouOwnLeavesTheMortgageOut() {
         val c = check(CheckKind.DEBT_RATIO)
         assertTrue(c.ok)
-        assertEquals("15%", c.figure)
-        assertEquals("$15,000", c.ledger.first().amount)
+        assertEquals("15%".asUiText(), c.figure)
+        assertEquals("$15,000".asUiText(), c.ledger.first().amount)
         // $88,000 in the accounts against the sheet's $100,000 total: the rest is said, not hidden.
-        assertEquals("$12,000", c.ledger[1].items.single { it.label == "Elsewhere in the sheet's total" }.amount)
-        assertTrue(c.steps.any { "The mortgage ($300,000) isn't counted" in it })
+        assertEquals("$12,000".asUiText(), c.ledger[1].items.single { it.label == UiText.of(Res.string.checkup_ratio_item_elsewhere) }.amount)
+        assertTrue(UiText.of(Res.string.checkup_ratio_step_mortgage, "$300,000") in c.steps)
     }
 
     @Test
     fun savingForLaterSaysWhatAdditionReaches25Percent() {
         val c = check(CheckKind.RETIREMENT)
-        assertEquals("23%", c.figure)
-        // (25% of $88,000 − $20,000) ÷ 75%: new money grows the total too.
-        assertTrue(c.steps.first().startsWith("Adding $2,667 to retirement accounts would reach 25%."), c.steps.first())
+        assertEquals("23%".asUiText(), c.figure)
+        // (25% of $88,000 − $20,000) ÷ 75%: new money grows the total too; at $1,000 a month that's 3 months.
+        assertEquals(UiText.plural(Res.plurals.checkup_retirement_step_reach_away, 3, "$2,667", "$1,000", 3), c.steps.first())
         assertFalse(c.whatIf!!.outcome(2_600.0).ok)
         assertTrue(c.whatIf.outcome(2_667.0).ok)
-        assertTrue(c.steps.any { it.startsWith("Alex has $0 in retirement accounts to Sam's $20,000") })
+        assertTrue(UiText.of(Res.string.checkup_retirement_step_uneven, "Alex", "$0", "Sam", "$20,000") in c.steps)
     }
 
     @Test
@@ -158,8 +191,9 @@ class MoneyCheckupTest {
     fun spendingThatTheSheetDoesNotItemiseIsShownSoThePartsAddUp() {
         // $9,000 spent; the three lines come to $7,000.
         val spending = check(CheckKind.EMERGENCY_FUND).ledger[1]
-        assertEquals("$2,000 / mo", spending.items.single { it.label == "Not itemised in the sheet" }.amount)
-        assertEquals("$2,000 / mo", check(CheckKind.SAVINGS_RATE).ledger.single { it.label == "Spending" }.items.last().amount)
+        val perMonth = UiText.of(Res.string.finance_wallet_per_month, "$2,000")
+        assertEquals(perMonth, spending.items.single { it.label == UiText.of(Res.string.checkup_not_itemised) }.amount)
+        assertEquals(perMonth, check(CheckKind.SAVINGS_RATE).ledger.single { it.label == Res.string.checkup_savings_ledger_spending }.items.last().amount)
     }
 
     @Test
@@ -170,7 +204,15 @@ class MoneyCheckupTest {
         val someRates = household(debts = listOf(Debt("Car loan", Owner.Joint, 10_000.0, 3.0, null), Debt("Family loan", Owner.Joint, 4_000.0, null, null)))
         val c = moneyCheckup(someRates, fedRate = null).byKind(CheckKind.COSTLY_DEBT)!!
         assertTrue(c.ok)
-        assertEquals("None of your loans with a rate charge more than about 5%. Family loan has no rate in the sheet, so it wasn't judged.", c.detail)
+        // "None of your loans with a rate charge more than about 5%. Family loan has no rate in the sheet, so it wasn't judged."
+        assertEquals(
+            UiText.of(
+                Res.string.narrator_two_sentences,
+                UiText.of(Res.string.checkup_debt_detail_none_rated, "5%"),
+                UiText.plural(Res.plurals.checkup_debt_unjudged, 1, names("Family loan")),
+            ),
+            c.detail,
+        )
     }
 
     @Test
@@ -178,7 +220,7 @@ class MoneyCheckupTest {
         // $28,000 owed of $100,000: ($28,000 − $25,000) ÷ 75% is exactly $4,000, which lands on 25% — not under it.
         val c = moneyCheckup(household(debts = listOf(Debt("Car loan", Owner.Joint, 28_000.0, 3.0, null))), fedRate = null).byKind(CheckKind.DEBT_RATIO)!!
         assertFalse(c.ok)
-        assertEquals("Paying down $4,001 from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).", c.steps.first())
+        assertEquals(UiText.of(Res.string.checkup_ratio_step_from_savings, "$4,001"), c.steps.first())
         assertFalse(c.whatIf!!.outcome(4_000.0).ok)
         assertTrue(c.whatIf.outcome(4_001.0).ok)
     }
@@ -188,6 +230,6 @@ class MoneyCheckupTest {
         assertEquals(15_000.0, check(CheckKind.DEBT_RATIO).whatIf!!.max, "owed, not rounded past it")
         val deep = moneyCheckup(household(debts = listOf(Debt("Car loan", Owner.Joint, 40_000.0, 3.0, null))), fedRate = null).byKind(CheckKind.DEBT_RATIO)!!
         assertEquals(18_000.0, deep.whatIf!!.max, "no more than the cash there is")
-        assertEquals("$22,000 still owed.", deep.whatIf.outcome(25_000.0).note, "an amount past the lever is held to it")
+        assertEquals(UiText.of(Res.string.checkup_ratio_whatif_still_owed, "$22,000"), deep.whatIf.outcome(25_000.0).note, "an amount past the lever is held to it")
     }
 }

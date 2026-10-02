@@ -16,8 +16,10 @@ import org.jetbrains.compose.resources.stringResource
  * composable, [load] anywhere else that can suspend (a notification, a share sheet).
  *
  * Arguments may themselves be [UiText] (resolved first, in the same language) or plain values
- * (numbers, already-formatted dates, names that come from the server), which are passed through
- * with `toString()`. Resource strings take positional `%1$s` / `%1$d` placeholders only.
+ * (numbers, already-formatted dates, names that come from the server), which are handed to the
+ * resource formatter as they are; it writes each with `toString()` into its positional `%1$s` /
+ * `%1$d` placeholder. Arguments must be values that don't change (strings, numbers, other
+ * [UiText]): [UiText] is [Immutable], and the lists it holds are copies taken when it is built.
  *
  * Equality is structural, so tests assert on the resource and its arguments rather than on the
  * English: `assertEquals(UiText.of(Res.string.moments_since, "6:55 PM"), visit.timeLabel)`.
@@ -30,14 +32,32 @@ sealed interface UiText {
     data class Verbatim(val value: String) : UiText
 
     @Immutable
-    data class Resource(val res: StringResource, val args: List<Any> = emptyList()) : UiText
+    class Resource(val res: StringResource, args: List<Any> = emptyList()) : UiText {
+        val args: List<Any> = args.toList()
+
+        override fun equals(other: Any?) = other is Resource && res == other.res && args == other.args
+        override fun hashCode() = 31 * res.hashCode() + args.hashCode()
+        override fun toString() = "Resource(res=${res.key}, args=$args)"
+    }
 
     @Immutable
-    data class Plural(val res: PluralStringResource, val quantity: Int, val args: List<Any> = emptyList()) : UiText
+    class Plural(val res: PluralStringResource, val quantity: Int, args: List<Any> = emptyList()) : UiText {
+        val args: List<Any> = args.toList()
+
+        override fun equals(other: Any?) = other is Plural && res == other.res && quantity == other.quantity && args == other.args
+        override fun hashCode() = 31 * (31 * res.hashCode() + quantity) + args.hashCode()
+        override fun toString() = "Plural(res=${res.key}, quantity=$quantity, args=$args)"
+    }
 
     /** [parts] side by side, with [separator] (itself translatable) between each pair. */
     @Immutable
-    data class Joined(val parts: List<UiText>, val separator: UiText = Verbatim("")) : UiText
+    class Joined(parts: List<UiText>, val separator: UiText = Verbatim("")) : UiText {
+        val parts: List<UiText> = parts.toList()
+
+        override fun equals(other: Any?) = other is Joined && parts == other.parts && separator == other.separator
+        override fun hashCode() = 31 * parts.hashCode() + separator.hashCode()
+        override fun toString() = "Joined(parts=$parts, separator=$separator)"
+    }
 
     companion object {
         fun of(res: StringResource, vararg args: Any): UiText = Resource(res, args.toList())
@@ -103,8 +123,9 @@ open class LocalizedException(
 
 /**
  * What to show for this failure: why it failed — its [LocalizedException.text] when it has one,
- * otherwise its raw message, which is server or platform text and so passed through
- * untranslated — set into [fallback] as `%1$s` when given ("Couldn't save: %1$s").
+ * otherwise its raw message, which is server or platform text and so shown untranslated — set
+ * into [fallback] as its `%1$s` argument when given ("Couldn't save: %1$s"), like any other
+ * [UiText] argument.
  */
 fun Throwable.userMessage(fallback: StringResource? = null): UiText {
     val localized = (this as? LocalizedException)?.text

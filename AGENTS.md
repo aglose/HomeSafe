@@ -2,14 +2,15 @@
 
 ## Strings and localization
 
-**No user-visible text is written as a Kotlin (or Swift) string literal.** Every word a person can
-read or hear (labels, buttons, titles, empty states, errors, snackbars, dialogs, content
-descriptions, notification titles/bodies/actions, channel names, generated sentences) lives in a
-strings XML file, so the app can be translated by adding a `values-<lang>` folder. This applies to
-screens and components and also to everything that produces text for them: view models, use
-cases, domain-model presenters, the finance narrator and explainers, network/data code whose
-error messages reach the UI, and platform notification code. A new screen or a change to an
-existing one that adds a literal is not done.
+**No user-visible text is written as a Kotlin string literal.** Every word a person can read or
+hear (labels, buttons, titles, empty states, errors, snackbars, dialogs, content descriptions,
+notification titles/bodies/actions, channel names, generated sentences) lives in a strings XML
+file, so the app can be translated by adding a `values-<lang>` folder. (iOS Swift follows Apple's
+mechanism instead; see "Where strings go".) This applies to screens and components and also to
+everything that produces text for them: view models, use cases, domain-model presenters, the
+finance narrator and explainers, network/data code whose error messages reach the UI, and
+platform notification code. A new screen or a change to an existing one that adds a literal is
+not done.
 
 ### Where strings go
 
@@ -50,6 +51,10 @@ existing one that adds a literal is not done.
 
 ### Writing the XML
 
+These rules are for the Compose resources under `composeResources/`. The Android-only
+`res/values/strings.xml` files are read by Android itself and follow Android's rules instead
+(there an apostrophe is escaped as `\'`).
+
 - One string per line, no leading/trailing whitespace inside the tag (it is kept verbatim).
 - Placeholders are positional only: `%1$s`, `%2$d`. Plain `%s` is not substituted. A literal
   percent sign is written as `%`, **not** `%%` (Compose resources does no `%%` unescaping).
@@ -65,7 +70,8 @@ existing one that adds a literal is not done.
 
 Identifiers and plumbing that no person reads: resource keys, routes, deep links, URLs, JSON
 field names, Frigate labels/zone/camera ids, SQL, preference keys, notification channel *ids*,
-test tags, log lines, `require`/`check` messages for programmer errors, and the sample *data* in
+test tags, log lines, `require`/`check` messages for programmer errors, SwiftUI `Text("…")` /
+`Tab("…", …)` literals (they are `LocalizedStringKey`s, looked up in the String Catalog), and the sample *data* in
 `@Preview`s and tests (a preview's camera called "Front Door" is data; the screen's "No cameras
 yet" is copy and comes from resources). Tests in `commonTest` assert on `UiText`/`StringResource`
 values structurally; Compose UI tests may match the English text.

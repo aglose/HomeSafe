@@ -376,7 +376,7 @@ private fun FinanceTopBar(
         // On the tabs only: their titles are short enough to leave room for a third button.
         if (!isDetail) {
             IconButton(onClick = onChartSettings, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 88.dp).testTag("finance_chart_settings")) {
-                Icon(Icons.Filled.Tune, contentDescription = "Chart settings", tint = colors.textSecondary)
+                Icon(Icons.Filled.Tune, contentDescription = stringResource(Res.string.finance_title_chart_settings), tint = colors.textSecondary)
             }
         }
         IconButton(onClick = onGlossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp).testTag("finance_glossary")) {

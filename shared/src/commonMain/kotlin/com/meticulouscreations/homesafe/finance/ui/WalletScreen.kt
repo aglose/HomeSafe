@@ -162,11 +162,11 @@ import homesafe.shared.generated.resources.finance_wallet_vesting_title
 import homesafe.shared.generated.resources.finance_wallet_watchlist_subtitle_live
 import homesafe.shared.generated.resources.finance_wallet_watchlist_subtitle_sheet
 import homesafe.shared.generated.resources.finance_wallet_watchlist_title
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt

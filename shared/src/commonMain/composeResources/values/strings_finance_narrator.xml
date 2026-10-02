@@ -261,6 +261,7 @@
     <string name="layman_stress_high_detail">High: many warning lights are on at once, a pattern seen in the run-up to past downturns.</string>
     <string name="layman_stress_severe_detail">Severe: most warning lights are flashing, as they did in 2008 and 2020.</string>
 
+    <!-- The money checkup's titles, tips and one-line details (MoneyCheckup.kt, CheckupUi.kt); the rest of its words are in strings_finance_checkup.xml -->
     <string name="layman_checkup_title">Money checkup</string>
     <!-- %1$d healthy lines out of %2$d (the plural follows %2$d) -->
     <plurals name="layman_checkup_score">
@@ -284,11 +285,6 @@
     <string name="layman_checkup_debt_title">Costly debt</string>
     <!-- %1$s a percentage, e.g. "5%" -->
     <string name="layman_checkup_debt_none">None of your loans charge more than about %1$s.</string>
-    <!-- %1$s the loans' names as a list, %2$s a percentage; the plural follows how many loans -->
-    <plurals name="layman_checkup_debt_some">
-        <item quantity="one">%1$s charges more than %2$s.</item>
-        <item quantity="other">%1$s charge more than %2$s.</item>
-    </plurals>
     <string name="layman_checkup_debt_tip_ok">Low-rate loans can be paid on schedule while savings earn about as much.</string>
     <string name="layman_checkup_debt_tip_costly">Paying these down early is a guaranteed return equal to their rate — usually better than savings pay.</string>
     <string name="layman_checkup_ratio_title">Debt vs what you own</string>

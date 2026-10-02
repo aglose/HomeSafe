@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The finance app's chart settings: the looks, line styles and haptics a person picks from
+  (ChartStyle.kt) and the chart settings page around them (ChartSettingsScreen.kt).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Looks (ChartShader): a name and a one-line description each. -->
+    <string name="chart_style_shader_glow">Glow</string>
+    <string name="chart_style_shader_glow_blurb">A soft halo and a wash beneath</string>
+    <string name="chart_style_shader_aurora">Aurora</string>
+    <string name="chart_style_shader_aurora_blurb">Northern lights drift under the line</string>
+    <string name="chart_style_shader_halftone">Halftone</string>
+    <string name="chart_style_shader_halftone_blurb">A dot screen that swells under your finger</string>
+    <string name="chart_style_shader_neon">Neon</string>
+    <string name="chart_style_shader_neon_blurb">A white-hot core in a wide bloom</string>
+    <string name="chart_style_shader_flat">Flat</string>
+    <string name="chart_style_shader_flat_blurb">Just the line, nothing else</string>
+
+    <!-- How closely the line follows the data (LineSharpness). -->
+    <string name="chart_style_sharpness_smooth">Smooth</string>
+    <string name="chart_style_sharpness_smooth_blurb">A gentle curve, easy on the eye</string>
+    <string name="chart_style_sharpness_sharp">Sharp</string>
+    <string name="chart_style_sharpness_sharp_blurb">Straight between points, every high and low kept</string>
+    <string name="chart_style_sharpness_points">Every point</string>
+    <string name="chart_style_sharpness_points_blurb">Sharp, with a dot on each reading</string>
+
+    <!-- What a finger scrubbing a chart feels (ChartHaptics). -->
+    <string name="chart_style_haptics_off">Off</string>
+    <string name="chart_style_haptics_off_blurb">No buzz</string>
+    <string name="chart_style_haptics_light">Light</string>
+    <string name="chart_style_haptics_light_blurb">A faint tick on each point</string>
+    <string name="chart_style_haptics_crisp">Crisp</string>
+    <string name="chart_style_haptics_crisp_blurb">A clear tick on each point, a thud at the highs and lows</string>
+    <string name="chart_style_haptics_strong">Strong</string>
+    <string name="chart_style_haptics_strong_blurb">A firm click on each point, a thud at the highs and lows</string>
+
+    <!-- The chart settings page. -->
+    <string name="chart_style_page_title">Charts</string>
+    <string name="chart_style_page_intro">How every chart in Finance looks and feels. Drag the chart below to try it.</string>
+    <string name="chart_style_section_look">Look</string>
+    <string name="chart_style_section_line">Line</string>
+    <string name="chart_style_section_haptics">Haptics</string>
+    <string name="chart_style_reset">Back to the defaults</string>
+    <string name="chart_style_fine_print">These apply to every chart in Finance: the markets, the economy, your wallet and the sheet's own charts.</string>
+    <!-- The live preview chart's caption: before a scrub, then the point under the finger. -->
+    <string name="chart_style_preview">Preview</string>
+    <string name="chart_style_preview_point">Point %1$d of %2$d</string>
+    <string name="chart_style_preview_chart_description">Preview chart</string>
+    <!-- A look's tile, for screen readers: %1$s is the look's name, e.g. "Aurora". -->
+    <string name="chart_style_tile_description">%1$s chart look</string>
+    <string name="chart_style_tile_use">Use %1$s</string>
+</resources>
