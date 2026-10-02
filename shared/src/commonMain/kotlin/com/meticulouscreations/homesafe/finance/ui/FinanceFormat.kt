@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.narrator_format_days_ago
 import homesafe.shared.generated.resources.narrator_format_hours_ago
 import homesafe.shared.generated.resources.narrator_format_in_days
@@ -18,11 +19,15 @@ import homesafe.shared.generated.resources.narrator_format_points_change
 import homesafe.shared.generated.resources.narrator_format_today
 import homesafe.shared.generated.resources.narrator_format_unchanged
 import homesafe.shared.generated.resources.narrator_format_years_ago
+import homesafe.shared.generated.resources.watchlist_coins
+import homesafe.shared.generated.resources.watchlist_shares
+import homesafe.shared.generated.resources.watchlist_shares_fraction
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.time.Instant
@@ -133,14 +138,24 @@ object FinanceFormat {
         return if ('.' in text) text.trimEnd('0').trimEnd('.') else text
     }
 
-    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
-    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null, currency: String? = null): String {
-        val held = shares(position.shares) + " " + when {
-            kind == InstrumentKind.CRYPTO && unit != null -> unit
-            position.shares == 1.0 -> "share"
-            else -> "shares"
+    /**
+     * What's held: "10 shares", "1 share", "0.5 shares", or "0.25 BTC" for a coin, whose [unit] is
+     * its ticker. A whole count picks its plural form; a fraction has a string of its own, since a
+     * plural is chosen by a whole number.
+     */
+    fun held(shares: Double, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null): UiText {
+        val amount = shares(shares)
+        return when {
+            kind == InstrumentKind.CRYPTO && unit != null -> UiText.of(Res.string.watchlist_coins, amount, unit)
+            shares == floor(shares) && shares <= Int.MAX_VALUE -> UiText.plural(Res.plurals.watchlist_shares, shares.toInt(), amount)
+            else -> UiText.of(Res.string.watchlist_shares_fraction, amount)
         }
-        return if (price == null) held else "$held · ${money(position.value(price), currency = currency)}"
+    }
+
+    /** "10 shares · $2,431.20", "0.25 BTC · $28,940.11"; without a price yet, just the holding. */
+    fun positionLine(position: Position, price: Double?, kind: InstrumentKind = InstrumentKind.EQUITY, unit: String? = null, currency: String? = null): UiText {
+        val held = held(position.shares, kind, unit)
+        return if (price == null) held else UiText.Joined(listOf(held, money(position.value(price), currency = currency).asUiText()), UiText.of(Res.string.common_dot_separator))
     }
 
     /**

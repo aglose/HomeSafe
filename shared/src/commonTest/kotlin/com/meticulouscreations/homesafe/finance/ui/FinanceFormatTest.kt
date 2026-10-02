@@ -2,9 +2,11 @@ package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
+import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.narrator_format_days_ago
 import homesafe.shared.generated.resources.narrator_format_hours_ago
 import homesafe.shared.generated.resources.narrator_format_in_days
@@ -17,6 +19,9 @@ import homesafe.shared.generated.resources.narrator_format_points_change
 import homesafe.shared.generated.resources.narrator_format_today
 import homesafe.shared.generated.resources.narrator_format_unchanged
 import homesafe.shared.generated.resources.narrator_format_years_ago
+import homesafe.shared.generated.resources.watchlist_coins
+import homesafe.shared.generated.resources.watchlist_shares
+import homesafe.shared.generated.resources.watchlist_shares_fraction
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -168,5 +173,18 @@ class FinanceFormatTest {
         assertEquals("3,000.00 JPY", FinanceFormat.money(3000.0, currency = "JPY"))
         assertEquals("-12.00 GBp", FinanceFormat.signedMoney(-12.0, currency = "GBp"))
         assertEquals("+12.00 GBp", FinanceFormat.priceChange(12.0, InstrumentKind.EQUITY, "GBp"))
+    }
+
+    @Test
+    fun positionLineCountsSharesOrCoinsThenTheirWorth() {
+        assertEquals(UiText.plural(Res.plurals.watchlist_shares, 1, "1"), FinanceFormat.held(1.0), "one share picks the singular")
+        assertEquals(UiText.plural(Res.plurals.watchlist_shares, 1_250, "1,250"), FinanceFormat.held(1_250.0))
+        assertEquals(UiText.of(Res.string.watchlist_shares_fraction, "0.5"), FinanceFormat.held(0.5), "a fraction isn't a whole count")
+        assertEquals(UiText.of(Res.string.watchlist_coins, "0.25", "BTC"), FinanceFormat.held(0.25, InstrumentKind.CRYPTO, "BTC"))
+        assertEquals(UiText.plural(Res.plurals.watchlist_shares, 10, "10"), FinanceFormat.positionLine(Position(10.0), price = null), "no price yet: just the holding")
+        assertEquals(
+            UiText.Joined(listOf(UiText.plural(Res.plurals.watchlist_shares, 10, "10"), "$2,431.20".asUiText()), UiText.of(Res.string.common_dot_separator)),
+            FinanceFormat.positionLine(Position(10.0), price = 243.12),
+        )
     }
 }

@@ -36,6 +36,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_data_error_chart
 import homesafe.shared.generated.resources.fin_data_error_markets
 import homesafe.shared.generated.resources.fin_data_error_sheet
+import homesafe.shared.generated.resources.watchlist_search_unavailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
@@ -55,7 +56,7 @@ data class SheetIssue(val problem: SheetProblem, val message: UiText, val servic
 
 /** The add-a-symbol search: what was typed, and what Yahoo matched it with. */
 @Immutable
-data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: String? = null)
+data class SymbolSearch(val query: String = "", val results: List<SymbolMatch> = emptyList(), val loading: Boolean = false, val error: UiText? = null)
 
 /** A price history being fetched for one symbol and range. */
 @Immutable
@@ -111,6 +112,13 @@ data class FinanceUiState(
 
     /** How to show [symbol], from its quote, else from what was saved when it was added (see [MarketCatalog.lookup]). */
     fun meta(symbol: String): MarketSymbol = watchedSymbol(symbol).let { w -> MarketCatalog.lookup(symbol, quotes[symbol], w?.name, w?.kind) }
+
+    /**
+     * The name to keep for [symbol] when it's followed from the app: Yahoo's name for it (data), else
+     * the ticker. A catalog symbol's name is copy in the reader's language, looked up again whenever
+     * it's shown, so it is never stored.
+     */
+    fun nameToSave(symbol: String): String = (meta(symbol).name as? UiText.Verbatim)?.value ?: symbol
 
     val stress: StressScore? get() = StressScore.of(readings.values.filter { it.indicator in IndicatorCatalog.radar })
 
@@ -266,7 +274,7 @@ class FinanceViewModel(
                 .onFailure { e ->
                     if (e is CancellationException) throw e
                     // The last query's matches go: left up, they'd pass for this one's.
-                    _uiState.update { s -> s.copy(search = s.search.copy(results = emptyList(), loading = false, error = e.message ?: "Search is unavailable")) }
+                    _uiState.update { s -> s.copy(search = s.search.copy(results = emptyList(), loading = false, error = e.shownAs(Res.string.watchlist_search_unavailable))) }
                 }
         }
     }
@@ -306,7 +314,7 @@ class FinanceViewModel(
 
                 else -> {
                     val meta = s.meta(symbol)
-                    val base = existing ?: WatchedSymbol(symbol, meta.name, meta.kind, clock.now().epochSeconds)
+                    val base = existing ?: WatchedSymbol(symbol, s.nameToSave(symbol), meta.kind, clock.now().epochSeconds)
                     watchlistRepository.save(base.copy(position = position))
                 }
             }

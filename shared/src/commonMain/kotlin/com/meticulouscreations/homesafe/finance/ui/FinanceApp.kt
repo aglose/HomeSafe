@@ -260,7 +260,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             viewModel::requestHistory,
                             onFollow = { symbol ->
                                 val meta = state.meta(symbol)
-                                viewModel.addSymbol(SymbolMatch(symbol, meta.name, meta.kind, typeLabel = "", exchange = null))
+                                viewModel.addSymbol(SymbolMatch(symbol, state.nameToSave(symbol), meta.kind, typeLabel = "", exchange = null))
                             },
                             onUnfollow = viewModel::removeSymbol,
                             onSetPosition = viewModel::setPosition,

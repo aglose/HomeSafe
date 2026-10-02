@@ -57,6 +57,7 @@ import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.finance_range_52_week
 import homesafe.shared.generated.resources.finance_signal_none
+import homesafe.shared.generated.resources.watchlist_in_sheet
 import org.jetbrains.compose.resources.stringResource
 
 /** Horizontal padding every finance page uses. */
@@ -340,7 +341,7 @@ internal fun SheetBadge(modifier: Modifier = Modifier) {
     ) {
         Icon(Icons.Filled.TableChart, contentDescription = null, tint = colors.cool, modifier = Modifier.size(11.dp))
         Spacer(Modifier.width(3.dp))
-        Text("In sheet", style = FinanceTheme.type.micro, color = colors.cool, maxLines = 1)
+        Text(stringResource(Res.string.watchlist_in_sheet), style = FinanceTheme.type.micro, color = colors.cool, maxLines = 1)
     }
 }
 

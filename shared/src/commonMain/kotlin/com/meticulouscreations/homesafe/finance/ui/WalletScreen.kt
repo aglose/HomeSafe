@@ -159,8 +159,6 @@ import homesafe.shared.generated.resources.finance_wallet_total_profit
 import homesafe.shared.generated.resources.finance_wallet_use_market_rate
 import homesafe.shared.generated.resources.finance_wallet_value_added
 import homesafe.shared.generated.resources.finance_wallet_vesting_title
-import homesafe.shared.generated.resources.finance_wallet_watchlist_subtitle_live
-import homesafe.shared.generated.resources.finance_wallet_watchlist_subtitle_sheet
 import homesafe.shared.generated.resources.finance_wallet_watchlist_title
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -226,7 +224,7 @@ internal fun WalletScreen(
         item(key = "watch-h") {
             SectionHeader(
                 stringResource(Res.string.finance_wallet_watchlist_title),
-                subtitle = watchlistSubtitle(state),
+                subtitle = stringResource(watchlistSubtitle(state)),
                 action = onAddSymbol?.let { add -> { AddSymbolButton(add) } },
             )
         }

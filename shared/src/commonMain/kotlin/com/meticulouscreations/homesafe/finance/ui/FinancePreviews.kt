@@ -71,6 +71,8 @@ import homesafe.shared.generated.resources.fin_data_chart_tabs_gone
 import homesafe.shared.generated.resources.fin_data_found_read
 import homesafe.shared.generated.resources.fin_data_found_snapshots
 import homesafe.shared.generated.resources.fin_data_note_history_undated
+import homesafe.shared.generated.resources.finance_markets_watchlist_title
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.sin
 
 /**
@@ -355,7 +357,13 @@ private fun FinanceSheetSyncLinesPreview() {
 private fun FinanceWatchlistPreview() {
     FinanceStage {
         LazyColumn(contentPadding = previewPadding) {
-            item { SectionHeader("Watchlist", subtitle = watchlistSubtitle(FinanceFixtures.state), action = { AddSymbolButton({}) }) }
+            item {
+                SectionHeader(
+                    stringResource(Res.string.finance_markets_watchlist_title),
+                    subtitle = stringResource(watchlistSubtitle(FinanceFixtures.state)),
+                    action = { AddSymbolButton({}) },
+                )
+            }
             watchlistItems(FinanceFixtures.state, "w") {}
         }
     }

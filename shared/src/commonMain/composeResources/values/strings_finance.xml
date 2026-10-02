@@ -49,8 +49,6 @@
     <string name="finance_wallet_not_enough_history">Not enough history in this range</string>
     <string name="finance_wallet_hero_how_to_read">Each point is a check-in recorded in your budget sheet, joined into a line, with today's figure at the end. Drag along it to see any check-in, pick a range above, and switch between total assets, debt and monthly profit with the buttons.</string>
     <string name="finance_wallet_watchlist_title">Your watchlist</string>
-    <string name="finance_wallet_watchlist_subtitle_sheet">The tickers your sheet tracks, live</string>
-    <string name="finance_wallet_watchlist_subtitle_live">Live prices</string>
     <string name="finance_wallet_charts_title">Sheet charts</string>
     <!-- %1$s is the budget sheet's title. -->
     <string name="finance_wallet_charts_subtitle">The charts in “%1$s”, live from the sheet</string>
@@ -170,7 +168,6 @@
     <string name="finance_markets_macro_title">Other big signals</string>
     <string name="finance_markets_macro_subtitle">Interest rates, gold, oil, crypto and the dollar — tap any to learn why it matters</string>
     <string name="finance_markets_watchlist_title">Watchlist</string>
-    <string name="finance_markets_watchlist_subtitle">From your budget sheet</string>
     <string name="finance_markets_fine_print">Quotes from Yahoo Finance, delayed up to 15 minutes. Updated every 15 seconds while markets are open.</string>
     <!-- %1$s is the reason the refresh failed, as the server gave it. -->
     <string name="finance_markets_fine_print_error">Couldn't refresh: %1$s. Quotes from Yahoo Finance, delayed up to 15 minutes. Updated every 15 seconds while markets are open.</string>

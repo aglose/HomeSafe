@@ -631,12 +631,13 @@ private fun com.meticulouscreations.homesafe.finance.ui.PillButton(text: kotlin.
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.PositionEditor(symbol: kotlin.String, unitLabel: kotlin.String, initial: com.meticulouscreations.homesafe.finance.domain.Position?, onSave: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.Position?, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.PositionEditor(symbol: kotlin.String, unitLabel: kotlin.String, costLabel: kotlin.String, initial: com.meticulouscreations.homesafe.finance.domain.Position?, onSave: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.Position?, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - symbol: STABLE (String is immutable)
     - unitLabel: STABLE (String is immutable)
+    - costLabel: STABLE (String is immutable)
     - initial: STABLE (marked @Stable or @Immutable)
     - onSave: STABLE (function type)
     - onDismiss: STABLE (function type)

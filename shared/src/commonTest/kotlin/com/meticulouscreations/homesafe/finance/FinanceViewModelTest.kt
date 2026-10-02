@@ -374,7 +374,7 @@ class FinanceViewModelTest {
         advanceTimeBy(301)
         runCurrent()
         assertTrue(vm.uiState.value.search.results.isEmpty(), "VTI mustn't be offered under \"tsla\"")
-        assertEquals("Yahoo answered 503", vm.uiState.value.search.error)
+        assertEquals("Yahoo answered 503".asUiText(), vm.uiState.value.search.error, "the failure as the server put it")
     }
 
     @Test

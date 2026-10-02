@@ -92,7 +92,6 @@ import homesafe.shared.generated.resources.finance_markets_range_year
 import homesafe.shared.generated.resources.finance_markets_range_ytd
 import homesafe.shared.generated.resources.finance_markets_symbol
 import homesafe.shared.generated.resources.finance_markets_volume
-import homesafe.shared.generated.resources.finance_markets_watchlist_subtitle
 import homesafe.shared.generated.resources.finance_markets_watchlist_title
 import homesafe.shared.generated.resources.finance_markets_what_is_it
 import homesafe.shared.generated.resources.finance_markets_why_it_matters
@@ -187,7 +186,7 @@ internal fun MarketsScreen(
             QuoteRow(meta.symbol, state.quotes[meta.symbol], onClick = { onOpenQuote(meta.symbol) })
         }
         item(key = "watch-h") {
-            SectionHeader(stringResource(Res.string.finance_markets_watchlist_title), subtitle = watchlistSubtitle(state), action = { AddSymbolButton(onAddSymbol) })
+            SectionHeader(stringResource(Res.string.finance_markets_watchlist_title), subtitle = stringResource(watchlistSubtitle(state)), action = { AddSymbolButton(onAddSymbol) })
         }
         watchlistItems(state, "watch", onOpenQuote)
         item(key = "fine") {
