@@ -248,6 +248,13 @@ class ConnectionRepositoryImpl(
         revalidationJob = appScope.launch { refreshRoute(verifySession = true) }
     }
 
+    override suspend fun reconnect() {
+        // One pass rather than [refreshRoute]'s loop: a pull wants an answer, and a revalidation
+        // already retrying in the background carries on doing so either way.
+        checkRoute(verifySession = true)
+        _activeConnection.value?.let { refreshCameras(it) }
+    }
+
     /**
      * Whether [localUrl] answers within [LOCAL_PROBE_TIMEOUT_MS]. Answering only proves *something*
      * is at that address; [verifiedLocalUrl] is what proves it is the server.
@@ -478,21 +485,26 @@ class ConnectionRepositoryImpl(
      * until it succeeds or the next network change supersedes it.
      */
     private suspend fun refreshRoute(verifySession: Boolean) {
-        while (true) {
-            val current = _activeConnection.value ?: return
-            if (sessionCredentials == null) return
-            val preferred = if (localAnswers(current.localUrl)) ConnectionRoute.LOCAL_NETWORK else ConnectionRoute.TAILSCALE
-            if (preferred == current.route && !verifySession) return
+        while (!checkRoute(verifySession)) delay(ROUTE_SWITCH_RETRY_MS)
+    }
 
-            val settled = signInMutex.withLock {
-                // Re-check under the lock: a user-driven connect may have landed in the meantime.
-                val latest = _activeConnection.value ?: return
-                val credentials = sessionCredentials ?: return
-                if (latest.route == preferred && !verifySession) return
-                moveSession(latest, preferred, credentials)
-            }
-            if (settled) return
-            delay(ROUTE_SWITCH_RETRY_MS)
+    /**
+     * One pass of [refreshRoute]. True when there is nothing more to do — the session is where
+     * it should be, or there is no session to move — and false when the address it should move
+     * to couldn't be reached, so a caller that wants it settled has to try again.
+     */
+    private suspend fun checkRoute(verifySession: Boolean): Boolean {
+        val current = _activeConnection.value ?: return true
+        if (sessionCredentials == null) return true
+        val preferred = if (localAnswers(current.localUrl)) ConnectionRoute.LOCAL_NETWORK else ConnectionRoute.TAILSCALE
+        if (preferred == current.route && !verifySession) return true
+
+        return signInMutex.withLock {
+            // Re-check under the lock: a user-driven connect may have landed in the meantime.
+            val latest = _activeConnection.value ?: return true
+            val credentials = sessionCredentials ?: return true
+            if (latest.route == preferred && !verifySession) return true
+            moveSession(latest, preferred, credentials)
         }
     }
 

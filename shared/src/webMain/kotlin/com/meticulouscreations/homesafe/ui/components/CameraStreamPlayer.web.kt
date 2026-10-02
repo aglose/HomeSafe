@@ -14,6 +14,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    reconnectRequests: Int,
 ) {
     LiveViewUnavailablePlaceholder(modifier)
 }
