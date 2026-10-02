@@ -234,7 +234,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             detailPadding,
                             viewModel::requestHistory,
                             onFollow = { symbol ->
-                                val meta = MarketCatalog.lookup(symbol, state.quotes[symbol])
+                                val meta = state.meta(symbol)
                                 viewModel.addSymbol(SymbolMatch(symbol, meta.name, meta.kind, typeLabel = "", exchange = null))
                             },
                             onUnfollow = viewModel::removeSymbol,

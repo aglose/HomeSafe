@@ -3,7 +3,7 @@ package com.meticulouscreations.homesafe.uitest
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
@@ -15,7 +15,6 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.Density
@@ -80,9 +79,11 @@ class MarketsIndexSwitchUiTest {
                         LocalFinancePalette provides FinancePalette(),
                         LocalFinanceTypography provides FinanceTypography(albertSansFontFamily()),
                     ) {
-                        // The root fills the test window whatever it's given; a phone's width inside it.
+                        // A phone's size whatever the test window is (the root fills the window, and
+                        // CI's emulator window is only 320x640px): tall enough that the index cards
+                        // are laid out, even where they hang past the window's edge.
                         Box(Modifier.fillMaxSize()) {
-                            Box(Modifier.width(width)) {
+                            Box(Modifier.requiredSize(width, 1_400.dp)) {
                                 MarketsScreen(openState, rememberLazyListState(), PaddingValues(), { _, _ -> }, {}, {})
                             }
                         }
@@ -97,7 +98,8 @@ class MarketsIndexSwitchUiTest {
                 // One jump to the card (scrolling to a node steps the paused clock without end).
                 cards.performSemanticsAction(SemanticsActions.ScrollToIndex) { it(i) }
                 mainClock.advanceTimeByFrame()
-                onNodeWithTag(tag).performClick()
+                // By its click action, not a touch: the card can sit past the window's edge.
+                onNodeWithTag(tag).performSemanticsAction(SemanticsActions.OnClick)
                 // Past the change line's crossfade.
                 mainClock.advanceTimeBy(400)
                 tops += onNodeWithTag(tag).getBoundsInRoot().top.value

@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.meticulouscreations.homesafe.finance.domain.Explainers
+import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
@@ -166,8 +167,9 @@ internal fun QuoteRow(
     inSheet: Boolean = false,
     position: Position? = null,
     fallbackName: String? = null,
+    fallbackKind: InstrumentKind? = null,
 ) {
-    val meta = MarketCatalog.lookup(symbol, quote, fallbackName)
+    val meta = MarketCatalog.lookup(symbol, quote, fallbackName, fallbackKind)
     val colors = FinanceTheme.colors
     Row(
         modifier
@@ -189,7 +191,7 @@ internal fun QuoteRow(
             Text(plain ?: if (meta.name != meta.shortName) meta.name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (position != null) {
                 Text(
-                    FinanceFormat.positionLine(position, quote?.price, meta.kind, meta.shortName),
+                    FinanceFormat.positionLine(position, quote?.price, meta.kind, meta.shortName, meta.currency),
                     style = FinanceTheme.type.label,
                     color = colors.accent,
                     maxLines = 1,
@@ -201,7 +203,7 @@ internal fun QuoteRow(
             Sparkline(quote.intraday, colors.direction(quote.change), Modifier.width(72.dp).height(30.dp), baseline = quote.previousClose)
             Spacer(Modifier.width(16.dp))
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(96.dp)) {
-                Text(FinanceFormat.price(quote.price, meta.kind), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+                Text(FinanceFormat.price(quote.price, meta.kind, meta.currency), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
                 Spacer(Modifier.height(4.dp))
                 ChangePill(FinanceFormat.signedPercent(quote.changePercent), positive = quote.change >= 0)
             }

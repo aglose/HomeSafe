@@ -10,6 +10,7 @@ import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.finance.domain.MarketSymbol
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.PriceHistory
@@ -92,10 +93,13 @@ data class FinanceUiState(
 
     val watchlist: List<String> get() = watchEntries.map { it.symbol }
 
-    /** What's held across the watchlist, at the latest prices; null with no positions. */
-    val holdings: Holdings? get() = Holdings.of(watchEntries, quotes)
+    /** What's held across the watchlist at the latest prices, a total per currency; empty with no positions. */
+    val holdings: List<Holdings> get() = Holdings.of(watchEntries, quotes)
 
     fun watchedSymbol(symbol: String): WatchedSymbol? = watched.firstOrNull { it.symbol == symbol }
+
+    /** How to show [symbol], from its quote, else from what was saved when it was added (see [MarketCatalog.lookup]). */
+    fun meta(symbol: String): MarketSymbol = watchedSymbol(symbol).let { w -> MarketCatalog.lookup(symbol, quotes[symbol], w?.name, w?.kind) }
 
     val stress: StressScore? get() = StressScore.of(readings.values.filter { it.indicator in IndicatorCatalog.radar })
 
@@ -143,8 +147,9 @@ class FinanceViewModel(
             watchlistRepository.observe().collect { list ->
                 val before = _uiState.value.watchlist
                 _uiState.update { it.copy(watched = list) }
-                // A symbol just added wants its quote now, not at the next poll.
-                if (pollJob?.isActive == true && _uiState.value.watchlist.any { it !in before }) fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
+                // A symbol just added wants its quote now, not at the next poll; in its own job, so
+                // a slow Yahoo never holds up the next change to the list.
+                if (pollJob?.isActive == true && _uiState.value.watchlist.any { it !in before }) launch { fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS) }
             }
         }
     }
@@ -234,7 +239,8 @@ class FinanceViewModel(
                 .onSuccess { found -> _uiState.update { s -> s.copy(search = s.search.copy(results = found, loading = false, error = null)) } }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
-                    _uiState.update { s -> s.copy(search = s.search.copy(loading = false, error = e.message ?: "Search is unavailable")) }
+                    // The last query's matches go: left up, they'd pass for this one's.
+                    _uiState.update { s -> s.copy(search = s.search.copy(results = emptyList(), loading = false, error = e.message ?: "Search is unavailable")) }
                 }
         }
     }
@@ -273,7 +279,7 @@ class FinanceViewModel(
                 position == null && symbol in s.sheetSymbols -> watchlistRepository.remove(symbol)
 
                 else -> {
-                    val meta = MarketCatalog.lookup(symbol, s.quotes[symbol])
+                    val meta = s.meta(symbol)
                     val base = existing ?: WatchedSymbol(symbol, meta.name, meta.kind, clock.now().epochSeconds)
                     watchlistRepository.save(base.copy(position = position))
                 }

@@ -42,9 +42,13 @@ data class WatchEntry(val symbol: String, val inSheet: Boolean, val addedInApp: 
     val isSuggestion: Boolean get() = !inSheet && !addedInApp
 }
 
-/** The positions held across the watchlist, valued at the latest quotes. Only symbols with a quote count. */
+/**
+ * The positions held across the watchlist in one [currency], valued at the latest quotes. Only
+ * symbols with a quote count, and positions in different currencies are never added together.
+ */
 @Immutable
 data class Holdings(
+    val currency: String,
     val value: Double,
     val dayChange: Double,
     /** Gain since purchase over the positions whose cost is known, and what those cost. */
@@ -55,18 +59,25 @@ data class Holdings(
     val dayChangePercent: Double? get() = (value - dayChange).takeIf { it > 0 }?.let { dayChange / it * 100 }
     val totalGainPercent: Double? get() = if (totalGain != null && costBasis != null && costBasis > 0) totalGain / costBasis * 100 else null
 
+    val isUsd: Boolean get() = currency == USD
+
     companion object {
-        fun of(entries: List<WatchEntry>, quotes: Map<String, Quote>): Holdings? {
+        const val USD = "USD"
+
+        /** One total per currency held, dollars first; empty with no positions that have quotes. */
+        fun of(entries: List<WatchEntry>, quotes: Map<String, Quote>): List<Holdings> =
+            entries.mapNotNull { e -> e.position?.let { p -> quotes[e.symbol]?.let { q -> p to q } } }
+                .groupBy { (_, q) -> q.currency ?: USD }
+                .map { (currency, held) -> total(currency, held) }
+                .sortedWith(compareBy({ !it.isUsd }, { it.currency }))
+
+        private fun total(currency: String, held: List<Pair<Position, Quote>>): Holdings {
             var value = 0.0
             var day = 0.0
             var gain = 0.0
             var cost = 0.0
             var withCost = 0
-            var count = 0
-            entries.forEach { e ->
-                val p = e.position ?: return@forEach
-                val q = quotes[e.symbol] ?: return@forEach
-                count++
+            held.forEach { (p, q) ->
                 value += p.value(q.price)
                 day += p.dayChange(q)
                 p.costPerShare?.let { c ->
@@ -75,8 +86,7 @@ data class Holdings(
                     gain += p.shares * (q.price - c)
                 }
             }
-            if (count == 0) return null
-            return Holdings(value, day, gain.takeIf { withCost > 0 }, cost.takeIf { withCost > 0 }, count)
+            return Holdings(currency, value, day, gain.takeIf { withCost > 0 }, cost.takeIf { withCost > 0 }, held.size)
         }
     }
 }

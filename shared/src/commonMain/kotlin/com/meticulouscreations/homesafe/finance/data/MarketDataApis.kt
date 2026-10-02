@@ -256,6 +256,7 @@ private data class ChartResult(
             intraday = series(),
             name = meta.longName ?: meta.shortName,
             instrumentType = meta.instrumentType,
+            currency = meta.currency,
         )
     }
 }
@@ -282,6 +283,7 @@ private data class ChartMeta(
     val longName: String? = null,
     val shortName: String? = null,
     val instrumentType: String? = null,
+    val currency: String? = null,
 )
 
 @Serializable

@@ -38,6 +38,8 @@ data class MarketSymbol(
     val kind: InstrumentKind,
     /** One or two sentences on what it is and why it matters, for its detail page. */
     val about: String = "",
+    /** What it's priced in, as Yahoo writes it ("USD", "JPY", "GBp"); null for the catalog's own, all in dollars or points. */
+    val currency: String? = null,
 )
 
 /**
@@ -65,6 +67,8 @@ data class Quote(
     val name: String? = null,
     /** Yahoo's word for what it is ("EQUITY", "ETF", "MUTUALFUND", …); see [InstrumentKind.fromYahoo]. */
     val instrumentType: String? = null,
+    /** The currency it trades in ("USD", "JPY", "GBp"), when Yahoo said. */
+    val currency: String? = null,
 ) {
     val change: Double get() = price - previousClose
     val changePercent: Double get() = if (previousClose == 0.0) 0.0 else change / previousClose * 100.0
@@ -195,14 +199,17 @@ object MarketCatalog {
     private val known = (indices + macro).associateBy { it.symbol }
 
     /**
-     * How to show [symbol]: the catalog's own entry, or one made up from the ticker, named from
-     * its [quote] (Yahoo sends the company's name with the price) or [name] when there's one.
+     * How to show [symbol]: the catalog's own entry, or one made up from the ticker. Its name,
+     * kind and currency come from its [quote] (Yahoo sends them with the price), else the [name]
+     * and [kind] saved when it was added, else a guess from the ticker.
      */
-    fun lookup(symbol: String, quote: Quote? = null, name: String? = null): MarketSymbol = known[symbol] ?: MarketSymbol(
+    fun lookup(symbol: String, quote: Quote? = null, name: String? = null, kind: InstrumentKind? = null): MarketSymbol = known[symbol] ?: MarketSymbol(
         symbol = symbol,
         name = quote?.name ?: name ?: symbol,
         shortName = symbol.removeSuffix("-USD"),
         kind = InstrumentKind.fromYahoo(quote?.instrumentType)
+            ?: kind
             ?: if (symbol.endsWith("-USD")) InstrumentKind.CRYPTO else InstrumentKind.EQUITY,
+        currency = quote?.currency,
     )
 }

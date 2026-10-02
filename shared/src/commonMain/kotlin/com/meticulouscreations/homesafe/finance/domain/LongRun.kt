@@ -11,7 +11,12 @@ import kotlin.math.pow
 @Immutable
 data class LongRunStats(
     val allTimeHigh: Double,
+    /**
+     * When the record was set: the start of the weekly bar it was traded in (the history has no
+     * finer grain than that), or the latest quote's time when today beat it ([allTimeHighToday]).
+     */
     val allTimeHighEpochSeconds: Long?,
+    val allTimeHighToday: Boolean,
     /** How far below the record the price is, as a percentage (0 at a record, negative below it). */
     val fromHighPercent: Double,
     val firstEpochSeconds: Long,
@@ -44,7 +49,8 @@ data class LongRunStats(
             var high = history.highest ?: series.values[closeHigh]
             var highAt = if (history.highest != null) history.highestEpochSeconds else series.times[closeHigh]
             val todayHigh = maxOf(quote?.dayHigh ?: price, price)
-            if (todayHigh > high) {
+            val today = todayHigh > high
+            if (today) {
                 high = todayHigh
                 highAt = quote?.marketTimeEpochSeconds?.takeIf { it > 0 } ?: nowEpochSeconds
             }
@@ -63,6 +69,7 @@ data class LongRunStats(
             return LongRunStats(
                 allTimeHigh = high,
                 allTimeHighEpochSeconds = highAt,
+                allTimeHighToday = today,
                 fromHighPercent = if (high > 0) (price - high) / high * 100 else 0.0,
                 firstEpochSeconds = firstTime,
                 firstPrice = first,

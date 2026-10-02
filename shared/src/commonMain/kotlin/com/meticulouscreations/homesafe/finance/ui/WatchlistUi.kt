@@ -63,8 +63,8 @@ import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.Holdings
 import com.meticulouscreations.homesafe.finance.domain.InstrumentKind
 import com.meticulouscreations.homesafe.finance.domain.LongRunStats
-import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.Position
+import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import kotlin.time.Clock
 
@@ -105,8 +105,7 @@ internal fun watchlistSubtitle(state: FinanceUiState): String {
  * Markets and Wallet tabs.
  */
 internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: String, onOpenQuote: (String) -> Unit) {
-    val holdings = state.holdings
-    if (holdings != null) item(key = "$keyPrefix-holdings") { HoldingsCard(holdings) }
+    state.holdings.forEach { holdings -> item(key = "$keyPrefix-holdings-${holdings.currency}") { HoldingsCard(holdings) } }
     items(state.watchEntries, key = { "$keyPrefix-${it.symbol}" }) { entry ->
         QuoteRow(
             entry.symbol,
@@ -115,6 +114,7 @@ internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: Stri
             inSheet = entry.inSheet,
             position = entry.position,
             fallbackName = state.watchedSymbol(entry.symbol)?.name,
+            fallbackKind = state.watchedSymbol(entry.symbol)?.kind,
         )
     }
 }
@@ -124,19 +124,23 @@ internal fun LazyListScope.watchlistItems(state: FinanceUiState, keyPrefix: Stri
 internal fun HoldingsCard(holdings: Holdings, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     FinanceCard(modifier.padding(bottom = 6.dp)) {
-        Text("YOUR HOLDINGS", style = FinanceTheme.type.micro, color = colors.textSecondary)
+        Text(
+            if (holdings.isUsd) "YOUR HOLDINGS" else "YOUR HOLDINGS IN ${holdings.currency.uppercase()}",
+            style = FinanceTheme.type.micro,
+            color = colors.textSecondary,
+        )
         Spacer(Modifier.height(4.dp))
-        Text(FinanceFormat.money(holdings.value), style = FinanceTheme.type.title, color = colors.textPrimary)
+        Text(FinanceFormat.money(holdings.value, currency = holdings.currency), style = FinanceTheme.type.title, color = colors.textPrimary)
         Spacer(Modifier.height(2.dp))
         Text(
-            "${FinanceFormat.signedMoney(holdings.dayChange)}${holdings.dayChangePercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} today",
+            "${FinanceFormat.signedMoney(holdings.dayChange, currency = holdings.currency)}${holdings.dayChangePercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} today",
             style = FinanceTheme.type.label,
             color = colors.direction(holdings.dayChange),
         )
         val gain = holdings.totalGain
         if (gain != null) {
             Text(
-                "${FinanceFormat.signedMoney(gain)}${holdings.totalGainPercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} since you bought",
+                "${FinanceFormat.signedMoney(gain, currency = holdings.currency)}${holdings.totalGainPercent?.let { " (${FinanceFormat.signedPercent(it)})" } ?: ""} since you bought",
                 style = FinanceTheme.type.label,
                 color = colors.direction(gain),
             )
@@ -328,7 +332,7 @@ internal fun WatchStatusRow(symbol: String, state: FinanceUiState, onFollow: () 
 internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPosition: (Position?) -> Unit) {
     val colors = FinanceTheme.colors
     val quote = state.quotes[symbol]
-    val meta = MarketCatalog.lookup(symbol, quote)
+    val meta = state.meta(symbol)
     val position = state.watchedSymbol(symbol)?.position
     var editing by rememberSaveable(symbol) { mutableStateOf(false) }
     Column {
@@ -362,12 +366,12 @@ internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPositio
             StatGrid(
                 listOf(
                     (if (meta.kind == InstrumentKind.CRYPTO) "Held" else "Shares") to "${FinanceFormat.shares(position.shares)} $unit",
-                    "Market value" to (price?.let { FinanceFormat.money(position.value(it)) } ?: "—"),
-                    "Average cost" to (position.costPerShare?.let { FinanceFormat.price(it, meta.kind) } ?: "Not entered"),
-                    "Cost basis" to (position.costPerShare?.let { FinanceFormat.money(it * position.shares) } ?: "—"),
-                    "Today" to (quote?.let { FinanceFormat.signedMoney(position.dayChange(it)) } ?: "—"),
+                    "Market value" to (price?.let { FinanceFormat.money(position.value(it), currency = meta.currency) } ?: "—"),
+                    "Average cost" to (position.costPerShare?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "Not entered"),
+                    "Cost basis" to (position.costPerShare?.let { FinanceFormat.money(it * position.shares, currency = meta.currency) } ?: "—"),
+                    "Today" to (quote?.let { FinanceFormat.signedMoney(position.dayChange(it), currency = meta.currency) } ?: "—"),
                     "Today %" to (quote?.let { FinanceFormat.signedPercent(it.changePercent) } ?: "—"),
-                    "Total return" to (price?.let { position.totalGain(it) }?.let { FinanceFormat.signedMoney(it) } ?: "—"),
+                    "Total return" to (price?.let { position.totalGain(it) }?.let { FinanceFormat.signedMoney(it, currency = meta.currency) } ?: "—"),
                     "Return %" to (price?.let { position.totalGainPercent(it) }?.let { FinanceFormat.signedPercent(it) } ?: "—"),
                 ),
             )
@@ -392,8 +396,9 @@ internal fun PositionSection(symbol: String, state: FinanceUiState, onSetPositio
 private fun PositionEditor(symbol: String, unitLabel: String, initial: Position?, onSave: (Position?) -> Unit, onDismiss: () -> Unit) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
-    var shares by rememberSaveable { mutableStateOf(initial?.shares?.let(FinanceFormat::shares)?.replace(",", "").orEmpty()) }
-    var cost by rememberSaveable { mutableStateOf(initial?.costPerShare?.let { FinanceFormat.grouped(it, 2).replace(",", "") }.orEmpty()) }
+    // Written out in full, never rounded: saving without an edit must leave the position as it was.
+    var shares by rememberSaveable { mutableStateOf(initial?.shares?.let(FinanceFormat::plainDecimal).orEmpty()) }
+    var cost by rememberSaveable { mutableStateOf(initial?.costPerShare?.let(FinanceFormat::plainDecimal).orEmpty()) }
     val sharesValue = parseAmount(shares)
     val costValue = parseAmount(cost)
     val sharesOk = shares.isBlank() || (sharesValue != null && sharesValue > 0)
@@ -464,7 +469,7 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
     val requestHistory by rememberUpdatedState(onRequestHistory)
     LaunchedEffect(symbol) { requestHistory(symbol, ChartRange.MAX) }
     val quote = state.quotes[symbol]
-    val meta = MarketCatalog.lookup(symbol, quote)
+    val meta = state.meta(symbol)
     val load = state.chart(symbol, ChartRange.MAX)
     val history = load?.history
     val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, Clock.System.now().epochSeconds) } }
@@ -475,8 +480,8 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
         SectionHeader("All time", trailing = stats?.let { "Data from ${FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt)}" })
         StatGrid(
             listOf(
-                "All-time high" to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind) } ?: dash),
-                "Set on" to (stats?.allTimeHighEpochSeconds?.let { FinanceFormat.date(it + 12 * 3600, gmt) } ?: dash),
+                "All-time high" to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind, meta.currency) } ?: dash),
+                recordWhen(stats, quote, gmt),
                 "From the high" to (stats?.let { if (it.fromHighPercent > -0.005) "At a record" else FinanceFormat.signedPercent(it.fromHighPercent) } ?: dash),
                 "Per year" to (stats?.perYearPercent?.let { FinanceFormat.signedPercent(it) } ?: dash),
                 "1 year" to (stats?.oneYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
@@ -493,5 +498,19 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
                     "compound to the change since the start. The all-time high is the highest price ever traded, not just closed at."
             },
         )
+    }
+}
+
+/**
+ * When the record was set. A record from the history is known only to its week (the bars are
+ * weekly, stamped at the week's start, which is written from midday so no offset slips it back a
+ * day); one set today is the quote's own moment, written in the exchange's clock as it is.
+ */
+private fun recordWhen(stats: LongRunStats?, quote: Quote?, historyOffset: Int): Pair<String, String> {
+    val at = stats?.allTimeHighEpochSeconds ?: return "Set on" to "—"
+    return if (stats.allTimeHighToday) {
+        "Set on" to FinanceFormat.date(at, quote?.gmtOffsetSeconds ?: historyOffset)
+    } else {
+        "Week of" to FinanceFormat.date(at + 12 * 3600, historyOffset)
     }
 }

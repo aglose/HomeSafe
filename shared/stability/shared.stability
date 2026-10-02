@@ -599,7 +599,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.QuoteDetailScreen(symbo
     - onSetPosition: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.QuoteRow(symbol: kotlin.String, quote: com.meticulouscreations.homesafe.finance.domain.Quote?, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, inSheet: kotlin.Boolean, position: com.meticulouscreations.homesafe.finance.domain.Position?, fallbackName: kotlin.String?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.QuoteRow(symbol: kotlin.String, quote: com.meticulouscreations.homesafe.finance.domain.Quote?, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, inSheet: kotlin.Boolean, position: com.meticulouscreations.homesafe.finance.domain.Position?, fallbackName: kotlin.String?, fallbackKind: com.meticulouscreations.homesafe.finance.domain.InstrumentKind?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -610,6 +610,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.QuoteRow(symbol: kotlin
     - inSheet: STABLE (primitive type)
     - position: STABLE (marked @Stable or @Immutable)
     - fallbackName: STABLE (class with no mutable properties)
+    - fallbackKind: STABLE (class with no mutable properties)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.RangeBar(low: kotlin.Double, high: kotlin.Double, current: kotlin.Double, lowLabel: kotlin.String, highLabel: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit

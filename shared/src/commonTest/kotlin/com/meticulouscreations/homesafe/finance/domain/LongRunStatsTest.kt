@@ -90,12 +90,43 @@ class LongRunStatsTest {
             WatchEntry("C", inSheet = false, addedInApp = true, position = Position(5.0, 1.0)),
             WatchEntry("D", inSheet = true, addedInApp = false, position = null),
         )
-        val h = Holdings.of(entries, quotes)!!
+        val h = Holdings.of(entries, quotes).single()
+        assertEquals("USD", h.currency)
         assertEquals(1_200.0, h.value)
         assertEquals(100.0, h.dayChange)
         assertEquals(300.0, h.totalGain)
         assertEquals(800.0, h.costBasis)
         assertEquals(2, h.count)
-        assertNull(Holdings.of(entries.map { it.copy(position = null) }, quotes))
+        assertTrue(Holdings.of(entries.map { it.copy(position = null) }, quotes).isEmpty())
+    }
+
+    @Test
+    fun holdingsInDifferentCurrenciesAreNeverAddedTogether() {
+        val quotes = mapOf(
+            "AAPL" to quote(200.0).copy(symbol = "AAPL", currency = "USD"),
+            "7203.T" to quote(3_000.0).copy(symbol = "7203.T", currency = "JPY"),
+            "VTI" to quote(300.0).copy(symbol = "VTI", currency = null),
+        )
+        val entries = listOf("7203.T" to 100.0, "AAPL" to 2.0, "VTI" to 1.0).map { (s, n) -> WatchEntry(s, false, true, Position(n)) }
+        val totals = Holdings.of(entries, quotes)
+        assertEquals(listOf("USD", "JPY"), totals.map { it.currency }, "dollars first; a quote without a currency counts as dollars")
+        assertEquals(700.0, totals[0].value)
+        assertEquals(300_000.0, totals[1].value)
+    }
+
+    @Test
+    fun aRecordFromTheHistoryIsNotTodaysButOneSetTodayIs() {
+        val history = yearly(100.0, 300.0, 250.0, highest = 320.0, highestAt = 12345L)
+        assertEquals(false, LongRunStats.of(history, quote(240.0), now)!!.allTimeHighToday)
+        assertEquals(true, LongRunStats.of(history, quote(330.0, dayHigh = 335.0), now)!!.allTimeHighToday)
+    }
+
+    @Test
+    fun anAddedSymbolKeepsItsSavedKindUntilItsQuoteSaysOtherwise() {
+        assertEquals(InstrumentKind.INDEX, MarketCatalog.lookup("^FTSE", quote = null, name = "FTSE 100", kind = InstrumentKind.INDEX).kind)
+        assertEquals(InstrumentKind.EQUITY, MarketCatalog.lookup("^FTSE").kind, "with nothing saved, a guess from the ticker")
+        val fromQuote = quote(8_000.0).copy(symbol = "^FTSE", instrumentType = "INDEX", currency = "GBP")
+        assertEquals(InstrumentKind.INDEX, MarketCatalog.lookup("^FTSE", fromQuote, kind = InstrumentKind.EQUITY).kind)
+        assertEquals("GBP", MarketCatalog.lookup("^FTSE", fromQuote).currency)
     }
 }

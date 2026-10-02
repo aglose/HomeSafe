@@ -174,7 +174,7 @@ internal fun PriceHeroAndChart(
 ) {
     val colors = FinanceTheme.colors
     val quote = state.quotes[symbol]
-    val meta = MarketCatalog.lookup(symbol, quote, state.watchedSymbol(symbol)?.name)
+    val meta = state.meta(symbol)
     val load = state.chart(symbol, range)
     val requestHistory by rememberUpdatedState(onRequestHistory)
 
@@ -216,10 +216,10 @@ internal fun PriceHeroAndChart(
             // slip back a day.
             val intraday = range == ChartRange.DAY || range == ChartRange.WEEK || range == ChartRange.MONTH
             val whenText = if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)
-            "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  $whenText"
+            "${FinanceFormat.priceChange(change, meta.kind, meta.currency)} (${FinanceFormat.signedPercent(changePct)})  $whenText"
         }
 
-        else -> "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  ${rangeCaption(range)}"
+        else -> "${FinanceFormat.priceChange(change, meta.kind, meta.currency)} (${FinanceFormat.signedPercent(changePct)})  ${rangeCaption(range)}"
     }
 
     val extent = if (range == ChartRange.DAY && series != null && series.size > 1) {
@@ -237,7 +237,7 @@ internal fun PriceHeroAndChart(
         Column(Modifier.padding(top = 12.dp)) {
             HeroNumber(
                 caption = meta.name,
-                value = shownValue?.let { FinanceFormat.price(it, meta.kind) } ?: "—",
+                value = shownValue?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—",
                 change = changeText,
                 changeColor = lineColor,
                 trailing = trailing,
@@ -357,7 +357,7 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
         }
         Spacer(Modifier.height(2.dp))
         if (quote != null) {
-            Text(FinanceFormat.price(quote.price, meta.kind), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            Text(FinanceFormat.price(quote.price, meta.kind, meta.currency), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
             Text(FinanceFormat.signedPercent(quote.changePercent), style = FinanceTheme.type.label, color = dir)
             Spacer(Modifier.height(8.dp))
             Sparkline(quote.intraday, dir, Modifier.fillMaxWidth().height(34.dp), baseline = quote.previousClose)
@@ -391,7 +391,7 @@ private fun TickerTape(quotes: Map<String, Quote>, onOpen: (String) -> Unit) {
             ) {
                 Text(meta.shortName, style = FinanceTheme.type.micro, color = colors.textSecondary)
                 Spacer(Modifier.width(6.dp))
-                Text(FinanceFormat.price(q.price, meta.kind), style = FinanceTheme.type.micro, color = colors.textPrimary)
+                Text(FinanceFormat.price(q.price, meta.kind, meta.currency), style = FinanceTheme.type.micro, color = colors.textPrimary)
                 Spacer(Modifier.width(4.dp))
                 Text(FinanceFormat.signedPercent(q.changePercent), style = FinanceTheme.type.micro, color = colors.direction(q.change))
             }
@@ -413,7 +413,7 @@ internal fun QuoteDetailScreen(
 ) {
     var range by rememberSaveable(symbol) { mutableStateOf(ChartRange.DAY) }
     val q = state.quotes[symbol]
-    val meta = MarketCatalog.lookup(symbol, q, state.watchedSymbol(symbol)?.name)
+    val meta = state.meta(symbol)
     LazyColumn(contentPadding = contentPadding) {
         item {
             PriceHeroAndChart(symbol, state, range, { range = it }, onRequestHistory, trailing = { Explainers.forSymbol(symbol)?.let { InfoButton(it) } })
@@ -452,12 +452,12 @@ internal fun QuoteDetailScreen(
         item {
             StatGrid(
                 listOf(
-                    "Price" to (q?.price?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W high" to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W low" to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    "Price" to (q?.price?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "52W high" to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
+                    "52W low" to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind, meta.currency) } ?: "—"),
                     "Volume" to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
                     "Symbol" to symbol,
                 ),
@@ -466,7 +466,7 @@ internal fun QuoteDetailScreen(
         val hi = q?.fiftyTwoWeekHigh
         val lo = q?.fiftyTwoWeekLow
         if (q != null && hi != null && lo != null) {
-            item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind), FinanceFormat.price(hi, meta.kind)) }
+            item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind, meta.currency), FinanceFormat.price(hi, meta.kind, meta.currency)) }
         }
         item { LongRunSection(symbol, state, onRequestHistory) }
         item { FinePrint("From Yahoo Finance; may be delayed up to 15 minutes. Not investment advice.") }

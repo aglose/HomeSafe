@@ -61,8 +61,12 @@ class FinanceViewModelTest {
         var sheetCalls = 0
         val histories = ArrayDeque<CompletableDeferred<PriceHistory>>()
 
+        /** When set, every quote call waits on it: Yahoo being slow. */
+        var slowQuotes: CompletableDeferred<Unit>? = null
+
         override suspend fun quotes(symbols: List<String>, maxAgeMillis: Long): Result<List<Quote>> {
             quoteCalls++
+            slowQuotes?.await()
             return Result.success(emptyList())
         }
 
@@ -70,8 +74,11 @@ class FinanceViewModelTest {
 
         val searches = mutableListOf<String>()
 
+        var searchFails = false
+
         override suspend fun searchSymbols(query: String): Result<List<SymbolMatch>> {
             searches += query
+            if (searchFails) return Result.failure(IllegalStateException("Yahoo answered 503"))
             return Result.success(listOf(SymbolMatch(query.uppercase(), "$query Inc.", InstrumentKind.EQUITY, "Equity", "NASDAQ")))
         }
 
@@ -349,5 +356,43 @@ class FinanceViewModelTest {
         vm.searchSymbols("  ")
         assertTrue(vm.uiState.value.search.results.isEmpty(), "a cleared box clears the results")
         assertFalse(vm.uiState.value.search.loading)
+    }
+
+    @Test
+    fun aFailedSearchClearsTheLastQuerysMatches() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock)
+        vm.searchSymbols("vti")
+        advanceTimeBy(301)
+        runCurrent()
+        assertEquals(listOf("VTI"), vm.uiState.value.search.results.map { it.symbol })
+
+        repo.searchFails = true
+        vm.searchSymbols("tsla")
+        advanceTimeBy(301)
+        runCurrent()
+        assertTrue(vm.uiState.value.search.results.isEmpty(), "VTI mustn't be offered under \"tsla\"")
+        assertEquals("Yahoo answered 503", vm.uiState.value.search.error)
+    }
+
+    @Test
+    fun aSlowQuoteFetchDoesNotHoldUpTheNextWatchlistChange() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val watchlist = FakeWatchlist()
+        val vm = FinanceViewModel(repo, watchlist, clock)
+        vm.setActive(true, full = false)
+        runCurrent()
+        val slow = CompletableDeferred<Unit>()
+        repo.slowQuotes = slow
+
+        vm.addSymbol(SymbolMatch("VTI", "Vanguard", InstrumentKind.EQUITY, "ETF", null))
+        runCurrent()
+        vm.addSymbol(SymbolMatch("ETH-USD", "Ethereum", InstrumentKind.CRYPTO, "Cryptocurrency", null))
+        runCurrent()
+        assertEquals(listOf("VTI", "ETH-USD"), vm.uiState.value.watched.map { it.symbol }, "both adds show while VTI's quote is still on its way")
+
+        slow.complete(Unit)
+        runCurrent()
+        vm.setActive(false)
     }
 }
