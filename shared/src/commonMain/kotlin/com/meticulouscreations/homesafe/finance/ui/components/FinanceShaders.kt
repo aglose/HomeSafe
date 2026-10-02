@@ -144,3 +144,77 @@ half4 main(float2 p) {
     return half4(half3(outC), half(outA));
 }
 """
+
+/**
+ * A chart's Aurora fill: curtains of light drifting sideways under the line, bright just under
+ * the line's peak ([top]) and gone by the chart's floor ([bottom]). Drawn clipped to the area
+ * under the line.
+ */
+internal const val CHART_AURORA_SHADER = """
+uniform float2 size;
+uniform float time;
+uniform float3 tint;
+uniform float top;
+uniform float bottom;
+
+float hash(float2 p) {
+    return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
+}
+
+float noise(float2 p) {
+    float2 i = floor(p);
+    float2 f = fract(p);
+    float2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + float2(1.0, 0.0)), u.x), mix(hash(i + float2(0.0, 1.0)), hash(i + float2(1.0, 1.0)), u.x), u.y);
+}
+
+float fbm(float2 p) {
+    float v = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 3; i++) {
+        v += a * noise(p);
+        p = p * 2.07 + float2(3.1, 1.7);
+        a *= 0.5;
+    }
+    return v;
+}
+
+half4 main(float2 p) {
+    float depth = clamp((p.y - top) / max(bottom - top, 1.0), 0.0, 1.0);
+    float2 uv = p / max(size.y, 1.0);
+    float t = time * 0.18;
+    float n = fbm(float2(uv.x * 2.4 + t, uv.y * 2.0 - t * 0.5));
+    float curtain = 0.5 + 0.5 * sin(uv.x * 11.0 + n * 7.0 - t * 3.0);
+    float fade = 1.0 - depth;
+    float alpha = clamp(fade * (0.35 + 0.65 * n) * (0.45 + 0.55 * curtain), 0.0, 1.0) * 0.75;
+    // The curtains shimmer between the line's colour and its channels turned round (green to
+    // violet-blue, orange to green), the way a real aurora shifts hue along its folds.
+    float3 col = mix(tint, tint.brg, 0.55 * curtain * (1.0 - n));
+    col = mix(col, float3(1.0), 0.15 * curtain * fade);
+    return half4(half3(col * alpha), half(alpha));
+}
+"""
+
+/**
+ * A chart's Halftone fill: a screen of dots under the line, big just under its peak ([top]) and
+ * shrinking to nothing at the floor ([bottom]), swelling and brightening near [scrub] (the
+ * finger's x, or negative when there's none). [cell] is the dot pitch in pixels.
+ */
+internal const val CHART_HALFTONE_SHADER = """
+uniform float3 tint;
+uniform float top;
+uniform float bottom;
+uniform float cell;
+uniform float scrub;
+
+half4 main(float2 p) {
+    float2 center = floor(p / cell) * cell + cell * 0.5;
+    float depth = clamp((center.y - top) / max(bottom - top, 1.0), 0.0, 1.0);
+    float near = scrub >= 0.0 ? exp(-abs(center.x - scrub) / (cell * 3.5)) : 0.0;
+    float radius = min(cell * 0.5, cell * 0.38 * (1.0 - depth) * (1.0 + 0.7 * near));
+    float d = length(p - center);
+    float disc = 1.0 - smoothstep(radius - 0.8, radius + 0.8, d);
+    float alpha = disc * (0.45 + 0.4 * near);
+    return half4(half3(tint * alpha), half(alpha));
+}
+"""
