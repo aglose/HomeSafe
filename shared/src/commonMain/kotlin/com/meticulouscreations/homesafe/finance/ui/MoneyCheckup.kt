@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import kotlin.math.abs
 import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
 
@@ -158,7 +159,21 @@ private fun roundUp(v: Double, step: Double) = ceil(v / step) * step
 
 private fun accountItem(a: Account) = CheckItem(a.name, "${a.owner.label} · ${a.category.label}", money(a.balance))
 
-private fun expenseItems(finance: PersonalFinance) = finance.expenses.map { CheckItem(it.name, null, money(it.monthly) + " / mo") }
+/**
+ * The sheet's expense lines as items, plus a line for whatever of [total] they don't add up to
+ * (the sheet's total can count spending it doesn't itemise), so the parts always make the figure.
+ */
+private fun expenseItems(finance: PersonalFinance, total: Double): List<CheckItem> {
+    val items = finance.expenses.map { CheckItem(it.name, null, money(it.monthly) + " / mo") }
+    val rest = total - finance.expenses.sumOf { it.monthly }
+    return if (finance.expenses.isNotEmpty() && abs(rest) >= 1) items + CheckItem("Not itemised in the sheet", "the sheet's total less the lines above", money(rest) + " / mo") else items
+}
+
+/** The smallest whole-dollar amount at least [v], so following a quoted amount always reaches the line. */
+private fun atLeast(v: Double) = money(ceil(v))
+
+/** The smallest whole-dollar amount over [v], for lines that pass only strictly past it. */
+private fun over(v: Double) = money(floor(v) + 1)
 
 /** "22%", "24.9%", "3.08%": a rate with no trailing zeros. */
 private fun rate(r: Double) = FinanceFormat.grouped(r, 2).trimEnd('0').trimEnd('.') + "%"
@@ -201,13 +216,13 @@ private fun emergencyFund(finance: PersonalFinance): Check? {
     val steps = buildList {
         when {
             m < EMERGENCY_MONTHS -> {
-                add("Set aside ${money(toThree)} more to reach 3 months (${money(EMERGENCY_MONTHS * spend)} in all)." + (monthsAway(toThree, left)?.let { " Saving all of the ${money(left!!)} left over each month, that's $it away." } ?: ""))
+                add("Set aside ${atLeast(toThree)} more to reach 3 months (${money(EMERGENCY_MONTHS * spend)} in all)." + (monthsAway(toThree, left)?.let { " Saving all of the ${money(left!!)} left over each month, that's $it away." } ?: ""))
                 add("Spending less shrinks the goal too: every ${money(100.0)} a month trimmed lowers a 3-month cushion by ${money(300.0)}.")
                 add("Keep it somewhere easy to reach that pays interest, like a high-yield savings account.")
             }
 
             m < EMERGENCY_STRONG_MONTHS -> {
-                add("${money(toSix)} more would reach the stronger 6-month cushion." + (monthsAway(toSix, left)?.let { " At ${money(left!!)} left over a month, $it." } ?: ""))
+                add("${atLeast(toSix)} more would reach the stronger 6-month cushion." + (monthsAway(toSix, left)?.let { " At ${money(left!!)} left over a month, $it." } ?: ""))
                 add("Toward six months matters most if one income carries the household or work is uncertain.")
             }
 
@@ -241,7 +256,7 @@ private fun emergencyFund(finance: PersonalFinance): Check? {
         gauge = CheckGauge(m, EMERGENCY_MONTHS, max(9.0, min(m * 1.15, 24.0)), higherIsBetter = true, targetLabel = "3 mo", stretch = EMERGENCY_STRONG_MONTHS, stretchLabel = "6 mo"),
         ledger = listOf(
             CheckLedgerRow(null, "Cash in the bank", money(cash), cashAccounts.map(::accountItem), WalletSection.ACCOUNTS.takeIf { finance.accounts.isNotEmpty() }),
-            CheckLedgerRow("÷", "Spending each month", money(spend), expenseItems(finance), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }),
+            CheckLedgerRow("÷", "Spending each month", money(spend), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }),
             CheckLedgerRow("=", "Months covered", months(m), result = true),
         ),
         steps = steps,
@@ -274,11 +289,11 @@ private fun savingsRate(finance: PersonalFinance): Check? {
     val gap = SAVINGS_GOAL * income - net
     val steps = buildList {
         if (!ok) {
-            add("Keeping ${money(gap)} more a month reaches 15%.")
+            add("Keeping ${atLeast(gap)} more a month reaches 15%.")
             finance.expenses.filter { it.monthly >= gap }.take(2).forEach { e ->
                 add("${e.name} is ${money(e.monthly)} a month — trimming it by ${pct(gap / e.monthly)} would cover that on its own.")
             }
-            add("More pay counts too: ${money(gap / (1 - SAVINGS_GOAL))} more take-home a month, with spending held where it is, gets there.")
+            add("More pay counts too: ${atLeast(gap / (1 - SAVINGS_GOAL))} more take-home a month, with spending held where it is, gets there.")
             add("401(k) contributions taken from your paycheck aren't in take-home, so they count on top of this.")
         } else {
             add("You keep ${money(-gap)} a month more than the 15% line.")
@@ -291,7 +306,7 @@ private fun savingsRate(finance: PersonalFinance): Check? {
     }
     val ledger = buildList {
         add(CheckLedgerRow(null, "Take-home pay", money(income), finance.income.map { CheckItem(it.person, null, money(it.monthly) + " / mo") }, WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
-        add(CheckLedgerRow("−", "Spending", money(spend), expenseItems(finance), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
+        add(CheckLedgerRow("−", "Spending", money(spend), expenseItems(finance, spend), WalletSection.CASH_FLOW.takeIf { finance.expenses.isNotEmpty() }))
         // The sheet's own "left over" can differ from income less expenses (a line it adds or leaves out).
         val other = income - spend - net
         if (abs(other) >= 1) add(CheckLedgerRow("−", "Other differences in the sheet", money(other)))
@@ -325,12 +340,16 @@ private fun savingsRate(finance: PersonalFinance): Check? {
 private fun costlyDebt(finance: PersonalFinance, fedRate: Double?): Check? {
     val open = finance.debts.filter { !it.isMortgage && !it.isPaidOff }.sortedByDescending { it.apr ?: -1.0 }
     if (open.isEmpty()) return null
+    // A loan with no rate in the sheet can't be judged, so it neither passes nor fails the line;
+    // with no rates at all there's nothing to judge, and the line is left out.
+    val unknown = open.filter { it.apr == null }
+    if (unknown.size == open.size) return null
     val hurdle = costlyDebtHurdle(fedRate)
-    val costly = open.filter { (it.apr ?: 0.0) > hurdle }
+    val costly = open.filter { it.apr != null && it.apr > hurdle }
     val ok = costly.isEmpty()
     val hurdleText = rate(hurdle)
     val interest = open.sumOf { it.yearlyInterest() ?: 0.0 }
-    val unknown = open.filter { it.apr == null }
+    val unjudged = if (unknown.isEmpty()) "" else " ${unknown.joinToString { it.name }} ${if (unknown.size == 1) "has" else "have"} no rate in the sheet, so ${if (unknown.size == 1) "it wasn't" else "they weren't"} judged."
     val spare = finance.monthlyExpenses?.let { finance.liquidCash - EMERGENCY_MONTHS * it }
     val steps = buildList {
         if (!ok) {
@@ -348,7 +367,7 @@ private fun costlyDebt(finance: PersonalFinance, fedRate: Double?): Check? {
                 )
             }
         } else {
-            add("Every loan costs less than the $hurdleText line, so paying them on schedule is reasonable while savings earn about as much.")
+            add("Every loan with a rate costs less than the $hurdleText line, so paying them on schedule is reasonable while savings earn about as much.")
         }
         if (interest > 0) add("Altogether your loans cost about ${money(interest)} a year in interest (${money(interest / 12)} a month).")
         if (unknown.isNotEmpty()) {
@@ -361,7 +380,7 @@ private fun costlyDebt(finance: PersonalFinance, fedRate: Double?): Check? {
         ok = ok,
         title = "Costly debt",
         figure = if (ok) "None" else "${costly.size} loan${if (costly.size == 1) "" else "s"}",
-        detail = if (ok) "None of your loans charge more than about $hurdleText." else "Charging more than $hurdleText: ${costly.joinToString { it.name }}.",
+        detail = (if (ok) "None of your loans${if (unknown.isEmpty()) "" else " with a rate"} charge more than about $hurdleText." else "Charging more than $hurdleText: ${costly.joinToString { it.name }}.") + unjudged,
         tip = if (ok) "Low-rate loans can be paid on schedule while savings earn about as much." else "Paying these down early is a guaranteed return equal to their rate — usually better than savings pay.",
         rule = "A loan is costly when its rate beats what savings earn — about the Fed's rate, and never under 5%. The mortgage isn't counted.",
         explainerId = "debt",
@@ -416,8 +435,8 @@ private fun debtRatio(finance: PersonalFinance): Check? {
     val fromSavings = (owed - DEBT_RATIO_LINE * assets) / (1 - DEBT_RATIO_LINE)
     val steps = buildList {
         if (!ok) {
-            add("Paying down ${money(fromSavings)} from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).")
-            add("Or ${money(owed - DEBT_RATIO_LINE * assets)} paid down from income over time, leaving savings where they are.")
+            add("Paying down ${over(fromSavings)} from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).")
+            add("Or ${over(owed - DEBT_RATIO_LINE * assets)} paid down from income over time, leaving savings where they are.")
             open.firstOrNull { it.apr != null }?.let { add("Start with the highest-rate loan, ${open.maxBy { d -> d.apr ?: -1.0 }.name}, to save the most interest on the way.") }
         } else if (owed == 0.0) {
             add("Nothing owed besides the mortgage.")
@@ -449,13 +468,18 @@ private fun debtRatio(finance: PersonalFinance): Check? {
             CheckLedgerRow("=", "Owed for what you own", pct(ratio), result = true),
         ),
         steps = steps,
-        whatIf = if (owed > 0) {
-            WhatIf("Pay down from savings", roundUp(owed, 500.0), 250.0) { x ->
-                val r2 = (owed - x) / (assets - x)
-                WhatIfOutcome("${pct(r2)} owed vs owned", r2 < DEBT_RATIO_LINE, "${money(owed - x)} still owed.")
+        // Paid from cash, so no more than is owed or than the cash there is.
+        whatIf = min(owed, finance.liquidCash).takeIf { it > 0 }?.let { payable ->
+            WhatIf("Pay down from savings", payable, 250.0) { amount ->
+                val x = amount.coerceIn(0.0, payable)
+                val left = assets - x
+                if (left <= 0) {
+                    WhatIfOutcome("Nothing left owned", false, "${money(owed - x)} still owed.")
+                } else {
+                    val r2 = (owed - x) / left
+                    WhatIfOutcome("${pct(r2)} owed vs owned", r2 < DEBT_RATIO_LINE, if (x >= owed) "Every loan but the mortgage paid off." else "${money(owed - x)} still owed.")
+                }
             }
-        } else {
-            null
         },
     )
 }
@@ -469,7 +493,7 @@ private fun retirement(finance: PersonalFinance): Check? {
     val toGoal = (RETIREMENT_SHARE * total - saved) / (1 - RETIREMENT_SHARE)
     val steps = buildList {
         if (!ok) {
-            add("Adding ${money(toGoal)} to retirement accounts would reach 25%." + (monthsAway(toGoal, finance.netMonthly)?.let { " Putting all of the ${money(finance.netMonthly!!)} left over each month in, that's $it." } ?: ""))
+            add("Adding ${atLeast(toGoal)} to retirement accounts would reach 25%." + (monthsAway(toGoal, finance.netMonthly)?.let { " Putting all of the ${money(finance.netMonthly!!)} left over each month in, that's $it." } ?: ""))
             add("A traditional 401(k) takes contributions before tax, so each ${money(100.0)} saved costs less than ${money(100.0)} of take-home.")
             add("Take any employer match in full first — it's part of your pay.")
         } else {

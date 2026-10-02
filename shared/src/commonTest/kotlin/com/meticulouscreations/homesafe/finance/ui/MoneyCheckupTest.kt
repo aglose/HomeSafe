@@ -153,4 +153,41 @@ class MoneyCheckupTest {
         assertEquals(0.0, sparse.byKind(CheckKind.DEBT_RATIO)!!.gauge!!.value)
         assertNull(sparse.byKind(CheckKind.DEBT_RATIO)!!.whatIf, "nothing owed, nothing to pay down")
     }
+
+    @Test
+    fun spendingThatTheSheetDoesNotItemiseIsShownSoThePartsAddUp() {
+        // $9,000 spent; the three lines come to $7,000.
+        val spending = check(CheckKind.EMERGENCY_FUND).ledger[1]
+        assertEquals("$2,000 / mo", spending.items.single { it.label == "Not itemised in the sheet" }.amount)
+        assertEquals("$2,000 / mo", check(CheckKind.SAVINGS_RATE).ledger.single { it.label == "Spending" }.items.last().amount)
+    }
+
+    @Test
+    fun loansWithoutARateAreNotJudgedAndWithNoRatesAtAllTheLineIsLeftOut() {
+        val noRates = household(debts = listOf(Debt("Family loan", Owner.Joint, 4_000.0, null, null)))
+        assertNull(moneyCheckup(noRates, fedRate = null).byKind(CheckKind.COSTLY_DEBT))
+
+        val someRates = household(debts = listOf(Debt("Car loan", Owner.Joint, 10_000.0, 3.0, null), Debt("Family loan", Owner.Joint, 4_000.0, null, null)))
+        val c = moneyCheckup(someRates, fedRate = null).byKind(CheckKind.COSTLY_DEBT)!!
+        assertTrue(c.ok)
+        assertEquals("None of your loans with a rate charge more than about 5%. Family loan has no rate in the sheet, so it wasn't judged.", c.detail)
+    }
+
+    @Test
+    fun theQuotedPayDownLeavesTheRatioStrictlyUnder25Percent() {
+        // $28,000 owed of $100,000: ($28,000 − $25,000) ÷ 75% is exactly $4,000, which lands on 25% — not under it.
+        val c = moneyCheckup(household(debts = listOf(Debt("Car loan", Owner.Joint, 28_000.0, 3.0, null))), fedRate = null).byKind(CheckKind.DEBT_RATIO)!!
+        assertFalse(c.ok)
+        assertEquals("Paying down $4,001 from savings would bring it under 25% (savings shrink too, so it takes a little more than the gap).", c.steps.first())
+        assertFalse(c.whatIf!!.outcome(4_000.0).ok)
+        assertTrue(c.whatIf.outcome(4_001.0).ok)
+    }
+
+    @Test
+    fun thePayDownSliderStopsAtWhatIsOwedOrTheCashThereIs() {
+        assertEquals(15_000.0, check(CheckKind.DEBT_RATIO).whatIf!!.max, "owed, not rounded past it")
+        val deep = moneyCheckup(household(debts = listOf(Debt("Car loan", Owner.Joint, 40_000.0, 3.0, null))), fedRate = null).byKind(CheckKind.DEBT_RATIO)!!
+        assertEquals(18_000.0, deep.whatIf!!.max, "no more than the cash there is")
+        assertEquals("$22,000 still owed.", deep.whatIf.outcome(25_000.0).note, "an amount past the lever is held to it")
+    }
 }

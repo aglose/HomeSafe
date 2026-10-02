@@ -577,7 +577,7 @@ private fun WhatIfCard(whatIf: WhatIf, kind: CheckKind) {
         }
         Slider(
             amount,
-            { v -> amount = ((v / whatIf.step).roundToInt() * whatIf.step).toFloat() },
+            { v -> amount = ((v / whatIf.step).roundToInt() * whatIf.step).coerceAtMost(whatIf.max).toFloat() },
             valueRange = 0f..whatIf.max.toFloat().coerceAtLeast(whatIf.step.toFloat()),
             colors = SliderDefaults.colors(thumbColor = colors.accent, activeTrackColor = colors.accent, inactiveTrackColor = colors.hairline),
         )
