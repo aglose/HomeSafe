@@ -29,7 +29,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.contentDescription
@@ -40,9 +40,13 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.meticulouscreations.homesafe.finance.domain.ChartShader
+import com.meticulouscreations.homesafe.finance.domain.LineSharpness
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceTheme
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 /** One line on a [LineChart]. The first line given is the one a finger scrubs. */
@@ -75,6 +79,9 @@ data class ChartAxis(val formatValue: (Double) -> String, val formatTime: (Long)
 
 private const val SAMPLES = 240
 
+/** A sharp line keeps every real point up to this many; past it, each stretch keeps its low and its high. */
+private const val SHARP_POINTS = 720
+
 /**
  * The finance app's line chart, drawn the way Robinhood draws one: no grid, a glowing line with
  * a wash beneath it, and the whole thing a scrubber — touch and slide sideways (or hold) and
@@ -89,6 +96,9 @@ private const val SAMPLES = 240
  * points are spaced evenly, which closes nights and weekends the way price charts do. [extent]
  * is how much of the width the line spans — less than 1 for a trading day still in progress.
  * [live] pulses a dot on the last point.
+ *
+ * How it's lit (glow, aurora, halftone, neon, flat), how closely the line follows the data and
+ * how strongly a scrub buzzes all come from [FinanceTheme.chart], the chart settings page's choice.
  */
 @Composable
 fun LineChart(
@@ -107,11 +117,13 @@ fun LineChart(
     onScrub: (Int?) -> Unit = {},
 ) {
     val colors = FinanceTheme.colors
+    val style = FinanceTheme.chart
     val haptics = LocalHapticFeedback.current
     val textMeasurer = rememberTextMeasurer()
     val currentOnScrub by rememberUpdatedState(onScrub)
+    val sharp = style.sharpness != LineSharpness.SMOOTH
 
-    val target = remember(lines, baseline, zones, rules, timeAxis, extent, fitZones) { geometryOf(lines, baseline, zones, rules, timeAxis, extent, fitZones) }
+    val target = remember(lines, baseline, zones, rules, timeAxis, extent, fitZones, sharp) { geometryOf(lines, baseline, zones, rules, timeAxis, extent, fitZones, sharp) }
     var from by remember { mutableStateOf<Geometry?>(null) }
     var to by remember { mutableStateOf(target) }
     val progress = remember { Animatable(1f) }
@@ -137,7 +149,20 @@ fun LineChart(
     val currentTarget by rememberUpdatedState(target)
     val currentTimeAxis by rememberUpdatedState(timeAxis)
     val currentExtent by rememberUpdatedState(extent)
-    val clock = rememberShaderClock(running = live)
+    val currentFeel by rememberUpdatedState(style.haptics)
+    val currentBaseline by rememberUpdatedState(baseline)
+    val primarySeries = lines.firstOrNull()?.series
+    val extremes = remember(primarySeries) { primarySeries?.let(::extremesOf) }
+    val currentExtremes by rememberUpdatedState(extremes)
+    val fillShader = remember(style.shader) {
+        when (style.shader) {
+            ChartShader.AURORA -> financeShaderOrNull(CHART_AURORA_SHADER)
+            ChartShader.HALFTONE -> financeShaderOrNull(CHART_HALFTONE_SHADER)
+            else -> null
+        }
+    }
+    // The aurora drifts, so it needs a frame clock; everything else is still unless live.
+    val clock = rememberShaderClock(running = live || (style.shader == ChartShader.AURORA && fillShader != null))
 
     Canvas(
         modifier
@@ -154,8 +179,9 @@ fun LineChart(
                     val idx = indexAt(clamped / w, primary, currentTarget, currentTimeAxis, currentExtent)
                     scrubX = xOfIndex(idx, primary, currentTarget, currentTimeAxis, currentExtent) * w
                     if (idx != scrubIndex) {
+                        val landmark = passedLandmark(primary, scrubIndex, idx, currentExtremes, currentBaseline)
                         scrubIndex = idx
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentFrequentTick)
+                        haptics.chartTick(currentFeel, landmark)
                         currentOnScrub(idx)
                     }
                 }
@@ -248,23 +274,26 @@ fun LineChart(
         }
 
         val reveal = if (firstReveal) progress.value else 1f
+        val look = Look(style.shader, style.sharpness, fillShader, clock.value, scrubX)
         clipRect(right = w * reveal) {
             geo.lines.indices.reversed().forEach { li ->
                 val line = lines.getOrNull(li) ?: return@forEach
                 val lg = geo.lines[li]
                 val path = buildPath(lg, w) { y(it) }
                 val dimFrom = if (li == 0) scrubX else null
-                drawChartLine(path, lg, line, w, bottom, dimFrom) { y(it) }
+                drawChartLine(path, lg, line, look, w, bottom, dimFrom) { y(it) }
             }
         }
 
-        // The finger: a hairline down the chart and a ringed dot on the line.
+        // The finger: a hairline down the chart and a ringed dot on the line. The dot takes its
+        // height from the line as drawn (thinned, curved, mid-morph), not from the raw value, so
+        // it rides the line wherever the finger goes.
         val sx = scrubX
         val primary = lines.firstOrNull()
-        if (sx != null && primary != null && scrubIndex >= 0 && scrubIndex < primary.series.size) {
+        val primaryGeo = geo.lines.firstOrNull()
+        if (sx != null && primary != null && primaryGeo != null && scrubIndex >= 0 && scrubIndex < primary.series.size) {
             drawLine(colors.textTertiary, Offset(sx, top), Offset(sx, bottom), 1.dp.toPx())
-            val v = primary.series.values[scrubIndex]
-            val sy = y(geo.normalise(v))
+            val sy = y(primaryGeo.yAt(sx / w))
             drawCircle(primary.color.copy(alpha = 0.25f), 11.dp.toPx(), Offset(sx, sy))
             drawCircle(primary.color, 5.dp.toPx(), Offset(sx, sy))
             drawCircle(colors.background, 2.dp.toPx(), Offset(sx, sy))
@@ -283,9 +312,14 @@ fun LineChart(
     }
 }
 
-private fun DrawScope.drawChartLine(path: Path, lg: LineGeo, line: ChartLine, w: Float, bottom: Float, dimFrom: Float?, y: (Float) -> Float) {
-    val stroke = line.width.dp.toPx()
-    if (line.fill && lg.xs.size > 1) {
+/** What a frame of the chart is drawn with: the settings' choices, and the moving parts the shaders read. */
+private class Look(val shader: ChartShader, val sharpness: LineSharpness, val fill: FinanceShader?, val time: Float, val scrubX: Float?)
+
+private fun DrawScope.drawChartLine(path: Path, lg: LineGeo, line: ChartLine, look: Look, w: Float, bottom: Float, dimFrom: Float?, y: (Float) -> Float) {
+    val sharp = look.sharpness != LineSharpness.SMOOTH
+    // A sharp line runs a touch thinner, so neighbouring points stay apart.
+    val stroke = line.width.dp.toPx() * (if (sharp) 0.85f else 1f)
+    if (line.fill && lg.xs.size > 1 && look.shader != ChartShader.FLAT) {
         val fill = Path().apply {
             addPath(path)
             lineTo(lg.xs.last() * w, bottom)
@@ -293,16 +327,39 @@ private fun DrawScope.drawChartLine(path: Path, lg: LineGeo, line: ChartLine, w:
             close()
         }
         val topY = lg.ys.minOrNull()?.let(y) ?: 0f
-        drawPath(fill, Brush.verticalGradient(listOf(line.color.copy(alpha = 0.28f), line.color.copy(alpha = 0f)), startY = topY, endY = bottom))
+        drawPath(fill, fillBrush(look, line.color, topY, bottom))
     }
     val effect = if (line.dashed) PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 5.dp.toPx())) else null
+    val round = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = effect)
+    // Corners stay corners on a sharp line; the miter limit keeps a spike from turning into a spear.
+    val core = if (sharp) Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Miter, miter = 3f, pathEffect = effect) else round
+    fun glow(alpha: Float, widthFactor: Float, a: Float) {
+        drawPath(path, line.color.copy(alpha = a * alpha), style = Stroke(stroke * widthFactor, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
     fun strokes(alpha: Float) {
         if (!line.dashed) {
-            // A cheap glow: two wide, faint passes under the line itself.
-            drawPath(path, line.color.copy(alpha = 0.10f * alpha), style = Stroke(stroke * 4.5f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-            drawPath(path, line.color.copy(alpha = 0.22f * alpha), style = Stroke(stroke * 2.2f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+            when (look.shader) {
+                ChartShader.FLAT -> Unit
+
+                ChartShader.NEON -> {
+                    // A neon tube: a wide, layered bloom round a white-hot core.
+                    glow(alpha, 8f, 0.06f)
+                    glow(alpha, 4f, 0.14f)
+                    glow(alpha, 2f, 0.32f)
+                }
+
+                else -> {
+                    // A cheap glow: two wide, faint passes under the line itself, tighter on a sharp line.
+                    glow(alpha, if (sharp) 3f else 4.5f, 0.10f)
+                    glow(alpha, if (sharp) 1.7f else 2.2f, if (sharp) 0.18f else 0.22f)
+                }
+            }
         }
-        drawPath(path, line.color.copy(alpha = alpha), style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round, pathEffect = effect))
+        drawPath(path, line.color.copy(alpha = alpha), style = core)
+        if (look.shader == ChartShader.NEON && !line.dashed) {
+            drawPath(path, lerp(line.color, Color.White, 0.7f).copy(alpha = alpha), style = Stroke(stroke * 0.4f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+        if (look.sharpness == LineSharpness.POINTS) drawPoints(lg, line.color.copy(alpha = alpha), stroke, w, y)
     }
     if (dimFrom == null) {
         strokes(1f)
@@ -310,6 +367,42 @@ private fun DrawScope.drawChartLine(path: Path, lg: LineGeo, line: ChartLine, w:
         clipRect(right = dimFrom) { strokes(1f) }
         clipRect(left = dimFrom) { strokes(0.3f) }
     }
+}
+
+/** What fills under a line: the chosen shader, or the plain wash where it's the glow or won't compile. */
+private fun DrawScope.fillBrush(look: Look, color: Color, topY: Float, bottom: Float): Brush {
+    val shader = look.fill
+    return when {
+        shader != null && look.shader == ChartShader.AURORA -> {
+            shader.setUniform("size", size.width, size.height)
+            shader.setUniform("time", look.time)
+            shader.setUniform("tint", color)
+            shader.setUniform("top", topY)
+            shader.setUniform("bottom", bottom)
+            shader.brush()
+        }
+
+        shader != null && look.shader == ChartShader.HALFTONE -> {
+            shader.setUniform("tint", color)
+            shader.setUniform("top", topY)
+            shader.setUniform("bottom", bottom)
+            shader.setUniform("cell", 6.dp.toPx())
+            shader.setUniform("scrub", look.scrubX ?: -1f)
+            shader.brush()
+        }
+
+        else -> Brush.verticalGradient(listOf(color.copy(alpha = if (look.shader == ChartShader.NEON) 0.14f else 0.28f), color.copy(alpha = 0f)), startY = topY, endY = bottom)
+    }
+}
+
+/** A dot on each real point of [lg], when it holds the real points and they're far enough apart to tell. */
+private fun DrawScope.drawPoints(lg: LineGeo, color: Color, stroke: Float, w: Float, y: (Float) -> Float) {
+    val n = lg.xs.size
+    if (!lg.exact || n < 2) return
+    val gap = (lg.xs[n - 1] - lg.xs[0]) * w / (n - 1)
+    if (gap < 5.dp.toPx()) return
+    val r = minOf(stroke * 1.15f, gap * 0.3f)
+    for (i in 0 until n) drawCircle(color, r, Offset(lg.xs[i] * w, y(lg.ys[i])))
 }
 
 private fun buildPath(lg: LineGeo, w: Float, y: (Float) -> Float): Path {
@@ -348,7 +441,7 @@ private fun DrawScope.drawAxis(
 
 /** Where each line's points sit, 0–1 across and 0 (top) to 1 (bottom) down, plus the value range they're scaled to. */
 @Immutable
-private class Geometry(
+internal class Geometry(
     val lines: List<LineGeo>,
     val baselineY: Float?,
     val rules: List<Float>,
@@ -359,14 +452,42 @@ private class Geometry(
     val timeMax: Long,
 ) {
     val isEmpty: Boolean get() = lines.isEmpty() || lines.all { it.xs.isEmpty() }
-
-    fun normalise(v: Double): Float = if (maxValue == minValue) 0.5f else (1.0 - (v - minValue) / (maxValue - minValue)).toFloat()
 }
 
+/** One line's points; [exact] when they're the series' own points, one for one, rather than a thinning or a curve. */
 @Immutable
-private class LineGeo(val xs: FloatArray, val ys: FloatArray)
+internal class LineGeo(val xs: FloatArray, val ys: FloatArray, val exact: Boolean = false) {
+    /** The line's height (0 top to 1 bottom) at [x] across, straight between points as it's drawn. */
+    fun yAt(x: Float): Float {
+        val n = xs.size
+        if (n == 0) return 0.5f
+        if (x <= xs[0]) return ys[0]
+        if (x >= xs[n - 1]) return ys[n - 1]
+        var lo = 0
+        var hi = n - 1
+        while (hi - lo > 1) {
+            val mid = (lo + hi) ushr 1
+            if (xs[mid] <= x) lo = mid else hi = mid
+        }
+        val span = xs[hi] - xs[lo]
+        return if (span <= 0f) ys[hi] else ys[lo] + (ys[hi] - ys[lo]) * (x - xs[lo]) / span
+    }
 
-private fun geometryOf(lines: List<ChartLine>, baseline: Double?, zones: List<ChartZone>, rules: List<ChartRule>, timeAxis: Boolean, extent: Float, fitZones: Boolean): Geometry {
+    /** These points as [count], spaced evenly along the old ones, so lines of different point counts can morph. */
+    fun resampled(count: Int): LineGeo {
+        val n = xs.size
+        if (n == count || n == 0 || count < 2) return this
+        fun at(arr: FloatArray, k: Int): Float {
+            if (n == 1) return arr[0]
+            val pos = k / (count - 1f) * (n - 1)
+            val i = pos.toInt().coerceAtMost(n - 2)
+            return arr[i] + (arr[i + 1] - arr[i]) * (pos - i)
+        }
+        return LineGeo(FloatArray(count) { at(xs, it) }, FloatArray(count) { at(ys, it) })
+    }
+}
+
+internal fun geometryOf(lines: List<ChartLine>, baseline: Double?, zones: List<ChartZone>, rules: List<ChartRule>, timeAxis: Boolean, extent: Float, fitZones: Boolean, sharp: Boolean): Geometry {
     val present = lines.filter { it.series.size >= 1 }
     if (present.isEmpty()) return Geometry(emptyList(), null, emptyList(), emptyList(), 0.0, 1.0, Long.MAX_VALUE, Long.MIN_VALUE)
     var lo = present.minOf { it.series.min() }
@@ -408,7 +529,7 @@ private fun geometryOf(lines: List<ChartLine>, baseline: Double?, zones: List<Ch
         if (s.size == 0) {
             LineGeo(FloatArray(0), FloatArray(0))
         } else {
-            sample(s, timeAxis, tMin, tMax, extent, ::norm)
+            if (sharp && s.size > 1) sharpSample(s, timeAxis, tMin, tMax, extent, ::norm) else sample(s, timeAxis, tMin, tMax, extent, ::norm)
         }
     }
     fun bound(v: Double?, fallback: Float) = v?.let(::norm) ?: fallback
@@ -425,9 +546,10 @@ private fun geometryOf(lines: List<ChartLine>, baseline: Double?, zones: List<Ch
 }
 
 /**
- * [s] as [SAMPLES] points. Each output point stands for a bucket of the source, and takes the
- * bucket's more extreme value (its max or min, whichever strays further from the bucket's
- * mean), so a spike — the VIX in March 2020 — survives being thinned from thousands of days.
+ * [s] as [SAMPLES] points. Each output point stands for a bucket of the source centred where the
+ * point is drawn, and takes the bucket's more extreme value (its max or min, whichever strays
+ * further from the bucket's mean), so a spike — the VIX in March 2020 — survives being thinned
+ * from thousands of days.
  */
 private fun sample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent: Float, norm: (Double) -> Float): LineGeo {
     val n = s.size
@@ -443,18 +565,20 @@ private fun sample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent:
     }
     val t0 = s.times.first()
     val t1 = s.times.last()
+    // Half a bucket's width, in source points.
+    val half = (n - 1) / (out - 1.0) / 2
     for (i in 0 until out) {
-        val f0 = i / out.toDouble()
-        val f1 = (i + 1) / out.toDouble()
-        val a = (f0 * (n - 1)).toInt()
-        val b = maxOf(a + 1, (f1 * (n - 1)).toInt()).coerceAtMost(n)
-        val v = if (b - a <= 1) {
+        val pos = i / (out - 1.0) * (n - 1)
+        val v = if (n <= out) {
             // Fewer source points than output points: a Catmull-Rom curve through them, so a
             // series of a few dozen snapshots draws as a smooth line rather than a zigzag.
-            val pos = i / (out - 1.0) * (n - 1)
             val k = pos.toInt().coerceAtMost(n - 2)
             catmullRom(s.values[maxOf(k - 1, 0)], s.values[k], s.values[k + 1], s.values[minOf(k + 2, n - 1)], pos - k)
         } else {
+            // The bucket is centred on this point's own place along the series, so the line
+            // doesn't drift right of the data the further across it goes.
+            val a = ceil(pos - half).toInt().coerceIn(0, n - 1)
+            val b = (floor(pos + half).toInt() + 1).coerceIn(a + 1, n)
             var mn = Double.MAX_VALUE
             var mx = -Double.MAX_VALUE
             var sum = 0.0
@@ -469,7 +593,6 @@ private fun sample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent:
         }
         ys[i] = norm(v)
         xs[i] = if (timeAxis && tMax > tMin) {
-            val pos = i / (out - 1.0) * (n - 1)
             val k = pos.toInt().coerceAtMost(n - 2)
             val t = s.times[k] + (s.times[k + 1] - s.times[k]) * (pos - k)
             ((t - tMin) / (tMax - tMin)).toFloat()
@@ -477,8 +600,8 @@ private fun sample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent:
             i / (out - 1f) * extent
         }
     }
-    // The first and last point are exactly the series' ends, so the live dot and the scrubbed
-    // value sit on the line.
+    // The first and last point are exactly the series' ends, so the line starts and ends on real
+    // values and the live dot sits on the last one.
     ys[0] = norm(s.values.first())
     ys[out - 1] = norm(s.values.last())
     if (timeAxis && tMax > tMin) {
@@ -488,20 +611,58 @@ private fun sample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent:
     return LineGeo(xs, ys)
 }
 
+/**
+ * [s] drawn sharp: straight from each real point to the next, up to [SHARP_POINTS] of them. A
+ * longer series keeps, from each stretch, its lowest and its highest point in the order they
+ * came, so the line is dense but every real extreme is still on it, where it happened.
+ */
+private fun sharpSample(s: Series, timeAxis: Boolean, tMin: Long, tMax: Long, extent: Float, norm: (Double) -> Float): LineGeo {
+    val n = s.size
+    fun xAt(k: Int): Float = if (timeAxis && tMax > tMin) {
+        ((s.times[k] - tMin).toDouble() / (tMax - tMin)).toFloat()
+    } else {
+        k / (n - 1f) * extent
+    }
+    if (n <= SHARP_POINTS) return LineGeo(FloatArray(n) { xAt(it) }, FloatArray(n) { norm(s.values[it]) }, exact = true)
+    val picked = IntArray(SHARP_POINTS)
+    var m = 0
+    picked[m++] = 0
+    // The ends are kept as they are; the points between are split into stretches of two each.
+    val stretches = (SHARP_POINTS - 2) / 2
+    val inner = n - 2
+    for (b in 0 until stretches) {
+        val from = 1 + (b.toLong() * inner / stretches).toInt()
+        val until = 1 + ((b + 1).toLong() * inner / stretches).toInt()
+        if (until <= from) continue
+        var lo = from
+        var hi = from
+        for (k in from until until) {
+            if (s.values[k] < s.values[lo]) lo = k
+            if (s.values[k] > s.values[hi]) hi = k
+        }
+        picked[m++] = minOf(lo, hi)
+        if (lo != hi) picked[m++] = maxOf(lo, hi)
+    }
+    picked[m++] = n - 1
+    return LineGeo(FloatArray(m) { xAt(picked[it]) }, FloatArray(m) { norm(s.values[picked[it]]) })
+}
+
 private fun catmullRom(p0: Double, p1: Double, p2: Double, p3: Double, t: Double): Double {
     val t2 = t * t
     val t3 = t2 * t
     return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 + (-p0 + 3 * p1 - 3 * p2 + p3) * t3)
 }
 
-private fun lerp(a: Geometry, b: Geometry, t: Float): Geometry {
+internal fun lerp(a: Geometry, b: Geometry, t: Float): Geometry {
     fun mix(x: Float, y: Float) = x + (y - x) * t
     val lines = b.lines.mapIndexed { i, bl ->
-        val al = a.lines.getOrNull(i)
+        // A line of a different point count (smooth to sharp, a longer series) is respaced to
+        // the new count first, so it still slides into shape rather than jumping.
+        val al = a.lines.getOrNull(i)?.takeIf { it.xs.isNotEmpty() && bl.xs.isNotEmpty() }?.resampled(bl.xs.size)
         if (al == null || al.xs.size != bl.xs.size) {
             bl
         } else {
-            LineGeo(FloatArray(bl.xs.size) { mix(al.xs[it], bl.xs[it]) }, FloatArray(bl.ys.size) { mix(al.ys[it], bl.ys[it]) })
+            LineGeo(FloatArray(bl.xs.size) { mix(al.xs[it], bl.xs[it]) }, FloatArray(bl.ys.size) { mix(al.ys[it], bl.ys[it]) }, bl.exact)
         }
     }
     return Geometry(
@@ -517,7 +678,7 @@ private fun lerp(a: Geometry, b: Geometry, t: Float): Geometry {
 }
 
 /** The source index under [fraction] of the width. */
-private fun indexAt(fraction: Float, s: Series, geo: Geometry, timeAxis: Boolean, extent: Float): Int {
+internal fun indexAt(fraction: Float, s: Series, geo: Geometry, timeAxis: Boolean, extent: Float): Int {
     if (timeAxis && geo.timeMax > geo.timeMin) {
         val t = geo.timeMin + ((geo.timeMax - geo.timeMin) * fraction).toLong()
         var lo = 0
@@ -531,9 +692,42 @@ private fun indexAt(fraction: Float, s: Series, geo: Geometry, timeAxis: Boolean
     return ((fraction / extent).coerceIn(0f, 1f) * (s.size - 1)).roundToInt()
 }
 
-private fun xOfIndex(index: Int, s: Series, geo: Geometry, timeAxis: Boolean, extent: Float): Float =
+internal fun xOfIndex(index: Int, s: Series, geo: Geometry, timeAxis: Boolean, extent: Float): Float =
     if (timeAxis && geo.timeMax > geo.timeMin) {
         ((s.times[index] - geo.timeMin).toDouble() / (geo.timeMax - geo.timeMin)).toFloat()
     } else {
         index / (s.size - 1f).coerceAtLeast(1f) * extent
     }
+
+/** Where a series peaks and bottoms out, by index. */
+internal class Extremes(val high: Int, val low: Int)
+
+internal fun extremesOf(s: Series): Extremes? {
+    if (s.size == 0) return null
+    var hi = 0
+    var lo = 0
+    for (i in 1 until s.size) {
+        if (s.values[i] > s.values[hi]) hi = i
+        if (s.values[i] < s.values[lo]) lo = i
+    }
+    return Extremes(hi, lo)
+}
+
+/**
+ * Whether a finger moving from point [from] to [to] reached the series' high or low, or crossed
+ * [baseline] (yesterday's close): the moments a scrub lands with a firmer buzz. Touching down
+ * ([from] -1) is never one.
+ */
+internal fun passedLandmark(s: Series, from: Int, to: Int, extremes: Extremes?, baseline: Double?): Boolean {
+    if (from < 0 || from >= s.size || to >= s.size) return false
+    val range = minOf(from, to)..maxOf(from, to)
+    fun reached(i: Int) = i != from && i in range
+    if (extremes != null && (reached(extremes.high) || reached(extremes.low))) return true
+    if (baseline == null) return false
+    // Every step the finger skipped over, so a fast scrub that dips under the baseline and back
+    // between two frames still lands its thud.
+    for (i in range.first until range.last) {
+        if ((s.values[i] >= baseline) != (s.values[i + 1] >= baseline)) return true
+    }
+    return false
+}

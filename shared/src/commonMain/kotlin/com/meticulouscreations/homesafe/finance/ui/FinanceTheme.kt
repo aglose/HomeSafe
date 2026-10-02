@@ -14,6 +14,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.Signal
 
 /**
@@ -79,6 +80,9 @@ class FinanceTypography(family: FontFamily) {
 
 val LocalFinanceTypography = staticCompositionLocalOf { FinanceTypography(FontFamily.Default) }
 
+/** How every chart is lit, drawn and felt, as chosen on the chart settings page. */
+val LocalChartStyle = staticCompositionLocalOf { ChartStyle.DEFAULT }
+
 object FinanceTheme {
     val colors: FinancePalette
         @Composable @ReadOnlyComposable
@@ -87,4 +91,8 @@ object FinanceTheme {
     val type: FinanceTypography
         @Composable @ReadOnlyComposable
         get() = LocalFinanceTypography.current
+
+    val chart: ChartStyle
+        @Composable @ReadOnlyComposable
+        get() = LocalChartStyle.current
 }

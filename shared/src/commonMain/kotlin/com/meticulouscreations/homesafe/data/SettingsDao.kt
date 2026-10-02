@@ -27,6 +27,12 @@ interface SettingsDao {
     @Upsert
     suspend fun upsertPlaybackPreferences(entity: PlaybackPreferencesEntity)
 
+    @Query("SELECT * FROM ChartPreferencesEntity WHERE id = 0")
+    fun observeChartPreferences(): Flow<ChartPreferencesEntity?>
+
+    @Upsert
+    suspend fun upsertChartPreferences(entity: ChartPreferencesEntity)
+
     @Query("SELECT * FROM DeviceIdentityEntity WHERE id = 0")
     suspend fun getDeviceIdentity(): DeviceIdentityEntity?
 

@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -84,6 +85,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -116,6 +118,9 @@ internal sealed interface FinanceDetail {
 
     /** How the budget sheet's last sync went, part by part. */
     data object SheetSync : FinanceDetail
+
+    /** How every chart looks and feels. */
+    data object ChartSettings : FinanceDetail
 }
 
 /**
@@ -131,6 +136,8 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     // The activity's instance, the one the drawer's teaser shares.
     val viewModel: FinanceViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val chartStyleViewModel: ChartStyleViewModel = metroViewModel()
+    val chartStyle by chartStyleViewModel.style.collectAsStateWithLifecycle()
     var tab by rememberSaveable { mutableStateOf(FinanceTab.WALLET) }
     val details = remember { mutableStateListOf<FinanceDetail>() }
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
@@ -157,7 +164,12 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val fontFamily = albertSansFontFamily()
     val type = remember(fontFamily) { FinanceTypography(fontFamily) }
     val openExplainer: (String) -> Unit = remember { { id -> explaining = id } }
-    CompositionLocalProvider(LocalFinancePalette provides palette, LocalFinanceTypography provides type, LocalExplainer provides openExplainer) {
+    CompositionLocalProvider(
+        LocalFinancePalette provides palette,
+        LocalFinanceTypography provides type,
+        LocalExplainer provides openExplainer,
+        LocalChartStyle provides chartStyle,
+    ) {
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
         val padding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 104.dp)
@@ -236,6 +248,8 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                         FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
 
                         FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
+
+                        FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
                     }
                 }
             }
@@ -247,6 +261,7 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                 onBack = { if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose() },
                 onRefresh = viewModel::refresh,
                 onGlossary = { push(FinanceDetail.Glossary) },
+                onChartSettings = { push(FinanceDetail.ChartSettings) },
             )
 
             // The one-time nudge, floating above the tabs' nav until it's put away.
@@ -311,6 +326,7 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     FinanceDetail.Connections -> "How it connects"
     FinanceDetail.Glossary -> "Jargon buster"
     FinanceDetail.SheetSync -> "Sheet sync"
+    FinanceDetail.ChartSettings -> "Chart settings"
 }
 
 /**
@@ -337,7 +353,15 @@ private fun financeTransition(from: Any, to: Any): ContentTransform {
 }
 
 @Composable
-private fun FinanceTopBar(title: String, isDetail: Boolean, refreshing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit, onGlossary: () -> Unit) {
+private fun FinanceTopBar(
+    title: String,
+    isDetail: Boolean,
+    refreshing: Boolean,
+    onBack: () -> Unit,
+    onRefresh: () -> Unit,
+    onGlossary: () -> Unit,
+    onChartSettings: () -> Unit,
+) {
     val colors = FinanceTheme.colors
     Box(
         Modifier
@@ -358,6 +382,12 @@ private fun FinanceTopBar(title: String, isDetail: Boolean, refreshing: Boolean,
         }
         AnimatedContent(title, modifier = Modifier.align(Alignment.Center), transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "title") { t ->
             Text(t, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+        }
+        // On the tabs only: their titles are short enough to leave room for a third button.
+        if (!isDetail) {
+            IconButton(onClick = onChartSettings, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 88.dp).testTag("finance_chart_settings")) {
+                Icon(Icons.Filled.Tune, contentDescription = "Chart settings", tint = colors.textSecondary)
+            }
         }
         IconButton(onClick = onGlossary, modifier = Modifier.align(Alignment.CenterEnd).padding(end = 44.dp).testTag("finance_glossary")) {
             Icon(Icons.AutoMirrored.Outlined.HelpOutline, contentDescription = "Jargon buster", tint = colors.textSecondary)

@@ -73,9 +73,22 @@ data class PlaybackPreferencesEntity(
 )
 
 /**
+ * A singleton row (always [id] = 0) holding how the finance charts look and feel. Added in schema
+ * 14; a missing row means the defaults (see `ChartStyle.DEFAULT`). Each field is an enum's name,
+ * stored as text so a value this build doesn't know degrades to the default instead of failing.
+ */
+@Entity
+data class ChartPreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    val shader: String,
+    val sharpness: String,
+    val haptics: String,
+)
+
+/**
  * A symbol the finance app follows on its own, beside the budget sheet's tickers: added from the
  * Markets tab's search, or holding a position entered against one of the sheet's. Added in
- * schema 14. [kind] is an `InstrumentKind` name, as text so an unknown one degrades to a guess.
+ * schema 15. [kind] is an `InstrumentKind` name, as text so an unknown one degrades to a guess.
  */
 @Entity
 data class WatchedSymbolEntity(

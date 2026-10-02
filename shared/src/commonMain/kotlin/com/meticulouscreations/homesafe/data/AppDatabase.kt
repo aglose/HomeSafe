@@ -49,9 +49,10 @@ class PropertyPlanDropped : AutoMigrationSpec
         PlaybackPreferencesEntity::class,
         DeviceIdentityEntity::class,
         MomentEventEntity::class,
+        ChartPreferencesEntity::class,
         WatchedSymbolEntity::class,
     ],
-    version = 14,
+    version = 15,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -74,8 +75,10 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 12 -> 13: quiet hours and "only when everyone's away" — four SettingsEntity columns,
         // all defaulting to off (the window defaults to 10 PM to 7 AM, unused until switched on).
         AutoMigration(from = 12, to = 13),
-        // 13 -> 14: the finance watchlist's own symbols and positions ([WatchedSymbolEntity], a new table).
+        // 13 -> 14: the finance charts' look and feel ([ChartPreferencesEntity], a new table).
         AutoMigration(from = 13, to = 14),
+        // 14 -> 15: the finance watchlist's own symbols and positions ([WatchedSymbolEntity], a new table).
+        AutoMigration(from = 14, to = 15),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
