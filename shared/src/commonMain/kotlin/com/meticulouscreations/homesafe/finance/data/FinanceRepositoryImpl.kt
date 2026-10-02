@@ -3,7 +3,6 @@ package com.meticulouscreations.homesafe.finance.data
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
-import com.meticulouscreations.homesafe.finance.domain.Combine
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
@@ -90,16 +89,7 @@ class FinanceRepositoryImpl(
         val parts = coroutineScope {
             indicator.fredIds.map { id -> async { fredSeries(id, start).getOrThrow() } }.awaitAll()
         }
-        var series = if (parts.size == 2) {
-            when (indicator.combine) {
-                Combine.RATIO_PERCENT -> parts[0].combine(parts[1]) { a, b -> if (b == 0.0) null else a / b * 100.0 }
-                Combine.RATIO -> parts[0].combine(parts[1]) { a, b -> if (b == 0.0) null else a / b }
-                Combine.DIFFERENCE -> parts[0].combine(parts[1]) { a, b -> a - b }
-                Combine.NONE -> parts.first()
-            }
-        } else {
-            parts.first()
-        }
+        var series = if (parts.size == 2) indicator.combine.apply(parts[0], parts[1]) else parts.first()
         if (indicator.transform == Transform.YEAR_OVER_YEAR) series = series.yearOverYearPercent()
         if (indicator.scale != 1.0) series = Series(series.times, DoubleArray(series.size) { series.values[it] * indicator.scale })
         IndicatorReading(indicator, series)

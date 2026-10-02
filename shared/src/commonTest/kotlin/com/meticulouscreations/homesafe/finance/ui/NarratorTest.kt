@@ -19,7 +19,8 @@ private val BRIGHT = EconomyTone.BRIGHT_SIDE
 
 class NarratorTest {
 
-    private val month = 30L * Series.DAY_SECONDS
+    // A twelfth of a year, so twelve readings back is exactly a year back, as FRED's month starts are.
+    private val month = Series.YEAR_SECONDS / 12
 
     /** A monthly series of [values], oldest first, ending now. */
     private fun monthly(vararg values: Double) = Series(LongArray(values.size) { 1_790_000_000L - (values.size - 1 - it) * month }, values)
@@ -93,6 +94,26 @@ class NarratorTest {
         assertTrue(straight.contains("+1.00 points over six months, toward the danger line"), straight)
         assertEquals(Trend.STEADY, Narrator.trend(monthly(4.0, 4.01, 3.99, 4.0, 4.02, 4.0, 4.01), noise = 0.1))
         assertEquals(Trend.FALLING, Narrator.trend(monthly(5.0, 4.8, 4.6, 4.4, 4.2, 4.0, 3.8), noise = 0.1))
+    }
+
+    @Test
+    fun pastTheDangerLineAWorseningMoveGoesFurtherIn() {
+        // Unemployment 6% → 7%, already past the 5.5% danger line.
+        val worse = Narrator.rightNow(reading("unrate", 6.0, 6.2, 6.4, 6.6, 6.8, 6.9, 7.0), STRAIGHT)
+        assertTrue(worse.contains("further into the danger zone"), worse)
+        val better = Narrator.rightNow(reading("unrate", 7.0, 6.9, 6.8, 6.6, 6.4, 6.2, 6.0), STRAIGHT)
+        assertTrue(better.contains("back toward the danger line"), better)
+    }
+
+    @Test
+    fun aMissingMonthIsNeverQuotedAsAYearAgo() {
+        // Fourteen monthly readings 30 days apart, with the one closest to a year back removed.
+        val full = monthly(4.0, 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8, 4.9, 5.0, 5.1, 5.2, 5.3)
+        val yearBack = full.lastTime!! - Series.YEAR_SECONDS
+        val gap = full.times.indices.minByOrNull { kotlin.math.abs(full.times[it] - yearBack) }!!
+        val holed = Series(full.times.filterIndexed { i, _ -> i != gap }.toLongArray(), full.values.filterIndexed { i, _ -> i != gap }.toDoubleArray())
+        val record = assertNotNull(Narrator.record(IndicatorReading(IndicatorCatalog.unemployment, holed)))
+        assertTrue(!record.contains("A year ago"), record)
     }
 
     @Test
@@ -180,6 +201,19 @@ class NarratorTest {
         val slack = briefing.items.first { it.topic == "Beneath the headline" }
         assertEquals(Signal.WATCH, slack.signal)
         assertTrue(slack.sentence.startsWith("1 of 3 measures past a line: long job searches 27.00%"), slack.sentence)
+    }
+
+    @Test
+    fun aPartWithoutASignalIsNotCountedAsCalm() {
+        // A quote but no fear gauge yet: the markets line has no signal of its own.
+        val briefing = Narrator.briefing(
+            mapOf("cpi" to reading("cpi", 2.1)),
+            stress = null,
+            quotes = mapOf(MarketCatalog.SP500.symbol to FinanceFixtures.quotes.getValue(MarketCatalog.SP500.symbol)),
+            tone = STRAIGHT,
+        )
+        assertNull(briefing.items.first { it.topic == "Markets" }.signal)
+        assertEquals("0 in danger · 0 to watch · 1 calm", briefing.headline)
     }
 
     @Test

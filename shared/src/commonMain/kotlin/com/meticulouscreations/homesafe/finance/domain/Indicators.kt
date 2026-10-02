@@ -77,6 +77,18 @@ enum class Combine {
 
     /** First − second: U-6 less U-3, the slack the headline rate leaves out. */
     DIFFERENCE,
+    ;
+
+    /**
+     * [first] and [second] put together at [first]'s times, each against [second]'s reading at or
+     * before it; a ratio's point is dropped where [second] is zero. [NONE] is [first] unchanged.
+     */
+    fun apply(first: Series, second: Series): Series = when (this) {
+        NONE -> first
+        RATIO_PERCENT -> first.combine(second) { a, b -> if (b == 0.0) null else a / b * 100.0 }
+        RATIO -> first.combine(second) { a, b -> if (b == 0.0) null else a / b }
+        DIFFERENCE -> first.combine(second) { a, b -> a - b }
+    }
 }
 
 /**
@@ -180,8 +192,8 @@ object IndicatorCatalog {
     // Jobs beneath the headline. The headline rate counts only people who looked for work in the
     // past four weeks and found none; these catch the part-timers who want more hours, the people
     // who gave up looking, how long searches are taking, and whether employers are still hiring.
-    // Lines are set from FRED's own history since 1990 (2007, the last year before a recession,
-    // sits near each watch line; 2008–10 is past each danger line).
+    // Each one's lines are set from its own FRED history since 1990, and its danger note says
+    // where the line sits against 2007 (the last year before a recession) and 2008–10.
     val u6 = Indicator(
         id = "u6", title = "Underemployment rate (U-6)", shortTitle = "U-6",
         fredIds = listOf("U6RATE"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.LABOR,
@@ -215,13 +227,13 @@ object IndicatorCatalog {
         dangerNote = "It was about 18% in 2007 and passed 30% in 2009 on the way to 45% in 2010. It sat near 21% through 2019.",
         startDate = "1990-01-01", weight = 0.5, cadence = Cadence.MONTHLY,
     )
-    val continuingClaims = Indicator(
-        id = "ccsa", title = "Continuing jobless claims", shortTitle = "Continuing claims",
-        fredIds = listOf("CCSA"), unit = IndicatorUnit.THOUSANDS, group = IndicatorGroup.LABOR,
-        thresholds = Thresholds(watch = 2000.0, danger = 2500.0, higherIsWorse = true),
-        why = "How many people are still collecting unemployment benefits each week. New claims say how many are being laid off; this says how many are failing to find the next job.",
-        dangerNote = "It averaged 2.5 million in 2007 and passed 3 million in mid-2008; the 2009 peak was 6.6 million.",
-        startDate = "2000-01-01", scale = 0.001, weight = 0.75, cadence = Cadence.WEEKLY,
+    val insuredUnemployment = Indicator(
+        id = "insured", title = "Insured unemployment rate (continuing claims)", shortTitle = "Insured unemployment",
+        fredIds = listOf("IURSA"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.LABOR,
+        thresholds = Thresholds(watch = 2.0, danger = 2.5, higherIsWorse = true),
+        why = "People still collecting unemployment benefits each week, as a share of the jobs that insurance covers. New claims say how many are being laid off; this says how many are failing to find the next job. As a rate it compares fairly across decades, where the raw count grows with the workforce.",
+        dangerNote = "It averaged 1.9% in 2007, crossed 2% in December 2007 as that recession began and 2.5% in August 2008, peaking at 5.0% in mid-2009. It sat near 1.2% through 2019.",
+        startDate = "1990-01-01", weight = 0.75, cadence = Cadence.WEEKLY,
     )
     val quits = Indicator(
         id = "quits", title = "Quits rate", shortTitle = "Quits",
@@ -235,9 +247,9 @@ object IndicatorCatalog {
         id = "openings", title = "Job openings per unemployed person", shortTitle = "Openings per seeker",
         fredIds = listOf("JTSJOL", "UNEMPLOY"), unit = IndicatorUnit.RATIO, group = IndicatorGroup.LABOR,
         combine = Combine.RATIO,
-        thresholds = Thresholds(watch = 1.0, danger = 0.7, higherIsWorse = false),
+        thresholds = Thresholds(watch = 0.8, danger = 0.5, higherIsWorse = false),
         why = "Open jobs divided by people looking for one. Above 1 there are more jobs than job seekers; below 1 there aren't enough to go round.",
-        dangerNote = "It was about 0.66 in 2007 and fell to 0.15 in 2009. It peaked at 2.0 in 2022 and was 1.2 through 2019.",
+        dangerNote = "It averaged 0.66 in 2006–07, fell below 0.5 in May 2008 and bottomed at 0.15 in 2009. It peaked at 2.0 in 2022 and was 1.2 through 2019.",
         startDate = "2001-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
     )
     val realWages = Indicator(
@@ -411,7 +423,7 @@ object IndicatorCatalog {
     /** The readings that feed the Risk tab's gauge, by group. */
     val radar: List<Indicator> = listOf(
         yieldCurve10y2y, yieldCurve10y3m, sahm, unemployment, claims, gdp, sentiment,
-        u6, slackGap, primeEpop, longTerm, continuingClaims, quits, openings, realWages, tempHelp,
+        u6, slackGap, primeEpop, longTerm, insuredUnemployment, quits, openings, realWages, tempHelp,
         highYield, stress, vix, delinquency,
         debtToGdp, interestBurden, m2,
         cpi, coreCpi, corePce, mortgage, homePrices, tenYear,
@@ -420,7 +432,7 @@ object IndicatorCatalog {
     val all: List<Indicator> = radar + listOf(fedFunds, twoYear, thirtyYear, participation)
 
     /** The labor readings the Economy tab lists under the unemployment chart. */
-    val labor: List<Indicator> = listOf(u6, slackGap, primeEpop, longTerm, continuingClaims, quits, openings, realWages, tempHelp, participation)
+    val labor: List<Indicator> = listOf(u6, slackGap, primeEpop, longTerm, insuredUnemployment, quits, openings, realWages, tempHelp, participation)
 
     private val byId = all.associateBy { it.id }
 

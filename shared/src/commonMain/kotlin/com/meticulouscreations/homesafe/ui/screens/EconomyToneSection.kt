@@ -16,8 +16,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 
 /**
  * How the finance app's Economy and Risk tabs talk: straight talk (the numbers, their lines and
@@ -46,6 +48,17 @@ internal fun EconomyToneSection(tone: EconomyTone, onTone: (EconomyTone) -> Unit
                     }
                 }
             }
+        }
+    }
+}
+
+/** Both choices, as Settings shows them. */
+@Preview(name = "Economy commentary", widthDp = 412)
+@Composable
+private fun EconomyToneSectionPreview() {
+    FrigateTheme {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            EconomyTone.entries.forEach { tone -> EconomyToneSection(tone = tone, onTone = {}) }
         }
     }
 }

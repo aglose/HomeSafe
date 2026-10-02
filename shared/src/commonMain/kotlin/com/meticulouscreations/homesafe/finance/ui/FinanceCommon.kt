@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -239,10 +242,10 @@ internal fun RangeBar(low: Double, high: Double, current: Double, lowLabel: Stri
     }
 }
 
-/** A row of small tappable chips, one selected. */
+/** A row of small tappable chips, one selected: a radio group to accessibility services. */
 @Composable
 internal fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> String, color: Color, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier.fillMaxWidth().padding(horizontal = PageGutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(modifier.fillMaxWidth().padding(horizontal = PageGutter).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
             val isSelected = option == selected
             Box(
@@ -250,7 +253,7 @@ internal fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> String, co
                     .clip(CircleShape)
                     .background(if (isSelected) color.copy(alpha = 0.18f) else FinanceTheme.colors.surfaceRaised)
                     .border(1.dp, if (isSelected) color.copy(alpha = 0.6f) else Color.Transparent, CircleShape)
-                    .clickable { onSelect(option) }
+                    .selectable(selected = isSelected, role = Role.RadioButton) { onSelect(option) }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             ) {
                 Text(label(option), style = FinanceTheme.type.label, color = if (isSelected) color else FinanceTheme.colors.textSecondary)

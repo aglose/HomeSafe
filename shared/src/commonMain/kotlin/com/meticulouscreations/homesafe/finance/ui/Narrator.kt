@@ -90,10 +90,6 @@ object Narrator {
     private fun change(r: IndicatorReading, delta: Double): String =
         FinanceFormat.indicatorChange(delta, r.indicator.unit).replace(" pts", " points")
 
-    /** "1.70 million" / "850,000", for a count held in thousands. */
-    private fun people(thousands: Double): String =
-        if (thousands >= 1000) FinanceFormat.grouped(thousands / 1000, 2) + " million" else FinanceFormat.grouped(thousands, 0) + ",000"
-
     /**
      * Which way it's been heading. Straight talk gives the six-month change and whether it's toward
      * or away from the danger line; the bright side says it in words, kindly.
@@ -106,9 +102,15 @@ object Narrator {
             val now = r.latest ?: return ""
             val then = r.history.valueAtOrBefore(time - 6 * 30L * Series.DAY_SECONDS) ?: return ""
             val delta = now - then
+            val worsening = worseUp != null && (delta > 0) == worseUp
             val toward = when {
                 t == Trend.STEADY || worseUp == null -> ""
-                (delta > 0) == worseUp -> ", toward the danger line"
+
+                // Already past the line, a worsening move goes further from it, not toward it.
+                r.signal == Signal.DANGER -> if (worsening) ", further into the danger zone" else ", back toward the danger line"
+
+                worsening -> ", toward the danger line"
+
                 else -> ", away from the danger line"
             }
             val moved = change(r, delta)
@@ -164,7 +166,7 @@ object Narrator {
 
             "longterm" -> "${pct(v)} of unemployed people have been looking for more than six months."
 
-            "ccsa" -> "About ${people(v)} people are still collecting unemployment benefits."
+            "insured" -> "${pct(v)} of workers covered by unemployment insurance are still collecting benefits."
 
             "quits" -> "${pct(v)} of workers quit their job last month."
 
@@ -328,8 +330,20 @@ object Narrator {
             parts += if (lower >= higher) "Higher than ${lower * 100 / others}% of readings since $since." else "Lower than ${higher * 100 / others}% of readings since $since."
         }
         extreme(h, v, t)?.let { parts += it }
-        h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { parts += "A year ago it was ${value(r, it)}." }
+        yearAgo(h, t)?.let { parts += "A year ago it was ${value(r, it)}." }
         return parts.joinToString(" ")
+    }
+
+    /**
+     * The reading a year before [t], with the same few days' grace as [Series.yearOverYearPercent]
+     * (which also covers a weekly series' 52 weeks); null when that reading is missing, so a
+     * 13-month-old one is never called a year's.
+     */
+    private fun yearAgo(h: Series, t: Long): Double? {
+        val target = t - Series.YEAR_SECONDS
+        val k = h.indexAtOrBefore(target + 3 * Series.DAY_SECONDS)
+        if (k < 0 || h.times[k] < target - 3 * Series.DAY_SECONDS) return null
+        return h.values[k]
     }
 
     /** "The highest since Oct 2021." when today's reading hasn't been matched for over a year; null otherwise. */
@@ -359,7 +373,7 @@ object Narrator {
                 else -> "Inflation has come down fast before: from about 9% in mid-2022 to about 3% a year later. Meanwhile savings accounts and Treasury bills tend to pay more while it runs hot."
             }
 
-            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "ccsa", "primeepop" -> if (!worse) {
+            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "insured", "primeepop" -> if (!worse) {
                 "Most people who want work have it, and a tight job market is when raises and job switches come easiest."
             } else {
                 "A cooling job market tends to bring the Fed to cut rates, which eases loan and card costs. Jobs have come back after every downturn: unemployment went from 14.8% in April 2020 to 3.6% by May 2022."
@@ -466,7 +480,7 @@ object Narrator {
                 "If your home tracked the national average, it's worth about ${FinanceFormat.money(abs(delta), 0)} ${if (delta >= 0) "more" else "less"} than a year ago."
             }
 
-            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "ccsa", "openings" -> finance?.runwayMonths?.let { months ->
+            "unrate", "sahm", "icsa", "u6", "slackgap", "longterm", "insured", "openings" -> finance?.runwayMonths?.let { months ->
                 "Your cash would cover about ${FinanceFormat.grouped(months, 1)} months of expenses if a paycheck stopped" +
                     when {
                         months >= 6 -> " — a solid cushion."
@@ -656,7 +670,9 @@ object Narrator {
         }
         val dangers = items.count { it.signal == Signal.DANGER }
         val watches = items.count { it.signal == Signal.WATCH }
-        val calms = items.size - dangers - watches
+        // Only lines that were actually judged calm: a part still waiting on its reading (markets
+        // with a quote but no fear gauge yet) is neither reassuring nor alarming.
+        val calms = items.count { it.signal == Signal.CALM }
         val headline = when {
             items.isEmpty() -> "Gathering the latest readings…"
             straight -> "$dangers in danger · $watches to watch · $calms calm"
