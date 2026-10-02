@@ -14,6 +14,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
+import kotlin.time.TimeSource
 
 /**
  * One camera's playback, outliving any single composable so its video is already decoding when
@@ -105,6 +106,9 @@ internal class LivePlayerHolder(val key: String?) {
     private var retryJob: Job? = null
     private var idleStopJob: Job? = null
 
+    /** When the last [start] ran: how long the current attempt has had, for [reconnect]. */
+    private var startedAt = TimeSource.Monotonic.markNow()
+
     private val listeners = mutableListOf<Listener>()
 
     fun addListener(listener: Listener) {
@@ -133,6 +137,21 @@ internal class LivePlayerHolder(val key: String?) {
             return
         }
         start(next, cold = needsColdStart || LivePlaybackPolicy.isColdSwap(current, next))
+    }
+
+    /**
+     * A pull to refresh, from a binder whose picture reads [status]: open a fresh session now,
+     * with a fresh failure budget, rather than at the end of the back-off — when
+     * [LivePlaybackPolicy.shouldReconnect] says the current one is stuck.
+     */
+    fun reconnect(status: LiveStreamStatus) {
+        val current = source as? VideoSource.Live ?: return
+        if (activeBinders == 0) return
+        // A failed session is closed straight away (see handleFailure), so none at all means it was lost.
+        if (!LivePlaybackPolicy.shouldReconnect(status, sessionLost = session == null, msSinceStart = startedAt.elapsedNow().inWholeMilliseconds)) return
+        consecutiveFailures = 0
+        retryJob?.cancel()
+        start(current, cold = true)
     }
 
     fun setPlayWhenReady(value: Boolean) {
@@ -224,6 +243,7 @@ internal class LivePlayerHolder(val key: String?) {
     private fun start(toLoad: VideoSource, cold: Boolean) {
         closeSession()
         needsColdStart = false
+        startedAt = TimeSource.Monotonic.markNow()
         if (cold) coldStartGeneration++
         val startPositionMs = when (toLoad) {
             is VideoSource.Live -> 0L

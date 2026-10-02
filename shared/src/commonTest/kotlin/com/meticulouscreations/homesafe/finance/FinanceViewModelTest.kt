@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.finance
 
+import com.meticulouscreations.homesafe.finance.data.InMemoryFinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
@@ -98,7 +99,7 @@ class FinanceViewModelTest {
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true, full = false)
         runCurrent()
         assertTrue(repo.quoteCalls >= 1)
@@ -119,7 +120,7 @@ class FinanceViewModelTest {
         val ticking = object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
         }
-        val vm = FinanceViewModel(repo, ticking, FakePreferences())
+        val vm = FinanceViewModel(repo, ticking, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
@@ -140,7 +141,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val never = CompletableDeferred<Result<PersonalFinance>>()
         repo.slowSheet = never
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -154,7 +155,7 @@ class FinanceViewModelTest {
     fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
         val repo = FakeRepository()
         repo.slowSheet = CompletableDeferred()
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         vm.setActive(false)
@@ -167,7 +168,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
         repo.sheet = { Result.success(read) }
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance)
@@ -188,7 +189,7 @@ class FinanceViewModelTest {
     @Test
     fun goingInactiveStopsThePolling() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -206,7 +207,7 @@ class FinanceViewModelTest {
     @Test
     fun theToneFollowsThePreferenceAndIsSavedWhenChanged() = runTest(dispatcher) {
         val prefs = FakePreferences()
-        val vm = FinanceViewModel(FakeRepository(), clock, prefs)
+        val vm = FinanceViewModel(FakeRepository(), clock, InMemoryFinanceTipLedger(), prefs)
         runCurrent()
         assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
 
@@ -224,7 +225,7 @@ class FinanceViewModelTest {
     @Test
     fun aRefreshEndsRefreshing() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         vm.refresh()
         assertTrue(vm.uiState.value.refreshing)
         runCurrent()
@@ -235,7 +236,7 @@ class FinanceViewModelTest {
     @Test
     fun aSlowOlderChartAnswerDoesNotReplaceANewerOne() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, clock, FakePreferences())
+        val vm = FinanceViewModel(repo, clock, InMemoryFinanceTipLedger(), FakePreferences())
         val first = CompletableDeferred<PriceHistory>()
         val older = CompletableDeferred<PriceHistory>()
         val newer = CompletableDeferred<PriceHistory>()
@@ -256,5 +257,26 @@ class FinanceViewModelTest {
         runCurrent()
 
         assertEquals(300.0, vm.uiState.value.chart("^GSPC", ChartRange.DAY)?.history?.series?.lastValue)
+    }
+
+    @Test
+    fun theNewToThisTipComesUpOnTheFirstTwoOpeningsOnlyEvenWhenPutAway() {
+        val ledger = InMemoryFinanceTipLedger()
+        val first = FinanceViewModel(FakeRepository(), clock, ledger, FakePreferences())
+        assertFalse(first.uiState.value.explainTipVisible, "nothing shows before the app is opened")
+
+        first.onAppOpened()
+        assertTrue(first.uiState.value.explainTipVisible)
+        first.dismissExplainTip()
+        assertFalse(first.uiState.value.explainTipVisible)
+
+        // A later launch: a new view model over the same install's ledger.
+        val second = FinanceViewModel(FakeRepository(), clock, ledger, FakePreferences())
+        second.onAppOpened()
+        assertTrue(second.uiState.value.explainTipVisible, "put away the first time, it still has its second showing")
+
+        second.onAppOpened()
+        assertFalse(second.uiState.value.explainTipVisible, "the third opening is past the limit")
+        assertEquals(FinanceViewModel.EXPLAIN_TIP_SHOWINGS, ledger.timesShown(FinanceViewModel.EXPLAIN_TIP))
     }
 }

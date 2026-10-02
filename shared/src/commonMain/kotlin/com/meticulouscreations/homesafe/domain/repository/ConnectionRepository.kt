@@ -74,6 +74,15 @@ interface ConnectionRepository {
      * returning screens make doesn't fail.
      */
     fun onAppVisibilityChanged(visible: Boolean)
+
+    /**
+     * The user asked for it — the Home page's pull to refresh: one pass, now, of what a return
+     * from the background does (re-choose the route, re-check the session and renew it if the
+     * server has forgotten it), then a fresh read of the server's camera list. Returns once
+     * both have landed or failed; a failure leaves the connection and the list as they were.
+     * A fake that never signs in needn't override it.
+     */
+    suspend fun reconnect() {}
 }
 
 private val NoExpectedConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)

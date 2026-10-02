@@ -26,7 +26,11 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +41,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
@@ -46,6 +51,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -92,7 +98,11 @@ class HomeViewModelTest {
             HouseholdPresence(devices = emptyList(), everyoneAway = everyoneAway),
         )
         var setAwayCalls = mutableListOf<Boolean>()
-        override suspend fun refresh(): Result<Unit> = Result.success(Unit)
+        var refreshes = 0
+        override suspend fun refresh(): Result<Unit> {
+            refreshes++
+            return Result.success(Unit)
+        }
         override suspend fun setDecidesPresence(decides: Boolean): Result<Unit> = Result.success(Unit)
         override suspend fun setHome(home: HomeLocation?): Result<Unit> = Result.success(Unit)
         override suspend fun removeDevice(deviceId: String): Result<Unit> = Result.success(Unit)
@@ -115,6 +125,15 @@ class HomeViewModelTest {
         override suspend fun saveBiometricCredentials(credentials: SavedCredentials) = fail("unused")
         override fun forgetBiometricCredentials() = Unit
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
+
+        var reconnects = 0
+
+        /** When set, a reconnect waits for it: a server slow to answer, or not answering at all. */
+        var reconnectGate: CompletableDeferred<Unit>? = null
+        override suspend fun reconnect() {
+            reconnects++
+            reconnectGate?.await()
+        }
     }
 
     private object FakePushToken : PushTokenProvider {
@@ -124,8 +143,11 @@ class HomeViewModelTest {
 
     /** Only the in-view strip and the latest moment are read here; the feed's own methods belong to its view model's test. */
     private class FakeMoments(private val inView: List<StationaryObject>, private val latest: Flow<MomentEvent?>) : MomentsRepository {
+        var stationaryRefreshes = 0
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = MutableStateFlow(inView)
-        override fun refreshStationaryObjects() = Unit
+        override fun refreshStationaryObjects() {
+            stationaryRefreshes++
+        }
         override fun nameCar(eventId: String, subLabel: String) = Unit
         override fun observeLatestMoment(): Flow<MomentEvent?> = latest
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
@@ -151,6 +173,7 @@ class HomeViewModelTest {
         val cameraRepo = FakeCameras(cameras)
         val presenceRepo = FakePresence(everyoneAway)
         val connection = FakeConnection(serverUrl)
+        val moments = FakeMoments(inView, latestMoment)
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(connection),
@@ -159,9 +182,12 @@ class HomeViewModelTest {
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
-            observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(FakeMoments(inView, latestMoment)),
-            observeLatestMomentUseCase = ObserveLatestMomentUseCase(FakeMoments(inView, latestMoment)),
+            observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(moments),
+            observeLatestMomentUseCase = ObserveLatestMomentUseCase(moments),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
+            reconnectToServerUseCase = ReconnectToServerUseCase(connection),
+            refreshHouseholdPresenceUseCase = RefreshHouseholdPresenceUseCase(presenceRepo),
+            refreshStationaryObjectsUseCase = RefreshStationaryObjectsUseCase(moments),
             clock = object : Clock {
                 // 18:00 UTC, a couple of hours after [tesla] arrived and the same day wherever the
                 // test runs, so the card's arrival never reads "yesterday".
@@ -322,5 +348,93 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         assertEquals(listOf(false), h.presenceRepo.setAwayCalls, "'I'm back' marks this device home")
+    }
+
+    @Test
+    fun aPullAsksAgainForEverythingThePageReads() = runTest {
+        val h = Harness()
+
+        h.viewModel.refresh()
+        advanceUntilIdle()
+
+        assertEquals(1, h.connection.reconnects, "route, session and the camera list")
+        assertEquals(1, h.presenceRepo.refreshes, "who is home")
+        assertEquals(1, h.moments.stationaryRefreshes, "the cars in view, and with them the latest moment")
+        assertEquals(1, h.viewModel.reconnectRequests.value, "and every card's player is asked to reconnect")
+    }
+
+    @Test
+    fun theBandStaysUpForOneSweepEvenWhenTheAnswerIsInstant() = runTest {
+        val h = Harness()
+
+        h.viewModel.refresh()
+        runCurrent()
+        assertTrue(h.viewModel.refreshing.value)
+
+        advanceTimeBy(800)
+        assertTrue(h.viewModel.refreshing.value, "a fast answer still reads as a refresh")
+
+        advanceUntilIdle()
+        assertFalse(h.viewModel.refreshing.value)
+    }
+
+    @Test
+    fun aServerThatDoesNotAnswerClosesTheBandWithoutCancellingTheReconnect() = runTest {
+        val h = Harness()
+        val gate = CompletableDeferred<Unit>()
+        h.connection.reconnectGate = gate
+
+        h.viewModel.refresh()
+        advanceTimeBy(8_001)
+        runCurrent()
+
+        assertFalse(h.viewModel.refreshing.value, "the band shouldn't wait out every timeout on the way")
+        assertEquals(0, h.moments.stationaryRefreshes, "the reconnect is still running behind it")
+
+        h.viewModel.refresh()
+        runCurrent()
+        assertEquals(1, h.connection.reconnects, "a pull while the last one's work still runs starts nothing new")
+        assertFalse(h.viewModel.refreshing.value)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, h.moments.stationaryRefreshes, "and finishes what it started")
+
+        h.viewModel.refresh()
+        advanceUntilIdle()
+        assertEquals(2, h.connection.reconnects, "once it has, the next pull runs")
+    }
+
+    @Test
+    fun presenceAndTheCarsAreAskedOnlyOnceTheRouteIsSettled() = runTest {
+        val h = Harness()
+        val gate = CompletableDeferred<Unit>()
+        h.connection.reconnectGate = gate
+
+        h.viewModel.refresh()
+        runCurrent()
+        assertEquals(0, h.presenceRepo.refreshes, "not on the address the reconnect may be about to move off")
+        assertEquals(0, h.moments.stationaryRefreshes)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals(1, h.presenceRepo.refreshes)
+        assertEquals(1, h.moments.stationaryRefreshes)
+    }
+
+    @Test
+    fun aPullWhileOneIsRunningIsIgnored() = runTest {
+        val h = Harness()
+        val gate = CompletableDeferred<Unit>()
+        h.connection.reconnectGate = gate
+
+        h.viewModel.refresh()
+        runCurrent()
+        h.viewModel.refresh()
+        gate.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals(1, h.connection.reconnects)
+        assertEquals(1, h.viewModel.reconnectRequests.value)
     }
 }

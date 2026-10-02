@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.finance
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
@@ -61,6 +62,8 @@ data class FinanceUiState(
     val financeLoading: Boolean = true,
     val sheetIssue: SheetIssue? = null,
     val refreshing: Boolean = false,
+    /** The "New to this?" tip is up: it comes up on an install's first few openings of the app (see [FinanceViewModel.onAppOpened]). */
+    val explainTipVisible: Boolean = false,
     /** How the Economy and Risk tabs talk about the readings; chosen in Settings or on the Economy tab. */
     val tone: EconomyTone = EconomyTone.DEFAULT,
 ) {
@@ -96,6 +99,7 @@ data class FinanceUiState(
 class FinanceViewModel(
     private val repository: FinanceRepository,
     private val clock: Clock,
+    private val tips: FinanceTipLedger,
     private val preferences: FinancePreferencesRepository,
 ) : ViewModel() {
 
@@ -159,6 +163,20 @@ class FinanceViewModel(
     }
 
     fun retrySheet() = loadSheet(refresh = true)
+
+    /**
+     * The finance app came up. The "New to this?" tip shows on the first [EXPLAIN_TIP_SHOWINGS]
+     * openings on an install and never after, put away or not: by then the ⓘ have been seen.
+     * Called once per opening, not on a recomposition or a configuration change.
+     */
+    fun onAppOpened() {
+        val show = tips.timesShown(EXPLAIN_TIP) < EXPLAIN_TIP_SHOWINGS
+        if (show) tips.recordShown(EXPLAIN_TIP)
+        _uiState.update { it.copy(explainTipVisible = show) }
+    }
+
+    /** The tip was put away for this opening; it still counts as one of its showings. */
+    fun dismissExplainTip() = _uiState.update { it.copy(explainTipVisible = false) }
 
     /**
      * Fetches [symbol]'s history for [range]. Asked whenever a chart comes up or changes range, and
@@ -263,9 +281,11 @@ class FinanceViewModel(
         pollJob?.cancel()
     }
 
-    private companion object {
-        const val QUOTE_POLL_OPEN_MS = 15_000L
-        const val QUOTE_POLL_CLOSED_MS = 60_000L
-        const val SHEET_POLL_MS = 120_000L
+    internal companion object {
+        const val EXPLAIN_TIP = "explain_tip"
+        const val EXPLAIN_TIP_SHOWINGS = 2
+        private const val QUOTE_POLL_OPEN_MS = 15_000L
+        private const val QUOTE_POLL_CLOSED_MS = 60_000L
+        private const val SHEET_POLL_MS = 120_000L
     }
 }
