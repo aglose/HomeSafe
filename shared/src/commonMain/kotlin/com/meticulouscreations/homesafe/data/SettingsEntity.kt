@@ -71,3 +71,16 @@ data class PlaybackPreferencesEntity(
     val quality: String,
     val soundOn: Boolean,
 )
+
+/**
+ * A singleton row (always [id] = 0) holding how the finance charts look and feel. Added in schema
+ * 14; a missing row means the defaults (see `ChartStyle.DEFAULT`). Each field is an enum's name,
+ * stored as text so a value this build doesn't know degrades to the default instead of failing.
+ */
+@Entity
+data class ChartPreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    val shader: String,
+    val sharpness: String,
+    val haptics: String,
+)
