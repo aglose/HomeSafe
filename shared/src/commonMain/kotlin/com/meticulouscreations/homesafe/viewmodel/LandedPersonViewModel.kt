@@ -6,13 +6,19 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.canMarkNotPerson
 import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.domain.model.summary
 import com.meticulouscreations.homesafe.domain.usecase.GetDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.MarkNotAPersonUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
+import homesafe.shared.generated.resources.moments_not_a_person_undo_failed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,15 +36,15 @@ data class LandedPersonUiState(
     /** The detection the camera screen was opened on, when it's a person nobody named; null otherwise. */
     val eventId: String? = null,
     /** "Person at the front door · 4:23 PM" */
-    val summary: String = "",
-    /** What the camera is called, for "Front Door won't alert for this again". */
+    val summary: UiText = UiText.Empty,
+    /** What the camera is called, for "Front Door won't alert for this again". Data, not copy. */
     val cameraDisplayName: String = "",
     /** The mark (or its Undo) is on its way to the relay. */
     val isSaving: Boolean = false,
     /** The relay has it as not a person. */
     val marked: Boolean = false,
-    /** Why the last mark or Undo didn't land. */
-    val error: String? = null,
+    /** Why the last mark or Undo didn't land: "Couldn't mark it: …", said in full. */
+    val error: UiText? = null,
 )
 
 /**
@@ -104,7 +110,10 @@ class LandedPersonViewModel(
             _uiState.update {
                 result.fold(
                     onSuccess = { _ -> it.copy(isSaving = false, marked = marking) },
-                    onFailure = { e -> it.copy(isSaving = false, error = e.message ?: if (marking) "Couldn't mark it" else "Couldn't undo it") },
+                    onFailure = { e ->
+                        val failed = if (marking) Res.string.moments_not_a_person_mark_failed else Res.string.moments_not_a_person_undo_failed
+                        it.copy(isSaving = false, error = e.userMessage(failed))
+                    },
                 )
             }
         }
@@ -112,7 +121,7 @@ class LandedPersonViewModel(
 
     private fun MomentEvent.toState(): LandedPersonUiState {
         val presentation = present(clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
-        return LandedPersonUiState(eventId = id, summary = "${presentation.title} · ${presentation.timeLabel}", cameraDisplayName = cameraDisplayName)
+        return LandedPersonUiState(eventId = id, summary = presentation.summary, cameraDisplayName = cameraDisplayName)
     }
 
     private companion object {

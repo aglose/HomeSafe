@@ -22,6 +22,8 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.VisitKind
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.ui.screens.TagCarDialog
@@ -33,6 +35,8 @@ import com.meticulouscreations.homesafe.viewmodel.MomentClip
 import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_tag_car_done_retraining
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -60,15 +64,15 @@ class MomentCarTagUiTest {
     )
 
     private fun presentation(title: String, clipCountLabel: String? = null) = MomentPresentation(
-        title = title,
-        timeLabel = "8:42 PM",
+        title = title.asUiText(),
+        timeLabel = "8:42 PM".asUiText(),
         durationLabel = "0:20",
-        dateGroup = "Today",
-        dateSubLabel = "Sep 14",
-        badgeLabel = "car",
-        locationLabel = "Front Yard · Driveway",
+        dateGroup = "Today".asUiText(),
+        dateSubLabel = "Sep 14".asUiText(),
+        badgeLabel = "car".asUiText(),
+        locationLabel = "Front Yard · Driveway".asUiText(),
         sightingsLabel = null,
-        clipCountLabel = clipCountLabel,
+        clipCountLabel = clipCountLabel?.asUiText(),
     )
 
     private fun feed(vararg items: MomentItem, onTagCar: (MomentEvent) -> Unit) = runComposeUiTest {
@@ -76,7 +80,7 @@ class MomentCarTagUiTest {
         setContent {
             FrigatePreview {
                 MomentsFeed(
-                    state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 14", items.toList()))),
+                    state = MomentsUiState(groups = listOf(MomentGroup("Today".asUiText(), "Sep 14".asUiText(), items.toList()))),
                     downloadState = DownloadUiState(),
                     onSelectCategory = {},
                     onUnfamiliarOnlyChange = {},
@@ -113,14 +117,14 @@ class MomentCarTagUiTest {
         mainClock.autoAdvance = false
         val tapped = mutableListOf<String>()
         val clips = listOf(
-            MomentClip(event("v0", "andrews_tesla"), "8:42 PM", "Andrew's Tesla in the driveway", "0:20"),
-            MomentClip(event("v1"), "8:43 PM", "Car in the driveway", "0:15", canTagCar = true),
+            MomentClip(event("v0", "andrews_tesla"), "8:42 PM".asUiText(), "Andrew's Tesla in the driveway".asUiText(), "0:20"),
+            MomentClip(event("v1"), "8:43 PM".asUiText(), "Car in the driveway".asUiText(), "0:15", canTagCar = true),
         )
         val visit = MomentItem(clips.first().event, presentation("Andrew's Tesla in the driveway", "2 clips"), null, key = "v0", kind = VisitKind.VISIT, clips = clips)
         setContent {
             FrigatePreview {
                 MomentsFeed(
-                    state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 14", listOf(visit)))),
+                    state = MomentsUiState(groups = listOf(MomentGroup("Today".asUiText(), "Sep 14".asUiText(), listOf(visit)))),
                     downloadState = DownloadUiState(),
                     onSelectCategory = {},
                     onUnfamiliarOnlyChange = {},
@@ -147,7 +151,7 @@ class MomentCarTagUiTest {
         assertEquals(listOf("v1"), tapped)
     }
 
-    private val target = CarTagTarget("stranger", "Car in the driveway · 8:42 PM")
+    private val target = CarTagTarget("stranger", "Car in the driveway · 8:42 PM".asUiText())
 
     private fun dialog(
         state: MomentCarTagUiState,
@@ -204,7 +208,7 @@ class MomentCarTagUiTest {
     fun onceTaggedItSaysHowItWentAndCloses() {
         var dismissed = 0
         dialog(
-            MomentCarTagUiState(target = target, done = true, notice = "Tagged as Grandma's Van. Retraining now."),
+            MomentCarTagUiState(target = target, done = true, notice = UiText.of(Res.string.moments_tag_car_done_retraining, "Grandma's Van")),
             onDismiss = { dismissed++ },
         ) {
             onNodeWithText("Car tagged").assertIsDisplayed()

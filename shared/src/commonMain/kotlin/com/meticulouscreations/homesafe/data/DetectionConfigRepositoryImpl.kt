@@ -7,7 +7,6 @@ import com.meticulouscreations.homesafe.domain.model.MaskPolygon
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.DetectionConfigRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
-import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.parseFrigatePolygon
 import com.meticulouscreations.homesafe.network.parseFrigatePolygons
 import com.meticulouscreations.homesafe.network.toFrigateCoordinates
@@ -66,7 +65,7 @@ class DetectionConfigRepositoryImpl(
     private fun serverUrlOrFailure(): Result<String> =
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
-            ?: Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: Result.failure(notConnected())
 }
 
 /**

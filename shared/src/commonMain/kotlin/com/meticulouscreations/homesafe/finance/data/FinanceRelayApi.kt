@@ -3,7 +3,12 @@ package com.meticulouscreations.homesafe.finance.data
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.network.PushRelayApi
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_relay_answered
+import homesafe.shared.generated.resources.fin_data_error_relay_outdated
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.timeout
@@ -44,7 +49,7 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
 
             // FastAPI's own 404 for a route it doesn't have: a relay from before this feature.
             response.status == HttpStatusCode.NotFound ->
-                throw SheetUnavailableException(SheetProblem.RELAY_OUTDATED, "The relay on the server doesn't serve the budget sheet yet.")
+                throw SheetUnavailableException(SheetProblem.RELAY_OUTDATED, UiText.of(Res.string.fin_data_error_relay_outdated), technical = "HTTP 404")
 
             else -> throw problemFrom(response.status, response.bodyAsText())
         }
@@ -53,7 +58,10 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
     internal companion object {
         private val json = Json { ignoreUnknownKeys = true }
 
-        /** The relay's `{"detail": {"error": …, "message": …, "service_account": …}}` as a typed problem. */
+        /**
+         * The relay's `{"detail": {"error": …, "message": …, "service_account": …}}` as a typed
+         * problem. The relay's message is its own words (English, from the server), shown as written.
+         */
         fun problemFrom(status: HttpStatusCode, body: String): SheetUnavailableException {
             val detail = runCatching { json.parseToJsonElement(body).jsonObject["detail"] as? JsonObject }.getOrNull()
             fun field(name: String) = (detail?.get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
@@ -66,9 +74,11 @@ class FinanceRelayApi(private val httpClient: HttpClient) {
                 "not_allowed" -> SheetProblem.NOT_ALLOWED
                 else -> if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden) SheetProblem.SIGNED_OUT else SheetProblem.OTHER
             }
+            val message = field("message")
             return SheetUnavailableException(
                 problem = kind,
-                message = field("message") ?: "The relay answered $status",
+                text = message?.asUiText() ?: UiText.of(Res.string.fin_data_error_relay_answered, status.toString()),
+                technical = message ?: "The relay answered $status",
                 serviceAccount = field("service_account"),
                 activationUrl = field("activation_url"),
             )

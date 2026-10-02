@@ -11,6 +11,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -18,6 +20,8 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.labeling_save_failed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -50,7 +54,7 @@ data class LiveLabelingUiState(
     /** The category the last car went under, for "Filed as Sarah's Tesla"; clears itself. */
     val filedAs: String? = null,
     /** Why the last filing failed; clears itself like [filedAs]. */
-    val error: String? = null,
+    val error: UiText? = null,
 ) {
     val uncertainCards: List<LiveLabelCard> get() = cards.filterNot { it.candidate.isConfident }
     val confidentCards: List<LiveLabelCard> get() = cards.filter { it.candidate.isConfident }
@@ -164,7 +168,7 @@ class LiveLabelingViewModel(
                 }
                 .onFailure { e ->
                     // Usually the crop aged out of Frigate's capped queue since the last refresh.
-                    _uiState.update { it.copy(busyKeys = it.busyKeys - card.key, filedAs = null, error = "Couldn't save: ${e.message}") }
+                    _uiState.update { it.copy(busyKeys = it.busyKeys - card.key, filedAs = null, error = e.userMessage(Res.string.labeling_save_failed)) }
                 }
             clearNoticeLater()
         }

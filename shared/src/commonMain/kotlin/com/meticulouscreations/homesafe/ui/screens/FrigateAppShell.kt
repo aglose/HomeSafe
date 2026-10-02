@@ -86,11 +86,18 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.shell_app_title
+import homesafe.shared.generated.resources.shell_app_version
+import homesafe.shared.generated.resources.shell_menu
+import homesafe.shared.generated.resources.shell_show_version
+import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * The shell's navigation state: which tab is up, and the nested back stack of each tab that has
@@ -518,10 +525,10 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
             .padding(horizontal = 24.dp, vertical = 12.dp),
     ) {
         IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
-            Icon(Icons.Filled.Menu, contentDescription = "Menu", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Menu, contentDescription = stringResource(Res.string.shell_menu), tint = MaterialTheme.colorScheme.primary)
         }
         Text(
-            text = "PERCYSAFE",
+            text = stringResource(Res.string.shell_app_title),
             style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.align(Alignment.Center),
@@ -529,7 +536,7 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
         val route = activeConnection?.route
         if (route == null) {
             IconButton(onClick = {}, modifier = Modifier.size(48.dp).align(Alignment.CenterEnd)) {
-                Icon(Icons.Filled.Sensors, contentDescription = "Status", tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Filled.Sensors, contentDescription = stringResource(Res.string.shell_status), tint = MaterialTheme.colorScheme.primary)
             }
         } else {
             Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion) }
@@ -557,7 +564,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
-                onClickLabel = "Show the app version",
+                onClickLabel = stringResource(Res.string.shell_show_version),
             ) { showVersion = true }
             .minimumInteractiveComponentSize(),
     ) {
@@ -576,11 +583,11 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
             } else {
                 PulsingDot(color = tint, size = 6.dp, pulsing = false)
             }
-            Text(text = route.label, style = MaterialTheme.typography.labelSmall, color = tint)
+            Text(text = stringResource(route.label), style = MaterialTheme.typography.labelSmall, color = tint)
         }
         DropdownMenu(expanded = showVersion, onDismissRequest = { showVersion = false }) {
             Text(
-                text = "Version $appVersion",
+                text = stringResource(Res.string.shell_app_version, appVersion),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
@@ -766,8 +773,9 @@ private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Icon(route.icon, contentDescription = route.label, tint = contentColor, modifier = Modifier.size(22.dp))
-        Text(text = route.label, style = MaterialTheme.typography.labelMedium, color = contentColor)
+        val label = stringResource(route.label)
+        Icon(route.icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(22.dp))
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = contentColor)
     }
 }
 
@@ -775,4 +783,8 @@ private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick
  * The bottom nav item for [route], for tests (and, on Android, UiAutomator as a resource id). Its
  * label alone is ambiguous: "Home" and "Settings" also appear as text inside the tabs.
  */
-fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_${route.label.lowercase()}"
+fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_" + when (route) {
+    TopLevelRoute.Home -> "home"
+    TopLevelRoute.Moments -> "moments"
+    TopLevelRoute.Settings -> "settings"
+}

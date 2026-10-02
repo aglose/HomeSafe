@@ -69,6 +69,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
@@ -89,9 +91,27 @@ import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.TimelineSpan
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_behind_live
+import homesafe.shared.generated.resources.camera_go_live
+import homesafe.shared.generated.resources.camera_live
+import homesafe.shared.generated.resources.camera_menu_detection_zones
+import homesafe.shared.generated.resources.camera_menu_tag_cars
+import homesafe.shared.generated.resources.camera_moment_clip_length
+import homesafe.shared.generated.resources.camera_no_recordings
+import homesafe.shared.generated.resources.camera_play
+import homesafe.shared.generated.resources.camera_recent_activity
+import homesafe.shared.generated.resources.camera_recent_empty
+import homesafe.shared.generated.resources.camera_recent_loading
+import homesafe.shared.generated.resources.camera_timeline
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.common_more_options
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -148,8 +168,8 @@ fun CameraDetailScreen(
     // One line of feedback under the quick actions — what a tap did, or why it couldn't — that
     // clears itself. The words are kept separately so the fade-out still has something to fade.
     var hint by remember { mutableStateOf<QuickActionHint?>(null) }
-    var hintText by remember { mutableStateOf("") }
-    val showHint: (String) -> Unit = { text ->
+    var hintText by remember { mutableStateOf<StringResource?>(null) }
+    val showHint: (StringResource) -> Unit = { text ->
         hintText = text
         hint = QuickActionHint(text)
     }
@@ -194,7 +214,7 @@ fun CameraDetailScreen(
             IconButton(onClick = onBack) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = stringResource(Res.string.common_back),
                     tint = MaterialTheme.colorScheme.primary,
                 )
             }
@@ -262,7 +282,7 @@ fun CameraDetailScreen(
             ) {
                 AnimatedVisibility(visible = hint != null) {
                     Text(
-                        text = hintText,
+                        text = hintText?.let { stringResource(it) }.orEmpty(),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -286,7 +306,7 @@ fun CameraDetailScreen(
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
-                        text = "Recent Activity",
+                        text = stringResource(Res.string.camera_recent_activity),
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onSurface,
                     )
@@ -294,7 +314,7 @@ fun CameraDetailScreen(
                     if (moments.isNullOrEmpty()) {
                         Text(
                             // Null is a question still out to the server, not an answer.
-                            text = if (moments == null) "Looking for recent detections…" else "No detections on this camera yet.",
+                            text = stringResource(if (moments == null) Res.string.camera_recent_loading else Res.string.camera_recent_empty),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -475,7 +495,7 @@ private fun PlayerSurface(
                 ) {
                     Icon(
                         imageVector = Icons.Filled.PlayArrow,
-                        contentDescription = "Play",
+                        contentDescription = stringResource(Res.string.camera_play),
                         tint = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.size(36.dp),
                     )
@@ -555,7 +575,7 @@ private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: I
 }
 
 /** A fresh instance per tap (identity equality), so repeating the same words restarts the auto-clear. */
-private class QuickActionHint(val text: String)
+private class QuickActionHint(val text: StringResource)
 
 /** Red and pulsing at the live edge; grey (and a button back to live) while watching history. */
 @Composable
@@ -577,7 +597,7 @@ private fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = 
             Box(modifier = Modifier.size(8.dp).background(dotColor, CircleShape))
         }
         Text(
-            text = if (isLive) "LIVE" else "GO LIVE",
+            text = stringResource(if (isLive) Res.string.camera_live else Res.string.camera_go_live),
             style = MaterialTheme.typography.labelSmall,
             color = if (isLive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -602,7 +622,7 @@ private fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, 
             color = MaterialTheme.colorScheme.onSurface,
         )
         Text(
-            text = "-${formatDuration(now - playheadEpochSeconds)}",
+            text = stringResource(Res.string.camera_behind_live, formatDuration(now - playheadEpochSeconds)),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -623,7 +643,7 @@ private fun TimelineSection(cameraName: String) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = "Timeline",
+                text = stringResource(Res.string.camera_timeline),
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -650,9 +670,10 @@ private fun TimelineSection(cameraName: String) {
             onDetectionTap = viewModel::playMoment,
         )
 
+        val historyError = playback.historyError
         val hint = when {
-            playback.historyError != null && playback.segments.isEmpty() -> "Couldn't load recordings: ${playback.historyError}"
-            playback.segments.isEmpty() -> "No recordings in this window yet"
+            historyError != null && playback.segments.isEmpty() -> historyError.resolve()
+            playback.segments.isEmpty() -> stringResource(Res.string.camera_no_recordings)
             else -> null
         }
         if (hint != null) {
@@ -670,7 +691,7 @@ private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit)
     val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
     val foreground = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Text(
-        text = span.label,
+        text = stringResource(span.label),
         style = MaterialTheme.typography.labelMedium,
         color = foreground,
         modifier = Modifier
@@ -695,7 +716,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
         IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
-                contentDescription = "More options",
+                contentDescription = stringResource(Res.string.common_more_options),
                 tint = MaterialTheme.colorScheme.primary,
             )
         }
@@ -708,7 +729,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
         ) {
             DropdownMenuItem(
-                text = { Text(text = "Detection zones", style = MaterialTheme.typography.labelLarge) },
+                text = { Text(text = stringResource(Res.string.camera_menu_detection_zones), style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = { Icon(imageVector = Icons.Filled.CropFree, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = {
                     expanded = false
@@ -718,7 +739,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
             // Also the way in when the home page's "In view now" strip is empty: a car it missed
             // leaves no strip to open this from.
             DropdownMenuItem(
-                text = { Text(text = "Tag cars in view", style = MaterialTheme.typography.labelLarge) },
+                text = { Text(text = stringResource(Res.string.camera_menu_tag_cars), style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = { Icon(imageVector = Icons.Filled.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = {
                     expanded = false
@@ -759,12 +780,15 @@ private fun RecentMomentCard(item: MomentItem, onClick: () -> Unit, onTagCar: ()
         }
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(text = p.title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
-                Text(text = p.timeLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(text = p.title.resolve(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                Text(text = p.timeLabel.resolve(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Text(
                 // A folded parked-car moment spans hours, which isn't a clip length: say how often it was seen instead.
-                text = listOfNotNull(p.dateGroup, p.sightingsLabel ?: p.durationLabel?.let { "$it clip" }).joinToString(" · "),
+                text = UiText.Joined(
+                    parts = listOfNotNull(p.dateGroup, p.sightingsLabel ?: p.durationLabel?.let { UiText.of(Res.string.camera_moment_clip_length, it) }),
+                    separator = UiText.of(Res.string.common_dot_separator),
+                ).resolve(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

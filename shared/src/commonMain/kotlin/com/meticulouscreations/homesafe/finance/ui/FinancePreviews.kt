@@ -50,8 +50,16 @@ import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
 import com.meticulouscreations.homesafe.finance.domain.YieldCurve
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_chart_quoted_tab
+import homesafe.shared.generated.resources.fin_data_chart_tabs_gone
+import homesafe.shared.generated.resources.fin_data_found_read
+import homesafe.shared.generated.resources.fin_data_found_snapshots
+import homesafe.shared.generated.resources.fin_data_note_history_undated
 import kotlin.math.sin
 
 /**
@@ -210,8 +218,8 @@ internal object FinanceFixtures {
         val assets = (0 until 24).map { 140_000.0 + it * 31_000.0 + sin(it / 2.0) * 15_000 }
         val gross = listOf(118_000.0, 131_500.0, 147_200.0, 163_900.0, 171_400.0, 186_300.0, 194_700.0, 208_100.0)
         fun chart(id: Long, tab: String, title: String, kind: SheetChartKind, domain: ChartDomain, vararg series: SheetChartSeries, stacking: ChartStacking = ChartStacking.NONE) =
-            SheetChart(id, tab, title, "", kind, stacking, domain, series.toList(), "https://docs.google.com/spreadsheets/d/example/edit#gid=$id")
-        fun money(label: String, values: List<Double?>, kind: SheetChartKind) = SheetChartSeries(label, values, kind, ChartValueFormat.MONEY)
+            SheetChart(id, tab, title.asUiText(), "", kind, stacking, domain, series.toList(), "https://docs.google.com/spreadsheets/d/example/edit#gid=$id")
+        fun money(label: String, values: List<Double?>, kind: SheetChartKind) = SheetChartSeries(label.asUiText(), values, kind, ChartValueFormat.MONEY)
         return listOf(
             chart(1, "Home", "Total Assets", SheetChartKind.AREA, dates, money("Total Assets", assets, SheetChartKind.AREA)),
             chart(2, "Home", "Total Debt", SheetChartKind.COLUMN, dates, money("Debt", (0 until 24).map { -64_000.0 + it * 2_400.0 }, SheetChartKind.COLUMN)),
@@ -234,7 +242,7 @@ internal object FinanceFixtures {
                 SheetChartKind.COMBO,
                 years,
                 money("Invested", gross.map { it * 0.14 }, SheetChartKind.COLUMN),
-                SheetChartSeries("Of take-home", (0 until 8).map { 0.12 + it * 0.012 }, SheetChartKind.LINE, ChartValueFormat.PERCENT, rightAxis = true),
+                SheetChartSeries("Of take-home".asUiText(), (0 until 8).map { 0.12 + it * 0.012 }, SheetChartKind.LINE, ChartValueFormat.PERCENT, rightAxis = true),
             ),
             chart(6, "Home", "Spending", SheetChartKind.PIE, ChartDomain.Categories(listOf("Housing", "Food", "Transport", "Childcare", "Other")), money("Monthly", listOf(4_200.0, 1_300.0, 650.0, 1_900.0, 880.0), SheetChartKind.PIE)),
         )
@@ -246,16 +254,16 @@ internal object FinanceFixtures {
             when (section) {
                 SheetSection.EXPENSES -> SectionHealth(section, SectionStatus.MISSING, null)
                 SheetSection.VESTING -> SectionHealth(section, SectionStatus.EMPTY, null)
-                SheetSection.HISTORY -> SectionHealth(section, SectionStatus.OK, "25 snapshots")
-                else -> SectionHealth(section, SectionStatus.OK, "read")
+                SheetSection.HISTORY -> SectionHealth(section, SectionStatus.OK, UiText.plural(Res.plurals.fin_data_found_snapshots, 25))
+                else -> SectionHealth(section, SectionStatus.OK, UiText.of(Res.string.fin_data_found_read))
             }
         },
         charts = listOf(
-            ChartHealth("Total Assets", "Home", null),
-            ChartHealth("Total Debt", "Home", null),
-            ChartHealth("Income", "Forecasts", "It plots “Forecasts”, which the sheet no longer has"),
+            ChartHealth("Total Assets".asUiText(), "Home", null),
+            ChartHealth("Total Debt".asUiText(), "Home", null),
+            ChartHealth("Income".asUiText(), "Forecasts", UiText.of(Res.string.fin_data_chart_tabs_gone, UiText.of(Res.string.fin_data_chart_quoted_tab, "Forecasts"))),
         ),
-        notes = listOf(ParseNote(SheetSection.HISTORY, "1 row in the history has figures but no date, so it was left out")),
+        notes = listOf(ParseNote(SheetSection.HISTORY, UiText.plural(Res.plurals.fin_data_note_history_undated, 1))),
     )
 
     val state = FinanceUiState(
@@ -314,7 +322,7 @@ private fun FinanceSheetSyncLinesPreview() {
         Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SheetSyncLine(FinanceFixtures.state, onOpen = {})
             SheetSyncLine(FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)), onOpen = {})
-            SheetSyncLine(FinanceFixtures.state.copy(sheetIssue = SheetIssue(SheetProblem.OTHER, "Google didn't answer", null, null)), onOpen = {})
+            SheetSyncLine(FinanceFixtures.state.copy(sheetIssue = SheetIssue(SheetProblem.OTHER, "Google didn't answer".asUiText(), null, null)), onOpen = {})
         }
     }
 }
@@ -348,7 +356,7 @@ private fun FinanceIndicatorPreview() {
 private fun FinanceSheetSetupPreview() {
     FinanceStage {
         WalletScreen(
-            FinanceFixtures.state.copy(finance = null, sheetIssue = SheetIssue(SheetProblem.NOT_SHARED, "", "relay@example.iam.gserviceaccount.com", null)),
+            FinanceFixtures.state.copy(finance = null, sheetIssue = SheetIssue(SheetProblem.NOT_SHARED, UiText.Empty, "relay@example.iam.gserviceaccount.com", null)),
             rememberLazyListState(),
             previewPadding,
             {},

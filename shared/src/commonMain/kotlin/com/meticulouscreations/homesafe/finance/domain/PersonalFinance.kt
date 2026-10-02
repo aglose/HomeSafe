@@ -1,32 +1,46 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_category_cash
+import homesafe.shared.generated.resources.fin_data_category_education
+import homesafe.shared.generated.resources.fin_data_category_home
+import homesafe.shared.generated.resources.fin_data_category_investing
+import homesafe.shared.generated.resources.fin_data_category_retirement
+import homesafe.shared.generated.resources.fin_data_owner_joint
+import org.jetbrains.compose.resources.StringResource
 
 /** Whose an account or a debt is: one person's, or both (a merged cell across the people's columns). */
 @Immutable
 sealed interface Owner {
-    val label: String
+    val label: UiText
 
     data class Person(val name: String) : Owner {
-        override val label: String get() = name
+        override val label: UiText get() = name.asUiText()
     }
 
     data object Joint : Owner {
-        override val label: String get() = "Joint"
+        override val label: UiText get() = UiText.of(Res.string.fin_data_owner_joint)
     }
 }
 
 /** What an account is for, guessed from its name; how the allocation donut groups them. */
-enum class AccountCategory(val label: String) {
-    RETIREMENT("Retirement"),
-    INVESTING("Investing"),
-    EDUCATION("Education (529)"),
-    CASH("Cash"),
-    HOME("Home equity"),
+enum class AccountCategory(val label: StringResource) {
+    RETIREMENT(Res.string.fin_data_category_retirement),
+    INVESTING(Res.string.fin_data_category_investing),
+    EDUCATION(Res.string.fin_data_category_education),
+    CASH(Res.string.fin_data_category_cash),
+    HOME(Res.string.fin_data_category_home),
 }
 
+/** An account; [name] is the sheet's own label for it, or the app's words for one it adds (the home's equity). */
 @Immutable
-data class Account(val name: String, val owner: Owner, val balance: Double, val category: AccountCategory)
+data class Account(val name: UiText, val owner: Owner, val balance: Double, val category: AccountCategory) {
+    /** An account named as the sheet names it. */
+    constructor(name: String, owner: Owner, balance: Double, category: AccountCategory) : this(name.asUiText(), owner, balance, category)
+}
 
 @Immutable
 data class ExpenseLine(val name: String, val monthly: Double)

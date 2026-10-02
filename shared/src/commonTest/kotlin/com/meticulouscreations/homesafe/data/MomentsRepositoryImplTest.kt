@@ -9,6 +9,9 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -80,7 +83,7 @@ class MomentsRepositoryImplTest {
 
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
@@ -447,7 +450,7 @@ class MomentsRepositoryImplTest {
         Harness.events = eventsJson
         val h = Harness(this, failEvents = true)
         backgroundScope.launch { h.repo.observeMoments().collect {} }   // keep the poller subscribed while we wait
-        var err: String? = null
+        var err: UiText? = null
         h.repo.observeMoments().first()
         eventually("error to surface") {
             err = h.repo.observeError().first()
@@ -1077,7 +1080,7 @@ class MomentsRepositoryImplTest {
             eventually("the first page") { h.repo.observeMoments().first().size == 100 }
             h.repo.loadOlder()
             // Watched throughout: the next poll finds nothing new and rightly clears it again.
-            val reported = MutableStateFlow<String?>(null)
+            val reported = MutableStateFlow<UiText?>(null)
             backgroundScope.launch { h.repo.observeError().collect { e -> if (e != null) reported.value = e } }
 
             server.starts = (2150L downTo 2001L).toList() + server.starts

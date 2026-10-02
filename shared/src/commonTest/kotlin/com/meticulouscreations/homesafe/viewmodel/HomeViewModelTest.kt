@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
+import com.meticulouscreations.homesafe.domain.model.labelName
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -27,6 +28,16 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceU
 import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_cameras_on
+import homesafe.shared.generated.resources.home_cameras_some_on
+import homesafe.shared.generated.resources.home_status_minutes_ago
+import homesafe.shared.generated.resources.home_status_subject_at_camera
+import homesafe.shared.generated.resources.moments_in_view_since
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -108,7 +119,7 @@ class HomeViewModelTest {
         override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")
@@ -129,7 +140,7 @@ class HomeViewModelTest {
         override fun nameCar(eventId: String, subLabel: String) = Unit
         override fun observeLatestMoment(): Flow<MomentEvent?> = latest
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
-        override fun observeError(): Flow<String?> = fail("unused")
+        override fun observeError(): Flow<UiText?> = fail("unused")
         override fun observePaging(): Flow<MomentsPaging> = fail("unused")
         override suspend fun loadOlder() = fail("unused")
         override fun showBefore(epochSeconds: Double?) = fail("unused")
@@ -252,11 +263,11 @@ class HomeViewModelTest {
         advanceUntilIdle()
 
         val item = h.viewModel.inView.value.single()
-        assertEquals("Sarah's Tesla", item.presentation.title)
+        assertEquals("Sarah's Tesla".asUiText(), item.presentation.title)
         assertEquals("Driveway", item.presentation.placeLabel)
         // The wording of the time is the domain model's own test (which can pin a time zone); here it
         // only matters that the arrival survived the trip through the view model.
-        assertTrue(item.presentation.sinceLabel!!.startsWith("since "), "the card says when the car got there")
+        assertEquals(Res.string.moments_in_view_since, (item.presentation.sinceLabel as UiText.Resource).res, "the card says when the car got there")
         assertEquals("http://frigate.test:8971/thumb/latest-sighting", item.thumbnailUrl, "the crop of the sighting, not a camera snapshot")
     }
 
@@ -298,8 +309,15 @@ class HomeViewModelTest {
         activate(h.viewModel.status)
         runCurrent()
 
-        assertEquals("Person at Backyard", h.viewModel.status.value.headline)
-        assertEquals("3 min ago · 1 of 2 cameras on", h.viewModel.status.value.details, "no presence part until the relay names a phone")
+        assertEquals(UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard"), h.viewModel.status.value.headline)
+        assertEquals(
+            UiText.Joined(
+                listOf(UiText.plural(Res.plurals.home_status_minutes_ago, 3), UiText.plural(Res.plurals.home_cameras_some_on, 2, 1, 2)),
+                separator = UiText.of(Res.string.common_dot_separator),
+            ),
+            h.viewModel.status.value.details,
+            "3 min ago · 1 of 2 cameras on: no presence part until the relay names a phone",
+        )
     }
 
     @Test
@@ -309,7 +327,10 @@ class HomeViewModelTest {
         runCurrent()
 
         assertNull(h.viewModel.status.value.headline, "not read yet, which is not the same as quiet")
-        assertEquals("1 camera on", h.viewModel.status.value.details)
+        assertEquals(
+            UiText.Joined(listOf(UiText.plural(Res.plurals.home_cameras_on, 1)), separator = UiText.of(Res.string.common_dot_separator)),
+            h.viewModel.status.value.details,
+        )
     }
 
     @Test

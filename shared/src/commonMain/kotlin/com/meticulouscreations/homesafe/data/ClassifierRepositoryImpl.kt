@@ -18,10 +18,15 @@ import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.network.FrigateTimelineEntry
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.frigateClassifierQueueImageUrl
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_classifier_not_found
+import homesafe.shared.generated.resources.error_detection_gone
+import homesafe.shared.generated.resources.error_no_car_box
 
 @Inject
 @SingleIn(AppScope::class)
@@ -41,7 +46,7 @@ class ClassifierRepositoryImpl(
         val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
         val config = api.getConfig(serverUrl).getOrElse { return Result.failure(it) }
         val model = config.models.firstOrNull { it.name == modelName }
-            ?: return Result.failure(FrigateResponseException("No classifier named $modelName on this server"))
+            ?: return Result.failure(FrigateResponseException(UiText.of(Res.string.error_classifier_not_found, modelName), technical = "No classifier $modelName"))
         val dataset = api.getDataset(serverUrl, modelName).getOrElse { return Result.failure(it) }
         val crops = api.getQueue(serverUrl, modelName).getOrElse { return Result.failure(it) }.map { UnlabeledCrop.fromFileName(it) }
         // Only frames the object on the crop; a queue without them still labels fine.
@@ -129,12 +134,12 @@ class ClassifierRepositoryImpl(
     override suspend fun getEventFrame(eventId: String): Result<EventFrame> {
         val serverUrl = serverUrlOrFailure().getOrElse { return Result.failure(it) }
         val event = api.getEvents(serverUrl, listOf(eventId)).getOrElse { return Result.failure(it) }.firstOrNull { it.id == eventId }
-            ?: return Result.failure(FrigateResponseException("Frigate no longer has this detection"))
+            ?: return Result.failure(FrigateResponseException(UiText.of(Res.string.error_detection_gone), technical = "No event $eventId"))
         val seen = api.getTimeline(serverUrl, listOf(eventId)).getOrElse { return Result.failure(it) }
             .mapNotNull { entry -> entry.data?.box?.seenBox(entry.timestamp) }
             .filter { it.width > 0 && it.height > 0 }
             .maxWithOrNull(compareBy<SeenBox>({ it.width * it.height }, { it.epochSeconds ?: 0.0 }))
-            ?: return Result.failure(FrigateResponseException("Frigate kept no box for this car"))
+            ?: return Result.failure(FrigateResponseException(UiText.of(Res.string.error_no_car_box), technical = "No box for $eventId"))
         val height = api.getConfig(serverUrl).getOrNull()?.detectSizes?.get(event.camera)?.height
         val jpeg = api.getRecordingFrame(serverUrl, event.camera, seen.epochSeconds ?: event.startTime, height)
             .getOrElse { return Result.failure(it) }
@@ -167,7 +172,7 @@ class ClassifierRepositoryImpl(
     private fun serverUrlOrFailure(): Result<String> =
         connectionRepository.currentServerUrl.value
             ?.let { Result.success(it) }
-            ?: Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: Result.failure(notConnected())
 
     private companion object {
         /**

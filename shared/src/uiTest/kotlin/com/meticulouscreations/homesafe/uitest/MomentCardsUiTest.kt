@@ -14,6 +14,7 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.VisitKind
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
@@ -72,26 +73,26 @@ class MomentCardsUiTest {
         sightingsLabel: String? = null,
         clipCountLabel: String? = null,
     ) = MomentPresentation(
-        title = title,
-        timeLabel = timeLabel,
+        title = title.asUiText(),
+        timeLabel = timeLabel.asUiText(),
         durationLabel = durationLabel,
-        dateGroup = "Today",
-        dateSubLabel = "Sep 14",
-        badgeLabel = badgeLabel,
-        locationLabel = locationLabel,
-        sightingsLabel = sightingsLabel,
-        clipCountLabel = clipCountLabel,
+        dateGroup = "Today".asUiText(),
+        dateSubLabel = "Sep 14".asUiText(),
+        badgeLabel = badgeLabel.asUiText(),
+        locationLabel = locationLabel.asUiText(),
+        sightingsLabel = sightingsLabel?.asUiText(),
+        clipCountLabel = clipCountLabel?.asUiText(),
     )
 
     private fun card(id: String, title: String = "Person detected", hasClip: Boolean = true) =
         MomentItem(event(id, hasClip = hasClip), presentation(title), thumbnailUrl = null)
 
-    private fun today(vararg items: MomentItem) = listOf(MomentGroup("Today", "Sep 14", items.toList()))
+    private fun today(vararg items: MomentItem) = listOf(MomentGroup("Today".asUiText(), "Sep 14".asUiText(), items.toList()))
 
     /** Three clips of someone in the backyard a few seconds apart, folded into one card. */
     private val visit: MomentItem = run {
         val clips = List(3) { i ->
-            MomentClip(event("v$i", startEpochSeconds = start + i * 20, cameraName = "backyard"), "6:5${5 + i} PM", "Person on the patio", "0:12")
+            MomentClip(event("v$i", startEpochSeconds = start + i * 20, cameraName = "backyard"), "6:5${5 + i} PM".asUiText(), "Person on the patio".asUiText(), "0:12")
         }
         MomentItem(
             event = clips.first().event,
@@ -114,9 +115,9 @@ class MomentCardsUiTest {
     /** Andrew's Tesla pulling in, moving and heading out: one quiet row, its last sighting still going. */
     private val routine: MomentItem = run {
         val sightings = listOf(
-            MomentClip(car("r0", 0.0), "5:51 PM", "Andrew's Tesla in the driveway", "0:40"),
-            MomentClip(car("r1", 1_140.0), "6:10 PM", "Andrew's Tesla in the driveway", "1:05"),
-            MomentClip(car("r2", 2_340.0, inProgress = true), "6:30 PM", "Andrew's Tesla on the street", null),
+            MomentClip(car("r0", 0.0), "5:51 PM".asUiText(), "Andrew's Tesla in the driveway".asUiText(), "0:40"),
+            MomentClip(car("r1", 1_140.0), "6:10 PM".asUiText(), "Andrew's Tesla in the driveway".asUiText(), "1:05"),
+            MomentClip(car("r2", 2_340.0, inProgress = true), "6:30 PM".asUiText(), "Andrew's Tesla on the street".asUiText(), null),
         )
         MomentItem(
             event = sightings.first().event,
@@ -169,8 +170,8 @@ class MomentCardsUiTest {
     fun eachDayIsHeadedByItsNameAndDate() = runFeed(
         MomentsUiState(
             groups = listOf(
-                MomentGroup("Today", "Sep 14", listOf(card("a"))),
-                MomentGroup("Yesterday", "Sep 13", listOf(card("b"))),
+                MomentGroup("Today".asUiText(), "Sep 14".asUiText(), listOf(card("a"))),
+                MomentGroup("Yesterday".asUiText(), "Sep 13".asUiText(), listOf(card("b"))),
             ),
         ),
     ) {
@@ -245,7 +246,7 @@ class MomentCardsUiTest {
         var downloaded: MomentEvent? = null
         runFeed(
             MomentsUiState(groups = today(card("a"))),
-            downloadState = DownloadUiState(resultEventId = "a", resultError = "Not enough space"),
+            downloadState = DownloadUiState(resultEventId = "a", resultError = "Not enough space".asUiText()),
             onDownloadClick = { downloaded = it },
         ) {
             onNodeWithContentDescription("Download failed: Not enough space").assertIsDisplayed().performClick()
@@ -286,7 +287,7 @@ class MomentCardsUiTest {
 
     @Test
     fun aClipThatWontPlaySaysWhyAndStillOffersFullScreen() = runFeed(
-        MomentsUiState(groups = today(card("a"), card("b")), expandedEventId = "a", clipError = "This clip is no longer on the server"),
+        MomentsUiState(groups = today(card("a"), card("b")), expandedEventId = "a", clipError = "This clip is no longer on the server".asUiText()),
     ) {
         onNodeWithText("This clip is no longer on the server").assertIsDisplayed()
         // Only the open card gets the player: the other one stays shut.

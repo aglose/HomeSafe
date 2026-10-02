@@ -11,6 +11,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetDetectionConfigUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionMasksUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveDetectionZonesUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -18,6 +20,9 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.zones_load_failed
+import homesafe.shared.generated.resources.zones_save_failed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -29,14 +34,14 @@ import kotlin.time.ExperimentalTime
 @Immutable
 data class DetectionZonesUiState(
     val isLoading: Boolean = true,
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     val config: CameraDetectionConfig? = null,
     /** Opens on the zones layer: naming areas is the common job; ignore areas are the exception. */
     val editor: MaskEditorState = MaskEditorState(layer = MaskLayer.ZONES),
     /** A fresh frame from the camera to draw over; re-issued on every (re)load so it isn't a stale cache hit. */
     val snapshotUrl: String? = null,
     val isSaving: Boolean = false,
-    val saveError: String? = null,
+    val saveError: UiText? = null,
     /** True right after a successful save until the next edit, for a "Saved" confirmation. */
     val justSaved: Boolean = false,
 )
@@ -91,7 +96,7 @@ class DetectionZonesViewModel(
                     }
                 }
                 .onFailure { error ->
-                    _uiState.update { it.copy(isLoading = false, loadError = error.message ?: "Couldn't load detection zones") }
+                    _uiState.update { it.copy(isLoading = false, loadError = error.userMessage(Res.string.zones_load_failed)) }
                 }
         }
     }
@@ -113,7 +118,9 @@ class DetectionZonesViewModel(
     fun startDraft() = edit { it.startDraft() }
     fun undoDraftPoint() = edit { it.undoDraftPoint() }
     fun cancelDraft() = edit { it.cancelDraft() }
-    fun finishDraft() = edit { it.finishDraft() }
+
+    /** [placeholderName] is what a new zone is called until renamed ("Zone 3"); the screen words it from [MaskEditorState.nextZoneNumber]. */
+    fun finishDraft(placeholderName: String) = edit { it.finishDraft(placeholderName) }
     fun select(index: Int?) = edit { it.select(index) }
     fun moveVertex(shapeIndex: Int, vertexIndex: Int, to: MaskPoint) = edit { it.moveVertex(shapeIndex, vertexIndex, to) }
     fun moveDraftVertex(vertexIndex: Int, to: MaskPoint) = edit { it.moveDraftVertex(vertexIndex, to) }
@@ -150,7 +157,7 @@ class DetectionZonesViewModel(
                     else -> saveDetectionMasksUseCase(cameraName, layer, editor.masks(layer))
                 }
                 result.onFailure { error ->
-                    _uiState.update { it.copy(isSaving = false, saveError = error.message ?: "Couldn't save ${layer.label.lowercase()}") }
+                    _uiState.update { it.copy(isSaving = false, saveError = error.userMessage(Res.string.zones_save_failed)) }
                     return@launch
                 }
             }

@@ -1,12 +1,18 @@
 package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.MomentTexts
 import com.meticulouscreations.homesafe.domain.usecase.FakeCarTagClassifiers
 import com.meticulouscreations.homesafe.domain.usecase.FakeNamingMoments
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TagMomentCarUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_tag_car_done_retraining
+import homesafe.shared.generated.resources.moments_tag_car_no_classifier
+import homesafe.shared.generated.resources.moments_tag_car_save_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -77,7 +83,8 @@ class MomentCarTagViewModelTest {
 
         val state = vm.uiState.value
         assertEquals(car.id, state.target?.eventId)
-        assertTrue(state.target!!.summary.startsWith("Car in the driveway · "), state.target.summary)
+        // The time's wording depends on the zone the test runs in; the moment it names doesn't.
+        assertEquals(MomentTexts.inThe(MomentTexts.car, "driveway"), (state.target!!.summary as UiText.Joined).parts.first())
         assertEquals(listOf("andrews_tesla", "sarahs_car"), state.knownCars, "\"Not ours\" is what an unnamed car already is")
         assertFalse(state.isLoading)
     }
@@ -120,7 +127,7 @@ class MomentCarTagViewModelTest {
 
         val state = vm.uiState.value
         assertTrue(state.done)
-        assertEquals("Tagged as Sarah's Car. Retraining now.", state.notice)
+        assertEquals(UiText.of(Res.string.moments_tag_car_done_retraining, "Sarah's Car"), state.notice)
         assertFalse(state.noticeIsError)
         assertEquals(mapOf(car.id to "sarahs_car"), state.tagged)
         assertEquals(listOf(car.id to "sarahs_car"), moments.named)
@@ -142,7 +149,7 @@ class MomentCarTagViewModelTest {
 
         assertEquals(listOf("grandmas_van" to classifiers.frame.box), classifiers.examples)
         assertEquals(listOf("andrews_tesla", "grandmas_van", "sarahs_car"), vm.uiState.value.knownCars)
-        assertEquals("Tagged as Grandma's Van. Retraining now.", vm.uiState.value.notice)
+        assertEquals(UiText.of(Res.string.moments_tag_car_done_retraining, "Grandma's Van"), vm.uiState.value.notice)
         assertEquals("", vm.uiState.value.newCarDraft)
     }
 
@@ -175,7 +182,7 @@ class MomentCarTagViewModelTest {
         advanceUntilIdle()
 
         val state = vm.uiState.value
-        assertEquals("Couldn't save the tag: no recording", state.notice)
+        assertEquals(UiText.of(Res.string.moments_tag_car_save_failed, "no recording"), state.notice)
         assertTrue(state.noticeIsError)
         assertFalse(state.done)
         assertFalse(state.isSaving)
@@ -190,7 +197,7 @@ class MomentCarTagViewModelTest {
         vm.open(car)
         advanceUntilIdle()
 
-        assertEquals("This server has no classifier that runs on cars.", vm.uiState.value.loadError)
+        assertEquals(UiText.of(Res.string.moments_tag_car_no_classifier), vm.uiState.value.loadError)
         vm.tag("sarahs_car")
         advanceUntilIdle()
         assertTrue(classifiers.examples.isEmpty(), "nothing to file into")

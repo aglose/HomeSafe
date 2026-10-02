@@ -2,6 +2,18 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_confirm_save_reason
+import homesafe.shared.generated.resources.biometric_confirmation_cancelled
+import homesafe.shared.generated.resources.biometric_keychain_save_failed
+import homesafe.shared.generated.resources.biometric_name_face_id
+import homesafe.shared.generated.resources.biometric_name_generic
+import homesafe.shared.generated.resources.biometric_name_touch_id
+import homesafe.shared.generated.resources.biometric_no_saved_login
+import homesafe.shared.generated.resources.biometric_sign_in_failed
+import homesafe.shared.generated.resources.biometric_sign_in_reason
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
@@ -14,6 +26,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import platform.CoreFoundation.CFAutorelease
 import platform.CoreFoundation.CFDictionaryAddValue
 import platform.CoreFoundation.CFDictionaryCreateMutable
@@ -90,14 +104,14 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
     }
 
     // biometryType is only populated once canEvaluatePolicy has run on this context.
-    override fun displayName(): String = memScoped {
+    override fun displayName(): StringResource = memScoped {
         val context = LAContext()
         val errorVar = alloc<ObjCObjectVar<NSError?>>()
         context.canEvaluatePolicy(LAPolicyDeviceOwnerAuthenticationWithBiometrics, errorVar.ptr)
         when (context.biometryType) {
-            LABiometryTypeFaceID -> "Face ID"
-            LABiometryTypeTouchID -> "Touch ID"
-            else -> "biometrics"
+            LABiometryTypeFaceID -> Res.string.biometric_name_face_id
+            LABiometryTypeTouchID -> Res.string.biometric_name_touch_id
+            else -> Res.string.biometric_name_generic
         }
     }
 
@@ -119,8 +133,8 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
     }
 
     override suspend fun save(credentials: SavedCredentials): Result<Unit> = runCatching {
-        val confirmed = confirmBiometric("Confirm your fingerprint or face to save this login")
-        check(confirmed) { "Biometric confirmation was cancelled" }
+        val confirmed = confirmBiometric(getString(Res.string.biometric_confirm_save_reason))
+        if (!confirmed) throw LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Biometric confirmation was cancelled")
 
         val accessControl = createBiometricAccessControl()
         val service = CFBridgingRetain(SERVICE_NAME)
@@ -146,7 +160,12 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
                 kSecValueData to data,
             )
             val status = SecItemAdd(addQuery, null)
-            check(status == errSecSuccess) { "Couldn't save credentials to the Keychain (status $status)" }
+            if (status != errSecSuccess) {
+                throw LocalizedException(
+                    UiText.of(Res.string.biometric_keychain_save_failed, status.toString()),
+                    technical = "Couldn't save credentials to the Keychain (status $status)",
+                )
+            }
         } finally {
             CFBridgingRelease(service)
             CFBridgingRelease(account)
@@ -162,7 +181,7 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
             val service = CFBridgingRetain(SERVICE_NAME)
             val account = CFBridgingRetain(ACCOUNT_NAME)
             val authContext = CFBridgingRetain(laContext)
-            val prompt = CFBridgingRetain("Sign in with Face ID or Touch ID")
+            val prompt = CFBridgingRetain(getString(Res.string.biometric_sign_in_reason))
             try {
                 val query = buildQuery(
                     kSecClass to kSecClassGenericPassword,
@@ -176,11 +195,14 @@ private class IosBiometricCredentialStore : BiometricCredentialStore {
                 memScoped {
                     val result = alloc<CFTypeRefVar>()
                     val status = SecItemCopyMatching(query, result.ptr)
-                    check(status == errSecSuccess) {
-                        "Biometric sign-in failed or was cancelled (status $status)"
+                    if (status != errSecSuccess) {
+                        throw LocalizedException(
+                            UiText.of(Res.string.biometric_sign_in_failed),
+                            technical = "Biometric sign-in failed or was cancelled (status $status)",
+                        )
                     }
                     val savedData = CFBridgingRelease(result.value) as? NSData
-                        ?: error("No saved biometric credentials")
+                        ?: throw LocalizedException(UiText.of(Res.string.biometric_no_saved_login), technical = "No saved biometric credentials")
                     json.decodeFromString(SavedCredentials.serializer(), savedData.toKotlinString())
                 }
             } finally {

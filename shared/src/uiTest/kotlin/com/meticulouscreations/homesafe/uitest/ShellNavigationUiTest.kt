@@ -22,6 +22,7 @@ import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
+import org.jetbrains.compose.resources.stringResource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -59,7 +60,7 @@ class ShellNavigationUiTest {
                     selectedTab = nav.selectedTab,
                     onSelectTab = nav::selectTab,
                 ) {
-                    Text("Showing ${nav.selectedTab.label}")
+                    Text("Showing ${stringResource(nav.selectedTab.label)}")
                 }
             }
         }

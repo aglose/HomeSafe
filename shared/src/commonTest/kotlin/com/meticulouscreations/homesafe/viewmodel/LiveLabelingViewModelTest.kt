@@ -13,6 +13,9 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetTrackedObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.labeling_save_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -213,7 +216,7 @@ class LiveLabelingViewModelTest {
         assertEquals(1, state.cards.size, "still there to try again")
         assertTrue(state.busyKeys.isEmpty())
         assertNull(state.filedAs)
-        assertEquals("Couldn't save: file not found", state.error)
+        assertEquals(UiText.of(Res.string.labeling_save_failed, "file not found"), state.error)
     }
 
     @Test

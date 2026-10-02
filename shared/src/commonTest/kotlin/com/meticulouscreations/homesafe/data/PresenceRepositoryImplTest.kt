@@ -8,6 +8,8 @@ import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.PushRelayApi
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -48,7 +50,7 @@ class PresenceRepositoryImplTest {
         override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(recent)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")

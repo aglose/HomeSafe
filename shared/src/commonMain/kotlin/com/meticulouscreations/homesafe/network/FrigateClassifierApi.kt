@@ -1,6 +1,16 @@
 package com.meticulouscreations.homesafe.network
 
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_load_camera_frame
+import homesafe.shared.generated.resources.error_load_classifier_config
+import homesafe.shared.generated.resources.error_load_classifier_queue
+import homesafe.shared.generated.resources.error_load_dataset
+import homesafe.shared.generated.resources.error_load_events
+import homesafe.shared.generated.resources.error_load_recording_frame
+import homesafe.shared.generated.resources.error_load_timeline
+import homesafe.shared.generated.resources.error_load_tracked_objects
+import homesafe.shared.generated.resources.error_request_failed
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -35,7 +45,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
     /** [getModels], plus each camera's detect resolution, which a queued crop was cut from. */
     suspend fun getConfig(serverUrl: String): Result<FrigateClassifierConfig> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/config")
-        check(response.status.isSuccess()) { "Couldn't load config: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_classifier_config)
         val root = response.body<FrigateClassificationRoot>()
         FrigateClassifierConfig(
             models = root.classification?.custom.orEmpty().map { (name, model) ->
@@ -62,7 +72,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
     suspend fun getEvents(serverUrl: String, eventIds: Collection<String>): Result<List<FrigateEvent>> = runCatching {
         eventIds.distinct().chunked(EVENT_IDS_PER_REQUEST).flatMap { batch ->
             val response = httpClient.get("${serverUrl.trimEnd('/')}/api/event_ids") { parameter("ids", batch.joinToString(",")) }
-            check(response.status.isSuccess()) { "Couldn't load events: ${response.status}" }
+            response.requireSuccess(Res.string.error_load_events)
             response.body<List<FrigateEvent>>()
         }
     }
@@ -78,7 +88,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
                 parameter("source_id", batch.joinToString(","))
                 parameter("limit", TIMELINE_LIMIT)
             }
-            check(response.status.isSuccess()) { "Couldn't load timeline: ${response.status}" }
+            response.requireSuccess(Res.string.error_load_timeline)
             response.body<List<FrigateTimelineEntry>>()
         }
     }
@@ -90,7 +100,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
             parameter("in_progress", 1)
             parameter("limit", IN_PROGRESS_LIMIT)
         }
-        check(response.status.isSuccess()) { "Couldn't load tracked objects: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_tracked_objects)
         response.body()
     }
 
@@ -104,14 +114,14 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
      */
     suspend fun getDataset(serverUrl: String, modelName: String): Result<FrigateClassifierDataset> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/classification/$modelName/dataset")
-        check(response.status.isSuccess()) { "Couldn't load dataset: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_dataset)
         classifierDataset(response.body())
     }
 
     /** File names of crops waiting to be labelled (the model's `train/` folder). */
     suspend fun getQueue(serverUrl: String, modelName: String): Result<List<String>> = runCatching {
         val response = httpClient.get("${serverUrl.trimEnd('/')}/api/classification/$modelName/train")
-        check(response.status.isSuccess()) { "Couldn't load queue: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_classifier_queue)
         response.body()
     }
 
@@ -143,7 +153,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
     /** [cameraName]'s latest detect frame at full detect resolution, as Frigate encodes it: what a car gets boxed on. */
     suspend fun getLatestFrame(serverUrl: String, cameraName: String): Result<ByteArray> = runCatching {
         val response = httpClient.get(frigateSnapshotUrl(serverUrl, cameraName))
-        check(response.status.isSuccess()) { "Couldn't load the camera's frame: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_camera_frame)
         response.body<ByteArray>()
     }
 
@@ -154,7 +164,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
      */
     suspend fun getRecordingFrame(serverUrl: String, cameraName: String, epochSeconds: Double, height: Int?): Result<ByteArray> = runCatching {
         val response = httpClient.get(frigateRecordingSnapshotUrl(serverUrl, cameraName, epochSeconds, height))
-        check(response.status.isSuccess()) { "Couldn't load the recording: ${response.status}" }
+        response.requireSuccess(Res.string.error_load_recording_frame)
         response.body<ByteArray>()
     }
 
@@ -171,7 +181,7 @@ class FrigateClassifierApi(private val httpClient: HttpClient) {
         }
         val result = runCatching { response.body<ConfigSetResponse>() }.getOrNull()
         if (!response.status.isSuccess() || result?.success == false) {
-            throw FrigateResponseException(result?.message ?: "Request failed: ${response.status}")
+            throw responseFailure(result?.message, response.status, Res.string.error_request_failed)
         }
     }
 

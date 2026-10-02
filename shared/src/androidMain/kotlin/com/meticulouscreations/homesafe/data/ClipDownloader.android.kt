@@ -7,6 +7,16 @@ import androidx.core.net.toUri
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.download_cancelled
+import homesafe.shared.generated.resources.download_connection_lost
+import homesafe.shared.generated.resources.download_failed_code
+import homesafe.shared.generated.resources.download_file_exists
+import homesafe.shared.generated.resources.download_frigate_refused
+import homesafe.shared.generated.resources.download_no_space
+import homesafe.shared.generated.resources.download_too_many_redirects
 import io.ktor.client.HttpClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -54,10 +64,10 @@ private class AndroidClipDownloader(context: Context) : ClipDownloader {
         while (true) {
             val row = withContext(Dispatchers.IO) { query(downloadId) }
                 // Gone: cancelled from its notification, or cleared from the Downloads app.
-                ?: error("The download was cancelled")
+                ?: throw LocalizedException(UiText.of(Res.string.download_cancelled), technical = "Download cancelled")
             when (row.status) {
                 DownloadManager.STATUS_SUCCESSFUL -> return
-                DownloadManager.STATUS_FAILED -> error(failureMessage(row.reason))
+                DownloadManager.STATUS_FAILED -> throw failure(row.reason)
             }
             val progress = when {
                 row.bytesSoFar <= 0L -> ClipDownloadProgress.Preparing
@@ -84,13 +94,16 @@ private class AndroidClipDownloader(context: Context) : ClipDownloader {
         }
 
     /** [reason] is the HTTP status for a server's refusal, or one of [DownloadManager]'s ERROR_ codes. */
-    private fun failureMessage(reason: Int): String = when (reason) {
-        in 400..599 -> "Frigate answered $reason for the clip"
-        DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Not enough space on the phone"
-        DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "A file with this name is already in Downloads"
-        DownloadManager.ERROR_HTTP_DATA_ERROR -> "Lost the connection to the server"
-        DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "The server redirected the download too many times"
-        else -> "Download failed ($reason)"
+    private fun failure(reason: Int): LocalizedException {
+        val text = when (reason) {
+            in 400..599 -> UiText.of(Res.string.download_frigate_refused, reason.toString())
+            DownloadManager.ERROR_INSUFFICIENT_SPACE -> UiText.of(Res.string.download_no_space)
+            DownloadManager.ERROR_FILE_ALREADY_EXISTS -> UiText.of(Res.string.download_file_exists)
+            DownloadManager.ERROR_HTTP_DATA_ERROR -> UiText.of(Res.string.download_connection_lost)
+            DownloadManager.ERROR_TOO_MANY_REDIRECTS -> UiText.of(Res.string.download_too_many_redirects)
+            else -> UiText.of(Res.string.download_failed_code, reason.toString())
+        }
+        return LocalizedException(text, technical = "Download failed ($reason)")
     }
 
     private class DownloadRow(val status: Int, val reason: Int, val bytesSoFar: Long, val totalBytes: Long)

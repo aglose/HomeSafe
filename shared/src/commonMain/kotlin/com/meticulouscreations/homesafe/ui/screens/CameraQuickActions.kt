@@ -53,6 +53,28 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_action_clip
+import homesafe.shared.generated.resources.camera_action_clip_description
+import homesafe.shared.generated.resources.camera_hint_single_quality
+import homesafe.shared.generated.resources.camera_hint_sound_off
+import homesafe.shared.generated.resources.camera_hint_sound_on
+import homesafe.shared.generated.resources.camera_hint_sound_on_no_audio
+import homesafe.shared.generated.resources.camera_quality_auto
+import homesafe.shared.generated.resources.camera_quality_auto_description
+import homesafe.shared.generated.resources.camera_quality_button_description
+import homesafe.shared.generated.resources.camera_quality_high
+import homesafe.shared.generated.resources.camera_quality_high_description
+import homesafe.shared.generated.resources.camera_quality_low
+import homesafe.shared.generated.resources.camera_quality_low_description
+import homesafe.shared.generated.resources.camera_quality_menu_title
+import homesafe.shared.generated.resources.camera_quality_selected
+import homesafe.shared.generated.resources.camera_sound_muted
+import homesafe.shared.generated.resources.camera_sound_on
+import homesafe.shared.generated.resources.camera_sound_turn_off
+import homesafe.shared.generated.resources.camera_sound_turn_on
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Quality, speaker and clip under the player. The speaker takes the prominent centre slot
@@ -72,7 +94,7 @@ import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 internal fun QuickActionsRow(
     cameraName: String,
     hasQualityChoice: Boolean,
-    showHint: (String) -> Unit,
+    showHint: (StringResource) -> Unit,
     onClip: (originFraction: Offset) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -85,15 +107,15 @@ internal fun QuickActionsRow(
         isMuted = playback.isMuted,
         hasAudio = playback.hasAudio,
         onQualitySelect = viewModel::setQuality,
-        onQualityUnavailable = { showHint("This camera has a single stream quality") },
+        onQualityUnavailable = { showHint(Res.string.camera_hint_single_quality) },
         onToggleSound = {
             val soundOn = playback.isMuted
             viewModel.toggleMuted()
             showHint(
                 when {
-                    soundOn && !playback.hasAudio -> "Sound on, but this stream has no audio"
-                    soundOn -> "Sound on"
-                    else -> "Sound off"
+                    soundOn && !playback.hasAudio -> Res.string.camera_hint_sound_on_no_audio
+                    soundOn -> Res.string.camera_hint_sound_on
+                    else -> Res.string.camera_hint_sound_off
                 },
             )
         },
@@ -138,10 +160,11 @@ internal fun CameraQuickActions(
         // player's own audio-availability report).
         var qualityMenuOpen by remember { mutableStateOf(false) }
         Box {
+            val qualityName = stringResource(qualityLabel(quality))
             QuickActionButton(
                 icon = Icons.Filled.Tune,
-                label = qualityLabel(quality),
-                contentDescription = "Video quality: ${qualityLabel(quality)}",
+                label = qualityName,
+                contentDescription = stringResource(Res.string.camera_quality_button_description, qualityName),
                 available = hasQualityChoice,
                 onClick = { if (hasQualityChoice) qualityMenuOpen = true else onQualityUnavailable() },
             )
@@ -160,8 +183,8 @@ internal fun CameraQuickActions(
         // ready when audio arrives; the dimming says the stream has nothing to play right now.
         QuickActionButton(
             icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-            label = soundLabel(isMuted),
-            contentDescription = if (isMuted) "Turn sound on" else "Turn sound off",
+            label = stringResource(soundLabel(isMuted)),
+            contentDescription = stringResource(if (isMuted) Res.string.camera_sound_turn_on else Res.string.camera_sound_turn_off),
             active = !isMuted,
             available = hasAudio,
             size = PRIMARY_QUICK_ACTION_SIZE,
@@ -173,8 +196,8 @@ internal fun CameraQuickActions(
         val clipOrigin = remember { OriginProbe() }
         QuickActionButton(
             icon = Icons.Filled.ContentCut,
-            label = CLIP_LABEL,
-            contentDescription = "Clip a video from $displayName",
+            label = stringResource(CLIP_LABEL),
+            contentDescription = stringResource(Res.string.camera_action_clip_description, displayName),
             onClick = { onClip(clipOrigin.fraction()) },
             onCirclePosition = { clipOrigin.coordinates = it },
         )
@@ -193,7 +216,7 @@ private fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (S
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
     ) {
         Text(
-            text = "Video quality",
+            text = stringResource(Res.string.camera_quality_menu_title),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -202,16 +225,16 @@ private fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (S
             DropdownMenuItem(
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(text = qualityLabel(option), style = MaterialTheme.typography.labelLarge)
+                        Text(text = stringResource(qualityLabel(option)), style = MaterialTheme.typography.labelLarge)
                         Text(
-                            text = qualityDescription(option),
+                            text = stringResource(qualityDescription(option)),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 },
                 trailingIcon = if (option == selected) {
-                    { Icon(imageVector = Icons.Filled.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary) }
+                    { Icon(imageVector = Icons.Filled.Check, contentDescription = stringResource(Res.string.camera_quality_selected), tint = MaterialTheme.colorScheme.primary) }
                 } else {
                     null
                 },
@@ -298,24 +321,24 @@ private fun QuickActionButton(
 }
 
 /** The quality button's caption: the short name a video menu would use for each stream. */
-internal fun qualityLabel(quality: StreamQuality): String = when (quality) {
-    StreamQuality.AUTO -> "Auto"
-    StreamQuality.HIGH -> "HD"
-    StreamQuality.LOW -> "SD"
+internal fun qualityLabel(quality: StreamQuality): StringResource = when (quality) {
+    StreamQuality.AUTO -> Res.string.camera_quality_auto
+    StreamQuality.HIGH -> Res.string.camera_quality_high
+    StreamQuality.LOW -> Res.string.camera_quality_low
 }
 
 /** What each quality choice trades, for the line under it in the picker. */
-internal fun qualityDescription(quality: StreamQuality): String = when (quality) {
-    StreamQuality.AUTO -> "Quick to start, then sharpens"
-    StreamQuality.HIGH -> "Full resolution, with the camera's sound"
-    StreamQuality.LOW -> "Lighter on data, no sound"
+internal fun qualityDescription(quality: StreamQuality): StringResource = when (quality) {
+    StreamQuality.AUTO -> Res.string.camera_quality_auto_description
+    StreamQuality.HIGH -> Res.string.camera_quality_high_description
+    StreamQuality.LOW -> Res.string.camera_quality_low_description
 }
 
 /** The speaker's caption. The saved preference, not whether the current stream has audio — the dimming says that. */
-internal fun soundLabel(isMuted: Boolean): String = if (isMuted) "Muted" else "Sound on"
+internal fun soundLabel(isMuted: Boolean): StringResource = if (isMuted) Res.string.camera_sound_muted else Res.string.camera_sound_on
 
 /** The scissors' caption. An action, not a state, so it never changes. */
-internal const val CLIP_LABEL = "Clip"
+internal val CLIP_LABEL: StringResource = Res.string.camera_action_clip
 
 /**
  * Where a quick action's circle sits, captured on placement and read on tap: the centre of the

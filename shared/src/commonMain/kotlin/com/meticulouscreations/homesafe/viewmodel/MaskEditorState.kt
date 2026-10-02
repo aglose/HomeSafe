@@ -15,6 +15,8 @@ data class ZoneInfo(
     val friendlyName: String?,
     /** Labels that count in this zone; empty means every tracked object. */
     val objects: List<String> = emptyList(),
+    /** Still the name it was drawn with ("Zone 3"), which the editor offers up to be typed over. */
+    val isPlaceholderName: Boolean = false,
 ) {
     val displayName: String get() = friendlyName?.takeIf { it.isNotBlank() } ?: name
 }
@@ -56,6 +58,14 @@ data class MaskEditorState(
     val canFinishDraft: Boolean get() = (draft?.size ?: 0) >= MaskPolygon.MIN_POINTS
     val isDirty: Boolean get() = dirtyLayers.isNotEmpty()
 
+    /** The number the next zone drawn is given, `zone_3`; the screen words its placeholder name ("Zone 3") from it. */
+    val nextZoneNumber: Int
+        get() {
+            var n = shapes.getValue(MaskLayer.ZONES).size + 1
+            while (shapes.getValue(MaskLayer.ZONES).any { it.zone?.name == "zone_$n" }) n++
+            return n
+        }
+
     fun masks(of: MaskLayer): List<MaskPolygon> = shapes.getValue(of).map { it.polygon }
 
     fun zones(): List<DetectionZone> = shapes.getValue(MaskLayer.ZONES).mapNotNull { shape ->
@@ -93,13 +103,14 @@ data class MaskEditorState(
 
     /**
      * Closes the draft into a real shape on the current layer, selecting it. On the zones layer
-     * the new zone gets a placeholder name ("Zone 3" / `zone_3`) that the user then renames. No-op
-     * with fewer than three corners.
+     * the new zone gets a placeholder key (`zone_3`, see [nextZoneNumber]) and [placeholderName]
+     * ("Zone 3", in the reader's language) as its name, which the user then renames. No-op with
+     * fewer than three corners.
      */
-    fun finishDraft(): MaskEditorState {
+    fun finishDraft(placeholderName: String? = null): MaskEditorState {
         val points = draft ?: return this
         if (points.size < MaskPolygon.MIN_POINTS) return this
-        val zone = if (layer == MaskLayer.ZONES) placeholderZone() else null
+        val zone = if (layer == MaskLayer.ZONES) ZoneInfo(name = "zone_$nextZoneNumber", friendlyName = placeholderName, isPlaceholderName = true) else null
         val updated = layerShapes + EditorShape(MaskPolygon(points), zone)
         return copy(
             shapes = shapes + (layer to updated),
@@ -179,7 +190,7 @@ data class MaskEditorState(
         } else {
             uniqueZoneName(DetectionZone.slug(friendlyName), excludingIndex = index)
         }
-        return replaceShape(index, shape.copy(zone = zone.copy(name = name, friendlyName = friendlyName)))
+        return replaceShape(index, shape.copy(zone = zone.copy(name = name, friendlyName = friendlyName, isPlaceholderName = false)))
     }
 
     fun setSelectedZoneObjects(objects: List<String>): MaskEditorState {
@@ -206,12 +217,6 @@ data class MaskEditorState(
     private fun replaceShape(index: Int, shape: EditorShape): MaskEditorState {
         val updated = layerShapes.toMutableList().also { it[index] = shape }
         return copy(shapes = shapes + (layer to updated), dirtyLayers = dirtyLayers + layer)
-    }
-
-    private fun placeholderZone(): ZoneInfo {
-        var n = shapes.getValue(MaskLayer.ZONES).size + 1
-        while (shapes.getValue(MaskLayer.ZONES).any { it.zone?.name == "zone_$n" }) n++
-        return ZoneInfo(name = "zone_$n", friendlyName = "Zone $n")
     }
 
     private fun uniqueZoneName(base: String, excludingIndex: Int): String {

@@ -190,7 +190,7 @@ fun Sparkline(series: Series, color: Color, modifier: Modifier = Modifier, basel
  * chart's colour) that slides to the next pick.
  */
 @Composable
-fun <T> RangeSelector(options: List<T>, selected: T, label: (T) -> String, color: Color, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+fun <T> RangeSelector(options: List<T>, selected: T, label: @Composable (T) -> String, color: Color, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
     val haptics = LocalHapticFeedback.current
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type

@@ -1,5 +1,13 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.moments_clip_count
+import homesafe.shared.generated.resources.moments_sighting_count
+import homesafe.shared.generated.resources.moments_since
+import homesafe.shared.generated.resources.moments_title_came_and_went
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -214,32 +222,29 @@ fun MomentVisit.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
     val leadPresentation = lead.present(today, timeZone)
     if (events.size == 1) return leadPresentation
 
-    val name = subLabel
+    val subject = subLabel?.let { subLabelDisplayName(it).asUiText() } ?: labelName(lead.label)
     val range = clockRangeLabel(startEpochSeconds, endEpochSeconds, timeZone)
     return when (kind) {
         VisitKind.ROUTINE -> {
-            val cameras = events.map { it.cameraDisplayName }.distinct().joinToString(", ")
+            val cameras = events.map { it.cameraDisplayName }.distinct().map { it.asUiText() }
             leadPresentation.copy(
-                title = "${subLabelDisplayName(name ?: lead.label)} came and went ${events.size}×",
+                title = UiText.plural(Res.plurals.moments_title_came_and_went, events.size, subject, events.size),
                 timeLabel = range,
                 durationLabel = null,
-                locationLabel = cameras,
+                locationLabel = UiText.Joined(cameras, UiText.of(Res.string.common_list_separator)),
                 sightingsLabel = null,
-                clipCountLabel = "${events.size} sightings",
+                clipCountLabel = UiText.plural(Res.plurals.moments_sighting_count, events.size),
             )
         }
 
         else -> {
-            val subject = name?.let { subLabelDisplayName(it) } ?: lead.label.lowercase().replaceFirstChar { it.uppercase() }
             val zones = events.flatMap { it.zones }.filter { it.isNotBlank() }
-            val place = zones.lastOrNull()
-            val places = zones.distinct().joinToString(", ") { zoneDisplayName(it).replaceFirstChar(Char::uppercase) }
             leadPresentation.copy(
-                title = if (place != null) "$subject ${zonePhrase(place)}" else "$subject detected",
+                title = detectionTitle(subject, zones.lastOrNull()),
                 timeLabel = range,
-                locationLabel = if (places.isEmpty()) lead.cameraDisplayName else "${lead.cameraDisplayName} · $places",
+                locationLabel = locationLabel(lead.cameraDisplayName, zones.distinct()),
                 sightingsLabel = null,
-                clipCountLabel = if (kind == VisitKind.VISIT) "${takes.size} clips" else null,
+                clipCountLabel = if (kind == VisitKind.VISIT) UiText.plural(Res.plurals.moments_clip_count, takes.size) else null,
             )
         }
     }
@@ -249,11 +254,11 @@ fun MomentVisit.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
  * "6:55–6:56 PM", "11:58 AM–12:04 PM", "6:55 PM" when both ends fall in the same minute, and
  * "Since 6:55 PM" while the last detection is still going.
  */
-internal fun clockRangeLabel(startEpochSeconds: Double, endEpochSeconds: Double?, timeZone: TimeZone): String {
+internal fun clockRangeLabel(startEpochSeconds: Double, endEpochSeconds: Double?, timeZone: TimeZone): UiText {
     val start = clockLabel(startEpochSeconds, timeZone)
-    if (endEpochSeconds == null) return "Since $start"
+    if (endEpochSeconds == null) return UiText.of(Res.string.moments_since, start)
     val end = clockLabel(endEpochSeconds, timeZone)
-    if (start == end) return start
+    if (start == end) return start.asUiText()
     val startMeridiem = start.takeLast(2)
-    return if (startMeridiem == end.takeLast(2)) "${start.dropLast(3)}–$end" else "$start–$end"
+    return (if (startMeridiem == end.takeLast(2)) "${start.dropLast(3)}–$end" else "$start–$end").asUiText()
 }

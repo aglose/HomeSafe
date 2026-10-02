@@ -36,6 +36,7 @@ import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
+import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.createLivePlayerPrefetch
 import dev.zacsweers.metro.AppScope
@@ -122,6 +123,10 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideClock(): Clock = Clock.System
 
+    /** Reads string resources for text the platform shows outside the UI, so tests can substitute it. */
+    @Provides
+    fun provideTextLoader(): TextLoader = TextLoader.Resources
+
     @SingleIn(AppScope::class)
     @Provides
     fun provideConnectionHistoryDao(platformContext: PlatformContext): ConnectionHistoryDao =
@@ -196,6 +201,7 @@ interface AppGraph : ViewModelGraph {
         deviceRegistrar: DeviceRegistrar,
         appScope: CoroutineScope,
         clock: Clock,
+        textLoader: TextLoader,
     ): DetectionAlertService = DetectionAlertService(
         apiClient = apiClient,
         connectionRepository = connectionRepository,
@@ -206,6 +212,7 @@ interface AppGraph : ViewModelGraph {
         scope = appScope,
         clock = { clock.now().toEpochMilliseconds() / 1000.0 },
         pollIntervalMs = DETECTION_POLL_INTERVAL_MS,
+        textLoader = textLoader,
     )
 
     /** An app-lifetime scope for background work that outlives any one screen, e.g. following network changes. */

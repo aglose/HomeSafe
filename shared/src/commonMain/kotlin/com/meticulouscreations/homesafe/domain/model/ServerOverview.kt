@@ -1,5 +1,18 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.settings_duration_days
+import homesafe.shared.generated.resources.settings_duration_days_fraction
+import homesafe.shared.generated.resources.settings_duration_hours
+import homesafe.shared.generated.resources.settings_duration_minutes
+import homesafe.shared.generated.resources.settings_duration_pair
+import homesafe.shared.generated.resources.settings_duration_seconds
+import homesafe.shared.generated.resources.settings_percent
+import homesafe.shared.generated.resources.settings_size_gb
+import homesafe.shared.generated.resources.settings_size_mb
+import homesafe.shared.generated.resources.settings_size_tb
+import homesafe.shared.generated.resources.settings_value_missing
 import kotlin.math.roundToInt
 
 /**
@@ -73,35 +86,37 @@ data class CameraZone(val name: String, val friendlyName: String? = null) {
 }
 
 /** "3 days, 2 hours" / "2 hours, 5 minutes" / "40 seconds" — the largest two units that apply. */
-fun formatUptime(seconds: Long): String {
+fun formatUptime(seconds: Long): UiText {
     val total = seconds.coerceAtLeast(0)
-    val days = total / 86_400
-    val hours = (total % 86_400) / 3_600
-    val minutes = (total % 3_600) / 60
-    fun unit(n: Long, name: String) = "$n $name${if (n == 1L) "" else "s"}"
+    val days = (total / 86_400).toInt()
+    val hours = ((total % 86_400) / 3_600).toInt()
+    val minutes = ((total % 3_600) / 60).toInt()
     return when {
-        days > 0 -> "${unit(days, "day")}, ${unit(hours, "hour")}"
-        hours > 0 -> "${unit(hours, "hour")}, ${unit(minutes, "minute")}"
-        minutes > 0 -> unit(minutes, "minute")
-        else -> unit(total, "second")
+        days > 0 -> UiText.of(Res.string.settings_duration_pair, UiText.plural(Res.plurals.settings_duration_days, days), UiText.plural(Res.plurals.settings_duration_hours, hours))
+        hours > 0 -> UiText.of(Res.string.settings_duration_pair, UiText.plural(Res.plurals.settings_duration_hours, hours), UiText.plural(Res.plurals.settings_duration_minutes, minutes))
+        minutes > 0 -> UiText.plural(Res.plurals.settings_duration_minutes, minutes)
+        else -> UiText.plural(Res.plurals.settings_duration_seconds, total.toInt())
     }
 }
 
 /** Megabytes as Frigate reports them, rendered the way its own UI does (decimal units): "412.7 GB", "1.2 TB", "512 MB". */
-fun formatMegabytes(mb: Double): String = when {
-    mb >= 1_000_000 -> "${(mb / 1_000_000).format1()} TB"
-    mb >= 1_000 -> "${(mb / 1_000).format1()} GB"
-    else -> "${mb.roundToInt()} MB"
+fun formatMegabytes(mb: Double): UiText = when {
+    mb >= 1_000_000 -> UiText.of(Res.string.settings_size_tb, (mb / 1_000_000).format1())
+    mb >= 1_000 -> UiText.of(Res.string.settings_size_gb, (mb / 1_000).format1())
+    else -> UiText.of(Res.string.settings_size_mb, mb.roundToInt())
 }
 
 /** "9%" — a whole-number percentage, or an em dash when the server didn't report one. */
-fun formatPercent(value: Double?): String = value?.let { "${it.roundToInt()}%" } ?: "—"
+fun formatPercent(value: Double?): UiText =
+    value?.let { UiText.of(Res.string.settings_percent, it.roundToInt()) } ?: UiText.of(Res.string.settings_value_missing)
 
 /** "7 days" / "1 day" / "1.5 days" */
-fun formatRetentionDays(days: Double): String {
-    val text = if (days == days.toLong().toDouble()) days.toLong().toString() else days.format1()
-    return "$text day${if (days == 1.0) "" else "s"}"
-}
+fun formatRetentionDays(days: Double): UiText =
+    if (days == days.toLong().toDouble()) {
+        UiText.plural(Res.plurals.settings_duration_days, days.toInt())
+    } else {
+        UiText.of(Res.string.settings_duration_days_fraction, days.format1())
+    }
 
 /** One decimal, trailing ".0" dropped: 412.65 -> "412.7", 2.0 -> "2". */
 private fun Double.format1(): String {

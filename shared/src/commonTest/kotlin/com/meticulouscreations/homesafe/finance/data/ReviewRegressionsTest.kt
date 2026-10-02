@@ -2,6 +2,12 @@ package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.narrator_format_days_ago
+import homesafe.shared.generated.resources.narrator_format_in_days
+import homesafe.shared.generated.resources.narrator_format_in_months
+import homesafe.shared.generated.resources.narrator_format_today
 import kotlinx.datetime.LocalDate
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -60,9 +66,9 @@ class ReviewRegressionsTest {
 
     @Test
     fun relativeDaysRoundsAndPluralises() {
-        assertEquals("in 1 day", FinanceFormat.relativeDays(0, 16 * 3600))
-        assertEquals("today", FinanceFormat.relativeDays(0, 6 * 3600))
-        assertEquals("in 2 months", FinanceFormat.relativeDays(0, 45 * 86_400))
-        assertEquals("3 days ago", FinanceFormat.relativeDays(3 * 86_400, 0))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_days, 1), FinanceFormat.relativeDays(0, 16 * 3600))
+        assertEquals(UiText.of(Res.string.narrator_format_today), FinanceFormat.relativeDays(0, 6 * 3600))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_months, 2), FinanceFormat.relativeDays(0, 45 * 86_400))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_days_ago, 3), FinanceFormat.relativeDays(3 * 86_400, 0))
     }
 }

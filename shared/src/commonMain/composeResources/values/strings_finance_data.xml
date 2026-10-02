@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Finance: the markets the app follows, the household's books as read from the budget sheet,
+  the sheet's setup, sync and chart cards, and the "How it all connects" map.
+  fin_data_* is data and domain text, fin_sheet_* the sheet screens, fin_connections_* the map.
+  Text in “curly quotes” inside fin_data_section_*_looked_for is a title in the user's own sheet:
+  keep it as the sheet spells it.
+-->
+<resources>
+    <!-- Market symbols: full name, the short name on a row, and a sentence for the detail page. -->
+    <string name="fin_data_symbol_sp500">S&amp;P 500</string>
+    <string name="fin_data_symbol_sp500_about">The 500 largest US public companies, weighted by size: the broadest single read on American stocks and the benchmark most retirement money tracks.</string>
+    <string name="fin_data_symbol_dow_name">Dow Jones Industrial Average</string>
+    <string name="fin_data_symbol_dow_short">Dow</string>
+    <string name="fin_data_symbol_dow_about">30 blue-chip companies, weighted by share price. The oldest US index, and the number the evening news quotes.</string>
+    <string name="fin_data_symbol_nasdaq_name">Nasdaq Composite</string>
+    <string name="fin_data_symbol_nasdaq_short">Nasdaq</string>
+    <string name="fin_data_symbol_nasdaq_about">Every stock on the Nasdaq exchange, heavy in technology. It moves further than the S&amp;P in both directions.</string>
+    <string name="fin_data_symbol_russell_name">Russell 2000</string>
+    <string name="fin_data_symbol_russell_short">Russell 2K</string>
+    <string name="fin_data_symbol_russell_about">2,000 small US companies. They borrow more and sell mostly at home, so this index feels a slowing economy and higher rates first.</string>
+    <string name="fin_data_symbol_vix_name">CBOE Volatility Index</string>
+    <string name="fin_data_symbol_vix_short">VIX</string>
+    <string name="fin_data_symbol_vix_about">The market's fear gauge: the volatility options traders expect from the S&amp;P 500 over the next 30 days. Under 20 is calm; over 30 is fear.</string>
+    <string name="fin_data_symbol_ten_year_name">10-Year Treasury Yield</string>
+    <string name="fin_data_symbol_ten_year_short">10Y Yield</string>
+    <string name="fin_data_symbol_ten_year_about">What the US government pays to borrow for ten years. Mortgages and most long-term borrowing are priced off it.</string>
+    <string name="fin_data_symbol_gold_name">Gold Futures</string>
+    <string name="fin_data_symbol_gold_short">Gold</string>
+    <string name="fin_data_symbol_gold_about">The classic safe haven. Gold tends to climb when investors lose faith in currencies, governments or the stock market.</string>
+    <string name="fin_data_symbol_oil_name">Crude Oil (WTI)</string>
+    <string name="fin_data_symbol_oil_short">Oil</string>
+    <string name="fin_data_symbol_oil_about">West Texas crude. Oil spikes have come before most US recessions since the 1970s.</string>
+    <string name="fin_data_symbol_bitcoin">Bitcoin</string>
+    <string name="fin_data_symbol_bitcoin_about">The largest cryptocurrency, trading around the clock: often the first thing to move when risk appetite changes.</string>
+    <string name="fin_data_symbol_dollar_name">US Dollar Index</string>
+    <string name="fin_data_symbol_dollar_short">Dollar</string>
+    <string name="fin_data_symbol_dollar_about">The dollar against six major currencies. A fast-rising dollar tightens credit around the world.</string>
+
+    <!-- A price chart's range buttons: one day, one week, one month, three months, year to date, one year, five years, all of it. -->
+    <string name="fin_data_range_1d">1D</string>
+    <string name="fin_data_range_1w">1W</string>
+    <string name="fin_data_range_1m">1M</string>
+    <string name="fin_data_range_3m">3M</string>
+    <string name="fin_data_range_ytd">YTD</string>
+    <string name="fin_data_range_1y">1Y</string>
+    <string name="fin_data_range_5y">5Y</string>
+    <string name="fin_data_range_max">MAX</string>
+
+    <!-- Whose an account or debt is, when it's both people's. -->
+    <string name="fin_data_owner_joint">Joint</string>
+
+    <!-- What an account is for: the allocation donut's groups. -->
+    <string name="fin_data_category_retirement">Retirement</string>
+    <string name="fin_data_category_investing">Investing</string>
+    <string name="fin_data_category_education">Education (529)</string>
+    <string name="fin_data_category_cash">Cash</string>
+    <string name="fin_data_category_home">Home equity</string>
+
+    <!-- Names the app gives accounts the sheet doesn't name itself. -->
+    <string name="fin_data_account_checking_savings">Checking &amp; savings</string>
+    <string name="fin_data_account_cash">Cash</string>
+    <string name="fin_data_account_home_equity">Home equity</string>
+
+    <!-- The parts of the budget sheet the app reads, and what it looks for to find each. -->
+    <string name="fin_data_section_income">Income</string>
+    <string name="fin_data_section_income_looked_for">a cell reading “Flow In” with each person's name to its right, and “Monthly Income” below</string>
+    <string name="fin_data_section_expenses">Monthly spending</string>
+    <string name="fin_data_section_expenses_looked_for">a cell reading “Flow Out”, with an amount beside each line under it</string>
+    <string name="fin_data_section_totals">Monthly totals</string>
+    <string name="fin_data_section_totals_looked_for">cells reading “Monthly Combined Income”, “Total Monthly Expenses” and “Net Monthly Profit”, each with its number beside it</string>
+    <string name="fin_data_section_accounts">Accounts</string>
+    <string name="fin_data_section_accounts_looked_for">a cell reading “Brokerage Accounts” with each person's name in its row</string>
+    <string name="fin_data_section_cash">Cash</string>
+    <string name="fin_data_section_cash_looked_for">a cell reading “Checking/Savings” (or “Cash”) with an amount beside it</string>
+    <string name="fin_data_section_total_assets">Total assets</string>
+    <string name="fin_data_section_total_assets_looked_for">a cell reading “Total Assets” with its number beside it</string>
+    <string name="fin_data_section_debts">Debt</string>
+    <string name="fin_data_section_debts_looked_for">a cell reading “Debt” with each person's name in the row below it, or in its own row</string>
+    <string name="fin_data_section_home">Home</string>
+    <string name="fin_data_section_home_looked_for">a cell reading “Home Asset” with “Total Equity” or “Deposit…” under it</string>
+    <string name="fin_data_section_vesting">Vesting</string>
+    <string name="fin_data_section_vesting_looked_for">a cell reading “Future Holdings”, with a “Type” and an “Amount” heading just under it</string>
+    <string name="fin_data_section_watchlist">Watchlist</string>
+    <string name="fin_data_section_watchlist_looked_for">cells like “Live TSLA Price”</string>
+    <string name="fin_data_section_history">History</string>
+    <string name="fin_data_section_history_looked_for">a “Date” heading in the same row as “Total Assets”, with a date in each row under it</string>
+    <string name="fin_data_section_tax_years">Income &amp; taxes</string>
+    <string name="fin_data_section_tax_years_looked_for">a “Take Home” heading in the same row as “Year”, with a year in each row under it</string>
+    <string name="fin_data_section_mortgage">Mortgage planner</string>
+    <string name="fin_data_section_mortgage_looked_for">a cell reading “Mortgage Calculator” with “Home Price” under it</string>
+    <string name="fin_data_section_house_sale">Last house sale</string>
+    <string name="fin_data_section_house_sale_looked_for">a cell reading “Sold Price” with its number beside it</string>
+
+    <!-- What was read from a part of the sheet, beside its name on the sync page. -->
+    <plurals name="fin_data_found_people">
+        <item quantity="one">%1$d person</item>
+        <item quantity="other">%1$d people</item>
+    </plurals>
+    <plurals name="fin_data_found_lines">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+    <plurals name="fin_data_found_accounts">
+        <item quantity="one">%1$d account</item>
+        <item quantity="other">%1$d accounts</item>
+    </plurals>
+    <plurals name="fin_data_found_balances">
+        <item quantity="one">%1$d balance</item>
+        <item quantity="other">%1$d balances</item>
+    </plurals>
+    <plurals name="fin_data_found_debts">
+        <item quantity="one">%1$d debt</item>
+        <item quantity="other">%1$d debts</item>
+    </plurals>
+    <plurals name="fin_data_found_payouts">
+        <item quantity="one">%1$d payout</item>
+        <item quantity="other">%1$d payouts</item>
+    </plurals>
+    <plurals name="fin_data_found_tickers">
+        <item quantity="one">%1$d ticker</item>
+        <item quantity="other">%1$d tickers</item>
+    </plurals>
+    <plurals name="fin_data_found_snapshots">
+        <item quantity="one">%1$d snapshot</item>
+        <item quantity="other">%1$d snapshots</item>
+    </plurals>
+    <plurals name="fin_data_found_years">
+        <item quantity="one">%1$d year</item>
+        <item quantity="other">%1$d years</item>
+    </plurals>
+    <string name="fin_data_found_all_totals">all 3</string>
+    <string name="fin_data_found_some_totals">%1$d of 3</string>
+    <string name="fin_data_found_read">read</string>
+
+    <!-- Rows the parser had to leave out. -->
+    <plurals name="fin_data_note_totals_partial">
+        <item quantity="one">Only %1$d of the 3 monthly totals was found</item>
+        <item quantity="other">Only %1$d of the 3 monthly totals were found</item>
+    </plurals>
+    <plurals name="fin_data_note_history_undated">
+        <item quantity="one">%1$d row in the history has figures but no date, so it was left out</item>
+        <item quantity="other">%1$d rows in the history have figures but no date, so they were left out</item>
+    </plurals>
+
+    <!-- The sheet's own charts: names for untitled ones, and why one can't be drawn. %1$s in the first is Google's name for the chart kind (waterfall, treemap…). -->
+    <string name="fin_data_chart_kind_not_drawn">A %1$s chart isn't one the app draws</string>
+    <string name="fin_data_chart_unknown_kind_not_drawn">This kind of chart isn't one the app draws</string>
+    <string name="fin_data_chart_no_ranges">It has no data ranges</string>
+    <string name="fin_data_chart_tabs_gone">It plots %1$s, which the sheet no longer has</string>
+    <string name="fin_data_chart_quoted_tab">“%1$s”</string>
+    <string name="fin_data_chart_cells_empty">The cells it plots are empty</string>
+    <string name="fin_data_chart_on_tab">Chart on %1$s</string>
+    <string name="fin_data_chart_series_number">Series %1$d</string>
+
+    <!-- Why the sheet or market data couldn't be read. -->
+    <string name="fin_data_error_relay_outdated">The relay on the server doesn't serve the budget sheet yet.</string>
+    <string name="fin_data_error_relay_answered">The relay answered %1$s</string>
+    <string name="fin_data_error_not_connected">Not connected to the server</string>
+    <string name="fin_data_error_sheet">Couldn't read the budget sheet</string>
+    <string name="fin_data_error_chart">Couldn't load the chart</string>
+    <string name="fin_data_error_markets">Markets are unreachable</string>
+    <string name="fin_data_error_yahoo_answered">Yahoo answered %1$s</string>
+    <string name="fin_data_error_no_chart">Yahoo had no chart for %1$s</string>
+    <!-- %1$s is an HTTP status ("503 Service Unavailable"), %2$s a FRED series id. -->
+    <string name="fin_data_error_fred_answered">FRED answered %1$s for %2$s</string>
+
+    <!-- The Wallet's card when the budget sheet can't be read: a title and what fixes it. -->
+    <string name="fin_sheet_setup_not_shared_title">Share your budget sheet</string>
+    <string name="fin_sheet_setup_not_shared_body">The server reads your sheet with its own Google account, so the sheet never has to be public. Open the sheet, tap Share, and add this address as a Viewer:</string>
+    <string name="fin_sheet_setup_api_disabled_title">Turn on the Google Sheets API</string>
+    <string name="fin_sheet_setup_api_disabled_body">The server's Google Cloud project needs the Sheets API switched on once. Open the link below, tap Enable, then come back and retry.</string>
+    <string name="fin_sheet_setup_not_configured_title">Point the server at your sheet</string>
+    <string name="fin_sheet_setup_not_configured_body">Put FINANCE_SHEET_ID=&lt;the sheet's id&gt; (the long part of its URL) in relay/finance.env on the server and restart the relay. It stays out of the public docker-compose.yml.</string>
+    <string name="fin_sheet_setup_no_key_title">The server has no Google key</string>
+    <string name="fin_sheet_setup_no_key_body">The relay reads the sheet with a Google service-account key. Set FINANCE_SHEET_KEY to its path (the push key works) and restart the relay.</string>
+    <string name="fin_sheet_setup_relay_outdated_title">Update the server's relay</string>
+    <string name="fin_sheet_setup_relay_outdated_body">The relay on your server is older than the finance app. Copy relay/ to the server and run docker compose up -d --build there.</string>
+    <string name="fin_sheet_setup_not_allowed_title">Not for this account</string>
+    <string name="fin_sheet_setup_not_allowed_body">The household's finances are shown to the server's admin accounts only. Sign in with one to see them here.</string>
+    <string name="fin_sheet_setup_signed_out_title">Sign in to see your money</string>
+    <string name="fin_sheet_setup_signed_out_body">Your budget comes through your PercySafe server, so it shows once you're connected.</string>
+    <string name="fin_sheet_setup_not_found_title">Sheet not found</string>
+    <string name="fin_sheet_setup_not_found_body">Google couldn't find the sheet the server is set to read. Check FINANCE_SHEET_ID.</string>
+    <string name="fin_sheet_setup_other_title">Couldn't read your sheet</string>
+    <string name="fin_sheet_setup_open_cloud">Open Google Cloud</string>
+
+    <!-- The Wallet's sync line, and the sheet sync page. %1$s / %2$s "ago" is a time like "4 min ago" or a date. -->
+    <string name="fin_sheet_sync_line_failed">Couldn't sync · showing the sheet from %1$s</string>
+    <plurals name="fin_sheet_sync_line_look">
+        <item quantity="one">Synced %2$s · %1$d thing needs a look</item>
+        <item quantity="other">Synced %2$s · %1$d things need a look</item>
+    </plurals>
+    <string name="fin_sheet_sync_line_ok">Synced %1$s · everything read</string>
+    <string name="fin_sheet_sync_open_action">Open sheet sync</string>
+    <string name="fin_sheet_sync_status_failed">The last sync didn't work</string>
+    <string name="fin_sheet_sync_status_look">Synced, but not everything was read</string>
+    <string name="fin_sheet_sync_status_ok">Everything in the sheet was read</string>
+    <string name="fin_sheet_sync_last_read">Last read from Google %1$s (%2$s)</string>
+    <string name="fin_sheet_sync_issue_fallback">The relay couldn't read the sheet.</string>
+    <string name="fin_sheet_sync_issue_showing_last">%1$s The Wallet is showing the last read that worked.</string>
+    <string name="fin_sheet_sync_syncing">Syncing…</string>
+    <string name="fin_sheet_sync_now">Sync now</string>
+    <string name="fin_sheet_sync_open_sheet">Open the sheet</string>
+    <string name="fin_sheet_sync_sections_title">What the app reads</string>
+    <string name="fin_sheet_sync_sections_subtitle">Each part is found by its title, wherever it sits in the sheet</string>
+    <string name="fin_sheet_sync_notes_title">Left out</string>
+    <string name="fin_sheet_sync_note_whole_sheet">Sheet</string>
+    <string name="fin_sheet_sync_charts_title">Charts</string>
+    <string name="fin_sheet_sync_charts_subtitle">Every chart in the sheet; adding, changing or removing one shows on the next sync</string>
+    <string name="fin_sheet_sync_chart_drawn">Drawn</string>
+    <string name="fin_sheet_sync_chart_not_drawn">Not drawn</string>
+    <string name="fin_sheet_sync_section_nothing_read">Nothing read</string>
+    <string name="fin_sheet_sync_section_not_found">Not found</string>
+    <string name="fin_sheet_sync_section_empty_detail">Its title is there, but nothing under it could be read. Looks for %1$s.</string>
+    <string name="fin_sheet_sync_section_missing_detail">Looks for %1$s.</string>
+    <string name="fin_sheet_sync_how">The app reads the sheet whenever Finance opens, every couple of minutes while it's open, and when you pull down. Moving a part, or adding and removing rows and columns in it, is fine. Renaming a part's title is what loses it: rename it back to the title this page shows, or have the app changed to look for the new one.</string>
+
+    <!-- One of the sheet's charts on the Wallet. -->
+    <string name="fin_sheet_chart_open_in_sheet">Sheet ↗</string>
+    <string name="fin_sheet_chart_kind_not_drawn">A kind of chart the app doesn't draw. Open it in the sheet.</string>
+    <string name="fin_sheet_chart_nothing_in_range">Nothing in its range yet.</string>
+    <string name="fin_sheet_chart_right_scale">Right scale</string>
+    <!-- %1$s is a change ("+$1,200"), %2$s the point it's at ("Nov 2019"). -->
+    <string name="fin_sheet_chart_change_at">%1$s  %2$s</string>
+    <string name="fin_sheet_chart_change_since">%1$s since %2$s</string>
+    <string name="fin_sheet_chart_total_caption">Total · %1$s</string>
+    <string name="fin_sheet_chart_total">Total</string>
+    <!-- A change in a percentage, in percentage points: "+1.2 pts". -->
+    <string name="fin_sheet_chart_points">%1$s pts</string>
+
+    <!-- How it all connects: the parts of the economy on the map. -->
+    <string name="fin_connections_node_fed">Fed rate</string>
+    <string name="fin_connections_node_mortgage">Mortgages</string>
+    <string name="fin_connections_node_bonds">Gov't rates</string>
+    <string name="fin_connections_node_debt">Gov't debt</string>
+    <string name="fin_connections_node_homes">Homes</string>
+    <string name="fin_connections_node_credit">Credit</string>
+    <string name="fin_connections_node_jobs">Jobs</string>
+    <string name="fin_connections_node_mood">Shoppers</string>
+    <string name="fin_connections_node_prices">Prices</string>
+    <string name="fin_connections_node_stocks">Stocks</string>
+
+    <!-- What pushes on what, and why. -->
+    <string name="fin_connections_link_prices_fed">When prices rise too fast, the Fed raises its rate to cool the economy down.</string>
+    <string name="fin_connections_link_fed_mortgage">A higher Fed rate pushes up mortgage, car-loan and credit-card rates within weeks.</string>
+    <string name="fin_connections_link_fed_jobs">When borrowing gets expensive, businesses slow hiring and put off expanding.</string>
+    <string name="fin_connections_link_fed_stocks">Higher rates make safe savings more attractive than stocks, and make companies' borrowing cost more — so stock prices tend to fall.</string>
+    <string name="fin_connections_link_fed_credit">Rate rises that come fast can strain borrowers who took out loans when money was cheap.</string>
+    <string name="fin_connections_link_bonds_mortgage">Mortgage rates track the government's 10-year borrowing cost, usually 1.5–2 points above it.</string>
+    <string name="fin_connections_link_mortgage_homes">Expensive loans mean fewer buyers can afford a house, which cools home prices.</string>
+    <string name="fin_connections_link_jobs_mood">People with secure jobs and raises feel better about money — and spend more.</string>
+    <string name="fin_connections_link_mood_prices">When everyone's out buying, businesses can raise prices. When shoppers pull back, prices cool.</string>
+    <string name="fin_connections_link_stocks_mood">When their 401(k)s are up, people feel richer and spend more.</string>
+    <string name="fin_connections_link_credit_jobs">When companies can't borrow, they cut costs — and that usually means jobs.</string>
+    <string name="fin_connections_link_debt_bonds">The more the government borrows, the more it may have to pay lenders to keep buying its debt.</string>
+
+    <string name="fin_connections_title">How it all connects</string>
+    <string name="fin_connections_intro">Nothing in the economy moves on its own. Tap any part to see what it pushes on and what pushes on it. Colors show today's reading: green calm, amber worth watching, orange-red a warning.</string>
+    <string name="fin_connections_tour_start">Walk me through it</string>
+    <string name="fin_connections_tour_stop">Stop the walkthrough</string>
+    <string name="fin_connections_fine_print">A simplified picture: real economies have many more links, and effects can take months to show up.</string>
+    <!-- %1$s is a part of the economy ("Fed rate"). -->
+    <string name="fin_connections_show_node">Show %1$s</string>
+    <string name="fin_connections_go_to_node">Go to %1$s</string>
+    <string name="fin_connections_pushes_on">%1$s pushes on</string>
+    <string name="fin_connections_pushed_by">What pushes on %1$s</string>
+    <!-- The S&P 500's move today on the map: "+0.6% today". -->
+    <string name="fin_connections_stocks_today">%1$s today</string>
+    <string name="fin_connections_tour_step">STEP %1$d OF %2$d</string>
+    <!-- One link of the walkthrough: "Prices → Fed rate". -->
+    <string name="fin_connections_tour_link">%1$s → %2$s</string>
+    <string name="fin_connections_entry_eyebrow">HOW IT ALL CONNECTS</string>
+    <string name="fin_connections_entry_title">Why does the Fed raising rates change your mortgage — and your job?</string>
+    <string name="fin_connections_entry_body">An interactive map of cause and effect, with today's readings.</string>
+</resources>

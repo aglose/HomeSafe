@@ -1,9 +1,67 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.moments_date_short
+import homesafe.shared.generated.resources.moments_date_today
+import homesafe.shared.generated.resources.moments_date_yesterday
+import homesafe.shared.generated.resources.moments_label_animal
+import homesafe.shared.generated.resources.moments_label_bear
+import homesafe.shared.generated.resources.moments_label_bicycle
+import homesafe.shared.generated.resources.moments_label_bird
+import homesafe.shared.generated.resources.moments_label_boat
+import homesafe.shared.generated.resources.moments_label_bus
+import homesafe.shared.generated.resources.moments_label_car
+import homesafe.shared.generated.resources.moments_label_cat
+import homesafe.shared.generated.resources.moments_label_cow
+import homesafe.shared.generated.resources.moments_label_deer
+import homesafe.shared.generated.resources.moments_label_dog
+import homesafe.shared.generated.resources.moments_label_face
+import homesafe.shared.generated.resources.moments_label_fox
+import homesafe.shared.generated.resources.moments_label_horse
+import homesafe.shared.generated.resources.moments_label_license_plate
+import homesafe.shared.generated.resources.moments_label_motorcycle
+import homesafe.shared.generated.resources.moments_label_package
+import homesafe.shared.generated.resources.moments_label_person
+import homesafe.shared.generated.resources.moments_label_rabbit
+import homesafe.shared.generated.resources.moments_label_sheep
+import homesafe.shared.generated.resources.moments_label_squirrel
+import homesafe.shared.generated.resources.moments_label_train
+import homesafe.shared.generated.resources.moments_label_truck
+import homesafe.shared.generated.resources.moments_label_vehicle
+import homesafe.shared.generated.resources.moments_month_apr
+import homesafe.shared.generated.resources.moments_month_aug
+import homesafe.shared.generated.resources.moments_month_dec
+import homesafe.shared.generated.resources.moments_month_feb
+import homesafe.shared.generated.resources.moments_month_jan
+import homesafe.shared.generated.resources.moments_month_jul
+import homesafe.shared.generated.resources.moments_month_jun
+import homesafe.shared.generated.resources.moments_month_mar
+import homesafe.shared.generated.resources.moments_month_may
+import homesafe.shared.generated.resources.moments_month_nov
+import homesafe.shared.generated.resources.moments_month_oct
+import homesafe.shared.generated.resources.moments_month_sep
+import homesafe.shared.generated.resources.moments_seen_last_seen
+import homesafe.shared.generated.resources.moments_seen_still_there
+import homesafe.shared.generated.resources.moments_title_detected
+import homesafe.shared.generated.resources.moments_title_in_zone
+import homesafe.shared.generated.resources.moments_title_on_zone
+import homesafe.shared.generated.resources.moments_weekday_friday
+import homesafe.shared.generated.resources.moments_weekday_monday
+import homesafe.shared.generated.resources.moments_weekday_saturday
+import homesafe.shared.generated.resources.moments_weekday_sunday
+import homesafe.shared.generated.resources.moments_weekday_thursday
+import homesafe.shared.generated.resources.moments_weekday_tuesday
+import homesafe.shared.generated.resources.moments_weekday_wednesday
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.StringResource
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
@@ -76,36 +134,46 @@ fun categoryForLabel(label: String): MomentCategory = when (label.lowercase()) {
 
 /** How a [MomentEvent] reads in the feed. Derived, not stored, so a label change never leaves stale copy behind. */
 data class MomentPresentation(
-    val title: String,
+    /** "Person on the front lawn" (see [detectionTitle]) */
+    val title: UiText,
     /** "8:42 AM" */
-    val timeLabel: String,
+    val timeLabel: UiText,
     /** "0:15", or null while still in progress. */
     val durationLabel: String?,
     /** "Today" / "Yesterday" / "Monday" — the group header the card sorts under. */
-    val dateGroup: String,
+    val dateGroup: UiText,
     /** "Sep 2" — the group header's right-hand sub label. */
-    val dateSubLabel: String,
+    val dateSubLabel: UiText,
     /**
-     * The pill on the card: Frigate's label ("PERSON", "CAR"). A recognised name is left to the
-     * title, which already leads with it; the pill used to repeat it ("CAR · ANDREWS TESLA").
+     * The pill on the card: what Frigate's label is called ("Person", "Car"; the card shows it in
+     * capitals). A recognised name is left to the title, which already leads with it; the pill
+     * used to repeat it ("CAR · ANDREWS TESLA").
      */
-    val badgeLabel: String,
+    val badgeLabel: UiText,
     /**
      * "Front Yard · Sidewalk, Front lawn" — the camera, then every zone the object was in, in
      * the order it reached them; just the camera when it was in none.
      */
-    val locationLabel: String,
+    val locationLabel: UiText,
     /**
      * "Seen 9 times · still there" / "Seen 3 times · last seen 2:24 PM" for a moment that stands
      * for several sightings of the same parked vehicle; null for a single sighting.
      */
-    val sightingsLabel: String?,
+    val sightingsLabel: UiText?,
     /**
      * "5 clips" / "6 sightings" on an entry that folds several detections together (see
      * [MomentVisit.present]), where it doubles as the control that lists them; null for one detection.
      */
-    val clipCountLabel: String? = null,
+    val clipCountLabel: UiText? = null,
 )
+
+/** "Car in the driveway · 8:42 PM": the moment in a line, as a prompt or a dialog names the one it's about. */
+val MomentPresentation.summary: UiText
+    get() = UiText.Joined(listOf(title, timeLabel), UiText.of(Res.string.common_dot_separator))
+
+/** "8:42 PM · Front Yard · Driveway": the card's line under its title. */
+val MomentPresentation.whenAndWhere: UiText
+    get() = UiText.Joined(listOf(timeLabel, locationLabel), UiText.of(Res.string.common_dot_separator))
 
 /**
  * [today] is passed in (not read from a clock) so grouping is deterministic in tests and so a
@@ -118,40 +186,93 @@ fun MomentEvent.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentS
 
     val daysAgo = today.toEpochDays() - date.toEpochDays()
     val dateGroup = when {
-        daysAgo <= 0 -> "Today"
-        daysAgo == 1L -> "Yesterday"
-        daysAgo < 7 -> date.dayOfWeek.name.lowercase().replaceFirstChar { it.uppercase() }
+        daysAgo <= 0 -> UiText.of(Res.string.moments_date_today)
+        daysAgo == 1L -> UiText.of(Res.string.moments_date_yesterday)
+        daysAgo < 7 -> UiText.of(date.dayOfWeek.displayName)
         else -> date.shortLabel()
     }
     val dateSubLabel = date.shortLabel()
 
-    // "Sarah's Tesla in the driveway", "Person on the front lawn", "Car detected": the subject is
-    // the classifier's name for the object when it has one, and the place is the last zone the
-    // object entered — where it ended up matters more than where it came from.
-    val noun = label.lowercase().replaceFirstChar { it.uppercase() }
-    // A placeholder the classifier or the face model files things under ("none", "unknown") is
-    // not a name, and the card never offers one as if it were.
-    val subject = subLabel?.takeIf { isFamiliar }?.let { subLabelDisplayName(it) } ?: noun
-    val place = zones.lastOrNull { it.isNotBlank() }
-    val title = if (place != null) "$subject ${zonePhrase(place)}" else "$subject detected"
-    val places = zones.filter { it.isNotBlank() }.joinToString(", ") { zoneDisplayName(it).replaceFirstChar(Char::uppercase) }
-    val location = if (places.isEmpty()) cameraDisplayName else "$cameraDisplayName · $places"
+    // The subject is the classifier's name for the object when it has one. A placeholder the
+    // classifier or the face model files things under ("none", "unknown") is not a name, and the
+    // card never offers one as if it were.
+    val subject = subLabel?.takeIf { isFamiliar }?.let { subLabelDisplayName(it).asUiText() } ?: labelName(label)
+    val places = zones.filter { it.isNotBlank() }
     val sightingsLabel = when {
         sightings <= 1 -> null
-        endEpochSeconds == null -> "Seen $sightings times · still there"
-        else -> "Seen $sightings times · last seen ${clockLabel(endEpochSeconds, timeZone)}"
+        endEpochSeconds == null -> UiText.plural(Res.plurals.moments_seen_still_there, sightings)
+        else -> UiText.plural(Res.plurals.moments_seen_last_seen, sightings, sightings, clockLabel(endEpochSeconds, timeZone))
     }
 
     return MomentPresentation(
-        title = title,
-        timeLabel = timeLabel,
+        title = detectionTitle(subject, places.lastOrNull()),
+        timeLabel = timeLabel.asUiText(),
         durationLabel = durationSeconds?.let { formatMomentDuration(it) },
         dateGroup = dateGroup,
         dateSubLabel = dateSubLabel,
-        badgeLabel = label,
-        locationLabel = location,
+        badgeLabel = labelName(label),
+        locationLabel = locationLabel(cameraDisplayName, places),
         sightingsLabel = sightingsLabel,
     )
+}
+
+/**
+ * "Sarah's Tesla in the driveway", "Person on the front lawn", "Car detected": [subject] where it
+ * ended up — the zone [place] it last entered, since where it ended up matters more than where
+ * it came from — or, when it was in none, just that it was seen. Enclosed places take "in the",
+ * surfaces "on the" (see [isEnclosedZone]); each is a whole sentence of its own to translate.
+ */
+fun detectionTitle(subject: UiText, place: String?): UiText = when {
+    place == null -> UiText.of(Res.string.moments_title_detected, subject)
+    isEnclosedZone(place) -> UiText.of(Res.string.moments_title_in_zone, subject, zoneDisplayName(place))
+    else -> UiText.of(Res.string.moments_title_on_zone, subject, zoneDisplayName(place))
+}
+
+/**
+ * What the app calls Frigate's object [label]: "Person" for `person`, "Car" for `car`. A label it
+ * has no word for is shown as Frigate wrote it, tidied up ("Umbrella", "Shopping cart"), since
+ * that is data the app can't translate.
+ */
+fun labelName(label: String): UiText =
+    LABEL_NAMES[label.lowercase()]?.let { UiText.of(it) }
+        ?: label.split('_', '-').filter { it.isNotBlank() }.joinToString(" ") { it.lowercase() }.replaceFirstChar(Char::uppercase).asUiText()
+
+private val LABEL_NAMES: Map<String, StringResource> = mapOf(
+    "person" to Res.string.moments_label_person,
+    "car" to Res.string.moments_label_car,
+    "truck" to Res.string.moments_label_truck,
+    "bus" to Res.string.moments_label_bus,
+    "motorcycle" to Res.string.moments_label_motorcycle,
+    "bicycle" to Res.string.moments_label_bicycle,
+    "boat" to Res.string.moments_label_boat,
+    "train" to Res.string.moments_label_train,
+    "vehicle" to Res.string.moments_label_vehicle,
+    "dog" to Res.string.moments_label_dog,
+    "cat" to Res.string.moments_label_cat,
+    "bird" to Res.string.moments_label_bird,
+    "horse" to Res.string.moments_label_horse,
+    "sheep" to Res.string.moments_label_sheep,
+    "cow" to Res.string.moments_label_cow,
+    "bear" to Res.string.moments_label_bear,
+    "deer" to Res.string.moments_label_deer,
+    "rabbit" to Res.string.moments_label_rabbit,
+    "squirrel" to Res.string.moments_label_squirrel,
+    "fox" to Res.string.moments_label_fox,
+    "animal" to Res.string.moments_label_animal,
+    "package" to Res.string.moments_label_package,
+    "face" to Res.string.moments_label_face,
+    "license_plate" to Res.string.moments_label_license_plate,
+)
+
+/**
+ * "Front Yard · Sidewalk, Front lawn": the camera ([cameraDisplayName]), then [zones] — Frigate
+ * zone keys, in the order given — capitalised; the camera alone when there are none.
+ */
+internal fun locationLabel(cameraDisplayName: String, zones: List<String>): UiText {
+    val camera = cameraDisplayName.asUiText()
+    if (zones.isEmpty()) return camera
+    val places = zones.map { zoneDisplayName(it).replaceFirstChar(Char::uppercase).asUiText() }
+    return UiText.Joined(listOf(camera, UiText.Joined(places, UiText.of(Res.string.common_list_separator))), UiText.of(Res.string.common_dot_separator))
 }
 
 /** "8:42 AM" — shared with the home screen's in-view strip, which times its cards the same way. */
@@ -163,10 +284,35 @@ internal fun clockLabel(epochSeconds: Double, timeZone: TimeZone): String {
     return "$hour12:$minute ${if (local.hour < 12) "AM" else "PM"}"
 }
 
-private fun Month.shortName(): String = name.lowercase().replaceFirstChar { it.uppercase() }.take(3)
+private val DayOfWeek.displayName: StringResource
+    get() = when (this) {
+        DayOfWeek.MONDAY -> Res.string.moments_weekday_monday
+        DayOfWeek.TUESDAY -> Res.string.moments_weekday_tuesday
+        DayOfWeek.WEDNESDAY -> Res.string.moments_weekday_wednesday
+        DayOfWeek.THURSDAY -> Res.string.moments_weekday_thursday
+        DayOfWeek.FRIDAY -> Res.string.moments_weekday_friday
+        DayOfWeek.SATURDAY -> Res.string.moments_weekday_saturday
+        DayOfWeek.SUNDAY -> Res.string.moments_weekday_sunday
+    }
+
+private val Month.shortName: StringResource
+    get() = when (this) {
+        Month.JANUARY -> Res.string.moments_month_jan
+        Month.FEBRUARY -> Res.string.moments_month_feb
+        Month.MARCH -> Res.string.moments_month_mar
+        Month.APRIL -> Res.string.moments_month_apr
+        Month.MAY -> Res.string.moments_month_may
+        Month.JUNE -> Res.string.moments_month_jun
+        Month.JULY -> Res.string.moments_month_jul
+        Month.AUGUST -> Res.string.moments_month_aug
+        Month.SEPTEMBER -> Res.string.moments_month_sep
+        Month.OCTOBER -> Res.string.moments_month_oct
+        Month.NOVEMBER -> Res.string.moments_month_nov
+        Month.DECEMBER -> Res.string.moments_month_dec
+    }
 
 /** "Sep 2": how the feed names a day, in its headers and on the chip that opens it at one. */
-fun LocalDate.shortLabel(): String = "${month.shortName()} $day"
+fun LocalDate.shortLabel(): UiText = UiText.of(Res.string.moments_date_short, UiText.of(month.shortName), day)
 
 /** A filesystem-safe on-device filename for this event's downloaded clip, e.g. "homesafe_front_door_1788401732.mp4". */
 fun MomentEvent.downloadFileName(): String {

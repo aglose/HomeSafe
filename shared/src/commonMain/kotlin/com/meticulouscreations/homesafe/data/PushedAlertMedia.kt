@@ -40,7 +40,7 @@ class PushedAlertMedia(
     private suspend fun fetch(eventId: String, name: String): Result<ByteArray> {
         val deviceId = identity.deviceId()
         val secret = identity.secret()
-        var last: Result<ByteArray> = Result.failure(IllegalStateException("No server to ask"))
+        var last: Result<ByteArray> = Result.failure(noServerToAsk())
         for (url in candidateUrls()) {
             last = relayApi.getEventMedia(url, eventId, name, deviceId, secret)
             if (last.isSuccess) break

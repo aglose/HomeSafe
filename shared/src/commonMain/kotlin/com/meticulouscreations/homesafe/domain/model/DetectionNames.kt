@@ -92,12 +92,13 @@ fun zoneDisplayName(key: String): String =
     key.split('_', '-').filter { it.isNotBlank() }.joinToString(" ") { it.lowercase() }
 
 /**
- * "in the driveway" / "on the front lawn" / "on the sidewalk". Enclosed or entered places take
- * "in"; surfaces take "on". Good enough for yard vocabulary; a wrong guess still reads.
+ * Whether the zone [key] names an enclosed or entered place — the driveway, the porch — which
+ * something is *in*, rather than a surface it is *on*. What picks between a title's "in the" and
+ * "on the" sentence (see [detectionTitle]).
  */
-fun zonePhrase(key: String): String {
+fun isEnclosedZone(key: String): Boolean {
     val name = zoneDisplayName(key)
-    val enclosed = listOf("driveway", "garage", "carport", "yard", "porch", "garden", "pool", "patio", "alley", "hallway", "kitchen", "room")
-    val preposition = if (enclosed.any { it in name }) "in" else "on"
-    return "$preposition the $name"
+    return ENCLOSED_ZONE_WORDS.any { it in name }
 }
+
+private val ENCLOSED_ZONE_WORDS = listOf("driveway", "garage", "carport", "yard", "porch", "garden", "pool", "patio", "alley", "hallway", "kitchen", "room")

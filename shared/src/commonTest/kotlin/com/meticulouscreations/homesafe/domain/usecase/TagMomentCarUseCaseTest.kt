@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.model.TrackedObject
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.repository.ClassifierRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.text.UiText
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -107,7 +108,7 @@ internal class FakeNamingMoments : MomentsRepository {
     }
     override fun refreshStationaryObjects() = Unit
     override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
-    override fun observeError(): Flow<String?> = fail("unused")
+    override fun observeError(): Flow<UiText?> = fail("unused")
     override fun observePaging(): Flow<MomentsPaging> = fail("unused")
     override suspend fun loadOlder() = fail("unused")
     override fun showBefore(epochSeconds: Double?) = fail("unused")

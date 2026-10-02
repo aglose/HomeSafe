@@ -32,12 +32,19 @@ import com.meticulouscreations.homesafe.domain.usecase.RefreshPhantomSpotsUseCas
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsBeforeUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ShowMomentsFromCameraUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_clip_load_failed
+import homesafe.shared.generated.resources.moments_clip_play_failed
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
+import homesafe.shared.generated.resources.moments_not_a_person_undo_failed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -88,9 +95,9 @@ data class MomentItem(
 data class MomentClip(
     val event: MomentEvent,
     /** "6:55 PM" */
-    val timeLabel: String,
+    val timeLabel: UiText,
     /** "Person on the front lawn" */
-    val title: String,
+    val title: UiText,
     /** "0:12", or null while still in progress. */
     val durationLabel: String?,
     /** A car the classifier left unnamed, which can be tagged as a known car. */
@@ -107,12 +114,13 @@ data class MomentClip(
 data class NotAPersonUiState(
     val markingEventId: String? = null,
     val marked: MomentEvent? = null,
-    val error: String? = null,
+    /** "Couldn't mark it: …", said in full. */
+    val error: UiText? = null,
 )
 
 /** A date header and the cards beneath it, in feed order. */
 @Immutable
-data class MomentGroup(val dateGroup: String, val dateSubLabel: String, val items: List<MomentItem>)
+data class MomentGroup(val dateGroup: UiText, val dateSubLabel: UiText, val items: List<MomentItem>)
 
 /** A camera the feed can be narrowed to: Frigate's key for it, and what the UI calls it. */
 @Immutable
@@ -131,7 +139,7 @@ data class MomentsUiState(
     val cameras: List<MomentCameraOption> = emptyList(),
     /** The camera the feed is narrowed to; null shows every camera. */
     val selectedCamera: MomentCameraOption? = null,
-    val error: String? = null,
+    val error: UiText? = null,
     /**
      * The day the feed was opened at, when it was: it shows that day and earlier, newest first.
      * Null is the live feed.
@@ -149,7 +157,7 @@ data class MomentsUiState(
     val clipRequest: PlayerRequest? = null,
     /** A frame from the recording at the event's start: on screen the instant the card opens, before the clip URL is even resolved. */
     val clipPosterUrl: String? = null,
-    val clipError: String? = null,
+    val clipError: UiText? = null,
     /** True from the moment a clip is requested until the player reports it is no longer buffering. */
     val clipBuffering: Boolean = false,
 )
@@ -160,7 +168,8 @@ data class DownloadUiState(
     val downloadingEventId: String? = null,
     /** Set once [downloadingEventId]'s attempt finishes; null error means success. Cleared again shortly after. */
     val resultEventId: String? = null,
-    val resultError: String? = null,
+    /** Why the download failed, often in the server's own words. */
+    val resultError: UiText? = null,
 )
 
 @OptIn(ExperimentalTime::class)
@@ -427,7 +436,7 @@ class MomentsViewModel(
                     }
                 }
                 .onFailure { e ->
-                    _clip.update { if (it.eventId != event.id) it else it.copy(error = e.message ?: "Couldn't load clip") }
+                    _clip.update { if (it.eventId != event.id) it else it.copy(error = e.userMessage(Res.string.moments_clip_load_failed)) }
                 }
         }
     }
@@ -443,7 +452,7 @@ class MomentsViewModel(
 
     /** The player gave up on the clip (bad status, expired session, purged event): say so instead of a blank box. */
     fun onClipPlaybackError() {
-        _clip.update { if (it.eventId != null) it.copy(error = "Couldn't play this clip", buffering = false) else it }
+        _clip.update { if (it.eventId != null) it.copy(error = UiText.of(Res.string.moments_clip_play_failed), buffering = false) else it }
     }
 
     /** Downloads one event's clip at a time; a tap on another card's download button cancels an in-flight one. */
@@ -453,7 +462,7 @@ class MomentsViewModel(
         _downloadState.value = DownloadUiState(downloadingEventId = event.id)
         downloadJob = viewModelScope.launch {
             val result = downloadMomentClipUseCase(event.id, event.downloadFileName())
-            _downloadState.value = DownloadUiState(resultEventId = event.id, resultError = result.exceptionOrNull()?.message)
+            _downloadState.value = DownloadUiState(resultEventId = event.id, resultError = result.exceptionOrNull()?.userMessage())
             delay(RESULT_FLASH_MS)
             // Only clear if nothing newer has started/finished in the meantime.
             _downloadState.update { if (it.resultEventId == event.id) DownloadUiState() else it }
@@ -475,7 +484,7 @@ class MomentsViewModel(
                     if (_clip.value.eventId == event.id) collapse()
                     flashNotAPerson(NotAPersonUiState(marked = event))
                 }
-                .onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't mark it")) }
+                .onFailure { flashNotAPerson(NotAPersonUiState(error = it.userMessage(Res.string.moments_not_a_person_mark_failed))) }
         }
     }
 
@@ -484,7 +493,7 @@ class MomentsViewModel(
         val event = _notAPersonState.value.marked ?: return
         _notAPersonState.value = NotAPersonUiState()
         viewModelScope.launch {
-            undoNotAPersonUseCase(event.id).onFailure { flashNotAPerson(NotAPersonUiState(error = it.message ?: "Couldn't undo it")) }
+            undoNotAPersonUseCase(event.id).onFailure { flashNotAPerson(NotAPersonUiState(error = it.userMessage(Res.string.moments_not_a_person_undo_failed))) }
         }
     }
 
@@ -510,7 +519,7 @@ class MomentsViewModel(
         val eventId: String? = null,
         val request: PlayerRequest? = null,
         val posterUrl: String? = null,
-        val error: String? = null,
+        val error: UiText? = null,
         val buffering: Boolean = false,
     )
 

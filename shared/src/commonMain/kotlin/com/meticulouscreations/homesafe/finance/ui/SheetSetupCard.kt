@@ -24,6 +24,28 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.SheetIssue
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_try_again
+import homesafe.shared.generated.resources.fin_sheet_setup_api_disabled_body
+import homesafe.shared.generated.resources.fin_sheet_setup_api_disabled_title
+import homesafe.shared.generated.resources.fin_sheet_setup_no_key_body
+import homesafe.shared.generated.resources.fin_sheet_setup_no_key_title
+import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
+import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
+import homesafe.shared.generated.resources.fin_sheet_setup_not_configured_body
+import homesafe.shared.generated.resources.fin_sheet_setup_not_configured_title
+import homesafe.shared.generated.resources.fin_sheet_setup_not_found_body
+import homesafe.shared.generated.resources.fin_sheet_setup_not_found_title
+import homesafe.shared.generated.resources.fin_sheet_setup_not_shared_body
+import homesafe.shared.generated.resources.fin_sheet_setup_not_shared_title
+import homesafe.shared.generated.resources.fin_sheet_setup_open_cloud
+import homesafe.shared.generated.resources.fin_sheet_setup_other_title
+import homesafe.shared.generated.resources.fin_sheet_setup_relay_outdated_body
+import homesafe.shared.generated.resources.fin_sheet_setup_relay_outdated_title
+import homesafe.shared.generated.resources.fin_sheet_setup_signed_out_body
+import homesafe.shared.generated.resources.fin_sheet_setup_signed_out_title
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Shown on the Wallet tab when the budget sheet can't be read: what's wrong, in words, and the
@@ -35,37 +57,15 @@ internal fun SheetSetupCard(issue: SheetIssue, onRetry: () -> Unit, modifier: Mo
     val colors = FinanceTheme.colors
     val uriHandler = LocalUriHandler.current
     val (title, body) = when (issue.problem) {
-        SheetProblem.NOT_SHARED ->
-            "Share your budget sheet" to
-                "The server reads your sheet with its own Google account, so the sheet never has to be public. Open the sheet, tap Share, and add this address as a Viewer:"
-
-        SheetProblem.API_DISABLED ->
-            "Turn on the Google Sheets API" to
-                "The server's Google Cloud project needs the Sheets API switched on once. Open the link below, tap Enable, then come back and retry."
-
-        SheetProblem.NOT_CONFIGURED ->
-            "Point the server at your sheet" to
-                "Put FINANCE_SHEET_ID=<the sheet's id> (the long part of its URL) in relay/finance.env on the server and restart the relay. It stays out of the public docker-compose.yml."
-
-        SheetProblem.NO_KEY ->
-            "The server has no Google key" to
-                "The relay reads the sheet with a Google service-account key. Set FINANCE_SHEET_KEY to its path (the push key works) and restart the relay."
-
-        SheetProblem.RELAY_OUTDATED ->
-            "Update the server's relay" to
-                "The relay on your server is older than the finance app. Copy relay/ to the server and run docker compose up -d --build there."
-
-        SheetProblem.NOT_ALLOWED ->
-            "Not for this account" to
-                "The household's finances are shown to the server's admin accounts only. Sign in with one to see them here."
-
-        SheetProblem.SIGNED_OUT ->
-            "Sign in to see your money" to
-                "Your budget comes through your PercySafe server, so it shows once you're connected."
-
-        SheetProblem.NOT_FOUND -> "Sheet not found" to "Google couldn't find the sheet the server is set to read. Check FINANCE_SHEET_ID."
-
-        SheetProblem.OTHER -> "Couldn't read your sheet" to issue.message
+        SheetProblem.NOT_SHARED -> stringResource(Res.string.fin_sheet_setup_not_shared_title) to stringResource(Res.string.fin_sheet_setup_not_shared_body)
+        SheetProblem.API_DISABLED -> stringResource(Res.string.fin_sheet_setup_api_disabled_title) to stringResource(Res.string.fin_sheet_setup_api_disabled_body)
+        SheetProblem.NOT_CONFIGURED -> stringResource(Res.string.fin_sheet_setup_not_configured_title) to stringResource(Res.string.fin_sheet_setup_not_configured_body)
+        SheetProblem.NO_KEY -> stringResource(Res.string.fin_sheet_setup_no_key_title) to stringResource(Res.string.fin_sheet_setup_no_key_body)
+        SheetProblem.RELAY_OUTDATED -> stringResource(Res.string.fin_sheet_setup_relay_outdated_title) to stringResource(Res.string.fin_sheet_setup_relay_outdated_body)
+        SheetProblem.NOT_ALLOWED -> stringResource(Res.string.fin_sheet_setup_not_allowed_title) to stringResource(Res.string.fin_sheet_setup_not_allowed_body)
+        SheetProblem.SIGNED_OUT -> stringResource(Res.string.fin_sheet_setup_signed_out_title) to stringResource(Res.string.fin_sheet_setup_signed_out_body)
+        SheetProblem.NOT_FOUND -> stringResource(Res.string.fin_sheet_setup_not_found_title) to stringResource(Res.string.fin_sheet_setup_not_found_body)
+        SheetProblem.OTHER -> stringResource(Res.string.fin_sheet_setup_other_title) to issue.message.resolve()
     }
     FinanceCard(modifier.padding(top = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -93,11 +93,11 @@ internal fun SheetSetupCard(issue: SheetIssue, onRetry: () -> Unit, modifier: Mo
         }
         issue.activationUrl?.let { url ->
             Spacer(Modifier.height(10.dp))
-            Text("Open Google Cloud", style = FinanceTheme.type.bodyStrong, color = colors.accent, modifier = Modifier.clickable { uriHandler.openUri(url) })
+            Text(stringResource(Res.string.fin_sheet_setup_open_cloud), style = FinanceTheme.type.bodyStrong, color = colors.accent, modifier = Modifier.clickable { uriHandler.openUri(url) })
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Try again",
+            stringResource(Res.string.common_try_again),
             style = FinanceTheme.type.bodyStrong,
             color = colors.background,
             modifier = Modifier

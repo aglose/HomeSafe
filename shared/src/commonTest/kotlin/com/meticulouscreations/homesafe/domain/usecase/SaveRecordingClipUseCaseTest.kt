@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
+import com.meticulouscreations.homesafe.text.asUiText
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -69,7 +70,7 @@ class SaveRecordingClipUseCaseTest {
         downloader.finish.complete(Result.failure(IllegalStateException("Frigate answered 500 for the clip")))
         runCurrent()
 
-        assertEquals(RecordingClipSave.Failed("Frigate answered 500 for the clip"), save.value)
+        assertEquals(RecordingClipSave.Failed("Frigate answered 500 for the clip".asUiText()), save.value)
     }
 
     @Test

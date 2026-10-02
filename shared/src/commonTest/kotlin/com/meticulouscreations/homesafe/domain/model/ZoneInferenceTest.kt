@@ -69,8 +69,8 @@ class ZoneInferenceTest {
         val placed = assertNotNull(person.inZones(frontYard))
         assertEquals(listOf("front_lawn"), placed.zones, "the sidewalk leg is not a place that wanted them")
         val p = placed.present(today)
-        assertEquals("Person on the front lawn", p.title)
-        assertEquals("Front Yard · Front lawn", p.locationLabel)
+        assertEquals(MomentTexts.onThe(MomentTexts.person, "front lawn"), p.title)
+        assertEquals(MomentTexts.location("Front Yard", "Front lawn"), p.locationLabel)
     }
 
     @Test
@@ -79,7 +79,7 @@ class ZoneInferenceTest {
         val person = event("person", listOf("sidewalk", "driveway"), 0.55 to 0.44, 0.5 to 0.43, 0.45 to 0.42)
         val placed = assertNotNull(person.inZones(frontYard))
         assertEquals(listOf("driveway"), placed.zones)
-        assertEquals("Person in the driveway", placed.present(today).title)
+        assertEquals(MomentTexts.inThe(MomentTexts.person, "driveway"), placed.present(today).title)
     }
 
     @Test
@@ -89,8 +89,8 @@ class ZoneInferenceTest {
         val placed = assertNotNull(tesla.inZones(frontYard))
         assertEquals(listOf("sidewalk", "street"), placed.zones)
         val p = placed.present(today)
-        assertEquals("Sarah's Tesla on the street", p.title)
-        assertEquals("Front Yard · Sidewalk, Street", p.locationLabel)
+        assertEquals(MomentTexts.onThe(MomentTexts.named("Sarah's Tesla"), "street"), p.title)
+        assertEquals(MomentTexts.location("Front Yard", "Sidewalk", "Street"), p.locationLabel)
     }
 
     @Test
@@ -113,7 +113,7 @@ class ZoneInferenceTest {
         )
         val placed = assertNotNull(arriving.inZones(frontYard))
         assertEquals(listOf("driveway"), placed.zones)
-        assertEquals("Andrew's Tesla in the driveway", placed.present(today).title)
+        assertEquals(MomentTexts.inThe(MomentTexts.named("Andrew's Tesla"), "driveway"), placed.present(today).title)
     }
 
     @Test
@@ -133,7 +133,7 @@ class ZoneInferenceTest {
         val andrew = event("person", emptyList(), 0.05 to 0.05, subLabel = "andrew")
         val placed = assertNotNull(andrew.inZones(frontYard))
         assertEquals(emptyList(), placed.zones)
-        assertEquals("Front Yard", placed.present(today).locationLabel)
+        assertEquals(MomentTexts.location("Front Yard"), placed.present(today).locationLabel)
     }
 
     @Test

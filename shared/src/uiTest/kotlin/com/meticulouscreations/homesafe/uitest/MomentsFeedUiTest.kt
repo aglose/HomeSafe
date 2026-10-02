@@ -21,6 +21,7 @@ import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.groupIntoVisits
 import com.meticulouscreations.homesafe.domain.model.present
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
@@ -59,7 +60,7 @@ class MomentsFeedUiTest {
         hasSnapshot = false,
     ).let { MomentItem(it, it.present(today, TimeZone.UTC), thumbnailUrl = null) }
 
-    private val aDay = listOf(MomentGroup("Sep 10", "Sep 10", listOf(item("a", 1_789_000_000.0), item("b", 1_788_990_000.0))))
+    private val aDay = listOf(MomentGroup("Sep 10".asUiText(), "Sep 10".asUiText(), listOf(item("a", 1_789_000_000.0), item("b", 1_788_990_000.0))))
 
     private val cameras = listOf(MomentCameraOption("front_door", "Front Door"), MomentCameraOption("backyard", "Backyard"))
 
@@ -138,7 +139,7 @@ class MomentsFeedUiTest {
         mainClock.advanceTimeByFrame()
         onNodeWithText("Sep 10").assertIsDisplayed()
 
-        state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 14", listOf(item("new", 1_789_300_000.0)))) + aDay)
+        state = MomentsUiState(groups = listOf(MomentGroup("Today".asUiText(), "Sep 14".asUiText(), listOf(item("new", 1_789_300_000.0)))) + aDay)
         mainClock.advanceTimeByFrame()
         mainClock.advanceTimeByFrame()
         onNodeWithText("Today").assertIsDisplayed()
@@ -298,7 +299,7 @@ class MomentsFeedUiTest {
             setContent {
                 FrigatePreview {
                     MomentsFeed(
-                        state = MomentsUiState(groups = listOf(MomentGroup("Sep 10", "Sep 10", listOf(visit)))),
+                        state = MomentsUiState(groups = listOf(MomentGroup("Sep 10".asUiText(), "Sep 10".asUiText(), listOf(visit)))),
                         downloadState = DownloadUiState(),
                         onSelectCategory = {},
                         onUnfamiliarOnlyChange = {},

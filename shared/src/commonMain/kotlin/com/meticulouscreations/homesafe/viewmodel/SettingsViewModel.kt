@@ -40,10 +40,20 @@ import com.meticulouscreations.homesafe.domain.usecase.SetCameraMotionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetDecidesPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.presence_error_location
+import homesafe.shared.generated.resources.presence_error_not_connected
+import homesafe.shared.generated.resources.presence_error_relay_refused
+import homesafe.shared.generated.resources.presence_error_relay_unreachable
+import homesafe.shared.generated.resources.presence_error_relay_unreachable_detail
+import homesafe.shared.generated.resources.settings_camera_error_generic
+import homesafe.shared.generated.resources.settings_camera_error_refused
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -59,14 +69,14 @@ data class SettingsUiState(
     /** Null until the first successful read of the server's stats and config. */
     val overview: ServerOverview? = null,
     /** The last poll's failure, if any — shown alongside whatever was loaded before it. */
-    val overviewError: String? = null,
+    val overviewError: UiText? = null,
     val alerts: AlertSettings = AlertSettings.DEFAULT,
     val notificationsSupported: Boolean = false,
     val notificationPermission: NotificationPermission = NotificationPermission.NOT_DETERMINED,
     /** Cameras whose detection/motion switch is mid-flight; their switches lock until the server answers. */
     val busyCameras: Set<String> = emptySet(),
     /** Why the last switch flip failed, e.g. a viewer account hitting an admin-only call. */
-    val cameraError: String? = null,
+    val cameraError: UiText? = null,
     /** True briefly after the test button, for an inline "Sent" confirmation. */
     val testNotificationSent: Boolean = false,
     /** The server's custom classifiers that can be taught in-app; empty while loading or when there are none. */
@@ -78,7 +88,7 @@ data class SettingsUiState(
     /** True while the "This phone decides home/away" switch is mid-flight. */
     val decidesBusy: Boolean = false,
     /** Why the relay couldn't be read or told, e.g. it's down. */
-    val awayError: String? = null,
+    val awayError: UiText? = null,
     /** The device being removed from the relay, by id; its row's remove button waits for the answer. */
     val removingDevice: String? = null,
     /** Automatic presence: whether a geofence is possible on this platform at all... */
@@ -87,7 +97,7 @@ data class SettingsUiState(
     val locationAccess: LocationAccess = LocationAccess.UNAVAILABLE,
     /** True while "Set home here" is getting a fix and telling the relay. */
     val homeBusy: Boolean = false,
-    val homeError: String? = null,
+    val homeError: UiText? = null,
     /** How often each alert rule would have fired last week; null until read, and left null if the read fails. */
     val alertVolume: AlertVolume? = null,
     /**
@@ -127,15 +137,15 @@ data class SettingsUiState(
 private data class LocalState(
     val permission: NotificationPermission = NotificationPermission.NOT_DETERMINED,
     val busyCameras: Set<String> = emptySet(),
-    val cameraError: String? = null,
+    val cameraError: UiText? = null,
     val testNotificationSent: Boolean = false,
     val classifiers: List<ClassifierModel> = emptyList(),
     val awayBusy: Boolean = false,
     val decidesBusy: Boolean = false,
-    val awayError: String? = null,
+    val awayError: UiText? = null,
     val removingDevice: String? = null,
     val homeBusy: Boolean = false,
-    val homeError: String? = null,
+    val homeError: UiText? = null,
     val alertVolume: AlertVolume? = null,
     val alertVolumeRequested: Boolean = false,
 )
@@ -301,7 +311,7 @@ class SettingsViewModel(
     fun openNotificationSettings() = openNotificationSettingsUseCase()
 
     fun sendTestNotification() {
-        sendTestNotificationUseCase()
+        viewModelScope.launch { sendTestNotificationUseCase() }
         local.update { it.copy(testNotificationSent = true) }
     }
 
@@ -409,17 +419,22 @@ class SettingsViewModel(
         }
     }
 
-    private fun friendlyAwayError(error: Throwable): String {
-        val message = error.message ?: return "Couldn't reach the push relay."
+    /**
+     * What to say about a failed relay call. Status codes and "Not connected" are matched in the
+     * failure's technical message, which a [com.meticulouscreations.homesafe.text.LocalizedException]
+     * keeps for exactly this; anything else shows as the failure explains itself.
+     */
+    private fun friendlyAwayError(error: Throwable): UiText {
+        val message = error.message ?: return UiText.of(Res.string.presence_error_relay_unreachable)
         return when {
-            "401" in message || "403" in message -> "The relay refused this session. Sign in again."
-            "Not connected" in message -> "Not connected to a server."
-            else -> "Couldn't reach the push relay: $message"
+            "401" in message || "403" in message -> UiText.of(Res.string.presence_error_relay_refused)
+            "Not connected" in message -> UiText.of(Res.string.presence_error_not_connected)
+            else -> error.userMessage(Res.string.presence_error_relay_unreachable_detail)
         }
     }
 
-    private fun friendlyHomeError(error: Throwable): String = when {
-        error.message?.contains("location") == true -> "Couldn't get this phone's location. Is location on?"
+    private fun friendlyHomeError(error: Throwable): UiText = when {
+        error.message?.contains("location") == true -> UiText.of(Res.string.presence_error_location)
         else -> friendlyAwayError(error)
     }
 
@@ -431,15 +446,17 @@ class SettingsViewModel(
             local.update {
                 it.copy(
                     busyCameras = it.busyCameras - cameraName,
-                    cameraError = result.exceptionOrNull()?.let { error -> friendlyCameraError(error.message) },
+                    cameraError = result.exceptionOrNull()?.let(::friendlyCameraError),
                 )
             }
         }
     }
 
-    private fun friendlyCameraError(message: String?): String = when {
-        message == null -> "Couldn't change that setting."
-        "401" in message || "403" in message -> "Frigate refused: this account can't change config. Sign in with an admin account."
-        else -> message
+    private fun friendlyCameraError(error: Throwable): UiText {
+        val message = error.message ?: return UiText.of(Res.string.settings_camera_error_generic)
+        return when {
+            "401" in message || "403" in message -> UiText.of(Res.string.settings_camera_error_refused)
+            else -> error.userMessage()
+        }
     }
 }

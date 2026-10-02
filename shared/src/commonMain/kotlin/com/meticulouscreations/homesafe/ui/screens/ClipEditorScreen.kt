@@ -98,6 +98,8 @@ import com.meticulouscreations.homesafe.domain.model.ClipLimits
 import com.meticulouscreations.homesafe.domain.model.ClipRange
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ClipTrimmer
 import com.meticulouscreations.homesafe.ui.components.ClipTrimmerStripHeight
@@ -114,7 +116,33 @@ import com.meticulouscreations.homesafe.viewmodel.ClipMoment
 import com.meticulouscreations.homesafe.viewmodel.ClipSaveState
 import com.meticulouscreations.homesafe.viewmodel.TrimHandle
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.clip_close_editor
+import homesafe.shared.generated.resources.clip_detected_nearby
+import homesafe.shared.generated.resources.clip_dismiss
+import homesafe.shared.generated.resources.clip_finding_recording
+import homesafe.shared.generated.resources.clip_length
+import homesafe.shared.generated.resources.clip_length_minutes
+import homesafe.shared.generated.resources.clip_length_seconds
+import homesafe.shared.generated.resources.clip_make_length
+import homesafe.shared.generated.resources.clip_moment_description
+import homesafe.shared.generated.resources.clip_pause
+import homesafe.shared.generated.resources.clip_play
+import homesafe.shared.generated.resources.clip_save_description
+import homesafe.shared.generated.resources.clip_save_failed
+import homesafe.shared.generated.resources.clip_saved
+import homesafe.shared.generated.resources.clip_saved_message
+import homesafe.shared.generated.resources.clip_saving
+import homesafe.shared.generated.resources.clip_saving_banner
+import homesafe.shared.generated.resources.clip_saving_description
+import homesafe.shared.generated.resources.clip_saving_progress_description
+import homesafe.shared.generated.resources.clip_time_range
+import homesafe.shared.generated.resources.clip_trim_hint
+import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.common_save
+import homesafe.shared.generated.resources.common_try_again
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.round
 
@@ -343,7 +371,7 @@ private fun EditorTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onClose) {
-            Icon(imageVector = Icons.Filled.Close, contentDescription = CLOSE_EDITOR_DESCRIPTION, tint = Color.White)
+            Icon(imageVector = Icons.Filled.Close, contentDescription = stringResource(Res.string.clip_close_editor), tint = Color.White)
         }
         Column(
             modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
@@ -357,8 +385,9 @@ private fun EditorTopBar(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                text = range?.let { "${formatClockTime(it.startEpochSeconds, withSeconds = true)} – ${formatClockTime(it.endEpochSeconds, withSeconds = true)}" }
-                    ?: "Finding the recording…",
+                text = range?.let {
+                    stringResource(Res.string.clip_time_range, formatClockTime(it.startEpochSeconds, withSeconds = true), formatClockTime(it.endEpochSeconds, withSeconds = true))
+                } ?: stringResource(Res.string.clip_finding_recording),
                 style = MaterialTheme.typography.labelMedium.copy(fontFeatureSettings = TABULAR_FIGURES),
                 color = EditorSecondaryText,
                 maxLines = 1,
@@ -384,19 +413,18 @@ private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit
     val tappable = enabled && phase == SavePhase.READY
     val container = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh
     val content = if (enabled) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+    val description = when (phase) {
+        SavePhase.READY -> stringResource(Res.string.clip_save_description)
+        SavePhase.SAVING -> fraction?.let { stringResource(Res.string.clip_saving_progress_description, percent(it)) } ?: stringResource(Res.string.clip_saving_description)
+        SavePhase.SAVED -> stringResource(Res.string.clip_saved_message)
+    }
     Box(
         modifier = Modifier
             .height(40.dp)
             .clip(CircleShape)
             .background(container)
             .clickable(enabled = tappable, role = Role.Button, onClick = onSave)
-            .semantics {
-                contentDescription = when (phase) {
-                    SavePhase.READY -> "Save clip"
-                    SavePhase.SAVING -> fraction?.let { "Saving clip, ${percent(it)}" } ?: "Saving clip"
-                    SavePhase.SAVED -> "Clip saved"
-                }
-            }
+            .semantics { contentDescription = description }
             .animateContentSize(spring(dampingRatio = 0.8f, stiffness = 500f))
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
@@ -416,11 +444,13 @@ private fun SaveButton(save: ClipSaveState, enabled: Boolean, onSave: () -> Unit
                     SavePhase.SAVED -> Icon(imageVector = Icons.Filled.Check, contentDescription = null, tint = content, modifier = Modifier.size(18.dp))
                 }
                 Text(
-                    text = when (shown) {
-                        SavePhase.READY -> "Save"
-                        SavePhase.SAVING -> "Saving"
-                        SavePhase.SAVED -> "Saved"
-                    },
+                    text = stringResource(
+                        when (shown) {
+                            SavePhase.READY -> Res.string.common_save
+                            SavePhase.SAVING -> Res.string.clip_saving
+                            SavePhase.SAVED -> Res.string.clip_saved
+                        },
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     color = content,
                 )
@@ -449,8 +479,8 @@ private fun SaveProgressRing(fraction: Float?, color: Color) {
     }
 }
 
-/** "42%". */
-private fun percent(fraction: Float): String = "${(fraction * 100).toInt()}%"
+/** 42, for 42%: the percentage the save button reads out. */
+private fun percent(fraction: Float): Int = (fraction * 100).toInt()
 
 /**
  * The picture, as large as the space allows at 16:9, on black. A tap plays or pauses. While a grip
@@ -580,14 +610,14 @@ private fun FramePreview(epochSeconds: Double, snapshotUrl: (Double, Int) -> Str
 }
 
 @Composable
-private fun LoadFailed(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+private fun LoadFailed(message: UiText, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Icon(imageVector = Icons.Filled.ErrorOutline, contentDescription = null, tint = EditorSecondaryText, modifier = Modifier.size(32.dp))
-        Text(text = message, style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
+        Text(text = message.resolve(), style = MaterialTheme.typography.bodyMedium, color = Color.White, textAlign = TextAlign.Center)
         Row(
             modifier = Modifier
                 .clip(CircleShape)
@@ -598,7 +628,7 @@ private fun LoadFailed(message: String, onRetry: () -> Unit, modifier: Modifier 
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Icon(imageVector = Icons.Filled.Refresh, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-            Text(text = "Try again", style = MaterialTheme.typography.labelLarge, color = Color.White)
+            Text(text = stringResource(Res.string.common_try_again), style = MaterialTheme.typography.labelLarge, color = Color.White)
         }
     }
 }
@@ -679,7 +709,7 @@ private fun ControlsPanel(
             exit = fadeOut() + slideOutVertically { -it / 2 },
         ) {
             Text(
-                text = "Drag the ends to trim · pinch the strip for finer steps",
+                text = stringResource(Res.string.clip_trim_hint),
                 style = MaterialTheme.typography.labelMedium,
                 color = EditorSecondaryText,
                 textAlign = TextAlign.Center,
@@ -743,7 +773,7 @@ private fun PlayPauseButton(isPlaying: Boolean, enabled: Boolean, onClick: () ->
         ) { playing ->
             Icon(
                 imageVector = if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
+                contentDescription = stringResource(if (playing) Res.string.clip_pause else Res.string.clip_play),
                 tint = Color.White,
                 modifier = Modifier.size(26.dp),
             )
@@ -765,14 +795,15 @@ private fun LengthChips(range: ClipRange, onSetLength: (Double) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(text = "Length", style = MaterialTheme.typography.labelLarge, color = EditorSecondaryText, modifier = Modifier.padding(end = 4.dp))
+        Text(text = stringResource(Res.string.clip_length), style = MaterialTheme.typography.labelLarge, color = EditorSecondaryText, modifier = Modifier.padding(end = 4.dp))
         ClipLimits.PRESET_SECONDS.forEach { seconds ->
+            val length = lengthLabel(seconds).resolve()
             EditorChip(
                 selected = abs(range.durationSeconds - seconds) < 0.5,
                 onClick = { onSetLength(seconds) },
-                contentDescription = "Make the clip ${lengthLabel(seconds)} long",
+                contentDescription = stringResource(Res.string.clip_make_length, length),
             ) {
-                Text(text = lengthLabel(seconds), style = MaterialTheme.typography.labelLarge)
+                Text(text = length, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
@@ -789,7 +820,7 @@ private fun MomentChips(moments: List<ClipMoment>, range: ClipRange?, onSelect: 
     val other = MaterialTheme.colorScheme.onSurfaceVariant
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
-            text = "Detected nearby",
+            text = stringResource(Res.string.clip_detected_nearby),
             style = MaterialTheme.typography.labelLarge,
             color = EditorSecondaryText,
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -802,20 +833,22 @@ private fun MomentChips(moments: List<ClipMoment>, range: ClipRange?, onSelect: 
                 val held = range != null &&
                     moment.startEpochSeconds >= range.startEpochSeconds - HOLD_TOLERANCE_SECONDS &&
                     moment.endEpochSeconds <= range.endEpochSeconds + HOLD_TOLERANCE_SECONDS
+                val title = moment.title.resolve()
+                val time = moment.timeLabel.resolve()
                 EditorChip(
                     selected = held,
                     onClick = { onSelect(moment) },
-                    contentDescription = "Clip ${moment.title} at ${moment.timeLabel}",
+                    contentDescription = stringResource(Res.string.clip_moment_description, title, time),
                 ) {
                     Box(modifier = Modifier.size(8.dp).background(clipMomentColor(extra, moment.category, other), CircleShape))
                     Text(
-                        text = moment.title,
+                        text = title,
                         style = MaterialTheme.typography.labelLarge,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.widthIn(max = 180.dp),
                     )
-                    Text(text = moment.timeLabel, style = MaterialTheme.typography.labelMedium, color = LocalContentColor.current.copy(alpha = 0.7f))
+                    Text(text = time, style = MaterialTheme.typography.labelMedium, color = LocalContentColor.current.copy(alpha = 0.7f))
                 }
             }
         }
@@ -910,9 +943,9 @@ private fun SaveBanner(save: ClipSaveState, onRetry: () -> Unit, onDismiss: () -
             )
             Text(
                 text = when (shown) {
-                    BannerKind.SAVING -> "Saving in the background. It'll finish even if you close the editor."
-                    BannerKind.SAVED -> "Clip saved"
-                    BannerKind.FAILED -> "Couldn't save: ${memory.message}"
+                    BannerKind.SAVING -> stringResource(Res.string.clip_saving_banner)
+                    BannerKind.SAVED -> stringResource(Res.string.clip_saved_message)
+                    BannerKind.FAILED -> stringResource(Res.string.clip_save_failed, memory.message.resolve())
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface,
@@ -921,8 +954,8 @@ private fun SaveBanner(save: ClipSaveState, onRetry: () -> Unit, onDismiss: () -
                 modifier = Modifier.weight(1f),
             )
             if (shown == BannerKind.FAILED) {
-                BannerAction(label = "Dismiss", onClick = onDismiss)
-                BannerAction(label = "Retry", onClick = onRetry)
+                BannerAction(label = stringResource(Res.string.clip_dismiss), onClick = onDismiss)
+                BannerAction(label = stringResource(Res.string.common_retry), onClick = onRetry)
             }
         }
     }
@@ -934,7 +967,7 @@ private enum class BannerKind { SAVING, SAVED, FAILED }
  * The save banner's last words. A plain holder rather than state: it only changes in the same
  * composition that reads it, so there's nothing to invalidate (the clip trimmer's bubble does the same).
  */
-private class BannerMemory(var kind: BannerKind = BannerKind.SAVED, var message: String = "")
+private class BannerMemory(var kind: BannerKind = BannerKind.SAVED, var message: UiText = UiText.Empty)
 
 @Composable
 private fun BannerAction(label: String, onClick: () -> Unit) {
@@ -968,14 +1001,11 @@ private fun Shimmer(modifier: Modifier = Modifier) {
     }
 }
 
-/** "10s", "30s", "1m", "2m". */
-internal fun lengthLabel(seconds: Double): String {
+/** "10s", "30s", "1m", "2m": whole minutes in minutes, anything else in seconds. */
+internal fun lengthLabel(seconds: Double): UiText {
     val whole = seconds.toLong()
-    return if (whole < 60 || whole % 60 != 0L) "${whole}s" else "${whole / 60}m"
+    return if (whole < 60 || whole % 60 != 0L) UiText.of(Res.string.clip_length_seconds, whole) else UiText.of(Res.string.clip_length_minutes, whole / 60)
 }
-
-/** The close button's description: what tests and screen readers find it by. */
-internal const val CLOSE_EDITOR_DESCRIPTION = "Close clip editor"
 
 private val EditorBackground = Color.Black
 private val EditorSecondaryText = Color.White.copy(alpha = 0.64f)

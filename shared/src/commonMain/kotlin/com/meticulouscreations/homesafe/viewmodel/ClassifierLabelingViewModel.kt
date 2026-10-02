@@ -17,6 +17,8 @@ import com.meticulouscreations.homesafe.domain.usecase.GetClassifierQueueImageUr
 import com.meticulouscreations.homesafe.domain.usecase.LabelClassifierCropUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveCarProfileUseCase
 import com.meticulouscreations.homesafe.domain.usecase.TrainClassifierUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Assisted
 import dev.zacsweers.metro.AssistedFactory
@@ -24,6 +26,18 @@ import dev.zacsweers.metro.AssistedInject
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactory
 import dev.zacsweers.metrox.viewmodel.ManualViewModelAssistedFactoryKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.labeling_category_add_failed
+import homesafe.shared.generated.resources.labeling_category_added
+import homesafe.shared.generated.resources.labeling_clear_failed
+import homesafe.shared.generated.resources.labeling_cleared_confident
+import homesafe.shared.generated.resources.labeling_load_failed
+import homesafe.shared.generated.resources.labeling_plate_too_short
+import homesafe.shared.generated.resources.labeling_profile_forget_failed
+import homesafe.shared.generated.resources.labeling_save_failed
+import homesafe.shared.generated.resources.labeling_train_failed
+import homesafe.shared.generated.resources.labeling_trained
+import homesafe.shared.generated.resources.labeling_training_slow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -34,7 +48,7 @@ import kotlinx.coroutines.launch
 @Immutable
 data class ClassifierLabelingUiState(
     val isLoading: Boolean = true,
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     val dataset: ClassifierDataset? = null,
     /** Crops whose label/discard call is in flight, so their tile can't be tapped twice. */
     val busyFiles: Set<String> = emptySet(),
@@ -42,7 +56,7 @@ data class ClassifierLabelingUiState(
     val decided: Map<String, String?> = emptyMap(),
     val isTraining: Boolean = false,
     /** "Trained on 31 images" / "Couldn't train: ..." — the last outcome, cleared on the next action. */
-    val notice: String? = null,
+    val notice: UiText? = null,
     val noticeIsError: Boolean = false,
     val newCategoryDraft: String = "",
     /** Whether the crops the model is sure about are listed too (see [ClassifierDataset.confidentQueue]). */
@@ -53,7 +67,7 @@ data class ClassifierLabelingUiState(
     val profileDraft: CarProfile? = null,
     val isSavingProfile: Boolean = false,
     /** Why the last save didn't take, shown in the dialog. */
-    val profileError: String? = null,
+    val profileError: UiText? = null,
 )
 
 /**
@@ -100,7 +114,7 @@ class ClassifierLabelingViewModel(
                         getCarProfilesUseCase().onSuccess { profiles -> _uiState.update { it.copy(carProfiles = profiles) } }
                     }
                 }
-                .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.message ?: "Couldn't load the classifier") } }
+                .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.userMessage(Res.string.labeling_load_failed)) } }
         }
     }
 
@@ -119,7 +133,7 @@ class ClassifierLabelingViewModel(
         if (_uiState.value.isSavingProfile) return
         val plate = CarProfile.normalPlate(draft.plate)
         if (plate.isNotEmpty() && plate.length < CarProfile.PLATE_MIN_LENGTH) {
-            _uiState.update { it.copy(profileError = "A plate needs at least ${CarProfile.PLATE_MIN_LENGTH} letters or digits") }
+            _uiState.update { it.copy(profileError = UiText.of(Res.string.labeling_plate_too_short, CarProfile.PLATE_MIN_LENGTH)) }
             return
         }
         _uiState.update { it.copy(isSavingProfile = true, profileError = null) }
@@ -135,7 +149,7 @@ class ClassifierLabelingViewModel(
                         )
                     }
                 }
-                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = "Couldn't save: ${e.message}") } }
+                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = e.userMessage(Res.string.labeling_save_failed)) } }
         }
     }
 
@@ -152,7 +166,7 @@ class ClassifierLabelingViewModel(
                         state.copy(isSavingProfile = false, profileDraft = null, carProfiles = profiles?.copy(profiles = profiles.profiles.filterNot { it.name == name }))
                     }
                 }
-                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = "Couldn't forget: ${e.message}") } }
+                .onFailure { e -> _uiState.update { it.copy(isSavingProfile = false, profileError = e.userMessage(Res.string.labeling_profile_forget_failed)) } }
         }
     }
 
@@ -186,13 +200,13 @@ class ClassifierLabelingViewModel(
                             busyFiles = current.busyFiles - files.toSet(),
                             dataset = data?.copy(queue = data.queue.filterNot { it.fileName in files }),
                             showConfident = false,
-                            notice = "Cleared ${files.size} crops the model was sure about",
+                            notice = UiText.plural(Res.plurals.labeling_cleared_confident, files.size),
                             noticeIsError = false,
                         )
                     }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(busyFiles = it.busyFiles - files.toSet(), notice = "Couldn't clear: ${e.message}", noticeIsError = true) }
+                    _uiState.update { it.copy(busyFiles = it.busyFiles - files.toSet(), notice = e.userMessage(Res.string.labeling_clear_failed), noticeIsError = true) }
                 }
         }
     }
@@ -205,10 +219,10 @@ class ClassifierLabelingViewModel(
         viewModelScope.launch {
             createClassifierCategoryUseCase(modelName, key)
                 .onSuccess {
-                    _uiState.update { it.copy(newCategoryDraft = "", notice = "Added category $key", noticeIsError = false) }
+                    _uiState.update { it.copy(newCategoryDraft = "", notice = UiText.of(Res.string.labeling_category_added, key), noticeIsError = false) }
                     load()
                 }
-                .onFailure { e -> _uiState.update { it.copy(notice = "Couldn't add category: ${e.message}", noticeIsError = true) } }
+                .onFailure { e -> _uiState.update { it.copy(notice = e.userMessage(Res.string.labeling_category_add_failed), noticeIsError = true) } }
         }
     }
 
@@ -219,7 +233,7 @@ class ClassifierLabelingViewModel(
         _uiState.update { it.copy(isTraining = true, notice = null) }
         viewModelScope.launch {
             trainClassifierUseCase(modelName).onFailure { e ->
-                _uiState.update { it.copy(isTraining = false, notice = "Couldn't train: ${e.message}", noticeIsError = true) }
+                _uiState.update { it.copy(isTraining = false, notice = e.userMessage(Res.string.labeling_train_failed), noticeIsError = true) }
                 return@launch
             }
             // Training on the real box takes ~30 s; poll until the "new since training" count drops to zero.
@@ -228,11 +242,11 @@ class ClassifierLabelingViewModel(
                 val refreshed = getClassifierDatasetUseCase(modelName).getOrNull()
                 if (refreshed != null && refreshed.hasTrained && refreshed.newImagesSinceTraining == 0) {
                     val total = refreshed.categoryCounts.values.sum()
-                    _uiState.update { it.copy(isTraining = false, dataset = refreshed, notice = "Trained on $total images. Frigate is using the new model now.", noticeIsError = false) }
+                    _uiState.update { it.copy(isTraining = false, dataset = refreshed, notice = UiText.plural(Res.plurals.labeling_trained, total), noticeIsError = false) }
                     return@launch
                 }
             }
-            _uiState.update { it.copy(isTraining = false, notice = "Training is taking longer than expected; pull to refresh in a minute.", noticeIsError = true) }
+            _uiState.update { it.copy(isTraining = false, notice = UiText.of(Res.string.labeling_training_slow), noticeIsError = true) }
         }
     }
 
@@ -254,7 +268,7 @@ class ClassifierLabelingViewModel(
                     }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = "Couldn't save: ${e.message}", noticeIsError = true) }
+                    _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = e.userMessage(Res.string.labeling_save_failed), noticeIsError = true) }
                 }
         }
     }

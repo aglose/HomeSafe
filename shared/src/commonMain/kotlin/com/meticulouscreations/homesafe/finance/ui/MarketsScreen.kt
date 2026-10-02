@@ -53,8 +53,48 @@ import com.meticulouscreations.homesafe.finance.ui.components.LineChart
 import com.meticulouscreations.homesafe.finance.ui.components.RangeSelector
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.finance_callout_for_you
+import homesafe.shared.generated.resources.finance_change_at
+import homesafe.shared.generated.resources.finance_change_with_percent
+import homesafe.shared.generated.resources.finance_markets_52w_high
+import homesafe.shared.generated.resources.finance_markets_52w_low
+import homesafe.shared.generated.resources.finance_markets_about
+import homesafe.shared.generated.resources.finance_markets_chart_description
+import homesafe.shared.generated.resources.finance_markets_closed
+import homesafe.shared.generated.resources.finance_markets_day_high
+import homesafe.shared.generated.resources.finance_markets_day_low
+import homesafe.shared.generated.resources.finance_markets_fine_print
+import homesafe.shared.generated.resources.finance_markets_fine_print_error
+import homesafe.shared.generated.resources.finance_markets_how_to_read_day
+import homesafe.shared.generated.resources.finance_markets_how_to_read_range
+import homesafe.shared.generated.resources.finance_markets_macro_subtitle
+import homesafe.shared.generated.resources.finance_markets_macro_title
+import homesafe.shared.generated.resources.finance_markets_open_closes
+import homesafe.shared.generated.resources.finance_markets_opens
+import homesafe.shared.generated.resources.finance_markets_prev_close
+import homesafe.shared.generated.resources.finance_markets_price
+import homesafe.shared.generated.resources.finance_markets_quote_fine_print
+import homesafe.shared.generated.resources.finance_markets_range_day
+import homesafe.shared.generated.resources.finance_markets_range_five_years
+import homesafe.shared.generated.resources.finance_markets_range_max
+import homesafe.shared.generated.resources.finance_markets_range_month
+import homesafe.shared.generated.resources.finance_markets_range_three_months
+import homesafe.shared.generated.resources.finance_markets_range_week
+import homesafe.shared.generated.resources.finance_markets_range_year
+import homesafe.shared.generated.resources.finance_markets_range_ytd
+import homesafe.shared.generated.resources.finance_markets_symbol
+import homesafe.shared.generated.resources.finance_markets_volume
+import homesafe.shared.generated.resources.finance_markets_watchlist_subtitle
+import homesafe.shared.generated.resources.finance_markets_watchlist_title
+import homesafe.shared.generated.resources.finance_markets_what_is_it
+import homesafe.shared.generated.resources.finance_markets_why_it_matters
+import homesafe.shared.generated.resources.finance_stats_title
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Clock
 
 /** The ranges the Markets tab and a quote's page offer. */
@@ -105,7 +145,9 @@ internal fun MarketsScreen(
                 }
             }
         }
-        item(key = "stats-h") { SectionHeader("Stats", trailing = MarketCatalog.lookup(selected).shortName, info = "prevclose") }
+        item(key = "stats-h") {
+            SectionHeader(stringResource(Res.string.finance_stats_title), trailing = MarketCatalog.lookup(selected).shortName.resolve(), info = "prevclose")
+        }
         item(key = "stats") {
             val q = state.quotes[selected]
             val kind = MarketCatalog.lookup(selected).kind
@@ -113,10 +155,10 @@ internal fun MarketsScreen(
                 Column {
                     StatGrid(
                         listOf(
-                            "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, kind) } ?: "—"),
-                            "Volume" to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
-                            "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, kind) } ?: "—"),
-                            "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, kind) } ?: "—"),
+                            stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, kind) } ?: "—"),
+                            stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
+                            stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, kind) } ?: "—"),
+                            stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, kind) } ?: "—"),
                         ),
                     )
                     val hi = q?.fiftyTwoWeekHigh
@@ -127,20 +169,25 @@ internal fun MarketsScreen(
                 }
             }
         }
-        item(key = "macro-h") { SectionHeader("Other big signals", subtitle = "Interest rates, gold, oil, crypto and the dollar — tap any to learn why it matters") }
+        item(key = "macro-h") {
+            SectionHeader(stringResource(Res.string.finance_markets_macro_title), subtitle = stringResource(Res.string.finance_markets_macro_subtitle))
+        }
         items(MarketCatalog.macro, key = { "macro-${it.symbol}" }) { meta ->
             QuoteRow(meta.symbol, state.quotes[meta.symbol], onClick = { onOpenQuote(meta.symbol) })
         }
         item(key = "watch-h") {
-            SectionHeader("Watchlist", subtitle = if (state.finance?.watchlist?.isNotEmpty() == true) "From your budget sheet" else null)
+            SectionHeader(
+                stringResource(Res.string.finance_markets_watchlist_title),
+                subtitle = if (state.finance?.watchlist?.isNotEmpty() == true) stringResource(Res.string.finance_markets_watchlist_subtitle) else null,
+            )
         }
         items(state.watchlist, key = { "watch-$it" }) { symbol ->
             QuoteRow(symbol, state.quotes[symbol], onClick = { onOpenQuote(symbol) })
         }
         item(key = "fine") {
             FinePrint(
-                (state.quotesError?.let { "Couldn't refresh: $it. " } ?: "") +
-                    "Quotes from Yahoo Finance, delayed up to 15 minutes. Updated every 15 seconds while markets are open.",
+                state.quotesError?.let { stringResource(Res.string.finance_markets_fine_print_error, it.resolve()) }
+                    ?: stringResource(Res.string.finance_markets_fine_print),
             )
         }
     }
@@ -195,20 +242,23 @@ internal fun PriceHeroAndChart(
     val lineColor = colors.direction(change ?: 0.0)
     val gmt = history?.gmtOffsetSeconds ?: quote?.gmtOffsetSeconds ?: 0
 
-    val changeText = when {
-        change == null || changePct == null -> " "
-
-        shownIndex != null -> {
+    val name = meta.name.resolve()
+    val caption = stringResource(rangeCaption(range))
+    val changeText = if (change == null || changePct == null) {
+        " "
+    } else {
+        val amount = stringResource(Res.string.finance_change_with_percent, FinanceFormat.priceChange(change, meta.kind), FinanceFormat.signedPercent(changePct))
+        val whenText = if (shownIndex != null) {
             val t = series!!.times[shownIndex]
             // Daily and longer bars are stamped at the exchange's midnight in the offset of their
             // own date, which in winter is an hour off today's; written from midday they can't
             // slip back a day.
             val intraday = range == ChartRange.DAY || range == ChartRange.WEEK || range == ChartRange.MONTH
-            val whenText = if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)
-            "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  $whenText"
+            if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)
+        } else {
+            caption
         }
-
-        else -> "${FinanceFormat.priceChange(change, meta.kind)} (${FinanceFormat.signedPercent(changePct)})  ${rangeCaption(range)}"
+        stringResource(Res.string.finance_change_at, amount, whenText)
     }
 
     val extent = if (range == ChartRange.DAY && series != null && series.size > 1) {
@@ -225,7 +275,7 @@ internal fun PriceHeroAndChart(
         AuroraBackground(lineColor, Modifier.matchParentSize(), intensity = if (series != null) 1f else 0.3f)
         Column(Modifier.padding(top = 12.dp)) {
             HeroNumber(
-                caption = meta.name,
+                caption = name,
                 value = shownValue?.let { FinanceFormat.price(it, meta.kind) } ?: "—",
                 change = changeText,
                 changeColor = lineColor,
@@ -238,23 +288,23 @@ internal fun PriceHeroAndChart(
                     baseline = if (range == ChartRange.DAY) baseline else null,
                     extent = extent,
                     live = live,
-                    contentDescription = "${meta.name} chart, ${rangeCaption(range)}",
+                    contentDescription = stringResource(Res.string.finance_markets_chart_description, name, caption),
                     onScrub = { scrub = it },
                     modifier = Modifier.fillMaxWidth().height(240.dp),
                 )
             } else if (load?.error != null) {
                 Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
-                    Text(load.error, style = FinanceTheme.type.label, color = colors.textSecondary)
+                    Text(load.error.resolve(), style = FinanceTheme.type.label, color = colors.textSecondary)
                 }
             } else {
                 Shimmer(Modifier.fillMaxWidth().height(240.dp).padding(horizontal = PageGutter), corner = 14.dp)
             }
             Spacer(Modifier.height(10.dp))
-            RangeSelector(PriceRanges, range, { it.label }, lineColor, onRange, Modifier.padding(horizontal = PageGutter - 4.dp))
+            RangeSelector(PriceRanges, range, { stringResource(it.label) }, lineColor, onRange, Modifier.padding(horizontal = PageGutter - 4.dp))
             // Today's move in a sentence, with a sense of whether it's a big day.
             if (range == ChartRange.DAY && quote != null && scrub == null) {
                 Text(
-                    Narrator.quoteVerdict(symbol, quote),
+                    Narrator.quoteVerdict(symbol, quote).resolve(),
                     style = FinanceTheme.type.label,
                     color = colors.textSecondary,
                     modifier = Modifier.padding(horizontal = PageGutter, vertical = 6.dp),
@@ -262,24 +312,24 @@ internal fun PriceHeroAndChart(
             }
             HowToRead(
                 if (range == ChartRange.DAY) {
-                    "The line is today's price, minute by minute. The dotted line is yesterday's close: above it (green) the day is up, below it (orange) the day is down. Drag along the chart to see the price at any moment, and pick a range to look further back."
+                    stringResource(Res.string.finance_markets_how_to_read_day)
                 } else {
-                    "The line is the price over ${rangeCaption(range).lowercase()}; it's green if it's higher now than at the start and orange if lower. Drag along the chart to see the price on any day."
+                    stringResource(Res.string.finance_markets_how_to_read_range, caption.lowercase())
                 },
             )
         }
     }
 }
 
-internal fun rangeCaption(range: ChartRange): String = when (range) {
-    ChartRange.DAY -> "Today"
-    ChartRange.WEEK -> "Past week"
-    ChartRange.MONTH -> "Past month"
-    ChartRange.THREE_MONTHS -> "Past 3 months"
-    ChartRange.YEAR_TO_DATE -> "Year to date"
-    ChartRange.YEAR -> "Past year"
-    ChartRange.FIVE_YEARS -> "Past 5 years"
-    ChartRange.MAX -> "All time"
+internal fun rangeCaption(range: ChartRange): StringResource = when (range) {
+    ChartRange.DAY -> Res.string.finance_markets_range_day
+    ChartRange.WEEK -> Res.string.finance_markets_range_week
+    ChartRange.MONTH -> Res.string.finance_markets_range_month
+    ChartRange.THREE_MONTHS -> Res.string.finance_markets_range_three_months
+    ChartRange.YEAR_TO_DATE -> Res.string.finance_markets_range_ytd
+    ChartRange.YEAR -> Res.string.finance_markets_range_year
+    ChartRange.FIVE_YEARS -> Res.string.finance_markets_range_five_years
+    ChartRange.MAX -> Res.string.finance_markets_range_max
 }
 
 /** "Market open" with a live dot, or when it next opens, from the S&P's session times. */
@@ -299,9 +349,9 @@ private fun MarketStatus(sp: Quote?) {
         PulsingDot(color = if (open) colors.gain else colors.textTertiary, size = 6.dp, pulsing = open)
         Spacer(Modifier.width(6.dp))
         val text = when {
-            open -> "Market open · closes ${sp.sessionEndEpochSeconds?.let { FinanceFormat.time(it, sp.gmtOffsetSeconds) } ?: ""}"
-            sp.sessionStartEpochSeconds != null && now < sp.sessionStartEpochSeconds -> "Opens ${FinanceFormat.time(sp.sessionStartEpochSeconds, sp.gmtOffsetSeconds)}"
-            else -> "Market closed"
+            open -> stringResource(Res.string.finance_markets_open_closes, sp.sessionEndEpochSeconds?.let { FinanceFormat.time(it, sp.gmtOffsetSeconds) } ?: "")
+            sp.sessionStartEpochSeconds != null && now < sp.sessionStartEpochSeconds -> stringResource(Res.string.finance_markets_opens, FinanceFormat.time(sp.sessionStartEpochSeconds, sp.gmtOffsetSeconds))
+            else -> stringResource(Res.string.finance_markets_closed)
         }
         Text(text, style = FinanceTheme.type.micro, color = if (open) colors.gain else colors.textSecondary)
     }
@@ -323,9 +373,10 @@ private fun IndexCard(symbol: String, quote: Quote?, selected: Boolean, onClick:
             .clickable(onClick = onClick)
             .padding(12.dp),
     ) {
-        Text(meta.shortName, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1)
+        val shortName = meta.shortName.resolve()
+        Text(shortName, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1)
         // What it is, in plain words ("Small companies").
-        Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }?.title?.takeIf { it != meta.shortName }?.let {
+        Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }?.title?.let { stringResource(it) }?.takeIf { it != shortName }?.let {
             Text(it, style = FinanceTheme.type.micro, color = colors.textTertiary, maxLines = 1)
         }
         Spacer(Modifier.height(2.dp))
@@ -362,7 +413,7 @@ private fun TickerTape(quotes: Map<String, Quote>, onOpen: (String) -> Unit) {
                 Modifier.clickable { onOpen(meta.symbol) }.padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(meta.shortName, style = FinanceTheme.type.micro, color = colors.textSecondary)
+                Text(meta.shortName.resolve(), style = FinanceTheme.type.micro, color = colors.textSecondary)
                 Spacer(Modifier.width(6.dp))
                 Text(FinanceFormat.price(q.price, meta.kind), style = FinanceTheme.type.micro, color = colors.textPrimary)
                 Spacer(Modifier.width(4.dp))
@@ -390,42 +441,42 @@ internal fun QuoteDetailScreen(
         }
         val explainer = Explainers.forSymbol(symbol)?.let { Explainers.byId(it) }
         if (explainer != null) {
-            item { SectionHeader("What is it?", info = explainer.id) }
+            item { SectionHeader(stringResource(Res.string.finance_markets_what_is_it), info = explainer.id) }
             item {
                 Column(Modifier.padding(horizontal = PageGutter)) {
-                    Text(explainer.oneLiner, style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary)
+                    Text(stringResource(explainer.oneLiner), style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary)
                     Spacer(Modifier.height(10.dp))
-                    Text("WHY IT MATTERS TO YOU", style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
+                    Text(stringResource(Res.string.finance_markets_why_it_matters), style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
                     Spacer(Modifier.height(2.dp))
-                    Text(explainer.whyYou, style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
+                    Text(stringResource(explainer.whyYou), style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
                     Narrator.forYou(explainer.id, state.readings, state.quotes, state.finance)?.let { mine ->
-                        Callout("What it means for you", mine, FinanceTheme.colors.accent, Icons.Filled.Person)
+                        Callout(stringResource(Res.string.finance_callout_for_you), mine.resolve(), FinanceTheme.colors.accent, Icons.Filled.Person)
                     }
                 }
             }
-        } else if (meta.about.isNotEmpty()) {
-            item { SectionHeader("About") }
+        } else if (meta.about != null) {
+            item { SectionHeader(stringResource(Res.string.finance_markets_about)) }
             item {
                 Text(
-                    meta.about,
+                    stringResource(meta.about),
                     style = FinanceTheme.type.body,
                     color = FinanceTheme.colors.textSecondary,
                     modifier = Modifier.padding(horizontal = PageGutter),
                 )
             }
         }
-        item { SectionHeader("Stats") }
+        item { SectionHeader(stringResource(Res.string.finance_stats_title)) }
         item {
             StatGrid(
                 listOf(
-                    "Price" to (q?.price?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Prev close" to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day high" to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Day low" to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W high" to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "52W low" to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
-                    "Volume" to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
-                    "Symbol" to symbol,
+                    stringResource(Res.string.finance_markets_price) to (q?.price?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_prev_close) to (q?.previousClose?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_day_high) to (q?.dayHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_day_low) to (q?.dayLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_52w_high) to (q?.fiftyTwoWeekHigh?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_52w_low) to (q?.fiftyTwoWeekLow?.let { FinanceFormat.price(it, meta.kind) } ?: "—"),
+                    stringResource(Res.string.finance_markets_volume) to (q?.volume?.takeIf { it > 0 }?.let(FinanceFormat::volume) ?: "—"),
+                    stringResource(Res.string.finance_markets_symbol) to symbol,
                 ),
             )
         }
@@ -434,6 +485,6 @@ internal fun QuoteDetailScreen(
         if (q != null && hi != null && lo != null) {
             item { RangeBar(lo, hi, q.price, FinanceFormat.price(lo, meta.kind), FinanceFormat.price(hi, meta.kind)) }
         }
-        item { FinePrint("From Yahoo Finance; may be delayed up to 15 minutes. Not investment advice.") }
+        item { FinePrint(stringResource(Res.string.finance_markets_quote_fine_print)) }
     }
 }

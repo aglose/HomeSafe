@@ -15,6 +15,8 @@ import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_generic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
@@ -85,7 +87,7 @@ class PresenceAutomationImplTest {
         override val currentServerUrl = MutableStateFlow<String?>(null)
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
-        override val biometricDisplayName = "biometrics"
+        override val biometricDisplayName = Res.string.biometric_name_generic
         override fun hasSavedBiometricCredentials() = false
         override suspend fun connect(serverUrl: String, localUrl: String?, username: String, password: String) = fail("unused")
         override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit) = fail("unused")

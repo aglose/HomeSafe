@@ -2,12 +2,16 @@ package com.meticulouscreations.homesafe.viewmodel
 
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.domain.model.MomentTexts
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.repository.PhantomRepository
 import com.meticulouscreations.homesafe.domain.usecase.FakeCarTagClassifiers
 import com.meticulouscreations.homesafe.domain.usecase.GetDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.MarkNotAPersonUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UndoNotAPersonUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,7 +97,8 @@ class LandedPersonViewModelTest {
 
         val state = vm.uiState.value
         assertEquals(phantom.id, state.eventId)
-        assertTrue(state.summary.startsWith("Person"), state.summary)
+        // The time's wording depends on the zone the test runs in; the moment it names doesn't.
+        assertEquals(MomentTexts.detected(MomentTexts.person), (state.summary as UiText.Joined).parts.first())
         assertEquals("Front Door", state.cameraDisplayName)
         assertFalse(state.marked)
     }
@@ -142,7 +147,7 @@ class LandedPersonViewModelTest {
 
         vm.mark()
         advanceUntilIdle()
-        assertEquals("Relay answered 502 Bad Gateway", vm.uiState.value.error)
+        assertEquals(UiText.of(Res.string.moments_not_a_person_mark_failed, "Relay answered 502 Bad Gateway"), vm.uiState.value.error)
         assertFalse(vm.uiState.value.marked)
 
         phantoms.refuse = false

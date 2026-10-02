@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The finance app's screens: Wallet, Markets, Economy, Risk, the quote and indicator pages, and
+  the shell around them. Explainers, the narrator and the sheet screens keep their own files.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Shell: tabs, top bar, pushed pages -->
+    <string name="finance_tab_wallet">Wallet</string>
+    <string name="finance_tab_markets">Markets</string>
+    <string name="finance_tab_economy">Economy</string>
+    <string name="finance_tab_risk">Risk</string>
+    <string name="finance_title_connections">How it connects</string>
+    <string name="finance_title_glossary">Jargon buster</string>
+    <string name="finance_title_sheet_sync">Sheet sync</string>
+    <string name="finance_close">Close finance</string>
+    <string name="finance_refreshing">Refreshing</string>
+    <string name="finance_refresh">Refresh</string>
+
+    <!-- Shared pieces -->
+    <string name="finance_signal_none">No line</string>
+    <string name="finance_range_52_week">52-week range</string>
+    <string name="finance_how_to_read">HOW TO READ IT</string>
+    <string name="finance_stats_title">Stats</string>
+    <string name="finance_callout_for_you">What it means for you</string>
+    <!-- A change and its percentage, e.g. "+$1,240 (+2.31%)". -->
+    <string name="finance_change_with_percent">%1$s (%2$s)</string>
+    <!-- A change and the moment it is measured at, e.g. "+$1,240 (+2.31%)  Mar 2024". -->
+    <string name="finance_change_at">%1$s  %2$s</string>
+    <!-- A change since a start date, e.g. "+$1,240 (+2.31%)  since Mar 2019". -->
+    <string name="finance_change_since">%1$s  since %2$s</string>
+
+    <!-- Chart ranges -->
+    <string name="finance_range_1y">1Y</string>
+    <string name="finance_range_3y">3Y</string>
+    <string name="finance_range_5y">5Y</string>
+    <string name="finance_range_10y">10Y</string>
+    <string name="finance_range_max">MAX</string>
+    <string name="finance_range_all">ALL</string>
+
+    <!-- Wallet -->
+    <string name="finance_wallet_metric_assets">Total assets</string>
+    <string name="finance_wallet_metric_debt">Debt</string>
+    <string name="finance_wallet_metric_cash_flow">Monthly profit</string>
+    <string name="finance_wallet_caption_cash_flow">Monthly profit · per month</string>
+    <!-- The hero chart's content description, e.g. "Total assets history". -->
+    <string name="finance_wallet_chart_description">%1$s history</string>
+    <string name="finance_wallet_not_enough_history">Not enough history in this range</string>
+    <string name="finance_wallet_hero_how_to_read">Each point is a check-in recorded in your budget sheet, joined into a line, with today's figure at the end. Drag along it to see any check-in, pick a range above, and switch between total assets, debt and monthly profit with the buttons.</string>
+    <string name="finance_wallet_watchlist_title">Your watchlist</string>
+    <string name="finance_wallet_watchlist_subtitle_sheet">The tickers your sheet tracks, live</string>
+    <string name="finance_wallet_watchlist_subtitle_live">Live prices</string>
+    <string name="finance_wallet_charts_title">Sheet charts</string>
+    <!-- %1$s is the budget sheet's title. -->
+    <string name="finance_wallet_charts_subtitle">The charts in “%1$s”, live from the sheet</string>
+    <string name="finance_wallet_accounts_title">Accounts</string>
+    <string name="finance_wallet_allocation_title">Where your money sits</string>
+    <string name="finance_wallet_allocation_subtitle">Tap a row to highlight it</string>
+    <string name="finance_wallet_cash_flow_title">Monthly cash flow</string>
+    <!-- An amount per month, e.g. "+$1,240 / mo". -->
+    <string name="finance_wallet_per_month">%1$s / mo</string>
+    <string name="finance_wallet_flow_history_title">Income vs spending</string>
+    <string name="finance_wallet_flow_history_subtitle">Green: what came in · orange: what went out, at each check-in in your sheet</string>
+    <!-- A month's money in and out, e.g. "Mar 2024: $14,170 in, $11,020 out". -->
+    <string name="finance_wallet_flow_history_selected">%1$s: %2$s in, %3$s out</string>
+    <string name="finance_wallet_debt_title">Debt</string>
+    <!-- Debt other than the mortgage, e.g. "$50K excl. mortgage". -->
+    <string name="finance_wallet_debt_excl_mortgage">%1$s excl. mortgage</string>
+    <string name="finance_wallet_home_title">Home</string>
+    <string name="finance_wallet_mortgage_title">Mortgage planner</string>
+    <string name="finance_wallet_mortgage_subtitle">Seeded from the sheet's New House tab: drag to try a different house</string>
+    <string name="finance_wallet_vesting_title">Vesting</string>
+    <!-- An amount after tax, e.g. "$5,830 after tax". -->
+    <string name="finance_wallet_after_tax">%1$s after tax</string>
+    <string name="finance_wallet_taxes_title">Income &amp; taxes</string>
+    <string name="finance_wallet_taxes_subtitle">Combined, by year — tap a year</string>
+    <string name="finance_wallet_old_house_title">Last house sale</string>
+    <string name="finance_wallet_bought_for">Bought for</string>
+    <string name="finance_wallet_sold_for">Sold for</string>
+    <string name="finance_wallet_total_profit">Total profit</string>
+    <string name="finance_wallet_return">Return</string>
+    <string name="finance_wallet_cash_received">Cash received</string>
+
+    <string name="finance_wallet_quick_net_worth">Net worth</string>
+    <string name="finance_wallet_quick_take_home">Take-home / mo</string>
+    <string name="finance_wallet_quick_spending">Spending / mo</string>
+    <string name="finance_wallet_quick_left_over">Left over</string>
+    <!-- %1$s is the savings rate, e.g. "Left over · 22%". -->
+    <string name="finance_wallet_quick_left_over_rate">Left over · %1$s</string>
+    <string name="finance_wallet_quick_runway">Cash runway</string>
+    <!-- %1$s is a number of months with one decimal, e.g. "4.5 months". -->
+    <string name="finance_wallet_quick_runway_months">%1$s months</string>
+    <string name="finance_wallet_quick_debt">Debt excl. mortgage</string>
+    <!-- Accessibility label for tapping a figure card, e.g. "Explain Net worth". -->
+    <string name="finance_wallet_explain_card">Explain %1$s</string>
+
+    <string name="finance_wallet_owner_all">All</string>
+    <!-- An owner chip: whose accounts and their total, e.g. "Alex $389K". -->
+    <string name="finance_wallet_owner_chip">%1$s %2$s</string>
+    <string name="finance_wallet_allocation_total">Total</string>
+
+    <!-- e.g. "$14,170 take-home" -->
+    <string name="finance_wallet_take_home_amount">%1$s take-home</string>
+    <string name="finance_wallet_flow_left_over">Left over</string>
+    <!-- e.g. "44% of income" -->
+    <string name="finance_wallet_share_of_income">%1$s of income</string>
+    <string name="finance_wallet_show_less">Show less</string>
+    <plurals name="finance_wallet_show_all">
+        <item quantity="one">Show %1$d</item>
+        <item quantity="other">Show all %1$d</item>
+    </plurals>
+
+    <string name="finance_wallet_debt_history">Debt history</string>
+    <!-- An interest rate, already formatted, e.g. "4.20% APR". -->
+    <string name="finance_wallet_apr">%1$s% APR</string>
+    <string name="finance_wallet_debt_secured">secured by the home</string>
+    <string name="finance_wallet_paid_off">Paid off</string>
+    <string name="finance_wallet_debt_fine_print">Net worth counts the house as the equity built in it, so the mortgage against its full value is listed but not subtracted — as the sheet does.</string>
+
+    <string name="finance_wallet_home_value">Home value</string>
+    <string name="finance_wallet_equity">Equity</string>
+    <string name="finance_wallet_owed">Owed</string>
+    <string name="finance_wallet_value_added">Value added</string>
+    <!-- e.g. "You own 25% of the house" -->
+    <string name="finance_wallet_home_owned">You own %1$s of the house</string>
+    <!-- %1$s is the total spent, %2$s an arrow showing whether the list is open (▴) or closed (▾). -->
+    <string name="finance_wallet_improvements">Improvements · %1$s %2$s</string>
+
+    <string name="finance_wallet_monthly_payment">Monthly payment</string>
+    <!-- A monthly payment's parts: loan, property tax, insurance. -->
+    <string name="finance_wallet_payment_parts">%1$s loan · %2$s tax · %3$s insurance</string>
+    <!-- A monthly payment's parts: loan, property tax, insurance, HOA dues. -->
+    <string name="finance_wallet_payment_parts_hoa">%1$s loan · %2$s tax · %3$s insurance · %4$s HOA</string>
+    <string name="finance_wallet_price">Price</string>
+    <string name="finance_wallet_down_payment">Down payment</string>
+    <string name="finance_wallet_rate">Rate</string>
+    <!-- %1$s is today's average 30-year mortgage rate, e.g. "6.35". -->
+    <string name="finance_wallet_use_market_rate">Use today's 30-year average: %1$s%</string>
+    <string name="finance_wallet_affordability_title">Against what the budget can carry</string>
+    <!-- The payment fits what the budget can carry (%1$s). -->
+    <string name="finance_wallet_affordability_fits">Fits · %1$s</string>
+    <!-- The payment is %1$s over what the budget can carry (%2$s). -->
+    <string name="finance_wallet_affordability_over">Over by %1$s · %2$s</string>
+
+    <string name="finance_wallet_paid_out">Paid out</string>
+    <!-- A short year on a bar chart, e.g. "'24". -->
+    <string name="finance_wallet_short_year">'%1$s</string>
+    <string name="finance_wallet_earned">Earned</string>
+    <string name="finance_wallet_take_home">Take-home</string>
+    <string name="finance_wallet_taxes">Taxes</string>
+    <string name="finance_wallet_effective_rate">Effective rate</string>
+    <string name="finance_wallet_invested">Invested</string>
+    <string name="finance_wallet_of_take_home">Of take-home</string>
+    <string name="finance_wallet_before_tax">Before tax</string>
+
+    <!-- %1$s is the sheet's title, %2$s how long ago it synced ("today", "3 days ago"). -->
+    <string name="finance_wallet_synced_from">Synced from “%1$s” · %2$s</string>
+    <string name="finance_wallet_open_sheet">Open the sheet</string>
+
+    <!-- Markets -->
+    <string name="finance_markets_prev_close">Prev close</string>
+    <string name="finance_markets_volume">Volume</string>
+    <string name="finance_markets_day_high">Day high</string>
+    <string name="finance_markets_day_low">Day low</string>
+    <string name="finance_markets_price">Price</string>
+    <string name="finance_markets_52w_high">52W high</string>
+    <string name="finance_markets_52w_low">52W low</string>
+    <string name="finance_markets_symbol">Symbol</string>
+    <string name="finance_markets_macro_title">Other big signals</string>
+    <string name="finance_markets_macro_subtitle">Interest rates, gold, oil, crypto and the dollar — tap any to learn why it matters</string>
+    <string name="finance_markets_watchlist_title">Watchlist</string>
+    <string name="finance_markets_watchlist_subtitle">From your budget sheet</string>
+    <string name="finance_markets_fine_print">Quotes from Yahoo Finance, delayed up to 15 minutes. Updated every 15 seconds while markets are open.</string>
+    <!-- %1$s is the reason the refresh failed, as the server gave it. -->
+    <string name="finance_markets_fine_print_error">Couldn't refresh: %1$s. Quotes from Yahoo Finance, delayed up to 15 minutes. Updated every 15 seconds while markets are open.</string>
+    <!-- A price chart's content description, e.g. "S&P 500 chart, Past week". -->
+    <string name="finance_markets_chart_description">%1$s chart, %2$s</string>
+    <string name="finance_markets_how_to_read_day">The line is today's price, minute by minute. The dotted line is yesterday's close: above it (green) the day is up, below it (orange) the day is down. Drag along the chart to see the price at any moment, and pick a range to look further back.</string>
+    <!-- %1$s is the range in lower case, e.g. "past week". -->
+    <string name="finance_markets_how_to_read_range">The line is the price over %1$s; it's green if it's higher now than at the start and orange if lower. Drag along the chart to see the price on any day.</string>
+    <string name="finance_markets_range_day">Today</string>
+    <string name="finance_markets_range_week">Past week</string>
+    <string name="finance_markets_range_month">Past month</string>
+    <string name="finance_markets_range_three_months">Past 3 months</string>
+    <string name="finance_markets_range_ytd">Year to date</string>
+    <string name="finance_markets_range_year">Past year</string>
+    <string name="finance_markets_range_five_years">Past 5 years</string>
+    <string name="finance_markets_range_max">All time</string>
+    <!-- %1$s is the closing time, e.g. "4:00 PM". -->
+    <string name="finance_markets_open_closes">Market open · closes %1$s</string>
+    <!-- %1$s is the opening time, e.g. "9:30 AM". -->
+    <string name="finance_markets_opens">Opens %1$s</string>
+    <string name="finance_markets_closed">Market closed</string>
+    <string name="finance_markets_what_is_it">What is it?</string>
+    <string name="finance_markets_why_it_matters">WHY IT MATTERS TO YOU</string>
+    <string name="finance_markets_about">About</string>
+    <string name="finance_markets_quote_fine_print">From Yahoo Finance; may be delayed up to 15 minutes. Not investment advice.</string>
+
+    <!-- Economy -->
+    <string name="finance_econ_inflation_title">Inflation</string>
+    <string name="finance_econ_inflation_subtitle">How much more things cost than a year ago</string>
+    <string name="finance_econ_curve_title">The yield curve</string>
+    <string name="finance_econ_curve_subtitle">What the government pays to borrow, from 1 month (left) to 30 years (right)</string>
+    <string name="finance_econ_yields_title">Government borrowing costs</string>
+    <string name="finance_econ_yields_subtitle">2, 10 and 30 years — mortgages follow the 10-year</string>
+    <!-- Legend labels for the 2-, 10- and 30-year Treasury yields. -->
+    <string name="finance_econ_yield_2y">2Y</string>
+    <string name="finance_econ_yield_10y">10Y</string>
+    <string name="finance_econ_yield_30y">30Y</string>
+    <string name="finance_econ_yields_how_to_read">Higher lines mean borrowing costs more for everyone. Grey bands are past recessions.</string>
+    <string name="finance_econ_real_title">Is your cash keeping up?</string>
+    <string name="finance_econ_real_subtitle">The Fed's rate against inflation: above zero, savings beat rising prices</string>
+    <!-- The real interest rate, e.g. "0.48% real". -->
+    <string name="finance_econ_real_value">%1$s% real</string>
+    <string name="finance_econ_fed_funds">Fed funds</string>
+    <string name="finance_econ_cpi_inflation">CPI inflation</string>
+    <string name="finance_econ_real_how_to_read">When the yellow line (the Fed's rate) is above the red one (inflation), cash in savings grows faster than prices.</string>
+    <string name="finance_econ_rates_title">Key rates</string>
+    <string name="finance_econ_rates_subtitle">Tap any for the full story</string>
+    <string name="finance_econ_fine_print">Economic data from the Federal Reserve Bank of St. Louis (FRED). Inflation is the change from a year earlier.</string>
+    <!-- %1$s is a month, e.g. "CPI in Mar 2024". -->
+    <string name="finance_econ_cpi_in">CPI in %1$s</string>
+    <!-- %1$s is the change ("+0.20 pts"), %2$s the month of the reading. -->
+    <string name="finance_econ_cpi_change">%1$s from the month before · %2$s</string>
+    <string name="finance_econ_inflation_caption">Prices vs a year ago</string>
+    <string name="finance_econ_cpi">CPI</string>
+    <string name="finance_econ_core_cpi">Core CPI</string>
+    <string name="finance_econ_core_pce">Core PCE</string>
+    <string name="finance_econ_fed_target">Fed target 2%</string>
+    <string name="finance_econ_inflation_chart">Inflation chart</string>
+    <string name="finance_econ_inflation_how_to_read">Each line is how much prices rose over the previous 12 months. Red counts everything; yellow and blue leave out jumpy food and gas prices. The dashed line is the Fed's 2% goal, and grey bands are past recessions.</string>
+    <string name="finance_econ_curve_compare_month">1M ago</string>
+    <string name="finance_econ_curve_compare_half">6M ago</string>
+    <string name="finance_econ_curve_compare_year">1Y ago</string>
+    <string name="finance_econ_curve_compare_two">2Y ago</string>
+    <!-- A comparison chip, e.g. "vs 1Y ago". -->
+    <string name="finance_econ_curve_vs">vs %1$s</string>
+    <string name="finance_econ_curve_failed_fred">Some of the curve's maturities didn't load from FRED. Pull down to try again.</string>
+    <string name="finance_econ_curve_failed">Some of the curve's maturities didn't load. Pull down to try again.</string>
+    <!-- A Treasury by its term, e.g. "10Y Treasury". -->
+    <string name="finance_econ_treasury">%1$s Treasury</string>
+    <!-- Today's yield against the compared one, both formatted, e.g. "4.12%  vs 4.50%". -->
+    <string name="finance_econ_curve_vs_then">%1$s  vs %2$s</string>
+    <string name="finance_econ_curve_spread">10Y − 3M spread</string>
+    <string name="finance_econ_curve_inverted">Inverted</string>
+    <string name="finance_econ_curve_normal">Normal</string>
+    <string name="finance_econ_curve_today">Today</string>
+    <string name="finance_econ_curve_description">Treasury yield curve</string>
+    <string name="finance_econ_curve_how_to_read_inverted">Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more. Right now short-term rates are higher than long-term ones, an upside-down shape that has come before every recession since 1970.</string>
+    <string name="finance_econ_curve_how_to_read_normal">Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more — and it does today. If the left end ever rises above the right, that's a classic recession warning. The dashed line is the curve as it was before.</string>
+    <string name="finance_econ_couldnt_load">Couldn't load</string>
+    <!-- e.g. "+0.40 pts in a year" -->
+    <string name="finance_econ_in_a_year">%1$s in a year</string>
+
+    <!-- Risk -->
+    <string name="finance_risk_stress">STRESS</string>
+    <string name="finance_risk_reading">Reading the gauges…</string>
+    <!-- How many warning signs sit in each band, e.g. "2 in danger · 5 to watch · 12 calm". -->
+    <string name="finance_risk_counts">%1$d in danger · %2$d to watch · %3$d calm</string>
+    <!-- Loading progress, e.g. "12 of 19 readings in". -->
+    <string name="finance_risk_loading">%1$d of %2$d readings in</string>
+    <string name="finance_risk_how_to_read">Each card below is one warning sign that has turned before past downturns. The big number is today's reading, the sentence says what it means, and the colored bar shows where it sits between calm (green), worth watching (amber) and danger (red). One sign on its own means little — trouble has come when many light up together.</string>
+    <string name="finance_risk_flashing_title">Flashing now</string>
+    <string name="finance_risk_flashing_subtitle">Signs past their 'watch' or 'danger' line — tap one to see why</string>
+    <string name="finance_risk_how_title">How the gauge works</string>
+    <string name="finance_risk_how_body">Each sign scores 0 when it's comfortably calm, 50 at its 'watch' line and 100 at its 'danger' line, and the gauge averages them — the most reliable recession alarms (the yield curve, the jobs alarm, risky companies' borrowing costs and financial stress) count the most. The lines are rules of thumb from past recessions and crises, not forecasts. Nothing here is financial advice.</string>
+    <!-- e.g. "+0.40 pts vs a year ago" -->
+    <string name="finance_risk_vs_year_ago">%1$s vs a year ago</string>
+    <string name="finance_risk_failed">Couldn't load from FRED. Pull down to retry.</string>
+
+    <!-- Indicator page -->
+    <!-- %1$s is the change vs a year ago ("+0.40 pts"), %2$s the date of the reading. -->
+    <string name="finance_indicator_change">%1$s vs a year ago · %2$s</string>
+    <!-- A chart's content description, e.g. "Unemployment rate chart". -->
+    <string name="finance_indicator_chart_description">%1$s chart</string>
+    <string name="finance_indicator_how_to_read">Drag along the chart to see any past reading. Grey bands are past recessions — see what this did just before them.</string>
+    <string name="finance_indicator_how_to_read_zones">Drag along the chart to see any past reading. The amber band is where it's worth watching and the red band is the danger zone. Grey bands are past recessions — see what this did just before them.</string>
+    <!-- %1$s is what the dashed line marks, in lower case, e.g. "the fed's 2% target". -->
+    <string name="finance_indicator_how_to_read_reference">Drag along the chart to see any past reading. The dashed line marks %1$s. Grey bands are past recessions — see what this did just before them.</string>
+    <!-- %1$s is what the dashed line marks, in lower case. -->
+    <string name="finance_indicator_how_to_read_zones_reference">Drag along the chart to see any past reading. The amber band is where it's worth watching and the red band is the danger zone. The dashed line marks %1$s. Grey bands are past recessions — see what this did just before them.</string>
+    <string name="finance_indicator_right_now">Right now</string>
+    <string name="finance_indicator_analogy">An everyday comparison</string>
+    <string name="finance_indicator_why">Why it matters</string>
+    <string name="finance_indicator_normal">What's normal</string>
+    <string name="finance_indicator_danger_line_title">The danger line</string>
+    <string name="finance_indicator_how_it_works">How it works</string>
+    <string name="finance_indicator_latest">Latest</string>
+    <string name="finance_indicator_as_of">As of</string>
+    <string name="finance_indicator_year_ago">1 year ago</string>
+    <string name="finance_indicator_five_years_ago">5 years ago</string>
+    <!-- The highest reading in the chosen range, e.g. "10Y high". -->
+    <string name="finance_indicator_range_high">%1$s high</string>
+    <!-- The lowest reading in the chosen range, e.g. "10Y low". -->
+    <string name="finance_indicator_range_low">%1$s low</string>
+    <string name="finance_indicator_watch_line">Watch line</string>
+    <string name="finance_indicator_danger_line">Danger line</string>
+    <string name="finance_indicator_updated">Updated</string>
+    <string name="finance_indicator_source">Source</string>
+    <!-- %1$s is the FRED series ids, e.g. "FRED DGS10". -->
+    <string name="finance_indicator_source_value">FRED %1$s</string>
+    <string name="finance_indicator_open_fred">Open on FRED</string>
+    <!-- Band labels drawn on an indicator's chart. -->
+    <string name="finance_zone_watch">Watch</string>
+    <string name="finance_zone_danger">Danger</string>
+</resources>

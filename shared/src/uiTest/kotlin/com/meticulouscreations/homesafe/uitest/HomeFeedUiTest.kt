@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeed
 import com.meticulouscreations.homesafe.ui.screens.IN_VIEW_CHECK_TEST_TAG
@@ -65,10 +66,10 @@ class HomeFeedUiTest {
             sinceIsKnown = true,
         ),
         presentation = StationaryObjectPresentation(
-            title = title,
+            title = title.asUiText(),
             placeLabel = placeLabel,
-            sinceLabel = sinceLabel,
-            lastSeenLabel = lastSeenLabel,
+            sinceLabel = sinceLabel?.asUiText(),
+            lastSeenLabel = lastSeenLabel?.asUiText(),
         ),
         thumbnailUrl = null,
     )

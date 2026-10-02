@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the network, data and platform layers say when something goes wrong, the names of the
+  biometric methods, and the in-app alerts' own words. Errors reach the screen through
+  LocalizedException / userMessage(). A %1$s that follows a failure is the server's HTTP status
+  ("404 Not Found"), passed through as it is. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Frigate API -->
+    <string name="error_login_failed">Login failed: %1$s</string>
+    <string name="error_sign_in_failed">Login failed</string>
+    <string name="error_load_cameras">Couldn't load cameras: %1$s</string>
+    <string name="error_load_camera_config">Couldn't load camera config: %1$s</string>
+    <string name="error_camera_not_on_server">Camera %1$s isn't on this server</string>
+    <string name="error_save_failed">Couldn't save: %1$s</string>
+    <string name="error_request_failed">Request failed: %1$s</string>
+    <string name="error_load_events">Couldn't load events: %1$s</string>
+    <string name="error_load_server_stats">Couldn't load server stats: %1$s</string>
+    <string name="error_load_server_config">Couldn't load server config: %1$s</string>
+    <string name="error_load_profile">Couldn't load profile: %1$s</string>
+    <string name="error_load_thumbnail">No thumbnail: %1$s</string>
+    <string name="error_load_preview">No preview: %1$s</string>
+    <string name="error_load_recordings">Couldn't load recordings: %1$s</string>
+    <string name="error_load_faces">Couldn't load faces: %1$s</string>
+    <string name="error_load_classifier_config">Couldn't load config: %1$s</string>
+    <string name="error_load_timeline">Couldn't load timeline: %1$s</string>
+    <string name="error_load_tracked_objects">Couldn't load tracked objects: %1$s</string>
+    <string name="error_load_dataset">Couldn't load dataset: %1$s</string>
+    <string name="error_load_classifier_queue">Couldn't load queue: %1$s</string>
+    <string name="error_load_camera_frame">Couldn't load the camera's frame: %1$s</string>
+    <string name="error_load_recording_frame">Couldn't load the recording: %1$s</string>
+
+    <!-- Push relay -->
+    <string name="error_relay_answered">Relay answered %1$s</string>
+    <string name="error_relay_no_secret">Relay issued no secret</string>
+    <string name="error_relay_no_spot">Relay kept no spot</string>
+
+    <!-- Repositories -->
+    <string name="error_not_connected">Not connected to a server</string>
+    <string name="error_no_server_to_ask">No server to ask</string>
+    <string name="error_server_unreachable">Couldn't reach the server</string>
+    <string name="error_load_server_config_fallback">Couldn't load the server's config</string>
+    <string name="error_load_detections">Couldn't load detections</string>
+    <string name="error_load_older_detections">Couldn't load older detections</string>
+    <string name="error_classifier_not_found">No classifier named %1$s on this server</string>
+    <string name="error_detection_gone">Frigate no longer has this detection</string>
+    <string name="error_no_car_box">Frigate kept no box for this car</string>
+    <string name="error_no_location">Couldn't get this phone's location</string>
+
+    <!-- Saving a clip to the device -->
+    <string name="download_cancelled">The download was cancelled</string>
+    <string name="download_frigate_refused">Frigate answered %1$s for the clip</string>
+    <string name="download_no_space">Not enough space on the phone</string>
+    <string name="download_file_exists">A file with this name is already in Downloads</string>
+    <string name="download_connection_lost">Lost the connection to the server</string>
+    <string name="download_too_many_redirects">The server redirected the download too many times</string>
+    <string name="download_failed_code">Download failed (%1$s)</string>
+    <string name="download_write_failed">Couldn't save the clip on this device</string>
+    <string name="download_unavailable_desktop">Downloading clips isn't available on desktop</string>
+    <string name="download_unavailable_platform">Downloading clips isn't available on this platform</string>
+
+    <!-- Biometric sign-in. The names are put into sentences such as "Sign in with %1$s". -->
+    <string name="biometric_name_face_id">Face ID</string>
+    <string name="biometric_name_touch_id">Touch ID</string>
+    <string name="biometric_name_fingerprint">fingerprint</string>
+    <string name="biometric_name_generic">biometrics</string>
+    <string name="biometric_confirm_save_reason">Confirm your fingerprint or face to save this login</string>
+    <string name="biometric_sign_in_reason">Sign in with Face ID or Touch ID</string>
+    <string name="biometric_confirmation_cancelled">Biometric confirmation was cancelled</string>
+    <string name="biometric_keychain_save_failed">Couldn't save the login to the Keychain (status %1$s)</string>
+    <string name="biometric_sign_in_failed">Biometric sign-in failed or was cancelled</string>
+    <string name="biometric_no_saved_login">No login is saved for biometric sign-in</string>
+    <string name="biometric_needs_app_open">Biometric sign-in needs the app open</string>
+    <string name="biometric_unavailable_desktop">Biometric sign-in isn't available on desktop</string>
+    <string name="biometric_unavailable_platform">Biometric sign-in isn't available on this platform</string>
+
+    <!-- In-app alerts (the relay's pushes bring their own words) -->
+    <string name="notif_away_title">Away: %1$s</string>
+</resources>

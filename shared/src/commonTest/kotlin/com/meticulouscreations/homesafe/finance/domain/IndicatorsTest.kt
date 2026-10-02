@@ -1,5 +1,13 @@
 package com.meticulouscreations.homesafe.finance.domain
 
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.indicator_stress_calm
+import homesafe.shared.generated.resources.indicator_stress_elevated
+import homesafe.shared.generated.resources.indicator_stress_high
+import homesafe.shared.generated.resources.indicator_stress_severe
+import homesafe.shared.generated.resources.indicator_unrate_short_title
+import homesafe.shared.generated.resources.indicator_unrate_title
+import homesafe.shared.generated.resources.indicator_unrate_why
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -15,13 +23,13 @@ class IndicatorsTest {
 
     private fun indicator(id: String = "x", thresholds: Thresholds? = null, weight: Double = 1.0) = Indicator(
         id = id,
-        title = id,
-        shortTitle = id,
+        title = Res.string.indicator_unrate_title,
+        shortTitle = Res.string.indicator_unrate_short_title,
         fredIds = listOf(id.uppercase()),
         unit = IndicatorUnit.PERCENT,
         group = IndicatorGroup.RECESSION,
         thresholds = thresholds,
-        why = "test fixture",
+        why = Res.string.indicator_unrate_why,
         weight = weight,
     )
 
@@ -77,7 +85,7 @@ class IndicatorsTest {
         assertEquals(3, score.counted, "the reading with no thresholds is left out")
         assertEquals(1, score.dangers)
         assertEquals(1, score.watches)
-        assertEquals("High", score.label)
+        assertEquals(Res.string.indicator_stress_high, score.label)
     }
 
     @Test
@@ -88,10 +96,10 @@ class IndicatorsTest {
 
     @Test
     fun stressScoreLabelBoundaries() {
-        assertEquals("Calm", StressScore(score = 29.9, counted = 1, dangers = 0, watches = 0).label)
-        assertEquals("Elevated", StressScore(score = 30.0, counted = 1, dangers = 0, watches = 0).label)
-        assertEquals("High", StressScore(score = 50.0, counted = 1, dangers = 0, watches = 0).label)
-        assertEquals("Severe", StressScore(score = 70.0, counted = 1, dangers = 0, watches = 0).label)
+        assertEquals(Res.string.indicator_stress_calm, StressScore(score = 29.9, counted = 1, dangers = 0, watches = 0).label)
+        assertEquals(Res.string.indicator_stress_elevated, StressScore(score = 30.0, counted = 1, dangers = 0, watches = 0).label)
+        assertEquals(Res.string.indicator_stress_high, StressScore(score = 50.0, counted = 1, dangers = 0, watches = 0).label)
+        assertEquals(Res.string.indicator_stress_severe, StressScore(score = 70.0, counted = 1, dangers = 0, watches = 0).label)
     }
 
     @Test

@@ -58,8 +58,11 @@ fun String.asUiText(): UiText = UiText.Verbatim(this)
 @Composable
 fun UiText.resolve(): String = when (this) {
     is UiText.Verbatim -> value
+
     is UiText.Resource -> stringResource(res, *resolveArgs(args))
+
     is UiText.Plural -> pluralStringResource(res, quantity, *resolveArgs(args))
+
     is UiText.Joined -> {
         val sep = separator.resolve()
         val resolved = parts.map { it.resolve() }
@@ -70,8 +73,11 @@ fun UiText.resolve(): String = when (this) {
 /** [resolve] for code that is not in a composition. */
 suspend fun UiText.load(): String = when (this) {
     is UiText.Verbatim -> value
+
     is UiText.Resource -> getString(res, *loadArgs(args))
+
     is UiText.Plural -> getPluralString(res, quantity, *loadArgs(args))
+
     is UiText.Joined -> {
         val sep = separator.load()
         parts.map { it.load() }.joinToString(sep)
@@ -96,12 +102,28 @@ open class LocalizedException(
 ) : Exception(technical ?: text.toString(), cause)
 
 /**
- * What to show for this failure: its [LocalizedException.text] when it has one, otherwise
- * [fallback] (which may take the raw message as `%1$s`, e.g. "Couldn't save: %1$s"). The raw
- * message is server or platform text, so it is passed through untranslated.
+ * What to show for this failure: why it failed — its [LocalizedException.text] when it has one,
+ * otherwise its raw message, which is server or platform text and so passed through
+ * untranslated — set into [fallback] as `%1$s` when given ("Couldn't save: %1$s").
  */
 fun Throwable.userMessage(fallback: StringResource? = null): UiText {
-    (this as? LocalizedException)?.let { return it.text }
+    val localized = (this as? LocalizedException)?.text
     val raw = message.orEmpty()
-    return if (fallback != null) UiText.of(fallback, raw) else UiText.Verbatim(raw)
+    return when {
+        fallback != null -> UiText.of(fallback, localized ?: raw)
+        else -> localized ?: UiText.Verbatim(raw)
+    }
+}
+
+/**
+ * [load] behind an interface, for code outside the UI that hands a finished `String` to the
+ * platform, such as a notification. Tests substitute it where resources can't be read: Android
+ * host tests have no `Resources` to load them through.
+ */
+fun interface TextLoader {
+    suspend fun load(text: UiText): String
+
+    companion object {
+        val Resources: TextLoader = TextLoader { it.load() }
+    }
 }

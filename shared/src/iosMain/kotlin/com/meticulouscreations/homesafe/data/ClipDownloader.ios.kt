@@ -3,6 +3,12 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
+import com.meticulouscreations.homesafe.network.requireSuccess
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.download_frigate_refused
+import homesafe.shared.generated.resources.download_write_failed
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.timeout
@@ -10,7 +16,6 @@ import io.ktor.client.request.header
 import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.contentLength
-import io.ktor.http.isSuccess
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -61,7 +66,7 @@ private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownlo
                 socketTimeoutMillis = SOCKET_TIMEOUT_MS
             }
         }.execute { response ->
-            check(response.status.isSuccess()) { "Frigate answered ${response.status} for the clip" }
+            response.requireSuccess(Res.string.download_frigate_refused)
             writeToFile(path, response.bodyAsChannel(), response.contentLength(), onProgress)
         }
 
@@ -87,7 +92,7 @@ private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownlo
         totalBytes: Long?,
         onProgress: (ClipDownloadProgress) -> Unit,
     ) = withContext(Dispatchers.IO) {
-        val file = fopen(path, "wb") ?: error("Couldn't open $path for writing")
+        val file = fopen(path, "wb") ?: throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't open $path for writing")
         try {
             val buffer = ByteArray(DOWNLOAD_CHUNK_BYTES)
             var received = 0L
@@ -96,7 +101,7 @@ private class IosClipDownloader(private val httpClient: HttpClient) : ClipDownlo
                 if (read < 0) break
                 if (read == 0) continue
                 val written = buffer.usePinned { pinned -> fwrite(pinned.addressOf(0), 1uL, read.toULong(), file) }
-                check(written == read.toULong()) { "Couldn't write the clip to $path" }
+                if (written != read.toULong()) throw LocalizedException(UiText.of(Res.string.download_write_failed), technical = "Couldn't write the clip to $path")
                 received += read
                 val fraction = totalBytes?.takeIf { it > 0L }?.let { (received.toDouble() / it).toFloat().coerceIn(0f, 1f) }
                 onProgress(ClipDownloadProgress.Downloading(fraction))

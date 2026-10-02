@@ -64,6 +64,29 @@ import com.meticulouscreations.homesafe.finance.domain.ExplainerTopic
 import com.meticulouscreations.homesafe.finance.domain.Explainers
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.explain_analogy
+import homesafe.shared.generated.resources.explain_click_label
+import homesafe.shared.generated.resources.explain_connected_to
+import homesafe.shared.generated.resources.explain_for_you
+import homesafe.shared.generated.resources.explain_how_it_works
+import homesafe.shared.generated.resources.explain_info_description
+import homesafe.shared.generated.resources.explain_normal
+import homesafe.shared.generated.resources.explain_real_rate_negative
+import homesafe.shared.generated.resources.explain_real_rate_positive
+import homesafe.shared.generated.resources.explain_right_now
+import homesafe.shared.generated.resources.explain_see_full_chart
+import homesafe.shared.generated.resources.explain_stress_calm
+import homesafe.shared.generated.resources.explain_stress_dangers
+import homesafe.shared.generated.resources.explain_stress_elevated
+import homesafe.shared.generated.resources.explain_stress_high
+import homesafe.shared.generated.resources.explain_stress_severe
+import homesafe.shared.generated.resources.explain_stress_watches
+import homesafe.shared.generated.resources.explain_why_it_matters
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 
 /** Opens the plain-English explainer with this id. Provided by [FinanceApp]; a no-op elsewhere (previews). */
 val LocalExplainer = staticCompositionLocalOf<(String) -> Unit> { {} }
@@ -75,15 +98,15 @@ val LocalExplainer = staticCompositionLocalOf<(String) -> Unit> { {} }
 @Composable
 fun InfoButton(explainerId: String, modifier: Modifier = Modifier, size: Dp = 18.dp, tint: Color = FinanceTheme.colors.textSecondary) {
     val open = LocalExplainer.current
-    val title = Explainers.byId(explainerId)?.title ?: return
+    val title = stringResource(Explainers.byId(explainerId)?.title ?: return)
     Box(
         modifier
             .minimumInteractiveComponentSize()
             .clip(CircleShape)
-            .clickable(role = Role.Button, onClickLabel = "Explain $title") { open(explainerId) },
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.explain_click_label, title)) { open(explainerId) },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(Icons.Outlined.Info, contentDescription = "What is $title?", tint = tint, modifier = Modifier.size(size))
+        Icon(Icons.Outlined.Info, contentDescription = stringResource(Res.string.explain_info_description, title), tint = tint, modifier = Modifier.size(size))
     }
 }
 
@@ -168,12 +191,12 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
             }
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text(e.title, style = type.title, color = colors.textPrimary)
-                if (e.technical.isNotEmpty()) Text(e.technical, style = type.label, color = colors.textSecondary)
+                Text(stringResource(e.title), style = type.title, color = colors.textPrimary)
+                e.technical?.let { Text(stringResource(it), style = type.label, color = colors.textSecondary) }
             }
         }
         Spacer(Modifier.height(16.dp))
-        Text(e.oneLiner, style = type.body.copy(fontSize = type.section.fontSize, lineHeight = type.section.lineHeight), color = colors.textPrimary)
+        Text(stringResource(e.oneLiner), style = type.body.copy(fontSize = type.section.fontSize, lineHeight = type.section.lineHeight), color = colors.textPrimary)
 
         val now = when {
             reading != null && reading.latest != null -> Narrator.rightNow(reading)
@@ -183,31 +206,42 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
                 val cpi = state.readings["cpi"]?.latest
                 if (ff != null && cpi != null) {
                     val real = ff - cpi
-                    "The Fed's ${FinanceFormat.grouped(ff, 2)}% minus inflation's ${FinanceFormat.grouped(cpi, 2)}% leaves a real rate of ${FinanceFormat.grouped(real, 2)}%" +
-                        if (real >= 0) " — money is a little tight, and savings keep up with prices." else " — savings lose ground to prices."
+                    UiText.of(
+                        if (real >= 0) Res.string.explain_real_rate_positive else Res.string.explain_real_rate_negative,
+                        FinanceFormat.percent(ff, 2),
+                        FinanceFormat.percent(cpi, 2),
+                        FinanceFormat.percent(real, 2),
+                    )
                 } else {
                     null
                 }
             }
 
-            e.id == "stress" -> state.stress?.let { "The gauge reads ${FinanceFormat.grouped(it.score, 0)} — ${it.label.lowercase()}. ${it.dangers} warning signs are in the danger zone and ${it.watches} are worth watching." }
+            e.id == "stress" -> state.stress?.let {
+                UiText.of(
+                    byStressBand(it.score, Res.string.explain_stress_calm, Res.string.explain_stress_elevated, Res.string.explain_stress_high, Res.string.explain_stress_severe),
+                    FinanceFormat.grouped(it.score, 0),
+                    UiText.plural(Res.plurals.explain_stress_dangers, it.dangers),
+                    UiText.plural(Res.plurals.explain_stress_watches, it.watches),
+                )
+            }
 
             else -> symbolFor(e.id)?.let { s -> state.quotes[s]?.let { q -> Narrator.quoteVerdict(s, q) } }
         }
         if (now != null) {
-            Callout("Right now", now, colors.signal(reading?.signal).takeIf { reading?.signal != null } ?: colors.cool, Icons.AutoMirrored.Filled.TrendingUp)
+            Callout(stringResource(Res.string.explain_right_now), now.resolve(), colors.signal(reading?.signal).takeIf { reading?.signal != null } ?: colors.cool, Icons.AutoMirrored.Filled.TrendingUp)
         }
         Narrator.forYou(e.id, state.readings, state.quotes, state.finance)?.let { mine ->
-            Callout("What it means for you", mine, colors.accent, Icons.Filled.Person)
+            Callout(stringResource(Res.string.explain_for_you), mine.resolve(), colors.accent, Icons.Filled.Person)
         }
-        ExplainSection("Why it matters", e.whyYou)
-        if (e.analogy.isNotEmpty()) Callout("An everyday comparison", e.analogy, colors.violet, Icons.Outlined.Lightbulb)
-        if (e.normal.isNotEmpty()) ExplainSection("What's normal", e.normal)
-        if (e.howItWorks.isNotEmpty()) ExplainSection("How it works", e.howItWorks)
+        ExplainSection(Res.string.explain_why_it_matters, stringResource(e.whyYou))
+        e.analogy?.let { Callout(stringResource(Res.string.explain_analogy), stringResource(it), colors.violet, Icons.Outlined.Lightbulb) }
+        e.normal?.let { ExplainSection(Res.string.explain_normal, stringResource(it)) }
+        e.howItWorks?.let { ExplainSection(Res.string.explain_how_it_works, stringResource(it)) }
 
         val related = e.related.mapNotNull { Explainers.byId(it) }
         if (related.isNotEmpty()) {
-            ExplainHeading("Connected to")
+            ExplainHeading(Res.string.explain_connected_to)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 related.forEach { r ->
                     val c = topicColor(r.topic, colors)
@@ -222,7 +256,7 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
                     ) {
                         Icon(topicIcon(r.topic), contentDescription = null, tint = c, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(r.title, style = type.label, color = colors.textPrimary)
+                        Text(stringResource(r.title), style = type.label, color = colors.textPrimary)
                     }
                 }
             }
@@ -230,7 +264,7 @@ internal fun ExplainerBody(e: Explainer, state: FinanceUiState, onNavigate: (Str
         if (IndicatorCatalog.byId(e.id) != null) {
             Spacer(Modifier.height(20.dp))
             Text(
-                "See the full chart",
+                stringResource(Res.string.explain_see_full_chart),
                 style = type.bodyStrong,
                 color = colors.background,
                 modifier = Modifier
@@ -248,9 +282,9 @@ private fun symbolFor(id: String): String? =
     (MarketCatalog.indices + MarketCatalog.macro).firstOrNull { Explainers.forSymbol(it.symbol) == id }?.symbol
 
 @Composable
-private fun ExplainHeading(text: String) {
+private fun ExplainHeading(text: StringResource) {
     Text(
-        text.uppercase(),
+        stringResource(text).uppercase(),
         style = FinanceTheme.type.micro,
         color = FinanceTheme.colors.textSecondary,
         modifier = Modifier.padding(top = 20.dp, bottom = 6.dp),
@@ -258,7 +292,7 @@ private fun ExplainHeading(text: String) {
 }
 
 @Composable
-private fun ExplainSection(heading: String, body: String) {
+private fun ExplainSection(heading: StringResource, body: String) {
     Column {
         ExplainHeading(heading)
         Text(body, style = FinanceTheme.type.body, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.88f))

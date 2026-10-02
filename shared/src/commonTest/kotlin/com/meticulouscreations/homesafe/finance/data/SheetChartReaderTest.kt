@@ -5,6 +5,15 @@ import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.SheetChart
 import com.meticulouscreations.homesafe.finance.domain.SheetChartKind
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.fin_data_chart_cells_empty
+import homesafe.shared.generated.resources.fin_data_chart_kind_not_drawn
+import homesafe.shared.generated.resources.fin_data_chart_on_tab
+import homesafe.shared.generated.resources.fin_data_chart_quoted_tab
+import homesafe.shared.generated.resources.fin_data_chart_tabs_gone
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -57,8 +66,8 @@ class SheetChartReaderTest {
         val dates = assertIs<ChartDomain.Dates>(chart.domain)
         assertEquals(listOf(1_678_838_400L, 1_687_478_400L, 1_696_118_400L), dates.epochSeconds, "sorted by date, blank rows dropped")
         assertEquals(listOf(200_000.0, 220_000.0, 250_000.0), chart.series.single().values)
-        assertEquals("Total Assets", chart.series.single().label, "no header count and a number first: the label above names it")
-        assertEquals("Total Assets", chart.title, "an untitled chart takes its one series' name")
+        assertEquals("Total Assets".asUiText(), chart.series.single().label, "no header count and a number first: the label above names it")
+        assertEquals("Total Assets".asUiText(), chart.title, "an untitled chart takes its one series' name")
         assertEquals(ChartValueFormat.MONEY, chart.series.single().format)
         assertEquals("https://docs.google.com/spreadsheets/d/x/edit#gid=12", chart.sourceUrl)
         assertTrue(chart.isDrawable)
@@ -85,7 +94,7 @@ class SheetChartReaderTest {
         assertEquals(ChartValueFormat.NUMBER, change.series.single().format)
         val income = charts[1]
         assertEquals(ChartDomain.Categories(listOf("2018", "2019")), income.domain, "a header row of words is the series' name, not a point")
-        assertEquals("Income", income.series.single().label)
+        assertEquals("Income".asUiText(), income.series.single().label)
         assertEquals(listOf(100.0, 110.0), income.series.single().values)
     }
 
@@ -101,7 +110,7 @@ class SheetChartReaderTest {
             """,
         ).single()
         assertEquals(1, chart.series.size)
-        assertEquals("Debt", chart.series.single().label)
+        assertEquals("Debt".asUiText(), chart.series.single().label)
         assertEquals(listOf(-64_000.0, -61_000.0, -58_000.0), chart.series.single().values)
     }
 
@@ -183,7 +192,7 @@ class SheetChartReaderTest {
         assertEquals(ChartDomain.Categories(listOf("2018", "2019")), charts[0].domain)
         assertEquals(listOf(100.0, 110.0), charts[0].series.single().values)
         assertEquals(ChartDomain.Categories(listOf("2018", "2019")), charts[1].domain)
-        assertEquals("Income", charts[1].series.single().label)
+        assertEquals("Income".asUiText(), charts[1].series.single().label)
         assertFalse(charts[2].isDrawable, "a blank column with nothing beside it has no points")
     }
 
@@ -211,12 +220,13 @@ class SheetChartReaderTest {
             """,
         )
         assertEquals(SheetChartKind.OTHER, charts[0].kind)
-        assertEquals("Chart on T", charts[0].title)
+        assertEquals(UiText.of(Res.string.fin_data_chart_on_tab, "T"), charts[0].title)
         assertEquals("https://docs.google.com/spreadsheets/d/x/edit", charts[0].sourceUrl, "no tab id: the sheet itself")
         assertTrue(charts.none { it.isDrawable })
-        assertEquals("A waterfall chart isn't one the app draws", charts[0].issue)
-        assertEquals("The cells it plots are empty", charts[1].issue)
-        assertEquals("It plots “Gone”, which the sheet no longer has", charts[2].issue)
+        assertEquals(UiText.of(Res.string.fin_data_chart_kind_not_drawn, "waterfall"), charts[0].issue)
+        assertEquals(UiText.of(Res.string.fin_data_chart_cells_empty), charts[1].issue)
+        val gone = UiText.Joined(listOf(UiText.of(Res.string.fin_data_chart_quoted_tab, "Gone")), UiText.of(Res.string.common_list_separator))
+        assertEquals(UiText.of(Res.string.fin_data_chart_tabs_gone, gone), charts[2].issue)
     }
 
     @Test

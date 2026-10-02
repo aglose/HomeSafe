@@ -11,10 +11,18 @@ import com.meticulouscreations.homesafe.domain.usecase.DiscardFaceAttemptsUseCas
 import com.meticulouscreations.homesafe.domain.usecase.GetFaceImageUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetFaceLibraryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.LabelFaceAttemptUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.faces_add_failed
+import homesafe.shared.generated.resources.faces_delete_failed
+import homesafe.shared.generated.resources.faces_load_failed
+import homesafe.shared.generated.resources.faces_person_added
+import homesafe.shared.generated.resources.faces_save_failed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,7 +32,7 @@ import kotlinx.coroutines.launch
 @Immutable
 data class FaceLibraryUiState(
     val isLoading: Boolean = true,
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     val library: FaceLibrary? = null,
     /** Attempts whose name/discard call is in flight, so their tile can't be tapped twice. */
     val busyFiles: Set<String> = emptySet(),
@@ -33,7 +41,7 @@ data class FaceLibraryUiState(
     /** The person whose registered images are unfolded in the People card; one at a time. */
     val expandedPerson: String? = null,
     /** "Added Andrew" / "Couldn't save: ..." — the last outcome, cleared on the next action. */
-    val notice: String? = null,
+    val notice: UiText? = null,
     val noticeIsError: Boolean = false,
     val newPersonDraft: String = "",
 ) {
@@ -70,7 +78,7 @@ class FaceLibraryViewModel(
         viewModelScope.launch {
             getFaceLibraryUseCase()
                 .onSuccess { data -> _uiState.update { it.copy(isLoading = false, library = data, decided = emptyMap()) } }
-                .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.message ?: "Couldn't load the face library") } }
+                .onFailure { e -> _uiState.update { it.copy(isLoading = false, loadError = e.userMessage(Res.string.faces_load_failed)) } }
         }
     }
 
@@ -91,10 +99,10 @@ class FaceLibraryViewModel(
         viewModelScope.launch {
             createPersonUseCase(key)
                 .onSuccess {
-                    _uiState.update { it.copy(newPersonDraft = "", notice = "Added $draft. File a face under them to start recognising.", noticeIsError = false) }
+                    _uiState.update { it.copy(newPersonDraft = "", notice = UiText.of(Res.string.faces_person_added, draft), noticeIsError = false) }
                     load()
                 }
-                .onFailure { e -> _uiState.update { it.copy(notice = "Couldn't add: ${e.message}", noticeIsError = true) } }
+                .onFailure { e -> _uiState.update { it.copy(notice = e.userMessage(Res.string.faces_add_failed), noticeIsError = true) } }
         }
     }
 
@@ -117,7 +125,7 @@ class FaceLibraryViewModel(
                         state.copy(busyFiles = state.busyFiles - fileName, library = updated)
                     }
                 }
-                .onFailure { e -> _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = "Couldn't delete: ${e.message}", noticeIsError = true) } }
+                .onFailure { e -> _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = e.userMessage(Res.string.faces_delete_failed), noticeIsError = true) } }
         }
     }
 
@@ -146,7 +154,7 @@ class FaceLibraryViewModel(
                     if (name != null) load()
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = "Couldn't save: ${e.message}", noticeIsError = true) }
+                    _uiState.update { it.copy(busyFiles = it.busyFiles - fileName, notice = e.userMessage(Res.string.faces_save_failed), noticeIsError = true) }
                 }
         }
     }

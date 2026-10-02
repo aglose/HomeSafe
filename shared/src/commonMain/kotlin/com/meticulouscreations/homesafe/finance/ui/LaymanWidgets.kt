@@ -55,6 +55,53 @@ import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.layman_checkup_debt_none
+import homesafe.shared.generated.resources.layman_checkup_debt_some
+import homesafe.shared.generated.resources.layman_checkup_debt_tip_costly
+import homesafe.shared.generated.resources.layman_checkup_debt_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_debt_title
+import homesafe.shared.generated.resources.layman_checkup_disclaimer
+import homesafe.shared.generated.resources.layman_checkup_emergency_detail
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_short
+import homesafe.shared.generated.resources.layman_checkup_emergency_tip_solid
+import homesafe.shared.generated.resources.layman_checkup_emergency_title
+import homesafe.shared.generated.resources.layman_checkup_healthy
+import homesafe.shared.generated.resources.layman_checkup_ratio_detail
+import homesafe.shared.generated.resources.layman_checkup_ratio_tip_high
+import homesafe.shared.generated.resources.layman_checkup_ratio_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_ratio_title
+import homesafe.shared.generated.resources.layman_checkup_retirement_detail
+import homesafe.shared.generated.resources.layman_checkup_retirement_tip_low
+import homesafe.shared.generated.resources.layman_checkup_retirement_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_retirement_title
+import homesafe.shared.generated.resources.layman_checkup_saving_detail
+import homesafe.shared.generated.resources.layman_checkup_saving_tip_low
+import homesafe.shared.generated.resources.layman_checkup_saving_tip_ok
+import homesafe.shared.generated.resources.layman_checkup_saving_title
+import homesafe.shared.generated.resources.layman_checkup_score
+import homesafe.shared.generated.resources.layman_checkup_title
+import homesafe.shared.generated.resources.layman_checkup_worth_a_look
+import homesafe.shared.generated.resources.layman_stress_calm
+import homesafe.shared.generated.resources.layman_stress_calm_detail
+import homesafe.shared.generated.resources.layman_stress_elevated
+import homesafe.shared.generated.resources.layman_stress_elevated_detail
+import homesafe.shared.generated.resources.layman_stress_high
+import homesafe.shared.generated.resources.layman_stress_high_detail
+import homesafe.shared.generated.resources.layman_stress_severe
+import homesafe.shared.generated.resources.layman_stress_severe_detail
+import homesafe.shared.generated.resources.layman_tip_dismiss
+import homesafe.shared.generated.resources.layman_tip_dismiss_label
+import homesafe.shared.generated.resources.layman_tip_text
+import homesafe.shared.generated.resources.layman_weather_title
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -68,7 +115,8 @@ import kotlin.math.sin
 internal fun WeatherGlyph(weather: Weather, modifier: Modifier = Modifier, size: Dp = 40.dp) {
     val colors = FinanceTheme.colors
     val time = rememberShaderClock()
-    Canvas(modifier.size(size).clearAndSetSemantics { contentDescription = weather.label }) {
+    val label = stringResource(weather.label)
+    Canvas(modifier.size(size).clearAndSetSemantics { contentDescription = label }) {
         val t = time.value
         when (weather) {
             Weather.SUNNY -> drawSun(colors.accent, center, this.size.minDimension * 0.22f, t)
@@ -140,14 +188,14 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
             WeatherGlyph(sky, size = 56.dp)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
-                Text("TODAY'S ECONOMIC WEATHER", style = type.micro, color = colors.textSecondary)
-                Text(briefing.headline, style = type.title, color = colors.textPrimary)
+                Text(stringResource(Res.string.layman_weather_title).uppercase(), style = type.micro, color = colors.textSecondary)
+                Text(stringResource(briefing.headline), style = type.title, color = colors.textPrimary)
             }
             InfoButton("stress")
         }
-        if (briefing.summary.isNotEmpty()) {
+        briefing.summary?.let { summary ->
             Spacer(Modifier.height(6.dp))
-            Text(briefing.summary, style = type.label, color = colors.textSecondary)
+            Text(summary.resolve(), style = type.label, color = colors.textSecondary)
         }
         briefing.items.forEachIndexed { i, item ->
             Spacer(Modifier.height(10.dp))
@@ -157,8 +205,8 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
                     WeatherGlyph(item.weather, size = 30.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(item.topic, style = type.bodyStrong, color = colors.textPrimary)
-                        Text(item.sentence, style = type.label, color = colors.textSecondary)
+                        Text(stringResource(item.topic), style = type.bodyStrong, color = colors.textPrimary)
+                        Text(item.sentence.resolve(), style = type.label, color = colors.textSecondary)
                     }
                     InfoButton(item.explainerId)
                 }
@@ -175,7 +223,12 @@ internal fun EconomyWeatherCard(briefing: Briefing, modifier: Modifier = Modifie
 internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
-    val bands = listOf(Triple("Calm", 0.0 to 30.0, colors.gain), Triple("Elevated", 30.0 to 50.0, colors.watch), Triple("High", 50.0 to 70.0, Color(0xFFFF8A3D)), Triple("Severe", 70.0 to 100.0, colors.loss))
+    val bands = listOf(
+        Triple(Res.string.layman_stress_calm, 0.0 to 30.0, colors.gain),
+        Triple(Res.string.layman_stress_elevated, 30.0 to 50.0, colors.watch),
+        Triple(Res.string.layman_stress_high, 50.0 to 70.0, Color(0xFFFF8A3D)),
+        Triple(Res.string.layman_stress_severe, 70.0 to 100.0, colors.loss),
+    )
     val marker = remember { Animatable(0f) }
     LaunchedEffect(stress?.score) { marker.animateTo(((stress?.score ?: 0.0) / 100).toFloat(), tween(1100, easing = FastOutSlowInEasing)) }
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter)) {
@@ -198,18 +251,21 @@ internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
         }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
             bands.forEach { (label, range, c) ->
-                Text(label, style = type.micro, color = if (stress != null && stress.score >= range.first && stress.score < range.second + (if (range.second == 100.0) 1 else 0)) c else colors.textTertiary, modifier = Modifier.weight((range.second - range.first).toFloat()))
+                Text(stringResource(label), style = type.micro, color = if (stress != null && stress.score >= range.first && stress.score < range.second + (if (range.second == 100.0) 1 else 0)) c else colors.textTertiary, modifier = Modifier.weight((range.second - range.first).toFloat()))
             }
         }
         if (stress != null) {
             Spacer(Modifier.height(8.dp))
             Text(
-                when {
-                    stress.score < 30 -> "Calm: almost every warning light is off. The economy isn't showing the strains that have come before past downturns."
-                    stress.score < 50 -> "Elevated: a few warning lights are on — worth keeping an eye on, but most signs are still calm. Past recessions came with many lights on at once."
-                    stress.score < 70 -> "High: many warning lights are on at once, a pattern seen in the run-up to past downturns."
-                    else -> "Severe: most warning lights are flashing, as they did in 2008 and 2020."
-                },
+                stringResource(
+                    byStressBand(
+                        stress.score,
+                        calm = Res.string.layman_stress_calm_detail,
+                        elevated = Res.string.layman_stress_elevated_detail,
+                        high = Res.string.layman_stress_high_detail,
+                        severe = Res.string.layman_stress_severe_detail,
+                    ),
+                ),
                 style = type.body,
                 color = colors.textSecondary,
             )
@@ -218,7 +274,7 @@ internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
 }
 
 /** One line of the money checkup: a pass or a flag, what it is, the household's number, and a tip. */
-private data class CheckLine(val ok: Boolean, val title: String, val detail: String, val tip: String, val explainerId: String)
+private data class CheckLine(val ok: Boolean, val title: StringResource, val detail: UiText, val tip: StringResource, val explainerId: String)
 
 /**
  * A plain-language health check of the household's finances, from the sheet: an emergency fund,
@@ -235,12 +291,12 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
                 CheckLine(
                     // Passing from three months, the bottom of the rule it quotes; six gets the stronger word.
                     m >= 3,
-                    "Emergency fund",
-                    "Your cash covers ${FinanceFormat.grouped(m, 1)} months of expenses.",
+                    Res.string.layman_checkup_emergency_title,
+                    UiText.of(Res.string.layman_checkup_emergency_detail, FinanceFormat.grouped(m, 1)),
                     when {
-                        m >= 6 -> "Comfortably past the 3–6 months planners suggest."
-                        m >= 3 -> "Within the 3–6 months planners suggest; toward six is safer if one job carries the household."
-                        else -> "Planners suggest 3–6 months; building cash first protects you against a layoff."
+                        m >= 6 -> Res.string.layman_checkup_emergency_tip_solid
+                        m >= 3 -> Res.string.layman_checkup_emergency_tip_ok
+                        else -> Res.string.layman_checkup_emergency_tip_short
                     },
                     "runway",
                 ),
@@ -250,9 +306,9 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
             add(
                 CheckLine(
                     r >= 0.15,
-                    "Saving each month",
-                    "You keep ${FinanceFormat.fractionPercent(r)} of take-home pay after expenses.",
-                    if (r >= 0.15) "At or above the common 15% goal." else "The common goal is 15–20% (401(k) contributions taken from your paycheck count on top). Trimming a big recurring expense moves this most.",
+                    Res.string.layman_checkup_saving_title,
+                    UiText.of(Res.string.layman_checkup_saving_detail, FinanceFormat.fractionPercent(r)),
+                    if (r >= 0.15) Res.string.layman_checkup_saving_tip_ok else Res.string.layman_checkup_saving_tip_low,
                     "savingsrate",
                 ),
             )
@@ -264,9 +320,15 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
             add(
                 CheckLine(
                     costly.isEmpty(),
-                    "Costly debt",
-                    if (costly.isEmpty()) "None of your loans charge more than about ${FinanceFormat.grouped(hurdle, 0)}%." else "${costly.joinToString { it.name }} charge${if (costly.size == 1) "s" else ""} more than ${FinanceFormat.grouped(hurdle, 0)}%.",
-                    if (costly.isEmpty()) "Low-rate loans can be paid on schedule while savings earn about as much." else "Paying these down early is a guaranteed return equal to their rate — usually better than savings pay.",
+                    Res.string.layman_checkup_debt_title,
+                    if (costly.isEmpty()) {
+                        UiText.of(Res.string.layman_checkup_debt_none, FinanceFormat.percent(hurdle, 0))
+                    } else {
+                        // The loans' names are the sheet's own, listed with the reader's separator.
+                        val names = UiText.Joined(costly.map { it.name.asUiText() }, UiText.of(Res.string.common_list_separator))
+                        UiText.plural(Res.plurals.layman_checkup_debt_some, costly.size, names, FinanceFormat.percent(hurdle, 0))
+                    },
+                    if (costly.isEmpty()) Res.string.layman_checkup_debt_tip_ok else Res.string.layman_checkup_debt_tip_costly,
                     "debt",
                 ),
             )
@@ -277,9 +339,9 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
             add(
                 CheckLine(
                     ratio < 0.25,
-                    "Debt vs what you own",
-                    "You owe ${FinanceFormat.fractionPercent(ratio, 0)} as much as you own (not counting the mortgage).",
-                    if (ratio < 0.25) "A comfortable margin." else "Over a quarter is worth bringing down.",
+                    Res.string.layman_checkup_ratio_title,
+                    UiText.of(Res.string.layman_checkup_ratio_detail, FinanceFormat.fractionPercent(ratio, 0)),
+                    if (ratio < 0.25) Res.string.layman_checkup_ratio_tip_ok else Res.string.layman_checkup_ratio_tip_high,
                     "networth",
                 ),
             )
@@ -291,9 +353,9 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
             add(
                 CheckLine(
                     share >= 0.25,
-                    "Saving for later",
-                    "${FinanceFormat.fractionPercent(share, 0)} of what you own is in retirement accounts.",
-                    if (share >= 0.25) "Tax-advantaged accounts are doing a lot of the work." else "Retirement accounts grow tax-free or tax-deferred; topping them up is often the cheapest way to invest.",
+                    Res.string.layman_checkup_retirement_title,
+                    UiText.of(Res.string.layman_checkup_retirement_detail, FinanceFormat.fractionPercent(share, 0)),
+                    if (share >= 0.25) Res.string.layman_checkup_retirement_tip_ok else Res.string.layman_checkup_retirement_tip_low,
                     "allocation",
                 ),
             )
@@ -304,8 +366,8 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
     FinanceCard(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("MONEY CHECKUP", style = type.micro, color = colors.textSecondary)
-                Text("$passed of ${lines.size} looking healthy", style = type.title, color = if (passed == lines.size) colors.gain else colors.textPrimary)
+                Text(stringResource(Res.string.layman_checkup_title).uppercase(), style = type.micro, color = colors.textSecondary)
+                Text(pluralStringResource(Res.plurals.layman_checkup_score, lines.size, passed, lines.size), style = type.title, color = if (passed == lines.size) colors.gain else colors.textPrimary)
             }
         }
         lines.forEachIndexed { i, line ->
@@ -314,21 +376,21 @@ internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: 
             Row(verticalAlignment = Alignment.Top) {
                 Icon(
                     if (line.ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                    contentDescription = if (line.ok) "Healthy" else "Worth a look",
+                    contentDescription = stringResource(if (line.ok) Res.string.layman_checkup_healthy else Res.string.layman_checkup_worth_a_look),
                     tint = if (line.ok) colors.gain else colors.watch,
                     modifier = Modifier.size(22.dp),
                 )
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text(line.title, style = type.bodyStrong, color = colors.textPrimary)
-                    Text(line.detail, style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
-                    Text(line.tip, style = type.label, color = colors.textSecondary)
+                    Text(stringResource(line.title), style = type.bodyStrong, color = colors.textPrimary)
+                    Text(line.detail.resolve(), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
+                    Text(stringResource(line.tip), style = type.label, color = colors.textSecondary)
                 }
                 InfoButton(line.explainerId)
             }
         }
         Spacer(Modifier.height(10.dp))
-        Text("Common rules of thumb, not financial advice.", style = type.micro, color = colors.textTertiary)
+        Text(stringResource(Res.string.layman_checkup_disclaimer), style = type.micro, color = colors.textTertiary)
     }
 }
 
@@ -352,13 +414,13 @@ internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modif
             Icon(Icons.Outlined.Info, contentDescription = null, tint = colors.accent, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Text(
-                "New to this? Tap ⓘ next to anything for a plain-English explanation, or ? at the top for the jargon buster.",
+                stringResource(Res.string.layman_tip_text),
                 style = FinanceTheme.type.label,
                 color = colors.textPrimary,
                 modifier = Modifier.weight(1f),
             )
-            Box(Modifier.size(44.dp).clickable(onClickLabel = "Dismiss tip", onClick = onDismiss), contentAlignment = Alignment.Center) {
-                Icon(Icons.Filled.Close, contentDescription = "Dismiss", tint = colors.textSecondary, modifier = Modifier.size(18.dp))
+            Box(Modifier.size(44.dp).clickable(onClickLabel = stringResource(Res.string.layman_tip_dismiss_label), onClick = onDismiss), contentAlignment = Alignment.Center) {
+                Icon(Icons.Filled.Close, contentDescription = stringResource(Res.string.layman_tip_dismiss), tint = colors.textSecondary, modifier = Modifier.size(18.dp))
             }
         }
     }
@@ -368,5 +430,5 @@ internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modif
 @Composable
 internal fun VerdictText(reading: IndicatorReading?, modifier: Modifier = Modifier) {
     if (reading?.latest == null) return
-    Text(Narrator.verdict(reading), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
+    Text(Narrator.verdict(reading).resolve(), style = FinanceTheme.type.label, color = FinanceTheme.colors.textPrimary.copy(alpha = 0.85f), modifier = modifier)
 }

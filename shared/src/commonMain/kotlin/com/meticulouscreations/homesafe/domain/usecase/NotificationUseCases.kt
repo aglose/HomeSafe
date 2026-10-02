@@ -4,7 +4,12 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.domain.repository.RelayPushStatus
+import com.meticulouscreations.homesafe.text.TextLoader
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.settings_test_notification_body
+import homesafe.shared.generated.resources.settings_test_notification_title
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -41,13 +46,13 @@ class ObserveRelayPushUseCase(private val status: RelayPushStatus) {
 
 /** Posts a sample notification so the user can see what one looks like and that the OS lets them through. */
 @Inject
-class SendTestNotificationUseCase(private val notifier: AlertNotifier) {
-    operator fun invoke() {
+class SendTestNotificationUseCase(private val notifier: AlertNotifier, private val textLoader: TextLoader) {
+    suspend operator fun invoke() {
         notifier.notify(
             AlertNotification(
                 id = TEST_NOTIFICATION_ID,
-                title = "Test alert",
-                body = "Notifications from HomeSafe are working. Detections will look like this.",
+                title = textLoader.load(UiText.of(Res.string.settings_test_notification_title)),
+                body = textLoader.load(UiText.of(Res.string.settings_test_notification_body)),
             ),
         )
     }

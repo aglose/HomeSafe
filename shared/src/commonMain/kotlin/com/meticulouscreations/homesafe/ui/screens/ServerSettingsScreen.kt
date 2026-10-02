@@ -26,8 +26,23 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
+import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.settings_refresh
+import homesafe.shared.generated.resources.settings_server_subtitle
+import homesafe.shared.generated.resources.settings_server_summary_checking
+import homesafe.shared.generated.resources.settings_server_summary_disk_full
+import homesafe.shared.generated.resources.settings_server_summary_healthy
+import homesafe.shared.generated.resources.settings_server_summary_refresh_failed
+import homesafe.shared.generated.resources.settings_server_summary_storage_used
+import homesafe.shared.generated.resources.settings_server_summary_unreachable
+import homesafe.shared.generated.resources.settings_server_summary_update_available
+import homesafe.shared.generated.resources.settings_server_title
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /**
@@ -67,14 +82,14 @@ private fun Header(onBack: () -> Unit, onRefresh: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = MaterialTheme.colorScheme.primary)
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = "Server", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, textAlign = TextAlign.Center)
-            Text(text = "What Frigate is and is doing", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text(text = stringResource(Res.string.settings_server_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, textAlign = TextAlign.Center)
+            Text(text = stringResource(Res.string.settings_server_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         IconButton(onClick = onRefresh) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.settings_refresh), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -84,23 +99,22 @@ private fun Header(onBack: () -> Unit, onRefresh: () -> Unit) {
  * The route, then the disk (the one number that creeps up unattended), then the single most
  * pressing thing wrong — or "healthy" when nothing is. Parts the server hasn't reported are left out.
  */
-internal fun serverSummary(route: ConnectionRoute?, overview: ServerOverview?, overviewError: String?): String {
+internal fun serverSummary(route: ConnectionRoute?, overview: ServerOverview?, overviewError: UiText?): UiText {
     val storage = overview?.recordingsStorage
     val status = when {
-        overview == null && overviewError != null -> "can't reach the server"
-        overview == null -> "checking…"
-        overviewError != null -> "last refresh failed"
-        storage != null && storage.usedFraction >= 0.9f -> "disk nearly full"
-        overview.updateAvailable -> "update available"
-        else -> "healthy"
+        overview == null && overviewError != null -> Res.string.settings_server_summary_unreachable
+        overview == null -> Res.string.settings_server_summary_checking
+        overviewError != null -> Res.string.settings_server_summary_refresh_failed
+        storage != null && storage.usedFraction >= 0.9f -> Res.string.settings_server_summary_disk_full
+        overview.updateAvailable -> Res.string.settings_server_summary_update_available
+        else -> Res.string.settings_server_summary_healthy
     }
-    return listOfNotNull(
-        when (route) {
-            ConnectionRoute.LOCAL_NETWORK -> "Local network"
-            ConnectionRoute.TAILSCALE -> "Tailscale"
-            null -> null
-        },
-        storage?.let { "${(it.usedFraction * 100).roundToInt()}% storage used" },
-        status,
-    ).joinToString(" · ")
+    return UiText.Joined(
+        listOfNotNull(
+            route?.let { UiText.of(it.label) },
+            storage?.let { UiText.of(Res.string.settings_server_summary_storage_used, (it.usedFraction * 100).roundToInt()) },
+            UiText.of(status),
+        ),
+        separator = UiText.of(Res.string.common_dot_separator),
+    )
 }

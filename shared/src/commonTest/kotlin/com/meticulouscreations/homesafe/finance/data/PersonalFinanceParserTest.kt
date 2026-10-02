@@ -4,6 +4,14 @@ import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.SectionStatus
 import com.meticulouscreations.homesafe.finance.domain.SheetSection
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_account_cash
+import homesafe.shared.generated.resources.fin_data_account_checking_savings
+import homesafe.shared.generated.resources.fin_data_account_home_equity
+import homesafe.shared.generated.resources.fin_data_found_snapshots
+import homesafe.shared.generated.resources.fin_data_note_history_undated
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
@@ -238,45 +246,45 @@ class PersonalFinanceParserTest {
 
     @Test
     fun aMergedCellIsOneJointAccountAndSeparateCellsAreTwoAccounts() {
-        val joint = finance.accounts.single { it.name == "Joint brokerage" }
+        val joint = finance.accounts.single { it.name == "Joint brokerage".asUiText() }
         assertEquals(Owner.Joint, joint.owner)
         assertEquals(46230.0, joint.balance)
 
-        val roth = finance.accounts.filter { it.name == "Roth IRA" }
+        val roth = finance.accounts.filter { it.name == "Roth IRA".asUiText() }
         assertEquals(setOf(Owner.Person("Alex") to 18470.0, Owner.Person("Sam") to 13920.0), roth.map { it.owner to it.balance }.toSet())
     }
 
     @Test
     fun aLoneColumnMakesAOnePersonAccount() {
-        val family529 = finance.accounts.single { it.name == "Family 529" }
+        val family529 = finance.accounts.single { it.name == "Family 529".asUiText() }
         assertEquals(Owner.Person("Alex"), family529.owner)
-        val k401 = finance.accounts.single { it.name == "401(k) Plan" }
+        val k401 = finance.accounts.single { it.name == "401(k) Plan".asUiText() }
         assertEquals(Owner.Person("Sam"), k401.owner)
     }
 
     @Test
     fun accountsAreCategorisedByNameKeyword() {
-        assertEquals(AccountCategory.INVESTING, finance.accounts.single { it.name == "Joint brokerage" }.category)
-        assertEquals(AccountCategory.RETIREMENT, finance.accounts.first { it.name == "Roth IRA" }.category)
-        assertEquals(AccountCategory.RETIREMENT, finance.accounts.single { it.name == "401(k) Plan" }.category)
-        assertEquals(AccountCategory.EDUCATION, finance.accounts.single { it.name == "Family 529" }.category)
-        assertTrue(finance.accounts.filter { it.name == "Checking Account" }.all { it.category == AccountCategory.CASH })
+        assertEquals(AccountCategory.INVESTING, finance.accounts.single { it.name == "Joint brokerage".asUiText() }.category)
+        assertEquals(AccountCategory.RETIREMENT, finance.accounts.first { it.name == "Roth IRA".asUiText() }.category)
+        assertEquals(AccountCategory.RETIREMENT, finance.accounts.single { it.name == "401(k) Plan".asUiText() }.category)
+        assertEquals(AccountCategory.EDUCATION, finance.accounts.single { it.name == "Family 529".asUiText() }.category)
+        assertTrue(finance.accounts.filter { it.name == "Checking Account".asUiText() }.all { it.category == AccountCategory.CASH })
     }
 
     @Test
     fun cashAccountsIncludeTheCombinedCheckingAndTheLoneCashLine() {
-        val combined = finance.accounts.single { it.name == "Checking & savings" }
+        val combined = finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_checking_savings) }
         assertEquals(Owner.Joint, combined.owner)
         assertEquals(8640.0, combined.balance)
         assertEquals(AccountCategory.CASH, combined.category)
 
-        val cash = finance.accounts.single { it.name == "Cash" }
+        val cash = finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_cash) }
         assertEquals(94200.0, cash.balance)
     }
 
     @Test
     fun homeEquityAccountUsesTheValueAddedFigureNotTheRawEquity() {
-        val homeAccount = finance.accounts.single { it.name == "Home equity" }
+        val homeAccount = finance.accounts.single { it.name == UiText.of(Res.string.fin_data_account_home_equity) }
         assertEquals(298700.0, homeAccount.balance)
         assertEquals(AccountCategory.HOME, homeAccount.category)
     }
@@ -472,7 +480,7 @@ class PersonalFinanceParserTest {
     fun theFixtureReadsEveryPartWithNothingToFlag() {
         assertEquals(0, finance.health.problemCount, finance.health.toString())
         assertTrue(finance.health.sections.all { it.status == SectionStatus.OK })
-        assertEquals("3 snapshots", finance.health.sections.first { it.section == SheetSection.HISTORY }.found)
+        assertEquals(UiText.plural(Res.plurals.fin_data_found_snapshots, 3), finance.health.sections.first { it.section == SheetSection.HISTORY }.found)
     }
 
     @Test
@@ -504,7 +512,7 @@ class PersonalFinanceParserTest {
         val read = parseWith(sheetGrid("Home", cells, homeMerges))
         assertEquals(2, read.history.size)
         assertEquals(SheetSection.HISTORY, read.health.notes.single().section)
-        assertTrue("no date" in read.health.notes.single().message)
+        assertEquals(UiText.plural(Res.plurals.fin_data_note_history_undated, 1), read.health.notes.single().message)
     }
 
     @Test
@@ -543,7 +551,7 @@ class PersonalFinanceParserTest {
     fun anUndatedRowRightUnderTheHistoryIsReportedButFiguresFurtherDownAreNot() {
         val trailing = parseWith(sheetGrid("Home", homeCells + ("W64" to 701000.0), homeMerges))
         assertEquals(3, trailing.history.size)
-        assertTrue("1 row" in trailing.health.notes.single().message)
+        assertEquals(UiText.plural(Res.plurals.fin_data_note_history_undated, 1), trailing.health.notes.single().message)
 
         // After a blank row, figures in the same columns are something else on the tab.
         val below = parseWith(sheetGrid("Home", homeCells + ("W66" to 12.0), homeMerges))

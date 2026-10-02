@@ -1,5 +1,12 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_clock_on_day
+import homesafe.shared.generated.resources.moments_clock_yesterday
+import homesafe.shared.generated.resources.moments_in_view_last_seen
+import homesafe.shared.generated.resources.moments_in_view_since
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -93,14 +100,14 @@ data class StationaryObject(
 
 /** How a [StationaryObject] reads on its card. Derived, like [MomentPresentation], never stored. */
 data class StationaryObjectPresentation(
-    /** "Sarah's Tesla". Falls back to the Frigate label ("Car") only for a subject built outside [stationaryObjects]. */
-    val title: String,
-    /** "Driveway" — where it is; the camera's name when it is in no zone. */
+    /** "Sarah's Tesla". Falls back to what the Frigate label is called ("Car") only for a subject built outside [stationaryObjects]. */
+    val title: UiText,
+    /** "Driveway" — where it is; the camera's name when it is in no zone. Data: a zone or camera name. */
     val placeLabel: String,
     /** "since 10:04 AM" / "since 6:12 PM yesterday", or null when the fetch didn't reach its arrival. */
-    val sinceLabel: String?,
+    val sinceLabel: UiText?,
     /** "last seen 4:51 PM" once the sighting is no longer fresh; null while Frigate is still seeing it. */
-    val lastSeenLabel: String?,
+    val lastSeenLabel: UiText?,
 )
 
 /**
@@ -109,26 +116,25 @@ data class StationaryObjectPresentation(
  */
 @OptIn(ExperimentalTime::class)
 fun StationaryObject.present(today: LocalDate, timeZone: TimeZone = TimeZone.currentSystemDefault()): StationaryObjectPresentation {
-    val title = subLabel?.takeIf { isRecognized }?.let { subLabelDisplayName(it) }
-        ?: label.lowercase().replaceFirstChar { it.uppercase() }
+    val title = subLabel?.takeIf { isRecognized }?.let { subLabelDisplayName(it).asUiText() } ?: labelName(label)
     val place = zones.lastOrNull { it.isNotBlank() }
     return StationaryObjectPresentation(
         title = title,
         placeLabel = place?.let { zoneDisplayName(it).replaceFirstChar(Char::uppercase) } ?: cameraDisplayName(cameraName),
-        sinceLabel = if (sinceIsKnown) "since ${dayQualifiedClockLabel(firstSeenEpochSeconds, today, timeZone)}" else null,
-        lastSeenLabel = if (seenRecently) null else "last seen ${clockLabel(lastSeenEpochSeconds, timeZone)}",
+        sinceLabel = if (sinceIsKnown) UiText.of(Res.string.moments_in_view_since, dayQualifiedClockLabel(firstSeenEpochSeconds, today, timeZone)) else null,
+        lastSeenLabel = if (seenRecently) null else UiText.of(Res.string.moments_in_view_last_seen, clockLabel(lastSeenEpochSeconds, timeZone)),
     )
 }
 
 /** "6:12 PM" for today, "6:12 PM yesterday" for the night before, "6:12 PM Sep 14" for anything older. */
 @OptIn(ExperimentalTime::class)
-internal fun dayQualifiedClockLabel(epochSeconds: Double, today: LocalDate, timeZone: TimeZone): String {
+internal fun dayQualifiedClockLabel(epochSeconds: Double, today: LocalDate, timeZone: TimeZone): UiText {
     val date = Instant.fromEpochSeconds(epochSeconds.toLong()).toLocalDateTime(timeZone).date
     val clock = clockLabel(epochSeconds, timeZone)
     return when (today.toEpochDays() - date.toEpochDays()) {
-        0L -> clock
-        1L -> "$clock yesterday"
-        else -> "$clock ${date.shortLabel()}"
+        0L -> clock.asUiText()
+        1L -> UiText.of(Res.string.moments_clock_yesterday, clock)
+        else -> UiText.of(Res.string.moments_clock_on_day, clock, date.shortLabel())
     }
 }
 

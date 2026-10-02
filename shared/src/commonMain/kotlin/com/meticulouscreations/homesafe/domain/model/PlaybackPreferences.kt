@@ -1,15 +1,15 @@
 package com.meticulouscreations.homesafe.domain.model
 
 /** Which of a camera's live streams the detail player should play. */
-enum class StreamQuality(val label: String) {
+enum class StreamQuality {
     /** Join on the lighter stream for a fast first frame, then step up to the full one. */
-    AUTO("Auto"),
+    AUTO,
 
     /** The camera's full-quality stream, and nothing else. */
-    HIGH("High"),
+    HIGH,
 
     /** The camera's lighter sub-stream only — easier on a slow link, and typically video-only. */
-    LOW("Low"),
+    LOW,
     ;
 
     /** The choice after this one, so a single button can cycle through them. */

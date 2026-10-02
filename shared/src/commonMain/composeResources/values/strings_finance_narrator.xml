@@ -1,0 +1,308 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The finance narrator (Narrator.kt): sentences built from live readings, the economic weather
+  report, and the words FinanceFormat puts around numbers; plus the explainer sheet (explain_*),
+  the jargon buster (glossary_*) and the plain-language widgets (layman_*).
+  Arguments are numbers already formatted for display ("3.2%", "$1,850", "$2.19M") or names.
+-->
+<resources>
+    <!-- FinanceFormat: words around numbers -->
+    <string name="narrator_format_unchanged">unchanged</string>
+    <!-- %1$s is a signed change in percentage points, e.g. "+1.50" -->
+    <string name="narrator_format_points_change">%1$s pts</string>
+    <string name="narrator_format_just_now">just now</string>
+    <plurals name="narrator_format_minutes_ago">
+        <item quantity="one">%1$d min ago</item>
+        <item quantity="other">%1$d min ago</item>
+    </plurals>
+    <plurals name="narrator_format_hours_ago">
+        <item quantity="one">%1$d h ago</item>
+        <item quantity="other">%1$d h ago</item>
+    </plurals>
+    <string name="narrator_format_today">today</string>
+    <plurals name="narrator_format_in_days">
+        <item quantity="one">in %1$d day</item>
+        <item quantity="other">in %1$d days</item>
+    </plurals>
+    <plurals name="narrator_format_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <plurals name="narrator_format_in_months">
+        <item quantity="one">in %1$d month</item>
+        <item quantity="other">in %1$d months</item>
+    </plurals>
+    <plurals name="narrator_format_months_ago">
+        <item quantity="one">%1$d month ago</item>
+        <item quantity="other">%1$d months ago</item>
+    </plurals>
+    <plurals name="narrator_format_in_years">
+        <item quantity="one">in %1$d year</item>
+        <item quantity="other">in %1$d years</item>
+    </plurals>
+    <plurals name="narrator_format_years_ago">
+        <item quantity="one">%1$d year ago</item>
+        <item quantity="other">%1$d years ago</item>
+    </plurals>
+
+    <!-- Two whole sentences of the narrator one after the other, e.g. a verdict and its trend -->
+    <string name="narrator_two_sentences">%1$s %2$s</string>
+
+    <!-- Which way a reading has moved over six months -->
+    <string name="narrator_trend_steady">It's been about steady for six months.</string>
+    <string name="narrator_trend_improving">It's been improving over the past six months.</string>
+    <string name="narrator_trend_climbing_worse">It's been climbing over the past six months — the wrong direction.</string>
+    <string name="narrator_trend_rising">It's been rising over the past six months.</string>
+    <string name="narrator_trend_easing_better">It's been easing over the past six months — a good sign.</string>
+    <string name="narrator_trend_sliding_worse">It's been sliding over the past six months — the wrong direction.</string>
+    <string name="narrator_trend_falling">It's been falling over the past six months.</string>
+
+    <!-- One-line verdicts on each indicator. %1$s etc. are formatted numbers. -->
+    <string name="narrator_verdict_waiting">Waiting for the latest reading.</string>
+    <string name="narrator_verdict_cpi_falling">Prices are %1$s lower than a year ago. Prices are actually falling.</string>
+    <string name="narrator_verdict_cpi_on_goal">Prices are %1$s higher than a year ago. That's right around the Fed's 2% goal.</string>
+    <string name="narrator_verdict_cpi_above_goal">Prices are %1$s higher than a year ago. That's a bit faster than the Fed's 2% goal.</string>
+    <string name="narrator_verdict_cpi_well_above_goal">Prices are %1$s higher than a year ago. That's well above the Fed's 2% goal.</string>
+    <string name="narrator_verdict_cpi_far_above_goal">Prices are %1$s higher than a year ago. That's far above the Fed's 2% goal — the kind that squeezes budgets.</string>
+    <string name="narrator_verdict_corepce_rising">The Fed's preferred measure says prices are rising %1$s a year, against its 2% target.</string>
+    <string name="narrator_verdict_corepce_falling">The Fed's preferred measure says prices are falling %1$s a year, below its 2% target.</string>
+    <string name="narrator_verdict_unrate_solid">About %1$s out of every 100 people who want a job can't find one. That's a solid job market.</string>
+    <string name="narrator_verdict_unrate_softening">About %1$s out of every 100 people who want a job can't find one. That's softening.</string>
+    <string name="narrator_verdict_unrate_weak">About %1$s out of every 100 people who want a job can't find one. That's a weak job market.</string>
+    <string name="narrator_verdict_sahm_ringing">The jobs alarm is ringing: unemployment is %1$s points above its low of the past year, past the 0.5 line that has marked every recession since 1970.</string>
+    <string name="narrator_verdict_sahm_quiet">Unemployment is %1$s points above its low of the past year — the alarm rings at 0.5.</string>
+    <!-- %1$s is a number of people, e.g. "231,000" -->
+    <string name="narrator_verdict_icsa_low">About %1$s people filed for unemployment for the first time last week. That's a low, healthy level of layoffs.</string>
+    <string name="narrator_verdict_icsa_rising">About %1$s people filed for unemployment for the first time last week. Layoffs are picking up.</string>
+    <string name="narrator_verdict_icsa_high">About %1$s people filed for unemployment for the first time last week. That's a high level of layoffs.</string>
+    <string name="narrator_verdict_gdp_healthy">The economy grew at a %1$s yearly pace last quarter. That's healthy.</string>
+    <string name="narrator_verdict_gdp_sluggish">The economy grew at a %1$s yearly pace last quarter. That's sluggish.</string>
+    <string name="narrator_verdict_gdp_shrank">The economy shrank at a %1$s yearly pace last quarter.</string>
+    <string name="narrator_verdict_umcsent_gloomy">People's mood about money scores %1$s, against a long-run average of about 85. That's very gloomy.</string>
+    <string name="narrator_verdict_umcsent_below">People's mood about money scores %1$s, against a long-run average of about 85. That's below average.</string>
+    <string name="narrator_verdict_umcsent_upbeat">People's mood about money scores %1$s, against a long-run average of about 85. That's upbeat.</string>
+    <string name="narrator_verdict_curve_inverted">Short-term borrowing costs more than long-term (by %1$s points) — the upside-down pattern that has come before every recession since 1970.</string>
+    <string name="narrator_verdict_curve_normal">Long-term borrowing costs %1$s points more than short-term — the normal, healthy shape.</string>
+    <string name="narrator_verdict_hy_relaxed">Risky companies pay %1$s points more than the government to borrow. Lenders are relaxed.</string>
+    <string name="narrator_verdict_hy_nervous">Risky companies pay %1$s points more than the government to borrow. Lenders are getting nervous.</string>
+    <string name="narrator_verdict_hy_scared">Risky companies pay %1$s points more than the government to borrow. Lenders are scared of defaults.</string>
+    <string name="narrator_verdict_stlfsi_calm">The financial system is calmer than usual (%1$s, where 0 is normal).</string>
+    <string name="narrator_verdict_stlfsi_strained">The financial system is under more strain than usual (%1$s, where 0 is normal).</string>
+    <string name="narrator_verdict_vix_calm">Investors expect calm markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
+    <string name="narrator_verdict_vix_choppy">Investors expect choppy markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
+    <string name="narrator_verdict_vix_wild">Investors expect wild markets over the next month (fear gauge at %1$s; under 20 is calm).</string>
+    <string name="narrator_verdict_ccdelinq_keeping_up">%1$s of credit card balances are a month or more overdue. Households are mostly keeping up.</string>
+    <string name="narrator_verdict_ccdelinq_falling_behind">%1$s of credit card balances are a month or more overdue. Households are falling behind.</string>
+    <!-- %1$s is a whole number of dollars without the $ sign, e.g. "121" -->
+    <string name="narrator_verdict_debtgdp">The government owes about $%1$s for every $100 the country produces in a year.</string>
+    <string name="narrator_verdict_interest">About %1$s cents of every federal tax dollar now go to interest on the debt.</string>
+    <string name="narrator_verdict_m2_growing">The amount of money in the economy is growing %1$s a year.</string>
+    <string name="narrator_verdict_m2_shrinking">The amount of money in the economy is shrinking %1$s a year — rare, and hard on borrowers.</string>
+    <string name="narrator_verdict_dff">The Fed's interest rate is %1$s — the starting point for credit cards, car loans and savings accounts.</string>
+    <!-- %1$s is the mortgage rate, %2$s the monthly payment on a $500,000 loan -->
+    <string name="narrator_verdict_mortgage">A typical 30-year mortgage costs %1$s. On a $500,000 loan that's about %2$s a month before taxes and insurance.</string>
+    <string name="narrator_verdict_homeprices_up">Home prices are up %1$s from a year ago.</string>
+    <string name="narrator_verdict_homeprices_down">Home prices are down %1$s from a year ago.</string>
+    <string name="narrator_verdict_dgs10">The government pays %1$s to borrow for 10 years. Mortgage rates usually run 1.5–2 points above this.</string>
+    <string name="narrator_verdict_dgs2">The government pays %1$s to borrow for 2 years — roughly where investors expect the Fed's rate to be.</string>
+    <string name="narrator_verdict_dgs30">The government pays %1$s to borrow for 30 years.</string>
+    <string name="narrator_verdict_other">The latest reading is %1$s.</string>
+
+    <!-- What a reading means for this household -->
+    <!-- %1$s monthly spending, %2$s how much more it would have cost a year ago -->
+    <string name="narrator_for_you_prices_falling_spend">Prices are falling: your %1$s of monthly spending buys what would have cost about %2$s more a year ago.</string>
+    <!-- %1$s what $100 of last year's things costs now -->
+    <string name="narrator_for_you_prices_falling">Prices are falling: something that cost $100 a year ago costs about %1$s now.</string>
+    <!-- %1$s monthly spending, %2$s how much less it cost a year ago, %3$s the inflation rate -->
+    <string name="narrator_for_you_prices_rising_spend">If your %1$s of monthly spending rose with prices, the same things would have cost about %2$s less a year ago. Raises below %3$s mean your pay buys less than it did.</string>
+    <!-- %1$s what $100 of last year's things costs now, %2$s the inflation rate -->
+    <string name="narrator_for_you_prices_rising">Something that cost $100 a year ago costs about %1$s now. A raise smaller than %2$s means your pay buys less than it did.</string>
+    <!-- %1$s the Fed's rate, %2$s the household's cash, %3$s the interest it would earn in a year -->
+    <string name="narrator_for_you_savings_beats_inflation">High-yield savings accounts pay roughly the Fed's %1$s. On your %2$s in cash that's about %3$s a year — a bit more than inflation takes away.</string>
+    <string name="narrator_for_you_savings_trails_inflation">High-yield savings accounts pay roughly the Fed's %1$s. On your %2$s in cash that's about %3$s a year — less than inflation takes away.</string>
+    <string name="narrator_for_you_savings_general">Savings accounts tend to pay close to the Fed's rate, and credit cards charge it plus 15–20 points.</string>
+    <!-- %1$s the planned house price, %2$s the monthly loan payment at today's rate, %3$s the rate in the plan -->
+    <string name="narrator_for_you_mortgage_same">For the %1$s house in your planner, today's average rate means about %2$s a month for the loan — about the same as the %3$s in your plan.</string>
+    <!-- %1$s the planned house price, %2$s the monthly loan payment at today's rate, %3$s the difference per month, %4$s the rate in the plan -->
+    <string name="narrator_for_you_mortgage_more">For the %1$s house in your planner, today's average rate means about %2$s a month for the loan — %3$s more than at the %4$s in your plan.</string>
+    <string name="narrator_for_you_mortgage_less">For the %1$s house in your planner, today's average rate means about %2$s a month for the loan — %3$s less than at the %4$s in your plan.</string>
+    <string name="narrator_for_you_mortgage_general">Each 1-point change in mortgage rates moves the payment on a $500,000 loan by about $330 a month.</string>
+    <string name="narrator_for_you_home_more">If your home tracked the national average, it's worth about %1$s more than a year ago.</string>
+    <string name="narrator_for_you_home_less">If your home tracked the national average, it's worth about %1$s less than a year ago.</string>
+    <!-- %1$s a number of months with one decimal, e.g. "4.5" -->
+    <string name="narrator_for_you_runway_solid">Your cash would cover about %1$s months of expenses if a paycheck stopped — a solid cushion.</string>
+    <string name="narrator_for_you_runway_ok">Your cash would cover about %1$s months of expenses if a paycheck stopped — within the 3–6 months planners suggest.</string>
+    <string name="narrator_for_you_runway_short">Your cash would cover about %1$s months of expenses if a paycheck stopped — planners suggest at least 3–6 months.</string>
+    <!-- %1$s the household's investments, %2$s today's signed change on them -->
+    <string name="narrator_for_you_stocks_mine">If your %1$s in investments moved with the S&amp;P 500 today, that's roughly %2$s. Day-to-day moves like this are normal; what matters is the long run.</string>
+    <!-- %1$s today's signed percent move, %2$s the signed change on $100,000 -->
+    <string name="narrator_for_you_stocks_general">A typical 401(k) moves with this. Today's %1$s on $100,000 would be about %2$s.</string>
+
+    <!-- Today's move for a market. %1$s the market's name, %2$s the size of the move, e.g. "0.84%" -->
+    <string name="narrator_quote_up_quiet">%1$s is up %2$s today — a quiet day. Most days move less than 1%.</string>
+    <string name="narrator_quote_up_ordinary">%1$s is up %2$s today — an ordinary day. Most days move less than 1%.</string>
+    <string name="narrator_quote_up_big">%1$s is up %2$s today — a big day. Most days move less than 1%.</string>
+    <string name="narrator_quote_up_very_big">%1$s is up %2$s today — a very big day. Most days move less than 1%.</string>
+    <string name="narrator_quote_down_quiet">%1$s is down %2$s today — a quiet day. Most days move less than 1%.</string>
+    <string name="narrator_quote_down_ordinary">%1$s is down %2$s today — an ordinary day. Most days move less than 1%.</string>
+    <string name="narrator_quote_down_big">%1$s is down %2$s today — a big day. Most days move less than 1%.</string>
+    <string name="narrator_quote_down_very_big">%1$s is down %2$s today — a very big day. Most days move less than 1%.</string>
+
+    <!-- The economic weather report -->
+    <string name="narrator_weather_sunny">Sunny</string>
+    <string name="narrator_weather_partly_cloudy">Partly cloudy</string>
+    <string name="narrator_weather_cloudy">Cloudy</string>
+    <string name="narrator_weather_stormy">Stormy</string>
+
+    <string name="narrator_topic_prices">Prices</string>
+    <string name="narrator_topic_jobs">Jobs</string>
+    <string name="narrator_topic_borrowing">Borrowing</string>
+    <string name="narrator_topic_markets">Markets</string>
+    <string name="narrator_topic_recession">Recession signs</string>
+    <string name="narrator_topic_debt">Government debt</string>
+
+    <string name="narrator_briefing_prices_falling">Prices are falling (%1$s lower than a year ago) — rare, and usually a sign of a weak economy.</string>
+    <string name="narrator_briefing_prices_normal">Prices are rising at a normal pace (%1$s a year).</string>
+    <string name="narrator_briefing_prices_bit_fast">Prices are still rising a little too fast (%1$s a year vs the 2% goal).</string>
+    <string name="narrator_briefing_prices_fast">Prices are rising fast (%1$s a year) — budgets are being squeezed.</string>
+    <string name="narrator_briefing_jobs_weakening">The job market is weakening: layoffs are rising.</string>
+    <string name="narrator_briefing_jobs_cooling">The job market is cooling off a little.</string>
+    <!-- %1$s the unemployment rate -->
+    <string name="narrator_briefing_jobs_plentiful_rate">Jobs are plentiful — unemployment is %1$s.</string>
+    <string name="narrator_briefing_jobs_plentiful">Jobs are plentiful.</string>
+    <!-- %1$s the mortgage rate, %2$s the Fed's rate -->
+    <string name="narrator_briefing_borrowing_expensive_fed">Borrowing is expensive — mortgages around %1$s, the Fed's rate %2$s.</string>
+    <string name="narrator_briefing_borrowing_moderate_fed">Borrowing costs are moderate — mortgages around %1$s, the Fed's rate %2$s.</string>
+    <string name="narrator_briefing_borrowing_cheap_fed">Borrowing is cheap — mortgages around %1$s, the Fed's rate %2$s.</string>
+    <string name="narrator_briefing_borrowing_expensive">Borrowing is expensive — mortgages around %1$s.</string>
+    <string name="narrator_briefing_borrowing_moderate">Borrowing costs are moderate — mortgages around %1$s.</string>
+    <string name="narrator_briefing_borrowing_cheap">Borrowing is cheap — mortgages around %1$s.</string>
+    <!-- %1$s the size of today's S&P 500 move, e.g. "0.84%" -->
+    <string name="narrator_briefing_markets_calm_up">Stock markets are calm — the S&amp;P 500 is up %1$s today.</string>
+    <string name="narrator_briefing_markets_calm_down">Stock markets are calm — the S&amp;P 500 is down %1$s today.</string>
+    <string name="narrator_briefing_markets_calm">Stock markets are calm.</string>
+    <string name="narrator_briefing_markets_jittery_up">Stock markets are jittery — the S&amp;P 500 is up %1$s today.</string>
+    <string name="narrator_briefing_markets_jittery_down">Stock markets are jittery — the S&amp;P 500 is down %1$s today.</string>
+    <string name="narrator_briefing_markets_jittery">Stock markets are jittery.</string>
+    <string name="narrator_briefing_recession_both">Both of the most reliable recession alarms are ringing.</string>
+    <string name="narrator_briefing_recession_jobs">The jobs-based recession alarm is ringing.</string>
+    <string name="narrator_briefing_recession_curve">The yield curve is upside down, an early recession warning.</string>
+    <string name="narrator_briefing_recession_quiet">The two most reliable recession alarms are quiet.</string>
+    <!-- %1$s a whole number of cents -->
+    <string name="narrator_briefing_debt_strain">About %1$s¢ of every tax dollar goes to interest on the national debt — a growing strain.</string>
+    <string name="narrator_briefing_debt">About %1$s¢ of every tax dollar goes to interest on the national debt.</string>
+
+    <string name="narrator_headline_gathering">Gathering the latest readings…</string>
+    <string name="narrator_headline_stormy">Stormy</string>
+    <string name="narrator_headline_mixed">Mixed, with a storm or two</string>
+    <string name="narrator_headline_mostly_cloudy">Mostly cloudy</string>
+    <string name="narrator_headline_partly_cloudy">Partly cloudy</string>
+    <string name="narrator_headline_mostly_sunny">Mostly sunny</string>
+
+    <!-- %1$d areas flashing red, out of %2$d (the plural follows %2$d) -->
+    <plurals name="narrator_summary_red">
+        <item quantity="one">%1$d of %2$d area is flashing red.</item>
+        <item quantity="other">%1$d of %2$d areas are flashing red.</item>
+    </plurals>
+    <plurals name="narrator_count_warning_signs">
+        <item quantity="one">%1$d warning sign</item>
+        <item quantity="other">%1$d warning signs</item>
+    </plurals>
+    <!-- %1$s the stress score out of 100, %2$s "4 warning signs", %3$d how many are worth watching -->
+    <string name="narrator_summary_stress_calm">Overall stress is calm (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
+    <string name="narrator_summary_stress_elevated">Overall stress is elevated (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
+    <string name="narrator_summary_stress_high">Overall stress is high (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
+    <string name="narrator_summary_stress_severe">Overall stress is severe (%1$s of 100): %2$s in the danger zone and %3$d worth watching.</string>
+
+    <!-- The explainer sheet. %1$s is the name of the idea, e.g. "Inflation" -->
+    <string name="explain_click_label">Explain %1$s</string>
+    <string name="explain_info_description">What is %1$s?</string>
+    <string name="explain_right_now">Right now</string>
+    <string name="explain_for_you">What it means for you</string>
+    <string name="explain_why_it_matters">Why it matters</string>
+    <string name="explain_analogy">An everyday comparison</string>
+    <string name="explain_normal">What's normal</string>
+    <string name="explain_how_it_works">How it works</string>
+    <string name="explain_connected_to">Connected to</string>
+    <string name="explain_see_full_chart">See the full chart</string>
+    <!-- %1$s the Fed's rate, %2$s inflation, %3$s the difference, all as percentages -->
+    <string name="explain_real_rate_positive">The Fed's %1$s minus inflation's %2$s leaves a real rate of %3$s — money is a little tight, and savings keep up with prices.</string>
+    <string name="explain_real_rate_negative">The Fed's %1$s minus inflation's %2$s leaves a real rate of %3$s — savings lose ground to prices.</string>
+    <!-- %1$s the stress score, %2$s "4 warning signs are in the danger zone", %3$s "3 are worth watching" -->
+    <string name="explain_stress_calm">The gauge reads %1$s — calm. %2$s and %3$s.</string>
+    <string name="explain_stress_elevated">The gauge reads %1$s — elevated. %2$s and %3$s.</string>
+    <string name="explain_stress_high">The gauge reads %1$s — high. %2$s and %3$s.</string>
+    <string name="explain_stress_severe">The gauge reads %1$s — severe. %2$s and %3$s.</string>
+    <plurals name="explain_stress_dangers">
+        <item quantity="one">%1$d warning sign is in the danger zone</item>
+        <item quantity="other">%1$d warning signs are in the danger zone</item>
+    </plurals>
+    <plurals name="explain_stress_watches">
+        <item quantity="one">%1$d is worth watching</item>
+        <item quantity="other">%1$d are worth watching</item>
+    </plurals>
+
+    <!-- The jargon buster -->
+    <string name="glossary_title">Jargon buster</string>
+    <string name="glossary_subtitle">Every term in this app, in plain English. Tap one for the full story.</string>
+    <string name="glossary_search_hint">Search, e.g. “yield curve”</string>
+    <string name="glossary_search_description">Search terms</string>
+    <!-- %1$s what the person typed -->
+    <string name="glossary_no_matches">Nothing matches “%1$s”.</string>
+
+    <!-- Plain-language widgets -->
+    <string name="layman_weather_title">Today's economic weather</string>
+    <string name="layman_stress_calm">Calm</string>
+    <string name="layman_stress_elevated">Elevated</string>
+    <string name="layman_stress_high">High</string>
+    <string name="layman_stress_severe">Severe</string>
+    <string name="layman_stress_calm_detail">Calm: almost every warning light is off. The economy isn't showing the strains that have come before past downturns.</string>
+    <string name="layman_stress_elevated_detail">Elevated: a few warning lights are on — worth keeping an eye on, but most signs are still calm. Past recessions came with many lights on at once.</string>
+    <string name="layman_stress_high_detail">High: many warning lights are on at once, a pattern seen in the run-up to past downturns.</string>
+    <string name="layman_stress_severe_detail">Severe: most warning lights are flashing, as they did in 2008 and 2020.</string>
+
+    <string name="layman_checkup_title">Money checkup</string>
+    <!-- %1$d healthy lines out of %2$d (the plural follows %2$d) -->
+    <plurals name="layman_checkup_score">
+        <item quantity="one">%1$d of %2$d looking healthy</item>
+        <item quantity="other">%1$d of %2$d looking healthy</item>
+    </plurals>
+    <string name="layman_checkup_healthy">Healthy</string>
+    <string name="layman_checkup_worth_a_look">Worth a look</string>
+    <string name="layman_checkup_disclaimer">Common rules of thumb, not financial advice.</string>
+    <string name="layman_checkup_emergency_title">Emergency fund</string>
+    <!-- %1$s a number of months with one decimal, e.g. "4.5" -->
+    <string name="layman_checkup_emergency_detail">Your cash covers %1$s months of expenses.</string>
+    <string name="layman_checkup_emergency_tip_solid">Comfortably past the 3–6 months planners suggest.</string>
+    <string name="layman_checkup_emergency_tip_ok">Within the 3–6 months planners suggest; toward six is safer if one job carries the household.</string>
+    <string name="layman_checkup_emergency_tip_short">Planners suggest 3–6 months; building cash first protects you against a layoff.</string>
+    <string name="layman_checkup_saving_title">Saving each month</string>
+    <!-- %1$s a percentage, e.g. "18.2%" -->
+    <string name="layman_checkup_saving_detail">You keep %1$s of take-home pay after expenses.</string>
+    <string name="layman_checkup_saving_tip_ok">At or above the common 15% goal.</string>
+    <string name="layman_checkup_saving_tip_low">The common goal is 15–20% (401(k) contributions taken from your paycheck count on top). Trimming a big recurring expense moves this most.</string>
+    <string name="layman_checkup_debt_title">Costly debt</string>
+    <!-- %1$s a percentage, e.g. "5%" -->
+    <string name="layman_checkup_debt_none">None of your loans charge more than about %1$s.</string>
+    <!-- %1$s the loans' names as a list, %2$s a percentage; the plural follows how many loans -->
+    <plurals name="layman_checkup_debt_some">
+        <item quantity="one">%1$s charges more than %2$s.</item>
+        <item quantity="other">%1$s charge more than %2$s.</item>
+    </plurals>
+    <string name="layman_checkup_debt_tip_ok">Low-rate loans can be paid on schedule while savings earn about as much.</string>
+    <string name="layman_checkup_debt_tip_costly">Paying these down early is a guaranteed return equal to their rate — usually better than savings pay.</string>
+    <string name="layman_checkup_ratio_title">Debt vs what you own</string>
+    <!-- %1$s a percentage, e.g. "12%" -->
+    <string name="layman_checkup_ratio_detail">You owe %1$s as much as you own (not counting the mortgage).</string>
+    <string name="layman_checkup_ratio_tip_ok">A comfortable margin.</string>
+    <string name="layman_checkup_ratio_tip_high">Over a quarter is worth bringing down.</string>
+    <string name="layman_checkup_retirement_title">Saving for later</string>
+    <!-- %1$s a percentage, e.g. "40%" -->
+    <string name="layman_checkup_retirement_detail">%1$s of what you own is in retirement accounts.</string>
+    <string name="layman_checkup_retirement_tip_ok">Tax-advantaged accounts are doing a lot of the work.</string>
+    <string name="layman_checkup_retirement_tip_low">Retirement accounts grow tax-free or tax-deferred; topping them up is often the cheapest way to invest.</string>
+
+    <string name="layman_tip_text">New to this? Tap ⓘ next to anything for a plain-English explanation, or ? at the top for the jargon buster.</string>
+    <string name="layman_tip_dismiss_label">Dismiss tip</string>
+    <string name="layman_tip_dismiss">Dismiss</string>
+</resources>

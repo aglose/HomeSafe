@@ -68,15 +68,111 @@ import com.meticulouscreations.homesafe.finance.ui.components.RollingNumber
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.finance.ui.components.StressRing
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.finance_callout_for_you
+import homesafe.shared.generated.resources.finance_econ_core_cpi
+import homesafe.shared.generated.resources.finance_econ_core_pce
+import homesafe.shared.generated.resources.finance_econ_couldnt_load
+import homesafe.shared.generated.resources.finance_econ_cpi
+import homesafe.shared.generated.resources.finance_econ_cpi_change
+import homesafe.shared.generated.resources.finance_econ_cpi_in
+import homesafe.shared.generated.resources.finance_econ_cpi_inflation
+import homesafe.shared.generated.resources.finance_econ_curve_compare_half
+import homesafe.shared.generated.resources.finance_econ_curve_compare_month
+import homesafe.shared.generated.resources.finance_econ_curve_compare_two
+import homesafe.shared.generated.resources.finance_econ_curve_compare_year
+import homesafe.shared.generated.resources.finance_econ_curve_description
+import homesafe.shared.generated.resources.finance_econ_curve_failed
+import homesafe.shared.generated.resources.finance_econ_curve_failed_fred
+import homesafe.shared.generated.resources.finance_econ_curve_how_to_read_inverted
+import homesafe.shared.generated.resources.finance_econ_curve_how_to_read_normal
+import homesafe.shared.generated.resources.finance_econ_curve_inverted
+import homesafe.shared.generated.resources.finance_econ_curve_normal
+import homesafe.shared.generated.resources.finance_econ_curve_spread
+import homesafe.shared.generated.resources.finance_econ_curve_subtitle
+import homesafe.shared.generated.resources.finance_econ_curve_title
+import homesafe.shared.generated.resources.finance_econ_curve_today
+import homesafe.shared.generated.resources.finance_econ_curve_vs
+import homesafe.shared.generated.resources.finance_econ_curve_vs_then
+import homesafe.shared.generated.resources.finance_econ_fed_funds
+import homesafe.shared.generated.resources.finance_econ_fed_target
+import homesafe.shared.generated.resources.finance_econ_fine_print
+import homesafe.shared.generated.resources.finance_econ_in_a_year
+import homesafe.shared.generated.resources.finance_econ_inflation_caption
+import homesafe.shared.generated.resources.finance_econ_inflation_chart
+import homesafe.shared.generated.resources.finance_econ_inflation_how_to_read
+import homesafe.shared.generated.resources.finance_econ_inflation_subtitle
+import homesafe.shared.generated.resources.finance_econ_inflation_title
+import homesafe.shared.generated.resources.finance_econ_rates_subtitle
+import homesafe.shared.generated.resources.finance_econ_rates_title
+import homesafe.shared.generated.resources.finance_econ_real_how_to_read
+import homesafe.shared.generated.resources.finance_econ_real_subtitle
+import homesafe.shared.generated.resources.finance_econ_real_title
+import homesafe.shared.generated.resources.finance_econ_real_value
+import homesafe.shared.generated.resources.finance_econ_treasury
+import homesafe.shared.generated.resources.finance_econ_yield_10y
+import homesafe.shared.generated.resources.finance_econ_yield_2y
+import homesafe.shared.generated.resources.finance_econ_yield_30y
+import homesafe.shared.generated.resources.finance_econ_yields_how_to_read
+import homesafe.shared.generated.resources.finance_econ_yields_subtitle
+import homesafe.shared.generated.resources.finance_econ_yields_title
+import homesafe.shared.generated.resources.finance_how_to_read
+import homesafe.shared.generated.resources.finance_indicator_analogy
+import homesafe.shared.generated.resources.finance_indicator_as_of
+import homesafe.shared.generated.resources.finance_indicator_change
+import homesafe.shared.generated.resources.finance_indicator_chart_description
+import homesafe.shared.generated.resources.finance_indicator_danger_line
+import homesafe.shared.generated.resources.finance_indicator_danger_line_title
+import homesafe.shared.generated.resources.finance_indicator_five_years_ago
+import homesafe.shared.generated.resources.finance_indicator_how_it_works
+import homesafe.shared.generated.resources.finance_indicator_how_to_read
+import homesafe.shared.generated.resources.finance_indicator_how_to_read_reference
+import homesafe.shared.generated.resources.finance_indicator_how_to_read_zones
+import homesafe.shared.generated.resources.finance_indicator_how_to_read_zones_reference
+import homesafe.shared.generated.resources.finance_indicator_latest
+import homesafe.shared.generated.resources.finance_indicator_normal
+import homesafe.shared.generated.resources.finance_indicator_open_fred
+import homesafe.shared.generated.resources.finance_indicator_range_high
+import homesafe.shared.generated.resources.finance_indicator_range_low
+import homesafe.shared.generated.resources.finance_indicator_right_now
+import homesafe.shared.generated.resources.finance_indicator_source
+import homesafe.shared.generated.resources.finance_indicator_source_value
+import homesafe.shared.generated.resources.finance_indicator_updated
+import homesafe.shared.generated.resources.finance_indicator_watch_line
+import homesafe.shared.generated.resources.finance_indicator_why
+import homesafe.shared.generated.resources.finance_indicator_year_ago
+import homesafe.shared.generated.resources.finance_range_10y
+import homesafe.shared.generated.resources.finance_range_1y
+import homesafe.shared.generated.resources.finance_range_3y
+import homesafe.shared.generated.resources.finance_range_5y
+import homesafe.shared.generated.resources.finance_range_max
+import homesafe.shared.generated.resources.finance_risk_counts
+import homesafe.shared.generated.resources.finance_risk_failed
+import homesafe.shared.generated.resources.finance_risk_flashing_subtitle
+import homesafe.shared.generated.resources.finance_risk_flashing_title
+import homesafe.shared.generated.resources.finance_risk_how_body
+import homesafe.shared.generated.resources.finance_risk_how_title
+import homesafe.shared.generated.resources.finance_risk_how_to_read
+import homesafe.shared.generated.resources.finance_risk_loading
+import homesafe.shared.generated.resources.finance_risk_reading
+import homesafe.shared.generated.resources.finance_risk_stress
+import homesafe.shared.generated.resources.finance_risk_vs_year_ago
+import homesafe.shared.generated.resources.finance_stats_title
+import homesafe.shared.generated.resources.finance_zone_danger
+import homesafe.shared.generated.resources.finance_zone_watch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /** How far back an economic chart looks. */
-internal enum class EconRange(val label: String, val years: Int?) {
-    Y1("1Y", 1),
-    Y3("3Y", 3),
-    Y5("5Y", 5),
-    Y10("10Y", 10),
-    MAX("MAX", null),
+internal enum class EconRange(val label: StringResource, val years: Int?) {
+    Y1(Res.string.finance_range_1y, 1),
+    Y3(Res.string.finance_range_3y, 3),
+    Y5(Res.string.finance_range_5y, 5),
+    Y10(Res.string.finance_range_10y, 10),
+    MAX(Res.string.finance_range_max, null),
 }
 
 internal fun Series.within(range: EconRange): Series {
@@ -100,28 +196,34 @@ internal fun EconomyScreen(
     LazyColumn(state = listState, contentPadding = contentPadding) {
         item(key = "weather") { CascadeIn(0) { EconomyWeatherCard(briefing, Modifier.padding(top = 8.dp)) } }
         item(key = "connect") { CascadeIn(1) { ConnectionsEntryCard(onOpenConnections, Modifier.padding(top = 12.dp)) } }
-        item(key = "inflation-h") { SectionHeader("Inflation", subtitle = "How much more things cost than a year ago", info = "cpi") }
+        item(key = "inflation-h") {
+            SectionHeader(stringResource(Res.string.finance_econ_inflation_title), subtitle = stringResource(Res.string.finance_econ_inflation_subtitle), info = "cpi")
+        }
         item(key = "inflation") { InflationBlock(state) }
         item(key = "curve-h") {
-            SectionHeader("The yield curve", subtitle = "What the government pays to borrow, from 1 month (left) to 30 years (right)", info = "yieldcurve")
+            SectionHeader(stringResource(Res.string.finance_econ_curve_title), subtitle = stringResource(Res.string.finance_econ_curve_subtitle), info = "yieldcurve")
         }
         item(key = "curve") { CascadeIn(0) { YieldCurveBlock(state) } }
-        item(key = "yields-h") { SectionHeader("Government borrowing costs", subtitle = "2, 10 and 30 years — mortgages follow the 10-year", info = "treasuries") }
+        item(key = "yields-h") {
+            SectionHeader(stringResource(Res.string.finance_econ_yields_title), subtitle = stringResource(Res.string.finance_econ_yields_subtitle), info = "treasuries")
+        }
         item(key = "yields") {
             CascadeIn(1) {
                 OverlayBlock(
                     lines = listOf(
-                        Triple("2Y", state.readings[IndicatorCatalog.twoYear.id], colors.cool),
-                        Triple("10Y", state.readings[IndicatorCatalog.tenYear.id], colors.accent),
-                        Triple("30Y", state.readings[IndicatorCatalog.thirtyYear.id], colors.violet),
+                        Triple(stringResource(Res.string.finance_econ_yield_2y), state.readings[IndicatorCatalog.twoYear.id], colors.cool),
+                        Triple(stringResource(Res.string.finance_econ_yield_10y), state.readings[IndicatorCatalog.tenYear.id], colors.accent),
+                        Triple(stringResource(Res.string.finance_econ_yield_30y), state.readings[IndicatorCatalog.thirtyYear.id], colors.violet),
                     ),
                     rules = emptyList(),
                     defaultRange = EconRange.Y5,
-                    howToRead = "Higher lines mean borrowing costs more for everyone. Grey bands are past recessions.",
+                    howToRead = stringResource(Res.string.finance_econ_yields_how_to_read),
                 )
             }
         }
-        item(key = "real-h") { SectionHeader("Is your cash keeping up?", subtitle = "The Fed's rate against inflation: above zero, savings beat rising prices", info = "realrate") }
+        item(key = "real-h") {
+            SectionHeader(stringResource(Res.string.finance_econ_real_title), subtitle = stringResource(Res.string.finance_econ_real_subtitle), info = "realrate")
+        }
         item(key = "real") {
             CascadeIn(2) {
                 val ff = state.readings[IndicatorCatalog.fedFunds.id]
@@ -130,29 +232,34 @@ internal fun EconomyScreen(
                     val real = if (ff?.latest != null && cpi?.latest != null) ff.latest!! - cpi.latest!! else null
                     if (real != null) {
                         Text(
-                            FinanceFormat.grouped(real, 2) + "% real",
+                            stringResource(Res.string.finance_econ_real_value, FinanceFormat.grouped(real, 2)),
                             style = FinanceTheme.type.title,
                             color = if (real >= 0) colors.gain else colors.loss,
                             modifier = Modifier.padding(horizontal = PageGutter),
                         )
                     }
                     OverlayBlock(
-                        lines = listOf(Triple("Fed funds", ff, colors.accent), Triple("CPI inflation", cpi, colors.loss)),
+                        lines = listOf(
+                            Triple(stringResource(Res.string.finance_econ_fed_funds), ff, colors.accent),
+                            Triple(stringResource(Res.string.finance_econ_cpi_inflation), cpi, colors.loss),
+                        ),
                         rules = listOf(ChartRule(0.0, colors.textTertiary)),
                         defaultRange = EconRange.Y10,
-                        howToRead = "When the yellow line (the Fed's rate) is above the red one (inflation), cash in savings grows faster than prices.",
+                        howToRead = stringResource(Res.string.finance_econ_real_how_to_read),
                     )
                 }
             }
         }
-        item(key = "rates-h") { SectionHeader("Key rates", subtitle = "Tap any for the full story", info = "dff") }
+        item(key = "rates-h") {
+            SectionHeader(stringResource(Res.string.finance_econ_rates_title), subtitle = stringResource(Res.string.finance_econ_rates_subtitle), info = "dff")
+        }
         item(key = "rates") {
             val rates = listOf(IndicatorCatalog.fedFunds, IndicatorCatalog.twoYear, IndicatorCatalog.tenYear, IndicatorCatalog.thirtyYear, IndicatorCatalog.mortgage, IndicatorCatalog.corePce)
             Column {
                 rates.forEach { ind -> IndicatorRow(ind, state.readings[ind.id], state.failedIndicators.contains(ind.id)) { onOpenIndicator(ind.id) } }
             }
         }
-        item(key = "fine") { FinePrint("Economic data from the Federal Reserve Bank of St. Louis (FRED). Inflation is the change from a year earlier.") }
+        item(key = "fine") { FinePrint(stringResource(Res.string.finance_econ_fine_print)) }
     }
 }
 
@@ -174,15 +281,21 @@ private fun InflationBlock(state: FinanceUiState) {
     val shown = scrub?.let { i -> cpiSeries?.takeIf { i in 0 until it.size }?.let { it.times[i] to it.values[i] } }
     val value = shown?.second ?: cpi?.latest
     val changeText = when {
-        shown != null -> "CPI in ${FinanceFormat.monthYear(shown.first)}"
-        cpi?.lastChange != null -> "${FinanceFormat.indicatorChange(cpi.lastChange!!, cpi.indicator.unit)} from the month before · ${cpi.latestEpochSeconds?.let { FinanceFormat.monthYear(it) }}"
+        shown != null -> stringResource(Res.string.finance_econ_cpi_in, FinanceFormat.monthYear(shown.first))
+
+        cpi?.lastChange != null -> stringResource(
+            Res.string.finance_econ_cpi_change,
+            FinanceFormat.indicatorChange(cpi.lastChange!!, cpi.indicator.unit).resolve(),
+            cpi.latestEpochSeconds?.let { FinanceFormat.monthYear(it) } ?: "",
+        )
+
         else -> " "
     }
     Box(Modifier.fillMaxWidth()) {
         AuroraBackground(tint, Modifier.matchParentSize(), secondary = colors.watch, intensity = if (cpi != null) 1f else 0.3f)
         Column(Modifier.padding(top = 16.dp)) {
             HeroNumber(
-                caption = "Prices vs a year ago",
+                caption = stringResource(Res.string.finance_econ_inflation_caption),
                 value = value?.let { FinanceFormat.grouped(it, 2) + "%" } ?: "—",
                 change = changeText,
                 changeColor = tint,
@@ -191,17 +304,17 @@ private fun InflationBlock(state: FinanceUiState) {
             Spacer(Modifier.height(12.dp))
             if (cpiSeries != null) {
                 val lines = listOfNotNull(
-                    ChartLine(cpiSeries, colors.loss, fill = true, label = "CPI"),
-                    coreSeries?.let { ChartLine(it, colors.watch, width = 1.8f, label = "Core CPI") },
-                    pceSeries?.let { ChartLine(it, colors.cool, width = 1.8f, label = "Core PCE") },
+                    ChartLine(cpiSeries, colors.loss, fill = true, label = stringResource(Res.string.finance_econ_cpi)),
+                    coreSeries?.let { ChartLine(it, colors.watch, width = 1.8f, label = stringResource(Res.string.finance_econ_core_cpi)) },
+                    pceSeries?.let { ChartLine(it, colors.cool, width = 1.8f, label = stringResource(Res.string.finance_econ_core_pce)) },
                 )
                 LineChart(
                     lines = lines,
-                    rules = listOf(ChartRule(2.0, colors.accent, "Fed target 2%", always = true)),
+                    rules = listOf(ChartRule(2.0, colors.accent, stringResource(Res.string.finance_econ_fed_target), always = true)),
                     timeAxis = true,
                     axis = econAxis,
                     periods = recessionBands,
-                    contentDescription = "Inflation chart",
+                    contentDescription = stringResource(Res.string.finance_econ_inflation_chart),
                     onScrub = { scrub = it },
                     modifier = Modifier.fillMaxWidth().height(230.dp),
                 )
@@ -212,14 +325,14 @@ private fun InflationBlock(state: FinanceUiState) {
                     },
                 )
                 cpi?.let { r ->
-                    Text(Narrator.verdict(r), style = FinanceTheme.type.body, color = colors.textPrimary.copy(alpha = 0.88f), modifier = Modifier.padding(horizontal = PageGutter))
+                    Text(Narrator.verdict(r).resolve(), style = FinanceTheme.type.body, color = colors.textPrimary.copy(alpha = 0.88f), modifier = Modifier.padding(horizontal = PageGutter))
                 }
-                HowToRead("Each line is how much prices rose over the previous 12 months. Red counts everything; yellow and blue leave out jumpy food and gas prices. The dashed line is the Fed's 2% goal, and grey bands are past recessions.")
+                HowToRead(stringResource(Res.string.finance_econ_inflation_how_to_read))
             } else {
                 Shimmer(Modifier.fillMaxWidth().height(230.dp).padding(horizontal = PageGutter), corner = 14.dp)
             }
             Spacer(Modifier.height(8.dp))
-            RangeSelector(EconRange.entries, range, { it.label }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+            RangeSelector(EconRange.entries, range, { stringResource(it.label) }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
         }
     }
 }
@@ -245,11 +358,11 @@ internal fun Legend(items: List<Triple<String, String, Color>>, modifier: Modifi
 }
 
 /** When to compare today's curve with. */
-private enum class CurveCompare(val label: String, val daysBack: Long) {
-    MONTH("1M ago", 30),
-    HALF("6M ago", 182),
-    YEAR("1Y ago", 365),
-    TWO("2Y ago", 730),
+private enum class CurveCompare(val label: StringResource, val daysBack: Long) {
+    MONTH(Res.string.finance_econ_curve_compare_month, 30),
+    HALF(Res.string.finance_econ_curve_compare_half, 182),
+    YEAR(Res.string.finance_econ_curve_compare_year, 365),
+    TWO(Res.string.finance_econ_curve_compare_two, 730),
 }
 
 /**
@@ -264,7 +377,7 @@ private fun YieldCurveBlock(state: FinanceUiState) {
     var scrub by remember { mutableStateOf<Int?>(null) }
     val latestTime = YieldCurve.tenors.mapNotNull { state.curve[it.fredId]?.lastTime }.maxOrNull()
     if (state.failedTenors.isNotEmpty() && state.curveSettled) {
-        FinePrint("Some of the curve's maturities didn't load from FRED. Pull down to try again.")
+        FinePrint(stringResource(Res.string.finance_econ_curve_failed_fred))
         return
     }
     if (latestTime == null || !state.curveSettled) {
@@ -278,7 +391,7 @@ private fun YieldCurveBlock(state: FinanceUiState) {
     }
     val today = curveAt(latestTime)
     if (today == null) {
-        FinePrint("Some of the curve's maturities didn't load. Pull down to try again.")
+        FinePrint(stringResource(Res.string.finance_econ_curve_failed))
         return
     }
     val then = curveAt(latestTime - compare.daysBack * Series.DAY_SECONDS)
@@ -288,36 +401,38 @@ private fun YieldCurveBlock(state: FinanceUiState) {
             val i = scrub
             Column(Modifier.weight(1f)) {
                 if (i != null) {
-                    Text("${YieldCurve.tenors[i].label} Treasury", style = FinanceTheme.type.label, color = colors.textSecondary)
+                    Text(stringResource(Res.string.finance_econ_treasury, stringResource(YieldCurve.tenors[i].label)), style = FinanceTheme.type.label, color = colors.textSecondary)
                     Text(
-                        FinanceFormat.grouped(today.values[i], 2) + "%" + (then?.let { "  vs " + FinanceFormat.grouped(it.values[i], 2) + "%" } ?: ""),
+                        (FinanceFormat.grouped(today.values[i], 2) + "%").let { now ->
+                            then?.let { stringResource(Res.string.finance_econ_curve_vs_then, now, FinanceFormat.grouped(it.values[i], 2) + "%") } ?: now
+                        },
                         style = FinanceTheme.type.title,
                         color = colors.textPrimary,
                     )
                 } else {
-                    Text("10Y − 3M spread", style = FinanceTheme.type.label, color = colors.textSecondary)
+                    Text(stringResource(Res.string.finance_econ_curve_spread), style = FinanceTheme.type.label, color = colors.textSecondary)
                     val spread = today.values[8] - today.values[1]
                     Text(FinanceFormat.signedPercent(spread), style = FinanceTheme.type.title, color = if (spread >= 0) colors.gain else colors.loss)
                 }
             }
             SignalChip(if (inverted) Signal.DANGER else Signal.CALM)
             Spacer(Modifier.width(6.dp))
-            Text(if (inverted) "Inverted" else "Normal", style = FinanceTheme.type.label, color = if (inverted) colors.loss else colors.textSecondary)
+            Text(stringResource(if (inverted) Res.string.finance_econ_curve_inverted else Res.string.finance_econ_curve_normal), style = FinanceTheme.type.label, color = if (inverted) colors.loss else colors.textSecondary)
         }
         Spacer(Modifier.height(8.dp))
         LineChart(
             lines = listOfNotNull(
-                ChartLine(today, colors.accent, fill = true, width = 3f, label = "Today"),
-                then?.let { ChartLine(it, colors.textSecondary, width = 2f, dashed = true, label = compare.label) },
+                ChartLine(today, colors.accent, fill = true, width = 3f, label = stringResource(Res.string.finance_econ_curve_today)),
+                then?.let { ChartLine(it, colors.textSecondary, width = 2f, dashed = true, label = stringResource(compare.label)) },
             ),
-            contentDescription = "Treasury yield curve",
+            contentDescription = stringResource(Res.string.finance_econ_curve_description),
             onScrub = { scrub = it },
             modifier = Modifier.fillMaxWidth().height(200.dp),
         )
         Row(Modifier.fillMaxWidth().padding(horizontal = 2.dp)) {
             YieldCurve.tenors.forEachIndexed { i, t ->
                 Text(
-                    t.label,
+                    stringResource(t.label),
                     style = FinanceTheme.type.micro,
                     color = if (scrub == i) colors.textPrimary else colors.textTertiary,
                     textAlign = TextAlign.Center,
@@ -326,14 +441,8 @@ private fun YieldCurveBlock(state: FinanceUiState) {
             }
         }
         Spacer(Modifier.height(10.dp))
-        ChipRow(CurveCompare.entries, compare, { "vs " + it.label }, colors.accent, { compare = it })
-        HowToRead(
-            if (inverted) {
-                "Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more. Right now short-term rates are higher than long-term ones, an upside-down shape that has come before every recession since 1970."
-            } else {
-                "Short loans are on the left, long ones on the right. Normally the line climbs — lending for longer earns more — and it does today. If the left end ever rises above the right, that's a classic recession warning. The dashed line is the curve as it was before."
-            },
-        )
+        ChipRow(CurveCompare.entries, compare, { stringResource(Res.string.finance_econ_curve_vs, stringResource(it.label)) }, colors.accent, { compare = it })
+        HowToRead(stringResource(if (inverted) Res.string.finance_econ_curve_how_to_read_inverted else Res.string.finance_econ_curve_how_to_read_normal))
     }
 }
 
@@ -366,7 +475,7 @@ private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, 
                 Triple(l.label, v?.let { FinanceFormat.grouped(it, 2) + "%" } ?: "—", l.color)
             } + listOfNotNull(at?.let { Triple(FinanceFormat.date(it), "", FinanceTheme.colors.textTertiary) }),
         )
-        RangeSelector(EconRange.entries, range, { it.label }, FinanceTheme.colors.accent, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+        RangeSelector(EconRange.entries, range, { stringResource(it.label) }, FinanceTheme.colors.accent, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
         if (howToRead != null) HowToRead(howToRead)
     }
 }
@@ -378,7 +487,7 @@ internal val recessionBands = Recessions.us.map { ChartPeriod(it.startEpochSecon
 @Composable
 internal fun HowToRead(text: String, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp)) {
-        Text("HOW TO READ IT", style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
+        Text(stringResource(Res.string.finance_how_to_read), style = FinanceTheme.type.micro, color = FinanceTheme.colors.accent)
         Spacer(Modifier.height(2.dp))
         Text(text, style = FinanceTheme.type.label, color = FinanceTheme.colors.textSecondary)
     }
@@ -396,13 +505,13 @@ internal fun IndicatorRow(indicator: Indicator, reading: IndicatorReading?, fail
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(Narrator.plainTitle(indicator.id), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+            Text(Narrator.plainTitle(indicator.id).resolve(), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
             val change = reading?.yearChange
             Text(
                 when {
-                    failed -> "Couldn't load"
-                    change != null -> FinanceFormat.indicatorChange(change, indicator.unit) + " in a year"
-                    else -> indicator.cadence.label
+                    failed -> stringResource(Res.string.finance_econ_couldnt_load)
+                    change != null -> stringResource(Res.string.finance_econ_in_a_year, FinanceFormat.indicatorChange(change, indicator.unit).resolve())
+                    else -> stringResource(indicator.cadence.label)
                 },
                 style = FinanceTheme.type.label,
                 color = colors.textSecondary,
@@ -415,7 +524,7 @@ internal fun IndicatorRow(indicator: Indicator, reading: IndicatorReading?, fail
             Column(horizontalAlignment = Alignment.End, modifier = Modifier.width(88.dp)) {
                 Text(reading.latest?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—", style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
                 if (reading.signal != null) {
-                    Text(reading.signal!!.label, style = FinanceTheme.type.micro, color = colors.signal(reading.signal))
+                    Text(stringResource(reading.signal!!.label), style = FinanceTheme.type.micro, color = colors.signal(reading.signal))
                 }
             }
         } else if (!failed) {
@@ -454,22 +563,22 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
                         StressRing(level.toFloat(), Modifier.matchParentSize())
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("STRESS", style = FinanceTheme.type.micro, color = colors.textSecondary)
+                                Text(stringResource(Res.string.finance_risk_stress), style = FinanceTheme.type.micro, color = colors.textSecondary)
                                 InfoButton("stress", size = 14.dp)
                             }
                             RollingNumber(stress?.score?.roundToInt()?.toString() ?: "0", FinanceTheme.type.hero, colors.textPrimary)
-                            Text(stress?.label ?: "Reading the gauges…", style = FinanceTheme.type.bodyStrong, color = tint)
+                            Text(stringResource(stress?.label ?: Res.string.finance_risk_reading), style = FinanceTheme.type.bodyStrong, color = tint)
                         }
                     }
                     if (stress != null) {
                         Text(
-                            "${stress.dangers} in danger · ${stress.watches} to watch · ${stress.counted - stress.dangers - stress.watches} calm",
+                            stringResource(Res.string.finance_risk_counts, stress.dangers, stress.watches, stress.counted - stress.dangers - stress.watches),
                             style = FinanceTheme.type.label,
                             color = colors.textSecondary,
                         )
                     }
                     if (state.economyLoading) {
-                        Text("${readings.size} of ${IndicatorCatalog.radar.size} readings in", style = FinanceTheme.type.micro, color = colors.textTertiary)
+                        Text(stringResource(Res.string.finance_risk_loading, readings.size, IndicatorCatalog.radar.size), style = FinanceTheme.type.micro, color = colors.textTertiary)
                     }
                     Spacer(Modifier.height(16.dp))
                     StressScale(stress)
@@ -477,16 +586,13 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
             }
         }
         item(key = "risk-read") {
-            HowToRead(
-                "Each card below is one warning sign that has turned before past downturns. The big number is today's reading, " +
-                    "the sentence says what it means, and the colored bar shows where it sits between calm (green), worth watching (amber) and danger (red). " +
-                    "One sign on its own means little — trouble has come when many light up together.",
-                Modifier.padding(top = 8.dp),
-            )
+            HowToRead(stringResource(Res.string.finance_risk_how_to_read), Modifier.padding(top = 8.dp))
         }
         val flashing = readings.filter { it.signal == Signal.DANGER || it.signal == Signal.WATCH }.sortedByDescending { it.stress ?: 0.0 }
         if (flashing.isNotEmpty()) {
-            item(key = "flash-h") { SectionHeader("Flashing now", subtitle = "Signs past their 'watch' or 'danger' line — tap one to see why") }
+            item(key = "flash-h") {
+                SectionHeader(stringResource(Res.string.finance_risk_flashing_title), subtitle = stringResource(Res.string.finance_risk_flashing_subtitle))
+            }
             item(key = "flash") {
                 FlowRow(
                     Modifier.fillMaxWidth().padding(horizontal = PageGutter),
@@ -505,7 +611,7 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
                         ) {
                             Box(Modifier.size(7.dp).clip(CircleShape).background(c))
                             Spacer(Modifier.width(6.dp))
-                            Text(Narrator.plainTitle(r.indicator.id), style = FinanceTheme.type.label, color = colors.textPrimary)
+                            Text(Narrator.plainTitle(r.indicator.id).resolve(), style = FinanceTheme.type.label, color = colors.textPrimary)
                             Spacer(Modifier.width(6.dp))
                             Text(r.latest?.let { FinanceFormat.indicator(it, r.indicator.unit) } ?: "", style = FinanceTheme.type.label, color = c)
                         }
@@ -514,7 +620,7 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
             }
         }
         IndicatorGroup.entries.forEach { group ->
-            item(key = "group-${group.name}") { SectionHeader(group.title, subtitle = group.blurb) }
+            item(key = "group-${group.name}") { SectionHeader(stringResource(group.title), subtitle = stringResource(group.blurb)) }
             val members = IndicatorCatalog.radar.filter { it.group == group }
             items(members, key = { "risk-${it.id}" }) { ind ->
                 CascadeIn(members.indexOf(ind)) {
@@ -524,11 +630,9 @@ internal fun RiskScreen(state: FinanceUiState, listState: LazyListState, content
             }
         }
         item(key = "how") {
-            SectionHeader("How the gauge works", info = "stress")
+            SectionHeader(stringResource(Res.string.finance_risk_how_title), info = "stress")
             Text(
-                "Each sign scores 0 when it's comfortably calm, 50 at its 'watch' line and 100 at its 'danger' line, and the gauge averages them — " +
-                    "the most reliable recession alarms (the yield curve, the jobs alarm, risky companies' borrowing costs and financial stress) count the most. " +
-                    "The lines are rules of thumb from past recessions and crises, not forecasts. Nothing here is financial advice.",
+                stringResource(Res.string.finance_risk_how_body),
                 style = FinanceTheme.type.body,
                 color = colors.textSecondary,
                 modifier = Modifier.padding(horizontal = PageGutter),
@@ -544,8 +648,8 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
     FinanceCard(onClick = onClick) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(Narrator.plainTitle(indicator.id), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
-                Text(indicator.title, style = FinanceTheme.type.micro, color = colors.textTertiary)
+                Text(Narrator.plainTitle(indicator.id).resolve(), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+                Text(stringResource(indicator.title), style = FinanceTheme.type.micro, color = colors.textTertiary)
             }
             if (reading != null) SignalChip(reading.signal)
             InfoButton(indicator.id)
@@ -559,9 +663,9 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
                         val yc = reading.yearChange
                         Text(
                             listOfNotNull(
-                                yc?.let { FinanceFormat.indicatorChange(it, indicator.unit) + " vs a year ago" },
+                                yc?.let { stringResource(Res.string.finance_risk_vs_year_ago, FinanceFormat.indicatorChange(it, indicator.unit).resolve()) },
                                 reading.latestEpochSeconds?.let { FinanceFormat.monthYear(it) },
-                            ).joinToString(" · "),
+                            ).joinToString(stringResource(Res.string.common_dot_separator)),
                             style = FinanceTheme.type.label,
                             color = colors.textSecondary,
                         )
@@ -576,7 +680,7 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
                 }
             }
 
-            failed -> Text("Couldn't load from FRED. Pull down to retry.", style = FinanceTheme.type.label, color = colors.textSecondary)
+            failed -> Text(stringResource(Res.string.finance_risk_failed), style = FinanceTheme.type.label, color = colors.textSecondary)
 
             else -> Shimmer(Modifier.fillMaxWidth().height(64.dp))
         }
@@ -644,11 +748,17 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                 AuroraBackground(tint, Modifier.matchParentSize(), intensity = if (reading != null) 1f else 0.3f)
                 Column(Modifier.padding(top = 12.dp)) {
                     HeroNumber(
-                        caption = Narrator.plainTitle(indicator.id) + " · " + indicator.title,
+                        caption = listOf(Narrator.plainTitle(indicator.id).resolve(), stringResource(indicator.title)).joinToString(stringResource(Res.string.common_dot_separator)),
                         value = (shown?.second ?: reading?.latest)?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—",
                         change = when {
                             shown != null -> FinanceFormat.date(shown.first)
-                            reading?.yearChange != null -> "${FinanceFormat.indicatorChange(reading.yearChange!!, indicator.unit)} vs a year ago · ${reading.latestEpochSeconds?.let { FinanceFormat.date(it) }}"
+
+                            reading?.yearChange != null -> stringResource(
+                                Res.string.finance_indicator_change,
+                                FinanceFormat.indicatorChange(reading.yearChange!!, indicator.unit).resolve(),
+                                reading.latestEpochSeconds?.let { FinanceFormat.date(it) } ?: "",
+                            )
+
                             else -> " "
                         },
                         changeColor = tint,
@@ -662,12 +772,12 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                         LineChart(
                             lines = listOf(ChartLine(series, tint, fill = true)),
                             zones = zonesFor(indicator, colors),
-                            rules = listOfNotNull(indicator.referenceLine?.let { ChartRule(it, colors.textSecondary, indicator.referenceLabel) }),
+                            rules = listOfNotNull(indicator.referenceLine?.let { ChartRule(it, colors.textSecondary, indicator.referenceLabel?.let { label -> stringResource(label) }.orEmpty()) }),
                             timeAxis = true,
                             axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { FinanceFormat.monthYear(it) }),
                             fitZones = true,
                             periods = recessionBands,
-                            contentDescription = "${indicator.title} chart",
+                            contentDescription = stringResource(Res.string.finance_indicator_chart_description, stringResource(indicator.title)),
                             onScrub = { scrub = it },
                             modifier = Modifier.fillMaxWidth().height(260.dp),
                         )
@@ -675,13 +785,14 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                         Shimmer(Modifier.fillMaxWidth().height(260.dp).padding(horizontal = PageGutter), corner = 14.dp)
                     }
                     Spacer(Modifier.height(8.dp))
-                    RangeSelector(EconRange.entries, range, { it.label }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+                    RangeSelector(EconRange.entries, range, { stringResource(it.label) }, tint, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
+                    val reference = indicator.referenceLabel?.takeIf { indicator.referenceLine != null }?.let { stringResource(it).lowercase() }
                     HowToRead(
-                        buildString {
-                            append("Drag along the chart to see any past reading. ")
-                            if (indicator.thresholds != null) append("The amber band is where it's worth watching and the red band is the danger zone. ")
-                            if (indicator.referenceLine != null && indicator.referenceLabel.isNotEmpty()) append("The dashed line marks ${indicator.referenceLabel.lowercase()}. ")
-                            append("Grey bands are past recessions — see what this did just before them.")
+                        when {
+                            indicator.thresholds != null && reference != null -> stringResource(Res.string.finance_indicator_how_to_read_zones_reference, reference)
+                            indicator.thresholds != null -> stringResource(Res.string.finance_indicator_how_to_read_zones)
+                            reference != null -> stringResource(Res.string.finance_indicator_how_to_read_reference, reference)
+                            else -> stringResource(Res.string.finance_indicator_how_to_read)
                         },
                     )
                 }
@@ -691,27 +802,27 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
         item {
             Column(Modifier.padding(horizontal = PageGutter)) {
                 if (reading?.latest != null) {
-                    Callout("Right now", Narrator.rightNow(reading), tint, Icons.AutoMirrored.Filled.TrendingUp)
+                    Callout(stringResource(Res.string.finance_indicator_right_now), Narrator.rightNow(reading).resolve(), tint, Icons.AutoMirrored.Filled.TrendingUp)
                 }
                 Narrator.forYou(id, state.readings, state.quotes, state.finance)?.let { mine ->
-                    Callout("What it means for you", mine, colors.accent, Icons.Filled.Person)
+                    Callout(stringResource(Res.string.finance_callout_for_you), mine.resolve(), colors.accent, Icons.Filled.Person)
                 }
-                explainer?.analogy?.takeIf { it.isNotEmpty() }?.let { Callout("An everyday comparison", it, colors.violet, Icons.Outlined.Lightbulb) }
+                explainer?.analogy?.let { Callout(stringResource(Res.string.finance_indicator_analogy), stringResource(it), colors.violet, Icons.Outlined.Lightbulb) }
             }
         }
-        item { SectionHeader("Why it matters") }
-        item { Text(explainer?.whyYou ?: indicator.why, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
-        explainer?.normal?.takeIf { it.isNotEmpty() }?.let { normal ->
-            item { SectionHeader("What's normal") }
-            item { Text(normal, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        item { SectionHeader(stringResource(Res.string.finance_indicator_why)) }
+        item { Text(stringResource(explainer?.whyYou ?: indicator.why), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        explainer?.normal?.let { normal ->
+            item { SectionHeader(stringResource(Res.string.finance_indicator_normal)) }
+            item { Text(stringResource(normal), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
         }
-        if (indicator.dangerNote.isNotEmpty()) {
-            item { SectionHeader("The danger line") }
-            item { Text(indicator.dangerNote, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        indicator.dangerNote?.let { dangerNote ->
+            item { SectionHeader(stringResource(Res.string.finance_indicator_danger_line_title)) }
+            item { Text(stringResource(dangerNote), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
         }
-        explainer?.howItWorks?.takeIf { it.isNotEmpty() }?.let { how ->
-            item { SectionHeader("How it works") }
-            item { Text(how, style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
+        explainer?.howItWorks?.let { how ->
+            item { SectionHeader(stringResource(Res.string.finance_indicator_how_it_works)) }
+            item { Text(stringResource(how), style = FinanceTheme.type.body, color = colors.textSecondary, modifier = Modifier.padding(horizontal = PageGutter)) }
         }
         if (reading != null && reading.latest != null) {
             val h = reading.history
@@ -719,27 +830,28 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
             val inRange = series ?: h
             val hiIdx = inRange.values.indices.maxByOrNull { inRange.values[it] }
             val loIdx = inRange.values.indices.minByOrNull { inRange.values[it] }
-            item { SectionHeader("Stats") }
+            item { SectionHeader(stringResource(Res.string.finance_stats_title)) }
             item {
+                val rangeLabel = stringResource(range.label)
                 StatGrid(
                     listOfNotNull(
-                        "Latest" to FinanceFormat.indicator(reading.latest!!, indicator.unit),
-                        "As of" to FinanceFormat.date(t),
-                        h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { "1 year ago" to FinanceFormat.indicator(it, indicator.unit) },
-                        h.valueAtOrBefore(t - 5 * Series.YEAR_SECONDS)?.let { "5 years ago" to FinanceFormat.indicator(it, indicator.unit) },
-                        hiIdx?.let { "${range.label} high" to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
-                        loIdx?.let { "${range.label} low" to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
-                        indicator.thresholds?.let { "Watch line" to FinanceFormat.indicator(it.watch, indicator.unit) },
-                        indicator.thresholds?.let { "Danger line" to FinanceFormat.indicator(it.danger, indicator.unit) },
-                        "Updated" to indicator.cadence.label,
-                        "Source" to "FRED " + indicator.fredIds.joinToString(" / "),
+                        stringResource(Res.string.finance_indicator_latest) to FinanceFormat.indicator(reading.latest!!, indicator.unit),
+                        stringResource(Res.string.finance_indicator_as_of) to FinanceFormat.date(t),
+                        h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_year_ago) to FinanceFormat.indicator(it, indicator.unit) },
+                        h.valueAtOrBefore(t - 5 * Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_five_years_ago) to FinanceFormat.indicator(it, indicator.unit) },
+                        hiIdx?.let { stringResource(Res.string.finance_indicator_range_high, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
+                        loIdx?.let { stringResource(Res.string.finance_indicator_range_low, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },
+                        indicator.thresholds?.let { stringResource(Res.string.finance_indicator_watch_line) to FinanceFormat.indicator(it.watch, indicator.unit) },
+                        indicator.thresholds?.let { stringResource(Res.string.finance_indicator_danger_line) to FinanceFormat.indicator(it.danger, indicator.unit) },
+                        stringResource(Res.string.finance_indicator_updated) to stringResource(indicator.cadence.label),
+                        stringResource(Res.string.finance_indicator_source) to stringResource(Res.string.finance_indicator_source_value, indicator.fredIds.joinToString(" / ")),
                     ),
                 )
             }
         }
         item {
             Text(
-                "Open on FRED",
+                stringResource(Res.string.finance_indicator_open_fred),
                 style = FinanceTheme.type.bodyStrong,
                 color = colors.accent,
                 modifier = Modifier
@@ -751,11 +863,14 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
 }
 
 /** The watch and danger bands an indicator's chart shades. */
+@Composable
 internal fun zonesFor(indicator: Indicator, colors: FinancePalette): List<ChartZone> {
     val th = indicator.thresholds ?: return emptyList()
+    val watch = stringResource(Res.string.finance_zone_watch)
+    val danger = stringResource(Res.string.finance_zone_danger)
     return if (th.higherIsWorse) {
-        listOf(ChartZone(th.watch, th.danger, colors.watch, "Watch"), ChartZone(th.danger, null, colors.loss, "Danger"))
+        listOf(ChartZone(th.watch, th.danger, colors.watch, watch), ChartZone(th.danger, null, colors.loss, danger))
     } else {
-        listOf(ChartZone(th.danger, th.watch, colors.watch, "Watch"), ChartZone(null, th.danger, colors.loss, "Danger"))
+        listOf(ChartZone(th.danger, th.watch, colors.watch, watch), ChartZone(null, th.danger, colors.loss, danger))
     }
 }

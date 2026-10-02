@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import com.meticulouscreations.homesafe.text.UiText
 
 /** How a chart in the budget sheet draws its data, as Google Sheets names the kinds the app draws itself. */
 enum class SheetChartKind {
@@ -49,10 +50,13 @@ sealed interface ChartDomain {
     }
 }
 
-/** One plotted series: a value (or a gap) for each point of the chart's [ChartDomain]. */
+/**
+ * One plotted series: a value (or a gap) for each point of the chart's [ChartDomain]. [label] is
+ * its name in the sheet, or the app's "Series 2" when the sheet gives it none.
+ */
 @Immutable
 data class SheetChartSeries(
-    val label: String,
+    val label: UiText,
     val values: List<Double?>,
     val kind: SheetChartKind,
     val format: ChartValueFormat,
@@ -69,7 +73,8 @@ data class SheetChart(
     val id: Long,
     /** The tab it sits on. */
     val tab: String,
-    val title: String,
+    /** The chart's title in the sheet; for an untitled one, its one series' name or the app's "Chart on Home". */
+    val title: UiText,
     val subtitle: String,
     val kind: SheetChartKind,
     val stacking: ChartStacking,
@@ -78,7 +83,7 @@ data class SheetChart(
     /** The chart's tab in Google Sheets, when the relay gave the sheet's address. */
     val sourceUrl: String?,
     /** Why the chart can't be drawn, in a sentence, when it can't. */
-    val issue: String? = null,
+    val issue: UiText? = null,
 ) {
     /** Whether some series are drawn against the right-hand scale and some against the left. */
     val isDualAxis: Boolean get() = series.any { it.rightAxis } && series.any { !it.rightAxis }

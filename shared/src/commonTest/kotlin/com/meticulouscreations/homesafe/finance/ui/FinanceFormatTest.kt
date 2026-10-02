@@ -1,6 +1,21 @@
 package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.IndicatorUnit
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.narrator_format_days_ago
+import homesafe.shared.generated.resources.narrator_format_hours_ago
+import homesafe.shared.generated.resources.narrator_format_in_days
+import homesafe.shared.generated.resources.narrator_format_in_months
+import homesafe.shared.generated.resources.narrator_format_in_years
+import homesafe.shared.generated.resources.narrator_format_just_now
+import homesafe.shared.generated.resources.narrator_format_minutes_ago
+import homesafe.shared.generated.resources.narrator_format_months_ago
+import homesafe.shared.generated.resources.narrator_format_points_change
+import homesafe.shared.generated.resources.narrator_format_today
+import homesafe.shared.generated.resources.narrator_format_unchanged
+import homesafe.shared.generated.resources.narrator_format_years_ago
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -82,55 +97,56 @@ class FinanceFormatTest {
 
     @Test
     fun relativeDaysDescribesTodayAndASingleDay() {
-        assertEquals("today", FinanceFormat.relativeDays(0L, 0L))
-        assertEquals("in 1 day", FinanceFormat.relativeDays(0L, 86_400L))
-        assertEquals("1 day ago", FinanceFormat.relativeDays(86_400L, 0L))
+        assertEquals(UiText.of(Res.string.narrator_format_today), FinanceFormat.relativeDays(0L, 0L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_days, 1), FinanceFormat.relativeDays(0L, 86_400L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_days_ago, 1), FinanceFormat.relativeDays(86_400L, 0L))
     }
 
     @Test
     fun relativeDaysCountsSmallGapsInDays() {
-        assertEquals("in 3 days", FinanceFormat.relativeDays(0L, 3 * 86_400L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_days, 3), FinanceFormat.relativeDays(0L, 3 * 86_400L))
     }
 
     @Test
     fun relativeDaysSwitchesToMonthsUnderTwoYears() {
-        assertEquals("in 4 months", FinanceFormat.relativeDays(0L, 120 * 86_400L))
-        assertEquals("2 months ago", FinanceFormat.relativeDays(60 * 86_400L, 0L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_months, 4), FinanceFormat.relativeDays(0L, 120 * 86_400L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_months_ago, 2), FinanceFormat.relativeDays(60 * 86_400L, 0L))
     }
 
     @Test
     fun relativeDaysSwitchesToYearsPastTwoYears() {
-        assertEquals("in 2 years", FinanceFormat.relativeDays(0L, 800 * 86_400L))
-        assertEquals("2 years ago", FinanceFormat.relativeDays(800 * 86_400L, 0L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_in_years, 2), FinanceFormat.relativeDays(0L, 800 * 86_400L))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_years_ago, 2), FinanceFormat.relativeDays(800 * 86_400L, 0L))
     }
 
     @Test
     fun indicatorChangeIsUnchangedWhenTheValueRoundsAwayToZero() {
         // New behavior: a value that rounds to zero at the unit's own precision reads as
         // "unchanged" instead of a misleading "+0.00" or "-0.00".
-        assertEquals("unchanged", FinanceFormat.indicatorChange(-0.001, IndicatorUnit.PERCENT))
-        assertEquals("unchanged", FinanceFormat.indicatorChange(0.001, IndicatorUnit.PERCENT))
-        assertEquals("unchanged", FinanceFormat.indicatorChange(0.4, IndicatorUnit.THOUSANDS), "THOUSANDS rounds at 0 decimals")
+        assertEquals(UiText.of(Res.string.narrator_format_unchanged), FinanceFormat.indicatorChange(-0.001, IndicatorUnit.PERCENT))
+        assertEquals(UiText.of(Res.string.narrator_format_unchanged), FinanceFormat.indicatorChange(0.001, IndicatorUnit.PERCENT))
+        assertEquals(UiText.of(Res.string.narrator_format_unchanged), FinanceFormat.indicatorChange(0.4, IndicatorUnit.THOUSANDS), "THOUSANDS rounds at 0 decimals")
     }
 
     @Test
     fun indicatorChangeStillSignsAndSuffixesARealMove() {
-        assertEquals("+1.50 pts", FinanceFormat.indicatorChange(1.5, IndicatorUnit.PERCENT))
-        assertEquals("−250K", FinanceFormat.indicatorChange(-250.4, IndicatorUnit.THOUSANDS))
-        assertEquals("+0.02", FinanceFormat.indicatorChange(0.015, IndicatorUnit.INDEX))
+        assertEquals(UiText.of(Res.string.narrator_format_points_change, "+1.50"), FinanceFormat.indicatorChange(1.5, IndicatorUnit.PERCENT))
+        assertEquals("−250K".asUiText(), FinanceFormat.indicatorChange(-250.4, IndicatorUnit.THOUSANDS))
+        assertEquals("+0.02".asUiText(), FinanceFormat.indicatorChange(0.015, IndicatorUnit.INDEX))
     }
 
     @Test
     fun agoChangesUnitAtEachThresholdAndNeverGoesNegative() {
         val now = 1_790_000_000L
-        assertEquals("just now", FinanceFormat.ago(now, now))
-        assertEquals("just now", FinanceFormat.ago(now, now - 59))
-        assertEquals("1 min ago", FinanceFormat.ago(now, now - 60))
-        assertEquals("59 min ago", FinanceFormat.ago(now, now - 3_599))
-        assertEquals("1 h ago", FinanceFormat.ago(now, now - 3_600))
-        assertEquals("35 h ago", FinanceFormat.ago(now, now - (36 * 3_600 - 1)))
+        val justNow = UiText.of(Res.string.narrator_format_just_now)
+        assertEquals(justNow, FinanceFormat.ago(now, now))
+        assertEquals(justNow, FinanceFormat.ago(now, now - 59))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_minutes_ago, 1), FinanceFormat.ago(now, now - 60))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_minutes_ago, 59), FinanceFormat.ago(now, now - 3_599))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_hours_ago, 1), FinanceFormat.ago(now, now - 3_600))
+        assertEquals(UiText.plural(Res.plurals.narrator_format_hours_ago, 35), FinanceFormat.ago(now, now - (36 * 3_600 - 1)))
         val then = now - 36 * 3_600
-        assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)), FinanceFormat.ago(now, then), "a day and a half on, the date")
-        assertEquals("just now", FinanceFormat.ago(now, now + 600), "a clock a little ahead of the relay's isn't the future")
+        assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)).asUiText(), FinanceFormat.ago(now, then), "a day and a half on, the date")
+        assertEquals(justNow, FinanceFormat.ago(now, now + 600), "a clock a little ahead of the relay's isn't the future")
     }
 }

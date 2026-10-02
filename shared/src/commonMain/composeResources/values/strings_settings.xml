@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Settings tab (alerts, away mode, recognition, cameras, the server's diagnostics) and the
+  sign-in screen. Keys: settings_* (the tab and the server page), alerts_* (the Alerts section),
+  presence_* (away mode and the household's devices), connection_* (sign-in and connection routes).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Connection routes: which of the server's addresses the app is using. -->
+    <string name="connection_route_local_network">Local network</string>
+    <string name="connection_route_tailscale">Tailscale</string>
+
+    <!-- Sign-in screen -->
+    <string name="connection_brand_wordmark">PERCYSAFE</string>
+    <string name="connection_tailscale_active">Tailscale Active</string>
+    <string name="connection_server_url_label">Server URL</string>
+    <string name="connection_server_url_placeholder">Enter Server URL</string>
+    <string name="connection_server_url_hint">Your NVR's Tailscale address — works from anywhere.</string>
+    <string name="connection_username_placeholder">Username</string>
+    <string name="connection_password_placeholder">Password</string>
+    <!-- Debug builds only: fills the form from a local test-credentials file. -->
+    <string name="connection_autofill_test_credentials">Autofill test credentials</string>
+    <string name="connection_connect">Connect</string>
+    <!-- %1$s: the platform's name for its biometrics, e.g. "Face ID" or "fingerprint". -->
+    <string name="connection_sign_in_with_biometrics">Sign in with %1$s</string>
+    <string name="connection_forget_saved_login">Forget saved login</string>
+    <string name="connection_biometric_update_title">Update %1$s sign-in?</string>
+    <string name="connection_biometric_enable_title">Enable %1$s sign-in?</string>
+    <string name="connection_biometric_update_body">You signed in with your password. Save it so %1$s sign-in uses this login next time instead of the one saved before.</string>
+    <string name="connection_biometric_enable_body">Skip retyping your password next time — sign in with %1$s instead. Your credentials are encrypted and can only be unlocked with your biometrics.</string>
+    <string name="connection_biometric_update">Update</string>
+    <string name="connection_biometric_enable">Enable</string>
+    <string name="connection_biometric_not_now">Not now</string>
+    <string name="connection_error_connect_failed">Couldn't connect to server</string>
+    <string name="connection_error_biometric_failed">Biometric sign-in failed</string>
+    <string name="connection_error_stale_biometric_login">Your saved login no longer matches the server. Sign in with your password to update it.</string>
+
+    <!-- Shared units and values on the Settings pages -->
+    <plurals name="settings_duration_days">
+        <item quantity="one">%1$d day</item>
+        <item quantity="other">%1$d days</item>
+    </plurals>
+    <plurals name="settings_duration_hours">
+        <item quantity="one">%1$d hour</item>
+        <item quantity="other">%1$d hours</item>
+    </plurals>
+    <plurals name="settings_duration_minutes">
+        <item quantity="one">%1$d minute</item>
+        <item quantity="other">%1$d minutes</item>
+    </plurals>
+    <plurals name="settings_duration_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <!-- The two largest units of an uptime: "3 days, 2 hours". -->
+    <string name="settings_duration_pair">%1$s, %2$s</string>
+    <!-- A retention period that isn't a whole number of days; %1$s is the number, e.g. "1.5". -->
+    <string name="settings_duration_days_fraction">%1$s days</string>
+    <!-- %1$s: an already-formatted number, e.g. "412.7". -->
+    <string name="settings_size_tb">%1$s TB</string>
+    <string name="settings_size_gb">%1$s GB</string>
+    <string name="settings_size_mb">%1$d MB</string>
+    <string name="settings_percent">%1$d%</string>
+    <!-- %1$s: an already-formatted number of milliseconds, e.g. "6.8". -->
+    <string name="settings_millis">%1$s ms</string>
+    <!-- Shown in place of a value the server didn't report. -->
+    <string name="settings_value_missing">—</string>
+    <string name="settings_on">On</string>
+    <string name="settings_off">Off</string>
+    <string name="settings_dismiss">Dismiss</string>
+    <string name="settings_refresh">Refresh</string>
+
+    <!-- Server: the row on the main page and the diagnostics page -->
+    <string name="settings_server_title">Server</string>
+    <string name="settings_server_subtitle">What Frigate is and is doing</string>
+    <string name="settings_server_summary_storage_used">%1$d% storage used</string>
+    <string name="settings_server_summary_unreachable">can't reach the server</string>
+    <string name="settings_server_summary_checking">checking…</string>
+    <string name="settings_server_summary_refresh_failed">last refresh failed</string>
+    <string name="settings_server_summary_disk_full">disk nearly full</string>
+    <string name="settings_server_summary_update_available">update available</string>
+    <string name="settings_server_summary_healthy">healthy</string>
+    <string name="settings_server_connected_to">Connected to %1$s</string>
+    <string name="settings_server_route_local">Local network — direct over Wi-Fi, no VPN hop</string>
+    <string name="settings_server_route_tailscale_local_unreachable">Tailscale — the local address isn't reachable from here</string>
+    <string name="settings_server_loading">Reading server stats…</string>
+    <string name="settings_server_unreachable">Couldn't reach the server: %1$s</string>
+    <string name="settings_server_last_refresh_failed">Last refresh failed: %1$s</string>
+    <string name="settings_server_version">Version</string>
+    <string name="settings_server_update_available">Update available: %1$s</string>
+    <string name="settings_server_uptime">Uptime</string>
+    <string name="settings_server_cpu">CPU</string>
+    <string name="settings_server_memory">Memory</string>
+    <string name="settings_server_detector">Detector</string>
+    <!-- The detector model's input size in pixels: "320×320". -->
+    <string name="settings_server_detector_input_size">%1$d×%2$d</string>
+    <!-- %1$s: a duration such as "6.8 ms". -->
+    <string name="settings_server_inference">Inference %1$s per frame</string>
+    <string name="settings_server_no_inference">No inference yet</string>
+    <string name="settings_server_gpu">GPU</string>
+    <!-- %1$s: a percentage such as "9%". -->
+    <string name="settings_server_gpu_busy">%1$s busy</string>
+    <string name="settings_server_gpu_memory">%1$s memory</string>
+    <string name="settings_server_gpu_decoder">%1$s decoder</string>
+
+    <!-- Server page: storage and retention -->
+    <string name="settings_storage_title">Storage &amp; Retention</string>
+    <string name="settings_storage_loading">Reading disk usage…</string>
+    <string name="settings_storage_unreported">The server didn't report its recordings disk.</string>
+    <!-- %1$s: the recordings disk's mount path. -->
+    <string name="settings_storage_recordings">Recordings (%1$s)</string>
+    <!-- %1$s: a size such as "412.7 GB". -->
+    <string name="settings_storage_used">%1$s used</string>
+    <string name="settings_storage_total">%1$s total</string>
+    <string name="settings_storage_percent_used">%1$d% used</string>
+    <string name="settings_retention_continuous">Continuous</string>
+    <string name="settings_retention_motion">Motion</string>
+    <string name="settings_retention_alerts">Alerts</string>
+    <string name="settings_retention_detections">Detections</string>
+    <string name="settings_retention_default">Default</string>
+    <string name="settings_retention_caption">Frigate deletes recordings older than these on its own. Retention is set in its config.yml.</string>
+
+    <!-- Server page: AI features -->
+    <string name="settings_ai_title">AI Features</string>
+    <string name="settings_ai_loading">Reading the server's config…</string>
+    <string name="settings_ai_face_recognition">Face recognition</string>
+    <string name="settings_ai_license_plates">License plate recognition</string>
+    <string name="settings_ai_semantic_search">Semantic search</string>
+    <string name="settings_ai_caption">These AI features are set in Frigate's config.yml and need a Frigate restart to change.</string>
+
+    <!-- Cameras section: each camera's detection pipeline -->
+    <string name="settings_cameras_title">Cameras</string>
+    <string name="settings_cameras_loading">Reading camera pipelines…</string>
+    <string name="settings_cameras_viewer_read_only">Signed in as a viewer: the switches below are read-only. An admin account can change them.</string>
+    <string name="settings_camera_disabled">Disabled</string>
+    <!-- %1$s: an already-formatted rate, e.g. "5.7". -->
+    <string name="settings_camera_detections_per_second">%1$s detections/s</string>
+    <string name="settings_camera_fps">%1$d fps</string>
+    <string name="settings_camera_skipped">%1$s skipped</string>
+    <string name="settings_camera_no_stats">No stats yet</string>
+    <string name="settings_object_detection">Object detection</string>
+    <string name="settings_object_detection_on">Looking for people, vehicles, and animals.</string>
+    <string name="settings_object_detection_off">Off — no detections or alerts from this camera.</string>
+    <string name="settings_motion_detection">Motion detection</string>
+    <string name="settings_motion_needed">Needed while object detection is on.</string>
+    <string name="settings_motion_on">Records motion segments and feeds the detector.</string>
+    <string name="settings_motion_off">Off — only continuous recording.</string>
+    <string name="settings_camera_error_generic">Couldn't change that setting.</string>
+    <string name="settings_camera_error_refused">Frigate refused: this account can't change config. Sign in with an admin account.</string>
+
+    <!-- Recognition rows -->
+    <string name="settings_recognition_title">Recognition</string>
+    <string name="settings_recognition_faces">Faces</string>
+    <string name="settings_recognition_faces_description">Name the faces Frigate saw so it can tell family from strangers</string>
+    <!-- %1$s: the object labels the classifier sorts, e.g. "car" or "car and truck". -->
+    <string name="settings_recognition_classifier_description">Label what the %1$s classifier saw, and retrain it</string>
+    <!-- Between the object labels in settings_recognition_classifier_description. -->
+    <string name="settings_recognition_objects_separator"> and </string>
+
+    <!-- The test notification the Alerts section sends -->
+    <string name="settings_test_notification_title">Test alert</string>
+    <string name="settings_test_notification_body">Notifications from HomeSafe are working. Detections will look like this.</string>
+
+    <!-- Saving a stretch of continuous recording (clip editor), when the failure says nothing itself. -->
+    <string name="settings_recording_clip_save_failed">Couldn't save the clip</string>
+
+    <!-- Alerts section -->
+    <string name="alerts_title">Alerts</string>
+    <string name="alerts_notifications">Notifications</string>
+    <string name="alerts_notifications_unsupported">Not available on this platform. Use the Android or iOS app for alerts.</string>
+    <string name="alerts_notifications_blocked">Blocked in system settings. Allow notifications for HomeSafe to turn this on.</string>
+    <string name="alerts_notifications_on_relay">On — from the HomeSafe relay, even while HomeSafe is closed.</string>
+    <string name="alerts_notifications_on_poller">On — a notification for each new detection while HomeSafe is running.</string>
+    <string name="alerts_notifications_off">Get a notification when a camera sees something.</string>
+    <string name="alerts_open_notification_settings">Open notification settings</string>
+    <string name="alerts_only_when_away">Only when everyone's away</string>
+    <string name="alerts_only_when_away_on">On — quiet while anyone's home. Once every phone is away, each person seen notifies on the Away alerts channel.</string>
+    <string name="alerts_only_when_away_off">Stay quiet while anyone's home, and hear only the Away alerts once the house is empty.</string>
+    <string name="alerts_only_strangers">Only strangers</string>
+    <string name="alerts_only_strangers_on">On — people Frigate recognises come and go quietly. Anyone it can't place still notifies.</string>
+    <string name="alerts_only_strangers_off">Skip the notification when Frigate recognises the person. Name faces under Recognition below.</string>
+    <string name="alerts_only_strangers_faces_off">Needs face recognition, which is off in Frigate's config.</string>
+    <string name="alerts_only_strangers_faces_unknown">Needs face recognition on the server.</string>
+    <string name="alerts_send_test">Send test notification</string>
+    <string name="alerts_test_sent">Sent</string>
+    <string name="alerts_caption_relay">Alerts come from the HomeSafe relay on the Frigate box, so they arrive even when HomeSafe is closed.</string>
+    <string name="alerts_caption_poller">HomeSafe checks Frigate for new detections every 15 seconds while it's open or recently in the background. Frigate has no push service for phones, so nothing arrives once the system stops the app.</string>
+    <string name="alerts_loading_cameras">Loading cameras…</string>
+    <string name="alerts_no_cameras">No cameras on this server.</string>
+    <string name="alerts_what_to_hear">What to hear about</string>
+    <string name="alerts_custom">Custom</string>
+    <string name="alerts_custom_description">Custom — tuned place by place below.</string>
+    <string name="alerts_hide_zones">Hide zones</string>
+    <string name="alerts_fine_tune">Fine-tune by zone</string>
+    <string name="alerts_zones_caption">Zones come from each camera's detection zones.</string>
+    <string name="alerts_relay_what_youll_hear">What you'll hear about</string>
+    <string name="alerts_relay_policy">While someone's home: household cars arriving and leaving, and people on the Front Yard, right away; everything else in a summary a few times a day. While everyone's away: everything.</string>
+    <string name="alerts_quiet_hours">Quiet hours</string>
+    <!-- %1$s, %2$s: times of day, e.g. "10:00 PM" and "6:00 AM". -->
+    <string name="alerts_quiet_hours_on">On — nothing from %1$s to %2$s. Away alerts still come through.</string>
+    <string name="alerts_quiet_hours_off">Silence ordinary alerts overnight. Away alerts still come through.</string>
+    <string name="alerts_quiet_from_button">From %1$s</string>
+    <string name="alerts_quiet_to_button">To %1$s</string>
+    <string name="alerts_quiet_hours_empty">The window starts where it ends, so it's empty. Pick a different end time.</string>
+    <string name="alerts_quiet_from_title">Quiet from</string>
+    <string name="alerts_quiet_until_title">Quiet until</string>
+    <string name="alerts_quiet_set">Set</string>
+    <!-- A time of day on the 12-hour clock: %1$d is the hour (1-12), %2$s the two-digit minute. -->
+    <string name="alerts_time_am">%1$d:%2$s AM</string>
+    <string name="alerts_time_pm">%1$d:%2$s PM</string>
+    <string name="alerts_category_people">People</string>
+    <string name="alerts_category_vehicles">Vehicles</string>
+    <string name="alerts_category_animals">Animals</string>
+    <!-- A category chip on a noisy rule: "Vehicles · ~40/day". -->
+    <string name="alerts_chip_noisy">%1$s · ~%2$d/day</string>
+    <!-- A camera's area outside every drawn zone: "Anywhere" when it has no zones, else "Anywhere else". -->
+    <string name="alerts_place_anywhere">Anywhere</string>
+    <string name="alerts_place_anywhere_else">Anywhere else</string>
+    <!-- %1$s camera, %2$s place on it, %3$s category, %4$d how many alerts. -->
+    <plurals name="alerts_noisy_hint_week">
+        <item quantity="one">%1$s · %2$s · %3$s would have alerted about %4$d time last week.</item>
+        <item quantity="other">%1$s · %2$s · %3$s would have alerted about %4$d times last week.</item>
+    </plurals>
+    <plurals name="alerts_noisy_hint_day">
+        <item quantity="one">%1$s · %2$s · %3$s would have alerted about %4$d time a day lately.</item>
+        <item quantity="other">%1$s · %2$s · %3$s would have alerted about %4$d times a day lately.</item>
+    </plurals>
+    <string name="alerts_preset_people_only">People only</string>
+    <string name="alerts_preset_people_driveway_cars">People + driveway cars</string>
+    <string name="alerts_preset_people_vehicles">People + vehicles</string>
+    <string name="alerts_preset_everything">Everything</string>
+    <string name="alerts_preset_people_only_description">People anywhere on any camera. Cars and animals stay quiet.</string>
+    <string name="alerts_preset_people_driveway_cars_description">People anywhere, and cars only in zones named like a driveway, garage or parking spot — not passing traffic.</string>
+    <string name="alerts_preset_people_vehicles_description">People and vehicles anywhere, street traffic included. The out-of-the-box rules.</string>
+    <string name="alerts_preset_everything_description">People, vehicles and animals anywhere.</string>
+
+    <!-- Away mode -->
+    <string name="presence_title">Away mode</string>
+    <string name="presence_im_away">I'm away</string>
+    <string name="presence_im_away_relay_unreachable">The push relay on the Frigate box can't be reached, so presence can't be changed right now.</string>
+    <!-- %1$s: the name of the phone that decides, e.g. "Apple iPhone". -->
+    <string name="presence_im_away_other_decides">%1$s decides whether the house is empty, so this switch only speaks for this phone.</string>
+    <string name="presence_im_away_debug">This is a debug build, so its switch doesn't decide whether the house is empty.</string>
+    <string name="presence_im_away_leaving">This phone has left home; it counts as away in a few minutes unless it comes back.</string>
+    <string name="presence_im_away_away">This phone counts as out of the house.</string>
+    <string name="presence_im_away_home">This phone counts as home.</string>
+    <string name="presence_decides">This phone decides home/away</string>
+    <string name="presence_decides_on">On — only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
+    <string name="presence_decides_other">%1$s decides now. Turn this on to make it this phone instead. Every phone still gets notifications.</string>
+    <string name="presence_decides_off">Only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
+    <string name="presence_nobody_home">Nobody home — alerts are escalated on both phones.</string>
+    <string name="presence_caption">When everyone is away, every person seen on any camera notifies loudly on both phones — on its own "Away alerts" channel, ignoring the zone rules above. Flip the switch back when you're home.</string>
+    <string name="presence_automatic">Automatic</string>
+    <string name="presence_automatic_unsupported">Not available on this platform. The switch above is manual here.</string>
+    <string name="presence_automatic_off">Let a geofence around home and your home Wi-Fi flip the switch for you.</string>
+    <string name="presence_automatic_needs_always">Needs location set to "Always" so the fence can notice you leaving with the app closed.</string>
+    <string name="presence_automatic_needs_home">Set where home is, from a phone standing in it.</string>
+    <string name="presence_automatic_on">Leaving home marks this phone away after a few minutes; arriving — by the fence, or by reaching your cameras over Wi-Fi — marks it home at once.</string>
+    <string name="presence_allow_location_always">Allow location always</string>
+    <string name="presence_allow_location_settings">Allow location in system settings</string>
+    <string name="presence_allow_location">Allow location</string>
+    <string name="presence_set_home_here">Set home here</string>
+    <string name="presence_move_home_here">Move home here</string>
+    <string name="presence_clear_home">Clear</string>
+    <string name="presence_home_not_set">Home isn't set yet.</string>
+    <!-- %1$d: the geofence's radius in metres. -->
+    <string name="presence_home_set">Home is set — a %1$d m circle every phone in the household watches.</string>
+    <!-- %1$s: a device's name. -->
+    <string name="presence_remove_title">Remove %1$s?</string>
+    <string name="presence_remove_body">It stops getting alerts and no longer counts for away mode. If HomeSafe is still installed on it, it comes back the next time the app opens.</string>
+    <string name="presence_remove">Remove</string>
+    <string name="presence_remove_device">Remove %1$s</string>
+    <plurals name="presence_other_devices">
+        <item quantity="one">%1$d other device</item>
+        <item quantity="other">%1$d other devices</item>
+    </plurals>
+    <string name="presence_other_devices_none_counted">Debug builds, and installs not heard from in a week. None of them count for away mode.</string>
+    <plurals name="presence_other_devices_counted">
+        <item quantity="one">Debug builds, and installs not heard from in a week. One still counts for away mode — remove it if nobody uses it.</item>
+        <item quantity="other">Debug builds, and installs not heard from in a week. %1$d still count for away mode — remove the ones nobody uses.</item>
+    </plurals>
+    <string name="presence_hide_other_devices">Hide other devices</string>
+    <string name="presence_show_other_devices">Show other devices</string>
+    <!-- A device row's details, joined with " · ": "this phone · away since 4:12 PM · decides home/away". -->
+    <string name="presence_status_away_since">away since %1$s</string>
+    <string name="presence_status_away">away</string>
+    <string name="presence_status_leaving">leaving…</string>
+    <string name="presence_status_home">home</string>
+    <string name="presence_detail_this_phone">this phone</string>
+    <string name="presence_detail_decides">decides home/away</string>
+    <string name="presence_detail_debug">debug, not counted</string>
+    <string name="presence_unnamed_device">Unnamed device</string>
+    <string name="presence_last_seen_just_now">seen just now</string>
+    <plurals name="presence_last_seen_minutes">
+        <item quantity="one">seen %1$d min ago</item>
+        <item quantity="other">seen %1$d min ago</item>
+    </plurals>
+    <plurals name="presence_last_seen_hours">
+        <item quantity="one">seen %1$d h ago</item>
+        <item quantity="other">seen %1$d h ago</item>
+    </plurals>
+    <string name="presence_last_seen_yesterday">seen yesterday</string>
+    <plurals name="presence_last_seen_days">
+        <item quantity="one">seen %1$d day ago</item>
+        <item quantity="other">seen %1$d days ago</item>
+    </plurals>
+    <string name="presence_error_relay_unreachable">Couldn't reach the push relay.</string>
+    <!-- %1$s: the failure as the relay or the network reported it. -->
+    <string name="presence_error_relay_unreachable_detail">Couldn't reach the push relay: %1$s</string>
+    <string name="presence_error_relay_refused">The relay refused this session. Sign in again.</string>
+    <string name="presence_error_not_connected">Not connected to a server.</string>
+    <string name="presence_error_location">Couldn't get this phone's location. Is location on?</string>
+</resources>

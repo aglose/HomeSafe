@@ -1,5 +1,20 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_cameras_on
+import homesafe.shared.generated.resources.home_cameras_some_on
+import homesafe.shared.generated.resources.home_presence_everyone_home
+import homesafe.shared.generated.resources.home_presence_house_empty
+import homesafe.shared.generated.resources.home_presence_some_home
+import homesafe.shared.generated.resources.home_presence_you_are_away
+import homesafe.shared.generated.resources.home_status_all_quiet
+import homesafe.shared.generated.resources.home_status_all_quiet_since
+import homesafe.shared.generated.resources.home_status_minutes_ago
+import homesafe.shared.generated.resources.home_status_now
+import homesafe.shared.generated.resources.home_status_subject_at_camera
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -31,6 +46,15 @@ class HomeStatusTest {
         everyoneAway = false,
     )
 
+    private val fourOn = UiText.plural(Res.plurals.home_cameras_on, 4)
+    private val everyoneHome = UiText.of(Res.string.home_presence_everyone_home)
+
+    private fun details(vararg parts: UiText) = UiText.Joined(parts.toList(), separator = UiText.of(Res.string.common_dot_separator))
+
+    /** The clock part of "All quiet since …", worded by the shared clock label. */
+    private fun quietSince(epochSeconds: Double) =
+        UiText.of(Res.string.home_status_all_quiet_since, dayQualifiedClockLabel(epochSeconds, day, utc))
+
     private fun detection(
         start: Double,
         end: Double? = start + 45,
@@ -55,37 +79,41 @@ class HomeStatusTest {
     fun aRecentDetectionIsTheHeadlineWithHowLongAgo() {
         val status = status(detection(start = at(19, 26), end = at(19, 27)))
 
-        assertEquals("Person at Backyard", status.headline)
-        assertEquals("3 min ago · 4 cameras on · Everyone home", status.details)
+        assertEquals(UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard"), status.headline)
+        assertEquals(details(UiText.plural(Res.plurals.home_status_minutes_ago, 3), fourOn, everyoneHome), status.details)
     }
 
     @Test
     fun theHeadlineSaysWhereWhenAZoneKnows() {
         val status = status(detection(start = at(19, 26), label = "car", subLabel = "sarahs_tesla", zones = listOf("street", "driveway")))
 
-        assertEquals("Sarah's Tesla in the driveway", status.headline, "the classifier's name and the last zone it reached")
+        assertEquals(
+            detectionTitle("Sarah's Tesla".asUiText(), "driveway"),
+            status.headline,
+            "the classifier's name and the last zone it reached",
+        )
     }
 
     @Test
     fun aDetectionStillInProgressIsHappeningNow() {
         val status = status(detection(start = at(19, 28), end = null))
 
-        assertEquals("Now · 4 cameras on · Everyone home", status.details)
+        assertEquals(details(UiText.of(Res.string.home_status_now), fourOn, everyoneHome), status.details)
     }
 
     @Test
     fun anOldDetectionSettlesIntoAllQuietSinceItEnded() {
         val status = status(detection(start = at(18, 55), end = at(18, 56)))
 
-        assertEquals("All quiet since 6:56 PM", status.headline)
-        assertEquals("4 cameras on · Everyone home", status.details, "no age once it isn't news")
+        assertEquals(quietSince(at(18, 56)), status.headline, "since 6:56 PM, when it ended")
+        assertEquals(details(fourOn, everyoneHome), status.details, "no age once it isn't news")
     }
 
     @Test
     fun quietSinceYesterdaySaysSo() {
         val status = status(detection(start = at(22, 10, dayOffset = -1), end = at(22, 12, dayOffset = -1)))
 
-        assertEquals("All quiet since 10:12 PM yesterday", status.headline)
+        assertEquals(quietSince(at(22, 12, dayOffset = -1)), status.headline, "since 10:12 PM yesterday")
     }
 
     @Test
@@ -93,12 +121,12 @@ class HomeStatusTest {
         // Frigate keeps a parked car's detection open for as long as it sits there.
         val status = status(detection(start = at(16, 5), end = null, label = "car"))
 
-        assertEquals("All quiet since 4:05 PM", status.headline)
+        assertEquals(quietSince(at(16, 5)), status.headline, "since 4:05 PM, when it parked")
     }
 
     @Test
     fun nothingEverDetectedIsSimplyQuiet() {
-        assertEquals("All quiet", status(latest = null).headline)
+        assertEquals(UiText.of(Res.string.home_status_all_quiet), status(latest = null).headline)
     }
 
     @Test
@@ -106,7 +134,7 @@ class HomeStatusTest {
         val status = status(latest = null, momentsLoaded = false)
 
         assertNull(status.headline, "not loaded is not the same as quiet")
-        assertEquals("4 cameras on · Everyone home", status.details, "the rest of the picture needn't wait for it")
+        assertEquals(details(fourOn, everyoneHome), status.details, "the rest of the picture needn't wait for it")
     }
 
     @Test
@@ -119,25 +147,28 @@ class HomeStatusTest {
 
     @Test
     fun camerasSwitchedOffAreCounted() {
-        assertEquals("3 of 4 cameras on", camerasOnLabel(fourCameras.mapIndexed { i, camera -> camera.copy(enabled = i != 2) }))
-        assertEquals("1 camera on", camerasOnLabel(listOf(Camera(name = "front_door", enabled = true))))
+        assertEquals(
+            UiText.plural(Res.plurals.home_cameras_some_on, 4, 3, 4),
+            camerasOnLabel(fourCameras.mapIndexed { i, camera -> camera.copy(enabled = i != 2) }),
+        )
+        assertEquals(UiText.plural(Res.plurals.home_cameras_on, 1), camerasOnLabel(listOf(Camera(name = "front_door", enabled = true))))
         assertNull(camerasOnLabel(emptyList()), "the grid already says there are no cameras")
     }
 
     @Test
     fun presenceReadsFromTheRelaysSnapshot() {
-        assertEquals("Everyone home", presenceLabel(bothHome))
+        assertEquals(everyoneHome, presenceLabel(bothHome))
         assertEquals(
-            "1 of 2 home",
+            UiText.of(Res.string.home_presence_some_home, 1, 2),
             presenceLabel(bothHome.copy(devices = listOf(phone("Pixel", isThisDevice = true), phone("iPhone", away = true)))),
         )
         assertEquals(
-            "You're away",
+            UiText.of(Res.string.home_presence_you_are_away),
             presenceLabel(bothHome.copy(devices = listOf(phone("Pixel", away = true, isThisDevice = true), phone("iPhone")))),
             "this phone's own state first: it is what its owner is checking",
         )
         assertEquals(
-            "House empty",
+            UiText.of(Res.string.home_presence_house_empty),
             presenceLabel(HouseholdPresence(listOf(phone("Pixel", away = true, isThisDevice = true), phone("iPhone", away = true)), everyoneAway = true)),
         )
         assertNull(presenceLabel(HouseholdPresence.EMPTY), "the relay hasn't answered")
@@ -151,6 +182,6 @@ class HomeStatusTest {
             everyoneAway = false,
         )
 
-        assertEquals("Everyone home", presenceLabel(presence))
+        assertEquals(everyoneHome, presenceLabel(presence))
     }
 }

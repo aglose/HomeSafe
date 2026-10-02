@@ -19,7 +19,6 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
-import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.FrigateTopBar
@@ -68,8 +67,8 @@ class ShellChromeUiTest {
             }
         }
 
-        TOP_LEVEL_ROUTES.forEach { route ->
-            onNodeWithContentDescription(route.label).assertIsDisplayed()
+        listOf("Home", "Moments", "Settings").forEach { name ->
+            onNodeWithContentDescription(name).assertIsDisplayed()
         }
     }
 

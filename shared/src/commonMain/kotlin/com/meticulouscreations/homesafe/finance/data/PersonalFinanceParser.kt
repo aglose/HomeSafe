@@ -19,9 +19,29 @@ import com.meticulouscreations.homesafe.finance.domain.SheetSection
 import com.meticulouscreations.homesafe.finance.domain.Snapshot
 import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.finance.domain.VestEvent
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_account_cash
+import homesafe.shared.generated.resources.fin_data_account_checking_savings
+import homesafe.shared.generated.resources.fin_data_account_home_equity
+import homesafe.shared.generated.resources.fin_data_found_accounts
+import homesafe.shared.generated.resources.fin_data_found_all_totals
+import homesafe.shared.generated.resources.fin_data_found_balances
+import homesafe.shared.generated.resources.fin_data_found_debts
+import homesafe.shared.generated.resources.fin_data_found_lines
+import homesafe.shared.generated.resources.fin_data_found_payouts
+import homesafe.shared.generated.resources.fin_data_found_people
+import homesafe.shared.generated.resources.fin_data_found_read
+import homesafe.shared.generated.resources.fin_data_found_snapshots
+import homesafe.shared.generated.resources.fin_data_found_some_totals
+import homesafe.shared.generated.resources.fin_data_found_tickers
+import homesafe.shared.generated.resources.fin_data_found_years
+import homesafe.shared.generated.resources.fin_data_note_history_undated
+import homesafe.shared.generated.resources.fin_data_note_totals_partial
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
+import org.jetbrains.compose.resources.PluralStringResource
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -67,7 +87,7 @@ object PersonalFinanceParser {
             oldHouse = oldHouse?.let(::houseSale),
         )
         val totals = listOfNotNull(finance.monthlyIncome, finance.monthlyExpenses, finance.netMonthly).size
-        if (totals in 1..2) notes += ParseNote(SheetSection.TOTALS, "Only $totals of the 3 monthly totals were found")
+        if (totals in 1..2) notes += ParseNote(SheetSection.TOTALS, UiText.plural(Res.plurals.fin_data_note_totals_partial, totals))
         val titled = buildSet {
             if (home != null) {
                 if (home.contains("Flow In")) add(SheetSection.INCOME)
@@ -95,8 +115,9 @@ object PersonalFinanceParser {
      * beside it, not the history's "Debt" column heading.
      */
     internal fun sectionHealth(f: PersonalFinance, titled: Set<SheetSection>): List<SectionHealth> {
-        fun plural(n: Int, one: String, many: String = one + "s") = if (n == 1) "1 $one" else "$n $many"
-        fun health(section: SheetSection, found: String?) = SectionHealth(
+        fun counted(n: Int, res: PluralStringResource) = n.takeIf { it > 0 }?.let { UiText.plural(res, it) }
+        val read = UiText.of(Res.string.fin_data_found_read)
+        fun health(section: SheetSection, found: UiText?) = SectionHealth(
             section,
             when {
                 found != null -> SectionStatus.OK
@@ -109,23 +130,23 @@ object PersonalFinanceParser {
         val cash = f.accounts.count { it.category == AccountCategory.CASH }
         val totals = listOfNotNull(f.monthlyIncome, f.monthlyExpenses, f.netMonthly).size
         return listOf(
-            health(SheetSection.INCOME, f.income.size.takeIf { it > 0 }?.let { plural(it, "person", "people") }),
-            health(SheetSection.EXPENSES, f.expenses.size.takeIf { it > 0 }?.let { plural(it, "line") }),
+            health(SheetSection.INCOME, counted(f.income.size, Res.plurals.fin_data_found_people)),
+            health(SheetSection.EXPENSES, counted(f.expenses.size, Res.plurals.fin_data_found_lines)),
             health(
                 SheetSection.TOTALS,
-                totals.takeIf { it > 0 }?.let { if (it == 3) "all 3" else "$it of 3" },
+                totals.takeIf { it > 0 }?.let { if (it == 3) UiText.of(Res.string.fin_data_found_all_totals) else UiText.of(Res.string.fin_data_found_some_totals, it) },
             ),
-            health(SheetSection.ACCOUNTS, invested.takeIf { it > 0 }?.let { plural(it, "account") }),
-            health(SheetSection.CASH, cash.takeIf { it > 0 }?.let { plural(it, "balance") }),
-            health(SheetSection.TOTAL_ASSETS, f.totalAssets?.let { "read" }),
-            health(SheetSection.DEBTS, f.debts.size.takeIf { it > 0 }?.let { plural(it, "debt") }),
-            health(SheetSection.HOME, f.home?.takeIf { it.equity != null || it.valueAdded != null }?.let { "read" }),
-            health(SheetSection.VESTING, f.vesting.size.takeIf { it > 0 }?.let { plural(it, "payout") }),
-            health(SheetSection.WATCHLIST, f.watchlist.size.takeIf { it > 0 }?.let { plural(it, "ticker") }),
-            health(SheetSection.HISTORY, f.history.size.takeIf { it > 0 }?.let { plural(it, "snapshot") }),
-            health(SheetSection.TAX_YEARS, f.taxYears.size.takeIf { it > 0 }?.let { plural(it, "year") }),
-            health(SheetSection.MORTGAGE, f.mortgagePlan?.let { "read" }),
-            health(SheetSection.HOUSE_SALE, f.oldHouse?.soldPrice?.let { "read" }),
+            health(SheetSection.ACCOUNTS, counted(invested, Res.plurals.fin_data_found_accounts)),
+            health(SheetSection.CASH, counted(cash, Res.plurals.fin_data_found_balances)),
+            health(SheetSection.TOTAL_ASSETS, f.totalAssets?.let { read }),
+            health(SheetSection.DEBTS, counted(f.debts.size, Res.plurals.fin_data_found_debts)),
+            health(SheetSection.HOME, f.home?.takeIf { it.equity != null || it.valueAdded != null }?.let { read }),
+            health(SheetSection.VESTING, counted(f.vesting.size, Res.plurals.fin_data_found_payouts)),
+            health(SheetSection.WATCHLIST, counted(f.watchlist.size, Res.plurals.fin_data_found_tickers)),
+            health(SheetSection.HISTORY, counted(f.history.size, Res.plurals.fin_data_found_snapshots)),
+            health(SheetSection.TAX_YEARS, counted(f.taxYears.size, Res.plurals.fin_data_found_years)),
+            health(SheetSection.MORTGAGE, f.mortgagePlan?.let { read }),
+            health(SheetSection.HOUSE_SALE, f.oldHouse?.soldPrice?.let { read }),
         )
     }
 
@@ -190,12 +211,13 @@ object PersonalFinanceParser {
         grid.findLabel("Checking/Savings")?.let { (r0, c) ->
             forEachRowBelow(grid, r0, c, maxBlank = 1) { r, label ->
                 grid.numberRightOf(r, c)?.takeIf { it != 0.0 }?.let {
-                    out += Account(if (label.equals("combined", true)) "Checking & savings" else label, Owner.Joint, it, AccountCategory.CASH)
+                    val name = if (label.equals("combined", true)) UiText.of(Res.string.fin_data_account_checking_savings) else UiText.verbatim(label)
+                    out += Account(name, Owner.Joint, it, AccountCategory.CASH)
                 }
             }
         }
         grid.findLabel("Cash")?.let { (r, c) ->
-            grid.numberRightOf(r, c)?.takeIf { it != 0.0 }?.let { out += Account("Cash", Owner.Joint, it, AccountCategory.CASH) }
+            grid.numberRightOf(r, c)?.takeIf { it != 0.0 }?.let { out += Account(UiText.of(Res.string.fin_data_account_cash), Owner.Joint, it, AccountCategory.CASH) }
         }
         return out
     }
@@ -204,7 +226,7 @@ object PersonalFinanceParser {
     private fun homeEquityAccount(grid: SheetGrid): Account? {
         val equity = homeEquity(grid) ?: return null
         val v = equity.valueAdded ?: equity.equity ?: return null
-        return Account("Home equity", Owner.Joint, v, AccountCategory.HOME)
+        return Account(UiText.of(Res.string.fin_data_account_home_equity), Owner.Joint, v, AccountCategory.HOME)
     }
 
     private fun grandTotal(grid: SheetGrid): Double? {
@@ -441,7 +463,7 @@ object PersonalFinanceParser {
         // Below the last date, rows straight after it (a newest snapshot whose date was left
         // blank) were too; anything past a blank row is something else on the tab.
         undated += trailingUndated
-        if (undated > 0) notes += ParseNote(SheetSection.HISTORY, "$undated row${if (undated == 1) "" else "s"} in the history ${if (undated == 1) "has" else "have"} figures but no date, so ${if (undated == 1) "it was" else "they were"} left out")
+        if (undated > 0) notes += ParseNote(SheetSection.HISTORY, UiText.plural(Res.plurals.fin_data_note_history_undated, undated))
         return out.sortedBy { it.epochSeconds }
     }
 

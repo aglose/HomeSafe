@@ -5,6 +5,9 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StaleBiometricCredentialsException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.biometric_name_fingerprint
+import homesafe.shared.generated.resources.biometric_name_generic
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -163,7 +166,7 @@ class ConnectionRepositoryImplTest {
     /** A store that holds one saved login and hands it over without a prompt. */
     private class FakeBiometrics(private var saved: SavedCredentials?) : BiometricCredentialStore {
         override fun isAvailable() = true
-        override fun displayName() = "fingerprint"
+        override fun displayName() = Res.string.biometric_name_fingerprint
         override fun hasSavedCredentials() = saved != null
         override suspend fun save(credentials: SavedCredentials): Result<Unit> {
             saved = credentials
@@ -179,7 +182,7 @@ class ConnectionRepositoryImplTest {
     /** A saved login behind a prompt the test resolves. */
     private class GatedBiometrics(private val prompt: CompletableDeferred<Result<SavedCredentials>>) : BiometricCredentialStore {
         override fun isAvailable() = true
-        override fun displayName() = "fingerprint"
+        override fun displayName() = Res.string.biometric_name_fingerprint
         override fun hasSavedCredentials() = true
         override suspend fun save(credentials: SavedCredentials) = Result.success(Unit)
         override suspend fun authenticateAndRetrieve(): Result<SavedCredentials> = prompt.await()
@@ -188,7 +191,7 @@ class ConnectionRepositoryImplTest {
 
     private object NoBiometrics : BiometricCredentialStore {
         override fun isAvailable() = false
-        override fun displayName() = "biometrics"
+        override fun displayName() = Res.string.biometric_name_generic
         override fun hasSavedCredentials() = false
         override suspend fun save(credentials: SavedCredentials) = Result.failure<Unit>(UnsupportedOperationException())
         override suspend fun authenticateAndRetrieve() = Result.failure<SavedCredentials>(UnsupportedOperationException())

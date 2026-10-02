@@ -1,6 +1,131 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.indicator_cadence_daily
+import homesafe.shared.generated.resources.indicator_cadence_monthly
+import homesafe.shared.generated.resources.indicator_cadence_quarterly
+import homesafe.shared.generated.resources.indicator_cadence_weekly
+import homesafe.shared.generated.resources.indicator_ccdelinq_danger_note
+import homesafe.shared.generated.resources.indicator_ccdelinq_short_title
+import homesafe.shared.generated.resources.indicator_ccdelinq_title
+import homesafe.shared.generated.resources.indicator_ccdelinq_why
+import homesafe.shared.generated.resources.indicator_corecpi_short_title
+import homesafe.shared.generated.resources.indicator_corecpi_title
+import homesafe.shared.generated.resources.indicator_corecpi_why
+import homesafe.shared.generated.resources.indicator_corepce_short_title
+import homesafe.shared.generated.resources.indicator_corepce_title
+import homesafe.shared.generated.resources.indicator_corepce_why
+import homesafe.shared.generated.resources.indicator_cpi_danger_note
+import homesafe.shared.generated.resources.indicator_cpi_short_title
+import homesafe.shared.generated.resources.indicator_cpi_title
+import homesafe.shared.generated.resources.indicator_cpi_why
+import homesafe.shared.generated.resources.indicator_debtgdp_danger_note
+import homesafe.shared.generated.resources.indicator_debtgdp_short_title
+import homesafe.shared.generated.resources.indicator_debtgdp_title
+import homesafe.shared.generated.resources.indicator_debtgdp_why
+import homesafe.shared.generated.resources.indicator_dff_short_title
+import homesafe.shared.generated.resources.indicator_dff_title
+import homesafe.shared.generated.resources.indicator_dff_why
+import homesafe.shared.generated.resources.indicator_dgs10_danger_note
+import homesafe.shared.generated.resources.indicator_dgs10_short_title
+import homesafe.shared.generated.resources.indicator_dgs10_title
+import homesafe.shared.generated.resources.indicator_dgs10_why
+import homesafe.shared.generated.resources.indicator_dgs2_short_title
+import homesafe.shared.generated.resources.indicator_dgs2_title
+import homesafe.shared.generated.resources.indicator_dgs2_why
+import homesafe.shared.generated.resources.indicator_dgs30_short_title
+import homesafe.shared.generated.resources.indicator_dgs30_title
+import homesafe.shared.generated.resources.indicator_dgs30_why
+import homesafe.shared.generated.resources.indicator_gdp_danger_note
+import homesafe.shared.generated.resources.indicator_gdp_short_title
+import homesafe.shared.generated.resources.indicator_gdp_title
+import homesafe.shared.generated.resources.indicator_gdp_why
+import homesafe.shared.generated.resources.indicator_group_credit_blurb
+import homesafe.shared.generated.resources.indicator_group_credit_title
+import homesafe.shared.generated.resources.indicator_group_debt_blurb
+import homesafe.shared.generated.resources.indicator_group_debt_title
+import homesafe.shared.generated.resources.indicator_group_inflation_blurb
+import homesafe.shared.generated.resources.indicator_group_inflation_title
+import homesafe.shared.generated.resources.indicator_group_recession_blurb
+import homesafe.shared.generated.resources.indicator_group_recession_title
+import homesafe.shared.generated.resources.indicator_homeprices_danger_note
+import homesafe.shared.generated.resources.indicator_homeprices_short_title
+import homesafe.shared.generated.resources.indicator_homeprices_title
+import homesafe.shared.generated.resources.indicator_homeprices_why
+import homesafe.shared.generated.resources.indicator_hy_danger_note
+import homesafe.shared.generated.resources.indicator_hy_short_title
+import homesafe.shared.generated.resources.indicator_hy_title
+import homesafe.shared.generated.resources.indicator_hy_why
+import homesafe.shared.generated.resources.indicator_icsa_danger_note
+import homesafe.shared.generated.resources.indicator_icsa_short_title
+import homesafe.shared.generated.resources.indicator_icsa_title
+import homesafe.shared.generated.resources.indicator_icsa_why
+import homesafe.shared.generated.resources.indicator_interest_danger_note
+import homesafe.shared.generated.resources.indicator_interest_short_title
+import homesafe.shared.generated.resources.indicator_interest_title
+import homesafe.shared.generated.resources.indicator_interest_why
+import homesafe.shared.generated.resources.indicator_m2_danger_note
+import homesafe.shared.generated.resources.indicator_m2_short_title
+import homesafe.shared.generated.resources.indicator_m2_title
+import homesafe.shared.generated.resources.indicator_m2_why
+import homesafe.shared.generated.resources.indicator_mortgage_danger_note
+import homesafe.shared.generated.resources.indicator_mortgage_short_title
+import homesafe.shared.generated.resources.indicator_mortgage_title
+import homesafe.shared.generated.resources.indicator_mortgage_why
+import homesafe.shared.generated.resources.indicator_reference_contraction
+import homesafe.shared.generated.resources.indicator_reference_fed_target
+import homesafe.shared.generated.resources.indicator_reference_inversion
+import homesafe.shared.generated.resources.indicator_reference_normal
+import homesafe.shared.generated.resources.indicator_reference_recession_trigger
+import homesafe.shared.generated.resources.indicator_reference_shrinking
+import homesafe.shared.generated.resources.indicator_sahm_danger_note
+import homesafe.shared.generated.resources.indicator_sahm_short_title
+import homesafe.shared.generated.resources.indicator_sahm_title
+import homesafe.shared.generated.resources.indicator_sahm_why
+import homesafe.shared.generated.resources.indicator_signal_calm
+import homesafe.shared.generated.resources.indicator_signal_danger
+import homesafe.shared.generated.resources.indicator_signal_watch
+import homesafe.shared.generated.resources.indicator_stlfsi_danger_note
+import homesafe.shared.generated.resources.indicator_stlfsi_short_title
+import homesafe.shared.generated.resources.indicator_stlfsi_title
+import homesafe.shared.generated.resources.indicator_stlfsi_why
+import homesafe.shared.generated.resources.indicator_stress_calm
+import homesafe.shared.generated.resources.indicator_stress_elevated
+import homesafe.shared.generated.resources.indicator_stress_high
+import homesafe.shared.generated.resources.indicator_stress_severe
+import homesafe.shared.generated.resources.indicator_t10y2y_danger_note
+import homesafe.shared.generated.resources.indicator_t10y2y_short_title
+import homesafe.shared.generated.resources.indicator_t10y2y_title
+import homesafe.shared.generated.resources.indicator_t10y2y_why
+import homesafe.shared.generated.resources.indicator_t10y3m_danger_note
+import homesafe.shared.generated.resources.indicator_t10y3m_short_title
+import homesafe.shared.generated.resources.indicator_t10y3m_title
+import homesafe.shared.generated.resources.indicator_t10y3m_why
+import homesafe.shared.generated.resources.indicator_tenor_10y
+import homesafe.shared.generated.resources.indicator_tenor_1m
+import homesafe.shared.generated.resources.indicator_tenor_1y
+import homesafe.shared.generated.resources.indicator_tenor_20y
+import homesafe.shared.generated.resources.indicator_tenor_2y
+import homesafe.shared.generated.resources.indicator_tenor_30y
+import homesafe.shared.generated.resources.indicator_tenor_3m
+import homesafe.shared.generated.resources.indicator_tenor_3y
+import homesafe.shared.generated.resources.indicator_tenor_5y
+import homesafe.shared.generated.resources.indicator_tenor_6m
+import homesafe.shared.generated.resources.indicator_tenor_7y
+import homesafe.shared.generated.resources.indicator_umcsent_danger_note
+import homesafe.shared.generated.resources.indicator_umcsent_short_title
+import homesafe.shared.generated.resources.indicator_umcsent_title
+import homesafe.shared.generated.resources.indicator_umcsent_why
+import homesafe.shared.generated.resources.indicator_unrate_danger_note
+import homesafe.shared.generated.resources.indicator_unrate_short_title
+import homesafe.shared.generated.resources.indicator_unrate_title
+import homesafe.shared.generated.resources.indicator_unrate_why
+import homesafe.shared.generated.resources.indicator_vix_danger_note
+import homesafe.shared.generated.resources.indicator_vix_short_title
+import homesafe.shared.generated.resources.indicator_vix_title
+import homesafe.shared.generated.resources.indicator_vix_why
+import org.jetbrains.compose.resources.StringResource
 
 /** How an indicator is shown: a raw level, or its change from a year before (a price index → inflation). */
 enum class Transform { LEVEL, YEAR_OVER_YEAR }
@@ -9,18 +134,18 @@ enum class Transform { LEVEL, YEAR_OVER_YEAR }
 enum class IndicatorUnit { PERCENT, INDEX, THOUSANDS, RATIO }
 
 /** Calm, worth watching, or flashing red. */
-enum class Signal(val label: String) {
-    CALM("Calm"),
-    WATCH("Watch"),
-    DANGER("Danger"),
+enum class Signal(val label: StringResource) {
+    CALM(Res.string.indicator_signal_calm),
+    WATCH(Res.string.indicator_signal_watch),
+    DANGER(Res.string.indicator_signal_danger),
 }
 
 /** The group an indicator sits in on the Risk tab. */
-enum class IndicatorGroup(val title: String, val blurb: String) {
-    RECESSION("Recession signals", "The readings that have turned before past downturns."),
-    CREDIT("Credit & market stress", "Where cracks in the financial system show first."),
-    DEBT("Debt & money", "Whether the country's borrowing is getting away from it."),
-    INFLATION("Inflation & rates", "What money costs, and what it's worth."),
+enum class IndicatorGroup(val title: StringResource, val blurb: StringResource) {
+    RECESSION(Res.string.indicator_group_recession_title, Res.string.indicator_group_recession_blurb),
+    CREDIT(Res.string.indicator_group_credit_title, Res.string.indicator_group_credit_blurb),
+    DEBT(Res.string.indicator_group_debt_title, Res.string.indicator_group_debt_blurb),
+    INFLATION(Res.string.indicator_group_inflation_title, Res.string.indicator_group_inflation_blurb),
 }
 
 /**
@@ -71,230 +196,230 @@ data class Thresholds(val watch: Double, val danger: Double, val higherIsWorse: 
 @Immutable
 data class Indicator(
     val id: String,
-    val title: String,
-    val shortTitle: String,
+    val title: StringResource,
+    val shortTitle: StringResource,
     val fredIds: List<String>,
     val unit: IndicatorUnit,
     val group: IndicatorGroup,
     val transform: Transform = Transform.LEVEL,
     val thresholds: Thresholds? = null,
     /** Why it matters, in plain words. */
-    val why: String,
+    val why: StringResource,
     /** What the danger line means, said once on the detail page. */
-    val dangerNote: String = "",
+    val dangerNote: StringResource? = null,
     /** A reference line to draw (the Fed's 2% target, a 0% inversion line). */
     val referenceLine: Double? = null,
-    val referenceLabel: String = "",
+    val referenceLabel: StringResource? = null,
     val ratioPercent: Boolean = false,
     val startDate: String = "1990-01-01",
     /** Multiplies every reading, e.g. jobless claims to thousands. */
     val scale: Double = 1.0,
     /** How much the composite stress gauge leans on it. */
     val weight: Double = 1.0,
-    /** Readings arrive this often, which is how stale data is judged and how changes are described. */
+    /** Readings arrive this often, which is how stale data is judged; its label is the detail page's "Updated". */
     val cadence: Cadence = Cadence.DAILY,
 )
 
-enum class Cadence(val label: String, val periodLabel: String) {
-    DAILY("Daily", "day"),
-    WEEKLY("Weekly", "week"),
-    MONTHLY("Monthly", "month"),
-    QUARTERLY("Quarterly", "quarter"),
+enum class Cadence(val label: StringResource) {
+    DAILY(Res.string.indicator_cadence_daily),
+    WEEKLY(Res.string.indicator_cadence_weekly),
+    MONTHLY(Res.string.indicator_cadence_monthly),
+    QUARTERLY(Res.string.indicator_cadence_quarterly),
 }
 
 /** Every FRED-backed reading the app follows. Thresholds are rules of thumb, explained on each page. */
 object IndicatorCatalog {
     val yieldCurve10y2y = Indicator(
-        id = "t10y2y", title = "Yield curve (10Y − 2Y)", shortTitle = "10Y−2Y",
+        id = "t10y2y", title = Res.string.indicator_t10y2y_title, shortTitle = Res.string.indicator_t10y2y_short_title,
         fredIds = listOf("T10Y2Y"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 0.25, danger = 0.0, higherIsWorse = false),
-        why = "Normally lenders want more to lock money up for ten years than for two. When the 2-year pays more — an inverted curve — markets are betting the Fed will have to cut because a slowdown is coming. Every US recession since 1970 was preceded by one.",
-        dangerNote = "Below 0% the curve is inverted. Recessions have tended to arrive 6–24 months after inversion, often just as the curve turns positive again.",
-        referenceLine = 0.0, referenceLabel = "Inversion", startDate = "1990-01-01", weight = 1.5,
+        why = Res.string.indicator_t10y2y_why,
+        dangerNote = Res.string.indicator_t10y2y_danger_note,
+        referenceLine = 0.0, referenceLabel = Res.string.indicator_reference_inversion, startDate = "1990-01-01", weight = 1.5,
     )
     val yieldCurve10y3m = Indicator(
-        id = "t10y3m", title = "Yield curve (10Y − 3M)", shortTitle = "10Y−3M",
+        id = "t10y3m", title = Res.string.indicator_t10y3m_title, shortTitle = Res.string.indicator_t10y3m_short_title,
         fredIds = listOf("T10Y3M"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 0.3, danger = 0.0, higherIsWorse = false),
-        why = "The New York Fed's preferred recession model uses this spread. It compares the 10-year yield with 3-month bills, which track the Fed's policy rate almost exactly.",
-        dangerNote = "Below 0% is inverted, the New York Fed model's strongest recession signal.",
-        referenceLine = 0.0, referenceLabel = "Inversion", startDate = "1990-01-01", weight = 1.5,
+        why = Res.string.indicator_t10y3m_why,
+        dangerNote = Res.string.indicator_t10y3m_danger_note,
+        referenceLine = 0.0, referenceLabel = Res.string.indicator_reference_inversion, startDate = "1990-01-01", weight = 1.5,
     )
     val sahm = Indicator(
-        id = "sahm", title = "Sahm rule", shortTitle = "Sahm",
+        id = "sahm", title = Res.string.indicator_sahm_title, shortTitle = Res.string.indicator_sahm_short_title,
         fredIds = listOf("SAHMREALTIME"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 0.3, danger = 0.5, higherIsWorse = true),
-        why = "How far the 3-month average unemployment rate has risen above its low of the past year. Unemployment rarely rises a little: once it starts climbing it tends to keep going.",
-        dangerNote = "At 0.5 points the rule has called every recession since 1970, usually within months of it starting.",
-        referenceLine = 0.5, referenceLabel = "Recession trigger", startDate = "1990-01-01", weight = 1.5, cadence = Cadence.MONTHLY,
+        why = Res.string.indicator_sahm_why,
+        dangerNote = Res.string.indicator_sahm_danger_note,
+        referenceLine = 0.5, referenceLabel = Res.string.indicator_reference_recession_trigger, startDate = "1990-01-01", weight = 1.5, cadence = Cadence.MONTHLY,
     )
     val unemployment = Indicator(
-        id = "unrate", title = "Unemployment rate", shortTitle = "Unemployment",
+        id = "unrate", title = Res.string.indicator_unrate_title, shortTitle = Res.string.indicator_unrate_short_title,
         fredIds = listOf("UNRATE"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 4.5, danger = 5.5, higherIsWorse = true),
-        why = "The share of people looking for work who can't find it. Jobs are what keep household spending — two thirds of the economy — going.",
-        dangerNote = "Above 5.5% layoffs are usually feeding on themselves.",
+        why = Res.string.indicator_unrate_why,
+        dangerNote = Res.string.indicator_unrate_danger_note,
         startDate = "1990-01-01", cadence = Cadence.MONTHLY,
     )
     val claims = Indicator(
-        id = "icsa", title = "Initial jobless claims", shortTitle = "Jobless claims",
+        id = "icsa", title = Res.string.indicator_icsa_title, shortTitle = Res.string.indicator_icsa_short_title,
         fredIds = listOf("ICSA"), unit = IndicatorUnit.THOUSANDS, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 250.0, danger = 300.0, higherIsWorse = true),
-        why = "New unemployment filings each week: the fastest hard data on layoffs, out every Thursday.",
-        dangerNote = "Sustained readings over 300k have marked every recession of the past 50 years.",
+        why = Res.string.indicator_icsa_why,
+        dangerNote = Res.string.indicator_icsa_danger_note,
         startDate = "2000-01-01", scale = 0.001, cadence = Cadence.WEEKLY,
     )
     val gdp = Indicator(
-        id = "gdp", title = "Real GDP growth", shortTitle = "GDP growth",
+        id = "gdp", title = Res.string.indicator_gdp_title, shortTitle = Res.string.indicator_gdp_short_title,
         fredIds = listOf("A191RL1Q225SBEA"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 1.0, danger = 0.0, higherIsWorse = false),
-        why = "How fast the economy grew last quarter after inflation, as an annual rate.",
-        dangerNote = "Two quarters in a row below zero is the textbook definition of a recession.",
-        referenceLine = 0.0, referenceLabel = "Contraction", startDate = "1990-01-01", cadence = Cadence.QUARTERLY,
+        why = Res.string.indicator_gdp_why,
+        dangerNote = Res.string.indicator_gdp_danger_note,
+        referenceLine = 0.0, referenceLabel = Res.string.indicator_reference_contraction, startDate = "1990-01-01", cadence = Cadence.QUARTERLY,
     )
     val sentiment = Indicator(
-        id = "umcsent", title = "Consumer sentiment", shortTitle = "Sentiment",
+        id = "umcsent", title = Res.string.indicator_umcsent_title, shortTitle = Res.string.indicator_umcsent_short_title,
         fredIds = listOf("UMCSENT"), unit = IndicatorUnit.INDEX, group = IndicatorGroup.RECESSION,
         thresholds = Thresholds(watch = 70.0, danger = 55.0, higherIsWorse = false),
-        why = "The University of Michigan's monthly survey of how people feel about their finances and the economy. Gloomy households stop spending.",
-        dangerNote = "Below 55 is the territory of 1980, 2008 and 2022.",
+        why = Res.string.indicator_umcsent_why,
+        dangerNote = Res.string.indicator_umcsent_danger_note,
         startDate = "1990-01-01", weight = 0.5, cadence = Cadence.MONTHLY,
     )
     val highYield = Indicator(
-        id = "hy", title = "Junk bond spread", shortTitle = "HY spread",
+        id = "hy", title = Res.string.indicator_hy_title, shortTitle = Res.string.indicator_hy_short_title,
         fredIds = listOf("BAMLH0A0HYM2"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.CREDIT,
         thresholds = Thresholds(watch = 4.5, danger = 6.0, higherIsWorse = true),
-        why = "The extra yield the riskiest companies pay over Treasuries. When lenders get scared of defaults this blows out, and companies that need to borrow can't.",
-        dangerNote = "Over 6% credit markets are pricing a wave of defaults (2008 peaked near 20%; March 2020 at 11%).",
+        why = Res.string.indicator_hy_why,
+        dangerNote = Res.string.indicator_hy_danger_note,
         startDate = "1997-01-01", weight = 1.5,
     )
     val stress = Indicator(
-        id = "stlfsi", title = "Financial stress index", shortTitle = "Stress index",
+        id = "stlfsi", title = Res.string.indicator_stlfsi_title, shortTitle = Res.string.indicator_stlfsi_short_title,
         fredIds = listOf("STLFSI4"), unit = IndicatorUnit.INDEX, group = IndicatorGroup.CREDIT,
         thresholds = Thresholds(watch = 0.0, danger = 1.0, higherIsWorse = true),
-        why = "The St. Louis Fed's weekly blend of 18 market measures — rates, spreads, volatility. Zero is normal.",
-        dangerNote = "Above 1 the financial system is under real strain; 2008 hit 5.",
-        referenceLine = 0.0, referenceLabel = "Normal", startDate = "1994-01-01", weight = 1.5, cadence = Cadence.WEEKLY,
+        why = Res.string.indicator_stlfsi_why,
+        dangerNote = Res.string.indicator_stlfsi_danger_note,
+        referenceLine = 0.0, referenceLabel = Res.string.indicator_reference_normal, startDate = "1994-01-01", weight = 1.5, cadence = Cadence.WEEKLY,
     )
     val vix = Indicator(
-        id = "vix", title = "VIX fear gauge", shortTitle = "VIX",
+        id = "vix", title = Res.string.indicator_vix_title, shortTitle = Res.string.indicator_vix_short_title,
         fredIds = listOf("VIXCLS"), unit = IndicatorUnit.INDEX, group = IndicatorGroup.CREDIT,
         thresholds = Thresholds(watch = 20.0, danger = 30.0, higherIsWorse = true),
-        why = "Expected stock market volatility over the next 30 days, from options prices.",
-        dangerNote = "Above 30 the market is afraid; panics push it past 50.",
+        why = Res.string.indicator_vix_why,
+        dangerNote = Res.string.indicator_vix_danger_note,
         startDate = "1990-01-01",
     )
     val delinquency = Indicator(
-        id = "ccdelinq", title = "Credit card delinquency", shortTitle = "Card delinquency",
+        id = "ccdelinq", title = Res.string.indicator_ccdelinq_title, shortTitle = Res.string.indicator_ccdelinq_short_title,
         fredIds = listOf("DRCCLACBS"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.CREDIT,
         thresholds = Thresholds(watch = 3.5, danger = 4.5, higherIsWorse = true),
-        why = "The share of credit card balances at least 30 days late at US banks: how stretched households are.",
-        dangerNote = "Above 4.5% households are falling behind as they did going into 2008.",
+        why = Res.string.indicator_ccdelinq_why,
+        dangerNote = Res.string.indicator_ccdelinq_danger_note,
         startDate = "1991-01-01", cadence = Cadence.QUARTERLY,
     )
     val debtToGdp = Indicator(
-        id = "debtgdp", title = "Federal debt to GDP", shortTitle = "Debt / GDP",
+        id = "debtgdp", title = Res.string.indicator_debtgdp_title, shortTitle = Res.string.indicator_debtgdp_short_title,
         fredIds = listOf("GFDEGDQ188S"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.DEBT,
         thresholds = Thresholds(watch = 100.0, danger = 125.0, higherIsWorse = true),
-        why = "Everything the federal government owes, against a year of national output.",
-        dangerNote = "Over 125% the US is past its World War II peak (119% in 1946), and every rate rise lands on a bigger pile.",
+        why = Res.string.indicator_debtgdp_why,
+        dangerNote = Res.string.indicator_debtgdp_danger_note,
         startDate = "1990-01-01", weight = 0.75, cadence = Cadence.QUARTERLY,
     )
     val interestBurden = Indicator(
-        id = "interest", title = "Interest as share of tax revenue", shortTitle = "Interest burden",
+        id = "interest", title = Res.string.indicator_interest_title, shortTitle = Res.string.indicator_interest_short_title,
         fredIds = listOf("A091RC1Q027SBEA", "W006RC1Q027SBEA"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.DEBT,
         thresholds = Thresholds(watch = 20.0, danger = 30.0, higherIsWorse = true),
-        why = "How much of every tax dollar goes to paying interest on the national debt. Money spent on interest can't be spent on anything else, and borrowing to pay it is how debt spirals start.",
-        dangerNote = "Above 30% the government spends more on interest than on almost anything else.",
+        why = Res.string.indicator_interest_why,
+        dangerNote = Res.string.indicator_interest_danger_note,
         ratioPercent = true, startDate = "1990-01-01", weight = 1.0, cadence = Cadence.QUARTERLY,
     )
     val m2 = Indicator(
-        id = "m2", title = "Money supply growth (M2)", shortTitle = "M2 growth",
+        id = "m2", title = Res.string.indicator_m2_title, shortTitle = Res.string.indicator_m2_short_title,
         fredIds = listOf("M2SL"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.DEBT,
         transform = Transform.YEAR_OVER_YEAR,
         thresholds = Thresholds(watch = 2.0, danger = 0.0, higherIsWorse = false),
-        why = "How fast the amount of money in the economy is growing. Booms run on it; it shrank for the first time since the 1930s in 2023.",
-        dangerNote = "Below 0% money is draining out of the economy — deflationary, and hard on borrowers.",
-        referenceLine = 0.0, referenceLabel = "Shrinking", startDate = "1989-01-01", weight = 0.5, cadence = Cadence.MONTHLY,
+        why = Res.string.indicator_m2_why,
+        dangerNote = Res.string.indicator_m2_danger_note,
+        referenceLine = 0.0, referenceLabel = Res.string.indicator_reference_shrinking, startDate = "1989-01-01", weight = 0.5, cadence = Cadence.MONTHLY,
     )
     val cpi = Indicator(
-        id = "cpi", title = "Inflation (CPI)", shortTitle = "CPI",
+        id = "cpi", title = Res.string.indicator_cpi_title, shortTitle = Res.string.indicator_cpi_short_title,
         fredIds = listOf("CPIAUCSL"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         transform = Transform.YEAR_OVER_YEAR,
         thresholds = Thresholds(watch = 3.0, danger = 5.0, higherIsWorse = true),
-        why = "How much prices rose over the past year, across everything a typical household buys.",
-        dangerNote = "Above 5% inflation is eating real incomes and forcing the Fed's hand.",
-        referenceLine = 2.0, referenceLabel = "Fed target", startDate = "1989-01-01", cadence = Cadence.MONTHLY,
+        why = Res.string.indicator_cpi_why,
+        dangerNote = Res.string.indicator_cpi_danger_note,
+        referenceLine = 2.0, referenceLabel = Res.string.indicator_reference_fed_target, startDate = "1989-01-01", cadence = Cadence.MONTHLY,
     )
     val coreCpi = Indicator(
-        id = "corecpi", title = "Core inflation (CPI ex food & energy)", shortTitle = "Core CPI",
+        id = "corecpi", title = Res.string.indicator_corecpi_title, shortTitle = Res.string.indicator_corecpi_short_title,
         fredIds = listOf("CPILFESL"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         transform = Transform.YEAR_OVER_YEAR,
         thresholds = Thresholds(watch = 3.0, danger = 4.5, higherIsWorse = true),
-        why = "Inflation without the swings of food and gas: the part that sticks.",
-        referenceLine = 2.0, referenceLabel = "Fed target", startDate = "1989-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
+        why = Res.string.indicator_corecpi_why,
+        referenceLine = 2.0, referenceLabel = Res.string.indicator_reference_fed_target, startDate = "1989-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
     )
     val corePce = Indicator(
-        id = "corepce", title = "Core PCE inflation", shortTitle = "Core PCE",
+        id = "corepce", title = Res.string.indicator_corepce_title, shortTitle = Res.string.indicator_corepce_short_title,
         fredIds = listOf("PCEPILFE"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         transform = Transform.YEAR_OVER_YEAR,
         thresholds = Thresholds(watch = 2.75, danger = 4.0, higherIsWorse = true),
-        why = "The inflation measure the Federal Reserve actually targets at 2%.",
-        referenceLine = 2.0, referenceLabel = "Fed target", startDate = "1989-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
+        why = Res.string.indicator_corepce_why,
+        referenceLine = 2.0, referenceLabel = Res.string.indicator_reference_fed_target, startDate = "1989-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
     )
     val fedFunds = Indicator(
         id = "dff",
-        title = "Fed funds rate",
-        shortTitle = "Fed funds",
+        title = Res.string.indicator_dff_title,
+        shortTitle = Res.string.indicator_dff_short_title,
         fredIds = listOf("DFF"),
         unit = IndicatorUnit.PERCENT,
         group = IndicatorGroup.INFLATION,
-        why = "The overnight rate the Federal Reserve sets. Every other interest rate in the country starts here.",
+        why = Res.string.indicator_dff_why,
         startDate = "1990-01-01",
     )
     val mortgage = Indicator(
-        id = "mortgage", title = "30-year mortgage rate", shortTitle = "Mortgage rate",
+        id = "mortgage", title = Res.string.indicator_mortgage_title, shortTitle = Res.string.indicator_mortgage_short_title,
         fredIds = listOf("MORTGAGE30US"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         thresholds = Thresholds(watch = 6.5, danger = 7.5, higherIsWorse = true),
-        why = "Freddie Mac's weekly average 30-year fixed rate: what buying a house costs to finance.",
-        dangerNote = "Above 7.5% housing affordability is at its worst since the 1980s.",
+        why = Res.string.indicator_mortgage_why,
+        dangerNote = Res.string.indicator_mortgage_danger_note,
         startDate = "1990-01-01", weight = 0.5, cadence = Cadence.WEEKLY,
     )
     val homePrices = Indicator(
-        id = "homeprices", title = "Home prices (Case-Shiller)", shortTitle = "Home prices",
+        id = "homeprices", title = Res.string.indicator_homeprices_title, shortTitle = Res.string.indicator_homeprices_short_title,
         fredIds = listOf("CSUSHPINSA"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         transform = Transform.YEAR_OVER_YEAR,
         thresholds = Thresholds(watch = 0.0, danger = -5.0, higherIsWorse = false),
-        why = "US home prices over the past year. Homes are most families' biggest asset; falling prices were the fuse in 2008.",
-        dangerNote = "Prices down 5% or more on a year ago means falling household wealth and underwater mortgages.",
+        why = Res.string.indicator_homeprices_why,
+        dangerNote = Res.string.indicator_homeprices_danger_note,
         referenceLine = 0.0, startDate = "1989-01-01", weight = 0.75, cadence = Cadence.MONTHLY,
     )
     val tenYear = Indicator(
-        id = "dgs10", title = "10-year Treasury yield", shortTitle = "10Y yield",
+        id = "dgs10", title = Res.string.indicator_dgs10_title, shortTitle = Res.string.indicator_dgs10_short_title,
         fredIds = listOf("DGS10"), unit = IndicatorUnit.PERCENT, group = IndicatorGroup.INFLATION,
         thresholds = Thresholds(watch = 4.75, danger = 5.5, higherIsWorse = true),
-        why = "The rate the world's safest borrower pays for ten years, and the anchor for mortgages and corporate debt. A disorderly surge means buyers are demanding more to hold US debt.",
-        dangerNote = "Above 5.5% borrowing costs are at levels last seen before 2008.",
+        why = Res.string.indicator_dgs10_why,
+        dangerNote = Res.string.indicator_dgs10_danger_note,
         startDate = "1990-01-01",
     )
     val twoYear = Indicator(
         id = "dgs2",
-        title = "2-year Treasury yield",
-        shortTitle = "2Y yield",
+        title = Res.string.indicator_dgs2_title,
+        shortTitle = Res.string.indicator_dgs2_short_title,
         fredIds = listOf("DGS2"),
         unit = IndicatorUnit.PERCENT,
         group = IndicatorGroup.INFLATION,
-        why = "Where markets expect the Fed's rate to be over the next two years.",
+        why = Res.string.indicator_dgs2_why,
         startDate = "1990-01-01",
     )
     val thirtyYear = Indicator(
         id = "dgs30",
-        title = "30-year Treasury yield",
-        shortTitle = "30Y yield",
+        title = Res.string.indicator_dgs30_title,
+        shortTitle = Res.string.indicator_dgs30_short_title,
         fredIds = listOf("DGS30"),
         unit = IndicatorUnit.PERCENT,
         group = IndicatorGroup.INFLATION,
-        why = "The long bond: what investors want to lend to Washington for a generation.",
+        why = Res.string.indicator_dgs30_why,
         startDate = "1990-01-01",
     )
 
@@ -313,23 +438,23 @@ object IndicatorCatalog {
     fun byId(id: String): Indicator? = byId[id]
 }
 
-/** The Treasury curve's tenors, as FRED's constant-maturity series and how far out each is in years. */
+/** The Treasury curve's tenors, as FRED's constant-maturity series and how far out each is in years. [label] is the short "10Y". */
 @Immutable
-data class Tenor(val label: String, val fredId: String, val years: Double)
+data class Tenor(val label: StringResource, val fredId: String, val years: Double)
 
 object YieldCurve {
     val tenors = listOf(
-        Tenor("1M", "DGS1MO", 1.0 / 12),
-        Tenor("3M", "DGS3MO", 0.25),
-        Tenor("6M", "DGS6MO", 0.5),
-        Tenor("1Y", "DGS1", 1.0),
-        Tenor("2Y", "DGS2", 2.0),
-        Tenor("3Y", "DGS3", 3.0),
-        Tenor("5Y", "DGS5", 5.0),
-        Tenor("7Y", "DGS7", 7.0),
-        Tenor("10Y", "DGS10", 10.0),
-        Tenor("20Y", "DGS20", 20.0),
-        Tenor("30Y", "DGS30", 30.0),
+        Tenor(Res.string.indicator_tenor_1m, "DGS1MO", 1.0 / 12),
+        Tenor(Res.string.indicator_tenor_3m, "DGS3MO", 0.25),
+        Tenor(Res.string.indicator_tenor_6m, "DGS6MO", 0.5),
+        Tenor(Res.string.indicator_tenor_1y, "DGS1", 1.0),
+        Tenor(Res.string.indicator_tenor_2y, "DGS2", 2.0),
+        Tenor(Res.string.indicator_tenor_3y, "DGS3", 3.0),
+        Tenor(Res.string.indicator_tenor_5y, "DGS5", 5.0),
+        Tenor(Res.string.indicator_tenor_7y, "DGS7", 7.0),
+        Tenor(Res.string.indicator_tenor_10y, "DGS10", 10.0),
+        Tenor(Res.string.indicator_tenor_20y, "DGS20", 20.0),
+        Tenor(Res.string.indicator_tenor_30y, "DGS30", 30.0),
     )
 
     /** How far back the curve's tenors are fetched: enough to draw the curve as it stood two years ago. */
@@ -362,11 +487,11 @@ data class IndicatorReading(
 /** The composite: weighted mean stress of every reading that has thresholds, 0–100. */
 @Immutable
 data class StressScore(val score: Double, val counted: Int, val dangers: Int, val watches: Int) {
-    val label: String get() = when {
-        score >= 70 -> "Severe"
-        score >= 50 -> "High"
-        score >= 30 -> "Elevated"
-        else -> "Calm"
+    val label: StringResource get() = when {
+        score >= 70 -> Res.string.indicator_stress_severe
+        score >= 50 -> Res.string.indicator_stress_high
+        score >= 30 -> Res.string.indicator_stress_elevated
+        else -> Res.string.indicator_stress_calm
     }
 
     companion object {
@@ -393,7 +518,7 @@ data class StressScore(val score: Double, val counted: Int, val dangers: Int, va
     }
 }
 
-/** A stretch of time to shade on a chart, e.g. a recession. */
+/** A stretch of time to shade on a chart, e.g. a recession. [label] is data (a year, an event's name), not copy. */
 @Immutable
 data class Period(val startEpochSeconds: Long, val endEpochSeconds: Long, val label: String)
 

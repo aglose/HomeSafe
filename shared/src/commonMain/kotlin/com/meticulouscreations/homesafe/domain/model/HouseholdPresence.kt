@@ -1,5 +1,13 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.presence_last_seen_days
+import homesafe.shared.generated.resources.presence_last_seen_hours
+import homesafe.shared.generated.resources.presence_last_seen_just_now
+import homesafe.shared.generated.resources.presence_last_seen_minutes
+import homesafe.shared.generated.resources.presence_last_seen_yesterday
+
 /** One phone in the household and what its owner last said about being home. */
 data class PresenceDevice(
     /** As the phone registered itself, e.g. "Google Pixel 10 Pro XL"; blank until it has. */
@@ -136,14 +144,14 @@ data class HouseholdDeviceList(
  * "seen just now" / "seen 12 min ago" / "seen 3 h ago" / "seen yesterday" / "seen 5 days ago" —
  * how long since the relay heard from a device.
  */
-fun formatLastSeen(lastSeenEpochSeconds: Double, nowEpochSeconds: Double): String {
+fun formatLastSeen(lastSeenEpochSeconds: Double, nowEpochSeconds: Double): UiText {
     val seconds = (nowEpochSeconds - lastSeenEpochSeconds).toLong().coerceAtLeast(0)
     val days = seconds / 86_400
     return when {
-        seconds < 120 -> "seen just now"
-        seconds < 3_600 -> "seen ${seconds / 60} min ago"
-        seconds < 86_400 -> "seen ${seconds / 3_600} h ago"
-        days == 1L -> "seen yesterday"
-        else -> "seen $days days ago"
+        seconds < 120 -> UiText.of(Res.string.presence_last_seen_just_now)
+        seconds < 3_600 -> UiText.plural(Res.plurals.presence_last_seen_minutes, (seconds / 60).toInt())
+        seconds < 86_400 -> UiText.plural(Res.plurals.presence_last_seen_hours, (seconds / 3_600).toInt())
+        days == 1L -> UiText.of(Res.string.presence_last_seen_yesterday)
+        else -> UiText.plural(Res.plurals.presence_last_seen_days, days.toInt())
     }
 }

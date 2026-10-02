@@ -10,15 +10,28 @@ import com.meticulouscreations.homesafe.domain.model.carClassifier
 import com.meticulouscreations.homesafe.domain.model.isGenericCar
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
+import com.meticulouscreations.homesafe.domain.model.summary
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierDatasetUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetClassifierModelsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetDetectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.MomentCarTag
 import com.meticulouscreations.homesafe.domain.usecase.TagMomentCarUseCase
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_tag_car_classifiers_failed
+import homesafe.shared.generated.resources.moments_tag_car_done_retraining
+import homesafe.shared.generated.resources.moments_tag_car_done_saved
+import homesafe.shared.generated.resources.moments_tag_car_done_unnamed_retraining
+import homesafe.shared.generated.resources.moments_tag_car_done_unnamed_saved
+import homesafe.shared.generated.resources.moments_tag_car_known_cars_failed
+import homesafe.shared.generated.resources.moments_tag_car_name_needed
+import homesafe.shared.generated.resources.moments_tag_car_no_classifier
+import homesafe.shared.generated.resources.moments_tag_car_save_failed
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,7 +49,7 @@ import kotlin.time.ExperimentalTime
 data class CarTagTarget(
     val eventId: String,
     /** "Car in the driveway · 8:42 PM" */
-    val summary: String,
+    val summary: UiText,
 )
 
 @Immutable
@@ -46,12 +59,12 @@ data class MomentCarTagUiState(
     /** The known cars a tag can name, `none` left out: a car nobody knows is already what "Car" means. */
     val knownCars: List<String> = emptyList(),
     val isLoading: Boolean = false,
-    val loadError: String? = null,
+    val loadError: UiText? = null,
     /** What's typed for a car the classifier doesn't know yet. */
     val newCarDraft: String = "",
     val isSaving: Boolean = false,
     /** What the tag did, or why it failed. */
-    val notice: String? = null,
+    val notice: UiText? = null,
     val noticeIsError: Boolean = false,
     /** [target] has been tagged: the picker only says how it went, and offers Done. */
     val done: Boolean = false,
@@ -148,7 +161,7 @@ class MomentCarTagViewModel(
     fun tagAsNewCar() {
         val key = CarTagging.knownCarKey(_uiState.value.newCarDraft)
         if (key == null) {
-            _uiState.update { it.copy(notice = "Type the car's name, e.g. Grandma's Van.", noticeIsError = true) }
+            _uiState.update { it.copy(notice = UiText.of(Res.string.moments_tag_car_name_needed), noticeIsError = true) }
             return
         }
         tag(key)
@@ -164,13 +177,18 @@ class MomentCarTagViewModel(
         viewModelScope.launch {
             tagMomentCarUseCase(MomentCarTag(model.name, category, target.eventId))
                 .onSuccess { outcome ->
-                    val named = if (outcome.named) "" else "Couldn't rename this detection; it'll show once the model recognises the car. "
-                    val training = if (outcome.trainingStarted) "Retraining now." else "Saved for the next training."
+                    // Whether the detection took the name now, and whether the model is learning it yet.
+                    val said = when {
+                        outcome.named && outcome.trainingStarted -> Res.string.moments_tag_car_done_retraining
+                        outcome.named -> Res.string.moments_tag_car_done_saved
+                        outcome.trainingStarted -> Res.string.moments_tag_car_done_unnamed_retraining
+                        else -> Res.string.moments_tag_car_done_unnamed_saved
+                    }
                     _uiState.update {
                         it.copy(
                             isSaving = false,
                             done = true,
-                            notice = "Tagged as ${subLabelDisplayName(category)}. $named$training",
+                            notice = UiText.of(said, subLabelDisplayName(category)),
                             noticeIsError = false,
                             newCarDraft = "",
                             knownCars = if (category in it.knownCars) it.knownCars else (it.knownCars + category).sorted(),
@@ -179,7 +197,7 @@ class MomentCarTagViewModel(
                     }
                 }
                 .onFailure { e ->
-                    _uiState.update { it.copy(isSaving = false, notice = "Couldn't save the tag: ${e.message}", noticeIsError = true) }
+                    _uiState.update { it.copy(isSaving = false, notice = e.userMessage(Res.string.moments_tag_car_save_failed), noticeIsError = true) }
                 }
         }
     }
@@ -200,20 +218,20 @@ class MomentCarTagViewModel(
         if (model != null || loadJob?.isActive == true || state.loadError != null) return
         _uiState.update { it.copy(isLoading = true) }
         loadJob = viewModelScope.launch {
-            val found = getClassifierModelsUseCase().getOrElse { e -> return@launch failLoad("Couldn't load the classifiers: ${e.message}") }
+            val found = getClassifierModelsUseCase().getOrElse { e -> return@launch failLoad(e.userMessage(Res.string.moments_tag_car_classifiers_failed)) }
                 .carClassifier()
-                ?: return@launch failLoad("This server has no classifier that runs on cars.")
-            val dataset = getClassifierDatasetUseCase(found.name).getOrElse { e -> return@launch failLoad("Couldn't load the known cars: ${e.message}") }
+                ?: return@launch failLoad(UiText.of(Res.string.moments_tag_car_no_classifier))
+            val dataset = getClassifierDatasetUseCase(found.name).getOrElse { e -> return@launch failLoad(e.userMessage(Res.string.moments_tag_car_known_cars_failed)) }
             model = found
             _uiState.update { it.copy(isLoading = false, loadError = null, knownCars = dataset.knownCars) }
         }
     }
 
-    private fun failLoad(message: String) = _uiState.update { it.copy(isLoading = false, loadError = message) }
+    private fun failLoad(message: UiText) = _uiState.update { it.copy(isLoading = false, loadError = message) }
 
     private fun MomentEvent.toTarget(): CarTagTarget {
         val presentation = present(clock.now().toLocalDateTime(TimeZone.currentSystemDefault()).date)
-        return CarTagTarget(eventId = id, summary = "${presentation.title} · ${presentation.timeLabel}")
+        return CarTagTarget(eventId = id, summary = presentation.summary)
     }
 
     private companion object {

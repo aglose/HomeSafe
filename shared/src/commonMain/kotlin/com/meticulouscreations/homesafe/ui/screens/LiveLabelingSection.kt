@@ -14,10 +14,16 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelCard
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
 import dev.zacsweers.metrox.viewmodel.assistedMetroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.labeling_filed_as
+import homesafe.shared.generated.resources.labeling_live_body
+import homesafe.shared.generated.resources.labeling_live_title
 import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * "On camera now": the cars [cameraName] is tracking this moment, each with its newest queued crop
@@ -54,15 +60,15 @@ fun LiveLabelingSection(cameraName: String, modifier: Modifier = Modifier) {
     val uncertain = uiState.uncertainCards
     val confident = uiState.confidentCards
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "On camera now", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.labeling_live_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
         Text(
-            text = "Name a car while it's in view. The model learns it at the next training.",
+            text = stringResource(Res.string.labeling_live_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         when {
-            filedAs != null -> Text(text = "Filed as ${categoryDisplayName(filedAs)}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
-            error != null -> Text(text = error, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
+            filedAs != null -> Text(text = stringResource(Res.string.labeling_filed_as, categoryDisplayName(filedAs)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+            error != null -> Text(text = error.resolve(), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.error)
         }
         uncertain.forEach { card ->
             key(card.key) { LiveCropCard(card = card, busy = card.key in uiState.busyKeys, onLabel = viewModel::label) }

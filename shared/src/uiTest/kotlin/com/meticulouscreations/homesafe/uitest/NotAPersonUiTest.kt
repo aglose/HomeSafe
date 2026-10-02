@@ -14,6 +14,8 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
 import com.meticulouscreations.homesafe.domain.model.VisitKind
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.MomentsFeed
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
@@ -22,6 +24,8 @@ import com.meticulouscreations.homesafe.viewmodel.MomentGroup
 import com.meticulouscreations.homesafe.viewmodel.MomentItem
 import com.meticulouscreations.homesafe.viewmodel.MomentsUiState
 import com.meticulouscreations.homesafe.viewmodel.NotAPersonUiState
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_not_a_person_mark_failed
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -47,15 +51,15 @@ class NotAPersonUiTest {
     )
 
     private fun presentation(title: String, clipCountLabel: String? = null) = MomentPresentation(
-        title = title,
-        timeLabel = "4:23 PM",
+        title = title.asUiText(),
+        timeLabel = "4:23 PM".asUiText(),
         durationLabel = "0:02",
-        dateGroup = "Today",
-        dateSubLabel = "Sep 29",
-        badgeLabel = "person",
-        locationLabel = "Front Door",
+        dateGroup = "Today".asUiText(),
+        dateSubLabel = "Sep 29".asUiText(),
+        badgeLabel = "person".asUiText(),
+        locationLabel = "Front Door".asUiText(),
         sightingsLabel = null,
-        clipCountLabel = clipCountLabel,
+        clipCountLabel = clipCountLabel?.asUiText(),
     )
 
     private fun feed(
@@ -69,7 +73,7 @@ class NotAPersonUiTest {
         setContent {
             FrigatePreview {
                 MomentsFeed(
-                    state = MomentsUiState(groups = listOf(MomentGroup("Today", "Sep 29", items))),
+                    state = MomentsUiState(groups = listOf(MomentGroup("Today".asUiText(), "Sep 29".asUiText(), items))),
                     downloadState = DownloadUiState(),
                     onSelectCategory = {},
                     onUnfamiliarOnlyChange = {},
@@ -110,8 +114,8 @@ class NotAPersonUiTest {
     fun aVisitsClipCanBeMarkedFromItsRow() {
         val tapped = mutableListOf<String>()
         val clips = listOf(
-            MomentClip(person("c0"), "4:23 PM", "Person detected", "0:17", canMarkNotPerson = true),
-            MomentClip(person("c1"), "4:25 PM", "Person detected", "0:02", canMarkNotPerson = true),
+            MomentClip(person("c0"), "4:23 PM".asUiText(), "Person detected".asUiText(), "0:17", canMarkNotPerson = true),
+            MomentClip(person("c1"), "4:25 PM".asUiText(), "Person detected".asUiText(), "0:02", canMarkNotPerson = true),
         )
         val visit = MomentItem(clips.first().event, presentation("Person detected", "2 clips"), null, key = "c0", kind = VisitKind.VISIT, clips = clips)
         feed(listOf(visit), onNotAPerson = { tapped += it.id }) {
@@ -137,7 +141,7 @@ class NotAPersonUiTest {
     }
 
     @Test
-    fun theBarSaysWhyAMarkFailed() = feed(listOf(), notAPersonState = NotAPersonUiState(error = "Relay answered 502")) {
+    fun theBarSaysWhyAMarkFailed() = feed(listOf(), notAPersonState = NotAPersonUiState(error = UiText.of(Res.string.moments_not_a_person_mark_failed, "Relay answered 502"))) {
         onNodeWithText("Couldn't mark it: Relay answered 502").assertIsDisplayed()
     }
 }

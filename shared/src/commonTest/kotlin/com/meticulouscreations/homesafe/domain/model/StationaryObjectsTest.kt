@@ -1,5 +1,11 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_clock_yesterday
+import homesafe.shared.generated.resources.moments_in_view_last_seen
+import homesafe.shared.generated.resources.moments_in_view_since
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -162,9 +168,9 @@ class StationaryObjectsTest {
 
         val presentation = stay.present(today = day, timeZone = utc)
 
-        assertEquals("Sarah's Tesla", presentation.title)
+        assertEquals(MomentTexts.named("Sarah's Tesla"), presentation.title)
         assertEquals("Driveway", presentation.placeLabel)
-        assertEquals("since 8:12 AM", presentation.sinceLabel)
+        assertEquals(UiText.of(Res.string.moments_in_view_since, "8:12 AM".asUiText()), presentation.sinceLabel)
         assertNull(presentation.lastSeenLabel, "seen a moment ago: the card needn't hedge")
     }
 
@@ -265,7 +271,7 @@ class StationaryObjectsTest {
 
         val presentation = stay.present(today = day, timeZone = utc)
 
-        assertEquals("Sarah's Tesla", presentation.title, "the name, never the label, on a known car")
+        assertEquals(MomentTexts.named("Sarah's Tesla"), presentation.title, "the name, never the label, on a known car")
         assertEquals("Front Yard", presentation.placeLabel)
     }
 
@@ -276,7 +282,10 @@ class StationaryObjectsTest {
             .stationaryObjects(nowEpochSeconds = at(6, 20))
             .single()
 
-        assertEquals("since 7:00 PM yesterday", stay.present(today = day, timeZone = utc).sinceLabel)
+        assertEquals(
+            UiText.of(Res.string.moments_in_view_since, UiText.of(Res.string.moments_clock_yesterday, "7:00 PM")),
+            stay.present(today = day, timeZone = utc).sinceLabel,
+        )
     }
 
     @Test
@@ -286,7 +295,7 @@ class StationaryObjectsTest {
             .stationaryObjects(nowEpochSeconds = at(6, 20))
             .single()
 
-        assertEquals("last seen 6:01 AM", stay.present(today = day, timeZone = utc).lastSeenLabel)
+        assertEquals(UiText.of(Res.string.moments_in_view_last_seen, "6:01 AM"), stay.present(today = day, timeZone = utc).lastSeenLabel)
         assertEquals(false, stay.seenRecently)
     }
 }

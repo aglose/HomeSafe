@@ -1,5 +1,9 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_seen_last_seen
+import homesafe.shared.generated.resources.moments_seen_still_there
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -98,8 +102,8 @@ class VehicleVisitsTest {
         assertEquals(at(14, 24), only.endEpochSeconds)
         assertEquals("sarahs_tesla", only.subLabel, "the surest name wins")
         assertEquals(0.99, only.subLabelScore)
-        assertEquals("Seen 9 times · last seen 2:24 PM", only.present(day, utc).sightingsLabel)
-        assertEquals("Sarah's Tesla detected", only.present(day, utc).title)
+        assertEquals(UiText.plural(Res.plurals.moments_seen_last_seen, 9, 9, "2:24 PM"), only.present(day, utc).sightingsLabel)
+        assertEquals(MomentTexts.detected(MomentTexts.named("Sarah's Tesla")), only.present(day, utc).title)
     }
 
     @Test
@@ -107,7 +111,7 @@ class VehicleVisitsTest {
         val merged = listOf(event("a", at(6, 6), at(6, 20), path = driveThrough), event("b", at(6, 30), end = null)).mergeVehicleVisits()
         val only = merged.single()
         assertTrue(only.isInProgress)
-        assertEquals("Seen 2 times · still there", only.present(day, utc).sightingsLabel)
+        assertEquals(UiText.plural(Res.plurals.moments_seen_still_there, 2), only.present(day, utc).sightingsLabel)
     }
 
     @Test
@@ -162,7 +166,7 @@ class VehicleVisitsTest {
         val only = events.reversed().mergeVehicleVisits().single()
         assertEquals("v3", only.id, "the first sighting that moved anchors the visit")
         assertEquals(4, only.sightings)
-        assertEquals("Seen 4 times · last seen 7:45 PM", only.present(day, utc).sightingsLabel)
+        assertEquals(UiText.plural(Res.plurals.moments_seen_last_seen, 4, 4, "7:45 PM"), only.present(day, utc).sightingsLabel)
     }
 
     @Test
@@ -221,7 +225,7 @@ class VehicleVisitsTest {
         val parked = event("parked", at(19, 42), at(19, 45), zones = listOf("driveway"), subLabel = "andrews_tesla", subLabelScore = 0.9)
         val only = listOf(arriving, parked).mergeVehicleVisits().single()
         assertEquals(listOf("street", "driveway"), only.zones)
-        assertEquals("Andrew's Tesla in the driveway", only.present(day, utc).title)
+        assertEquals(MomentTexts.inThe(MomentTexts.named("Andrew's Tesla"), "driveway"), only.present(day, utc).title)
     }
 
     @Test
@@ -230,7 +234,7 @@ class VehicleVisitsTest {
         val unplaced = event("unplaced", at(19, 42), at(19, 43))
         val only = listOf(parked, unplaced).mergeVehicleVisits().single()
         assertEquals(listOf("driveway"), only.zones, "nothing to add, nothing to reorder")
-        assertEquals("Car in the driveway", only.present(day, utc).title)
+        assertEquals(MomentTexts.inThe(MomentTexts.car, "driveway"), only.present(day, utc).title)
     }
 
     @Test

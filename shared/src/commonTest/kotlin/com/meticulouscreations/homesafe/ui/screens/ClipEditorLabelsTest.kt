@@ -1,6 +1,10 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import com.meticulouscreations.homesafe.domain.model.ClipLimits
+import com.meticulouscreations.homesafe.text.UiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.clip_length_minutes
+import homesafe.shared.generated.resources.clip_length_seconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -9,11 +13,11 @@ class ClipEditorLabelsTest {
 
     @Test
     fun secondsUnderAMinuteAndWholeMinutesAbove() {
-        assertEquals("10s", lengthLabel(10.0))
-        assertEquals("30s", lengthLabel(30.0))
-        assertEquals("1m", lengthLabel(60.0))
-        assertEquals("2m", lengthLabel(120.0))
-        assertEquals("90s", lengthLabel(90.0))
+        assertEquals(UiText.of(Res.string.clip_length_seconds, 10L), lengthLabel(10.0))
+        assertEquals(UiText.of(Res.string.clip_length_seconds, 30L), lengthLabel(30.0))
+        assertEquals(UiText.of(Res.string.clip_length_minutes, 1L), lengthLabel(60.0))
+        assertEquals(UiText.of(Res.string.clip_length_minutes, 2L), lengthLabel(120.0))
+        assertEquals(UiText.of(Res.string.clip_length_seconds, 90L), lengthLabel(90.0))
     }
 
     @Test

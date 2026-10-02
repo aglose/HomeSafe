@@ -54,10 +54,37 @@ import com.meticulouscreations.homesafe.domain.model.KnownPerson
 import com.meticulouscreations.homesafe.domain.model.UnlabeledCrop
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.network.FrigateFaceApi
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryUiState
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.faces_add
+import homesafe.shared.generated.resources.faces_add_person_first
+import homesafe.shared.generated.resources.faces_explainer
+import homesafe.shared.generated.resources.faces_filed_as
+import homesafe.shared.generated.resources.faces_new_person_label
+import homesafe.shared.generated.resources.faces_not_one_of_us
+import homesafe.shared.generated.resources.faces_not_recognised
+import homesafe.shared.generated.resources.faces_people_empty
+import homesafe.shared.generated.resources.faces_people_title
+import homesafe.shared.generated.resources.faces_person_count
+import homesafe.shared.generated.resources.faces_person_face_description
+import homesafe.shared.generated.resources.faces_person_no_faces
+import homesafe.shared.generated.resources.faces_queue_empty_body
+import homesafe.shared.generated.resources.faces_queue_empty_title
+import homesafe.shared.generated.resources.faces_queue_waiting
+import homesafe.shared.generated.resources.faces_refresh
+import homesafe.shared.generated.resources.faces_remove_face
+import homesafe.shared.generated.resources.faces_subtitle
+import homesafe.shared.generated.resources.faces_thinks
+import homesafe.shared.generated.resources.faces_thinks_score
+import homesafe.shared.generated.resources.faces_title
+import org.jetbrains.compose.resources.pluralStringResource
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Teach Frigate who's who. Every face it got a good look at shows up here with its best guess;
@@ -71,14 +98,14 @@ fun FaceLibraryScreen(onBack: () -> Unit) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Header(title = "Faces", subtitle = "Teach Frigate who's who", onBack = onBack, onRefresh = viewModel::load)
+        Header(title = stringResource(Res.string.faces_title), subtitle = stringResource(Res.string.faces_subtitle), onBack = onBack, onRefresh = viewModel::load)
 
         when {
             uiState.isLoading -> Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
 
-            uiState.loadError != null -> ErrorPanel(message = uiState.loadError.orEmpty(), onRetry = viewModel::load)
+            uiState.loadError != null -> ErrorPanel(message = uiState.loadError?.resolve().orEmpty(), onRetry = viewModel::load)
 
             else -> uiState.library?.let { library -> Body(uiState = uiState, library = library, viewModel = viewModel) }
         }
@@ -93,14 +120,14 @@ private fun Header(title: String, subtitle: String, onBack: () -> Unit, onRefres
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = MaterialTheme.colorScheme.primary)
         }
         Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(text = title, style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, textAlign = TextAlign.Center)
             Text(text = subtitle, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
         IconButton(onClick = onRefresh) {
-            Icon(Icons.Filled.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.faces_refresh), tint = MaterialTheme.colorScheme.primary)
         }
     }
 }
@@ -115,7 +142,11 @@ private fun Body(uiState: FaceLibraryUiState, library: FaceLibrary, viewModel: F
         item(key = "people", contentType = "people") { PeopleCard(uiState = uiState, library = library, viewModel = viewModel) }
         item(key = "queue-title", contentType = "title") {
             Text(
-                text = if (library.attempts.isEmpty()) "No faces waiting" else "${library.attempts.size} ${if (library.attempts.size == 1) "face" else "faces"} waiting for a name",
+                text = if (library.attempts.isEmpty()) {
+                    stringResource(Res.string.faces_queue_empty_title)
+                } else {
+                    pluralStringResource(Res.plurals.faces_queue_waiting, library.attempts.size, library.attempts.size)
+                },
                 style = MaterialTheme.typography.headlineSmall,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -123,7 +154,7 @@ private fun Body(uiState: FaceLibraryUiState, library: FaceLibrary, viewModel: F
         if (library.attempts.isEmpty()) {
             item(key = "queue-empty", contentType = "title") {
                 Text(
-                    text = "Frigate saves every face it gets a good look at, with its best guess. Walk past a camera facing it and check back in a minute.",
+                    text = stringResource(Res.string.faces_queue_empty_body),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -147,10 +178,10 @@ private fun Body(uiState: FaceLibraryUiState, library: FaceLibrary, viewModel: F
 @Composable
 private fun PeopleCard(uiState: FaceLibraryUiState, library: FaceLibrary, viewModel: FaceLibraryViewModel) {
     Card {
-        Text(text = "People", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.faces_people_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
         if (library.people.isEmpty()) {
             Text(
-                text = "Nobody yet. Add the people who live here, then file their faces below as Frigate catches them.",
+                text = stringResource(Res.string.faces_people_empty),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -158,7 +189,7 @@ private fun PeopleCard(uiState: FaceLibraryUiState, library: FaceLibrary, viewMo
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 library.people.forEach { person ->
                     Chip(
-                        label = "${person.displayName} · ${person.imageCount}",
+                        label = stringResource(Res.string.faces_person_count, person.displayName, person.imageCount),
                         selected = uiState.expandedPerson == person.name,
                         onClick = { viewModel.togglePerson(person.name) },
                     )
@@ -178,21 +209,21 @@ private fun PeopleCard(uiState: FaceLibraryUiState, library: FaceLibrary, viewMo
             OutlinedTextField(
                 value = uiState.newPersonDraft,
                 onValueChange = viewModel::setNewPersonDraft,
-                label = { Text("New person, e.g. Andrew") },
+                label = { Text(stringResource(Res.string.faces_new_person_label)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words, imeAction = ImeAction.Done),
                 modifier = Modifier.weight(1f),
             )
-            OutlinedButton(onClick = viewModel::createPerson, enabled = uiState.newPersonDraft.isNotBlank()) { Text("Add") }
+            OutlinedButton(onClick = viewModel::createPerson, enabled = uiState.newPersonDraft.isNotBlank()) { Text(stringResource(Res.string.faces_add)) }
         }
         Text(
-            text = "A face is recognised the moment it's filed — no training step. Five to ten faces per person from different cameras, distances and lighting makes it dependable. Tap a name to see or prune their faces.",
+            text = stringResource(Res.string.faces_explainer),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         uiState.notice?.let {
             Text(
-                text = it,
+                text = it.resolve(),
                 style = MaterialTheme.typography.bodySmall,
                 color = if (uiState.noticeIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary,
             )
@@ -205,12 +236,14 @@ private fun PeopleCard(uiState: FaceLibraryUiState, library: FaceLibrary, viewMo
 private fun PersonGallery(person: KnownPerson, busyFiles: Set<String>, imageUrl: (String) -> String?, onDelete: (String) -> Unit) {
     if (person.imageFiles.isEmpty()) {
         Text(
-            text = "${person.displayName} has no faces yet. File one from the list below.",
+            text = stringResource(Res.string.faces_person_no_faces, person.displayName),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         return
     }
+    val faceDescription = stringResource(Res.string.faces_person_face_description, person.displayName)
+    val removeDescription = stringResource(Res.string.faces_remove_face)
     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(person.imageFiles, key = { it }) { file ->
             Box(modifier = Modifier.size(84.dp)) {
@@ -221,7 +254,7 @@ private fun PersonGallery(person: KnownPerson, busyFiles: Set<String>, imageUrl:
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
                 ) {
                     imageUrl(file)?.let { url ->
-                        AsyncImage(model = url, contentDescription = "${person.displayName}'s face", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+                        AsyncImage(model = url, contentDescription = faceDescription, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                     }
                     if (file in busyFiles) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp).align(Alignment.Center), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.primary)
@@ -229,7 +262,7 @@ private fun PersonGallery(person: KnownPerson, busyFiles: Set<String>, imageUrl:
                 }
                 Icon(
                     imageVector = Icons.Filled.Close,
-                    contentDescription = "Remove this face",
+                    contentDescription = removeDescription,
                     tint = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -275,9 +308,12 @@ private fun AttemptCard(
                 val guess = attempt.guessedCategory?.takeIf { it != FaceLibrary.UNKNOWN_GUESS }
                 Text(
                     text = when {
-                        guess == null -> "Frigate doesn't recognise this face"
-                        attempt.guessedScore != null -> "Frigate thinks: ${subLabelDisplayName(guess)} (${(attempt.guessedScore * 100).toInt()}%)"
-                        else -> "Frigate thinks: ${subLabelDisplayName(guess)}"
+                        guess == null -> stringResource(Res.string.faces_not_recognised)
+
+                        attempt.guessedScore != null ->
+                            stringResource(Res.string.faces_thinks_score, subLabelDisplayName(guess), (attempt.guessedScore * 100).toInt())
+
+                        else -> stringResource(Res.string.faces_thinks, subLabelDisplayName(guess))
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -288,12 +324,12 @@ private fun AttemptCard(
                 if (decided != null) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Filled.Check, contentDescription = null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
-                        Text(text = "Filed as ${subLabelDisplayName(decided.orEmpty())}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
+                        Text(text = stringResource(Res.string.faces_filed_as, subLabelDisplayName(decided)), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
                     }
                 } else {
                     if (people.isEmpty()) {
                         Text(
-                            text = "Add a person above to file this face.",
+                            text = stringResource(Res.string.faces_add_person_first),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -304,7 +340,7 @@ private fun AttemptCard(
                             }
                         }
                     }
-                    TextButton(onClick = onDiscard, enabled = !busy) { Text("Not one of us") }
+                    TextButton(onClick = onDiscard, enabled = !busy) { Text(stringResource(Res.string.faces_not_one_of_us)) }
                 }
             }
         }
@@ -347,7 +383,7 @@ private fun Chip(label: String, selected: Boolean, onClick: () -> Unit) {
 @Composable
 private fun ErrorPanel(message: String, onRetry: () -> Unit) {
     Column(modifier = Modifier.fillMaxWidth().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "Couldn't load the face library: $message", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-        OutlinedButton(onClick = onRetry) { Text("Retry") }
+        Text(text = message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+        OutlinedButton(onClick = onRetry) { Text(stringResource(Res.string.common_retry)) }
     }
 }

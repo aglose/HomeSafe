@@ -5,12 +5,17 @@ import com.meticulouscreations.homesafe.finance.domain.PriceHistory
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesTo
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_fred_answered
+import homesafe.shared.generated.resources.fin_data_error_no_chart
+import homesafe.shared.generated.resources.fin_data_error_yahoo_answered
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
@@ -21,6 +26,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -67,7 +73,7 @@ class YahooFinanceApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpCli
                 parameter("range", "1d")
                 parameter("interval", "5m")
             }
-            if (!response.status.isSuccess()) throw FrigateResponseException("Yahoo answered ${response.status}")
+            if (!response.status.isSuccess()) throw yahooFailed(response.status)
             response.body<SparkEnvelope>().spark.result.mapNotNull { r ->
                 r.response.firstOrNull()?.toQuote(r.symbol)
             }
@@ -80,14 +86,17 @@ class YahooFinanceApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpCli
             parameter("interval", range.yahooInterval)
             parameter("includePrePost", "false")
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Yahoo answered ${response.status}")
+        if (!response.status.isSuccess()) throw yahooFailed(response.status)
         val result = response.body<ChartEnvelope>().chart.result?.firstOrNull()
-            ?: throw FrigateResponseException("Yahoo had no chart for $symbol")
+            ?: throw FrigateResponseException(UiText.of(Res.string.fin_data_error_no_chart, symbol), "Yahoo had no chart for $symbol")
         val baseline = if (range == ChartRange.DAY) result.meta.previousClose ?: result.meta.chartPreviousClose else result.meta.chartPreviousClose
         PriceHistory(symbol, range, result.series(), baseline, result.meta.gmtoffset ?: 0)
     }
 
     private companion object {
+        fun yahooFailed(status: HttpStatusCode) =
+            FrigateResponseException(UiText.of(Res.string.fin_data_error_yahoo_answered, status.toString()), "Yahoo answered $status")
+
         const val BASE = "https://query1.finance.yahoo.com"
         const val SPARK_MAX = 20
     }
@@ -103,7 +112,9 @@ class FredApi(@Named(PUBLIC_DATA_CLIENT) private val httpClient: HttpClient) {
             parameter("id", seriesId)
             parameter("cosd", startDate)
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("FRED answered ${response.status} for $seriesId")
+        if (!response.status.isSuccess()) {
+            throw FrigateResponseException(UiText.of(Res.string.fin_data_error_fred_answered, response.status.toString(), seriesId), "FRED answered ${response.status} for $seriesId")
+        }
         parseCsv(response.bodyAsText())
     }
 

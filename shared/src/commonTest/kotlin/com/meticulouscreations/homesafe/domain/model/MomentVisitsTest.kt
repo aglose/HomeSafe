@@ -1,5 +1,9 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.moments_since
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlin.test.Test
@@ -58,11 +62,11 @@ class MomentVisitsTest {
     @Test
     fun aVisitReadsAsOneCardWithItsSpanAndClipCount() {
         val p = backyard.groupIntoVisits().single().present(day, utc)
-        assertEquals("Person detected", p.title)
-        assertEquals("6:55–6:56 PM", p.timeLabel)
-        assertEquals("Backyard", p.locationLabel)
-        assertEquals("5 clips", p.clipCountLabel)
-        assertEquals("person", p.badgeLabel)
+        assertEquals(MomentTexts.detected(MomentTexts.person), p.title)
+        assertEquals("6:55–6:56 PM".asUiText(), p.timeLabel)
+        assertEquals(MomentTexts.location("Backyard"), p.locationLabel)
+        assertEquals(MomentTexts.clips(5), p.clipCountLabel)
+        assertEquals(MomentTexts.person, p.badgeLabel)
     }
 
     @Test
@@ -87,7 +91,7 @@ class MomentVisitsTest {
         val next = event("next", at(10, 30))
         val visit = listOf(live, next).groupIntoVisits().single()
         assertNull(visit.endEpochSeconds)
-        assertEquals("Since 10:00 AM", visit.present(day, utc).timeLabel)
+        assertEquals(UiText.of(Res.string.moments_since, "10:00 AM"), visit.present(day, utc).timeLabel)
     }
 
     /**
@@ -109,10 +113,10 @@ class MomentVisitsTest {
         assertEquals("a", visit.lead.id, "the clip that covers the take plays")
         val p = visit.present(day, utc)
         assertNull(p.clipCountLabel, "nothing to open onto")
-        assertEquals("Person on the lawn", p.title)
-        assertEquals("7:55 PM", p.timeLabel)
+        assertEquals(MomentTexts.onThe(MomentTexts.person, "lawn"), p.title)
+        assertEquals("7:55 PM".asUiText(), p.timeLabel)
         assertEquals("0:22", p.durationLabel)
-        assertEquals("Front Yard · Lawn, Driveway", p.locationLabel)
+        assertEquals(MomentTexts.location("Front Yard", "Lawn", "Driveway"), p.locationLabel)
     }
 
     @Test
@@ -125,7 +129,7 @@ class MomentVisitsTest {
         assertEquals(VisitKind.VISIT, visit.kind)
         assertEquals(listOf("a", "e"), visit.takes.map { it.lead.id }, "the longer clip, even when it started second")
         assertEquals("a", visit.lead.id)
-        assertEquals("2 clips", visit.present(day, utc).clipCountLabel)
+        assertEquals(MomentTexts.clips(2), visit.present(day, utc).clipCountLabel)
     }
 
     @Test
@@ -162,7 +166,7 @@ class MomentVisitsTest {
         assertEquals(setOf(listOf("anon", "andrew"), listOf("sarah")), visits.map { v -> v.events.map { it.id } }.toSet())
         val andrews = visits.first { it.key == "anon" }
         assertEquals("andrew", andrews.subLabel)
-        assertEquals("Andrew detected", andrews.present(day, utc).title, "the visit is titled by whoever was recognised in it")
+        assertEquals(MomentTexts.detected(MomentTexts.named("Andrew")), andrews.present(day, utc).title, "the visit is titled by whoever was recognised in it")
     }
 
     @Test
@@ -172,8 +176,8 @@ class MomentVisitsTest {
             event("b", at(9, 1), zones = listOf("sidewalk")),
         ).groupIntoVisits().single()
         val p = visit.present(day, utc)
-        assertEquals("Person on the sidewalk", p.title)
-        assertEquals("Backyard · Lawn, Sidewalk", p.locationLabel)
+        assertEquals(MomentTexts.onThe(MomentTexts.person, "sidewalk"), p.title)
+        assertEquals(MomentTexts.location("Backyard", "Lawn", "Sidewalk"), p.locationLabel)
     }
 
     @Test
@@ -204,10 +208,10 @@ class MomentVisitsTest {
         assertEquals(VisitKind.ROUTINE, routine.kind)
         assertEquals(8, routine.events.size, "across cameras")
         val p = routine.present(day, utc)
-        assertEquals("Andrew's Tesla came and went 8×", p.title)
-        assertEquals("5:51–6:30 PM", p.timeLabel)
-        assertEquals("Front Yard, Backyard", p.locationLabel)
-        assertEquals("8 sightings", p.clipCountLabel)
+        assertEquals(MomentTexts.cameAndWent("Andrew's Tesla", 8), p.title)
+        assertEquals("5:51–6:30 PM".asUiText(), p.timeLabel)
+        assertEquals(MomentTexts.cameras("Front Yard", "Backyard"), p.locationLabel)
+        assertEquals(MomentTexts.sightings(8), p.clipCountLabel)
     }
 
     @Test
@@ -236,8 +240,8 @@ class MomentVisitsTest {
             assertFalse(it.isFamiliar, "${it.subLabel} is not a name")
             assertFalse(it.isHouseholdCar)
         }
-        assertEquals("Car detected", notOurs.present(day, utc).title)
-        assertEquals("Person detected", unknownFace.present(day, utc).title)
+        assertEquals(MomentTexts.detected(MomentTexts.car), notOurs.present(day, utc).title)
+        assertEquals(MomentTexts.detected(MomentTexts.person), unknownFace.present(day, utc).title)
     }
 
     @Test
@@ -255,9 +259,9 @@ class MomentVisitsTest {
 
     @Test
     fun rangesShareTheirMeridiemAndCollapseWithinAMinute() {
-        assertEquals("6:55–6:56 PM", clockRangeLabel(at(18, 55), at(18, 56), utc))
-        assertEquals("11:58 AM–12:04 PM", clockRangeLabel(at(11, 58), at(12, 4), utc))
-        assertEquals("6:55 PM", clockRangeLabel(at(18, 55, 1), at(18, 55, 40), utc))
-        assertEquals("Since 6:55 PM", clockRangeLabel(at(18, 55), null, utc))
+        assertEquals("6:55–6:56 PM".asUiText(), clockRangeLabel(at(18, 55), at(18, 56), utc))
+        assertEquals("11:58 AM–12:04 PM".asUiText(), clockRangeLabel(at(11, 58), at(12, 4), utc))
+        assertEquals("6:55 PM".asUiText(), clockRangeLabel(at(18, 55, 1), at(18, 55, 40), utc))
+        assertEquals(UiText.of(Res.string.moments_since, "6:55 PM"), clockRangeLabel(at(18, 55), null, utc))
     }
 }

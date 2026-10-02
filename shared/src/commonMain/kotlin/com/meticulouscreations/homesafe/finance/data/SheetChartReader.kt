@@ -6,6 +6,18 @@ import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.SheetChart
 import com.meticulouscreations.homesafe.finance.domain.SheetChartKind
 import com.meticulouscreations.homesafe.finance.domain.SheetChartSeries
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.fin_data_chart_cells_empty
+import homesafe.shared.generated.resources.fin_data_chart_kind_not_drawn
+import homesafe.shared.generated.resources.fin_data_chart_no_ranges
+import homesafe.shared.generated.resources.fin_data_chart_on_tab
+import homesafe.shared.generated.resources.fin_data_chart_quoted_tab
+import homesafe.shared.generated.resources.fin_data_chart_series_number
+import homesafe.shared.generated.resources.fin_data_chart_tabs_gone
+import homesafe.shared.generated.resources.fin_data_chart_unknown_kind_not_drawn
 import kotlin.math.roundToLong
 
 /**
@@ -41,7 +53,7 @@ object SheetChartReader {
         val base = SheetChart(
             id = chart.id ?: index.toLong(),
             tab = chart.sheet,
-            title = chart.title,
+            title = chart.title.asUiText(),
             subtitle = chart.subtitle,
             kind = kind,
             stacking = when (chart.stacked) {
@@ -55,7 +67,9 @@ object SheetChartReader {
         )
         if (kind == SheetChartKind.OTHER) {
             val name = chart.kind.lowercase().replace('_', ' ').takeUnless { it == "other" }
-            return base.withTitle(null).copy(issue = "${name?.let { "A $it chart" } ?: "This kind of chart"} isn't one the app draws")
+            // Google's name for the kind (a waterfall, a treemap), as it gives it.
+            val issue = name?.let { UiText.of(Res.string.fin_data_chart_kind_not_drawn, it) } ?: UiText.of(Res.string.fin_data_chart_unknown_kind_not_drawn)
+            return base.withTitle(chart.title, null).copy(issue = issue)
         }
 
         // A domain plotted again as a series of its own (Sheets allows it; dates as bars) isn't data.
@@ -90,7 +104,8 @@ object SheetChartReader {
 
         var series = plotted.mapIndexed { s, spec ->
             SheetChartSeries(
-                label = seriesLabel(spec, seriesCells[s], headers, grids) ?: (chart.title.takeIf { plotted.size == 1 && it.isNotBlank() } ?: "Series ${s + 1}"),
+                label = (seriesLabel(spec, seriesCells[s], headers, grids) ?: chart.title.takeIf { plotted.size == 1 && it.isNotBlank() })?.asUiText()
+                    ?: UiText.of(Res.string.fin_data_chart_series_number, s + 1),
                 values = kept.map { values[s].getOrNull(it) },
                 kind = spec.type?.let(::kindOf)?.takeUnless { it == SheetChartKind.OTHER } ?: kind,
                 format = formatOf(spec.format),
@@ -105,24 +120,29 @@ object SheetChartReader {
             domainOut = ChartDomain.Categories(slices.map { labels[it] })
             series = series.take(1).map { s -> s.copy(values = slices.map { s.values[it] }) }
         }
-        val drawn = base.copy(domain = domainOut, series = series).withTitle(series.singleOrNull()?.label)
+        val drawn = base.copy(domain = domainOut, series = series).withTitle(chart.title, series.singleOrNull()?.label)
         return if (drawn.isDrawable) drawn else drawn.copy(issue = emptyReason(chart, grids))
     }
 
     /** Why a chart of a kind the app draws has nothing to draw. */
-    private fun emptyReason(chart: RelayChart, grids: Map<String, SheetGrid>): String {
+    private fun emptyReason(chart: RelayChart, grids: Map<String, SheetGrid>): UiText {
         val tabs = (chart.domain + chart.series.flatMap { it.ranges }).map { it.sheet }.distinct()
         val gone = tabs.filter { it !in grids }
         return when {
-            chart.series.isEmpty() -> "It has no data ranges"
-            gone.isNotEmpty() -> "It plots ${gone.joinToString { "“$it”" }}, which the sheet no longer has"
-            else -> "The cells it plots are empty"
+            chart.series.isEmpty() -> UiText.of(Res.string.fin_data_chart_no_ranges)
+
+            gone.isNotEmpty() -> UiText.of(
+                Res.string.fin_data_chart_tabs_gone,
+                UiText.Joined(gone.map { UiText.of(Res.string.fin_data_chart_quoted_tab, it) }, UiText.of(Res.string.common_list_separator)),
+            )
+
+            else -> UiText.of(Res.string.fin_data_chart_cells_empty)
         }
     }
 
-    /** A chart without a title is named after its one series, or its tab. */
-    private fun SheetChart.withTitle(fallback: String?): SheetChart =
-        if (title.isNotBlank()) this else copy(title = fallback?.takeIf { it.isNotBlank() } ?: "Chart on $tab")
+    /** A chart the sheet leaves untitled ([sheetTitle] blank) is named after its one series ([fallback]), or its tab. */
+    private fun SheetChart.withTitle(sheetTitle: String, fallback: UiText?): SheetChart =
+        if (sheetTitle.isNotBlank()) this else copy(title = fallback ?: UiText.of(Res.string.fin_data_chart_on_tab, tab))
 
     fun kindOf(name: String): SheetChartKind? = when (name.uppercase()) {
         "LINE" -> SheetChartKind.LINE

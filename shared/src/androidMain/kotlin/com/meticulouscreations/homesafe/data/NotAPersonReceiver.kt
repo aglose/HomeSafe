@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
+import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.load
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -33,18 +36,30 @@ class NotAPersonReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 val actions = BackgroundGraph.get(app).pushedAlertActions
+                // Null when the relay didn't answer within the budget.
                 val result = withTimeoutOrNull(RECEIVER_BUDGET_MS) {
                     if (marking) actions.markNotAPerson(target.eventId) else actions.undoNotAPerson(target.eventId)
-                } ?: Result.failure(IllegalStateException("The server didn't answer in time."))
-                result
-                    .onSuccess {
-                        if (marking) AlertNotificationPoster.showMarkedNotAPerson(app, id, target) else AlertNotificationPoster.clearNotAPerson(app, id)
+                }
+                if (result?.isSuccess == true) {
+                    if (marking) AlertNotificationPoster.showMarkedNotAPerson(app, id, target) else AlertNotificationPoster.clearNotAPerson(app, id)
+                } else {
+                    // The relay's own reason when it gave one; the platform's message is passed through as it is.
+                    val failure = result?.exceptionOrNull()
+                    val reason = if (failure == null) {
+                        app.getString(R.string.notif_reason_timeout)
+                    } else {
+                        (failure as? LocalizedException)?.text?.load() ?: failure.message ?: app.getString(R.string.notif_reason_unreachable)
                     }
-                    .onFailure { e ->
-                        val reason = e.message ?: "The server couldn't be reached."
-                        if (marking) AlertNotificationPoster.showNotAPersonFailed(app, id, target, reason) else AlertNotificationPoster.showUndoFailed(app, id, target, reason)
-                    }
-                Log.i(TAG, "${if (marking) "not a person" else "undo"} ${target.eventId} -> ${if (result.isSuccess) "done" else result.exceptionOrNull()?.message}")
+                    if (marking) AlertNotificationPoster.showNotAPersonFailed(app, id, target, reason) else AlertNotificationPoster.showUndoFailed(app, id, target, reason)
+                }
+                val outcome = if (result == null) {
+                    "timed out"
+                } else if (result.isSuccess) {
+                    "done"
+                } else {
+                    result.exceptionOrNull()?.message
+                }
+                Log.i(TAG, "${if (marking) "not a person" else "undo"} ${target.eventId} -> $outcome")
             } finally {
                 pending.finish()
             }

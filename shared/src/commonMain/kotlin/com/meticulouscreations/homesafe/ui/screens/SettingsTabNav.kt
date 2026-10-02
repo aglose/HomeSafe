@@ -27,6 +27,17 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ClassifierModel
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.settings_recognition_classifier_description
+import homesafe.shared.generated.resources.settings_recognition_faces
+import homesafe.shared.generated.resources.settings_recognition_faces_description
+import homesafe.shared.generated.resources.settings_recognition_objects_separator
+import homesafe.shared.generated.resources.settings_recognition_title
+import homesafe.shared.generated.resources.settings_server_title
+import org.jetbrains.compose.resources.stringResource
 
 /** The Settings tab's root; the shell watches the back stack's depth to hide its own bar on nested screens. */
 data object SettingsHomeRoute
@@ -90,12 +101,12 @@ fun RecognitionSection(
 ) {
     if (models.isEmpty() && faceRecognitionEnabled != true) return
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = "Recognition", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(text = stringResource(Res.string.settings_recognition_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
         if (faceRecognitionEnabled == true) {
             SettingsLinkRow(
                 icon = Icons.Filled.Face,
-                title = "Faces",
-                description = "Name the faces Frigate saw so it can tell family from strangers",
+                title = stringResource(Res.string.settings_recognition_faces),
+                description = stringResource(Res.string.settings_recognition_faces_description),
                 onClick = onOpenFaces,
             )
         }
@@ -103,7 +114,7 @@ fun RecognitionSection(
             SettingsLinkRow(
                 icon = Icons.Filled.DirectionsCar,
                 title = model.displayName,
-                description = "Label what the ${model.objects.joinToString(" and ")} classifier saw, and retrain it",
+                description = stringResource(Res.string.settings_recognition_classifier_description, objectList(model.objects)),
                 onClick = { onOpen(model.name) },
             )
         }
@@ -116,8 +127,13 @@ fun RecognitionSection(
  */
 @Composable
 internal fun ServerSummaryRow(summary: String, onOpen: () -> Unit) {
-    SettingsLinkRow(icon = Icons.Filled.Dns, title = "Server", description = summary, onClick = onOpen)
+    SettingsLinkRow(icon = Icons.Filled.Dns, title = stringResource(Res.string.settings_server_title), description = summary, onClick = onOpen)
 }
+
+/** A classifier's Frigate labels, which are data, as one phrase: "car", "car and truck". */
+@Composable
+private fun objectList(objects: List<String>): String =
+    UiText.Joined(objects.map { it.asUiText() }, UiText.of(Res.string.settings_recognition_objects_separator)).resolve()
 
 /** One row that opens a page of its own: an icon, what it is, a line about it, and a chevron. */
 @Composable

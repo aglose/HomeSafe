@@ -13,10 +13,13 @@ import com.meticulouscreations.homesafe.finance.domain.Series
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.Transform
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_not_connected
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
@@ -105,7 +108,7 @@ class FinanceRepositoryImpl(
             return@withLock Result.success(cached.second)
         }
         val serverUrl = connectionRepository.currentServerUrl.value
-            ?: return@withLock Result.failure(SheetUnavailableException(SheetProblem.SIGNED_OUT, "Not connected to the server"))
+            ?: return@withLock Result.failure(SheetUnavailableException(SheetProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
         val workbook = relay.workbook(serverUrl, refresh).getOrElse { return@withLock Result.failure(it) }
         // Not mapCatching: it would turn the Finance screen closing mid-parse (a cancellation)
         // into a failed read, which would then show as a sync error.

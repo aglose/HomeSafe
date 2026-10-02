@@ -10,10 +10,14 @@ import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceAutomation
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_no_location
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
@@ -111,7 +115,7 @@ class PresenceAutomationImpl(
 
     override suspend fun setHomeHere(): Result<Unit> {
         val here = geofenceMonitor.currentLocation()
-            ?: return Result.failure(IllegalStateException("Couldn't get this phone's location"))
+            ?: return Result.failure(LocalizedException(UiText.of(Res.string.error_no_location), technical = "No location for this phone"))
         return presenceRepository.setHome(HomeLocation(here.latitude, here.longitude, DEFAULT_RADIUS_METERS))
     }
 

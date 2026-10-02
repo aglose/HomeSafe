@@ -9,7 +9,12 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_relay_answered
+import homesafe.shared.generated.resources.error_relay_no_secret
+import homesafe.shared.generated.resources.error_relay_no_spot
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
@@ -54,14 +59,14 @@ class PushRelayApi(private val httpClient: HttpClient) {
             bearer(secret)
             setBody(registration)
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
-        response.body<RelayRegistration>().let { DeviceCredentials(it.deviceId, it.secret ?: throw FrigateResponseException("Relay issued no secret")) }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayRegistration>().let { DeviceCredentials(it.deviceId, it.secret ?: throw FrigateResponseException(UiText.of(Res.string.error_relay_no_secret), technical = "Relay issued no secret")) }
     }
 
     /** Asks the relay to push a sample alert to every registered phone. */
     suspend fun sendTestPush(serverUrl: String): Result<Unit> = runCatching {
         val response = httpClient.post(relayUrl(serverUrl, "/test"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /**
@@ -81,7 +86,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
             bearer(secret)
             setBody(PresenceUpdate(away = away, source = source, dwellSeconds = dwellSeconds))
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPresence>().toDomain()
     }
 
@@ -91,7 +96,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
             parameter("device", deviceId)
             bearer(secret)
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPresence>().toDomain()
     }
 
@@ -107,7 +112,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
             bearer(secret)
             setBody(AuthorityUpdate(deviceId = deviceId))
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPresence>().toDomain()
     }
 
@@ -121,7 +126,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
             parameter("device", deviceId)
             bearer(secret)
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPresence>().toDomain()
     }
 
@@ -132,7 +137,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
      */
     suspend fun removeDevice(serverUrl: String, deviceId: String): Result<Unit> = runCatching {
         val response = httpClient.delete(relayUrl(serverUrl, "/devices/$deviceId"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /**
@@ -149,7 +154,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
                 setBody(HomeUpdate(lat = home.latitude, lng = home.longitude, radiusMeters = home.radiusMeters))
             }
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPresence>().toDomain()
     }
 
@@ -163,7 +168,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
             parameter("device", deviceId)
             bearer(secret)
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<ByteArray>()
     }
 
@@ -183,7 +188,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
                 contentType(ContentType.Image.JPEG)
                 setBody(frame)
             }
-            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+            if (!response.status.isSuccess()) throw relayRefused(response.status)
         }
 
     /**
@@ -197,13 +202,13 @@ class PushRelayApi(private val httpClient: HttpClient) {
             contentType(ContentType.Application.Json)
             setBody(SubLabelRequest(subLabel = subLabel.orEmpty(), subLabelScore = score))
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /** The household cars' make, model, colour and plate, which the relay checks the classifier's names against. */
     suspend fun getCarProfiles(serverUrl: String): Result<CarProfiles> = runCatching {
         val response = httpClient.get(relayUrl(serverUrl, "/cars/profiles"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayCarProfiles>().toDomain()
     }
 
@@ -213,14 +218,14 @@ class PushRelayApi(private val httpClient: HttpClient) {
             contentType(ContentType.Application.Json)
             setBody(RelayCarProfile(profile.name, profile.make, profile.model, profile.colour, profile.plate))
         }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayCarProfile>().toDomain()
     }
 
     /** Forgets the profile of the car filed as [name]; the relay stops checking that name. */
     suspend fun deleteCarProfile(serverUrl: String, name: String): Result<Unit> = runCatching {
         val response = httpClient.delete(relayUrl(serverUrl, "/cars/profiles/$name"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /**
@@ -234,7 +239,7 @@ class PushRelayApi(private val httpClient: HttpClient) {
         for (ids in eventIds.chunked(CAR_CHECKS_PER_CALL)) {
             val response = httpClient.get(relayUrl(serverUrl, "/cars/checks")) { parameter("events", ids.joinToString(",")) }
             if (response.status == HttpStatusCode.NotFound) return@runCatching null
-            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+            if (!response.status.isSuccess()) throw relayRefused(response.status)
             response.body<RelayCarChecks>().checks.forEach { (id, check) -> checks[id] = check.toDomain() }
         }
         checks
@@ -250,22 +255,26 @@ class PushRelayApi(private val httpClient: HttpClient) {
     suspend fun markNotAPerson(serverUrl: String, eventId: String, deviceId: String? = null, secret: String? = null): Result<PhantomSpot> =
         runCatching {
             val response = httpClient.post(relayUrl(serverUrl, "/events/$eventId/not_a_person")) { asDevice(deviceId, secret) }
-            if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
-            response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException("Relay kept no spot")
+            if (!response.status.isSuccess()) throw relayRefused(response.status)
+            response.body<RelayNotAPerson>().spot.toDomain() ?: throw FrigateResponseException(UiText.of(Res.string.error_relay_no_spot), technical = "Relay kept no spot")
         }
 
     /** Takes a [markNotAPerson] back, the same way it was given: the phantom spot goes, and the example it filed. */
     suspend fun undoNotAPerson(serverUrl: String, eventId: String, deviceId: String? = null, secret: String? = null): Result<Unit> = runCatching {
         val response = httpClient.delete(relayUrl(serverUrl, "/events/$eventId/not_a_person")) { asDevice(deviceId, secret) }
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
     }
 
     /** Every phantom spot the relay keeps, for the feed to hide what the relay no longer pushes. */
     suspend fun getPhantomSpots(serverUrl: String): Result<List<PhantomSpot>> = runCatching {
         val response = httpClient.get(relayUrl(serverUrl, "/phantoms"))
-        if (!response.status.isSuccess()) throw FrigateResponseException("Relay answered ${response.status}")
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayPhantoms>().spots.mapNotNull { it.toDomain() }
     }
+
+    /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */
+    private fun relayRefused(status: HttpStatusCode) =
+        FrigateResponseException(UiText.of(Res.string.error_relay_answered, status.toString()), technical = "Relay answered $status")
 
     private fun HttpRequestBuilder.bearer(secret: String?) {
         if (secret != null) header(HttpHeaders.Authorization, "Bearer $secret")

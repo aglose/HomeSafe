@@ -44,6 +44,11 @@ import com.meticulouscreations.homesafe.finance.ui.components.ChangePill
 import com.meticulouscreations.homesafe.finance.ui.components.RollingNumber
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.finance_range_52_week
+import homesafe.shared.generated.resources.finance_signal_none
+import org.jetbrains.compose.resources.stringResource
 
 /** Horizontal padding every finance page uses. */
 internal val PageGutter = 20.dp
@@ -132,7 +137,7 @@ internal fun SignalChip(signal: Signal?, modifier: Modifier = Modifier) {
     ) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
         Spacer(Modifier.width(6.dp))
-        Text(signal?.label ?: "No line", style = FinanceTheme.type.micro, color = color)
+        Text(stringResource(signal?.label ?: Res.string.finance_signal_none), style = FinanceTheme.type.micro, color = color)
     }
 }
 
@@ -152,10 +157,12 @@ internal fun QuoteRow(symbol: String, quote: Quote?, onClick: () -> Unit, modifi
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(meta.shortName, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            val shortName = meta.shortName.resolve()
+            val name = meta.name.resolve()
+            Text(shortName, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
             // What it is in plain words where there's an explainer ("Government's 10-year borrowing cost"), else its full name.
-            val plain = Explainers.forSymbol(symbol)?.let { Explainers.byId(it)?.title }?.takeIf { it != meta.shortName }
-            Text(plain ?: if (meta.name != meta.shortName) meta.name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            val plain = Explainers.forSymbol(symbol)?.let { Explainers.byId(it)?.title }?.let { stringResource(it) }?.takeIf { it != shortName }
+            Text(plain ?: if (name != shortName) name else symbol, style = FinanceTheme.type.label, color = colors.textSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         if (quote != null) {
             Sparkline(quote.intraday, colors.direction(quote.change), Modifier.width(72.dp).height(30.dp), baseline = quote.previousClose)
@@ -208,7 +215,7 @@ internal fun RangeBar(low: Double, high: Double, current: Double, lowLabel: Stri
     val fraction = if (high > low) ((current - low) / (high - low)).toFloat().coerceIn(0f, 1f) else 0.5f
     Column(modifier.fillMaxWidth().padding(horizontal = PageGutter, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("52-week range", style = FinanceTheme.type.label, color = colors.textSecondary)
+            Text(stringResource(Res.string.finance_range_52_week), style = FinanceTheme.type.label, color = colors.textSecondary)
             InfoButton("range52w", size = 15.dp)
         }
         Spacer(Modifier.height(10.dp))
@@ -241,7 +248,7 @@ internal fun RangeBar(low: Double, high: Double, current: Double, lowLabel: Stri
 
 /** A row of small tappable chips, one selected. */
 @Composable
-internal fun <T> ChipRow(options: List<T>, selected: T, label: (T) -> String, color: Color, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
+internal fun <T> ChipRow(options: List<T>, selected: T, label: @Composable (T) -> String, color: Color, onSelect: (T) -> Unit, modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(horizontal = PageGutter), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEach { option ->
             val isSelected = option == selected

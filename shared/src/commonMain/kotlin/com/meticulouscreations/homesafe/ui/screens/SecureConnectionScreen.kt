@@ -61,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
 import com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors
@@ -68,7 +69,27 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ConnectUiState
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.connection_autofill_test_credentials
+import homesafe.shared.generated.resources.connection_biometric_enable
+import homesafe.shared.generated.resources.connection_biometric_enable_body
+import homesafe.shared.generated.resources.connection_biometric_enable_title
+import homesafe.shared.generated.resources.connection_biometric_not_now
+import homesafe.shared.generated.resources.connection_biometric_update
+import homesafe.shared.generated.resources.connection_biometric_update_body
+import homesafe.shared.generated.resources.connection_biometric_update_title
+import homesafe.shared.generated.resources.connection_brand_wordmark
+import homesafe.shared.generated.resources.connection_connect
+import homesafe.shared.generated.resources.connection_forget_saved_login
+import homesafe.shared.generated.resources.connection_password_placeholder
+import homesafe.shared.generated.resources.connection_server_url_hint
+import homesafe.shared.generated.resources.connection_server_url_label
+import homesafe.shared.generated.resources.connection_server_url_placeholder
+import homesafe.shared.generated.resources.connection_sign_in_with_biometrics
+import homesafe.shared.generated.resources.connection_tailscale_active
+import homesafe.shared.generated.resources.connection_username_placeholder
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.stringResource
 
 /**
  * Test-only login values for the "Autofill test credentials" button, supplied by the debug
@@ -144,7 +165,7 @@ fun SecureConnectionScreen(
 
     biometricSaveOffer?.let { credentials ->
         BiometricSaveOfferDialog(
-            biometricDisplayName = viewModel.biometricDisplayName,
+            biometricDisplayName = stringResource(viewModel.biometricDisplayName),
             replacesSavedLogin = hasSavedBiometricCredentials,
             onSave = {
                 biometricSaveOffer = null
@@ -210,7 +231,7 @@ fun SecureConnectionScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
-                        text = "PERCYSAFE",
+                        text = stringResource(Res.string.connection_brand_wordmark),
                         style = MaterialTheme.typography.displayLarge.copy(letterSpacing = 0.025.em),
                         color = extraColors.textPrimary,
                         textAlign = TextAlign.Center,
@@ -225,7 +246,7 @@ fun SecureConnectionScreen(
                     ) {
                         PulsingDot(color = MaterialTheme.colorScheme.secondary, pulsing = false)
                         Text(
-                            text = "Tailscale Active",
+                            text = stringResource(Res.string.connection_tailscale_active),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.secondary,
                         )
@@ -239,7 +260,7 @@ fun SecureConnectionScreen(
                     // Server URL input
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            text = "Server URL",
+                            text = stringResource(Res.string.connection_server_url_label),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 16.dp),
@@ -247,14 +268,14 @@ fun SecureConnectionScreen(
                         ConnectionTextField(
                             value = serverUrl,
                             onValueChange = { serverUrl = it },
-                            placeholder = "Enter Server URL",
+                            placeholder = stringResource(Res.string.connection_server_url_placeholder),
                             leadingIcon = Icons.Filled.Dns,
                             extraColors = extraColors,
                             enabled = !isConnecting,
                             modifier = Modifier.testTag(SIGN_IN_SERVER_URL_TEST_TAG),
                         )
                         Text(
-                            text = "Your NVR's Tailscale address — works from anywhere.",
+                            text = stringResource(Res.string.connection_server_url_hint),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.tertiaryContainer,
                             modifier = Modifier.padding(start = 16.dp),
@@ -265,7 +286,7 @@ fun SecureConnectionScreen(
                     ConnectionTextField(
                         value = username,
                         onValueChange = { username = it },
-                        placeholder = "Username",
+                        placeholder = stringResource(Res.string.connection_username_placeholder),
                         leadingIcon = Icons.Filled.Person,
                         extraColors = extraColors,
                         enabled = !isConnecting,
@@ -276,7 +297,7 @@ fun SecureConnectionScreen(
                     ConnectionTextField(
                         value = password,
                         onValueChange = { password = it },
-                        placeholder = "Password",
+                        placeholder = stringResource(Res.string.connection_password_placeholder),
                         leadingIcon = Icons.Filled.Lock,
                         extraColors = extraColors,
                         enabled = !isConnecting,
@@ -286,7 +307,7 @@ fun SecureConnectionScreen(
 
                     if (uiState is ConnectUiState.Error) {
                         Text(
-                            text = (uiState as ConnectUiState.Error).message,
+                            text = (uiState as ConnectUiState.Error).message.resolve(),
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.error,
                             modifier = Modifier.padding(start = 16.dp),
@@ -317,7 +338,7 @@ fun SecureConnectionScreen(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Text(
-                                    "Autofill test credentials",
+                                    stringResource(Res.string.connection_autofill_test_credentials),
                                     style = MaterialTheme.typography.labelMedium,
                                 )
                             }
@@ -347,7 +368,7 @@ fun SecureConnectionScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text("Connect", style = MaterialTheme.typography.labelLarge)
+                            Text(stringResource(Res.string.connection_connect), style = MaterialTheme.typography.labelLarge)
                             Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                         }
                     }
@@ -371,7 +392,7 @@ fun SecureConnectionScreen(
                             ) {
                                 Icon(Icons.Filled.Fingerprint, contentDescription = null)
                                 Text(
-                                    "Sign in with ${viewModel.biometricDisplayName}",
+                                    stringResource(Res.string.connection_sign_in_with_biometrics, stringResource(viewModel.biometricDisplayName)),
                                     style = MaterialTheme.typography.labelLarge,
                                 )
                             }
@@ -382,7 +403,7 @@ fun SecureConnectionScreen(
                             enabled = !isConnecting,
                         ) {
                             Text(
-                                text = "Forget saved login",
+                                text = stringResource(Res.string.connection_forget_saved_login),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -403,13 +424,15 @@ private fun BiometricSaveOfferDialog(
     onDismiss: () -> Unit,
 ) {
     val extraColors = LocalFrigateExtraColors.current
-    val title = if (replacesSavedLogin) "Update $biometricDisplayName sign-in?" else "Enable $biometricDisplayName sign-in?"
-    val body = if (replacesSavedLogin) {
-        "You signed in with your password. Save it so $biometricDisplayName sign-in uses this login " +
-            "next time instead of the one saved before."
+    val title = if (replacesSavedLogin) {
+        stringResource(Res.string.connection_biometric_update_title, biometricDisplayName)
     } else {
-        "Skip retyping your password next time — sign in with $biometricDisplayName instead. " +
-            "Your credentials are encrypted and can only be unlocked with your biometrics."
+        stringResource(Res.string.connection_biometric_enable_title, biometricDisplayName)
+    }
+    val body = if (replacesSavedLogin) {
+        stringResource(Res.string.connection_biometric_update_body, biometricDisplayName)
+    } else {
+        stringResource(Res.string.connection_biometric_enable_body, biometricDisplayName)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -426,13 +449,16 @@ private fun BiometricSaveOfferDialog(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             ) {
-                Text(if (replacesSavedLogin) "Update" else "Enable", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    stringResource(if (replacesSavedLogin) Res.string.connection_biometric_update else Res.string.connection_biometric_enable),
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text(
-                    "Not now",
+                    stringResource(Res.string.connection_biometric_not_now),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

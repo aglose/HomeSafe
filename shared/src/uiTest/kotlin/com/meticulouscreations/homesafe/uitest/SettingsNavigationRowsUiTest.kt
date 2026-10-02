@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.RetentionPolicy
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.RecognitionSection
 import com.meticulouscreations.homesafe.ui.screens.ServerSummaryRow
@@ -152,7 +153,7 @@ class SettingsNavigationRowsUiTest {
         mainClock.autoAdvance = false
         setContent {
             FrigatePreview {
-                ServerSummaryRow(summary = serverSummary(ConnectionRoute.LOCAL_NETWORK, overview, overviewError = null), onOpen = {})
+                ServerSummaryRow(summary = serverSummary(ConnectionRoute.LOCAL_NETWORK, overview, overviewError = null).resolve(), onOpen = {})
             }
         }
 

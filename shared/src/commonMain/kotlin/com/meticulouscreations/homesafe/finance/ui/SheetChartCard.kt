@@ -41,6 +41,19 @@ import com.meticulouscreations.homesafe.finance.ui.components.DonutSlice
 import com.meticulouscreations.homesafe.finance.ui.components.GroupedBarChart
 import com.meticulouscreations.homesafe.finance.ui.components.LineChart
 import com.meticulouscreations.homesafe.finance.ui.components.RollingNumber
+import com.meticulouscreations.homesafe.text.resolve
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.fin_sheet_chart_change_at
+import homesafe.shared.generated.resources.fin_sheet_chart_change_since
+import homesafe.shared.generated.resources.fin_sheet_chart_kind_not_drawn
+import homesafe.shared.generated.resources.fin_sheet_chart_nothing_in_range
+import homesafe.shared.generated.resources.fin_sheet_chart_open_in_sheet
+import homesafe.shared.generated.resources.fin_sheet_chart_points
+import homesafe.shared.generated.resources.fin_sheet_chart_right_scale
+import homesafe.shared.generated.resources.fin_sheet_chart_total
+import homesafe.shared.generated.resources.fin_sheet_chart_total_caption
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 
 /**
@@ -53,12 +66,13 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
     val uriHandler = LocalUriHandler.current
     var selected by remember(chart) { mutableStateOf<Int?>(null) }
+    val title = chart.title.resolve()
     FinanceCard(modifier, padding = 0.dp) {
         Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(chart.title, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(title, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOf(chart.subtitle, chart.tab).filter { it.isNotBlank() }.joinToString(" · "),
+                    listOf(chart.subtitle, chart.tab).filter { it.isNotBlank() }.joinToString(stringResource(Res.string.common_dot_separator)),
                     style = FinanceTheme.type.micro,
                     color = colors.textTertiary,
                     maxLines = 1,
@@ -67,7 +81,7 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
             }
             chart.sourceUrl?.let { url ->
                 Text(
-                    "Sheet ↗",
+                    stringResource(Res.string.fin_sheet_chart_open_in_sheet),
                     style = FinanceTheme.type.label,
                     color = colors.accent,
                     modifier = Modifier.clip(CircleShape).clickable { uriHandler.openUri(url) }.padding(horizontal = 8.dp, vertical = 6.dp),
@@ -76,7 +90,7 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
         }
         if (!chart.isDrawable) {
             Text(
-                if (chart.kind == SheetChartKind.OTHER) "A kind of chart the app doesn't draw. Open it in the sheet." else "Nothing in its range yet.",
+                stringResource(if (chart.kind == SheetChartKind.OTHER) Res.string.fin_sheet_chart_kind_not_drawn else Res.string.fin_sheet_chart_nothing_in_range),
                 style = FinanceTheme.type.label,
                 color = colors.textSecondary,
                 modifier = Modifier.padding(16.dp),
@@ -102,7 +116,7 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
                     },
                     stacked = chart.stacking != ChartStacking.NONE,
                     selected = selected,
-                    contentDescription = chart.title,
+                    contentDescription = title,
                     onSelect = { selected = it },
                     modifier = Modifier.fillMaxWidth().height(190.dp).padding(horizontal = 16.dp),
                 )
@@ -127,7 +141,7 @@ private fun LineBody(chart: SheetChart, selected: Int?, onSelect: (Int?) -> Unit
         Headline(chart, selected)
         LinePanel(chart, rightAxis = if (split) false else null, onSelect, Modifier.fillMaxWidth().height(190.dp))
         if (split) {
-            Text("Right scale", style = FinanceTheme.type.micro, color = FinanceTheme.colors.textTertiary, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
+            Text(stringResource(Res.string.fin_sheet_chart_right_scale), style = FinanceTheme.type.micro, color = FinanceTheme.colors.textTertiary, modifier = Modifier.padding(start = 16.dp, top = 10.dp))
             LinePanel(chart, rightAxis = true, onSelect, Modifier.fillMaxWidth().height(110.dp))
         }
         SeriesLegend(chart, selected)
@@ -155,7 +169,7 @@ private fun LinePanel(chart: SheetChart, rightAxis: Boolean?, onSelect: (Int?) -
             formatValue = { v -> if (chart.stacking == ChartStacking.PERCENT) FinanceFormat.percent(v, 0) else formatValue(v, format, compact = true) },
             formatTime = { t -> if (plot.timeAxis) shortMonthYear(t) else pointLabel(chart, t.toInt(), short = true) },
         ),
-        contentDescription = chart.title,
+        contentDescription = chart.title.resolve(),
         onScrub = { i -> onSelect(i?.let { plot.points.getOrNull(it) }) },
         modifier = modifier,
     )
@@ -217,14 +231,14 @@ private fun Headline(chart: SheetChart, selected: Int?) {
         RollingNumber(formatValue(value, format, compact = false), FinanceTheme.type.title, colors.textPrimary)
         val pointText = pointLabel(chart, point, short = false)
         val caption = when {
-            chart.kind == SheetChartKind.SCORECARD -> chart.series.first().label.takeIf { it != chart.title }.orEmpty()
+            chart.kind == SheetChartKind.SCORECARD -> chart.series.first().label.takeIf { it != chart.title }?.resolve().orEmpty()
             change == null -> pointText
-            selected != null -> "${formatChange(change, format)}  $pointText"
-            else -> "${formatChange(change, format)} since ${pointLabel(chart, first, short = false)}"
+            selected != null -> stringResource(Res.string.fin_sheet_chart_change_at, formatChange(change, format), pointText)
+            else -> stringResource(Res.string.fin_sheet_chart_change_since, formatChange(change, format), pointLabel(chart, first, short = false))
         }
         if (caption.isNotEmpty()) {
             Text(
-                (if (stackTotal && selected == null && change != null) "Total · " else "") + caption,
+                if (stackTotal && selected == null && change != null) stringResource(Res.string.fin_sheet_chart_total_caption, caption) else caption,
                 style = FinanceTheme.type.label,
                 color = when {
                     change == null || change == 0.0 -> colors.textSecondary
@@ -249,7 +263,7 @@ private fun SeriesLegend(chart: SheetChart, selected: Int?) {
     ) {
         chart.series.forEachIndexed { i, s ->
             val at = selected ?: chart.chronological.lastOrNull { s.values.getOrNull(it) != null } ?: -1
-            LegendDot(s.label, s.values.getOrNull(at)?.let { formatValue(it, s.format, compact = true) } ?: "—", palette[i % palette.size])
+            LegendDot(s.label.resolve(), s.values.getOrNull(at)?.let { formatValue(it, s.format, compact = true) } ?: "—", palette[i % palette.size])
         }
     }
 }
@@ -283,7 +297,7 @@ private fun PieBody(chart: SheetChart, selected: Int?, onSelect: (Int) -> Unit) 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 val shown = selected?.let { series.values.getOrNull(it) } ?: total
                 RollingNumber(formatValue(shown, series.format, compact = true), FinanceTheme.type.bodyStrong, colors.textPrimary)
-                Text(selected?.let { labels.getOrNull(it) } ?: "Total", style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1)
+                Text(selected?.let { labels.getOrNull(it) } ?: stringResource(Res.string.fin_sheet_chart_total), style = FinanceTheme.type.micro, color = colors.textSecondary, maxLines = 1)
             }
         }
         Column(Modifier.padding(horizontal = 16.dp)) {
@@ -333,8 +347,10 @@ internal fun formatValue(value: Double, format: ChartValueFormat, compact: Boole
     }
 }
 
+/** A change the way its cells are formatted; a percentage's in percentage points ("+1.2 pts"). */
+@Composable
 internal fun formatChange(change: Double, format: ChartValueFormat): String = when (format) {
     ChartValueFormat.MONEY -> FinanceFormat.signedMoney(change, 0)
-    ChartValueFormat.PERCENT -> FinanceFormat.signedPercent(change * 100, 1).removeSuffix("%") + " pts"
+    ChartValueFormat.PERCENT -> stringResource(Res.string.fin_sheet_chart_points, FinanceFormat.signedPercent(change * 100, 1).removeSuffix("%"))
     ChartValueFormat.NUMBER -> (if (change < 0) "-" else "+") + formatValue(abs(change), format, compact = false)
 }

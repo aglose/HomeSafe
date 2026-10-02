@@ -5,7 +5,12 @@ import com.meticulouscreations.homesafe.domain.model.clipFileName
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloadProgress
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.repository.RecordingsRepository
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.Inject
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.settings_recording_clip_save_failed
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,7 +22,7 @@ import kotlinx.coroutines.launch
 sealed interface RecordingClipSave {
     data class Running(val progress: ClipDownloadProgress) : RecordingClipSave
     data object Saved : RecordingClipSave
-    data class Failed(val message: String) : RecordingClipSave
+    data class Failed(val message: UiText) : RecordingClipSave
 }
 
 /**
@@ -50,7 +55,14 @@ class SaveRecordingClipUseCase(
             }
             state.value = result.fold(
                 onSuccess = { RecordingClipSave.Saved },
-                onFailure = { error -> RecordingClipSave.Failed(error.message ?: "Couldn't save the clip") },
+                onFailure = { error ->
+                    val message = if (error !is LocalizedException && error.message.isNullOrBlank()) {
+                        UiText.of(Res.string.settings_recording_clip_save_failed)
+                    } else {
+                        error.userMessage()
+                    }
+                    RecordingClipSave.Failed(message)
+                },
             )
         }
         return state.asStateFlow()

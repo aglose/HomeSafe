@@ -44,6 +44,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.shell_refresh
+import homesafe.shared.generated.resources.shell_refreshing
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.exp
 import kotlin.math.min
 
@@ -95,6 +99,8 @@ fun ApertureRefreshBox(
         }
     }
     val haptics = LocalHapticFeedback.current
+    val refreshLabel = stringResource(Res.string.shell_refresh)
+    val refreshingLabel = stringResource(Res.string.shell_refreshing)
     LaunchedEffect(armed) {
         if (armed && !isRefreshing) haptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
     }
@@ -105,7 +111,7 @@ fun ApertureRefreshBox(
             .pullToRefresh(isRefreshing = isRefreshing, state = state, threshold = APERTURE_THRESHOLD, onRefresh = onRefresh)
             .semantics {
                 customActions = listOf(
-                    CustomAccessibilityAction("Refresh") {
+                    CustomAccessibilityAction(refreshLabel) {
                         onRefresh()
                         true
                     },
@@ -119,7 +125,7 @@ fun ApertureRefreshBox(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(APERTURE_THRESHOLD * (1f + MAX_OVERSHOOT))
-                .then(if (isRefreshing) Modifier.refreshingSemantics() else Modifier),
+                .then(if (isRefreshing) Modifier.refreshingSemantics(refreshingLabel) else Modifier),
         )
         Box(
             modifier = Modifier
@@ -131,9 +137,9 @@ fun ApertureRefreshBox(
     }
 }
 
-/** The band while it scans, to a screen reader: a progress of no known length, announced as it starts. */
-private fun Modifier.refreshingSemantics(): Modifier = semantics {
-    contentDescription = "Refreshing"
+/** The band while it scans, to a screen reader: a progress of no known length, announced as it starts as [label]. */
+private fun Modifier.refreshingSemantics(label: String): Modifier = semantics {
+    contentDescription = label
     progressBarRangeInfo = ProgressBarRangeInfo.Indeterminate
     liveRegion = LiveRegionMode.Polite
 }

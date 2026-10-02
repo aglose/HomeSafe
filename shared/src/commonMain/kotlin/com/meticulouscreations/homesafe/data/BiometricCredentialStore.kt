@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import org.jetbrains.compose.resources.StringResource
 
 /**
  * Stores login credentials behind a platform biometric check (Face ID / Touch ID on iOS,
@@ -33,7 +34,7 @@ interface BiometricCredentialStore {
     fun isAvailable(): Boolean
 
     /** A short, user-facing name for the biometric method on this device, e.g. "Face ID" or "fingerprint". */
-    fun displayName(): String
+    fun displayName(): StringResource
 
     /** True if credentials were previously saved with [save] and are (still) present on this device. */
     fun hasSavedCredentials(): Boolean

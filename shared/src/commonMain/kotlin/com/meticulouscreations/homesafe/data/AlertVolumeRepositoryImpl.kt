@@ -4,7 +4,6 @@ import com.meticulouscreations.homesafe.domain.model.AlertVolume
 import com.meticulouscreations.homesafe.domain.repository.AlertVolumeRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
-import com.meticulouscreations.homesafe.network.FrigateResponseException
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
@@ -28,7 +27,7 @@ class AlertVolumeRepositoryImpl(
 
     override suspend fun estimate(): Result<AlertVolume> {
         val url = connectionRepository.currentServerUrl.value
-            ?: return Result.failure(FrigateResponseException("Not connected to a server"))
+            ?: return Result.failure(notConnected())
         val now = clock.now().toEpochMilliseconds() / 1000.0
         val windowStart = now - WINDOW_SECONDS
         val events = apiClient.getEvents(url, limit = SAMPLE_LIMIT, afterEpochSeconds = windowStart).getOrElse { return Result.failure(it) }

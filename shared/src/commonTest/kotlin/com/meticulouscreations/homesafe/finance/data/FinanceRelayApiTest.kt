@@ -2,6 +2,11 @@ package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_data_error_relay_answered
+import homesafe.shared.generated.resources.fin_data_error_relay_outdated
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -47,7 +52,7 @@ class FinanceRelayApiTest {
             HttpStatusCode.Forbidden,
             """{"detail":{"error":"not_shared","message":"Share it","service_account":"relay@project.iam.gserviceaccount.com"}}""",
         )
-        assertEquals("Share it", problem.message)
+        assertEquals("Share it".asUiText(), problem.text, "the relay's own words, as written")
         assertEquals("relay@project.iam.gserviceaccount.com", problem.serviceAccount)
         assertNull(problem.activationUrl)
 
@@ -62,7 +67,7 @@ class FinanceRelayApiTest {
     fun problemFromWithNoDetailFallsBackToStatus() {
         val unauthorized = FinanceRelayApi.problemFrom(HttpStatusCode.Unauthorized, "")
         assertEquals(SheetProblem.SIGNED_OUT, unauthorized.problem)
-        assertEquals("The relay answered ${HttpStatusCode.Unauthorized}", unauthorized.message)
+        assertEquals(UiText.of(Res.string.fin_data_error_relay_answered, HttpStatusCode.Unauthorized.toString()), unauthorized.text)
 
         val forbidden = FinanceRelayApi.problemFrom(HttpStatusCode.Forbidden, "")
         assertEquals(SheetProblem.SIGNED_OUT, forbidden.problem)
@@ -72,7 +77,7 @@ class FinanceRelayApiTest {
     fun problemFromWithGarbageBodyIsOther() {
         val problem = FinanceRelayApi.problemFrom(HttpStatusCode.InternalServerError, "not json at all")
         assertEquals(SheetProblem.OTHER, problem.problem)
-        assertEquals("The relay answered ${HttpStatusCode.InternalServerError}", problem.message)
+        assertEquals(UiText.of(Res.string.fin_data_error_relay_answered, HttpStatusCode.InternalServerError.toString()), problem.text)
     }
 
     // ---- workbook ------------------------------------------------------------------------------
@@ -137,6 +142,7 @@ class FinanceRelayApiTest {
         val failure = api(engine).workbook("http://frigate.local", refresh = false).exceptionOrNull()
         val sheetException = assertIs<SheetUnavailableException>(failure)
         assertEquals(SheetProblem.RELAY_OUTDATED, sheetException.problem)
+        assertEquals(UiText.of(Res.string.fin_data_error_relay_outdated), sheetException.text)
     }
 
     @Test

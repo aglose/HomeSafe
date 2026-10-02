@@ -22,6 +22,12 @@ import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateEvent
+import com.meticulouscreations.homesafe.text.TextLoader
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.notif_away_title
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
@@ -92,6 +98,8 @@ class DetectionAlertService(
     private val previewWindowSeconds: Double = PREVIEW_WINDOW_SECONDS,
     /** Waits between asks for a preview that isn't there yet; its length is how many retries there are. */
     private val previewRetryDelaysMs: List<Long> = PREVIEW_RETRY_DELAYS_MS,
+    /** Words the notification's title and body; tests substitute it where resources can't load. */
+    private val textLoader: TextLoader = TextLoader.Resources,
 ) {
     private val settings: StateFlow<AlertSettings> =
         settingsRepository.observeSettings().stateIn(scope, SharingStarted.Eagerly, AlertSettings.DEFAULT)
@@ -272,16 +280,19 @@ class DetectionAlertService(
         val timeZone = TimeZone.currentSystemDefault()
         val today = Instant.fromEpochSeconds(clock().toLong()).toLocalDateTime(timeZone).date
         val presentation = moment.present(today, timeZone)
-        val where = buildString {
-            append(moment.cameraDisplayName)
-            append(" · ")
-            append(presentation.timeLabel)
-            moment.subLabel?.takeIf { it.isNotBlank() }?.let { append(" · ").append(subLabelDisplayName(it)) }
-        }
+        val title = if (urgent) UiText.of(Res.string.notif_away_title, presentation.title) else presentation.title
+        val where = UiText.Joined(
+            listOfNotNull(
+                moment.cameraDisplayName.asUiText(),
+                presentation.timeLabel,
+                moment.subLabel?.takeIf { it.isNotBlank() }?.let { subLabelDisplayName(it).asUiText() },
+            ),
+            separator = UiText.of(Res.string.common_dot_separator),
+        )
         val text = AlertNotification(
             id = moment.id,
-            title = if (urgent) "Away: ${presentation.title}" else presentation.title,
-            body = where,
+            title = textLoader.load(title),
+            body = textLoader.load(where),
             target = MomentDeepLink(eventId = moment.id, cameraName = moment.cameraName, startEpochSeconds = moment.startEpochSeconds),
             urgent = urgent,
             offerCarTag = moment.isGenericCar,

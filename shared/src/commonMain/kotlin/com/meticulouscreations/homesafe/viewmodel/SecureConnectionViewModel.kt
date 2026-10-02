@@ -10,17 +10,24 @@ import com.meticulouscreations.homesafe.domain.usecase.GetBiometricLoginStatusUs
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
+import com.meticulouscreations.homesafe.text.LocalizedException
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.userMessage
 import com.meticulouscreations.homesafe.ui.components.LiveStartupMilestones
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.connection_error_biometric_failed
+import homesafe.shared.generated.resources.connection_error_connect_failed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
 
 sealed interface ConnectUiState {
     data object Idle : ConnectUiState
@@ -37,7 +44,7 @@ sealed interface ConnectUiState {
      * newer than whatever the store holds.
      */
     data class Success(val credentials: SavedCredentials, val viaBiometrics: Boolean) : ConnectUiState
-    data class Error(val message: String) : ConnectUiState
+    data class Error(val message: UiText) : ConnectUiState
 }
 
 @Inject
@@ -62,7 +69,7 @@ class SecureConnectionViewModel(
     val biometricLoginAvailable: Boolean = biometricLogin.isAvailable
 
     /** Short user-facing name for the biometric method, e.g. "Face ID" or "fingerprint". */
-    val biometricDisplayName: String = biometricLogin.displayName
+    val biometricDisplayName: StringResource = biometricLogin.displayName
 
     private val _hasSavedBiometricCredentials = MutableStateFlow(biometricLogin.hasSavedCredentials)
     val hasSavedBiometricCredentials: StateFlow<Boolean> = _hasSavedBiometricCredentials.asStateFlow()
@@ -79,7 +86,7 @@ class SecureConnectionViewModel(
                     LiveStartupMilestones.mark("signin.ok")
                     _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = false)
                 }
-                .onFailure { error -> _uiState.value = ConnectUiState.Error(error.message ?: "Couldn't connect to server") }
+                .onFailure { error -> _uiState.value = ConnectUiState.Error(error.messageOr(Res.string.connection_error_connect_failed)) }
         }
     }
 
@@ -101,7 +108,7 @@ class SecureConnectionViewModel(
                     // A refused saved password is forgotten by the repository; drop the
                     // biometric button along with it so the form is the obvious next step.
                     refreshSavedCredentials()
-                    _uiState.value = ConnectUiState.Error(error.message ?: "Biometric sign-in failed")
+                    _uiState.value = ConnectUiState.Error(error.messageOr(Res.string.connection_error_biometric_failed))
                 }
         }
     }
@@ -133,4 +140,8 @@ class SecureConnectionViewModel(
     private fun refreshSavedCredentials() {
         _hasSavedBiometricCredentials.value = getBiometricLoginStatusUseCase().hasSavedCredentials
     }
+
+    /** The failure as it explains itself ([userMessage]), or [fallback] when it says nothing at all. */
+    private fun Throwable.messageOr(fallback: StringResource): UiText =
+        if (this !is LocalizedException && message.isNullOrBlank()) UiText.of(fallback) else userMessage()
 }

@@ -12,10 +12,14 @@ import com.meticulouscreations.homesafe.domain.repository.ServerStatusRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateServerConfig
 import com.meticulouscreations.homesafe.network.FrigateServerStats
+import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.error_load_server_config_fallback
+import homesafe.shared.generated.resources.error_server_unreachable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -46,7 +50,7 @@ class ServerStatusRepositoryImpl(
 ) : ServerStatusRepository {
 
     private val _overview = MutableStateFlow<ServerOverview?>(null)
-    private val _error = MutableStateFlow<String?>(null)
+    private val _error = MutableStateFlow<UiText?>(null)
 
     /** The last config read, kept so a stats-only poll can rebuild the overview without re-reading it. */
     private var lastConfig: FrigateServerConfig? = null
@@ -75,21 +79,21 @@ class ServerStatusRepositoryImpl(
     override fun observeOverview(): Flow<ServerOverview?> =
         combine(_overview, poller.onStart { emit(Unit) }) { overview, _ -> overview }
 
-    override fun observeError(): Flow<String?> = _error.asStateFlow()
+    override fun observeError(): Flow<UiText?> = _error.asStateFlow()
 
     override suspend fun refresh() {
         connectionRepository.currentServerUrl.value?.let { fetch(it, includeConfig = true) }
     }
 
     override suspend fun setCameraDetection(cameraName: String, enabled: Boolean): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         val motionEnabled = _overview.value?.cameras?.firstOrNull { it.name == cameraName }?.motionEnabled ?: true
         return apiClient.setCameraDetection(url, cameraName, enabled, motionEnabled)
             .onSuccess { fetch(url, includeConfig = true) }
     }
 
     override suspend fun setCameraMotion(cameraName: String, enabled: Boolean): Result<Unit> {
-        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(IllegalStateException("Not connected"))
+        val url = connectionRepository.currentServerUrl.value ?: return Result.failure(notConnected())
         return apiClient.setCameraMotion(url, cameraName, enabled)
             .onSuccess { fetch(url, includeConfig = true) }
     }
@@ -101,12 +105,12 @@ class ServerStatusRepositoryImpl(
             lastUrl = url
         }
         val stats = apiClient.getStats(url).getOrElse { failure ->
-            _error.value = failure.message ?: "Couldn't reach the server"
+            _error.value = failure.errorText(Res.string.error_server_unreachable)
             return@withLock
         }
         val config = if (includeConfig || lastConfig == null) {
             apiClient.getServerConfig(url).getOrElse { failure ->
-                _error.value = failure.message ?: "Couldn't load the server's config"
+                _error.value = failure.errorText(Res.string.error_load_server_config_fallback)
                 return@withLock
             }.also { lastConfig = it }
         } else {
