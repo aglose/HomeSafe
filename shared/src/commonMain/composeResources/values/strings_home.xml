@@ -33,6 +33,7 @@
     <!-- %1$d phones at home out of %2$d. -->
     <string name="home_presence_some_home">%1$d of %2$d home</string>
     <!-- Accessibility action on the summary: it opens the Moments feed. -->
+    <string name="home_status_refresh_action">Refresh home</string>
     <string name="home_status_open_moments">Open moments</string>
 
     <!-- The strip of cars parked in view, under the summary. -->

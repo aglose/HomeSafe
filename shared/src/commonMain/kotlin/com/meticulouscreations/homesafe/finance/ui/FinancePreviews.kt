@@ -19,8 +19,11 @@ import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
 import com.meticulouscreations.homesafe.finance.domain.ChartDomain
+import com.meticulouscreations.homesafe.finance.domain.ChartHaptics
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
+import com.meticulouscreations.homesafe.finance.domain.ChartShader
 import com.meticulouscreations.homesafe.finance.domain.ChartStacking
+import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
@@ -31,6 +34,7 @@ import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
+import com.meticulouscreations.homesafe.finance.domain.LineSharpness
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
 import com.meticulouscreations.homesafe.finance.domain.Owner
@@ -383,6 +387,51 @@ private fun FinanceExplainerPreview() {
     FinanceStage {
         Box(Modifier.background(FinancePalette().surfaceRaised)) {
             ExplainerBody(Explainers.byId("cpi")!!, FinanceFixtures.state, {}, {})
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceChartSettingsPreview() {
+    FinanceStage { ChartSettingsScreen(ChartStyle.DEFAULT, previewPadding) {} }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceChartSettingsSharpPreview() {
+    val style = ChartStyle(ChartShader.HALFTONE, LineSharpness.POINTS, ChartHaptics.STRONG)
+    FinanceStage {
+        CompositionLocalProvider(LocalChartStyle provides style) { ChartSettingsScreen(style, previewPadding) {} }
+    }
+}
+
+/** The fixture household having a harder year: thin cash, a costly card, a smaller monthly gap. */
+internal val strugglingFinance: PersonalFinance = FinanceFixtures.finance.let { f ->
+    f.copy(
+        monthlyExpenses = 12_960.0,
+        netMonthly = 1_210.0,
+        accounts = f.accounts.map { if (it.category == AccountCategory.CASH) it.copy(balance = it.balance / 3.2) else it },
+        debts = f.debts.map { if (it.name == "Credit cards") it.copy(balance = 8_430.0, apr = 24.9) else it },
+    )
+}
+
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceCheckupPreview() {
+    FinanceStage {
+        Column(Modifier.padding(vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            MoneyCheckup(moneyCheckup(strugglingFinance, 4.33), {})
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceCheckupBreakdownPreview() {
+    FinanceStage {
+        Box(Modifier.background(FinancePalette().surfaceRaised)) {
+            CheckupPage(moneyCheckup(strugglingFinance, 4.33), CheckKind.EMERGENCY_FUND, {}, {})
         }
     }
 }

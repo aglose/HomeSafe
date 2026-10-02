@@ -1,9 +1,13 @@
 package com.meticulouscreations.homesafe.finance.ui
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,11 +38,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
@@ -159,6 +165,8 @@ import homesafe.shared.generated.resources.finance_wallet_watchlist_title
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -188,11 +196,30 @@ internal fun WalletScreen(
     onOpenSync: () -> Unit = {},
 ) {
     val finance = state.finance
+    val fedRate = state.readings[IndicatorCatalog.fedFunds.id]?.latest
+    val checkup = remember(finance, fedRate) { finance?.let { moneyCheckup(it, fedRate) } }
+    // The checkup's breakdown sheet: open or not, and on which page (null: how it's scored).
+    var checkupOpen by rememberSaveable { mutableStateOf(false) }
+    var checkupPage by rememberSaveable { mutableStateOf<CheckKind?>(null) }
+    // A section the checkup just jumped to, lit up briefly so the eye lands on it.
+    var flash by remember { mutableStateOf<WalletSection?>(null) }
+    val scope = rememberCoroutineScope()
     LazyColumn(state = listState, contentPadding = contentPadding) {
         if (finance != null) item(key = "sync") { SheetSyncLine(state, onOpenSync, Modifier.padding(top = 4.dp)) }
         when {
-            finance != null -> walletItems(finance, state)
+            finance != null && checkup != null -> walletItems(
+                finance,
+                state,
+                checkup,
+                flash,
+                onOpenCheckup = { page ->
+                    checkupPage = page
+                    checkupOpen = true
+                },
+            )
+
             state.financeLoading -> item(key = "loading") { WalletSkeleton() }
+
             else -> item(key = "setup") { state.sheetIssue?.let { SheetSetupCard(it, onRetrySheet) } }
         }
         item(key = "watch-h") {
@@ -204,12 +231,52 @@ internal fun WalletScreen(
         items(state.watchlist, key = { "w-$it" }) { symbol -> QuoteRow(symbol, state.quotes[symbol], onClick = { onOpenQuote(symbol) }) }
         if (finance != null) item(key = "source") { SourceFooter(finance) }
     }
+    if (checkupOpen && checkup != null) {
+        CheckupSheet(
+            checkup,
+            page = checkupPage,
+            onPage = { checkupPage = it },
+            onDismiss = { checkupOpen = false },
+            onJump = { section ->
+                checkupOpen = false
+                scope.launch {
+                    listState.scrollToKey(section.key)
+                    flash = section
+                    delay(1_400)
+                    if (flash == section) flash = null
+                }
+            },
+        )
+    }
 }
 
-private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUiState) {
+/**
+ * Brings the item with [key] to the top of the list. The list only knows the keys of what it has
+ * laid out, so it glides down a screen at a time until the item is among them (or the list ends).
+ */
+private suspend fun LazyListState.scrollToKey(key: Any) {
+    repeat(40) {
+        layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }?.let {
+            animateScrollToItem(it.index)
+            return
+        }
+        val step = layoutInfo.viewportSize.height * 0.85f
+        if (step <= 0f || animateScrollBy(step, tween(220, easing = LinearEasing)) == 0f) return
+    }
+}
+
+/** A section header that glows for a moment when the checkup jumps to it. */
+@Composable
+private fun Flashable(lit: Boolean, content: @Composable () -> Unit) {
+    val glow by animateFloatAsState(if (lit) 0.16f else 0f, tween(if (lit) 220 else 900), label = "sectionFlash")
+    val accent = FinanceTheme.colors.accent
+    Box(Modifier.fillMaxWidth().drawBehind { drawRect(accent.copy(alpha = glow)) }) { content() }
+}
+
+private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUiState, checkup: Checkup, flash: WalletSection?, onOpenCheckup: (CheckKind?) -> Unit) {
     item(key = "hero") { NetWorthHero(finance) }
     item(key = "quick") { QuickStats(finance) }
-    item(key = "checkup") { CascadeIn(1) { MoneyCheckup(finance, state.readings[IndicatorCatalog.fedFunds.id]?.latest, Modifier.padding(top = 16.dp)) } }
+    item(key = "checkup") { CascadeIn(1) { MoneyCheckup(checkup, onOpenCheckup, Modifier.padding(top = 16.dp)) } }
     if (finance.charts.isNotEmpty()) {
         item(key = "charts-h") { SectionHeader(stringResource(Res.string.finance_wallet_charts_title), subtitle = stringResource(Res.string.finance_wallet_charts_subtitle, finance.title)) }
         items(finance.charts.size, key = { "chart-${finance.charts[it].id}" }) { i ->
@@ -217,18 +284,24 @@ private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUi
         }
     }
     if (finance.accounts.isNotEmpty()) {
-        item(key = "acct-h") { SectionHeader(stringResource(Res.string.finance_wallet_accounts_title), trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") }
+        item(key = WalletSection.ACCOUNTS.key) { Flashable(flash == WalletSection.ACCOUNTS) { SectionHeader(stringResource(Res.string.finance_wallet_accounts_title), trailing = finance.totalAssets?.let(FinanceFormat::compactMoney), info = "totalassets") } }
         item(key = "acct") { CascadeIn(0) { AccountsBlock(finance) } }
-        item(key = "alloc-h") { SectionHeader(stringResource(Res.string.finance_wallet_allocation_title), subtitle = stringResource(Res.string.finance_wallet_allocation_subtitle), info = "allocation") }
+        item(key = WalletSection.ALLOCATION.key) {
+            Flashable(flash == WalletSection.ALLOCATION) {
+                SectionHeader(stringResource(Res.string.finance_wallet_allocation_title), subtitle = stringResource(Res.string.finance_wallet_allocation_subtitle), info = "allocation")
+            }
+        }
         item(key = "alloc") { CascadeIn(1) { AllocationBlock(finance.accounts) } }
     }
     if (finance.expenses.isNotEmpty()) {
-        item(key = "flow-h") {
-            SectionHeader(
-                stringResource(Res.string.finance_wallet_cash_flow_title),
-                trailing = finance.netMonthly?.let { stringResource(Res.string.finance_wallet_per_month, FinanceFormat.signedMoney(it, 0)) },
-                info = "cashflow",
-            )
+        item(key = WalletSection.CASH_FLOW.key) {
+            Flashable(flash == WalletSection.CASH_FLOW) {
+                SectionHeader(
+                    stringResource(Res.string.finance_wallet_cash_flow_title),
+                    trailing = finance.netMonthly?.let { stringResource(Res.string.finance_wallet_per_month, FinanceFormat.signedMoney(it, 0)) },
+                    info = "cashflow",
+                )
+            }
         }
         item(key = "flow") { CascadeIn(2) { CashFlowBlock(finance) } }
     }
@@ -278,12 +351,14 @@ private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUi
         }
     }
     if (finance.debts.isNotEmpty()) {
-        item(key = "debt-h") {
-            SectionHeader(
-                stringResource(Res.string.finance_wallet_debt_title),
-                trailing = stringResource(Res.string.finance_wallet_debt_excl_mortgage, FinanceFormat.compactMoney(finance.consumerDebt)),
-                info = "debt",
-            )
+        item(key = WalletSection.DEBT.key) {
+            Flashable(flash == WalletSection.DEBT) {
+                SectionHeader(
+                    stringResource(Res.string.finance_wallet_debt_title),
+                    trailing = stringResource(Res.string.finance_wallet_debt_excl_mortgage, FinanceFormat.compactMoney(finance.consumerDebt)),
+                    info = "debt",
+                )
+            }
         }
         item(key = "debt") { CascadeIn(4) { DebtBlock(finance) } }
     }

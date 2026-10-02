@@ -69,6 +69,16 @@ fun HomeFeedEmptyPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = emptyList(), inView = emptyList())
 }
 
+/**
+ * Mid-refresh: the band open and scanning between where the shell's top bar sits (blank here; the
+ * shell draws it) and the list it pushed down. Private: Layoutlib has no part in drawing the shader.
+ */
+@Preview(name = "Home, refreshing", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+private fun HomeFeedRefreshingPreview() {
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, refreshing = true)
+}
+
 /** The camera card's corner pill in each state it can be in; sized to the pills, not a phone. */
 @Preview(name = "Status badges")
 @Composable
@@ -85,7 +95,7 @@ fun StatusBadgePreview() {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTile>?, inView: List<InViewItem>) {
+private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTile>?, inView: List<InViewItem>, refreshing: Boolean = false) {
     FrigatePreview {
         SharedTransitionPreview {
             val zoomState = rememberCameraCardZoomState()
@@ -96,6 +106,9 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
                 statusHeadline = if (cameras == null) null else UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard").resolve(),
                 statusDetails = cameras?.let { previewStatusDetails(camerasOn = it.count { tile -> tile.camera.enabled }, everyoneAway = everyoneAway) },
                 inView = inView,
+                refreshing = refreshing,
+                // Only the refreshing preview is pullable, so the others draw exactly as their reference screenshots.
+                onRefresh = if (refreshing) ({}) else null,
             ) { tile ->
                 CameraCard(
                     tile = tile,

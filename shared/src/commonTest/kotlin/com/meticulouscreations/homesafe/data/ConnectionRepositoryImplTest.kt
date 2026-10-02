@@ -693,6 +693,63 @@ class ConnectionRepositoryImplTest {
     }
 
     @Test
+    fun aPullToRefreshRenewsAnExpiredSessionAndPicksUpACameraAddedOnTheServer() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+
+        // While the app sat open: the server restarted (sessions gone) and a camera was added.
+        h.frigate.expireSessions()
+        h.frigate.cameras = mapOf("front_door" to true, "backyard" to false, "garage" to true)
+        h.repository.reconnect()
+
+        // Returns once both have landed — no waiting on a background job.
+        assertEquals(2, h.frigate.logins(tailscaleHost), "renewed where the password may go")
+        assertEquals(0, h.frigate.logins(localHost))
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
+        assertEquals(listOf("backyard", "front_door", "garage"), h.cameraNames())
+    }
+
+    @Test
+    fun aPullToRefreshAfterLeavingHomeMovesTheRouteAtOnce() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+
+        // Out of the house with no path event yet: the LAN address is still in use, and dead.
+        h.frigate.localReachable = false
+        h.repository.reconnect()
+
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+        assertEquals(serverUrl, h.repository.currentServerUrl.value)
+    }
+
+    @Test
+    fun aPullToRefreshWithTheServerUnreachableKeepsTheConnectionAndTheCameras() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+        val before = h.repository.activeConnection.value
+
+        h.frigate.localReachable = false
+        h.frigate.tailscaleReachable = false
+        h.repository.reconnect()
+
+        assertEquals(before, h.repository.activeConnection.value, "nothing reachable to move to, so nothing moves")
+        assertEquals(listOf("backyard", "front_door"), h.cameraNames(), "and the list isn't emptied for want of an answer")
+    }
+
+    @Test
+    fun aPullToRefreshBeforeSigningInDoesNothing() = runTest {
+        val h = Harness(this)
+
+        h.repository.reconnect()
+
+        assertNull(h.repository.activeConnection.value)
+        assertEquals(emptyList(), h.frigate.requests)
+    }
+
+    @Test
     fun aBiometricSignInTheServerRefusesForgetsTheSavedLogin() = runTest {
         val h = Harness(this, FakeBiometrics(SavedCredentials(serverUrl, "andrew", "old-password", localUrl)))
         h.frigate.rejectLogin = true   // the password was changed on the server since it was saved

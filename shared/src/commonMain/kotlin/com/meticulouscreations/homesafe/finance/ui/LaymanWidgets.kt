@@ -24,9 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -49,9 +47,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
-import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.domain.StressScore
 import com.meticulouscreations.homesafe.finance.ui.components.CascadeIn
 import com.meticulouscreations.homesafe.finance.ui.components.rememberShaderClock
@@ -273,128 +269,7 @@ internal fun StressScale(stress: StressScore?, modifier: Modifier = Modifier) {
     }
 }
 
-/** One line of the money checkup: a pass or a flag, what it is, the household's number, and a tip. */
-private data class CheckLine(val ok: Boolean, val title: StringResource, val detail: UiText, val tip: StringResource, val explainerId: String)
-
-/**
- * A plain-language health check of the household's finances, from the sheet: an emergency fund,
- * a savings rate, costly debt, debt against what's owned, and saving for later — each a pass or a
- * flag against a common rule of thumb, with what to do about a flag. Rules of thumb, not advice.
- */
-@Composable
-internal fun MoneyCheckup(finance: PersonalFinance, fedRate: Double?, modifier: Modifier = Modifier) {
-    val colors = FinanceTheme.colors
-    val type = FinanceTheme.type
-    val lines = buildList {
-        finance.runwayMonths?.let { m ->
-            add(
-                CheckLine(
-                    // Passing from three months, the bottom of the rule it quotes; six gets the stronger word.
-                    m >= 3,
-                    Res.string.layman_checkup_emergency_title,
-                    UiText.of(Res.string.layman_checkup_emergency_detail, FinanceFormat.grouped(m, 1)),
-                    when {
-                        m >= 6 -> Res.string.layman_checkup_emergency_tip_solid
-                        m >= 3 -> Res.string.layman_checkup_emergency_tip_ok
-                        else -> Res.string.layman_checkup_emergency_tip_short
-                    },
-                    "runway",
-                ),
-            )
-        }
-        finance.savingsRate?.let { r ->
-            add(
-                CheckLine(
-                    r >= 0.15,
-                    Res.string.layman_checkup_saving_title,
-                    UiText.of(Res.string.layman_checkup_saving_detail, FinanceFormat.fractionPercent(r)),
-                    if (r >= 0.15) Res.string.layman_checkup_saving_tip_ok else Res.string.layman_checkup_saving_tip_low,
-                    "savingsrate",
-                ),
-            )
-        }
-        val hurdle = (fedRate ?: 5.0).coerceAtLeast(5.0)
-        val costly = finance.debts.filter { !it.isMortgage && !it.isPaidOff && (it.apr ?: 0.0) > hurdle }
-        val anyDebt = finance.debts.any { !it.isMortgage && !it.isPaidOff }
-        if (anyDebt) {
-            add(
-                CheckLine(
-                    costly.isEmpty(),
-                    Res.string.layman_checkup_debt_title,
-                    if (costly.isEmpty()) {
-                        UiText.of(Res.string.layman_checkup_debt_none, FinanceFormat.percent(hurdle, 0))
-                    } else {
-                        // The loans' names are the sheet's own, listed with the reader's separator.
-                        val names = UiText.Joined(costly.map { it.name.asUiText() }, UiText.of(Res.string.common_list_separator))
-                        UiText.plural(Res.plurals.layman_checkup_debt_some, costly.size, names, FinanceFormat.percent(hurdle, 0))
-                    },
-                    if (costly.isEmpty()) Res.string.layman_checkup_debt_tip_ok else Res.string.layman_checkup_debt_tip_costly,
-                    "debt",
-                ),
-            )
-        }
-        val assets = finance.totalAssets
-        if (assets != null && assets > 0) {
-            val ratio = finance.consumerDebt / assets
-            add(
-                CheckLine(
-                    ratio < 0.25,
-                    Res.string.layman_checkup_ratio_title,
-                    UiText.of(Res.string.layman_checkup_ratio_detail, FinanceFormat.fractionPercent(ratio, 0)),
-                    if (ratio < 0.25) Res.string.layman_checkup_ratio_tip_ok else Res.string.layman_checkup_ratio_tip_high,
-                    "networth",
-                ),
-            )
-        }
-        val retirement = finance.accounts.filter { it.category == AccountCategory.RETIREMENT }.sumOf { it.balance }
-        val total = finance.accounts.sumOf { it.balance }
-        if (total > 0) {
-            val share = retirement / total
-            add(
-                CheckLine(
-                    share >= 0.25,
-                    Res.string.layman_checkup_retirement_title,
-                    UiText.of(Res.string.layman_checkup_retirement_detail, FinanceFormat.fractionPercent(share, 0)),
-                    if (share >= 0.25) Res.string.layman_checkup_retirement_tip_ok else Res.string.layman_checkup_retirement_tip_low,
-                    "allocation",
-                ),
-            )
-        }
-    }
-    if (lines.isEmpty()) return
-    val passed = lines.count { it.ok }
-    FinanceCard(modifier) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(Res.string.layman_checkup_title).uppercase(), style = type.micro, color = colors.textSecondary)
-                Text(pluralStringResource(Res.plurals.layman_checkup_score, lines.size, passed, lines.size), style = type.title, color = if (passed == lines.size) colors.gain else colors.textPrimary)
-            }
-        }
-        lines.forEachIndexed { i, line ->
-            Spacer(Modifier.height(12.dp))
-            if (i > 0) Hairline(Modifier.padding(bottom = 12.dp))
-            Row(verticalAlignment = Alignment.Top) {
-                Icon(
-                    if (line.ok) Icons.Filled.CheckCircle else Icons.Filled.ErrorOutline,
-                    contentDescription = stringResource(if (line.ok) Res.string.layman_checkup_healthy else Res.string.layman_checkup_worth_a_look),
-                    tint = if (line.ok) colors.gain else colors.watch,
-                    modifier = Modifier.size(22.dp),
-                )
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(line.title), style = type.bodyStrong, color = colors.textPrimary)
-                    Text(line.detail.resolve(), style = type.body, color = colors.textPrimary.copy(alpha = 0.88f))
-                    Text(stringResource(line.tip), style = type.label, color = colors.textSecondary)
-                }
-                InfoButton(line.explainerId)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Text(stringResource(Res.string.layman_checkup_disclaimer), style = type.micro, color = colors.textTertiary)
-    }
-}
-
-/** A one-time nudge at the top of a tab: every ⓘ explains, and ? opens the jargon buster. */
+/** A nudge over the tabs on an install's first openings: every ⓘ explains, and ? opens the jargon buster. */
 @Composable
 internal fun ExplainTip(visible: Boolean, onDismiss: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors

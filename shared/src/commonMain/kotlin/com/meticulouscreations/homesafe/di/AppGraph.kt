@@ -31,6 +31,8 @@ import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceAutomation
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
+import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
+import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
@@ -179,6 +181,11 @@ interface AppGraph : ViewModelGraph {
     @SingleIn(AppScope::class)
     @Provides
     fun provideDeviceInfo(platformContext: PlatformContext): DeviceInfo = createDeviceInfo(platformContext)
+
+    /** How often the finance app's nudges have been shown on this install. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideFinanceTipLedger(platformContext: PlatformContext): FinanceTipLedger = createFinanceTipLedger(platformContext)
 
     /**
      * The monitor reports crossings to the automation and the automation drives the monitor, so

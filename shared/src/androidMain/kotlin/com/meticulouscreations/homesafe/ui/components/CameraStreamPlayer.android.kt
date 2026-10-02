@@ -95,6 +95,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    reconnectRequests: Int,
 ) {
     val context = LocalContext.current
     val holder = remember(playerKey) { HolderLease(context, playerKey) }.holder
@@ -276,6 +277,9 @@ actual fun CameraStreamPlayer(
         holder.onBinderStarted()
         onStopOrDispose { holder.onBinderStopped() }
     }
+
+    val currentStreamStatus by rememberUpdatedState(streamStatus)
+    OnReconnectRequest(reconnectRequests) { holder.reconnect(currentStreamStatus) }
 
     // Keyed on the endpoint as well as the URL: the same stream gaining one is a load the holder acts on.
     LaunchedEffect(holder, source.url, (source as? VideoSource.Live)?.webRtc) { holder.load(source) }

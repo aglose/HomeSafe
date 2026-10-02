@@ -75,7 +75,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
@@ -85,6 +88,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
@@ -111,6 +115,7 @@ import homesafe.shared.generated.resources.home_in_view_check
 import homesafe.shared.generated.resources.home_in_view_title
 import homesafe.shared.generated.resources.home_no_cameras
 import homesafe.shared.generated.resources.home_status_open_moments
+import homesafe.shared.generated.resources.home_status_refresh_action
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -135,6 +140,8 @@ fun HomeTabContent(
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
     val inView by viewModel.inView.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
+    val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
+    val reconnectRequests by viewModel.reconnectRequests.collectAsStateWithLifecycle()
 
     // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
     ReportFullyDrawnWhen { cameras != null }
@@ -153,6 +160,8 @@ fun HomeTabContent(
         onInViewCheck = { inView.firstOrNull()?.subject?.cameraName?.let(onTagCars) },
         modifier = Modifier.testTag(HOME_FEED_TEST_TAG),
         scrollToTopRequests = scrollToTopRequests,
+        refreshing = refreshing,
+        onRefresh = viewModel::refresh,
     ) { tile ->
         CameraCard(
             tile = tile,
@@ -160,6 +169,7 @@ fun HomeTabContent(
             zoomState = zoomState,
             onClick = { onCameraClick(tile) },
             modifier = Modifier.animateItem(),
+            reconnectRequests = reconnectRequests,
         )
     }
 }
@@ -186,6 +196,10 @@ fun HomeTabContent(
  * strip's whole height. A strip that is already there when the page is composed — back from a
  * camera, say — is simply there.
  *
+ * Pulling the list down from the top refreshes the page — [onRefresh], with the band open while
+ * [refreshing] (see [ApertureRefreshBox]); the band opens below the shell's floating top bar,
+ * which the list scrolls under. Null leaves the list unpullable: the sign-in screen's skeleton.
+ *
  * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
  * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
  * card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
@@ -205,6 +219,8 @@ internal fun HomeFeed(
     onInViewClick: (InViewItem) -> Unit = {},
     onInViewCheck: () -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
+    refreshing: Boolean = false,
+    onRefresh: (() -> Unit)? = null,
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -212,46 +228,61 @@ internal fun HomeFeed(
     val listState = rememberLazyListState()
     LaunchedEffect(listState, scrollToTopRequests) { scrollToTopRequests.collect { listState.animateScrollToItem(0) } }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier.fillMaxSize(),
-        contentPadding = tabContentPadding(),
-        verticalArrangement = Arrangement.spacedBy(24.dp),
-    ) {
-        if (everyoneAway) {
-            item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
-        }
+    PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
+        LazyColumn(
+            state = listState,
+            modifier = modifier.fillMaxSize(),
+            contentPadding = tabContentPadding(),
+            verticalArrangement = Arrangement.spacedBy(24.dp),
+        ) {
+            if (everyoneAway) {
+                item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
+            }
 
-        // One item, one section: an item of its own for the strip would still be spaced from its
-        // neighbours while empty, would pop in whole rather than open out, and would sit a whole
-        // section gap below the summary it belongs with.
-        item(key = "status") {
-            Column {
-                HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick)
-                InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
+            // One item, one section: an item of its own for the strip would still be spaced from its
+            // neighbours while empty, would pop in whole rather than open out, and would sit a whole
+            // section gap below the summary it belongs with.
+            item(key = "status") {
+                Column {
+                    HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick, onRefresh = onRefresh)
+                    InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
+                }
             }
-        }
 
-        val loadedCameras = cameras
-        if (loadedCameras == null) {
-            items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
-                SkeletonCameraCard(
-                    phase = { loadingPhase?.value ?: 0f },
-                    phaseOffset = index / SKELETON_CARD_COUNT.toFloat(),
-                    modifier = Modifier.animateItem(),
-                )
+            val loadedCameras = cameras
+            if (loadedCameras == null) {
+                items(SKELETON_CARD_COUNT, key = { "camera-skeleton-$it" }) { index ->
+                    SkeletonCameraCard(
+                        phase = { loadingPhase?.value ?: 0f },
+                        phaseOffset = index / SKELETON_CARD_COUNT.toFloat(),
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            } else if (loadedCameras.isEmpty()) {
+                item {
+                    Text(
+                        text = stringResource(Res.string.home_no_cameras),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                items(loadedCameras, key = { it.camera.name }) { tile -> cameraCard(tile) }
             }
-        } else if (loadedCameras.isEmpty()) {
-            item {
-                Text(
-                    text = stringResource(Res.string.home_no_cameras),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        } else {
-            items(loadedCameras, key = { it.camera.name }) { tile -> cameraCard(tile) }
         }
+    }
+}
+
+/**
+ * [content] — a tab's list, scrolling under the shell's floating top bar — with pull to refresh
+ * when there is an [onRefresh], and as it is when there isn't. The band opens just below the bar.
+ */
+@Composable
+private fun PullToRefreshUnderTopBar(refreshing: Boolean, onRefresh: (() -> Unit)?, content: @Composable () -> Unit) {
+    if (onRefresh == null) {
+        content()
+    } else {
+        ApertureRefreshBox(isRefreshing = refreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize(), bandTop = shellTopBarClearance(), content = content)
     }
 }
 
@@ -261,15 +292,33 @@ internal fun HomeFeed(
  * Stateless: the wording is [com.meticulouscreations.homesafe.domain.model.homeStatus]'s. A line
  * that hasn't loaded yet keeps its height, blank, and its text fades in when it lands, so neither
  * the page nor the cards below it move when it does.
+ *
+ * With [onRefresh], it also offers the page's pull to refresh as an accessibility action: a
+ * screen reader only offers the actions of the node it is on, and this is the page's first.
  */
 @Composable
-internal fun HomeStatusHeader(headline: String?, details: String?, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HomeStatusHeader(headline: String?, details: String?, onClick: () -> Unit, modifier: Modifier = Modifier, onRefresh: (() -> Unit)? = null) {
     val extraColors = LocalFrigateExtraColors.current
+    val refreshLabel = stringResource(Res.string.home_status_refresh_action)
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .clickable(onClickLabel = stringResource(Res.string.home_status_open_moments), onClick = onClick)
+            .then(
+                if (onRefresh == null) {
+                    Modifier
+                } else {
+                    Modifier.semantics {
+                        customActions = listOf(
+                            CustomAccessibilityAction(refreshLabel) {
+                                onRefresh()
+                                true
+                            },
+                        )
+                    }
+                },
+            )
             .padding(vertical = 4.dp)
             .testTag(HOME_STATUS_TEST_TAG),
         verticalAlignment = Alignment.CenterVertically,
@@ -459,6 +508,7 @@ internal fun CameraCard(
     zoomState: CameraCardZoomState,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    reconnectRequests: Int = 0,
 ) {
     val camera = tile.camera
     val extraColors = LocalFrigateExtraColors.current
@@ -559,6 +609,7 @@ internal fun CameraCard(
                     webRtcSignalingUrl = tile.webRtcSignalingUrl,
                     playerKey = camera.name,
                     onStreamStatusChanged = { streamStatus = it },
+                    reconnectRequests = reconnectRequests,
                 )
             }
         }

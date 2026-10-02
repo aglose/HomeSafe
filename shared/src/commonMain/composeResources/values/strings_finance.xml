@@ -10,6 +10,7 @@
     <string name="finance_tab_markets">Markets</string>
     <string name="finance_tab_economy">Economy</string>
     <string name="finance_tab_risk">Risk</string>
+    <string name="finance_title_chart_settings">Chart settings</string>
     <string name="finance_title_connections">How it connects</string>
     <string name="finance_title_glossary">Jargon buster</string>
     <string name="finance_title_sheet_sync">Sheet sync</string>

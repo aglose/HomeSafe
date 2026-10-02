@@ -14,9 +14,9 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 /**
- * Reads cameras from the local cache only. A refresh happens as a side effect of
- * [ConnectionRepositoryImpl.connect] succeeding — there's no pull-to-refresh affordance in the
- * UI today, so no second refresh trigger is introduced here.
+ * Reads cameras from the local cache only. The cache is refreshed by [ConnectionRepositoryImpl]:
+ * as a side effect of [ConnectionRepositoryImpl.connect] succeeding, and by its
+ * [ConnectionRepositoryImpl.reconnect] — the Home page's pull to refresh.
  *
  * The cache is keyed by the server's identity ([com.meticulouscreations.homesafe.domain.model.ActiveConnection.serverUrl]),
  * not by whichever address is active, so a local ↔ Tailscale route switch doesn't empty the list.

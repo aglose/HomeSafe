@@ -72,6 +72,10 @@ import kotlin.math.min
  * (a screen reader only offers actions on the node it is on, so a caller whose content has
  * better-placed nodes, such as headings, should offer [onRefresh] there too), and while
  * [isRefreshing] the band is announced as an indeterminate "Refreshing" progress.
+ *
+ * [bandTop] is how far below the box's top edge the band opens: zero for content that starts
+ * there, and for a list that scrolls up under a floating bar, the bar's height — the band then
+ * opens beneath the bar, in the gap the list slides down to leave, rather than behind it.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,6 +83,7 @@ fun ApertureRefreshBox(
     isRefreshing: Boolean,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier,
+    bandTop: Dp = 0.dp,
     content: @Composable () -> Unit,
 ) {
     val state = rememberPullToRefreshState()
@@ -123,6 +128,7 @@ fun ApertureRefreshBox(
             scanning = { scanning.value },
             time = { time.floatValue },
             modifier = Modifier
+                .padding(top = bandTop)
                 .fillMaxWidth()
                 .height(APERTURE_THRESHOLD * (1f + MAX_OVERSHOOT))
                 .then(if (isRefreshing) Modifier.refreshingSemantics(refreshingLabel) else Modifier),

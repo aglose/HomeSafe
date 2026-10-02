@@ -5,7 +5,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import homesafe.shared.generated.resources.Res
@@ -135,6 +138,10 @@ expect val liveAudioCodecs: List<String>
  * @param onAudioAvailabilityChanged whether what's playing carries an audio track this platform
  *   can decode — false for go2rtc's video-only sub-streams, for recordings Frigate saved without
  *   audio, and for codecs the platform can't play. What a mute button should key its enabled state on.
+ * @param reconnectRequests a count the caller bumps to ask a live source that isn't playing to
+ *   reconnect now, rather than when its own back-off says — the Home page's pull to refresh. Only
+ *   a change after this call site first composed counts; whether the player acts on it is
+ *   [LivePlaybackPolicy.shouldReconnect]'s call, so a camera that is live is left alone.
  */
 @Composable
 expect fun CameraStreamPlayer(
@@ -147,7 +154,23 @@ expect fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit = {},
     onPlaybackError: () -> Unit = {},
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
+    reconnectRequests: Int = 0,
 )
+
+/**
+ * Runs [reconnect] each time [requests] changes — but not for the count this call site arrived
+ * with, so a card scrolled into view after a pull doesn't take it for a new one.
+ */
+@Composable
+internal fun OnReconnectRequest(requests: Int, reconnect: () -> Unit) {
+    val currentReconnect by rememberUpdatedState(reconnect)
+    val handled = remember { intArrayOf(requests) }
+    LaunchedEffect(requests) {
+        if (requests == handled[0]) return@LaunchedEffect
+        handled[0] = requests
+        currentReconnect()
+    }
+}
 
 /**
  * Plays a camera's live stream without sound, reporting only how far it has got — see
@@ -162,6 +185,7 @@ fun CameraStreamPlayer(
     webRtcSignalingUrl: String? = null,
     playerKey: String? = null,
     onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
+    reconnectRequests: Int = 0,
 ) {
     val request = remember(streamUrl, posterUrl, webRtcSignalingUrl) {
         val webRtc = webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
@@ -172,6 +196,7 @@ fun CameraStreamPlayer(
         modifier = modifier,
         playerKey = playerKey,
         onStreamStatusChanged = onStreamStatusChanged,
+        reconnectRequests = reconnectRequests,
     )
 }
 
