@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.network
 
 import io.ktor.http.Url
+import kotlinx.io.IOException
 
 /**
  * Whether this device is on a tailnet right now: Tailscale gives every device it has connected an
@@ -41,3 +42,10 @@ internal fun isTailnetUrl(url: String): Boolean {
     val host = runCatching { Url(url).host }.getOrNull()?.lowercase() ?: return false
     return isTailnetIpv4(host) || host.endsWith(".ts.net")
 }
+
+/**
+ * Whether this failure is the network's: no route, a refused or reset connection, a timeout, a
+ * name that wouldn't resolve. Those are what "nothing answered" means. Anything else came from a
+ * server that did answer (a refusal, a body that wouldn't parse) and has to keep its own words.
+ */
+internal fun Throwable.isTransportFailure(): Boolean = this is IOException

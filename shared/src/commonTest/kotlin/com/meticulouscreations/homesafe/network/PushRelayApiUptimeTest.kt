@@ -11,6 +11,11 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -19,6 +24,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** The relay's uptime record, as its `relay.py` answers `/status/data`. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class PushRelayApiUptimeTest {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -96,6 +102,18 @@ class PushRelayApiUptimeTest {
     fun aRelayFromBeforeTheRecordFailsWithItsStatus() = runTest {
         val failure = api(status = HttpStatusCode.NotFound, respondWith = """{"detail":"Not Found"}""").getUptime("http://frigate:8971", hours = 24).exceptionOrNull()
         assertTrue(failure?.message.orEmpty().contains("404"), failure?.message)
+    }
+
+    @Test
+    fun aReadThatIsCancelledHandsBackNoResultToMistakeForAFailure() = runTest {
+        val engine = MockEngine { awaitCancellation() }
+        val api = PushRelayApi(HttpClient(engine) { install(ContentNegotiation) { json(json) } })
+        var result: Result<*>? = null
+        val read = launch { result = api.getUptime("http://frigate:8971", hours = 24) }
+        runCurrent()
+        read.cancelAndJoin()
+        assertTrue(read.isCancelled)
+        assertNull(result, "it was cancelled, not answered: a failure here would be shown over the read that replaced it")
     }
 
     @Test

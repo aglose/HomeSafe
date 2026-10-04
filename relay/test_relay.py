@@ -3318,6 +3318,31 @@ class UptimeTest(unittest.TestCase):
         # 192.0.2.0/24 is reserved for documentation: nothing answers.
         self.assertFalse(relay.tcp_reachable("192.0.2.1", 9, timeout=0.3))
 
+    def test_a_lookup_stuck_in_the_resolver_is_not_joined_by_another(self):
+        import threading
+
+        release = threading.Event()
+        calls = []
+
+        def hang(*args, **kwargs):
+            calls.append(args)
+            release.wait(5)
+            return []
+
+        saved = relay.socket.getaddrinfo
+        relay.socket.getaddrinfo = hang
+        try:
+            self.assertFalse(relay.resolves("example.test", timeout=0.05))
+            self.assertFalse(relay.resolves("example.test", timeout=0.05), "still stuck: still not resolving")
+            self.assertEqual(1, len(calls), "and no second thread went in behind the first")
+            release.set()
+            relay._dns_lookup["thread"].join(2)
+            self.assertTrue(relay.resolves("example.test", timeout=2), "the resolver is back, and so is the check")
+            self.assertEqual(2, len(calls))
+        finally:
+            release.set()
+            relay.socket.getaddrinfo = saved
+
     def test_a_missing_tailscale_socket_is_no_status(self):
         self.assertIsNone(relay.tailscale_status("/nonexistent/tailscaled.sock", timeout=1))
 
@@ -3389,6 +3414,30 @@ class UptimeTest(unittest.TestCase):
         self.assertEqual([{"check": "server", "start": self.T + 15 * 60, "end": self.T + 35 * 60, "seconds": 1200}], body["outages"])
         self.assertEqual(1.0, by_key["router"]["up_fraction"])
 
+    def test_a_hole_the_range_opens_in_the_middle_of_is_listed_from_where_it_began(self):
+        rows = self.rows({"router": " " * 20 + "u" * 40})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400, previous_at=self.T - 600)
+        self.assertEqual("xxxxuuuuuuuu", body["checks"][0]["states"])
+        self.assertEqual([{"check": "server", "start": self.T - 540, "end": self.T + 1200, "seconds": 1740}], body["outages"])
+        # Without the sample before the range there is nothing to say when it began, and it isn't guessed.
+        self.assertEqual([], relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400)["outages"])
+
+    def test_a_hole_that_runs_to_the_end_of_the_range_ends_there(self):
+        rows = self.rows({"router": "u" * 30})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400)
+        self.assertEqual([{"check": "server", "start": self.T + 1800, "end": self.T + 3600, "seconds": 1800}], body["outages"], "whoever asks is being answered: it is over")
+        # And a range with no sample in it at all, on a relay that had been recording.
+        empty = relay.uptime_summary([], self.T, self.T + 3600, 12, self.T - 86400, previous_at=self.T - 120)
+        self.assertEqual([{"check": "server", "start": self.T - 60, "end": self.T + 3600, "seconds": 3660}], empty["outages"])
+        self.assertEqual("x" * 12, empty["checks"][0]["states"])
+
+    def test_whether_a_device_is_online_now_is_the_newest_samples_word_alone(self):
+        rows = [(self.T + i * 60, {"router": 1}, {"phone": 1, "laptop": 1} if i < 59 else {"laptop": 0}) for i in range(60)]
+        devices = {d["name"]: d for d in relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)["devices"]}
+        self.assertIsNone(devices["phone"]["online"], "the tailnet didn't name it that minute: unknown, not what an older sample said")
+        self.assertEqual(self.T + 58 * 60, devices["phone"]["last_seen"])
+        self.assertIs(False, devices["laptop"]["online"])
+
     def test_nothing_before_the_first_sample_ever_counts_as_down(self):
         rows = self.rows({"router": " " * 30 + "u" * 30})
         body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T + 30 * 60)
@@ -3455,6 +3504,13 @@ class UptimeRecordTest(_ScratchDb):
         body = relay.uptime_report(1, 12, now=self.MINUTE + 7200)
         self.assertEqual([], body["devices"], "no sample in the range names it")
 
+    def test_the_report_reaches_back_for_the_sample_before_its_range(self):
+        relay.record_uptime(self.MINUTE - 600, {"router": True}, {})
+        for i in range(20, 60):
+            relay.record_uptime(self.MINUTE + i * 60, {"router": True}, {})
+        body = relay.uptime_report(1, 12, now=self.MINUTE + 3600)
+        self.assertEqual([("server", self.MINUTE - 540, self.MINUTE + 1200)], [(o["check"], o["start"], o["end"]) for o in body["outages"]])
+
     def test_a_minute_recorded_twice_is_one_row(self):
         relay.record_uptime(self.MINUTE, {"router": False}, {})
         relay.record_uptime(self.MINUTE, {"router": True}, {})
@@ -3491,6 +3547,10 @@ class UptimeRecordTest(_ScratchDb):
         # (an `isn\'t` once ended a string early and left the page stuck on "Loading").
         self.assertNotIn("\\", page.body)
         self.assertNotIn("isn't", page.body)
+        # Each timeline is one stop for a keyboard, with a name and its span's words for a screen reader.
+        self.assertIn('role="slider"', page.body)
+        self.assertIn("aria-valuetext", page.body)
+        self.assertIn('aria-live="polite"', page.body)
 
 
 if __name__ == "__main__":

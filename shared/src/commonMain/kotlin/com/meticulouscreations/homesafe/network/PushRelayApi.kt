@@ -36,6 +36,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.URLBuilder
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -286,6 +287,10 @@ class PushRelayApi(private val httpClient: HttpClient) {
         val response = httpClient.get(relayUrl(serverUrl, "/status/data")) { parameter("hours", hours) }
         if (!response.status.isSuccess()) throw relayRefused(response.status)
         response.body<RelayUptime>().toDomain()
+    }.onFailure {
+        // A read that was cancelled (another range was chosen, the route moved) has no result to
+        // hand back: as a failure it would be shown as an error over the read that replaced it.
+        if (it is CancellationException) throw it
     }
 
     /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */

@@ -3915,8 +3915,20 @@ def tcp_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
         return False
 
 
+# The lookup `resolves` last started, kept so a resolver that hangs holds one thread, not one more a minute.
+_dns_lookup: dict[str, threading.Thread | None] = {"thread": None}
+
+
 def resolves(name: str, timeout: float = UPTIME_DNS_SECONDS) -> bool:
-    """Whether [name] resolves within [timeout]. getaddrinfo has no timeout of its own, so it runs on a thread that is left behind when slow."""
+    """
+    Whether [name] resolves within [timeout]. getaddrinfo has no timeout of its own, so it runs on
+    a thread that is left behind when slow. One at a time: while an earlier lookup is still stuck
+    in the resolver the name isn't resolving, and starting another behind it would add a thread
+    every minute for as long as the resolver hangs.
+    """
+    earlier = _dns_lookup["thread"]
+    if earlier is not None and earlier.is_alive():
+        return False
     answer: list[bool] = []
 
     def look() -> None:
@@ -3927,6 +3939,7 @@ def resolves(name: str, timeout: float = UPTIME_DNS_SECONDS) -> bool:
             answer.append(False)
 
     thread = threading.Thread(target=look, name="uptime-dns", daemon=True)
+    _dns_lookup["thread"] = thread
     thread.start()
     thread.join(timeout)
     return bool(answer and answer[0])
@@ -4105,14 +4118,16 @@ def covered(outage: dict[str, Any], by: list[dict[str, Any]], until: float) -> b
 
 
 def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since: float, until: float, buckets: int,
-                   recording_since: float | None, known_devices: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+                   recording_since: float | None, known_devices: dict[str, dict[str, Any]] | None = None,
+                   previous_at: int | None = None) -> dict[str, Any]:
     """
     What `/status/data` answers: [rows] (time, checks, devices; in order, inside [since, until])
     cut into [buckets] equal spans, each check and each device a string of `bucket_state` letters,
     how much of the time each check was up, and the stretches something was down, newest first.
     "server" is the samples themselves: a span with fewer than there should have been was a span
     the relay wasn't running for. Nothing before [recording_since] (the first sample ever kept)
-    counts against anything: it wasn't being measured.
+    counts against anything: it wasn't being measured. [previous_at] is the last sample before
+    [since], so a hole the range opens in the middle of is still listed, from where it began.
     """
     width = (until - since) / buckets
     index = lambda at: min(buckets - 1, max(0, int((at - since) / width)))
@@ -4121,7 +4136,6 @@ def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since
     series: dict[str, list[tuple[int, bool]]] = {k: [] for k in names}
     device_tally: dict[str, list[list[int]]] = {}
     device_last: dict[str, int] = {}
-    device_now: dict[str, bool] = {}
     counts = [0] * buckets
     for at, checks, devices in rows:
         b = index(at)
@@ -4131,7 +4145,6 @@ def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since
             series[key].append((at, bool(value)))
         for name, online in devices.items():
             device_tally.setdefault(name, [[0, 0] for _ in range(buckets)])[b][0 if online else 1] += 1
-            device_now[name] = bool(online)
             if online:
                 device_last[name] = at
 
@@ -4152,11 +4165,15 @@ def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since
         server.append("u" if expected - got <= 1 else ("d" if got else "x"))
 
     outages = []
-    previous: int | None = None
+    previous = previous_at
     for at, _, _ in rows:
         if previous is not None and at - previous > UPTIME_GAP_SECONDS:
             outages.append({"check": "server", "start": previous + UPTIME_EVERY_SECONDS, "end": at})
         previous = at
+    # No sample since the last one, right up to the end of the range. It ends there rather than
+    # being left open: whoever is asking is being answered, so the relay is running again.
+    if previous is not None and until - previous > UPTIME_GAP_SECONDS:
+        outages.append({"check": "server", "start": previous + UPTIME_EVERY_SECONDS, "end": until})
     runs = {key: uptime_runs(series[key], until) for key in names}
     for key in names:
         causes, cause = [], UPTIME_NEEDS.get(key)
@@ -4170,6 +4187,9 @@ def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since
 
     fresh = bool(rows) and until - rows[-1][0] <= UPTIME_GAP_SECONDS
     latest = rows[-1][1] if fresh else {}
+    # Whether a device is online now is the newest sample's word alone. One it doesn't name (the
+    # tailnet couldn't be read that minute) is unknown, not whatever an older sample said.
+    latest_devices = rows[-1][2] if fresh else {}
     result_checks = [{
         "key": "server", "states": "".join(server),
         "up_fraction": (recorded / expected_total) if expected_total else None,
@@ -4188,7 +4208,7 @@ def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since
     known_devices = known_devices or {}
     result_devices = [{
         "name": name, "os": (known_devices.get(name) or {}).get("os", ""),
-        "online": device_now.get(name, False) if fresh else None,
+        "online": bool(latest_devices[name]) if name in latest_devices else None,
         "last_seen": device_last.get(name) or (known_devices.get(name) or {}).get("last_seen"),
         # A phone dozes on and off the tailnet all day: seen at all in a span is on the tailnet for it.
         "states": "".join("u" if t[0] else bucket_state(*t) for t in device_tally[name]),
@@ -4206,8 +4226,9 @@ def uptime_report(hours: float, buckets: int, now: float | None = None) -> dict[
     since = until - hours * 3600
     rows = with_db(lambda c: c.execute("SELECT at, checks, devices FROM uptime WHERE at>=? AND at<=? ORDER BY at", (since, until)).fetchall())
     first = with_db(lambda c: c.execute("SELECT MIN(at) FROM uptime").fetchone()[0])
+    before = with_db(lambda c: c.execute("SELECT MAX(at) FROM uptime WHERE at<?", (since,)).fetchone()[0])
     parsed = [(at, json.loads(checks or "{}"), json.loads(devices or "{}")) for at, checks, devices in rows]
-    return uptime_summary(parsed, since, until, buckets, first, state_get("uptime_devices"))
+    return uptime_summary(parsed, since, until, buckets, first, state_get("uptime_devices"), before)
 
 
 # ---------------------------------------------------------------- HTTP API
@@ -4357,6 +4378,7 @@ button[aria-pressed=true]{background:var(--card);border-color:var(--muted);font-
 .num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap}
 .bar{display:flex;gap:1px;height:22px;margin-top:6px}.bar i{flex:1;border-radius:2px;background:var(--none)}
 .bar i.u{background:var(--up);opacity:.55}.bar i.d{background:var(--part)}.bar i.x{background:var(--down)}
+.bar:focus-visible{outline:2px solid var(--ink);outline-offset:3px}.bar i.sel{box-shadow:0 0 0 2px var(--ink);opacity:1}
 .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:var(--none)}.dot.u{background:var(--up)}.dot.x{background:var(--down)}
 .axis{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:4px}
 .legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 2px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
@@ -4365,7 +4387,7 @@ button[aria-pressed=true]{background:var(--card);border-color:var(--muted);font-
 <h1>HomeSafe status</h1><div class="sub" id="sub">Loading…</div>
 <div class="ranges" id="ranges"></div>
 <div class="legend"><span><i style="background:var(--up);opacity:.55"></i>Up</span><span><i style="background:var(--part)"></i>Partly down</span><span><i style="background:var(--down)"></i>Down</span><span><i style="background:var(--none)"></i>Not measured</span></div>
-<div id="tip">Hover or tap a bar for its time</div>
+<div id="tip" aria-live="polite">Hover or tap a bar for its time, or focus one and use the arrow keys</div>
 <div id="checks"></div><h2>Devices on Tailscale</h2><div id="devices"></div><h2>Outages</h2><div id="outages"></div>
 </main><script>
 const RANGES=[[24,"24 hours"],[168,"7 days"],[720,"30 days"]];let hours=24;
@@ -4373,7 +4395,11 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 const when=t=>new Date(t*1000).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
 const span=s=>s<60?Math.round(s)+" s":s<5400?Math.round(s/60)+" min":s<172800?(s/3600).toFixed(1)+" h":Math.round(s/86400)+" d";
 const WORD={u:"up",d:"partly down",x:"down",n:"not measured"};
-function bar(states,d,label){return '<div class="bar">'+[...states].map((c,i)=>'<i class="'+c+'" data-t="'+esc(label+" · "+when(d.since+i*d.bucket_seconds)+" · "+WORD[c])+'"></i>').join("")+"</div>"}
+function bar(states,d,label){const text=i=>label+" · "+when(d.since+i*d.bucket_seconds)+" · "+WORD[states[i]],last=states.length-1;
+return '<div class="bar" tabindex="0" role="slider" aria-label="'+esc(label)+' timeline" aria-valuemin="0" aria-valuemax="'+last+'" aria-valuenow="'+last+'" aria-valuetext="'+esc(text(last))+'">'+[...states].map((c,i)=>'<i class="'+c+'" data-t="'+esc(text(i))+'"></i>').join("")+"</div>"}
+function pick(bar,i){const spans=bar.children;if(!spans.length)return;i=Math.max(0,Math.min(spans.length-1,i));bar.dataset.i=i;const t=spans[i].dataset.t;
+bar.setAttribute("aria-valuenow",i);bar.setAttribute("aria-valuetext",t);document.querySelectorAll(".bar i.sel").forEach(s=>s.classList.remove("sel"));spans[i].classList.add("sel");document.getElementById("tip").textContent=t}
+const at=bar=>bar.dataset.i===undefined?bar.children.length-1:+bar.dataset.i;
 function draw(d){
 document.getElementById("sub").textContent="Measured from the server, once a minute"+(d.recording_since?" since "+when(d.recording_since):"")+". Updated "+when(d.until)+".";
 document.getElementById("checks").innerHTML=d.checks.map(c=>'<div class="row"><div class="head"><span><span class="dot '+(c.up===true?"u":c.up===false?"x":"")+'"></span>'+esc(c.name)+'</span><span class="num">'+(c.up_fraction==null?"not measured":(c.up_fraction*100).toFixed(c.up_fraction>0.999&&c.up_fraction<1?3:2)+"% up"+(c.down_seconds?" · "+span(c.down_seconds)+" down":""))+"</span></div>"+bar(c.states,d,c.name)+"</div>").join("")+'<div class="axis"><span>'+when(d.since)+"</span><span>"+when(d.until)+"</span></div>";
@@ -4386,9 +4412,14 @@ async function load(){ranges();try{const r=await fetch("status/data?hours="+hour
 if(r.status===401){document.getElementById("sub").innerHTML='Sign in to Frigate in this browser first: <a href="http://'+location.hostname+':8971/">open Frigate</a>, then reload this page.';return}
 if(!r.ok)throw new Error("HTTP "+r.status);draw(await r.json())}catch(e){document.getElementById("sub").textContent="Couldn't load the status: "+e.message}}
 document.getElementById("ranges").onclick=e=>{const h=e.target.dataset.h;if(h){hours=+h;load()}};
-document.body.addEventListener("pointerover",e=>{const t=e.target.dataset&&e.target.dataset.t;if(t)document.getElementById("tip").textContent=t});
-document.body.addEventListener("click",e=>{const t=e.target.dataset&&e.target.dataset.t;if(t)document.getElementById("tip").textContent=t});
-load();setInterval(load,60000);
+const hit=e=>e.target.dataset&&e.target.dataset.t&&e.target.parentElement.classList.contains("bar")?e.target:null;
+document.body.addEventListener("pointerover",e=>{const s=hit(e);if(s)pick(s.parentElement,[...s.parentElement.children].indexOf(s))});
+document.body.addEventListener("click",e=>{const s=hit(e);if(s)pick(s.parentElement,[...s.parentElement.children].indexOf(s))});
+document.body.addEventListener("focusin",e=>{if(e.target.classList&&e.target.classList.contains("bar"))pick(e.target,at(e.target))});
+document.body.addEventListener("keydown",e=>{const bar=e.target.classList&&e.target.classList.contains("bar")?e.target:null;if(!bar)return;const i=at(bar);
+const to={ArrowLeft:i-1,ArrowDown:i-1,ArrowRight:i+1,ArrowUp:i+1,Home:0,End:bar.children.length-1}[e.key];if(to===undefined)return;e.preventDefault();pick(bar,to)});
+const reading=()=>document.activeElement&&document.activeElement.classList.contains("bar");
+load();setInterval(()=>{if(!reading())load()},60000);
 </script></body></html>
 """
 

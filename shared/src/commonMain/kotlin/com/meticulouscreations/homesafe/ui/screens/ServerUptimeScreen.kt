@@ -44,8 +44,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -109,6 +113,7 @@ import homesafe.shared.generated.resources.uptime_up_share_with_down
 import kotlinx.datetime.TimeZone
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 
 // The status colours a span is drawn in. They are the same in every theme: the meaning has to
 // survive a screenshot sent to someone else. A span is never colour alone: tapping it says its
@@ -234,7 +239,8 @@ private fun UptimeRecord(uptime: ServerUptime, route: ConnectionRoute?) {
             null -> Unit
         }
         UptimeLegend()
-        SettingsCaption(selectionText(uptime, selection, timeZone)?.resolve() ?: stringResource(Res.string.uptime_span_hint))
+        val selectionWords = selectionText(uptime, selection, timeZone)?.resolve()
+        SettingsCaption(selectionWords ?: stringResource(Res.string.uptime_span_hint))
         uptime.checks.forEach { check ->
             val title = check.title.resolve()
             UptimeRow(
@@ -244,6 +250,7 @@ private fun UptimeRecord(uptime: ServerUptime, route: ConnectionRoute?) {
                 note = check.kind?.takeIf { check.isUpNow == false || check.downSeconds > 0 }?.let { stringResource(it.about) },
                 timeline = remember(check.states) { Timeline(check.states) },
                 selectedIndex = selection?.takeIf { it.rowKey == check.key }?.index,
+                selectedWords = selectionWords?.takeIf { selection?.rowKey == check.key },
                 onSelect = { selection = SpanSelection(check.key, it) },
             )
         }
@@ -251,6 +258,7 @@ private fun UptimeRecord(uptime: ServerUptime, route: ConnectionRoute?) {
     SettingsSection(title = stringResource(Res.string.uptime_devices_title), icon = Icons.Filled.Devices) {
         SettingsCaption(stringResource(Res.string.uptime_devices_about))
         if (uptime.devices.isEmpty()) SettingsCaption(stringResource(Res.string.uptime_devices_none))
+        val selectionWords = selectionText(uptime, selection, timeZone)?.resolve()
         uptime.devices.forEach { device ->
             UptimeRow(
                 title = device.name,
@@ -259,6 +267,7 @@ private fun UptimeRecord(uptime: ServerUptime, route: ConnectionRoute?) {
                 note = null,
                 timeline = remember(device.states) { Timeline(device.states) },
                 selectedIndex = selection?.takeIf { it.rowKey == deviceRowKey(device) }?.index,
+                selectedWords = selectionWords?.takeIf { selection?.rowKey == deviceRowKey(device) },
                 onSelect = { selection = SpanSelection(deviceRowKey(device), it) },
             )
         }
@@ -290,6 +299,7 @@ private fun UptimeRow(
     note: String?,
     timeline: Timeline,
     selectedIndex: Int?,
+    selectedWords: String?,
     onSelect: (Int) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -303,14 +313,26 @@ private fun UptimeRow(
             Text(text = title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
             Text(text = figures, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.End)
         }
-        UptimeBar(timeline = timeline, selectedIndex = selectedIndex, description = stringResource(Res.string.uptime_bar_description, title), onSelect = onSelect)
+        UptimeBar(
+            timeline = timeline,
+            selectedIndex = selectedIndex,
+            selectedWords = selectedWords,
+            description = stringResource(Res.string.uptime_bar_description, title),
+            onSelect = onSelect,
+        )
         note?.let { SettingsCaption(it) }
     }
 }
 
-/** The timeline: one block per span, oldest on the left. A tap picks the span under it. */
+/**
+ * The timeline: one block per span, oldest on the left. A tap picks the span under it. To a
+ * screen reader it is a slider over the spans: the adjust gesture (or a switch's step) moves
+ * from one to the next, and [selectedWords], the picked span's check, time and state, is read
+ * as its value. Without that the blocks would be colour and nothing else to someone who can't
+ * see them.
+ */
 @Composable
-private fun UptimeBar(timeline: Timeline, selectedIndex: Int?, description: String, onSelect: (Int) -> Unit) {
+private fun UptimeBar(timeline: Timeline, selectedIndex: Int?, selectedWords: String?, description: String, onSelect: (Int) -> Unit) {
     val states = timeline.states
     val unmeasured = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f)
     val ring = MaterialTheme.colorScheme.onSurface
@@ -318,7 +340,21 @@ private fun UptimeBar(timeline: Timeline, selectedIndex: Int?, description: Stri
         modifier = Modifier
             .fillMaxWidth()
             .height(22.dp)
-            .semantics { contentDescription = description }
+            .semantics {
+                contentDescription = description
+                if (states.isEmpty()) return@semantics
+                selectedWords?.let { stateDescription = it }
+                // Unpicked, it stands at the newest span, so the first step back is "a moment ago".
+                progressBarRangeInfo = ProgressBarRangeInfo(
+                    current = (selectedIndex ?: states.lastIndex).toFloat(),
+                    range = 0f..states.lastIndex.toFloat(),
+                    steps = (states.size - 2).coerceAtLeast(0),
+                )
+                setProgress { target ->
+                    onSelect(target.roundToInt().coerceIn(0, states.lastIndex))
+                    true
+                }
+            }
             .pointerInput(states.size) {
                 detectTapGestures { tap ->
                     if (states.isNotEmpty()) onSelect((tap.x / size.width * states.size).toInt().coerceIn(0, states.lastIndex))

@@ -3139,12 +3139,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.TrainCard(uiState: com.m
     - onTrain: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.UptimeBar(timeline: com.meticulouscreations.homesafe.ui.screens.Timeline, selectedIndex: kotlin.Int?, description: kotlin.String, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.UptimeBar(timeline: com.meticulouscreations.homesafe.ui.screens.Timeline, selectedIndex: kotlin.Int?, selectedWords: kotlin.String?, description: kotlin.String, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - timeline: STABLE (marked @Stable or @Immutable)
     - selectedIndex: STABLE (class with no mutable properties)
+    - selectedWords: STABLE (class with no mutable properties)
     - description: STABLE (String is immutable)
     - onSelect: STABLE (function type)
 
@@ -3187,7 +3188,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.UptimeRecord(uptime: com
     - route: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.UptimeRow(title: kotlin.String, figures: kotlin.String, isUpNow: kotlin.Boolean?, note: kotlin.String?, timeline: com.meticulouscreations.homesafe.ui.screens.Timeline, selectedIndex: kotlin.Int?, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.UptimeRow(title: kotlin.String, figures: kotlin.String, isUpNow: kotlin.Boolean?, note: kotlin.String?, timeline: com.meticulouscreations.homesafe.ui.screens.Timeline, selectedIndex: kotlin.Int?, selectedWords: kotlin.String?, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -3197,6 +3198,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.UptimeRow(title: kotlin.
     - note: STABLE (class with no mutable properties)
     - timeline: STABLE (marked @Stable or @Immutable)
     - selectedIndex: STABLE (class with no mutable properties)
+    - selectedWords: STABLE (class with no mutable properties)
     - onSelect: STABLE (function type)
 
 @Composable

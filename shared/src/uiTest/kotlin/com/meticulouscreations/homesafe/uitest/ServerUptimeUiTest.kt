@@ -1,7 +1,13 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
@@ -10,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
@@ -102,6 +109,31 @@ class ServerUptimeUiTest {
         onNodeWithText("Internet · ", substring = true).assertExists()
         onNodeWithText(" · Down", substring = true).assertExists()
         onAllNodesWithText("Tap a bar to see its time").assertCountEquals(0)
+    }
+
+    @Test
+    fun aScreenReaderStepsThroughTheSpansAndHearsEachOnesTimeAndState() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent { FrigatePreview { ServerUptimeContent(state = loaded(), onBack = {}, onRefresh = {}, onSelectRange = {}) } }
+
+        val timeline = onNodeWithContentDescription("Timeline for Internet")
+        // Unpicked it stands at the newest of its four spans, with nothing said yet.
+        timeline.assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(3f, 0f..3f, 2)))
+        timeline.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+
+        // The adjust gesture moves it to the second span, the one the internet was down for.
+        timeline.performSemanticsAction(SemanticsActions.SetProgress) { it(1f) }
+        mainClock.advanceTimeByFrame()
+
+        timeline.assert(SemanticsMatcher.expectValue(SemanticsProperties.ProgressBarRangeInfo, ProgressBarRangeInfo(1f, 0f..3f, 2)))
+        timeline.assert(
+            SemanticsMatcher("its value says the check, the time and the state") {
+                val said = it.config.getOrNull(SemanticsProperties.StateDescription).orEmpty()
+                said.startsWith("Internet · ") && said.endsWith(" · Down")
+            },
+        )
+        // And only the row that was moved speaks for the span.
+        onNodeWithContentDescription("Timeline for Server running").assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
     }
 
     @Test

@@ -11,7 +11,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveConnectionProblemU
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
-import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.network.isTransportFailure
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
@@ -122,11 +122,11 @@ class SecureConnectionViewModel(
     /**
      * "Tailscale isn't connected on this device" for a sign-in to [serverUrl] that nothing
      * answered, when that is why: the address is a tailnet one and the device has no tailnet
-     * address of its own. Null when the server did answer (it refused, or erred), or when
-     * Tailscale isn't the reason — the ordinary message stands then.
+     * address of its own. Null when the server did answer (it refused, erred, or sent something
+     * that wouldn't parse), or when Tailscale isn't the reason — the failure's own message stands then.
      */
     private fun tailscaleOffMessage(error: Throwable, serverUrl: String?): UiText? {
-        if (error is FrigateResponseException || serverUrl == null) return null
+        if (!error.isTransportFailure() || serverUrl == null) return null
         return observeConnectionProblemUseCase.explainUnanswered(serverUrl)?.let { UiText.of(Res.string.connection_error_tailscale_off) }
     }
 

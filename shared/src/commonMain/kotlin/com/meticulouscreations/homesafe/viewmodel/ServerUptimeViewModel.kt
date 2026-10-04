@@ -18,6 +18,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.uptime_load_failed
 import homesafe.shared.generated.resources.uptime_not_kept_yet
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -78,7 +79,10 @@ class ServerUptimeViewModel(
         val range = _uiState.value.range
         _uiState.update { it.copy(isLoading = true) }
         loading = viewModelScope.launch {
-            getServerUptime(range).fold(
+            val result = getServerUptime(range)
+            // Whatever a superseded read came back with, it is not this screen's answer any more.
+            ensureActive()
+            result.fold(
                 onSuccess = { uptime -> _uiState.update { it.copy(isLoading = false, uptime = uptime, error = null) } },
                 onFailure = { failure -> _uiState.update { it.copy(isLoading = false, error = failure.uptimeError()) } },
             )

@@ -1,5 +1,8 @@
 package com.meticulouscreations.homesafe.network
 
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import kotlinx.io.IOException
+import kotlinx.serialization.SerializationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -47,6 +50,16 @@ class TailnetProbeTest {
         assertNull(tailnetVerdict(listOf("127.0.0.1")), "flight mode")
         assertNull(tailnetVerdict(emptyList()), "the interfaces wouldn't show")
         assertNull(tailnetVerdict(listOf("", " ")))
+    }
+
+    @Test
+    fun onlyTheNetworksOwnFailuresAreNothingAnswering() {
+        assertTrue(IOException("Connection refused").isTransportFailure())
+        assertTrue(HttpRequestTimeoutException("http://100.99.163.71:8971/api/login", 10_000).isTransportFailure())
+        // The server answered: it refused, or sent something that wouldn't parse. Those keep their own words.
+        assertFalse(FrigateResponseException("Login failed: 500").isTransportFailure())
+        assertFalse(SerializationException("Unexpected JSON token at offset 0").isTransportFailure())
+        assertFalse(IllegalStateException("no cameras").isTransportFailure())
     }
 
     @Test

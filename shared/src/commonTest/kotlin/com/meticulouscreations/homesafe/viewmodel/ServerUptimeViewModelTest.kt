@@ -17,6 +17,7 @@ import homesafe.shared.generated.resources.biometric_name_generic
 import homesafe.shared.generated.resources.error_relay_answered
 import homesafe.shared.generated.resources.uptime_load_failed
 import homesafe.shared.generated.resources.uptime_not_kept_yet
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -65,9 +66,17 @@ class ServerUptimeViewModelTest {
         /** When set, the next read waits on it, so a test can look at the state mid-load. */
         var gate: CompletableDeferred<Unit>? = null
 
+        /** Hands a cancelled read back as a failure, as a `runCatching` around the request would. */
+        var swallowCancellation = false
+
         override suspend fun getUptime(range: UptimeRange): Result<ServerUptime> {
             asked += range
-            gate?.await()
+            try {
+                gate?.await()
+            } catch (e: CancellationException) {
+                if (!swallowCancellation) throw e
+                return Result.failure(e)
+            }
             return failure?.let { Result.failure(it) } ?: Result.success(record(range.hours))
         }
     }
@@ -145,6 +154,22 @@ class ServerUptimeViewModelTest {
         slow.complete(Unit)
         advanceUntilIdle()
         assertEquals(record(168), vm.uiState.value.uptime, "the month's answer came last and is not shown")
+    }
+
+    @Test
+    fun aSupersededReadThatComesBackAsAFailureIsNotShownAsAnError() = runTest(dispatcher) {
+        val uptime = FakeUptime(::record).apply { swallowCancellation = true }
+        val vm = viewModel(uptime, FakeConnection(tailscale))
+        advanceUntilIdle()
+        uptime.gate = CompletableDeferred()
+        vm.selectRange(UptimeRange.Month)
+        advanceUntilIdle()
+        uptime.gate = null
+        vm.selectRange(UptimeRange.Week)
+        advanceUntilIdle()
+        assertEquals(record(168), vm.uiState.value.uptime)
+        assertNull(vm.uiState.value.error, "the month's read was cancelled, which is not something to tell anyone")
+        assertFalse(vm.uiState.value.isLoading)
     }
 
     @Test
