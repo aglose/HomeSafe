@@ -7,9 +7,11 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.usecase.ConnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ForgetBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetBiometricLoginStatusUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveConnectionProblemUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveMostRecentConnectionUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SaveBiometricCredentialsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SignInWithBiometricsUseCase
+import com.meticulouscreations.homesafe.network.FrigateResponseException
 import com.meticulouscreations.homesafe.text.LocalizedException
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
@@ -21,6 +23,7 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.connection_error_biometric_failed
 import homesafe.shared.generated.resources.connection_error_connect_failed
+import homesafe.shared.generated.resources.connection_error_tailscale_off
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -57,6 +60,7 @@ class SecureConnectionViewModel(
     private val forgetBiometricCredentialsUseCase: ForgetBiometricCredentialsUseCase,
     observeMostRecentConnectionUseCase: ObserveMostRecentConnectionUseCase,
     private val getBiometricLoginStatusUseCase: GetBiometricLoginStatusUseCase,
+    private val observeConnectionProblemUseCase: ObserveConnectionProblemUseCase,
 ) : ViewModel() {
 
     val mostRecentConnection: StateFlow<ConnectionRecord?> =
@@ -86,7 +90,7 @@ class SecureConnectionViewModel(
                     LiveStartupMilestones.mark("signin.ok")
                     _uiState.value = ConnectUiState.Success(credentials, viaBiometrics = false)
                 }
-                .onFailure { error -> _uiState.value = ConnectUiState.Error(error.messageOr(Res.string.connection_error_connect_failed)) }
+                .onFailure { error -> _uiState.value = ConnectUiState.Error(tailscaleOffMessage(error, serverUrl) ?: error.messageOr(Res.string.connection_error_connect_failed)) }
         }
     }
 
@@ -108,9 +112,22 @@ class SecureConnectionViewModel(
                     // A refused saved password is forgotten by the repository; drop the
                     // biometric button along with it so the form is the obvious next step.
                     refreshSavedCredentials()
-                    _uiState.value = ConnectUiState.Error(error.messageOr(Res.string.connection_error_biometric_failed))
+                    _uiState.value = ConnectUiState.Error(
+                        tailscaleOffMessage(error, mostRecentConnection.value?.serverUrl) ?: error.messageOr(Res.string.connection_error_biometric_failed),
+                    )
                 }
         }
+    }
+
+    /**
+     * "Tailscale isn't connected on this device" for a sign-in to [serverUrl] that nothing
+     * answered, when that is why: the address is a tailnet one and the device has no tailnet
+     * address of its own. Null when the server did answer (it refused, or erred), or when
+     * Tailscale isn't the reason — the ordinary message stands then.
+     */
+    private fun tailscaleOffMessage(error: Throwable, serverUrl: String?): UiText? {
+        if (error is FrigateResponseException || serverUrl == null) return null
+        return observeConnectionProblemUseCase.explainUnanswered(serverUrl)?.let { UiText.of(Res.string.connection_error_tailscale_off) }
     }
 
     /**

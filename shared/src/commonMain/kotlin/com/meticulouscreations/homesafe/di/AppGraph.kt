@@ -37,7 +37,11 @@ import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.PushRelayApi
+import com.meticulouscreations.homesafe.network.TailnetProbe
+import com.meticulouscreations.homesafe.network.TailscaleApp
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
+import com.meticulouscreations.homesafe.network.createTailnetProbe
+import com.meticulouscreations.homesafe.network.createTailscaleApp
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.createLivePlayerPrefetch
@@ -158,6 +162,14 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideNetworkMonitor(platformContext: PlatformContext): NetworkMonitor =
         createNetworkMonitor(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideTailnetProbe(): TailnetProbe = createTailnetProbe()
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideTailscaleApp(platformContext: PlatformContext): TailscaleApp = createTailscaleApp(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

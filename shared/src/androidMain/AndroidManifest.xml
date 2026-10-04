@@ -10,6 +10,12 @@
     <!-- Geofences don't survive a reboot; BootReceiver re-arms the home fence. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- The "Open Tailscale" button on the Home notice (TailscaleApp.android.kt): Android 11+
+         hides other apps from this one unless they are named here. -->
+    <queries>
+        <package android:name="com.tailscale.ipn" />
+    </queries>
+
     <application>
         <receiver
             android:name="com.meticulouscreations.homesafe.data.GeofenceBroadcastReceiver"

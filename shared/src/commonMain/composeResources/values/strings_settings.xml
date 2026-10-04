@@ -33,6 +33,8 @@
     <string name="connection_biometric_not_now">Not now</string>
     <string name="connection_error_connect_failed">Couldn't connect to server</string>
     <string name="connection_error_biometric_failed">Biometric sign-in failed</string>
+    <!-- Sign-in failed because nothing answered, and this device has no Tailscale address. -->
+    <string name="connection_error_tailscale_off">Tailscale isn't connected on this device, so the server can't be reached. Open the Tailscale app, connect, then try again.</string>
     <string name="connection_error_stale_biometric_login">Your saved login no longer matches the server. Sign in with your password to update it.</string>
 
     <!-- Shared units and values on the Settings pages -->

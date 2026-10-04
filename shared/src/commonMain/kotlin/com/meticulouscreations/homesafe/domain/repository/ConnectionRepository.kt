@@ -33,6 +33,15 @@ interface ConnectionRepository {
      */
     val expectedConnection: StateFlow<ActiveConnection?> get() = NoExpectedConnection
 
+    /**
+     * True while the app is signed in but the last attempt to reach the server found nothing
+     * answering on any of its addresses: the app opened on what the device kept because the
+     * server couldn't be reached, or a route change left it with nowhere to go. It goes back
+     * to false the moment an address answers. Screens use it to say so rather than leave stale
+     * pictures and spinners to speak for themselves. A fake that never signs in needn't override it.
+     */
+    val serverUnreachable: StateFlow<Boolean> get() = NeverUnreachable
+
     /** The most recently successful connection, used to prefill the connect screen. */
     val mostRecentConnection: Flow<ConnectionRecord?>
 
@@ -87,3 +96,4 @@ interface ConnectionRepository {
 }
 
 private val NoExpectedConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
+private val NeverUnreachable: StateFlow<Boolean> = MutableStateFlow(false)

@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.Info
@@ -87,6 +88,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
+import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.BufferingDots
@@ -101,6 +103,7 @@ import com.meticulouscreations.homesafe.ui.components.pinchGestures
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
+import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import dev.zacsweers.metrox.viewmodel.metroViewModel
@@ -111,6 +114,13 @@ import homesafe.shared.generated.resources.home_away_banner
 import homesafe.shared.generated.resources.home_badge_connecting
 import homesafe.shared.generated.resources.home_badge_disabled
 import homesafe.shared.generated.resources.home_badge_live
+import homesafe.shared.generated.resources.home_connection_open_tailscale
+import homesafe.shared.generated.resources.home_connection_retry
+import homesafe.shared.generated.resources.home_connection_retrying
+import homesafe.shared.generated.resources.home_connection_tailscale_off_body
+import homesafe.shared.generated.resources.home_connection_tailscale_off_title
+import homesafe.shared.generated.resources.home_connection_unreachable_body
+import homesafe.shared.generated.resources.home_connection_unreachable_title
 import homesafe.shared.generated.resources.home_in_view_check
 import homesafe.shared.generated.resources.home_in_view_title
 import homesafe.shared.generated.resources.home_no_cameras
@@ -142,6 +152,9 @@ fun HomeTabContent(
     val status by viewModel.status.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val reconnectRequests by viewModel.reconnectRequests.collectAsStateWithLifecycle()
+    val connectionNotice: ConnectionNoticeViewModel = metroViewModel()
+    val connectionProblem by connectionNotice.problem.collectAsStateWithLifecycle()
+    val connectionRetrying by connectionNotice.retrying.collectAsStateWithLifecycle()
 
     // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
     ReportFullyDrawnWhen { cameras != null }
@@ -162,6 +175,10 @@ fun HomeTabContent(
         scrollToTopRequests = scrollToTopRequests,
         refreshing = refreshing,
         onRefresh = viewModel::refresh,
+        connectionProblem = connectionProblem,
+        connectionRetrying = connectionRetrying,
+        onConnectionRetry = connectionNotice::retry,
+        onOpenTailscale = if (connectionNotice.canOpenTailscale) connectionNotice::openTailscale else null,
     ) { tile ->
         CameraCard(
             tile = tile,
@@ -221,6 +238,10 @@ internal fun HomeFeed(
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
+    connectionProblem: ConnectionProblem? = null,
+    connectionRetrying: Boolean = false,
+    onConnectionRetry: () -> Unit = {},
+    onOpenTailscale: (() -> Unit)? = null,
     cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -235,6 +256,18 @@ internal fun HomeFeed(
             contentPadding = tabContentPadding(),
             verticalArrangement = Arrangement.spacedBy(24.dp),
         ) {
+            // First on the page: with no server, everything below it is what the device kept.
+            if (connectionProblem != null) {
+                item(key = "connection-notice") {
+                    ConnectionProblemNotice(
+                        problem = connectionProblem,
+                        retrying = connectionRetrying,
+                        onRetry = onConnectionRetry,
+                        modifier = Modifier.animateItem(),
+                        onOpenTailscale = onOpenTailscale,
+                    )
+                }
+            }
             if (everyoneAway) {
                 item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
             }
@@ -665,6 +698,60 @@ private fun AwayBanner(onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text(stringResource(Res.string.home_away_back)) }
     }
 }
+
+/**
+ * Why the cameras below aren't live: the app is signed in but can't reach the server. Names the
+ * cause when the device knows it (Tailscale off here, which the server can do nothing about)
+ * and offers one more try. Without it the page showed kept pictures and endless spinners, which
+ * read as the server being down. With Tailscale the cause and [onOpenTailscale] given (the
+ * platform can open it), a second button goes straight there.
+ */
+@Composable
+internal fun ConnectionProblemNotice(
+    problem: ConnectionProblem,
+    retrying: Boolean,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier,
+    onOpenTailscale: (() -> Unit)? = null,
+) {
+    val (title, body) = when (problem) {
+        ConnectionProblem.TailscaleOff -> Res.string.home_connection_tailscale_off_title to Res.string.home_connection_tailscale_off_body
+        ConnectionProblem.ServerUnreachable -> Res.string.home_connection_unreachable_title to Res.string.home_connection_unreachable_body
+    }
+    val shape = RoundedCornerShape(16.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f))
+            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f), shape)
+            .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)
+            .testTag(CONNECTION_NOTICE_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+            Text(text = stringResource(title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.weight(1f))
+        }
+        Text(
+            text = stringResource(body),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(end = 8.dp),
+        )
+        Row(modifier = Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (problem == ConnectionProblem.TailscaleOff && onOpenTailscale != null) {
+                TextButton(onClick = onOpenTailscale) { Text(stringResource(Res.string.home_connection_open_tailscale)) }
+            }
+            TextButton(onClick = onRetry, enabled = !retrying) {
+                Text(stringResource(if (retrying) Res.string.home_connection_retrying else Res.string.home_connection_retry))
+            }
+        }
+    }
+}
+
+/** The notice at the top of Home while the server can't be reached, for tests to find. */
+internal const val CONNECTION_NOTICE_TEST_TAG = "connection_notice"
 
 /**
  * A card opens only once the fingers have spread by a deliberate amount, not on the tiny outward

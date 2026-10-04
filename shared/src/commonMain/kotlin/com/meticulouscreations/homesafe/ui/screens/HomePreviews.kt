@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.labelName
 import com.meticulouscreations.homesafe.domain.model.present
@@ -63,6 +64,13 @@ fun HomeFeedAwayPreview() {
     HomeFeedPreviewContent(everyoneAway = true, cameras = previewTiles.take(1), inView = emptyList())
 }
 
+/** Signed in on what the device kept, with Tailscale off on it: the notice leads the page. Only the JVM renderer and Studio draw it. */
+@Preview(name = "Home, Tailscale off", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+private fun HomeFeedTailscaleOffPreview() {
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = emptyList(), connectionProblem = ConnectionProblem.TailscaleOff)
+}
+
 @Preview(name = "Home, no cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedEmptyPreview() {
@@ -95,7 +103,13 @@ fun StatusBadgePreview() {
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTile>?, inView: List<InViewItem>, refreshing: Boolean = false) {
+private fun HomeFeedPreviewContent(
+    everyoneAway: Boolean,
+    cameras: List<CameraTile>?,
+    inView: List<InViewItem>,
+    refreshing: Boolean = false,
+    connectionProblem: ConnectionProblem? = null,
+) {
     FrigatePreview {
         SharedTransitionPreview {
             val zoomState = rememberCameraCardZoomState()
@@ -109,6 +123,8 @@ private fun HomeFeedPreviewContent(everyoneAway: Boolean, cameras: List<CameraTi
                 refreshing = refreshing,
                 // Only the refreshing preview is pullable, so the others draw exactly as their reference screenshots.
                 onRefresh = if (refreshing) ({}) else null,
+                connectionProblem = connectionProblem,
+                onOpenTailscale = {},
             ) { tile ->
                 CameraCard(
                     tile = tile,

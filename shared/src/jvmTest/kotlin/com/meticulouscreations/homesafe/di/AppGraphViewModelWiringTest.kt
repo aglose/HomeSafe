@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
+import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
@@ -16,6 +17,7 @@ import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
+import com.meticulouscreations.homesafe.viewmodel.ServerUptimeViewModel
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,6 +46,8 @@ class AppGraphViewModelWiringTest {
                 LandedPersonViewModel::class,
                 FinanceViewModel::class,
                 ChartStyleViewModel::class,
+                ServerUptimeViewModel::class,
+                ConnectionNoticeViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )

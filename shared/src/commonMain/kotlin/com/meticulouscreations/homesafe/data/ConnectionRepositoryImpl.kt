@@ -108,6 +108,9 @@ class ConnectionRepositoryImpl(
     private val _expectedConnection = MutableStateFlow<ActiveConnection?>(null)
     override val expectedConnection: StateFlow<ActiveConnection?> = _expectedConnection.asStateFlow()
 
+    private val _serverUnreachable = MutableStateFlow(false)
+    override val serverUnreachable: StateFlow<Boolean> = _serverUnreachable.asStateFlow()
+
     override val mostRecentConnection: Flow<ConnectionRecord?> =
         connectionHistoryDao.mostRecentAsFlow().map { entity ->
             entity?.let {
@@ -426,6 +429,7 @@ class ConnectionRepositoryImpl(
             ),
         )
         sessionCredentials = credentials
+        _serverUnreachable.value = false
         _activeConnection.value = connection
         return Result.success(Unit)
     }
@@ -443,6 +447,7 @@ class ConnectionRepositoryImpl(
         if (_activeConnection.value != null) return true
         if (cameraDao.observeByServer(credentials.serverUrl).first().isEmpty()) return false
         sessionCredentials = credentials
+        _serverUnreachable.value = true
         _activeConnection.value = ActiveConnection(
             serverUrl = credentials.serverUrl,
             localUrl = LOCAL_SERVER_URL,
@@ -509,7 +514,8 @@ class ConnectionRepositoryImpl(
             val latest = _activeConnection.value ?: return true
             val credentials = sessionCredentials ?: return true
             if (latest.route == preferred && !verifySession) return true
-            moveSession(latest, preferred, credentials)
+            // The one place the server is actually asked: what it found is what the screens are told.
+            moveSession(latest, preferred, credentials).also { reached -> _serverUnreachable.value = !reached }
         }
     }
 

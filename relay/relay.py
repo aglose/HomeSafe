@@ -29,11 +29,13 @@ of each car kept on the box.
 
 import hashlib
 import html
+import http.client
 import json
 import logging
 import os
 import re
 import secrets
+import socket
 import sqlite3
 from statistics import median
 import threading
@@ -286,6 +288,10 @@ def db() -> sqlite3.Connection:
     if not {"labels", "names"} <= {row[1] for row in conn.execute("PRAGMA table_info(notify_log)")}:
         conn.execute("ALTER TABLE notify_log ADD COLUMN labels TEXT")
         conn.execute("ALTER TABLE notify_log ADD COLUMN names TEXT")
+    # One row a minute of what the relay could reach (see "uptime"): `at` the minute, `checks` a
+    # JSON object of check -> 1/0 (a check that couldn't be made is left out), `devices` each
+    # tailnet device -> 1/0 for whether Tailscale had it online.
+    conn.execute("CREATE TABLE IF NOT EXISTS uptime (at INTEGER PRIMARY KEY, checks TEXT, devices TEXT)")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -3845,6 +3851,365 @@ def boot_report() -> None:
     log.info("boot report: %s | %s | %s", title, body, result)
 
 
+# ---------------------------------------------------------------- uptime
+
+# "I couldn't connect" has half a dozen possible culprits between a phone and a camera, and on
+# 2026-10-04 it took an afternoon in the journal to learn the box had been fine and the phone's
+# Tailscale was off. So once a minute the relay tries each link of that chain from the box's side
+# and keeps the answers in relay.db (`uptime`), and `/status` draws them: which link was down,
+# when, for how long, and which of the household's devices Tailscale could see. A minute with no
+# row is a minute the relay wasn't running, which is how a reboot or a dead box shows up.
+UPTIME_EVERY_SECONDS = 60
+UPTIME_KEEP_DAYS = 90
+# Two samples further apart than this have a hole between them: the relay was down.
+UPTIME_GAP_SECONDS = UPTIME_EVERY_SECONDS * 2.5
+# tailscaled's LocalAPI socket, mounted into the container (docker-compose.yml). Without it the
+# Tailscale check and the device list are left out rather than shown as down.
+TAILSCALE_SOCKET = os.environ.get("TAILSCALE_SOCKET", "/var/run/tailscale/tailscaled.sock")
+# Anything that answers on 443 by address, so this check doesn't lean on DNS.
+UPTIME_INTERNET_HOSTS = (("1.1.1.1", 443), ("8.8.8.8", 443))
+# A name the relay itself needs resolved to push. Every heartbeat failure up to 2026-10-04 was
+# "Could not resolve host", while the router and the internet were both fine.
+UPTIME_DNS_NAME = os.environ.get("UPTIME_DNS_NAME", "fcm.googleapis.com")
+UPTIME_DNS_SECONDS = 8.0
+# The order the app and the page show them in: the box's own links outward, then what it serves.
+# "server" is not sampled: it is whether there was a sample at all.
+UPTIME_CHECKS = ("server", "router", "internet", "dns", "tailscale", "frigate", "cameras", "live")
+UPTIME_MAX_OUTAGES = 50
+# A link that drops, comes back for a minute or two and drops again is one outage, not ten.
+UPTIME_MERGE_SECONDS = 300
+# What each check can't work without: while the router is unreachable there is no internet, and
+# without the internet no name resolves. An outage wholly inside its cause's is left off the
+# list (the bars still show it), so one router failure reads as one line.
+UPTIME_NEEDS = {"internet": "router", "dns": "internet", "cameras": "frigate"}
+
+
+def default_gateway(proc_net_route: str) -> str | None:
+    """The default route's gateway from a /proc/net/route table (the lowest metric wins), dotted; None without one."""
+    best: tuple[int, str] | None = None
+    for line in proc_net_route.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 8 or fields[1] != "00000000" or fields[7] != "00000000":
+            continue
+        try:
+            raw = bytes.fromhex(fields[2])
+            metric = int(fields[6])
+        except ValueError:
+            continue
+        if len(raw) != 4 or raw == b"\x00\x00\x00\x00":
+            continue
+        address = ".".join(str(b) for b in reversed(raw))
+        if best is None or metric < best[0]:
+            best = (metric, address)
+    return best[1] if best else None
+
+
+def tcp_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
+    """Whether [host] answers on [port] at all: a refusal is an answer, silence is not."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except ConnectionRefusedError:
+        return True
+    except OSError:
+        return False
+
+
+def resolves(name: str, timeout: float = UPTIME_DNS_SECONDS) -> bool:
+    """Whether [name] resolves within [timeout]. getaddrinfo has no timeout of its own, so it runs on a thread that is left behind when slow."""
+    answer: list[bool] = []
+
+    def look() -> None:
+        try:
+            socket.getaddrinfo(name, 443)
+            answer.append(True)
+        except OSError:
+            answer.append(False)
+
+    thread = threading.Thread(target=look, name="uptime-dns", daemon=True)
+    thread.start()
+    thread.join(timeout)
+    return bool(answer and answer[0])
+
+
+class _UnixHTTPConnection(http.client.HTTPConnection):
+    """HTTP over a unix socket: tailscaled's LocalAPI is one."""
+
+    def __init__(self, path: str, timeout: float):
+        super().__init__("local-tailscaled.sock", timeout=timeout)
+        self._path = path
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(self.timeout)
+        self.sock.connect(self._path)
+
+
+def tailscale_status(path: str | None = None, timeout: float = 5.0) -> dict[str, Any] | None:
+    """tailscaled's own status (what `tailscale status --json` prints); None when it can't be asked."""
+    connection = _UnixHTTPConnection(path or TAILSCALE_SOCKET, timeout)
+    try:
+        connection.request("GET", "/localapi/v0/status")
+        response = connection.getresponse()
+        if response.status != 200:
+            return None
+        return json.loads(response.read())
+    except (OSError, ValueError, http.client.HTTPException):
+        return None
+    finally:
+        connection.close()
+
+
+def epoch_of(stamp: str | None) -> float | None:
+    """An RFC 3339 time from tailscaled ("2026-10-04T05:27:17.1Z") as epoch seconds; None for its zero time or anything unreadable."""
+    if not stamp or stamp.startswith("0001-"):
+        return None
+    try:
+        return datetime.fromisoformat(re.sub(r"\.\d+", "", stamp).replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def tailnet_devices(status: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """
+    The household's devices on the tailnet by their MagicDNS name ("pixel-10-pro-xl"), each with
+    whether Tailscale has it online, when it was last seen and its OS. Funnel's ingress nodes are
+    Tailscale's own, not anyone's phone, and are left out.
+    """
+    devices: dict[str, dict[str, Any]] = {}
+    for peer in (status.get("Peer") or {}).values():
+        host = peer.get("HostName") or ""
+        if host == "funnel-ingress-node":
+            continue
+        name = (peer.get("DNSName") or "").split(".")[0] or host
+        if not name:
+            continue
+        devices[name] = {"online": bool(peer.get("Online")), "last_seen": epoch_of(peer.get("LastSeen")), "os": peer.get("OS") or ""}
+    return devices
+
+
+def uptime_probe() -> tuple[dict[str, bool], dict[str, dict[str, Any]]]:
+    """One look at every link: the checks that could be made (True up, False down), and the tailnet's devices."""
+    checks: dict[str, bool] = {}
+    try:
+        with open("/proc/net/route") as f:
+            gateway = default_gateway(f.read())
+    except OSError:
+        gateway = None
+    checks["router"] = bool(gateway) and (tcp_reachable(gateway, 53) or tcp_reachable(gateway, 80))
+    checks["internet"] = any(tcp_reachable(host, port) for host, port in UPTIME_INTERNET_HOSTS)
+    checks["dns"] = resolves(UPTIME_DNS_NAME)
+    devices: dict[str, dict[str, Any]] = {}
+    if os.path.exists(TAILSCALE_SOCKET):
+        status = tailscale_status()
+        checks["tailscale"] = bool(status and status.get("BackendState") == "Running" and (status.get("Self") or {}).get("Online"))
+        if status:
+            devices = tailnet_devices(status)
+    try:
+        cameras = (requests.get(f"{FRIGATE}/api/stats", timeout=5).json().get("cameras") or {})
+        checks["frigate"] = True
+        if cameras:
+            checks["cameras"] = all(float(cam.get("camera_fps") or 0) > 0 for cam in cameras.values())
+    except Exception:
+        checks["frigate"] = False
+    try:
+        checks["live"] = requests.get(f"{GO2RTC}/api", timeout=5).status_code == 200
+    except Exception:
+        checks["live"] = False
+    return checks, devices
+
+
+def record_uptime(at: int, checks: dict[str, bool], devices: dict[str, dict[str, Any]]) -> None:
+    """Keeps the minute's sample, and what Tailscale says of each device now (its OS and when it was last seen)."""
+    with_db(lambda c: (
+        c.execute("INSERT OR REPLACE INTO uptime VALUES (?,?,?)", (
+            at, json.dumps({k: int(v) for k, v in checks.items()}), json.dumps({k: int(v["online"]) for k, v in devices.items()}))),
+        c.commit(),
+    ))
+    if devices:
+        known = state_get("uptime_devices") or {}
+        for name, device in devices.items():
+            seen = at if device["online"] else (device["last_seen"] or (known.get(name) or {}).get("last_seen"))
+            known[name] = {"os": device["os"], "last_seen": seen}
+        state_set("uptime_devices", known)
+    if at % 3600 < UPTIME_EVERY_SECONDS:
+        with_db(lambda c: (c.execute("DELETE FROM uptime WHERE at<?", (at - UPTIME_KEEP_DAYS * 86400,)), c.commit()))
+
+
+def uptime_forever() -> None:
+    """Samples on the minute, for as long as the relay runs."""
+    while True:
+        now = time.time()
+        time.sleep(UPTIME_EVERY_SECONDS - now % UPTIME_EVERY_SECONDS)
+        at = int(time.time()) // UPTIME_EVERY_SECONDS * UPTIME_EVERY_SECONDS
+        try:
+            checks, devices = uptime_probe()
+            record_uptime(at, checks, devices)
+            down = sorted(k for k, v in checks.items() if not v)
+            if down:
+                log.warning("uptime: down: %s", ", ".join(down))
+        except Exception:
+            log.exception("uptime sample failed")
+
+
+def bucket_state(up: int, down: int) -> str:
+    """One bucket's letter: "u" up throughout, "x" down throughout, "d" some of each, "n" nothing measured."""
+    if up and down:
+        return "d"
+    if down:
+        return "x"
+    return "u" if up else "n"
+
+
+def uptime_runs(samples: list[tuple[int, bool]], until: float) -> list[dict[str, Any]]:
+    """
+    The stretches a check was down, from its (time, up) samples in order. A stretch starts at the
+    first down sample and ends at the next up one; a hole in the samples ends it a sample after
+    its last down one (what happened in the hole belongs to "server"); one still down at the last
+    sample, with that sample fresh as of [until], has no end yet.
+    """
+    runs: list[dict[str, Any]] = []
+    start: int | None = None
+    last: int | None = None
+    for at, up in samples:
+        if start is not None and last is not None and at - last > UPTIME_GAP_SECONDS:
+            runs.append({"start": start, "end": last + UPTIME_EVERY_SECONDS, "cut": True})
+            start = None
+        if not up and start is None:
+            start = at
+        elif up and start is not None:
+            runs.append({"start": start, "end": at})
+            start = None
+        last = at
+    if start is not None and last is not None:
+        runs.append({"start": start, "end": None if until - last <= UPTIME_GAP_SECONDS else last + UPTIME_EVERY_SECONDS})
+    # Flapping joins up; a stretch cut short by a hole doesn't join the next, the hole being "server"'s.
+    merged: list[dict[str, Any]] = []
+    for run in runs:
+        previous = merged[-1] if merged else None
+        if previous and not previous.get("cut") and previous["end"] is not None and run["start"] - previous["end"] <= UPTIME_MERGE_SECONDS:
+            previous["end"] = run["end"]
+            previous["cut"] = run.get("cut", False)
+        else:
+            merged.append(dict(run))
+    return [{"start": run["start"], "end": run["end"]} for run in merged]
+
+
+def covered(outage: dict[str, Any], by: list[dict[str, Any]], until: float) -> bool:
+    """Whether [outage] lies inside one of [by], give or take a sample at each end."""
+    end = outage["end"] if outage["end"] is not None else until
+    return any(
+        other["start"] - UPTIME_EVERY_SECONDS <= outage["start"] and end <= (other["end"] if other["end"] is not None else until) + UPTIME_EVERY_SECONDS
+        for other in by
+    )
+
+
+def uptime_summary(rows: list[tuple[int, dict[str, int], dict[str, int]]], since: float, until: float, buckets: int,
+                   recording_since: float | None, known_devices: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
+    """
+    What `/status/data` answers: [rows] (time, checks, devices; in order, inside [since, until])
+    cut into [buckets] equal spans, each check and each device a string of `bucket_state` letters,
+    how much of the time each check was up, and the stretches something was down, newest first.
+    "server" is the samples themselves: a span with fewer than there should have been was a span
+    the relay wasn't running for. Nothing before [recording_since] (the first sample ever kept)
+    counts against anything: it wasn't being measured.
+    """
+    width = (until - since) / buckets
+    index = lambda at: min(buckets - 1, max(0, int((at - since) / width)))
+    names = [k for k in UPTIME_CHECKS if k != "server"] + sorted({k for _, checks, _ in rows for k in checks} - set(UPTIME_CHECKS))
+    tally = {k: [[0, 0] for _ in range(buckets)] for k in names}
+    series: dict[str, list[tuple[int, bool]]] = {k: [] for k in names}
+    device_tally: dict[str, list[list[int]]] = {}
+    device_last: dict[str, int] = {}
+    device_now: dict[str, bool] = {}
+    counts = [0] * buckets
+    for at, checks, devices in rows:
+        b = index(at)
+        counts[b] += 1
+        for key, value in checks.items():
+            tally[key][b][0 if value else 1] += 1
+            series[key].append((at, bool(value)))
+        for name, online in devices.items():
+            device_tally.setdefault(name, [[0, 0] for _ in range(buckets)])[b][0 if online else 1] += 1
+            device_now[name] = bool(online)
+            if online:
+                device_last[name] = at
+
+    # "server": how many of the samples each span should hold are there.
+    server = []
+    recorded = expected_total = 0
+    for b in range(buckets):
+        start, end = since + b * width, min(since + (b + 1) * width, until)
+        measured_from = max(start, recording_since) if recording_since is not None else end
+        expected = int((end - measured_from) // UPTIME_EVERY_SECONDS) if end > measured_from else 0
+        if expected <= 0:
+            server.append("n" if not counts[b] else "u")
+            continue
+        got = min(counts[b], expected)
+        recorded += got
+        expected_total += expected
+        # A sample or two short is the edge of the span or a slow probe, not an outage.
+        server.append("u" if expected - got <= 1 else ("d" if got else "x"))
+
+    outages = []
+    previous: int | None = None
+    for at, _, _ in rows:
+        if previous is not None and at - previous > UPTIME_GAP_SECONDS:
+            outages.append({"check": "server", "start": previous + UPTIME_EVERY_SECONDS, "end": at})
+        previous = at
+    runs = {key: uptime_runs(series[key], until) for key in names}
+    for key in names:
+        causes, cause = [], UPTIME_NEEDS.get(key)
+        while cause:
+            causes += runs.get(cause, [])
+            cause = UPTIME_NEEDS.get(cause)
+        outages += [{"check": key, **run} for run in runs[key] if not covered(run, causes, until)]
+    for outage in outages:
+        outage["seconds"] = int((outage["end"] if outage["end"] is not None else until) - outage["start"])
+    outages.sort(key=lambda o: o["start"], reverse=True)
+
+    fresh = bool(rows) and until - rows[-1][0] <= UPTIME_GAP_SECONDS
+    latest = rows[-1][1] if fresh else {}
+    result_checks = [{
+        "key": "server", "states": "".join(server),
+        "up_fraction": (recorded / expected_total) if expected_total else None,
+        "down_seconds": (expected_total - recorded) * UPTIME_EVERY_SECONDS, "up": True if fresh else None,
+    }]
+    for key in names:
+        up = sum(t[0] for t in tally[key])
+        down = sum(t[1] for t in tally[key])
+        if not up and not down:
+            continue
+        result_checks.append({
+            "key": key, "states": "".join(bucket_state(*t) for t in tally[key]),
+            "up_fraction": up / (up + down), "down_seconds": down * UPTIME_EVERY_SECONDS,
+            "up": bool(latest[key]) if key in latest else None,
+        })
+    known_devices = known_devices or {}
+    result_devices = [{
+        "name": name, "os": (known_devices.get(name) or {}).get("os", ""),
+        "online": device_now.get(name, False) if fresh else None,
+        "last_seen": device_last.get(name) or (known_devices.get(name) or {}).get("last_seen"),
+        # A phone dozes on and off the tailnet all day: seen at all in a span is on the tailnet for it.
+        "states": "".join("u" if t[0] else bucket_state(*t) for t in device_tally[name]),
+    } for name in sorted(device_tally)]
+    return {
+        "since": since, "until": until, "bucket_seconds": width, "sample_seconds": UPTIME_EVERY_SECONDS,
+        "recording_since": recording_since, "checks": result_checks, "devices": result_devices,
+        "outages": outages[:UPTIME_MAX_OUTAGES],
+    }
+
+
+def uptime_report(hours: float, buckets: int, now: float | None = None) -> dict[str, Any]:
+    """The last [hours] of samples from relay.db as an `uptime_summary`."""
+    until = now if now is not None else time.time()
+    since = until - hours * 3600
+    rows = with_db(lambda c: c.execute("SELECT at, checks, devices FROM uptime WHERE at>=? AND at<=? ORDER BY at", (since, until)).fetchall())
+    first = with_db(lambda c: c.execute("SELECT MIN(at) FROM uptime").fetchone()[0])
+    parsed = [(at, json.loads(checks or "{}"), json.loads(devices or "{}")) for at, checks, devices in rows]
+    return uptime_summary(parsed, since, until, buckets, first, state_get("uptime_devices"))
+
+
 # ---------------------------------------------------------------- HTTP API
 
 app = FastAPI(title="HomeSafe relay")
@@ -3946,6 +4311,7 @@ def startup() -> None:
     threading.Thread(target=poll_forever, name="poller", daemon=True).start()
     threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
+    threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
@@ -3954,6 +4320,82 @@ def health() -> dict[str, Any]:
     devices = with_db(lambda c: c.execute("SELECT COUNT(*) FROM devices").fetchone()[0])
     sent = with_db(lambda c: c.execute("SELECT COUNT(*) FROM sent").fetchone()[0])
     return {"ok": True, "devices": devices, "alerts_seen": sent, "project": PROJECT}
+
+
+UPTIME_CHECK_NAMES = {
+    "server": "Server running", "router": "Home router", "internet": "Internet", "dns": "Name lookups (DNS)",
+    "tailscale": "Tailscale on the server", "frigate": "Frigate", "cameras": "Cameras sending video", "live": "Live video (go2rtc)",
+}
+
+
+@app.get("/status/data")
+def status_data(request: Request, hours: float = 24, buckets: int = 96) -> dict[str, Any]:
+    """What was up and when over the last [hours] (see "uptime"), for the app's status screen and `/status`."""
+    require_frigate_session(request)
+    hours = min(max(hours, 1.0), UPTIME_KEEP_DAYS * 24.0)
+    body = uptime_report(hours, min(max(buckets, 12), 288))
+    for check in body["checks"]:
+        check["name"] = UPTIME_CHECK_NAMES.get(check["key"], humanize(check["key"]))
+    return body
+
+
+# The same picture for a browser, at http://<box>:8787/status on the home network or the tailnet.
+# The page itself holds nothing; its data rides on the Frigate session cookie, which a browser
+# signed in to Frigate on :8971 sends to :8787 too (cookies are per host, not per port).
+STATUS_PAGE = """<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HomeSafe status</title>
+<style>
+:root{--bg:#fcfcfb;--ink:#1a1a19;--muted:#6b6b68;--line:#e4e4e0;--card:#fff;--up:#0ca30c;--part:#fab219;--down:#d03b3b;--none:#e4e4e0}
+@media (prefers-color-scheme: dark){:root{--bg:#1a1a19;--ink:#f1f1ee;--muted:#a3a39f;--line:#33332f;--card:#232321;--none:#33332f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,sans-serif}
+main{max-width:760px;margin:0 auto;padding:20px 16px 48px}h1{font-size:20px;margin:0 0 4px;font-weight:600}h2{font-size:15px;margin:28px 0 10px;font-weight:600}
+.sub{color:var(--muted);font-size:13px}.ranges{display:flex;gap:8px;margin:16px 0}
+button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid var(--line);background:transparent;color:var(--ink);cursor:pointer}
+button[aria-pressed=true]{background:var(--card);border-color:var(--muted);font-weight:600}
+.row{padding:10px 0;border-top:1px solid var(--line)}.head{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+.num{font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px;white-space:nowrap}
+.bar{display:flex;gap:1px;height:22px;margin-top:6px}.bar i{flex:1;border-radius:2px;background:var(--none)}
+.bar i.u{background:var(--up);opacity:.55}.bar i.d{background:var(--part)}.bar i.x{background:var(--down)}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;background:var(--none)}.dot.u{background:var(--up)}.dot.x{background:var(--down)}
+.axis{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-top:4px}
+.legend{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:12px;margin:6px 0 2px}.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+#tip{min-height:20px;color:var(--muted);font-size:13px;margin-top:8px}table{width:100%;border-collapse:collapse;font-size:14px}td{padding:7px 0;border-top:1px solid var(--line)}td:last-child{text-align:right;color:var(--muted);white-space:nowrap}
+</style></head><body><main>
+<h1>HomeSafe status</h1><div class="sub" id="sub">Loading…</div>
+<div class="ranges" id="ranges"></div>
+<div class="legend"><span><i style="background:var(--up);opacity:.55"></i>Up</span><span><i style="background:var(--part)"></i>Partly down</span><span><i style="background:var(--down)"></i>Down</span><span><i style="background:var(--none)"></i>Not measured</span></div>
+<div id="tip">Hover or tap a bar for its time</div>
+<div id="checks"></div><h2>Devices on Tailscale</h2><div id="devices"></div><h2>Outages</h2><div id="outages"></div>
+</main><script>
+const RANGES=[[24,"24 hours"],[168,"7 days"],[720,"30 days"]];let hours=24;
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const when=t=>new Date(t*1000).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"});
+const span=s=>s<60?Math.round(s)+" s":s<5400?Math.round(s/60)+" min":s<172800?(s/3600).toFixed(1)+" h":Math.round(s/86400)+" d";
+const WORD={u:"up",d:"partly down",x:"down",n:"not measured"};
+function bar(states,d,label){return '<div class="bar">'+[...states].map((c,i)=>'<i class="'+c+'" data-t="'+esc(label+" · "+when(d.since+i*d.bucket_seconds)+" · "+WORD[c])+'"></i>').join("")+"</div>"}
+function draw(d){
+document.getElementById("sub").textContent="Measured from the server, once a minute"+(d.recording_since?" since "+when(d.recording_since):"")+". Updated "+when(d.until)+".";
+document.getElementById("checks").innerHTML=d.checks.map(c=>'<div class="row"><div class="head"><span><span class="dot '+(c.up===true?"u":c.up===false?"x":"")+'"></span>'+esc(c.name)+'</span><span class="num">'+(c.up_fraction==null?"not measured":(c.up_fraction*100).toFixed(c.up_fraction>0.999&&c.up_fraction<1?3:2)+"% up"+(c.down_seconds?" · "+span(c.down_seconds)+" down":""))+"</span></div>"+bar(c.states,d,c.name)+"</div>").join("")+'<div class="axis"><span>'+when(d.since)+"</span><span>"+when(d.until)+"</span></div>";
+document.getElementById("devices").innerHTML=d.devices.length?d.devices.map(v=>'<div class="row"><div class="head"><span><span class="dot '+(v.online===true?"u":v.online===false?"x":"")+'"></span>'+esc(v.name)+'</span><span class="num">'+(v.online?"online":v.last_seen?"last seen "+when(v.last_seen):"not seen")+"</span></div>"+bar(v.states,d,v.name)+"</div>").join(""):'<div class="sub">The server is not reading Tailscale.</div>';
+const names=Object.fromEntries(d.checks.map(c=>[c.key,c.name]));
+document.getElementById("outages").innerHTML=d.outages.length?"<table>"+d.outages.map(o=>"<tr><td>"+esc(names[o.check]||o.check)+"</td><td>"+when(o.start)+(o.end?"":" · ongoing")+" · "+span(o.seconds)+"</td></tr>").join("")+"</table>":'<div class="sub">Nothing was down in this range.</div>';
+}
+function ranges(){document.getElementById("ranges").innerHTML=RANGES.map(r=>'<button aria-pressed="'+(r[0]===hours)+'" data-h="'+r[0]+'">'+r[1]+"</button>").join("")}
+async function load(){ranges();try{const r=await fetch("status/data?hours="+hours,{credentials:"same-origin"});
+if(r.status===401){document.getElementById("sub").innerHTML='Sign in to Frigate in this browser first: <a href="http://'+location.hostname+':8971/">open Frigate</a>, then reload this page.';return}
+if(!r.ok)throw new Error("HTTP "+r.status);draw(await r.json())}catch(e){document.getElementById("sub").textContent="Couldn't load the status: "+e.message}}
+document.getElementById("ranges").onclick=e=>{const h=e.target.dataset.h;if(h){hours=+h;load()}};
+document.body.addEventListener("pointerover",e=>{const t=e.target.dataset&&e.target.dataset.t;if(t)document.getElementById("tip").textContent=t});
+document.body.addEventListener("click",e=>{const t=e.target.dataset&&e.target.dataset.t;if(t)document.getElementById("tip").textContent=t});
+load();setInterval(load,60000);
+</script></body></html>
+"""
+
+
+@app.get("/status")
+def status_page() -> Response:
+    return Response(content=STATUS_PAGE, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/devices")

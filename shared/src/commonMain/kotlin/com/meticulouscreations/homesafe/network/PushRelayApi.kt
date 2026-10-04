@@ -9,6 +9,11 @@ import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.PhantomSpot
 import com.meticulouscreations.homesafe.domain.model.PresenceDevice
 import com.meticulouscreations.homesafe.domain.model.SeenBox
+import com.meticulouscreations.homesafe.domain.model.ServerUptime
+import com.meticulouscreations.homesafe.domain.model.UptimeCheck
+import com.meticulouscreations.homesafe.domain.model.UptimeDevice
+import com.meticulouscreations.homesafe.domain.model.UptimeOutage
+import com.meticulouscreations.homesafe.domain.model.UptimeState
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
@@ -272,6 +277,17 @@ class PushRelayApi(private val httpClient: HttpClient) {
         response.body<RelayPhantoms>().spots.mapNotNull { it.toDomain() }
     }
 
+    /**
+     * The server's uptime record over the last [hours] (the relay's `/status/data`): what the box
+     * could reach each minute, cut into spans for drawing. Works on whichever address [serverUrl]
+     * is, the home network's or Tailscale's.
+     */
+    suspend fun getUptime(serverUrl: String, hours: Int): Result<ServerUptime> = runCatching {
+        val response = httpClient.get(relayUrl(serverUrl, "/status/data")) { parameter("hours", hours) }
+        if (!response.status.isSuccess()) throw relayRefused(response.status)
+        response.body<RelayUptime>().toDomain()
+    }
+
     /** The relay answered [status] instead of success; the message keeps the status for callers that look for a 401 or 403. */
     private fun relayRefused(status: HttpStatusCode) =
         FrigateResponseException(UiText.of(Res.string.error_relay_answered, status.toString()), technical = "Relay answered $status")
@@ -471,3 +487,47 @@ internal data class RelayPhantoms(val spots: List<RelayPhantomSpot> = emptyList(
 
 @Serializable
 internal data class RelayNotAPerson(val spot: RelayPhantomSpot)
+
+/** The relay's `/status/data`. Times are epoch seconds; `states` is one letter per span (see [UptimeState.fromLetter]). */
+@Serializable
+internal data class RelayUptime(
+    val since: Double,
+    val until: Double,
+    @SerialName("bucket_seconds") val bucketSeconds: Double,
+    @SerialName("recording_since") val recordingSince: Double? = null,
+    val checks: List<RelayUptimeCheck> = emptyList(),
+    val devices: List<RelayUptimeDevice> = emptyList(),
+    val outages: List<RelayUptimeOutage> = emptyList(),
+) {
+    fun toDomain() = ServerUptime(
+        sinceEpochSeconds = since.toLong(),
+        untilEpochSeconds = until.toLong(),
+        bucketSeconds = bucketSeconds,
+        recordingSinceEpochSeconds = recordingSince?.toLong(),
+        checks = checks.map { UptimeCheck(it.key, it.name.orEmpty().ifBlank { it.key }, it.states.map(UptimeState::fromLetter), it.upFraction, it.downSeconds, it.up) },
+        devices = devices.map { UptimeDevice(it.name, it.os.orEmpty(), it.online, it.lastSeen?.toLong(), it.states.map(UptimeState::fromLetter)) },
+        outages = outages.map { UptimeOutage(it.check, it.start.toLong(), it.end?.toLong(), it.seconds) },
+    )
+}
+
+@Serializable
+internal data class RelayUptimeCheck(
+    val key: String,
+    val name: String? = null,
+    val states: String = "",
+    @SerialName("up_fraction") val upFraction: Double? = null,
+    @SerialName("down_seconds") val downSeconds: Long = 0,
+    val up: Boolean? = null,
+)
+
+@Serializable
+internal data class RelayUptimeDevice(
+    val name: String,
+    val os: String? = null,
+    val online: Boolean? = null,
+    @SerialName("last_seen") val lastSeen: Double? = null,
+    val states: String = "",
+)
+
+@Serializable
+internal data class RelayUptimeOutage(val check: String, val start: Double, val end: Double? = null, val seconds: Long = 0)
