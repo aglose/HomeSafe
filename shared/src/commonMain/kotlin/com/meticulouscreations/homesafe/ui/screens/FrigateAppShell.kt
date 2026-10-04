@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Sensors
 import androidx.compose.material.icons.filled.Wifi
@@ -90,6 +91,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_app_version
 import homesafe.shared.generated.resources.shell_menu
+import homesafe.shared.generated.resources.shell_offline
 import homesafe.shared.generated.resources.shell_show_version
 import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
@@ -277,12 +279,13 @@ fun FrigateAppShell() {
     // so the zoomed picture gets the whole screen.
     val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+    val offline by viewModel.offline.collectAsStateWithLifecycle()
     LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
         showBottomNav = nav.showsBottomNav(nav.selectedTab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
@@ -325,11 +328,12 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     // this tab's Compose view (the native bar beneath is the platform's to draw).
     val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
+    val offline by viewModel.offline.collectAsStateWithLifecycle()
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
         showBottomNav = nav.showsBottomNav(tab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }) },
+        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, tab) },
@@ -509,10 +513,11 @@ internal fun ShellSkeleton() {
 
 /**
  * [appVersion] is what the route badge shows when tapped; unused until there is a route to badge.
- * [onMenu] opens the drawer.
+ * [onMenu] opens the drawer. With [offline] the badge says so instead of naming the route: the
+ * app is on what the device kept, and "Tailscale" there would read as "connected over Tailscale".
  */
 @Composable
-internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String, onMenu: () -> Unit = {}) {
+internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String, onMenu: () -> Unit = {}, offline: Boolean = false) {
     // A Box, not a Row: the title is centred on the screen regardless of what sits at the ends,
     // so it doesn't shift when the status icon becomes the (wider) route badge — which is also
     // the moment the sign-in skeleton's bar dissolves into the real one.
@@ -539,20 +544,22 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
                 Icon(Icons.Filled.Sensors, contentDescription = stringResource(Res.string.shell_status), tint = MaterialTheme.colorScheme.primary)
             }
         } else {
-            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion) }
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion, offline) }
         }
     }
 }
 
 /**
- * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path. A tap
- * drops down the app's version, which is how to tell which release is on the phone.
+ * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path — or
+ * "Offline" while the server can't be reached on either. A tap drops down the app's version,
+ * which is how to tell which release is on the phone.
  */
 @Composable
-private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
-    val tint = when (route) {
-        ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
-        ConnectionRoute.TAILSCALE -> MaterialTheme.colorScheme.primary
+private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, offline: Boolean) {
+    val tint = when {
+        offline -> MaterialTheme.colorScheme.error
+        route == ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
+        else -> MaterialTheme.colorScheme.primary
     }
     var showVersion by remember { mutableStateOf(false) }
     val interactionSource = remember { MutableInteractionSource() }
@@ -578,12 +585,14 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String) {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            if (route == ConnectionRoute.LOCAL_NETWORK) {
+            if (offline) {
+                Icon(Icons.Filled.CloudOff, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
+            } else if (route == ConnectionRoute.LOCAL_NETWORK) {
                 Icon(Icons.Filled.Wifi, contentDescription = null, tint = tint, modifier = Modifier.size(14.dp))
             } else {
                 PulsingDot(color = tint, size = 6.dp, pulsing = false)
             }
-            Text(text = stringResource(route.label), style = MaterialTheme.typography.labelSmall, color = tint)
+            Text(text = stringResource(if (offline) Res.string.shell_offline else route.label), style = MaterialTheme.typography.labelSmall, color = tint)
         }
         DropdownMenu(expanded = showVersion, onDismissRequest = { showVersion = false }) {
             Text(

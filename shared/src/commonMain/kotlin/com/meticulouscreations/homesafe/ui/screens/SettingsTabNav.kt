@@ -14,6 +14,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -37,6 +38,8 @@ import homesafe.shared.generated.resources.settings_recognition_faces_descriptio
 import homesafe.shared.generated.resources.settings_recognition_objects_separator
 import homesafe.shared.generated.resources.settings_recognition_title
 import homesafe.shared.generated.resources.settings_server_title
+import homesafe.shared.generated.resources.uptime_link_description
+import homesafe.shared.generated.resources.uptime_title
 import org.jetbrains.compose.resources.stringResource
 
 /** The Settings tab's root; the shell watches the back stack's depth to hide its own bar on nested screens. */
@@ -51,9 +54,12 @@ data object FacesRoute
 /** The server's diagnostics — address, load, detector, disk, retention, AI features — off the main page. */
 data object ServerRoute
 
+/** The server's uptime record, one tap below its diagnostics. */
+data object UptimeRoute
+
 /**
  * The Settings tab's own nested navigation: the settings page, and drilling into a classifier's
- * labelling screen, the face library, or the server's diagnostics. [content] renders the
+ * labelling screen, the face library, or the server's diagnostics and its uptime record. [content] renders the
  * settings page and receives the callbacks that open them.
  */
 @Composable
@@ -82,7 +88,8 @@ fun SettingsTabNav(
                 )
             }
             entry<FacesRoute> { FaceLibraryScreen(onBack = { backStack.removeLastOrNull() }) }
-            entry<ServerRoute> { ServerSettingsScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<ServerRoute> { ServerSettingsScreen(onBack = { backStack.removeLastOrNull() }, onOpenUptime = { backStack.add(UptimeRoute) }) }
+            entry<UptimeRoute> { ServerUptimeScreen(onBack = { backStack.removeLastOrNull() }) }
         },
     )
 }
@@ -128,6 +135,17 @@ fun RecognitionSection(
 @Composable
 internal fun ServerSummaryRow(summary: String, onOpen: () -> Unit) {
     SettingsLinkRow(icon = Icons.Filled.Dns, title = stringResource(Res.string.settings_server_title), description = summary, onClick = onOpen)
+}
+
+/** The way from the server's diagnostics into its uptime record ([ServerUptimeScreen]). */
+@Composable
+internal fun UptimeLinkRow(onOpen: () -> Unit) {
+    SettingsLinkRow(
+        icon = Icons.Filled.MonitorHeart,
+        title = stringResource(Res.string.uptime_title),
+        description = stringResource(Res.string.uptime_link_description),
+        onClick = onOpen,
+    )
 }
 
 /** A classifier's Frigate labels, which are data, as one phrase: "car", "car and truck". */

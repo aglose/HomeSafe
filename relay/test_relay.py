@@ -3260,5 +3260,298 @@ class FinanceSheetRoute(unittest.TestCase):
             relay.FINANCE_LOCK_SECONDS = saved
 
 
+class UptimeTest(unittest.TestCase):
+    """The uptime record's pure parts: reading the box's routes and tailnet, and turning samples into the status picture."""
+
+    # The box's own table, 2026-10-04: the wired default route, and Wi-Fi's as the spare.
+    ROUTES = (
+        "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n"
+        "wlo1\t00000000\t0244A8C0\t0003\t0\t0\t3003\t00000000\t0\t0\t0\n"
+        "eno2\t00000000\t0144A8C0\t0003\t0\t0\t1002\t00000000\t0\t0\t0\n"
+        "eno2\t0001A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n"
+    )
+    T = 1_791_000_000  # on a minute
+
+    def test_the_default_gateway_is_the_lowest_metric_default_route(self):
+        self.assertEqual("192.168.68.1", relay.default_gateway(self.ROUTES))
+
+    def test_no_default_route_is_no_gateway(self):
+        self.assertIsNone(relay.default_gateway(self.ROUTES.splitlines()[0] + "\neno2\t0001A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n"))
+        self.assertIsNone(relay.default_gateway(""))
+        self.assertIsNone(relay.default_gateway("header\nshort line\neno2\t00000000\tnothex!!\t0003\t0\t0\t1\t00000000\t0\t0\t0\n"))
+
+    def test_tailnet_devices_go_by_their_dns_name_and_leave_out_funnel(self):
+        status = {"Peer": {
+            "a": {"HostName": "localhost", "DNSName": "iphone-15-pro.tail4c441a.ts.net.", "OS": "iOS", "Online": True, "LastSeen": "2026-10-04T02:50:00.1Z"},
+            "b": {"HostName": "Pixel 10 Pro XL", "DNSName": "pixel-10-pro-xl.tail4c441a.ts.net.", "OS": "android", "Online": False, "LastSeen": "2026-10-04T05:27:17.1Z"},
+            "c": {"HostName": "funnel-ingress-node", "DNSName": "", "Online": False, "LastSeen": "2026-10-02T23:10:28.1Z"},
+            "d": {"HostName": "old-laptop", "DNSName": "", "OS": "linux", "LastSeen": "0001-01-01T00:00:00Z"},
+        }}
+        devices = relay.tailnet_devices(status)
+        self.assertEqual(["iphone-15-pro", "old-laptop", "pixel-10-pro-xl"], sorted(devices))
+        self.assertEqual((True, "iOS"), (devices["iphone-15-pro"]["online"], devices["iphone-15-pro"]["os"]))
+        self.assertFalse(devices["pixel-10-pro-xl"]["online"])
+        self.assertEqual(1791091637, int(devices["pixel-10-pro-xl"]["last_seen"]))
+        self.assertEqual((False, None), (devices["old-laptop"]["online"], devices["old-laptop"]["last_seen"]))
+        self.assertEqual({}, relay.tailnet_devices({}))
+
+    def test_tailscaled_times(self):
+        self.assertEqual(1791091637, int(relay.epoch_of("2026-10-04T05:27:17.1Z")))
+        self.assertEqual(1791091637, int(relay.epoch_of("2026-10-03T22:27:17.123456789-07:00")))
+        self.assertIsNone(relay.epoch_of("0001-01-01T00:00:00Z"))
+        self.assertIsNone(relay.epoch_of(None))
+        self.assertIsNone(relay.epoch_of("yesterday"))
+
+    def test_a_bucket_is_up_down_some_of_each_or_unmeasured(self):
+        self.assertEqual(["u", "x", "d", "n"], [relay.bucket_state(3, 0), relay.bucket_state(0, 2), relay.bucket_state(1, 1), relay.bucket_state(0, 0)])
+
+    def test_a_refused_connection_is_an_answer(self):
+        import socket
+
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+        listener.listen(1)
+        self.assertTrue(relay.tcp_reachable("127.0.0.1", port, timeout=2))
+        listener.close()
+        self.assertTrue(relay.tcp_reachable("127.0.0.1", port, timeout=2), "nothing listening: refused, so the host is there")
+        # 192.0.2.0/24 is reserved for documentation: nothing answers.
+        self.assertFalse(relay.tcp_reachable("192.0.2.1", 9, timeout=0.3))
+
+    def test_a_lookup_stuck_in_the_resolver_is_not_joined_by_another(self):
+        import threading
+
+        release = threading.Event()
+        calls = []
+
+        def hang(*args, **kwargs):
+            calls.append(args)
+            release.wait(5)
+            return []
+
+        saved = relay.socket.getaddrinfo
+        relay.socket.getaddrinfo = hang
+        try:
+            self.assertFalse(relay.resolves("example.test", timeout=0.05))
+            self.assertFalse(relay.resolves("example.test", timeout=0.05), "still stuck: still not resolving")
+            self.assertEqual(1, len(calls), "and no second thread went in behind the first")
+            release.set()
+            relay._dns_lookup["thread"].join(2)
+            self.assertTrue(relay.resolves("example.test", timeout=2), "the resolver is back, and so is the check")
+            self.assertEqual(2, len(calls))
+        finally:
+            release.set()
+            relay.socket.getaddrinfo = saved
+
+    def test_a_missing_tailscale_socket_is_no_status(self):
+        self.assertIsNone(relay.tailscale_status("/nonexistent/tailscaled.sock", timeout=1))
+
+    def minutes(self, flags):
+        """(time, up) samples a minute apart from a string: "u" up, "x" down, " " no sample."""
+        return [(self.T + i * 60, c == "u") for i, c in enumerate(flags) if c != " "]
+
+    def test_a_down_stretch_runs_from_its_first_down_sample_to_the_next_up_one(self):
+        runs = relay.uptime_runs(self.minutes("uuxxxuu"), self.T + 7 * 60)
+        self.assertEqual([{"start": self.T + 120, "end": self.T + 300}], runs)
+
+    def test_one_still_down_has_no_end_while_the_samples_are_fresh(self):
+        self.assertEqual([{"start": self.T + 60, "end": None}], relay.uptime_runs(self.minutes("uxx"), self.T + 3 * 60))
+        self.assertEqual([{"start": self.T + 60, "end": self.T + 180}], relay.uptime_runs(self.minutes("uxx"), self.T + 3600), "the samples stopped long ago")
+
+    def test_a_hole_in_the_samples_ends_a_stretch(self):
+        runs = relay.uptime_runs(self.minutes("ux     xu"), self.T + 9 * 60)
+        self.assertEqual([{"start": self.T + 60, "end": self.T + 120}, {"start": self.T + 420, "end": self.T + 480}], runs)
+
+    def test_a_link_that_flaps_is_one_stretch(self):
+        runs = relay.uptime_runs(self.minutes("uxxuuxxxuuuuuuuuxu"), self.T + 18 * 60)
+        self.assertEqual([{"start": self.T + 60, "end": self.T + 480}, {"start": self.T + 960, "end": self.T + 1020}], runs, "two minutes up joins them; eight doesn't")
+        self.assertEqual([{"start": self.T + 60, "end": None}], relay.uptime_runs(self.minutes("uxxuux"), self.T + 6 * 60), "and it is still going")
+
+    def rows(self, flags_by_check, devices=None):
+        length = len(next(iter(flags_by_check.values())))
+        rows = []
+        for i in range(length):
+            checks = {k: int(f[i] == "u") for k, f in flags_by_check.items() if f[i] != " "}
+            if not checks:
+                continue
+            rows.append((self.T + i * 60, checks, {name: int(f[i] == "u") for name, f in (devices or {}).items() if f[i] != " "}))
+        return rows
+
+    def test_the_summary_cuts_the_samples_into_spans(self):
+        rows = self.rows({"router": "u" * 60, "internet": "u" * 20 + "x" * 5 + "u" * 35}, {"pixel": "u" * 30 + "x" * 30})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400, {"pixel": {"os": "android", "last_seen": 5}})
+        by_key = {c["key"]: c for c in body["checks"]}
+        self.assertEqual(["server", "router", "internet"], [c["key"] for c in body["checks"]], "in the fixed order, without the checks never made")
+        self.assertEqual("u" * 12, by_key["router"]["states"])
+        self.assertEqual("uuuuxuuuuuuu", by_key["internet"]["states"])
+        self.assertAlmostEqual(55 / 60, by_key["internet"]["up_fraction"])
+        self.assertEqual(300, by_key["internet"]["down_seconds"])
+        self.assertEqual((1.0, 0), (by_key["router"]["up_fraction"], by_key["router"]["down_seconds"]))
+        self.assertEqual("u" * 12, by_key["server"]["states"])
+        self.assertEqual(300.0, body["bucket_seconds"])
+        self.assertEqual([{"check": "internet", "start": self.T + 1200, "end": self.T + 1500, "seconds": 300}], body["outages"])
+        pixel = body["devices"][0]
+        self.assertEqual(("pixel", "android", False, self.T + 29 * 60, "uuuuuuxxxxxx"), (pixel["name"], pixel["os"], pixel["online"], pixel["last_seen"], pixel["states"]))
+        self.assertTrue(by_key["internet"]["up"])
+
+    def test_a_device_seen_at_all_in_a_span_was_on_the_tailnet_for_it(self):
+        rows = self.rows({"router": "u" * 60}, {"phone": "xuxxx" + "x" * 5 + "u" * 50})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual("ux" + "u" * 10, body["devices"][0]["states"])
+
+    def test_a_span_that_is_partly_down_says_so(self):
+        rows = self.rows({"dns": "uuxuu" + "u" * 55})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual("d" + "u" * 11, {c["key"]: c for c in body["checks"]}["dns"]["states"])
+
+    def test_minutes_without_a_sample_are_the_server_being_down(self):
+        rows = self.rows({"router": "u" * 15 + " " * 20 + "u" * 25})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400)
+        by_key = {c["key"]: c for c in body["checks"]}
+        self.assertEqual("uuuxxxxuuuuu", by_key["server"]["states"])
+        self.assertEqual("uuunnnnuuuuu", by_key["router"]["states"], "the router wasn't measured then, which is not the same as down")
+        self.assertEqual(1200, by_key["server"]["down_seconds"])
+        self.assertEqual([{"check": "server", "start": self.T + 15 * 60, "end": self.T + 35 * 60, "seconds": 1200}], body["outages"])
+        self.assertEqual(1.0, by_key["router"]["up_fraction"])
+
+    def test_a_hole_the_range_opens_in_the_middle_of_is_listed_from_where_it_began(self):
+        rows = self.rows({"router": " " * 20 + "u" * 40})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400, previous_at=self.T - 600)
+        self.assertEqual("xxxxuuuuuuuu", body["checks"][0]["states"])
+        self.assertEqual([{"check": "server", "start": self.T - 540, "end": self.T + 1200, "seconds": 1740}], body["outages"])
+        # Without the sample before the range there is nothing to say when it began, and it isn't guessed.
+        self.assertEqual([], relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400)["outages"])
+
+    def test_a_hole_that_runs_to_the_end_of_the_range_ends_there(self):
+        rows = self.rows({"router": "u" * 30})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T - 86400)
+        self.assertEqual([{"check": "server", "start": self.T + 1800, "end": self.T + 3600, "seconds": 1800}], body["outages"], "whoever asks is being answered: it is over")
+        # And a range with no sample in it at all, on a relay that had been recording.
+        empty = relay.uptime_summary([], self.T, self.T + 3600, 12, self.T - 86400, previous_at=self.T - 120)
+        self.assertEqual([{"check": "server", "start": self.T - 60, "end": self.T + 3600, "seconds": 3660}], empty["outages"])
+        self.assertEqual("x" * 12, empty["checks"][0]["states"])
+
+    def test_whether_a_device_is_online_now_is_the_newest_samples_word_alone(self):
+        rows = [(self.T + i * 60, {"router": 1}, {"phone": 1, "laptop": 1} if i < 59 else {"laptop": 0}) for i in range(60)]
+        devices = {d["name"]: d for d in relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)["devices"]}
+        self.assertIsNone(devices["phone"]["online"], "the tailnet didn't name it that minute: unknown, not what an older sample said")
+        self.assertEqual(self.T + 58 * 60, devices["phone"]["last_seen"])
+        self.assertIs(False, devices["laptop"]["online"])
+
+    def test_nothing_before_the_first_sample_ever_counts_as_down(self):
+        rows = self.rows({"router": " " * 30 + "u" * 30})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T + 30 * 60)
+        server = body["checks"][0]
+        self.assertEqual("nnnnnnuuuuuu", server["states"])
+        self.assertEqual((1.0, 0), (server["up_fraction"], server["down_seconds"]))
+        self.assertEqual([], body["outages"])
+
+    def test_an_outage_inside_its_cause_is_left_off_the_list(self):
+        down = "u" * 10 + "x" * 10 + "u" * 40
+        rows = self.rows({"router": down, "internet": down, "dns": "u" * 9 + "x" * 12 + "u" * 39, "frigate": "u" * 60, "cameras": "u" * 30 + "x" * 5 + "u" * 25})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual([("cameras", 300), ("router", 600)], [(o["check"], o["seconds"]) for o in body["outages"]], "newest first; dns a sample either side still counts as inside")
+        self.assertEqual("uuxxuuuuuuuu", {c["key"]: c for c in body["checks"]}["internet"]["states"], "the bars still show it")
+
+    def test_an_outage_that_outlasts_its_cause_is_listed(self):
+        rows = self.rows({"router": "u" * 10 + "x" * 5 + "u" * 45, "internet": "u" * 10 + "x" * 30 + "u" * 20})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual(["internet", "router"], sorted(o["check"] for o in body["outages"]))
+
+    def test_no_samples_at_all(self):
+        body = relay.uptime_summary([], self.T, self.T + 3600, 12, None)
+        self.assertEqual([{"key": "server", "states": "n" * 12, "up_fraction": None, "down_seconds": 0, "up": None}], body["checks"])
+        self.assertEqual(([], []), (body["devices"], body["outages"]))
+
+    def test_stale_samples_say_nothing_about_now(self):
+        rows = self.rows({"router": "u" * 10})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual([None, None], [c["up"] for c in body["checks"]])
+
+    def test_an_outage_still_going_is_measured_up_to_now(self):
+        rows = self.rows({"frigate": "u" * 50 + "x" * 10})
+        body = relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)
+        self.assertEqual([{"check": "frigate", "start": self.T + 3000, "end": None, "seconds": 600}], body["outages"])
+        self.assertFalse({c["key"]: c for c in body["checks"]}["frigate"]["up"])
+
+    def test_a_check_the_relay_learns_later_is_shown_after_the_known_ones(self):
+        rows = self.rows({"zigbee": "u" * 60, "router": "u" * 60})
+        self.assertEqual(["server", "router", "zigbee"], [c["key"] for c in relay.uptime_summary(rows, self.T, self.T + 3600, 12, self.T)["checks"]])
+
+
+class UptimeRecordTest(_ScratchDb):
+    """The uptime record against a scratch relay.db."""
+
+    # Not `T`: the scratch database's own `T` is a moment two hours ago, to the microsecond.
+    MINUTE = 1_791_000_000
+
+    def test_samples_are_kept_and_read_back_as_a_report(self):
+        for i in range(60):
+            relay.record_uptime(self.MINUTE + i * 60, {"router": True, "internet": i not in (10, 11)},
+                                {"pixel-10-pro-xl": {"online": i < 30, "last_seen": 123.0, "os": "android"}})
+        body = relay.uptime_report(1, 12, now=self.MINUTE + 3600)
+        by_key = {c["key"]: c for c in body["checks"]}
+        self.assertEqual("uuduuuuuuuuu", by_key["internet"]["states"], "two minutes of the third five down")
+        self.assertEqual(self.MINUTE, body["recording_since"])
+        device = body["devices"][0]
+        self.assertEqual(("pixel-10-pro-xl", "android", self.MINUTE + 29 * 60), (device["name"], device["os"], device["last_seen"]))
+        self.assertEqual({"os": "android", "last_seen": 123.0}, relay.state_get("uptime_devices")["pixel-10-pro-xl"], "offline now: Tailscale's own last-seen")
+
+    def test_a_device_last_seen_is_remembered_past_the_range(self):
+        relay.record_uptime(self.MINUTE, {"router": True}, {"phone": {"online": True, "last_seen": None, "os": "iOS"}})
+        relay.record_uptime(self.MINUTE + 60, {"router": True}, {"phone": {"online": False, "last_seen": None, "os": "iOS"}})
+        self.assertEqual(self.MINUTE, relay.state_get("uptime_devices")["phone"]["last_seen"])
+        body = relay.uptime_report(1, 12, now=self.MINUTE + 7200)
+        self.assertEqual([], body["devices"], "no sample in the range names it")
+
+    def test_the_report_reaches_back_for_the_sample_before_its_range(self):
+        relay.record_uptime(self.MINUTE - 600, {"router": True}, {})
+        for i in range(20, 60):
+            relay.record_uptime(self.MINUTE + i * 60, {"router": True}, {})
+        body = relay.uptime_report(1, 12, now=self.MINUTE + 3600)
+        self.assertEqual([("server", self.MINUTE - 540, self.MINUTE + 1200)], [(o["check"], o["start"], o["end"]) for o in body["outages"]])
+
+    def test_a_minute_recorded_twice_is_one_row(self):
+        relay.record_uptime(self.MINUTE, {"router": False}, {})
+        relay.record_uptime(self.MINUTE, {"router": True}, {})
+        self.assertEqual([(self.MINUTE, '{"router": 1}')], relay.with_db(lambda c: c.execute("SELECT at, checks FROM uptime").fetchall()))
+
+    def test_old_samples_are_dropped_on_the_hour(self):
+        hour = self.MINUTE - self.MINUTE % 3600
+        relay.record_uptime(hour - relay.UPTIME_KEEP_DAYS * 86400 - 60, {"router": True}, {})
+        relay.record_uptime(hour + 120, {"router": True}, {})
+        self.assertEqual(2, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM uptime").fetchone()[0]), "not on the hour: nothing dropped")
+        relay.record_uptime(hour, {"router": True}, {})
+        self.assertEqual([hour, hour + 120], [r[0] for r in relay.with_db(lambda c: c.execute("SELECT at FROM uptime ORDER BY at").fetchall())])
+
+    def test_the_route_wants_a_session_and_names_the_checks(self):
+        relay.record_uptime(int(time.time()) // 60 * 60, {"router": True, "dns": True}, {})
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.status_data(_Caller(None))
+        self.assertEqual(401, refused.exception.status_code)
+        saved = relay.require_frigate_session
+        relay.require_frigate_session = lambda request: "andrew"
+        try:
+            body = relay.status_data(_Caller("frigate_token=x"), hours=0.1, buckets=5000)
+        finally:
+            relay.require_frigate_session = saved
+        self.assertEqual(["Server running", "Home router", "Name lookups (DNS)"], [c["name"] for c in body["checks"]])
+        self.assertEqual(288, len(body["checks"][0]["states"]), "buckets are capped")
+        self.assertAlmostEqual(3600, body["until"] - body["since"], delta=1, msg="and the range is at least an hour")
+
+    def test_the_page_is_html_that_asks_for_the_data(self):
+        page = relay.status_page()
+        self.assertEqual("text/html", page.media_type)
+        self.assertIn("status/data?hours=", page.body)
+        # It isn't a raw string: an escape meant for the script would be eaten by Python first
+        # (an `isn\'t` once ended a string early and left the page stuck on "Loading").
+        self.assertNotIn("\\", page.body)
+        self.assertNotIn("isn't", page.body)
+        # Each timeline is one stop for a keyboard, with a name and its span's words for a screen reader.
+        self.assertIn('role="slider"', page.body)
+        self.assertIn("aria-valuetext", page.body)
+        self.assertIn('aria-live="polite"', page.body)
+
+
 if __name__ == "__main__":
     unittest.main()

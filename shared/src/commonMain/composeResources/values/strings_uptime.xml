@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The server's uptime screen (Settings › Server › Uptime): what the relay on the box could reach,
+  minute by minute, and which of the household's devices Tailscale could see. Keys: uptime_*.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="uptime_title">Uptime</string>
+    <string name="uptime_subtitle">What was reachable, and when</string>
+    <!-- The row on the Server page that opens this screen. -->
+    <string name="uptime_link_description">Outages, and which of your devices Tailscale can see</string>
+
+    <string name="uptime_range_day">24 hours</string>
+    <string name="uptime_range_week">7 days</string>
+    <string name="uptime_range_month">30 days</string>
+
+    <!-- The headline. -->
+    <string name="uptime_headline_all_up">Everything is up</string>
+    <!-- %1$s: what is down, e.g. "Internet" or "Internet, Name lookups". -->
+    <string name="uptime_headline_down">Down now: %1$s</string>
+    <string name="uptime_headline_unknown">No recent sample from the server</string>
+    <string name="uptime_list_separator">, </string>
+    <!-- %1$s: a day and time, e.g. "Oct 4, 2:06 PM". -->
+    <string name="uptime_measured_since">Measured from the server once a minute since %1$s.</string>
+    <string name="uptime_measured">Measured from the server once a minute.</string>
+    <string name="uptime_reached_over_local">Read over your home network.</string>
+    <string name="uptime_reached_over_tailscale">Read over Tailscale.</string>
+
+    <!-- The checks, in the order the server tries them. Each *_about line is shown under a check that is or has been down. -->
+    <string name="uptime_check_server">Server running</string>
+    <string name="uptime_check_server_about">Checks that the box is on and keeping this record. A gap is a restart or a power cut.</string>
+    <string name="uptime_check_router">Home router</string>
+    <string name="uptime_check_router_about">Checks that the box can reach the router. Down means its cable or the router itself.</string>
+    <string name="uptime_check_internet">Internet</string>
+    <string name="uptime_check_internet_about">Checks that the house is online. Down means nothing reaches the box from outside.</string>
+    <string name="uptime_check_dns">Name lookups</string>
+    <string name="uptime_check_dns_about">Checks that the box can look up addresses. Down means alerts can't be pushed.</string>
+    <string name="uptime_check_tailscale">Tailscale on the server</string>
+    <string name="uptime_check_tailscale_about">Checks that the box is on your tailnet. Down means no access from away.</string>
+    <string name="uptime_check_frigate">Frigate</string>
+    <string name="uptime_check_frigate_about">Checks that the camera software answers.</string>
+    <string name="uptime_check_cameras">Cameras</string>
+    <string name="uptime_check_cameras_about">Checks that every camera is sending video.</string>
+    <string name="uptime_check_live">Live video</string>
+    <string name="uptime_check_live_about">Checks that the live stream service answers.</string>
+
+    <!-- A check's figures. %1$d / %2$d / %2$s: the percentage's whole part and its decimals. -->
+    <string name="uptime_percent_whole">%1$d%</string>
+    <string name="uptime_percent_one_decimal">%1$d.%2$d%</string>
+    <string name="uptime_percent_two_decimals">%1$d.%2$s%</string>
+    <!-- %1$s: a percentage, e.g. "99.9%". -->
+    <string name="uptime_up_share">%1$s up</string>
+    <!-- %1$s: a percentage; %2$s: a length of time, e.g. "5 minutes". -->
+    <string name="uptime_up_share_with_down">%1$s up · %2$s down</string>
+    <string name="uptime_not_measured">Not measured</string>
+
+    <!-- The states a span can be in: the legend, and what a tapped span says. -->
+    <string name="uptime_state_up">Up</string>
+    <string name="uptime_state_partial">Partly down</string>
+    <string name="uptime_state_down">Down</string>
+    <string name="uptime_state_not_measured">Not measured</string>
+    <string name="uptime_device_state_seen">On the tailnet</string>
+    <string name="uptime_device_state_unseen">Not on the tailnet</string>
+    <!-- A tapped span. %1$s: the check or device; %2$s: when the span starts; %3$s: its state. -->
+    <string name="uptime_span_detail">%1$s · %2$s · %3$s</string>
+    <string name="uptime_span_hint">Tap a bar to see its time</string>
+    <!-- Read out for a row's bar. %1$s: the check or device. -->
+    <string name="uptime_bar_description">Timeline for %1$s</string>
+    <!-- A day and a time. %1$s: "Oct 4"; %2$s: "2:06 PM". -->
+    <string name="uptime_moment">%1$s, %2$s</string>
+
+    <!-- Devices on the tailnet. -->
+    <string name="uptime_devices_title">Your devices on Tailscale</string>
+    <string name="uptime_devices_about">A phone that Tailscale can't see can't reach the server from away, even when the server is fine.</string>
+    <string name="uptime_devices_none">The server isn't reading Tailscale yet.</string>
+    <string name="uptime_device_online">On the tailnet</string>
+    <!-- %1$s: a day and time. -->
+    <string name="uptime_device_last_seen">Last seen %1$s</string>
+    <string name="uptime_device_never_seen">Not seen</string>
+
+    <!-- Outages. -->
+    <string name="uptime_outages_title">Outages</string>
+    <string name="uptime_outages_none">Nothing was down in this range.</string>
+    <!-- %1$s: when it began; %2$s: how long it lasted. -->
+    <string name="uptime_outage_ended">%1$s · %2$s</string>
+    <!-- %1$s: when it began; %2$s: how long it has lasted so far. -->
+    <string name="uptime_outage_ongoing">%1$s · still down after %2$s</string>
+
+    <!-- Loading and failures. -->
+    <string name="uptime_loading">Reading the uptime record…</string>
+    <!-- %1$s: why. -->
+    <string name="uptime_load_failed">Couldn't read the uptime record: %1$s</string>
+    <string name="uptime_not_kept_yet">This server's relay doesn't keep an uptime record yet. Update the relay on the box.</string>
+</resources>

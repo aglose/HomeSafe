@@ -77,6 +77,10 @@ services:
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.
       - /mnt/surveillance/frigate/clips:/clips
+      # tailscaled's LocalAPI socket, for the uptime record (relay.py, "uptime"): whether the box
+      # is on the tailnet, and which of the household's devices are. The directory, not the socket:
+      # tailscaled makes a new socket each time it restarts, and a mounted file would go stale.
+      - /var/run/tailscale:/var/run/tailscale:ro
 
   # Local vision model for the car check's second opinion. The relay pulls qwen3-vl:4b-instruct
   # (3.3 GB, ~4.5 GB of VRAM with its context) the first time it runs. One model, one request at a
