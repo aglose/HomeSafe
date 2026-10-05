@@ -26,6 +26,8 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -545,7 +547,7 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
  * quick-look layer — the pinch, or the held finger's drag, continuing there without a lift of
  * the fingers.
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun CameraCard(
     tile: CameraTile,
@@ -659,19 +661,22 @@ internal fun CameraCard(
             }
         }
 
-        Row(
+        // The name at one end and the badge at the other, on one line where both fit. On a
+        // narrow card (two abreast on a small phone on its side) they don't, and the badge drops
+        // to a line of its own rather than squeezing the name until it breaks mid-word.
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = camera.displayName,
                 style = MaterialTheme.typography.headlineSmall,
                 color = extraColors.textPrimary,
-                modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp),
+                modifier = Modifier.padding(end = 12.dp),
             )
             StatusBadge(
                 enabled = camera.enabled,
