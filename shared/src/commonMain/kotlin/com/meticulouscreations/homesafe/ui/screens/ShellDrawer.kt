@@ -29,9 +29,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.ChevronRight
@@ -160,20 +162,23 @@ internal fun ShellDrawer(
                 .navigationBarsPadding()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
         ) {
-            Text(
-                stringResource(Res.string.shell_app_title),
-                style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
-            )
-            DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
-            DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
-            DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
-            DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
-            Spacer(Modifier.height(24.dp))
-            DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
-            FinanceDrawerCard(finance, onOpenFinance)
-            Spacer(Modifier.weight(1f))
+            // Everything but the small print scrolls: on a phone on its side the drawer is
+            // shorter than what is in it, and the Finance card must not be cut off at the fold.
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                Text(
+                    stringResource(Res.string.shell_app_title),
+                    style = MaterialTheme.typography.headlineMedium.copy(letterSpacing = 0.03.em),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
+                )
+                DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
+                DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
+                DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
+                DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
+                Spacer(Modifier.height(24.dp))
+                DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
+                FinanceDrawerCard(finance, onOpenFinance)
+            }
             Text(
                 stringResource(Res.string.shell_drawer_market_disclaimer),
                 style = MaterialTheme.typography.labelSmall,

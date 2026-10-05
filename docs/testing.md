@@ -70,6 +70,11 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
   environment runs any frame still pending at teardown on the test thread, where its layout pass races the main
   thread's drawing and crashes the process.
 - Per-area steps live in robots (`SignInRobot`, `ShellRobot`, and the Home, Moments and Settings ones).
+- `turnPhone(onItsSide = true)` lays the running app out for a phone on its side (the nav down the side, a
+  camera full screen) and `turnPhone(onItsSide = false)` upright again, without changing the test window's size:
+  it provides `LocalCompactLandscape`, which the layouts read in place of the window's own shape. A screen-level
+  test does the same with `CompositionLocalProvider(LocalCompactLandscape provides true)`. A real device rotating
+  under the real Activity — which must not recreate it — is `AppE2eTest`'s.
 
 On the JVM, the journeys keep the desktop app's database in `shared/build/tmp/jvmTest/homesafe-data`, not
 `~/.homesafe`. The directory is set with the `homesafe.dataDir` system property.

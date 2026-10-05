@@ -18,18 +18,25 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertLeftPositionInRootIsEqualTo
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.LocalCompactLandscape
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.LocalNativeTabBar
+import com.meticulouscreations.homesafe.ui.screens.NAV_RAIL_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.bottomNavClearance
+import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The shell's chrome with and without a platform-drawn tab bar. On iOS 26 the bar is SwiftUI's
@@ -69,9 +76,9 @@ class ShellScaffoldUiTest {
         onNodeWithText("Tab content").assertIsDisplayed()
     }
 
-    private fun runClearance(nativeTabBar: Boolean, expectedDp: Int) = runComposeUiTest {
+    private fun runClearance(nativeTabBar: Boolean, expectedDp: Int, onItsSide: Boolean = false) = runComposeUiTest {
         setContent {
-            CompositionLocalProvider(LocalNativeTabBar provides nativeTabBar) {
+            CompositionLocalProvider(LocalNativeTabBar provides nativeTabBar, LocalCompactLandscape provides onItsSide) {
                 Box(Modifier.testTag("clearance").width(10.dp).height(bottomNavClearance()))
             }
         }
@@ -85,6 +92,93 @@ class ShellScaffoldUiTest {
 
     @Test
     fun reservesOnlyAGapAboveANativeTabBar() = runClearance(nativeTabBar = true, expectedDp = 16)
+
+    @Test
+    fun reservesOnlyAGapAtTheFootWhenTheNavIsAtTheSide() = runClearance(nativeTabBar = false, expectedDp = 24, onItsSide = true)
+
+    /**
+     * The shell laid out for a phone on its side, whatever size the test host's window is (see
+     * [LocalCompactLandscape]): there is no height there to float a bar over the foot of every page.
+     */
+    private fun runShellOnItsSide(
+        nativeTabBar: Boolean = false,
+        showBottomNav: Boolean = true,
+        onSelectTab: (TopLevelRoute) -> Unit = {},
+        block: ComposeUiTest.() -> Unit,
+    ) = runComposeUiTest {
+        setContent {
+            FrigatePreview {
+                CompositionLocalProvider(LocalNativeTabBar provides nativeTabBar, LocalCompactLandscape provides true) {
+                    ShellScaffold(
+                        showTopBar = false,
+                        topBar = {},
+                        selectedTab = TopLevelRoute.Home,
+                        onSelectTab = onSelectTab,
+                        showBottomNav = showBottomNav,
+                    ) {
+                        Text("Tab content", Modifier.testTag("content"))
+                    }
+                }
+            }
+        }
+        block()
+    }
+
+    @Test
+    fun aPhoneOnItsSideGetsTheNavAsARailBesideTheContent() = runShellOnItsSide {
+        val rail = onNodeWithTag(NAV_RAIL_TEST_TAG).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val content = onNodeWithTag("content").assertIsDisplayed().getUnclippedBoundsInRoot()
+
+        assertTrue(content.left >= rail.right, "the content starts clear of the rail: content at ${content.left}, rail ends at ${rail.right}")
+        // Stood on end: the tabs are one above the other, in the bar's order.
+        val home = onNodeWithTag(bottomNavTestTag(TopLevelRoute.Home)).getUnclippedBoundsInRoot()
+        val moments = onNodeWithTag(bottomNavTestTag(TopLevelRoute.Moments)).getUnclippedBoundsInRoot()
+        val settings = onNodeWithTag(bottomNavTestTag(TopLevelRoute.Settings)).getUnclippedBoundsInRoot()
+        assertTrue(home.bottom <= moments.top && moments.bottom <= settings.top, "Home, Moments, Settings from the top")
+    }
+
+    @Test
+    fun theRailsTabsAreTheBarsTabs() {
+        val tapped = mutableListOf<TopLevelRoute>()
+        runShellOnItsSide(onSelectTab = { tapped += it }) {
+            onNodeWithTag(bottomNavTestTag(TopLevelRoute.Home)).assertIsSelected()
+
+            onNodeWithTag(bottomNavTestTag(TopLevelRoute.Settings)).performClick()
+
+            assertEquals(listOf<TopLevelRoute>(TopLevelRoute.Settings), tapped)
+        }
+    }
+
+    @Test
+    fun theRailLeavesWithTheNavAndTheContentTakesItsStripBack() = runShellOnItsSide(showBottomNav = false) {
+        onNodeWithTag(NAV_RAIL_TEST_TAG).assertDoesNotExist()
+        onNodeWithTag("content").assertLeftPositionInRootIsEqualTo(0.dp)
+    }
+
+    @Test
+    fun aNativeTabBarIsNeverARail() = runShellOnItsSide(nativeTabBar = true) {
+        onNodeWithTag(NAV_RAIL_TEST_TAG).assertDoesNotExist()
+        onNodeWithTag("content").assertLeftPositionInRootIsEqualTo(0.dp)
+    }
+
+    @Test
+    fun heldUprightTheNavIsTheBarAlongTheBottom() = runComposeUiTest {
+        setContent {
+            FrigatePreview {
+                CompositionLocalProvider(LocalCompactLandscape provides false) {
+                    ShellScaffold(showTopBar = false, topBar = {}, selectedTab = TopLevelRoute.Home, onSelectTab = {}) {
+                        Text("Tab content", Modifier.testTag("content"))
+                    }
+                }
+            }
+        }
+
+        onNodeWithTag(NAV_RAIL_TEST_TAG).assertDoesNotExist()
+        onNodeWithTag("content").assertLeftPositionInRootIsEqualTo(0.dp)
+        val home = onNodeWithTag(bottomNavTestTag(TopLevelRoute.Home)).assertIsDisplayed().getUnclippedBoundsInRoot()
+        val moments = onNodeWithTag(bottomNavTestTag(TopLevelRoute.Moments)).getUnclippedBoundsInRoot()
+        assertTrue(home.right <= moments.left, "side by side")
+    }
 
     /**
      * While the finance app covers the shell the tab content leaves the composition — that's what

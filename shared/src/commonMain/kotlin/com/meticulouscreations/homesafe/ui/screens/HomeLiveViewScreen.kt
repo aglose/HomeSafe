@@ -34,10 +34,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -200,11 +202,16 @@ fun HomeTabContent(
  * [refreshing] (see [ApertureRefreshBox]); the band opens below the shell's floating top bar,
  * which the list scrolls under. Null leaves the list unpullable: the sign-in screen's skeleton.
  *
- * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
+ * A lazy grid (not a plain scrolling Column) so off-screen camera cards aren't composed.
  * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
  * card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
  * actually on screen are decoding; with several 4K streams that concurrency was a real
  * contributor to stutter.
+ *
+ * The cameras take as many columns as fit at [CAMERA_CARD_MIN_WIDTH]: one on a phone held
+ * upright, where this is a list; two on a phone on its side or a small tablet, three on a wide
+ * window. A full-width 16:9 card in a landscape window would be taller than the window itself.
+ * Everything above the cameras spans the full row.
  */
 @Composable
 internal fun HomeFeed(
@@ -221,28 +228,30 @@ internal fun HomeFeed(
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
     refreshing: Boolean = false,
     onRefresh: (() -> Unit)? = null,
-    cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
+    cameraCard: @Composable LazyGridItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
     val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
-    val listState = rememberLazyListState()
-    LaunchedEffect(listState, scrollToTopRequests) { scrollToTopRequests.collect { listState.animateScrollToItem(0) } }
+    val gridState = rememberLazyGridState()
+    LaunchedEffect(gridState, scrollToTopRequests) { scrollToTopRequests.collect { gridState.animateScrollToItem(0) } }
 
     PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
-        LazyColumn(
-            state = listState,
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(minSize = CAMERA_CARD_MIN_WIDTH),
+            state = gridState,
             modifier = modifier.fillMaxSize(),
-            contentPadding = tabContentPadding(),
+            contentPadding = tabContentPadding(maxWidth = HOME_GRID_MAX_WIDTH),
             verticalArrangement = Arrangement.spacedBy(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(CAMERA_CARD_COLUMN_GAP),
         ) {
             if (everyoneAway) {
-                item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
+                item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
             }
 
             // One item, one section: an item of its own for the strip would still be spaced from its
             // neighbours while empty, would pop in whole rather than open out, and would sit a whole
             // section gap below the summary it belongs with.
-            item(key = "status") {
+            item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
                 Column {
                     HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick, onRefresh = onRefresh)
                     InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
@@ -259,7 +268,7 @@ internal fun HomeFeed(
                     )
                 }
             } else if (loadedCameras.isEmpty()) {
-                item {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
                         text = stringResource(Res.string.home_no_cameras),
                         style = MaterialTheme.typography.bodyMedium,
@@ -689,6 +698,18 @@ private val IN_VIEW_CARD_WIDTH: Dp = 232.dp
 
 /** Outlined placeholder cards shown until the camera cache answers — about a phone screen's worth. */
 private const val SKELETON_CARD_COUNT = 3
+
+/**
+ * The narrowest a camera card gets before the grid gives up a column: wide enough that a phone
+ * held upright (even a small one, 360dp less its gutters) shows one card per row, as it always has.
+ */
+private val CAMERA_CARD_MIN_WIDTH: Dp = 300.dp
+
+/** Between two cards side by side; tighter than the 24dp between rows, which also separates sections. */
+private val CAMERA_CARD_COLUMN_GAP: Dp = 16.dp
+
+/** Three columns of generous cards; past this the grid centres rather than growing a fourth. */
+private val HOME_GRID_MAX_WIDTH: Dp = 1280.dp
 
 /** The camera cards' corner radius; the loading skeleton and the in-flight video clip use the same. */
 internal val CAMERA_CARD_CORNER_RADIUS: Dp = SkeletonCardCornerRadius

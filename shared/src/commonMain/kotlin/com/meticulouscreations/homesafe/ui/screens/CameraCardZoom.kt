@@ -8,7 +8,6 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -55,6 +54,7 @@ import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.components.liveSurfaceIsExclusive
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
+import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import homesafe.shared.generated.resources.Res
@@ -290,10 +290,10 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
     ) {
         // Two transforms, outermost first: the lift, from the card's place and size to the
         // overlay's own; then the pinch zoom inside it, about the same centre.
+        // As large as the window allows at 16:9: full width upright, full height on its side.
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(16f / 9f)
+                .fitVideo()
                 .align(Alignment.Center)
                 .onSizeChanged { state.contentSize = it }
                 .graphicsLayer {

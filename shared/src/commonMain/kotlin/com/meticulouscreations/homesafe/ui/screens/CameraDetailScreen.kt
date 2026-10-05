@@ -1,10 +1,13 @@
 package com.meticulouscreations.homesafe.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -14,7 +17,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -47,6 +49,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -71,7 +74,9 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
+import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -80,9 +85,12 @@ import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
+import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.formatDuration
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.ui.windowHeight
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailUiState
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
@@ -126,6 +134,12 @@ import kotlin.math.roundToInt
  *
  * [onClip] opens the clip editor around [anchorEpochSeconds] — the frame on screen, or "now" at
  * the live edge — with its splash landing at [originFraction] of the window (the scissors).
+ *
+ * Turn the phone on its side and the video takes the whole window: the header and the page under
+ * the player go, the system bars hide, and the controls that were on the page — back, quality,
+ * sound, clip, the timeline — come up over the picture on a tap and fade away again (see
+ * [FullScreenPlayerChrome]). It is the same player in the same place in the composition, grown to
+ * the window, so the stream never rebinds; turning back upright gives the page back as it was.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -159,6 +173,17 @@ fun CameraDetailScreen(
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     val scrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val fullScreen = isCompactLandscape()
+    // Hidden from the moment this screen is the one arriving (or being returned to, from the clip
+    // editor), and back as it starts to leave, so the camera list isn't revealed under hidden bars.
+    if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
+    // The full-screen player fills the viewport from the top of the scroll, which is then held there.
+    LaunchedEffect(fullScreen) { if (fullScreen) scrollState.scrollTo(0) }
+    // In a window much wider than a phone's (a tablet on its side, the desktop) a full-width 16:9
+    // player would be the whole page. It stops growing at the width whose 16:9 is
+    // PLAYER_MAX_HEIGHT_FRACTION of the window's height, and centres, so the timeline under it
+    // is still in sight. On a phone held upright that width is wider than the phone.
+    val playerGutter = if (fullScreen) 0.dp else contentGutter(maxWidth = windowHeight() * PLAYER_MAX_HEIGHT_FRACTION * VIDEO_ASPECT, min = 0.dp)
     // How tall the scrolling area is — what the player grows into while zoomed. Held as state
     // rather than read here so that only the player's layout, not this screen, depends on it.
     val scrollViewportHeight = remember { mutableIntStateOf(0) }
@@ -200,40 +225,44 @@ fun CameraDetailScreen(
         onDismiss = tagViewModel::dismiss,
     )
 
-    Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier = Modifier.fillMaxSize().background(if (fullScreen) Color.Black else MaterialTheme.colorScheme.background)) {
         // This header replaces the shell's top bar (the shell hides it while a nested screen is
-        // up), so it steps in from the status bar itself.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(Res.string.common_back),
-                    tint = MaterialTheme.colorScheme.primary,
+        // up), so it steps in from the status bar itself. Full screen, the player's own chrome
+        // carries the way back; the scrolling column below is the same one either way, so the
+        // player in it stays put in the composition as the header comes and goes.
+        if (!fullScreen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(Res.string.common_back),
+                        tint = MaterialTheme.colorScheme.primary,
+                    )
+                }
+                Text(
+                    text = cameraDisplayName(cameraName),
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    textAlign = TextAlign.Center,
                 )
+                CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars)
             }
-            Text(
-                text = cameraDisplayName(cameraName),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                textAlign = TextAlign.Center,
-            )
-            CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars)
         }
 
         Column(
             modifier = Modifier
                 .weight(1f)
                 .onSizeChanged { scrollViewportHeight.intValue = it.height }
-                .verticalScroll(scrollState),
+                .verticalScroll(scrollState, enabled = !fullScreen),
         ) {
             PlayerSurface(
                 cameraAvailable = cameraAvailable,
@@ -247,11 +276,21 @@ fun CameraDetailScreen(
                 takeover = zoomTakeover,
                 // The zoomed player fills the viewport only from the top of the scroll.
                 onZoomStarted = { scope.launch { scrollState.animateScrollTo(0) } },
+                fullScreen = fullScreen,
+                hasQualityChoice = hasQualityChoice,
+                hint = hintText.takeIf { hint != null },
+                showHint = showHint,
+                onBack = onBack,
+                onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
+                // The header's own menu, in white, at the end of the chrome's top row.
+                overflowMenu = { onOpenChange ->
+                    CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars, tint = Color.White, onOpenChange = onOpenChange)
+                },
                 modifier = with(sharedTransitionScope) {
                     // The video is the one thing that moves between here and the card (this
                     // screen only fades — see SharedElementPush / SharedElementPop); its corners
                     // round off on the way to the card and square up on the way here.
-                    Modifier.sharedBounds(
+                    Modifier.padding(horizontal = playerGutter).sharedBounds(
                         sharedContentState = rememberSharedContentState(key = cameraVideoSharedKey(cameraName)),
                         animatedVisibilityScope = animatedVisibilityScope,
                         boundsTransform = CameraVideoBoundsTransform,
@@ -263,6 +302,10 @@ fun CameraDetailScreen(
                     )
                 },
             )
+
+            // Full screen there is no page: the player is the viewport, and what the page offered
+            // is on the player's chrome.
+            if (fullScreen) return@Column
 
             QuickActionsRow(
                 hasQualityChoice = hasQualityChoice,
@@ -276,7 +319,7 @@ fun CameraDetailScreen(
 
             Column(
                 modifier = Modifier
-                    .padding(horizontal = 24.dp)
+                    .padding(horizontal = contentGutter())
                     .padding(top = 16.dp, bottom = bottomNavClearance()),
                 verticalArrangement = Arrangement.spacedBy(24.dp),
             ) {
@@ -340,17 +383,6 @@ fun CameraDetailScreen(
 }
 
 /**
- * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
- *
- * At rest this is a 16:9 strip at the top of the scroll. Zooming in takes over the whole scroll
- * viewport ([viewportHeight]): the surface grows downward until it fills the screen, pushing the
- * rest of the page out of view, and the video sits centred in the part above the floating nav
- * bar ([bottomInsetPx]), so the enlarged picture has the full height of a portrait screen to
- * spread into rather than being clipped to its own strip. Zooming back out gives the space back.
- * On a landscape screen the strip is already taller than the viewport, so nothing moves.
- */
-
-/**
  * This screen's view model, resolved from the graph rather than passed down as a parameter.
  *
  * `viewModel()` returns whatever is already in the nav entry's [ViewModelStore] for [key], and
@@ -365,6 +397,26 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
         create(cameraName)
     }
 
+/**
+ * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
+ *
+ * At rest this is a 16:9 strip at the top of the scroll.
+ * Zooming in takes over the whole scroll viewport ([viewportHeight]): the surface grows downward
+ * until it fills the screen, pushing the rest of the page out of view, and the video sits centred
+ * in the part above the floating nav bar ([bottomInsetPx]), so the enlarged picture has the full
+ * height of a portrait screen to spread into rather than being clipped to its own strip. Zooming
+ * back out gives the space back.
+ *
+ * [fullScreen] — the phone on its side — is that same takeover held open, with nothing under it
+ * to keep clear of: the surface is the viewport, black to its edges, and the picture is the
+ * largest 16:9 that fits (a phone's screen is wider than that, so it stands between two black
+ * bars until it is pinched larger). A tap then shows or hides the chrome ([FullScreenPlayerChrome])
+ * rather than pausing, as every full-screen player does; pause is a button on the chrome. The
+ * chrome stands in for the page the player has covered, so it is handed what the page's quick
+ * actions were: [hasQualityChoice], the line of feedback they report into ([hint], null when there
+ * is nothing to say; [showHint] to say it), the ways out — [onBack], and [onClip] into the editor —
+ * and the header's [overflowMenu], which tells the chrome when it is open.
+ */
 @Composable
 private fun PlayerSurface(
     cameraAvailable: Boolean,
@@ -376,6 +428,13 @@ private fun PlayerSurface(
     bottomInsetPx: Int,
     takeover: Animatable<Float, *>,
     onZoomStarted: () -> Unit,
+    fullScreen: Boolean,
+    hasQualityChoice: Boolean,
+    hint: StringResource?,
+    showHint: (StringResource) -> Unit,
+    onBack: () -> Unit,
+    onClip: (originFraction: Offset) -> Unit,
+    overflowMenu: @Composable (onOpenChange: (Boolean) -> Unit) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
@@ -383,6 +442,24 @@ private fun PlayerSurface(
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val scope = rememberCoroutineScope()
+    // Read by the tap handler, which is keyed on the zoom alone and must not restart on a rotation.
+    val isFullScreen by rememberUpdatedState(fullScreen)
+
+    // The chrome is up on arrival, so the way back is in sight, and goes after a few seconds of
+    // being left alone — but not while paused (the picture isn't going anywhere), mid-scrub, or
+    // with one of its menus open. [chromeTouched] restarts the wait: each use of a control bumps it.
+    var chromeShown by remember { mutableStateOf(true) }
+    var chromeHeld by remember { mutableStateOf(false) }
+    var chromeTouched by remember { mutableIntStateOf(0) }
+    LaunchedEffect(fullScreen) { if (fullScreen) chromeShown = true }
+    val scrubbing = playback.scrubEpochSeconds != null
+    LaunchedEffect(fullScreen, chromeShown, chromeHeld, chromeTouched, playback.isPlaying, scrubbing) {
+        if (fullScreen && chromeShown && !chromeHeld && playback.isPlaying && !scrubbing) {
+            delay(timeMillis = FULL_SCREEN_CHROME_MS)
+            chromeShown = false
+        }
+    }
+    val takeoverFraction: () -> Float = if (fullScreen) ({ 1f }) else ({ takeover.value })
 
     // [takeover]: 0 = the 16:9 strip, 1 = the full viewport. Driven from a snapshotFlow so the
     // pinch's per-frame scale changes never recompose this surface; only the zoomed flip does.
@@ -399,23 +476,23 @@ private fun PlayerSurface(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .zoomTakeoverHeight(takeover = { takeover.value }, viewportHeight = viewportHeight)
-            .background(MaterialTheme.colorScheme.surfaceContainerLowest),
+            .zoomTakeoverHeight(takeover = takeoverFraction, viewportHeight = viewportHeight)
+            .background(if (fullScreen) Color.Black else MaterialTheme.colorScheme.surfaceContainerLowest),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .zoomTakeoverHeight(takeover = { takeover.value }, viewportHeight = viewportHeight, bottomInsetPx = bottomInsetPx)
+                .zoomTakeoverHeight(takeover = takeoverFraction, viewportHeight = viewportHeight, bottomInsetPx = if (fullScreen) 0 else bottomInsetPx)
                 .clipToBounds()
                 .pinchZoomGestures(zoom),
         ) {
             // The video and its scrub preview zoom together; the pills and buttons over them don't.
-            // The video keeps its 16:9 shape (both players stretch to fill) and stays centred, so
-            // while the surface is taller than the strip it is letterboxed until zoomed past that.
+            // The video keeps its 16:9 shape (both players stretch to fill) and stays centred, as
+            // large as the surface allows: letterboxed while the surface is taller than that, and
+            // pillarboxed where it is wider (full screen on a phone), until zoomed past either.
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                    .fitVideo()
                     .align(Alignment.Center)
                     .pinchZoomContent(zoom),
             ) {
@@ -461,13 +538,14 @@ private fun PlayerSurface(
                 }
             }
 
-            if (request != null) {
+            // Full screen the tap is for the chrome, so it is there to take even with no stream.
+            if (request != null || fullScreen) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(zoom) {
                             detectTapGestures(
-                                onTap = { viewModel.togglePlayPause() },
+                                onTap = { if (isFullScreen) chromeShown = !chromeShown else viewModel.togglePlayPause() },
                                 onDoubleTap = { tapAt ->
                                     scope.launch {
                                         if (zoom.isZoomed) zoom.animateReset() else zoom.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
@@ -485,6 +563,9 @@ private fun PlayerSurface(
                     strokeWidth = 3.dp,
                 )
 
+                // The chrome has a play button of its own in this very spot, and that one works.
+                fullScreen && chromeShown -> Unit
+
                 request != null && !playback.isPlaying -> Box(
                     modifier = Modifier
                         .align(Alignment.Center)
@@ -500,6 +581,30 @@ private fun PlayerSurface(
                         modifier = Modifier.size(36.dp),
                     )
                 }
+            }
+
+            if (fullScreen) {
+                // matchParentSize, not fillMaxSize: AnimatedVisibility measures to its content.
+                AnimatedVisibility(
+                    visible = chromeShown,
+                    modifier = Modifier.matchParentSize(),
+                    enter = fadeIn(tween(FULL_SCREEN_CHROME_FADE_MS)),
+                    exit = fadeOut(tween(FULL_SCREEN_CHROME_FADE_MS)),
+                ) {
+                    FullScreenPlayerChrome(
+                        cameraName = cameraName,
+                        cameraAvailable = cameraAvailable,
+                        hasQualityChoice = hasQualityChoice,
+                        hint = hint,
+                        showHint = showHint,
+                        onBack = onBack,
+                        onClip = onClip,
+                        onTouch = { chromeTouched++ },
+                        onHold = { chromeHeld = it },
+                        overflowMenu = overflowMenu,
+                    )
+                }
+                return@Box
             }
 
             if (cameraAvailable) {
@@ -559,6 +664,13 @@ private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
 private const val QUICK_ACTION_HINT_MS = 3_000L
 private const val ZOOM_TAKEOVER_MS = 300
 
+/** How long the full-screen player's chrome stays up once it has been left alone. */
+private const val FULL_SCREEN_CHROME_MS = 4_000L
+private const val FULL_SCREEN_CHROME_FADE_MS = 180
+
+/** The most of the window's height the player takes while the page is under it. */
+private const val PLAYER_MAX_HEIGHT_FRACTION = 0.6f
+
 /**
  * Sizes the player surface between its 16:9 strip ([takeover] = 0) and the scroll viewport's
  * height less [bottomInsetPx] ([takeover] = 1), never shorter than the strip. Both inputs are read
@@ -567,7 +679,7 @@ private const val ZOOM_TAKEOVER_MS = 300
  */
 private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: IntState, bottomInsetPx: Int = 0): Modifier = layout { measurable, constraints ->
     val width = constraints.maxWidth
-    val strip = (width * 9f / 16f).roundToInt()
+    val strip = (width / VIDEO_ASPECT).roundToInt()
     val expanded = max(strip, viewportHeight.intValue - bottomInsetPx)
     val height = lerp(strip, expanded, takeover())
     val placeable = measurable.measure(Constraints.fixed(width, height))
@@ -579,7 +691,7 @@ private class QuickActionHint(val text: StringResource)
 
 /** Red and pulsing at the live edge; grey (and a button back to live) while watching history. */
 @Composable
-private fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+internal fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val dotColor = if (isLive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
     Row(
         modifier = modifier
@@ -605,7 +717,7 @@ private fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier = 
 }
 
 @Composable
-private fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, modifier: Modifier = Modifier) {
+internal fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, modifier: Modifier = Modifier) {
     val viewModel = cameraDetailViewModel(cameraName)
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
     Row(
@@ -629,27 +741,47 @@ private fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, 
     }
 }
 
+/**
+ * The camera's timeline and the chips that choose how much of it to show.
+ *
+ * On the page it is headed "Timeline". [overVideo] is the full-screen player's: the heading gives
+ * its place to the "behind live" readout (which on the page sits in the player's corner), and
+ * [onTouch] reports each use of it, so the chrome it is part of stays up while it is in use.
+ */
 @Composable
-private fun TimelineSection(cameraName: String) {
+internal fun TimelineSection(cameraName: String, modifier: Modifier = Modifier, overVideo: Boolean = false, onTouch: () -> Unit = {}) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
     val detections by viewModel.timelineDetections.collectAsStateWithLifecycle()
 
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(if (overVideo) 8.dp else 12.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(Res.string.camera_timeline),
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+            if (overVideo) {
+                val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
+                // An empty box at the live edge, so the chips keep to the end of the row.
+                if (playhead != null) BehindLiveReadout(playheadEpochSeconds = playhead, cameraName = cameraName) else Box(Modifier)
+            } else {
+                Text(
+                    text = stringResource(Res.string.camera_timeline),
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 TimelineSpan.entries.forEach { span ->
-                    SpanChip(span = span, selected = span == playback.span, onClick = { viewModel.setSpan(span) })
+                    SpanChip(
+                        span = span,
+                        selected = span == playback.span,
+                        onClick = {
+                            onTouch()
+                            viewModel.setSpan(span)
+                        },
+                    )
                 }
             }
         }
@@ -663,11 +795,20 @@ private fun TimelineSection(cameraName: String) {
             isLive = playback.isLive,
             onScrubStart = viewModel::onScrubStart,
             onScrub = viewModel::onScrub,
-            onScrubEnd = viewModel::onScrubEnd,
-            onSeek = viewModel::seekTo,
+            onScrubEnd = {
+                onTouch()
+                viewModel.onScrubEnd()
+            },
+            onSeek = { epochSeconds ->
+                onTouch()
+                viewModel.seekTo(epochSeconds)
+            },
             detections = detections,
             // A dot is a detection: play it from its start, as its Recent Activity card would.
-            onDetectionTap = viewModel::playMoment,
+            onDetectionTap = { startEpochSeconds ->
+                onTouch()
+                viewModel.playMoment(startEpochSeconds)
+            },
         )
 
         val historyError = playback.historyError
@@ -687,7 +828,7 @@ private fun TimelineSection(cameraName: String) {
 }
 
 @Composable
-private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit) {
+internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit) {
     val background = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
     val foreground = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
     Text(
@@ -708,21 +849,33 @@ private fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit)
  * Google Home calls activity zones and Frigate calls masks — and tagging the cars in view by
  * hand, reached from the header rather than cards competing with the timeline and recent
  * activity for the eye.
+ *
+ * The full-screen player's chrome carries the same menu, in its own [tint], and is told through
+ * [onOpenChange] while the menu is open so it doesn't fade away from under it.
  */
 @Composable
-private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -> Unit) {
+private fun CameraOverflowMenu(
+    onEditDetectionZones: () -> Unit,
+    onTagCars: () -> Unit,
+    tint: Color = MaterialTheme.colorScheme.primary,
+    onOpenChange: (Boolean) -> Unit = {},
+) {
     var expanded by remember { mutableStateOf(false) }
+    val setExpanded: (Boolean) -> Unit = { open ->
+        expanded = open
+        onOpenChange(open)
+    }
     Box {
-        IconButton(onClick = { expanded = true }, modifier = Modifier.size(48.dp)) {
+        IconButton(onClick = { setExpanded(true) }, modifier = Modifier.size(48.dp)) {
             Icon(
                 imageVector = Icons.Filled.MoreVert,
                 contentDescription = stringResource(Res.string.common_more_options),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = tint,
             )
         }
         DropdownMenu(
             expanded = expanded,
-            onDismissRequest = { expanded = false },
+            onDismissRequest = { setExpanded(false) },
             containerColor = MaterialTheme.colorScheme.surface,
             shape = RoundedCornerShape(16.dp),
             // The same hairline every card on this screen carries, so the menu reads as one of them.
@@ -732,7 +885,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
                 text = { Text(text = stringResource(Res.string.camera_menu_detection_zones), style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = { Icon(imageVector = Icons.Filled.CropFree, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = {
-                    expanded = false
+                    setExpanded(false)
                     onEditDetectionZones()
                 },
             )
@@ -742,7 +895,7 @@ private fun CameraOverflowMenu(onEditDetectionZones: () -> Unit, onTagCars: () -
                 text = { Text(text = stringResource(Res.string.camera_menu_tag_cars), style = MaterialTheme.typography.labelLarge) },
                 leadingIcon = { Icon(imageVector = Icons.Filled.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
                 onClick = {
-                    expanded = false
+                    setExpanded(false)
                     onTagCars()
                 },
             )

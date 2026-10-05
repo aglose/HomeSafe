@@ -13,13 +13,17 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Refresh
@@ -62,6 +66,7 @@ import com.meticulouscreations.homesafe.domain.model.boxBetween
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.model.subLabelDisplayName
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.viewmodel.CameraFrame
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
@@ -104,9 +109,12 @@ fun CarTaggingScreen(cameraName: String, onBack: () -> Unit, modifier: Modifier 
     // Until the view model has started this launch, what it holds is the last one's: show loading instead.
     val uiState = latest.takeIf { it.launch == launch } ?: CarTaggingUiState()
 
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag(CAR_TAGGING_TEST_TAG)) {
-        Header(cameraName = cameraName, refreshing = uiState.isLoading, onBack = onBack, onRefresh = viewModel::refresh)
-        Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+    // Upright, the frame has the middle of the page and the tagging panel the foot of it. On a
+    // phone on its side the panel would take half the height there is, so it stands beside the
+    // frame instead and the frame gets the full height.
+    val sideBySide = isCompactLandscape()
+    val stage: @Composable (Modifier) -> Unit = { stageModifier ->
+        Box(modifier = stageModifier, contentAlignment = Alignment.Center) {
             val frame = uiState.frame
             when {
                 frame != null -> FrameEditor(
@@ -133,11 +141,36 @@ fun CarTaggingScreen(cameraName: String, onBack: () -> Unit, modifier: Modifier 
                 else -> CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         }
-        if (uiState.frame != null) {
-            TagPanel(uiState = uiState, onTag = viewModel::tag, onCancel = viewModel::clearSelection)
+    }
+    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).testTag(CAR_TAGGING_TEST_TAG)) {
+        Header(cameraName = cameraName, refreshing = uiState.isLoading, onBack = onBack, onRefresh = viewModel::refresh)
+        if (sideBySide) {
+            Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                stage(Modifier.weight(TAG_FRAME_WEIGHT).fillMaxHeight().navigationBarsPadding().padding(bottom = 8.dp))
+                if (uiState.frame != null) {
+                    TagPanel(
+                        uiState = uiState,
+                        onTag = viewModel::tag,
+                        onCancel = viewModel::clearSelection,
+                        // Its share of the width, up to what its chips have any use for.
+                        modifier = Modifier.weight(1f, fill = false).widthIn(max = TAG_PANEL_MAX_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    )
+                }
+            }
+        } else {
+            stage(Modifier.weight(1f).fillMaxWidth())
+            if (uiState.frame != null) {
+                TagPanel(uiState = uiState, onTag = viewModel::tag, onCancel = viewModel::clearSelection, modifier = Modifier.fillMaxWidth())
+            }
         }
     }
 }
+
+/** The widest the tagging panel gets beside the frame on a phone on its side: its chips wrap inside it. */
+private val TAG_PANEL_MAX_WIDTH = 320.dp
+
+/** The frame's share of the width beside the panel (whose share is 1). */
+private const val TAG_FRAME_WEIGHT = 1.6f
 
 @Composable
 private fun Header(cameraName: String, refreshing: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
@@ -249,9 +282,9 @@ private fun FrameEditor(frame: CameraFrame, uiState: CarTaggingUiState, onTap: (
 /** What to do with the chosen car: who it is. With nothing chosen, how to choose. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCancel: () -> Unit) {
+private fun TagPanel(uiState: CarTaggingUiState, onTag: (String) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     Column(
-        modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = modifier.navigationBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         uiState.notice?.let { notice ->

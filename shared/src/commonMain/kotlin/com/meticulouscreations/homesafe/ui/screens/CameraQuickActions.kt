@@ -109,15 +109,8 @@ internal fun QuickActionsRow(
         onQualitySelect = viewModel::setQuality,
         onQualityUnavailable = { showHint(Res.string.camera_hint_single_quality) },
         onToggleSound = {
-            val soundOn = playback.isMuted
+            showHint(soundToggleHint(wasMuted = playback.isMuted, hasAudio = playback.hasAudio))
             viewModel.toggleMuted()
-            showHint(
-                when {
-                    soundOn && !playback.hasAudio -> Res.string.camera_hint_sound_on_no_audio
-                    soundOn -> Res.string.camera_hint_sound_on
-                    else -> Res.string.camera_hint_sound_off
-                },
-            )
         },
         onClip = onClip,
         modifier = modifier,
@@ -204,9 +197,19 @@ internal fun CameraQuickActions(
     }
 }
 
+/**
+ * What a tap on the speaker did, in a line: sound on, sound off, or on but with nothing to play
+ * (go2rtc's sub-streams and Frigate's recordings are video-only).
+ */
+internal fun soundToggleHint(wasMuted: Boolean, hasAudio: Boolean): StringResource = when {
+    wasMuted && !hasAudio -> Res.string.camera_hint_sound_on_no_audio
+    wasMuted -> Res.string.camera_hint_sound_on
+    else -> Res.string.camera_hint_sound_off
+}
+
 /** The three stream choices, each with a line on what it trades, the one in force ticked. */
 @Composable
-private fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (StreamQuality) -> Unit, onDismiss: () -> Unit) {
+internal fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (StreamQuality) -> Unit, onDismiss: () -> Unit) {
     DropdownMenu(
         expanded = expanded,
         onDismissRequest = onDismiss,
@@ -345,7 +348,7 @@ internal val CLIP_LABEL: StringResource = Res.string.camera_action_clip
  * circle as a fraction of the window, (0.5, 0.5) until it has been placed. A plain holder, not
  * state — nothing redraws when it moves; only the next tap reads it.
  */
-private class OriginProbe {
+internal class OriginProbe {
     var coordinates: LayoutCoordinates? = null
 
     fun fraction(): Offset {

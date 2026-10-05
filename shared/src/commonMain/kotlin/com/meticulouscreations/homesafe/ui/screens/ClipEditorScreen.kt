@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -47,6 +48,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -109,6 +111,7 @@ import com.meticulouscreations.homesafe.ui.components.clipMomentColor
 import com.meticulouscreations.homesafe.ui.components.splashReveal
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.formatDuration
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorUiState
 import com.meticulouscreations.homesafe.viewmodel.ClipEditorViewModel
@@ -162,6 +165,9 @@ import kotlin.math.round
  *
  * Once the splash has landed the system bars are hidden (swipe from an edge to peek at them); not
  * before, so the page being covered doesn't jump up under the water as the status bar goes.
+ *
+ * On a phone on its side the picture and the controls stand side by side rather than one above
+ * the other: stacked, the controls would leave the picture a strip a few fingers tall.
  */
 @OptIn(ExperimentalAnimationApi::class)
 @Composable
@@ -287,6 +293,39 @@ private fun ClipEditorContent(
         }
     }
 
+    // The picture and the controls under it are the same two pieces whichever way the phone is
+    // held; each takes the modifier that places it.
+    val stage: @Composable (Modifier) -> Unit = { stageModifier ->
+        PreviewStage(
+            state = state,
+            onTogglePlay = onTogglePlay,
+            onRetryLoad = onRetryLoad,
+            onPlayerPosition = onPlayerPosition,
+            onBuffering = onBuffering,
+            onPlaybackEnd = onPlaybackEnd,
+            onPlaybackError = onPlaybackError,
+            snapshotUrl = snapshotUrl,
+            modifier = stageModifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+    }
+    val controls: @Composable (Modifier) -> Unit = { controlsModifier ->
+        ControlsPanel(
+            state = state,
+            onTogglePlay = onTogglePlay,
+            snapshotUrl = snapshotUrl,
+            trimmer = trimmer,
+            onSelectMoment = { moment ->
+                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                onSelectMoment(moment)
+            },
+            onSetLength = { seconds ->
+                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                onSetLength(seconds)
+            },
+            modifier = controlsModifier.chromeRise(splashProgress, fromTop = false),
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(modifier = Modifier.fillMaxSize()) {
             EditorTopBar(
@@ -299,36 +338,18 @@ private fun ClipEditorContent(
                 modifier = Modifier.chromeRise(splashProgress, fromTop = true),
             )
 
-            PreviewStage(
-                state = state,
-                onTogglePlay = onTogglePlay,
-                onRetryLoad = onRetryLoad,
-                onPlayerPosition = onPlayerPosition,
-                onBuffering = onBuffering,
-                onPlaybackEnd = onPlaybackEnd,
-                onPlaybackError = onPlaybackError,
-                snapshotUrl = snapshotUrl,
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-            )
-
-            ControlsPanel(
-                state = state,
-                onTogglePlay = onTogglePlay,
-                snapshotUrl = snapshotUrl,
-                trimmer = trimmer,
-                onSelectMoment = { moment ->
-                    haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSelectMoment(moment)
-                },
-                onSetLength = { seconds ->
-                    haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    onSetLength(seconds)
-                },
-                modifier = Modifier.chromeRise(splashProgress, fromTop = false),
-            )
+            if (isCompactLandscape()) {
+                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                    stage(Modifier.weight(CONTROLS_STAGE_WEIGHT).fillMaxHeight())
+                    // Their share of the width, up to that of a phone held upright, which is what
+                    // the filmstrip was drawn for; they scroll, should the chips and a long hint
+                    // outgrow the height.
+                    controls(Modifier.weight(1f, fill = false).widthIn(max = CONTROLS_SIDE_MAX_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()))
+                }
+            } else {
+                stage(Modifier.weight(1f).fillMaxWidth())
+                controls(Modifier.fillMaxWidth())
+            }
         }
 
         SaveBanner(
@@ -337,7 +358,9 @@ private fun ClipEditorContent(
             onDismiss = onDismissSaveError,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(16.dp),
+                .padding(16.dp)
+                // A banner, not a bar: in a wide window it doesn't stretch across the picture.
+                .widthIn(max = SAVE_BANNER_MAX_WIDTH),
         )
     }
 }
@@ -653,9 +676,7 @@ private fun ControlsPanel(
     LaunchedEffect(state.activeHandle) { if (state.activeHandle != null) coached = true }
 
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(bottom = 12.dp),
+        modifier = modifier.padding(bottom = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         ClipTimeReadout(range = state.range, playheadEpochSeconds = state.playheadEpochSeconds, modifier = Modifier.fillMaxWidth())
@@ -1016,6 +1037,13 @@ private const val CHROME_REVEAL_FROM = 0.55f
 private val CHROME_RISE = 24.dp
 
 private val PREVIEW_CORNER = 16.dp
+
+/** The widest the controls' column gets beside the picture on a phone on its side. */
+private val CONTROLS_SIDE_MAX_WIDTH = 400.dp
+
+/** The picture's share of the width beside the controls (whose share is 1). */
+private const val CONTROLS_STAGE_WEIGHT = 1.2f
+private val SAVE_BANNER_MAX_WIDTH = 520.dp
 private val PLAY_BUTTON_SIZE = 48.dp
 
 /** Full-width 16:9, like the camera page's player; the filmstrip's frames are small. */

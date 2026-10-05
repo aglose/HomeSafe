@@ -86,6 +86,7 @@
     <!-- How far behind live the recording on screen is; %1$s is a duration such as "4:05". -->
     <string name="camera_behind_live">-%1$s</string>
     <string name="camera_play">Play</string>
+    <string name="camera_pause">Pause</string>
     <string name="camera_timeline">Timeline</string>
     <!-- The timeline's span choices: one hour, three hours, twelve hours, a day. -->
     <string name="camera_span_1h">1h</string>

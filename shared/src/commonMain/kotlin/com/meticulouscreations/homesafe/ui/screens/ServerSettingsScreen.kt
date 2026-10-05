@@ -62,7 +62,7 @@ fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
+                .padding(horizontal = contentGutter())
                 // Content padding, as on the main page: the last card scrolls clear of the floating nav.
                 .padding(top = 8.dp, bottom = bottomNavClearance()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -77,7 +77,7 @@ fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
 @Composable
 private fun Header(onBack: () -> Unit, onRefresh: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {

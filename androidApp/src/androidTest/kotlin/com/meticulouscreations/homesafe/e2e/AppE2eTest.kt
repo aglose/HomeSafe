@@ -18,6 +18,7 @@ import com.meticulouscreations.homesafe.MainActivity
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.screens.FULL_SCREEN_CHROME_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_CONNECT_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.SIGN_IN_SERVER_URL_TEST_TAG
 import org.junit.After
@@ -183,6 +184,53 @@ class AppE2eTest {
             }
             // Hand the launch Intent back so the scenario sees the Activity finish when it closes.
             InstrumentationRegistry.getInstrumentation().runOnMainSync { running?.intent = launchIntent }
+        }
+    }
+
+    /**
+     * A rotation is the window changing shape, not a new Activity (`android:configChanges` in the
+     * manifest): a recreated one would build a new app graph and be back at the sign-in form,
+     * with the camera that was open gone. Only the real Activity on a real display can show that.
+     */
+    @Test
+    fun turningTheDeviceOnItsSideKeepsTheSameActivityAndTheCameraThatWasOpen() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val device = UiDevice.getInstance(instrumentation)
+        app.launch().use { scenario ->
+            app.signIn()
+            app.awaitCameraCard("back_yard", "Back Yard")
+            app.tap(hasText("Back Yard"), "the Back Yard card")
+            app.awaitCameraScreen("Back Yard")
+            var before: MainActivity? = null
+            scenario.onActivity { before = it }
+            val chrome = hasTestTag(FULL_SCREEN_CHROME_TEST_TAG)
+
+            try {
+                device.setOrientationLeft()
+                app.awaitUntil("the display to be on its side") { device.displayWidth > device.displayHeight }
+
+                // On a phone-sized display the camera now has the whole screen, with its controls
+                // over the video; on anything larger it is still the page. Either way it is still
+                // this camera, in the Activity that was already running.
+                val density = instrumentation.targetContext.resources.displayMetrics.density
+                val phoneOnItsSide = device.displayHeight / density < 480 && device.displayWidth / density >= 600
+                if (phoneOnItsSide) app.awaitNode(chrome, "the full-screen player's controls") else app.awaitCameraScreen("Back Yard")
+                app.awaitText("Back Yard")
+                assertEquals(0, app.count(hasTestTag(SIGN_IN_CONNECT_TEST_TAG)))
+                app.awaitUntil("the one resumed MainActivity to be the instance that was running before the turn") {
+                    resumedActivities().let { it.size == 1 && it.single() === before }
+                }
+
+                device.setOrientationNatural()
+                app.awaitUntil("the display to be upright again") { device.displayWidth < device.displayHeight }
+
+                app.awaitGone(chrome, "the full-screen player's controls")
+                app.awaitCameraScreen("Back Yard")
+                app.awaitSelected(TopLevelRoute.Home)
+            } finally {
+                device.setOrientationNatural()
+                device.unfreezeRotation()
+            }
         }
     }
 

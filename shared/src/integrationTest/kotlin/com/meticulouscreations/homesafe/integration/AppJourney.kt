@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.integration
 
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.Snapshot
@@ -20,6 +21,7 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateServer
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
+import com.meticulouscreations.homesafe.ui.LocalCompactLandscape
 import com.meticulouscreations.homesafe.uitest.scrollIntoView
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -56,11 +58,17 @@ private fun runJourney(name: String, state: FakeFrigateState, block: AppJourney.
         val graph = createAppGraph(testPlatformContext())
         val watchdog = JourneyWatchdog(Thread.currentThread(), JOURNEY_WATCHDOG)
         val onScreen = mutableStateOf(true)
+        // Null leaves the layout to the window the journey runs in, as the app itself does.
+        val onItsSide = mutableStateOf<Boolean?>(null)
         var stuck = false
         try {
             mainClock.autoAdvance = false
-            setContent { if (onScreen.value) App(graph) }
-            val journey = AppJourney(this, server, graph, name)
+            setContent {
+                if (onScreen.value) {
+                    CompositionLocalProvider(LocalCompactLandscape provides onItsSide.value) { App(graph) }
+                }
+            }
+            val journey = AppJourney(this, server, graph, name, onItsSide)
             try {
                 journey.block()
             } catch (failure: Throwable) {
@@ -164,8 +172,26 @@ internal class AppJourney(
     val graph: AppGraph,
     /** Names this journey's screenshots; see [snapshot]. */
     val name: String = "journey",
+    private val onItsSide: MutableState<Boolean?> = mutableStateOf(null),
 ) {
     private var snapshots = 0
+
+    /**
+     * Turns the phone: on its side ([onItsSide] true) the app lays itself out for a short, wide
+     * window — the nav down the side, a camera full screen — and upright (false) for a tall one.
+     * The window the journey runs in stays the size it is (a desktop window on the JVM, whatever
+     * the emulator's is on Android), so this is the same app, signed in and wherever it had got
+     * to, being told its window changed shape: what a rotation is to it, now that a rotation no
+     * longer recreates the Activity.
+     */
+    fun turnPhone(onItsSide: Boolean) {
+        ui.runOnUiThread {
+            this.onItsSide.value = onItsSide
+            Snapshot.sendApplyNotifications()
+        }
+        settle()
+        snapshot(if (onItsSide) "turned on its side" else "turned upright")
+    }
 
     val state: FakeFrigateState get() = server.state
 

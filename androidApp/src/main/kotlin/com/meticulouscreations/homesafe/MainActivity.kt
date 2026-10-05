@@ -38,8 +38,9 @@ class MainActivity : FragmentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
 
-        // Only on a fresh launch: a recreation (rotation) re-delivers the intent that started the
-        // Activity, and the moment it named was opened the first time round.
+        // Only on a fresh launch: a recreation re-delivers the intent that started the Activity,
+        // and the moment it named was opened the first time round. (A rotation is not one: see
+        // android:configChanges in the manifest. A font-size or language change still is.)
         if (savedInstanceState == null) openMomentFrom(intent)
 
         appGraph = createAppGraph(platformContext = PlatformContext(this))

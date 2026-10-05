@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -102,7 +103,9 @@ import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
+import com.meticulouscreations.homesafe.ui.windowHeight
 import com.meticulouscreations.homesafe.viewmodel.DownloadUiState
 import com.meticulouscreations.homesafe.viewmodel.MomentCameraOption
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
@@ -330,10 +333,13 @@ internal fun MomentsFeed(
         )
     }
 
+    // The gutters are each row's own (and the list's content padding) rather than the column's,
+    // so the list takes drags across the whole window: on a phone on its side the thumbs rest
+    // at the edges, out in the gutters.
+    val gutter = contentGutter()
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp)
             // Under the shell's floating top bar (see shellTopBarClearance); the filter chips
             // stay put beneath it while the list scrolls under both.
             .padding(top = shellTopBarClearance() + 8.dp),
@@ -345,7 +351,7 @@ internal fun MomentsFeed(
         // rather than scroll: with a camera, a type and a day all picked they don't fit one line
         // on a phone, and a filter in force that has scrolled out of sight reads as no filter.
         FlowRow(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = gutter),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
             itemVerticalAlignment = Alignment.CenterVertically,
@@ -374,18 +380,18 @@ internal fun MomentsFeed(
                 text = message.resolve(),
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(start = 16.dp),
+                modifier = Modifier.padding(start = gutter + 16.dp, end = gutter),
             )
         }
 
-        NotAPersonBar(state = notAPersonState, onUndo = onUndoNotAPerson, onDismiss = onDismissNotAPerson)
+        NotAPersonBar(state = notAPersonState, onUndo = onUndoNotAPerson, onDismiss = onDismissNotAPerson, modifier = Modifier.padding(horizontal = gutter))
 
         // The pull is only for the feed: the filter chips above stay where they are.
         ApertureRefreshBox(isRefreshing = state.refreshing, onRefresh = onRefresh, modifier = Modifier.weight(1f)) {
             if (state.groups.isEmpty()) {
                 // A list of one screen-filling item rather than the message alone: the pull needs
                 // something to drag, and an empty feed is exactly when someone reaches for it.
-                LazyColumn(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(horizontal = gutter)) {
                     item(key = "empty", contentType = "empty") {
                         EmptyMoments(
                             category = state.selectedCategory,
@@ -413,7 +419,7 @@ internal fun MomentsFeed(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = bottomNavClearance()),
+                    contentPadding = PaddingValues(start = gutter, end = gutter, bottom = bottomNavClearance()),
                     verticalArrangement = Arrangement.spacedBy(24.dp),
                 ) {
                     state.groups.forEach { group ->
@@ -888,6 +894,9 @@ private fun MomentDateHeader(dateGroup: UiText, dateSubLabel: UiText, onRefresh:
     }
 }
 
+/** The most of the window's height a card's inline player takes. */
+private const val INLINE_PLAYER_MAX_HEIGHT_FRACTION = 0.6f
+
 /** Whether [eventId] is this entry's detection or one of its clips. */
 private fun MomentItem.plays(eventId: String): Boolean = eventFor(eventId) != null
 
@@ -1306,11 +1315,23 @@ private fun MomentClipList(
     }
 }
 
-/** The card-width player a card opens beneath itself, with the way out to the full-width one. */
+/**
+ * The card-width player a card opens beneath itself, with the way out to the full-width one.
+ *
+ * 16:9 across the card, unless that would be most of the window's height (a card on a phone on
+ * its side is wider than the window is tall): then the picture is as tall as
+ * [INLINE_PLAYER_MAX_HEIGHT_FRACTION] of the window allows, centred in the card's width, so the
+ * card it belongs to is still in sight above it.
+ */
 @Composable
 private fun InlineClipPlayer(player: ClipPlayerState, onClipBuffering: (Boolean) -> Unit, onClipError: () -> Unit, onFullScreenClick: () -> Unit) {
     Box(
-        modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+            .wrapContentWidth()
+            .heightIn(max = windowHeight() * INLINE_PLAYER_MAX_HEIGHT_FRACTION)
+            .fitVideo(),
         contentAlignment = Alignment.Center,
     ) {
         // Error is checked before the player: an error that lands after the request was set
