@@ -45,10 +45,10 @@
         <error line="143" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="302" column="5" source="compose:modifier-missing-check" />
+        <error line="304" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="132" column="5" source="compose:modifier-missing-check" />
+        <error line="142" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="117" column="5" source="compose:modifier-missing-check" />
@@ -60,7 +60,7 @@
         <error line="754" column="14" source="compose:param-order-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SettingsTabNav.kt">
-        <error line="96" column="5" source="compose:modifier-missing-check" />
+        <error line="103" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
         <error line="78" column="14" source="compose:compositionlocal-allowlist" />

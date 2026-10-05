@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -22,6 +23,7 @@ import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.text.asUiText
@@ -120,6 +122,120 @@ class HomeFeedUiTest {
         }
 
         onAllNodesWithText("No cameras found on this server.").assertCountEquals(0)
+    }
+
+    @Test
+    fun tailscaleBeingOffOnThisDeviceIsSaidAtTheTopOfThePage() {
+        var retries = 0
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                FrigatePreview {
+                    HomeFeed(
+                        everyoneAway = false,
+                        cameras = listOf(tile("front_door")),
+                        onAwayBack = {},
+                        connectionProblem = ConnectionProblem.TailscaleOff,
+                        onConnectionRetry = { retries++ },
+                    ) { tile -> Text(tile.camera.displayName) }
+                }
+            }
+
+            onNodeWithText("Tailscale isn't connected on this device").assertIsDisplayed()
+            onNodeWithText("Open the Tailscale app and connect.", substring = true).assertIsDisplayed()
+            // What the device kept is still there beneath it.
+            onNodeWithText("Front Door").assertIsDisplayed()
+            onNodeWithText("Try again").performClick()
+        }
+        assertEquals(1, retries)
+    }
+
+    @Test
+    fun whereTheAppCanOpenTailscaleTheNoticeOffersTo() {
+        var opened = 0
+        runComposeUiTest {
+            mainClock.autoAdvance = false
+            setContent {
+                FrigatePreview {
+                    HomeFeed(
+                        everyoneAway = false,
+                        cameras = emptyList(),
+                        onAwayBack = {},
+                        connectionProblem = ConnectionProblem.TailscaleOff,
+                        onOpenTailscale = { opened++ },
+                    ) { }
+                }
+            }
+
+            onNodeWithText("Open Tailscale").performClick()
+            onNodeWithText("Try again").assertIsDisplayed()
+        }
+        assertEquals(1, opened)
+    }
+
+    @Test
+    fun whereItCannotThereIsOnlyTryAgain() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(everyoneAway = false, cameras = emptyList(), onAwayBack = {}, connectionProblem = ConnectionProblem.TailscaleOff) { }
+            }
+        }
+
+        onAllNodesWithText("Open Tailscale").assertCountEquals(0)
+        onNodeWithText("Try again").assertIsDisplayed()
+    }
+
+    @Test
+    fun openingTailscaleIsNotOfferedForAServerThatIsSimplyNotAnswering() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = emptyList(),
+                    onAwayBack = {},
+                    connectionProblem = ConnectionProblem.ServerUnreachable,
+                    onOpenTailscale = {},
+                ) { }
+            }
+        }
+
+        onAllNodesWithText("Open Tailscale").assertCountEquals(0)
+    }
+
+    @Test
+    fun aServerThatIsNotAnsweringIsNotBlamedOnTailscale() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(
+                    everyoneAway = false,
+                    cameras = emptyList(),
+                    onAwayBack = {},
+                    connectionProblem = ConnectionProblem.ServerUnreachable,
+                    connectionRetrying = true,
+                ) { }
+            }
+        }
+
+        onNodeWithText("Can't reach the server").assertIsDisplayed()
+        onAllNodesWithText("Tailscale isn't connected on this device").assertCountEquals(0)
+        // Mid-retry the button says so and can't be pressed again.
+        onNodeWithText("Trying…").assertIsNotEnabled()
+    }
+
+    @Test
+    fun thereIsNoNoticeWhileTheServerAnswers() = runComposeUiTest {
+        mainClock.autoAdvance = false
+        setContent {
+            FrigatePreview {
+                HomeFeed(everyoneAway = false, cameras = emptyList(), onAwayBack = {}) { }
+            }
+        }
+
+        onAllNodesWithText("Try again").assertCountEquals(0)
+        onAllNodesWithText("Can't reach the server").assertCountEquals(0)
     }
 
     @Test

@@ -44,6 +44,14 @@
     <string name="home_no_cameras">No cameras found on this server.</string>
     <string name="home_away_banner">Away mode · nobody home · alerts escalated</string>
     <string name="home_away_back">I'm back</string>
+    <!-- The notice at the top of Home while the app is signed in but can't reach the server. -->
+    <string name="home_connection_tailscale_off_title">Tailscale isn't connected on this device</string>
+    <string name="home_connection_tailscale_off_body">This device has no route to the server without it. Open the Tailscale app and connect. Until then you're seeing what this device kept.</string>
+    <string name="home_connection_unreachable_title">Can't reach the server</string>
+    <string name="home_connection_unreachable_body">It isn't answering on your home network or over Tailscale. You're seeing what this device kept.</string>
+    <string name="home_connection_open_tailscale">Open Tailscale</string>
+    <string name="home_connection_retry">Try again</string>
+    <string name="home_connection_retrying">Trying…</string>
 
     <!-- The pill in the corner of a camera card. -->
     <string name="home_badge_disabled">Disabled</string>
@@ -116,6 +124,8 @@
     <string name="shell_menu">Menu</string>
     <!-- The top bar's connection-status icon before there is a connection, for screen readers. -->
     <string name="shell_status">Status</string>
+    <!-- The top bar's badge while the server can't be reached, in place of the route. -->
+    <string name="shell_offline">Offline</string>
     <!-- Accessibility action on the connection badge. -->
     <string name="shell_show_version">Show the app version</string>
     <!-- %1$s is the app's version, e.g. "1.4.2". -->

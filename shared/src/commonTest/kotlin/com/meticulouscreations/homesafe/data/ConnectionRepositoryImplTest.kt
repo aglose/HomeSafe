@@ -799,6 +799,7 @@ class ConnectionRepositoryImplTest {
         assertEquals(serverUrl, h.repository.activeConnection.value?.activeUrl)
         assertEquals(0, h.frigate.logins(localHost), "the password went nowhere it isn't allowed to")
         assertTrue(h.biometrics.hasSavedCredentials())
+        assertTrue(h.repository.serverUnreachable.value, "and the screens are told there is no server behind what they show")
         val loginsWhileDown = h.frigate.logins(tailscaleHost)
 
         // The server comes up: the session is minted behind the screens, with no prompt.
@@ -806,8 +807,36 @@ class ConnectionRepositoryImplTest {
         h.frigate.localReachable = true
         eventually("a login once the server answers") { h.frigate.logins(tailscaleHost) > loginsWhileDown }
         eventually("a working session on the address in use") { h.apiClient.sessionCookieHeader(serverUrl) != null }
+        eventually("the screens told the server is back") { !h.repository.serverUnreachable.value }
         assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
         assertEquals(0, h.frigate.logins(localHost))
+    }
+
+    @Test
+    fun aSignInThatLandsHasAServer() = runTest {
+        val h = Harness(this)
+        assertFalse(h.repository.serverUnreachable.value)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+        assertFalse(h.repository.serverUnreachable.value)
+    }
+
+    @Test
+    fun aPullWithNothingAnsweringSaysTheServerIsUnreachableAndOneThatLandsTakesItBack() = runTest {
+        val h = Harness(this)
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+
+        // Tailscale switched off on the phone, away from home: neither address answers.
+        h.frigate.tailscaleReachable = false
+        h.frigate.localReachable = false
+        h.repository.reconnect()
+        assertTrue(h.repository.serverUnreachable.value)
+
+        // Tailscale back on.
+        h.frigate.tailscaleReachable = true
+        h.repository.reconnect()
+        assertFalse(h.repository.serverUnreachable.value)
     }
 
     @Test

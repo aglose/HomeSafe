@@ -47,12 +47,12 @@ import kotlin.math.roundToInt
 
 /**
  * The server's diagnostics, one tap below Settings: how the app reaches it, its version, load and
- * detector, the recordings disk and retention, and the AI features its config switches on. Worth
+ * detector, its uptime record, the recordings disk and retention, and the AI features its config switches on. Worth
  * a look when something seems off, not on every visit — which is why the main page carries only
  * the one-line [serverSummary] and a way in.
  */
 @Composable
-fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, onOpenUptime: () -> Unit = {}) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
@@ -68,6 +68,7 @@ fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier) {
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             ServerSection(state, onRetry = viewModel::retryOverview)
+            UptimeLinkRow(onOpen = onOpenUptime)
             StorageSection(state.overview)
             AiFeaturesSection(state.overview)
         }

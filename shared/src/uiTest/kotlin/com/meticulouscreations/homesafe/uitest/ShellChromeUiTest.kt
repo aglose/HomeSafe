@@ -166,6 +166,21 @@ class ShellChromeUiTest {
     }
 
     @Test
+    fun theBadgeSaysOfflineInsteadOfNamingARouteNothingIsTravellingOver() = runComposeUiTest {
+        setContent {
+            FrigatePreview {
+                FrigateTopBar(
+                    activeConnection = ActiveConnection(serverUrl = "http://100.64.0.1:5000", localUrl = null, route = ConnectionRoute.TAILSCALE),
+                    appVersion = "1.0.62 (431)",
+                    offline = true,
+                )
+            }
+        }
+        onNodeWithText("Offline").assertIsDisplayed()
+        onNodeWithText("Tailscale").assertDoesNotExist()
+    }
+
+    @Test
     fun tappingTheRouteBadgeShowsTheAppVersion() = runComposeUiTest {
         setContent {
             FrigatePreview {
