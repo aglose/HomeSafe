@@ -95,6 +95,9 @@
     <string name="camera_behind_live">-%1$s</string>
     <string name="camera_play">Play</string>
     <string name="camera_pause">Pause</string>
+    <!-- What a tap on the full-screen video does, for a screen reader or a keyboard: its controls fade away when left alone. -->
+    <string name="camera_show_controls">Show controls</string>
+    <string name="camera_hide_controls">Hide controls</string>
     <string name="camera_timeline">Timeline</string>
     <!-- The timeline's span choices: one hour, three hours, twelve hours, a day. -->
     <string name="camera_span_1h">1h</string>

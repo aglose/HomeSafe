@@ -25,11 +25,11 @@
         <error line="19" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
-        <error line="146" column="5" source="compose:modifier-missing-check" />
-        <error line="427" column="5" source="compose:state-param-check" />
-        <error line="430" column="5" source="compose:lambda-param-in-effect" />
-        <error line="430" column="5" source="compose:parameter-naming" />
-        <error line="636" column="47" source="compose:lambda-param-in-effect" />
+        <error line="159" column="5" source="compose:modifier-missing-check" />
+        <error line="440" column="5" source="compose:state-param-check" />
+        <error line="443" column="5" source="compose:lambda-param-in-effect" />
+        <error line="443" column="5" source="compose:parameter-naming" />
+        <error line="700" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />
@@ -48,7 +48,7 @@
         <error line="304" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="142" column="5" source="compose:modifier-missing-check" />
+        <error line="143" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="117" column="5" source="compose:modifier-missing-check" />

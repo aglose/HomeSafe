@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -59,11 +60,21 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
@@ -102,6 +113,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.camera_behind_live
 import homesafe.shared.generated.resources.camera_go_live
+import homesafe.shared.generated.resources.camera_hide_controls
 import homesafe.shared.generated.resources.camera_live
 import homesafe.shared.generated.resources.camera_menu_detection_zones
 import homesafe.shared.generated.resources.camera_menu_tag_cars
@@ -111,6 +123,7 @@ import homesafe.shared.generated.resources.camera_play
 import homesafe.shared.generated.resources.camera_recent_activity
 import homesafe.shared.generated.resources.camera_recent_empty
 import homesafe.shared.generated.resources.camera_recent_loading
+import homesafe.shared.generated.resources.camera_show_controls
 import homesafe.shared.generated.resources.camera_timeline
 import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.common_dot_separator
@@ -446,16 +459,36 @@ private fun PlayerSurface(
     val isFullScreen by rememberUpdatedState(fullScreen)
 
     // The chrome is up on arrival, so the way back is in sight, and goes after a few seconds of
-    // being left alone — but not while paused (the picture isn't going anywhere), mid-scrub, or
-    // with one of its menus open. [chromeTouched] restarts the wait: each use of a control bumps it.
+    // being left alone — but not while paused (the picture isn't going anywhere), mid-scrub,
+    // with one of its menus open ([chromeHeld]), or while the keyboard's focus is on one of its
+    // controls ([chromeFocused]). [chromeTouched] restarts the wait: each use of a control bumps it.
     var chromeShown by remember { mutableStateOf(true) }
     var chromeHeld by remember { mutableStateOf(false) }
+    var chromeFocused by remember { mutableStateOf(false) }
     var chromeTouched by remember { mutableIntStateOf(0) }
+    // The chrome reports its menus and its focus while it is composed, and it can leave with
+    // either still set — turned upright with a menu open, hidden by a tap. Whenever it goes,
+    // or comes back afresh, nothing is holding it.
+    LaunchedEffect(fullScreen, chromeShown) {
+        if (!fullScreen || !chromeShown) {
+            chromeHeld = false
+            chromeFocused = false
+        }
+    }
     LaunchedEffect(fullScreen) { if (fullScreen) chromeShown = true }
     val scrubbing = playback.scrubEpochSeconds != null
-    LaunchedEffect(fullScreen, chromeShown, chromeHeld, chromeTouched, playback.isPlaying, scrubbing) {
-        if (fullScreen && chromeShown && !chromeHeld && playback.isPlaying && !scrubbing) {
-            delay(timeMillis = FULL_SCREEN_CHROME_MS)
+    // How long "left alone" is belongs to the person: someone using a screen reader or a switch
+    // has told the system how long controls that disappear should wait for them.
+    val accessibilityManager = LocalAccessibilityManager.current
+    LaunchedEffect(fullScreen, chromeShown, chromeHeld, chromeFocused, chromeTouched, playback.isPlaying, scrubbing) {
+        if (fullScreen && chromeShown && !chromeHeld && !chromeFocused && playback.isPlaying && !scrubbing) {
+            val wait = accessibilityManager?.calculateRecommendedTimeoutMillis(
+                originalTimeoutMillis = FULL_SCREEN_CHROME_MS,
+                containsIcons = true,
+                containsText = true,
+                containsControls = true,
+            ) ?: FULL_SCREEN_CHROME_MS
+            delay(timeMillis = wait)
             chromeShown = false
         }
     }
@@ -476,13 +509,18 @@ private fun PlayerSurface(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .zoomTakeoverHeight(takeover = takeoverFraction, viewportHeight = viewportHeight)
+            .zoomTakeoverHeight(takeover = takeoverFraction, viewportHeight = viewportHeight, fillViewport = fullScreen)
             .background(if (fullScreen) Color.Black else MaterialTheme.colorScheme.surfaceContainerLowest),
     ) {
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .zoomTakeoverHeight(takeover = takeoverFraction, viewportHeight = viewportHeight, bottomInsetPx = if (fullScreen) 0 else bottomInsetPx)
+                .zoomTakeoverHeight(
+                    takeover = takeoverFraction,
+                    viewportHeight = viewportHeight,
+                    bottomInsetPx = if (fullScreen) 0 else bottomInsetPx,
+                    fillViewport = fullScreen,
+                )
                 .clipToBounds()
                 .pinchZoomGestures(zoom),
         ) {
@@ -540,9 +578,34 @@ private fun PlayerSurface(
 
             // Full screen the tap is for the chrome, so it is there to take even with no stream.
             if (request != null || fullScreen) {
+                // Once the chrome has faded this layer is the only way to it, so full screen it is
+                // a button in its own right: named for a screen reader, which can activate it, and
+                // focusable, so Enter or Space on a keyboard does what a tap does. The pointer
+                // input stays as it was — a clickable would swallow the double tap that zooms.
+                val toggleChromeLabel = stringResource(if (chromeShown) Res.string.camera_hide_controls else Res.string.camera_show_controls)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .then(
+                            if (fullScreen) {
+                                Modifier
+                                    .semantics {
+                                        role = Role.Button
+                                        onClick(label = toggleChromeLabel) {
+                                            chromeShown = !chromeShown
+                                            true
+                                        }
+                                    }
+                                    .onKeyEvent { event ->
+                                        val activates = event.type == KeyEventType.KeyUp && event.key in ACTIVATION_KEYS
+                                        if (activates) chromeShown = !chromeShown
+                                        activates
+                                    }
+                                    .focusable()
+                            } else {
+                                Modifier
+                            },
+                        )
                         .pointerInput(zoom) {
                             detectTapGestures(
                                 onTap = { if (isFullScreen) chromeShown = !chromeShown else viewModel.togglePlayPause() },
@@ -601,6 +664,7 @@ private fun PlayerSurface(
                         onClip = onClip,
                         onTouch = { chromeTouched++ },
                         onHold = { chromeHeld = it },
+                        onFocusChange = { chromeFocused = it },
                         overflowMenu = overflowMenu,
                     )
                 }
@@ -671,19 +735,45 @@ private const val FULL_SCREEN_CHROME_FADE_MS = 180
 /** The most of the window's height the player takes while the page is under it. */
 private const val PLAYER_MAX_HEIGHT_FRACTION = 0.6f
 
+/** The keys that press a focused button: what Enter, Space or a D-pad's centre does on any other one. */
+private val ACTIVATION_KEYS = setOf(Key.Enter, Key.NumPadEnter, Key.Spacebar, Key.DirectionCenter)
+
 /**
  * Sizes the player surface between its 16:9 strip ([takeover] = 0) and the scroll viewport's
- * height less [bottomInsetPx] ([takeover] = 1), never shorter than the strip. Both inputs are read
+ * height less [bottomInsetPx] ([takeover] = 1) — see [playerSurfaceHeight]. Both inputs are read
  * during layout, so the takeover animation and a viewport resize re-measure this node without
- * recomposing anything.
+ * recomposing anything. [fillViewport] is the full-screen player: the viewport's height exactly.
  */
-private fun Modifier.zoomTakeoverHeight(takeover: () -> Float, viewportHeight: IntState, bottomInsetPx: Int = 0): Modifier = layout { measurable, constraints ->
+private fun Modifier.zoomTakeoverHeight(
+    takeover: () -> Float,
+    viewportHeight: IntState,
+    bottomInsetPx: Int = 0,
+    fillViewport: Boolean = false,
+): Modifier = layout { measurable, constraints ->
     val width = constraints.maxWidth
-    val strip = (width / VIDEO_ASPECT).roundToInt()
-    val expanded = max(strip, viewportHeight.intValue - bottomInsetPx)
-    val height = lerp(strip, expanded, takeover())
+    val height = playerSurfaceHeight(width, viewportHeight.intValue, bottomInsetPx, takeover(), fillViewport)
     val placeable = measurable.measure(Constraints.fixed(width, height))
     layout(width, height) { placeable.place(0, 0) }
+}
+
+/**
+ * How tall the player's surface is, [width] across, in a scroll viewport [viewportHeight] tall.
+ *
+ * On the page it runs from its 16:9 strip ([takeover] 0) to the viewport less [bottomInsetPx]
+ * ([takeover] 1, pinched larger), and is never shorter than the strip: a page scrolls, so a
+ * strip taller than what is left of the viewport is simply scrolled.
+ *
+ * [fillViewport] — full screen, the phone on its side — is the viewport and nothing else. That
+ * window is wider than 16:9, so the strip would be *taller* than the viewport, and nothing
+ * scrolls there: a surface the strip's height hangs off the foot of the window, taking the
+ * bottom of the picture and the timeline with it. (Before the viewport has been measured, on the
+ * first frame, there is only the strip to go by.)
+ */
+internal fun playerSurfaceHeight(width: Int, viewportHeight: Int, bottomInsetPx: Int, takeover: Float, fillViewport: Boolean): Int {
+    val strip = (width / VIDEO_ASPECT).roundToInt()
+    if (fillViewport && viewportHeight > 0) return viewportHeight
+    val expanded = max(strip, viewportHeight - bottomInsetPx)
+    return lerp(strip, expanded, takeover)
 }
 
 /** A fresh instance per tap (identity equality), so repeating the same words restarts the auto-clear. */

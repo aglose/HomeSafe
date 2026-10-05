@@ -103,6 +103,7 @@ import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
 import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
 import com.meticulouscreations.homesafe.ui.components.pinchGestures
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
@@ -225,10 +226,10 @@ fun HomeTabContent(
  * actually on screen are decoding; with several 4K streams that concurrency was a real
  * contributor to stutter.
  *
- * The cameras take as many columns as fit at [CAMERA_CARD_MIN_WIDTH]: one on a phone held
- * upright, where this is a list; two on a phone on its side or a small tablet, three on a wide
- * window. A full-width 16:9 card in a landscape window would be taller than the window itself.
- * Everything above the cameras spans the full row.
+ * The cameras take as many columns as [CameraGridCells] gives them: one on a phone held upright,
+ * where this is a list; two on a phone on its side or a small tablet, three on a wide window. A
+ * full-width 16:9 card in a landscape window would be taller than the window itself. Everything
+ * above the cameras spans the full row.
  */
 @Composable
 internal fun HomeFeed(
@@ -254,11 +255,13 @@ internal fun HomeFeed(
     // The skeleton's frame clock runs only while there is a skeleton to drive.
     val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
     val gridState = rememberLazyGridState()
+    val compactLandscape = isCompactLandscape()
+    val columns = remember(compactLandscape) { CameraGridCells(twoAbreastWhenTheyFit = compactLandscape) }
     LaunchedEffect(gridState, scrollToTopRequests) { scrollToTopRequests.collect { gridState.animateScrollToItem(0) } }
 
     PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
         LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = CAMERA_CARD_MIN_WIDTH),
+            columns = columns,
             state = gridState,
             modifier = modifier.fillMaxSize(),
             contentPadding = tabContentPadding(maxWidth = HOME_GRID_MAX_WIDTH),
@@ -787,15 +790,51 @@ private val IN_VIEW_CARD_WIDTH: Dp = 232.dp
 private const val SKELETON_CARD_COUNT = 3
 
 /**
+ * How many camera cards go side by side in the width the grid has: as many as fit at
+ * [CAMERA_CARD_MIN_WIDTH], and never more than [CAMERA_GRID_MAX_COLUMNS].
+ *
+ * [twoAbreastWhenTheyFit] is a phone on its side, where one card per row is the wrong answer
+ * even when a second doesn't fit at the usual width: the smallest phones are 640dp long, which
+ * the side nav and the gutters bring under two cards' worth, and a single card that wide is
+ * taller than the window. There two go side by side so long as each still has
+ * [CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH].
+ *
+ * The columns share the width equally, as [GridCells.Fixed] would share it.
+ */
+internal class CameraGridCells(private val twoAbreastWhenTheyFit: Boolean) : GridCells {
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        fun fitting(minWidth: Dp): Int = (availableSize + spacing) / (minWidth.roundToPx() + spacing)
+        val fit = fitting(CAMERA_CARD_MIN_WIDTH)
+        val count = when {
+            fit < 2 && twoAbreastWhenTheyFit && fitting(CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH) >= 2 -> 2
+            else -> fit.coerceIn(1, CAMERA_GRID_MAX_COLUMNS)
+        }
+        val shared = availableSize - spacing * (count - 1)
+        // Whole pixels each; the first few columns take the remainder, one apiece.
+        return List(count) { index -> shared / count + if (index < shared % count) 1 else 0 }
+    }
+
+    override fun equals(other: Any?): Boolean = other is CameraGridCells && other.twoAbreastWhenTheyFit == twoAbreastWhenTheyFit
+
+    override fun hashCode(): Int = twoAbreastWhenTheyFit.hashCode()
+}
+
+/**
  * The narrowest a camera card gets before the grid gives up a column: wide enough that a phone
  * held upright (even a small one, 360dp less its gutters) shows one card per row, as it always has.
  */
 private val CAMERA_CARD_MIN_WIDTH: Dp = 300.dp
 
+/** The narrowest a card gets on a phone on its side, where two abreast matter more than their size. */
+private val CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH: Dp = 200.dp
+
+/** Three generous cards across; a wider window centres the grid rather than growing a fourth column. */
+private const val CAMERA_GRID_MAX_COLUMNS = 3
+
 /** Between two cards side by side; tighter than the 24dp between rows, which also separates sections. */
 private val CAMERA_CARD_COLUMN_GAP: Dp = 16.dp
 
-/** Three columns of generous cards; past this the grid centres rather than growing a fourth. */
+/** The widest the grid's three columns get; past this it centres. */
 private val HOME_GRID_MAX_WIDTH: Dp = 1280.dp
 
 /** The camera cards' corner radius; the loading skeleton and the in-flight video clip use the same. */

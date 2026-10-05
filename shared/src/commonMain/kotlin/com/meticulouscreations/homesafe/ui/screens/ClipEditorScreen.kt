@@ -83,12 +83,14 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
@@ -147,7 +149,9 @@ import homesafe.shared.generated.resources.common_try_again
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.round
+import kotlin.math.roundToInt
 
 /**
  * The clip editor, full screen, after Google Photos' video editor: the picture up top on black,
@@ -293,39 +297,6 @@ private fun ClipEditorContent(
         }
     }
 
-    // The picture and the controls under it are the same two pieces whichever way the phone is
-    // held; each takes the modifier that places it.
-    val stage: @Composable (Modifier) -> Unit = { stageModifier ->
-        PreviewStage(
-            state = state,
-            onTogglePlay = onTogglePlay,
-            onRetryLoad = onRetryLoad,
-            onPlayerPosition = onPlayerPosition,
-            onBuffering = onBuffering,
-            onPlaybackEnd = onPlaybackEnd,
-            onPlaybackError = onPlaybackError,
-            snapshotUrl = snapshotUrl,
-            modifier = stageModifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-    }
-    val controls: @Composable (Modifier) -> Unit = { controlsModifier ->
-        ControlsPanel(
-            state = state,
-            onTogglePlay = onTogglePlay,
-            snapshotUrl = snapshotUrl,
-            trimmer = trimmer,
-            onSelectMoment = { moment ->
-                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                onSelectMoment(moment)
-            },
-            onSetLength = { seconds ->
-                haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                onSetLength(seconds)
-            },
-            modifier = controlsModifier.chromeRise(splashProgress, fromTop = false),
-        )
-    }
-
     Box(modifier = Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
         Column(modifier = Modifier.fillMaxSize()) {
             EditorTopBar(
@@ -338,18 +309,47 @@ private fun ClipEditorContent(
                 modifier = Modifier.chromeRise(splashProgress, fromTop = true),
             )
 
-            if (isCompactLandscape()) {
-                Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    stage(Modifier.weight(CONTROLS_STAGE_WEIGHT).fillMaxHeight())
-                    // Their share of the width, up to that of a phone held upright, which is what
-                    // the filmstrip was drawn for; they scroll, should the chips and a long hint
-                    // outgrow the height.
-                    controls(Modifier.weight(1f, fill = false).widthIn(max = CONTROLS_SIDE_MAX_WIDTH).fillMaxHeight().verticalScroll(rememberScrollState()))
-                }
-            } else {
-                stage(Modifier.weight(1f).fillMaxWidth())
-                controls(Modifier.fillMaxWidth())
-            }
+            val sideBySide = isCompactLandscape()
+            val controlsScroll = rememberScrollState()
+            StageAndControls(
+                sideBySide = sideBySide,
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                stage = {
+                    PreviewStage(
+                        state = state,
+                        onTogglePlay = onTogglePlay,
+                        onRetryLoad = onRetryLoad,
+                        onPlayerPosition = onPlayerPosition,
+                        onBuffering = onBuffering,
+                        onPlaybackEnd = onPlaybackEnd,
+                        onPlaybackError = onPlaybackError,
+                        snapshotUrl = snapshotUrl,
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp),
+                    )
+                },
+                controls = {
+                    ControlsPanel(
+                        state = state,
+                        onTogglePlay = onTogglePlay,
+                        snapshotUrl = snapshotUrl,
+                        trimmer = trimmer,
+                        onSelectMoment = { moment ->
+                            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onSelectMoment(moment)
+                        },
+                        onSetLength = { seconds ->
+                            haptic.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            onSetLength(seconds)
+                        },
+                        // Beside the picture they have a fixed height, and scroll should the
+                        // chips and a long hint outgrow it; under it they are as tall as they are.
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (sideBySide) Modifier.verticalScroll(controlsScroll) else Modifier)
+                            .chromeRise(splashProgress, fromTop = false),
+                    )
+                },
+            )
         }
 
         SaveBanner(
@@ -362,6 +362,55 @@ private fun ClipEditorContent(
                 // A banner, not a bar: in a wide window it doesn't stretch across the picture.
                 .widthIn(max = SAVE_BANNER_MAX_WIDTH),
         )
+    }
+}
+
+/**
+ * The editor's two pieces, arranged for the window: the [stage] over the [controls] (which are as
+ * tall as they are, the stage taking the rest), or with [sideBySide] the stage beside them (the
+ * controls taking their share of the width, up to [CONTROLS_SIDE_MAX_WIDTH], and the stage the
+ * rest).
+ *
+ * One layout that measures two ways, rather than a `Column` in one branch and a `Row` in the
+ * other: each piece is then composed at one place whichever way the phone is held, so turning it
+ * re-measures them and nothing more. Composed afresh in the other branch, the stage's player —
+ * the editor's own, kept by nothing else — would be released and made again, and the clip would
+ * start over from where it was last sought to rather than carry on from the playhead.
+ */
+@Composable
+internal fun StageAndControls(
+    sideBySide: Boolean,
+    stage: @Composable () -> Unit,
+    controls: @Composable () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Layout(
+        content = {
+            Box(propagateMinConstraints = true) { stage() }
+            Box(propagateMinConstraints = true) { controls() }
+        },
+        modifier = modifier,
+    ) { measurables, constraints ->
+        val (stageMeasurable, controlsMeasurable) = measurables
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        if (sideBySide) {
+            val controlsWidth = min((width / (1f + CONTROLS_STAGE_WEIGHT)).roundToInt(), CONTROLS_SIDE_MAX_WIDTH.roundToPx())
+            val controlsPlaceable = controlsMeasurable.measure(Constraints.fixed(controlsWidth, height))
+            val stagePlaceable = stageMeasurable.measure(Constraints.fixed(width - controlsWidth, height))
+            layout(width, height) {
+                stagePlaceable.placeRelative(0, 0)
+                controlsPlaceable.placeRelative(width - controlsWidth, 0)
+            }
+        } else {
+            val controlsPlaceable = controlsMeasurable.measure(Constraints(minWidth = width, maxWidth = width, maxHeight = height))
+            val stageHeight = (height - controlsPlaceable.height).coerceAtLeast(0)
+            val stagePlaceable = stageMeasurable.measure(Constraints.fixed(width, stageHeight))
+            layout(width, height) {
+                stagePlaceable.placeRelative(0, 0)
+                controlsPlaceable.placeRelative(0, stageHeight)
+            }
+        }
     }
 }
 
@@ -1038,10 +1087,13 @@ private val CHROME_RISE = 24.dp
 
 private val PREVIEW_CORNER = 16.dp
 
-/** The widest the controls' column gets beside the picture on a phone on its side. */
+/**
+ * The widest the controls' column gets beside the picture on a phone on its side: the width of a
+ * phone held upright, which is what the filmstrip was drawn for.
+ */
 private val CONTROLS_SIDE_MAX_WIDTH = 400.dp
 
-/** The picture's share of the width beside the controls (whose share is 1). */
+/** The picture's share of the width beside the controls (whose share is 1), on a window too narrow for the controls' full width. */
 private const val CONTROLS_STAGE_WEIGHT = 1.2f
 private val SAVE_BANNER_MAX_WIDTH = 520.dp
 private val PLAY_BUTTON_SIZE = 48.dp

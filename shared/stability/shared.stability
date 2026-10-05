@@ -2236,7 +2236,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.FullScreenButton(onClick
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.FullScreenPlayerChrome(cameraName: kotlin.String, cameraAvailable: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, onTouch: kotlin.Function0<kotlin.Unit>, onHold: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.FullScreenPlayerChrome(cameraName: kotlin.String, cameraAvailable: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, onTouch: kotlin.Function0<kotlin.Unit>, onHold: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onFocusChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2250,6 +2250,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.FullScreenPlayerChrome(
     - onTouch: STABLE (function type)
     - onHold: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onFocusChange: STABLE (function type)
     - overflowMenu: STABLE (composable function type)
 
 @Composable
@@ -3098,6 +3099,16 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SpanChip(span: com.meti
     - span: STABLE (class with no mutable properties)
     - selected: STABLE (primitive type)
     - onClick: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.StageAndControls(sideBySide: kotlin.Boolean, stage: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, controls: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - sideBySide: STABLE (primitive type)
+    - stage: STABLE (composable function type)
+    - controls: STABLE (composable function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.StatusBadge(enabled: kotlin.Boolean, status: com.meticulouscreations.homesafe.ui.components.LiveStreamStatus, textColor: androidx.compose.ui.graphics.Color, pillColor: androidx.compose.ui.graphics.Color): kotlin.Unit

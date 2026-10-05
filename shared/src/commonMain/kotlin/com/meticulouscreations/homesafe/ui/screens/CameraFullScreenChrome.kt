@@ -41,6 +41,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -77,8 +78,9 @@ import org.jetbrains.compose.resources.stringResource
  * to the glass. Collects `playback` itself, like the page's own rows, so position ticks while a
  * recording plays recompose this and not the screen.
  *
- * [onTouch] reports each use of a control, and [onHold] whether a menu is open: the caller's
- * reasons to keep the chrome up. [hint] is the quick actions' line of feedback, said under the
+ * [onTouch] reports each use of a control, [onHold] whether a menu is open, and [onFocusChange]
+ * whether the keyboard's focus is on one of the controls: the caller's reasons to keep the chrome
+ * up. [hint] is the quick actions' line of feedback, said under the
  * top row here because there is no page to say it on. [overflowMenu] is the page header's menu
  * (detection zones, tag cars), which ends the top row and reports its own opening and closing.
  */
@@ -94,13 +96,14 @@ internal fun FullScreenPlayerChrome(
     onTouch: () -> Unit,
     onHold: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onFocusChange: (Boolean) -> Unit = {},
     overflowMenu: @Composable (onOpenChange: (Boolean) -> Unit) -> Unit = {},
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val displayName = cameraDisplayName(cameraName)
 
-    Box(modifier = modifier.fillMaxSize().testTag(FULL_SCREEN_CHROME_TEST_TAG)) {
+    Box(modifier = modifier.fillMaxSize().onFocusChanged { onFocusChange(it.hasFocus) }.testTag(FULL_SCREEN_CHROME_TEST_TAG)) {
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
