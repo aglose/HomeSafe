@@ -25,6 +25,8 @@ import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
 import org.jetbrains.compose.resources.stringResource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * The shell's navigation state — [ShellNavigation] and the per-tab back stack under it — driven
@@ -216,6 +218,42 @@ class ShellNavigationUiTest {
             assertEquals(1, nav.homeBackStack.size)
             assertEquals(30, listState.firstVisibleItemIndex, "the first tap only returns to the root; a second scrolls it")
         }
+    }
+
+    @Test
+    fun aCameraOnAPhoneOnItsSideHasTheWindowToItselfAndTurningBackReturnsTheNav() {
+        val nav = ShellNavigation()
+        nav.openDetection(detection)
+        assertFalse(nav.showsFullScreenVideo(TopLevelRoute.Home), "upright, the camera is a page under the nav")
+        assertTrue(nav.showsBottomNav(TopLevelRoute.Home))
+
+        nav.compactLandscape = true
+
+        assertTrue(nav.showsFullScreenVideo(TopLevelRoute.Home))
+        assertFalse(nav.showsBottomNav(TopLevelRoute.Home), "the video has the whole window")
+        // Under iOS 26's native bar every tab asks; only the one showing the camera gives up its nav.
+        assertFalse(nav.showsFullScreenVideo(TopLevelRoute.Moments))
+        assertTrue(nav.showsBottomNav(TopLevelRoute.Moments))
+
+        nav.compactLandscape = false
+
+        assertFalse(nav.showsFullScreenVideo(TopLevelRoute.Home))
+        assertTrue(nav.showsBottomNav(TopLevelRoute.Home))
+    }
+
+    @Test
+    fun onlyACameraGoesFullScreenOnAPhoneOnItsSide() {
+        val nav = ShellNavigation()
+        nav.compactLandscape = true
+
+        assertFalse(nav.showsFullScreenVideo(TopLevelRoute.Home), "the camera list keeps its nav, as a rail")
+        assertTrue(nav.showsBottomNav(TopLevelRoute.Home))
+
+        // A screen beyond the camera (its zone editor, say) is a page again.
+        nav.openDetection(detection)
+        nav.homeBackStack.add("zones")
+        assertFalse(nav.showsFullScreenVideo(TopLevelRoute.Home))
+        assertTrue(nav.showsBottomNav(TopLevelRoute.Home))
     }
 
     @Test

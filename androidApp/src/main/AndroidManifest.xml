@@ -18,7 +18,14 @@
         <profileable android:shell="true" />
         <!-- singleTask: a notification tap (or any relaunch) resumes the running instance instead of
              stacking a second MainActivity — and a second app graph, poller, and sign-in screen — on top. -->
+        <!-- configChanges: the UI is all Compose, which re-lays itself out when the window changes,
+             so a rotation (or a fold, a split-screen resize, a keyboard docking, the system
+             theme flipping at sunset) must not recreate the Activity. A recreation builds a new
+             app graph: back to the sign-in screen, the navigation stack gone and every live
+             stream reconnecting. Rotating to watch a camera full screen is the case that matters
+             most (see CameraDetailScreen). -->
         <activity
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode"
             android:exported="true"
             android:launchMode="singleTask"
             android:name=".MainActivity"

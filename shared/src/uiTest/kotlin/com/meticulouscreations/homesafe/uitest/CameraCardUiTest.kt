@@ -1,17 +1,25 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
@@ -22,6 +30,7 @@ import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /**
  * One camera card on its own, outside the feed: what it says about its camera, and what a plain
@@ -38,14 +47,15 @@ import kotlin.test.assertNull
 @OptIn(ExperimentalTestApi::class)
 class CameraCardUiTest {
 
-    private fun ComposeUiTest.setUpCard(camera: Camera, onClick: () -> Unit = {}): CameraCardZoomState {
+    private fun ComposeUiTest.setUpCard(camera: Camera, width: Dp? = null, onClick: () -> Unit = {}): CameraCardZoomState {
         lateinit var state: CameraCardZoomState
         mainClock.autoAdvance = false
         setContent {
             FrigatePreview {
                 SharedTransitionPreview {
                     state = rememberCameraCardZoomState()
-                    Column {
+                    // requiredWidth: the card's own width, whatever the test host's window is.
+                    Column(modifier = if (width != null) Modifier.requiredWidth(width) else Modifier) {
                         CameraCard(
                             tile = CameraTile(camera = camera, streamUrl = null, posterUrl = null),
                             sharedTransitionScope = this@SharedTransitionPreview,
@@ -84,6 +94,49 @@ class CameraCardUiTest {
 
         onNodeWithText("Backyard").assertIsDisplayed()
         onAllNodesWithText("hikvision_2").assertCountEquals(0)
+    }
+
+    /**
+     * The text node itself, from the unmerged tree: the card is one clickable thing, so in the
+     * merged tree its name and its badge are both just "the card".
+     */
+    private fun ComposeUiTest.textNode(text: String): SemanticsNodeInteraction = onNodeWithText(text, useUnmergedTree = true)
+
+    /** How many lines the node showing [text] laid it out on. */
+    private fun ComposeUiTest.lineCountOf(text: String): Int {
+        val layouts = mutableListOf<TextLayoutResult>()
+        textNode(text).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        return layouts.single().lineCount
+    }
+
+    @Test
+    fun onACardWithRoomTheBadgeSitsBesideTheName() = runComposeUiTest {
+        setUpCard(Camera(name = "driveway", enabled = true), width = 360.dp)
+
+        val name = textNode("Driveway").getUnclippedBoundsInRoot()
+        val badge = textNode("Connecting").getUnclippedBoundsInRoot()
+        assertEquals(1, lineCountOf("Driveway"))
+        assertTrue(badge.left >= name.right, "the badge is beside the name, at the card's other end")
+        assertTrue(badge.top < name.bottom, "on the name's line")
+    }
+
+    @Test
+    fun onANarrowCardTheBadgeDropsBelowTheNameRatherThanBreakingIt() = runComposeUiTest {
+        // Two abreast on the smallest phone on its side: 640dp, less the side nav and the gutters.
+        setUpCard(Camera(name = "driveway", enabled = true), width = 236.dp)
+
+        val name = textNode("Driveway").getUnclippedBoundsInRoot()
+        val badge = textNode("Connecting").getUnclippedBoundsInRoot()
+        assertEquals(1, lineCountOf("Driveway"), "the name is whole, not broken mid-word")
+        assertTrue(badge.top >= name.bottom, "the badge has a line of its own under the name")
+    }
+
+    @Test
+    fun aNameOfSeveralWordsStillWrapsBetweenThemOnANarrowCard() = runComposeUiTest {
+        setUpCard(Camera(name = "garage_side_entrance_door", enabled = true), width = 236.dp)
+
+        // Too long for the card at any arrangement, so it takes two lines, split at a space.
+        assertEquals(2, lineCountOf("Garage Side Entrance Door"))
     }
 
     @Test

@@ -115,7 +115,7 @@ fun FaceLibraryScreen(onBack: () -> Unit) {
 @Composable
 private fun Header(title: String, subtitle: String, onBack: () -> Unit, onRefresh: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -134,9 +134,10 @@ private fun Header(title: String, subtitle: String, onBack: () -> Unit, onRefres
 
 @Composable
 private fun Body(uiState: FaceLibraryUiState, library: FaceLibrary, viewModel: FaceLibraryViewModel) {
+    val gutter = contentGutter()
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = bottomNavClearance()),
+        contentPadding = PaddingValues(start = gutter, end = gutter, bottom = bottomNavClearance()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item(key = "people", contentType = "people") { PeopleCard(uiState = uiState, library = library, viewModel = viewModel) }

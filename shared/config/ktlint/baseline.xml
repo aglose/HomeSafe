@@ -7,6 +7,9 @@
         <error line="95" column="5" source="compose:parameter-naming" />
         <error line="97" column="5" source="compose:parameter-naming" />
     </file>
+    <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/WindowLayout.kt">
+        <error line="21" column="14" source="compose:compositionlocal-allowlist" />
+    </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/CameraStreamPlayer.kt">
         <error line="151" column="5" source="compose:parameter-naming" />
         <error line="152" column="5" source="compose:parameter-naming" />
@@ -22,30 +25,30 @@
         <error line="19" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
-        <error line="132" column="5" source="compose:modifier-missing-check" />
-        <error line="375" column="5" source="compose:state-param-check" />
-        <error line="378" column="5" source="compose:lambda-param-in-effect" />
-        <error line="378" column="5" source="compose:parameter-naming" />
-        <error line="531" column="47" source="compose:lambda-param-in-effect" />
+        <error line="159" column="5" source="compose:modifier-missing-check" />
+        <error line="440" column="5" source="compose:state-param-check" />
+        <error line="443" column="5" source="compose:lambda-param-in-effect" />
+        <error line="443" column="5" source="compose:parameter-naming" />
+        <error line="700" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />
-        <error line="209" column="64" source="compose:vm-forwarding-check" />
+        <error line="210" column="64" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/DetectionZonesScreen.kt">
-        <error line="128" column="5" source="compose:modifier-missing-check" />
-        <error line="130" column="5" source="compose:lambda-param-in-effect" />
-        <error line="473" column="21" source="compose:vm-forwarding-check" />
+        <error line="137" column="5" source="compose:modifier-missing-check" />
+        <error line="139" column="5" source="compose:lambda-param-in-effect" />
+        <error line="521" column="21" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FaceLibraryScreen.kt">
         <error line="96" column="5" source="compose:modifier-missing-check" />
-        <error line="142" column="56" source="compose:vm-forwarding-check" />
+        <error line="143" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="275" column="5" source="compose:modifier-missing-check" />
+        <error line="304" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="140" column="5" source="compose:modifier-missing-check" />
+        <error line="145" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="117" column="5" source="compose:modifier-missing-check" />
@@ -60,7 +63,7 @@
         <error line="103" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ShellInsets.kt">
-        <error line="42" column="14" source="compose:compositionlocal-allowlist" />
+        <error line="78" column="14" source="compose:compositionlocal-allowlist" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/theme/Color.kt">
         <error line="78" column="5" source="compose:compositionlocal-allowlist" />

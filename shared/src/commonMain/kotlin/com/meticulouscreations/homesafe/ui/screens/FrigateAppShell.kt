@@ -6,10 +6,13 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,17 +25,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
-import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Menu
@@ -48,6 +53,7 @@ import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -65,6 +71,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.Lifecycle
@@ -84,6 +91,7 @@ import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
@@ -162,6 +170,22 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /** The tab that is up, as far as Compose knows; under a native tab bar the bar itself is the truth. */
     val selectedTab: TopLevelRoute get() = topLevel.topLevelKey
 
+    /**
+     * Whether the window is a phone on its side (see [isCompactLandscape]), as the shell's
+     * composition last saw it. Kept here, as state, because what it decides — whether a camera has
+     * the whole window — is also asked from outside any composition: the iOS 26 host hides its
+     * native tab bar on the same answer (see [showsBottomNav]).
+     */
+    var compactLandscape by mutableStateOf(false)
+
+    /**
+     * Whether [tab] is showing a camera full screen: its own screen, with the phone on its side.
+     * The video then has the whole window (see CameraDetailScreen), so the shell takes its nav
+     * away and stops keeping the content clear of the cutout at the window's sides.
+     */
+    fun showsFullScreenVideo(tab: TopLevelRoute): Boolean =
+        compactLandscape && tab == TopLevelRoute.Home && homeBackStack.lastOrNull() is CameraDetailRoute
+
     private val reselected = MutableSharedFlow<TopLevelRoute>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
     /** Whether [tab] is showing its root screen, which is when the shell's own top bar belongs above it. */
@@ -177,13 +201,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     fun reselections(tab: TopLevelRoute): ScrollToTopRequests = ScrollToTopRequests(reselected.filter { it == tab }.map { })
 
     /**
-     * Whether the floating bottom nav belongs over [tab]: not over the car-tagging screen, which
-     * wants every pixel for the frame, nor the clip editor, which is full screen, nor while the
-     * finance app (which has its own) is up, nor under the drawer — under iOS 26's native bar
-     * that would stay on top of the drawer's scrim and switch tabs behind it.
+     * Whether the shell's nav (the floating pill, or the rail beside a phone on its side) belongs
+     * over [tab]: not over the car-tagging screen, which wants every pixel for the frame, nor the
+     * clip editor, which is full screen, nor a camera that has the window to itself
+     * ([showsFullScreenVideo]), nor while the finance app (which has its own) is up, nor under
+     * the drawer — under iOS 26's native bar that would stay on top of the drawer's scrim and
+     * switch tabs behind it.
      */
     fun showsBottomNav(tab: TopLevelRoute): Boolean =
-        !financeOpen && !drawerOpen && !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
+        !financeOpen &&
+            !drawerOpen &&
+            !showsFullScreenVideo(tab) &&
+            !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
 
     /**
      * A tap on [tab] in the bottom nav, which follows Material's bottom navigation behaviour on
@@ -281,10 +310,13 @@ fun FrigateAppShell() {
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
     LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
+    val compactLandscape = isCompactLandscape()
+    SideEffect { nav.compactLandscape = compactLandscape }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(nav.selectedTab),
         showBottomNav = nav.showsBottomNav(nav.selectedTab),
+        immersive = nav.showsFullScreenVideo(nav.selectedTab),
         topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
@@ -329,10 +361,14 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     val cardZoom = rememberCameraCardZoomState()
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
+    // Every tab's composition says the same thing here: they share one window.
+    val compactLandscape = isCompactLandscape()
+    SideEffect { nav.compactLandscape = compactLandscape }
 
     ShellScaffold(
         showTopBar = nav.showsTopBar(tab),
         showBottomNav = nav.showsBottomNav(tab),
+        immersive = nav.showsFullScreenVideo(tab),
         topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
@@ -424,15 +460,24 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  *
  * Edge-to-edge: the background paints under the system bars, and each piece that must stay
  * tappable steps in from its own bar — the top bar from the status bar, the floating nav from
- * the navigation bar, and everything from a display cutout at the sides (landscape notch).
+ * the navigation bar, and everything from what the system draws at the window's sides in
+ * landscape: a display cutout, and the navigation bar under three-button navigation.
  *
  * Under a native tab bar ([LocalNativeTabBar]) the floating nav is left out: the platform's bar
  * sits where it would, and [bottomNavClearance] already keeps the content clear of it.
+ *
+ * On a phone on its side ([showsNavRail]) the nav is a rail down the start edge instead, and the
+ * content moves over to make room for it: there is no height there to float a bar over the foot
+ * of every page. It comes and goes with [showBottomNav] as the pill does.
  *
  * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into,
  * the drawer, and the finance app. [contentCovered] says an overlay hides everything beneath it;
  * [contentObscured] that one is over it (the drawer's scrim, or the finance app opening), so it
  * leaves the accessibility tree.
+ *
+ * [immersive] gives the content the whole window, cutout and all: a camera's video, full screen
+ * with the phone on its side, which is black to the glass and places its own controls clear of
+ * the edges.
  */
 @Composable
 internal fun ShellScaffold(
@@ -444,21 +489,33 @@ internal fun ShellScaffold(
     showBottomNav: Boolean = true,
     contentCovered: Boolean = false,
     contentObscured: Boolean = false,
+    immersive: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     // While an overlay covers the whole shell (the finance app) the tab content isn't drawn at
     // all, so its live players stop; its saveable state is kept here and comes back with it.
     val saveableState = rememberSaveableStateHolder()
+    val navRail = showsNavRail()
+    // The content gives the rail its strip of the window, and takes it back as the rail leaves.
+    val railClearance by animateDpAsState(
+        targetValue = if (navRail && showBottomNav) NAV_RAIL_CLEARANCE else 0.dp,
+        animationSpec = tween(NAV_TRANSITION_MS, easing = NavEnterEasing),
+        label = "nav-rail-clearance",
+    )
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal)),
+            // Clear of what the system draws at the window's sides in landscape: a display
+            // cutout, and the navigation bar under three-button navigation.
+            .then(if (immersive) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))),
     ) {
         // Under the drawer or the finance app the shell is out of reach for screen readers too,
         // so focus can't wander behind the scrim to a camera or the menu button.
         Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
-            if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { content() }
+            Box(Modifier.fillMaxSize().padding(start = railClearance)) {
+                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { content() }
+            }
 
             // Fades over the nested screen's own header, which is the same height in the same
             // place, so the hand-over is a dissolve between two rows and nothing else moves.
@@ -475,7 +532,7 @@ internal fun ShellScaffold(
             // tagging) takes over, so the tap that opened it isn't answered by a blink.
             if (!LocalNativeTabBar.current) {
                 AnimatedVisibility(
-                    visible = showBottomNav,
+                    visible = showBottomNav && !navRail,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
@@ -484,6 +541,20 @@ internal fun ShellScaffold(
                     exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutVertically(tween(NAV_TRANSITION_MS / 2)) { it / 2 },
                 ) {
                     BottomNavBar(selected = selectedTab, onSelect = onSelectTab)
+                }
+
+                // The same nav, stood on end beside the content, centred in the height the top
+                // bar leaves. It slips out sideways as the pill slips down.
+                AnimatedVisibility(
+                    visible = showBottomNav && navRail,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .padding(start = NAV_RAIL_MARGIN, top = shellTopBarClearance())
+                        .navigationBarsPadding(),
+                    enter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) + slideInHorizontally(tween(NAV_TRANSITION_MS, easing = NavEnterEasing)) { -it / 2 },
+                    exit = fadeOut(tween(NAV_TRANSITION_MS / 2, easing = LinearEasing)) + slideOutHorizontally(tween(NAV_TRANSITION_MS / 2)) { -it / 2 },
+                ) {
+                    NavRail(selected = selectedTab, onSelect = onSelectTab)
                 }
             }
         }
@@ -527,7 +598,7 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
             // Opaque, status bar included: tab content scrolls underneath this bar.
             .background(MaterialTheme.colorScheme.background)
             .statusBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = shellTopBarVerticalPadding()),
     ) {
         IconButton(onClick = onMenu, modifier = Modifier.size(48.dp).align(Alignment.CenterStart).testTag("shell_menu")) {
             Icon(Icons.Filled.Menu, contentDescription = stringResource(Res.string.shell_menu), tint = MaterialTheme.colorScheme.primary)
@@ -762,8 +833,55 @@ private fun BottomNavBar(
     }
 }
 
+/**
+ * [BottomNavBar] for a phone on its side (see [showsNavRail]): the same three tabs in the same
+ * glass, one above the other. The items carry the same test tags, so a test — or a finger —
+ * finds a tab wherever the nav happens to be.
+ */
 @Composable
-private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick: () -> Unit) {
+private fun NavRail(
+    selected: TopLevelRoute,
+    onSelect: (TopLevelRoute) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(NAV_RAIL_CORNER)
+    Column(
+        modifier = modifier
+            .width(NAV_RAIL_WIDTH)
+            .background(LocalFrigateExtraColors.current.glassFill, shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
+            .padding(8.dp)
+            .testTag(NAV_RAIL_TEST_TAG),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        TOP_LEVEL_ROUTES.forEach { route ->
+            BottomNavItemView(
+                route = route,
+                isSelected = route == selected,
+                onClick = { onSelect(route) },
+                // Every item as wide as the rail, so the selected one's highlight doesn't change
+                // width with the length of its label.
+                modifier = Modifier.fillMaxWidth(),
+                horizontalPadding = 4.dp,
+            )
+        }
+    }
+}
+
+private val NAV_RAIL_CORNER = 28.dp
+
+/** The side nav itself, for tests: there when the shell is laid out for a phone on its side. */
+const val NAV_RAIL_TEST_TAG = "nav_rail"
+
+@Composable
+private fun BottomNavItemView(
+    route: TopLevelRoute,
+    isSelected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 24.dp,
+) {
     val contentColor = if (isSelected) {
         MaterialTheme.colorScheme.onPrimaryContainer
     } else {
@@ -771,20 +889,20 @@ private fun BottomNavItemView(route: TopLevelRoute, isSelected: Boolean, onClick
     }
     val interactionSource = remember { MutableInteractionSource() }
     Column(
-        modifier = Modifier
+        modifier = modifier
             .clip(CircleShape)
             .let { if (isSelected) it.background(MaterialTheme.colorScheme.primaryContainer) else it }
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
             // Which tab is up, for accessibility services and tests alike.
             .semantics { selected = isSelected }
             .testTag(bottomNavTestTag(route))
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+            .padding(horizontal = horizontalPadding, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         val label = stringResource(route.label)
         Icon(route.icon, contentDescription = label, tint = contentColor, modifier = Modifier.size(22.dp))
-        Text(text = label, style = MaterialTheme.typography.labelMedium, color = contentColor)
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = contentColor, maxLines = 1)
     }
 }
 

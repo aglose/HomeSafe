@@ -37,9 +37,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ShowChart
@@ -83,6 +85,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -93,6 +96,7 @@ import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
@@ -198,7 +202,15 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     ) {
         val status = WindowInsets.statusBars.asPaddingValues()
         val nav = WindowInsets.navigationBars.asPaddingValues()
-        val padding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 104.dp)
+        // On a phone on its side the tabs' nav stands at the start edge instead of floating over
+        // the foot of the page (as the camera shell's does; see showsNavRail there), and the tabs'
+        // pages start clear of it.
+        val sideNav = isCompactLandscape()
+        val padding = PaddingValues(
+            start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp,
+            top = status.calculateTopPadding() + 60.dp,
+            bottom = nav.calculateBottomPadding() + if (sideNav) 32.dp else 104.dp,
+        )
         val detailPadding = PaddingValues(top = status.calculateTopPadding() + 60.dp, bottom = nav.calculateBottomPadding() + 32.dp)
         val pullState = rememberPullToRefreshState()
 
@@ -298,7 +310,8 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(bottom = 84.dp),
+                    // Above the nav when it floats along the bottom; beside it when it is at the side.
+                    .padding(start = if (sideNav) FINANCE_SIDE_NAV_CLEARANCE else 0.dp, bottom = if (sideNav) 16.dp else 84.dp),
             )
 
             if (addingSymbol) {
@@ -328,20 +341,30 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                 )
             }
 
+            val onPickTab: (FinanceTab) -> Unit = { picked ->
+                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                if (picked == tab) {
+                    scope.launch { listStates.getValue(picked).animateScrollToItem(0) }
+                } else {
+                    tab = picked
+                }
+            }
             AnimatedVisibility(
-                visible = details.isEmpty(),
+                visible = details.isEmpty() && !sideNav,
                 modifier = Modifier.align(Alignment.BottomCenter),
                 enter = fadeIn(tween(220)) + slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it },
                 exit = fadeOut(tween(140)) + slideOutVertically(tween(200)) { it },
             ) {
-                FinanceBottomNav(tab) { picked ->
-                    haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    if (picked == tab) {
-                        scope.launch { listStates.getValue(picked).animateScrollToItem(0) }
-                    } else {
-                        tab = picked
-                    }
-                }
+                FinanceBottomNav(tab, onPickTab)
+            }
+            AnimatedVisibility(
+                visible = details.isEmpty() && sideNav,
+                // Centred in the height the top bar leaves.
+                modifier = Modifier.align(Alignment.CenterStart).padding(top = status.calculateTopPadding() + 48.dp),
+                enter = fadeIn(tween(220)) + slideInHorizontally(tween(260, easing = FastOutSlowInEasing)) { -it },
+                exit = fadeOut(tween(140)) + slideOutHorizontally(tween(200)) { -it },
+            ) {
+                FinanceSideNav(tab, onPickTab)
             }
         }
     }
@@ -450,24 +473,61 @@ private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Uni
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FinanceTab.entries.forEach { t ->
-            val isSelected = t == selected
-            Column(
-                Modifier
-                    .clip(CircleShape)
-                    .background(if (isSelected) colors.gain.copy(alpha = 0.16f) else Color.Transparent)
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab) { onSelect(t) }
-                    .semantics { this.selected = isSelected }
-                    .testTag("finance_tab_${t.name.lowercase()}")
-                    .padding(horizontal = 14.dp, vertical = 7.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(t.icon, contentDescription = null, tint = if (isSelected) colors.gain else colors.textSecondary, modifier = Modifier.size(22.dp))
-                Text(stringResource(t.label), style = FinanceTheme.type.micro, color = if (isSelected) colors.gain else colors.textSecondary)
-            }
-        }
+        FinanceTab.entries.forEach { t -> FinanceNavItem(t, isSelected = t == selected, onSelect = onSelect) }
     }
 }
+
+/** [FinanceBottomNav] stood on end, for a phone on its side: the same tabs, with the same test tags. */
+@Composable
+private fun FinanceSideNav(selected: FinanceTab, onSelect: (FinanceTab) -> Unit) {
+    val colors = FinanceTheme.colors
+    val shape = RoundedCornerShape(26.dp)
+    Column(
+        Modifier
+            .padding(start = FINANCE_SIDE_NAV_MARGIN)
+            .navigationBarsPadding()
+            .width(FINANCE_SIDE_NAV_WIDTH)
+            .clip(shape)
+            .background(colors.surfaceRaised.copy(alpha = 0.94f))
+            .border(1.dp, colors.hairline, shape)
+            .padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Every item as wide as the rail, so the selected one's highlight doesn't follow its label's length.
+        FinanceTab.entries.forEach { t -> FinanceNavItem(t, isSelected = t == selected, onSelect = onSelect, modifier = Modifier.fillMaxWidth(), horizontalPadding = 4.dp) }
+    }
+}
+
+@Composable
+private fun FinanceNavItem(
+    tab: FinanceTab,
+    isSelected: Boolean,
+    onSelect: (FinanceTab) -> Unit,
+    modifier: Modifier = Modifier,
+    horizontalPadding: Dp = 14.dp,
+) {
+    val colors = FinanceTheme.colors
+    Column(
+        modifier
+            .clip(CircleShape)
+            .background(if (isSelected) colors.gain.copy(alpha = 0.16f) else Color.Transparent)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab) { onSelect(tab) }
+            .semantics { this.selected = isSelected }
+            .testTag("finance_tab_${tab.name.lowercase()}")
+            .padding(horizontal = horizontalPadding, vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(tab.icon, contentDescription = null, tint = if (isSelected) colors.gain else colors.textSecondary, modifier = Modifier.size(22.dp))
+        Text(stringResource(tab.label), style = FinanceTheme.type.micro, color = if (isSelected) colors.gain else colors.textSecondary, maxLines = 1)
+    }
+}
+
+private val FINANCE_SIDE_NAV_MARGIN = 12.dp
+private val FINANCE_SIDE_NAV_WIDTH = 76.dp
+
+/** How far the tabs' pages start from the edge while the nav is at the side. */
+private val FINANCE_SIDE_NAV_CLEARANCE = FINANCE_SIDE_NAV_MARGIN + FINANCE_SIDE_NAV_WIDTH
 
 /** For the drawer: the S&P's quote, if there is one yet. */
 internal fun FinanceUiState.spQuote() = quotes[MarketCatalog.SP500.symbol]

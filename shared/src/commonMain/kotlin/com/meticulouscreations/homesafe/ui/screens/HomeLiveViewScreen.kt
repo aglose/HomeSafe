@@ -26,6 +26,8 @@ import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -34,10 +36,12 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyItemScope
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyGridItemScope
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -101,6 +105,7 @@ import com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard
 import com.meticulouscreations.homesafe.ui.components.SkeletonCardCornerRadius
 import com.meticulouscreations.homesafe.ui.components.pinchGestures
 import com.meticulouscreations.homesafe.ui.components.rememberLoadingPhase
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
@@ -217,11 +222,16 @@ fun HomeTabContent(
  * [refreshing] (see [ApertureRefreshBox]); the band opens below the shell's floating top bar,
  * which the list scrolls under. Null leaves the list unpullable: the sign-in screen's skeleton.
  *
- * A LazyColumn (not a plain scrolling Column) so off-screen camera cards aren't composed.
+ * A lazy grid (not a plain scrolling Column) so off-screen camera cards aren't composed.
  * Their players (pooled per camera, see CameraStreamPlayer's playerKey) pause the moment a
  * card scrolls out and resume at the live edge when it scrolls back in, so only the cameras
  * actually on screen are decoding; with several 4K streams that concurrency was a real
  * contributor to stutter.
+ *
+ * The cameras take as many columns as [CameraGridCells] gives them: one on a phone held upright,
+ * where this is a list; two on a phone on its side or a small tablet, three on a wide window. A
+ * full-width 16:9 card in a landscape window would be taller than the window itself. Everything
+ * above the cameras spans the full row.
  */
 @Composable
 internal fun HomeFeed(
@@ -242,23 +252,27 @@ internal fun HomeFeed(
     connectionRetrying: Boolean = false,
     onConnectionRetry: () -> Unit = {},
     onOpenTailscale: (() -> Unit)? = null,
-    cameraCard: @Composable LazyItemScope.(CameraTile) -> Unit,
+    cameraCard: @Composable LazyGridItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
     val loadingPhase = if (cameras == null) rememberLoadingPhase() else null
-    val listState = rememberLazyListState()
-    LaunchedEffect(listState, scrollToTopRequests) { scrollToTopRequests.collect { listState.animateScrollToItem(0) } }
+    val gridState = rememberLazyGridState()
+    val compactLandscape = isCompactLandscape()
+    val columns = remember(compactLandscape) { CameraGridCells(twoAbreastWhenTheyFit = compactLandscape) }
+    LaunchedEffect(gridState, scrollToTopRequests) { scrollToTopRequests.collect { gridState.animateScrollToItem(0) } }
 
     PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
-        LazyColumn(
-            state = listState,
+        LazyVerticalGrid(
+            columns = columns,
+            state = gridState,
             modifier = modifier.fillMaxSize(),
-            contentPadding = tabContentPadding(),
+            contentPadding = tabContentPadding(maxWidth = HOME_GRID_MAX_WIDTH),
             verticalArrangement = Arrangement.spacedBy(24.dp),
+            horizontalArrangement = Arrangement.spacedBy(CAMERA_CARD_COLUMN_GAP),
         ) {
             // First on the page: with no server, everything below it is what the device kept.
             if (connectionProblem != null) {
-                item(key = "connection-notice") {
+                item(key = "connection-notice", span = { GridItemSpan(maxLineSpan) }) {
                     ConnectionProblemNotice(
                         problem = connectionProblem,
                         retrying = connectionRetrying,
@@ -269,13 +283,13 @@ internal fun HomeFeed(
                 }
             }
             if (everyoneAway) {
-                item(key = "away-banner") { AwayBanner(onBack = onAwayBack) }
+                item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
             }
 
             // One item, one section: an item of its own for the strip would still be spaced from its
             // neighbours while empty, would pop in whole rather than open out, and would sit a whole
             // section gap below the summary it belongs with.
-            item(key = "status") {
+            item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
                 Column {
                     HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick, onRefresh = onRefresh)
                     InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
@@ -292,7 +306,7 @@ internal fun HomeFeed(
                     )
                 }
             } else if (loadedCameras.isEmpty()) {
-                item {
+                item(span = { GridItemSpan(maxLineSpan) }) {
                     Text(
                         text = stringResource(Res.string.home_no_cameras),
                         style = MaterialTheme.typography.bodyMedium,
@@ -533,7 +547,7 @@ private fun InViewCard(item: InViewItem, onClick: () -> Unit) {
  * quick-look layer — the pinch, or the held finger's drag, continuing there without a lift of
  * the fingers.
  */
-@OptIn(ExperimentalSharedTransitionApi::class)
+@OptIn(ExperimentalSharedTransitionApi::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun CameraCard(
     tile: CameraTile,
@@ -647,19 +661,22 @@ internal fun CameraCard(
             }
         }
 
-        Row(
+        // The name at one end and the badge at the other, on one line where both fit. On a
+        // narrow card (two abreast on a small phone on its side) they don't, and the badge drops
+        // to a line of its own rather than squeezing the name until it breaks mid-word.
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
                 .padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.Top,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
                 text = camera.displayName,
                 style = MaterialTheme.typography.headlineSmall,
                 color = extraColors.textPrimary,
-                modifier = Modifier.weight(1f, fill = false).padding(end = 12.dp),
+                modifier = Modifier.padding(end = 12.dp),
             )
             StatusBadge(
                 enabled = camera.enabled,
@@ -776,6 +793,54 @@ private val IN_VIEW_CARD_WIDTH: Dp = 232.dp
 
 /** Outlined placeholder cards shown until the camera cache answers — about a phone screen's worth. */
 private const val SKELETON_CARD_COUNT = 3
+
+/**
+ * How many camera cards go side by side in the width the grid has: as many as fit at
+ * [CAMERA_CARD_MIN_WIDTH], and never more than [CAMERA_GRID_MAX_COLUMNS].
+ *
+ * [twoAbreastWhenTheyFit] is a phone on its side, where one card per row is the wrong answer
+ * even when a second doesn't fit at the usual width: the smallest phones are 640dp long, which
+ * the side nav and the gutters bring under two cards' worth, and a single card that wide is
+ * taller than the window. There two go side by side so long as each still has
+ * [CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH].
+ *
+ * The columns share the width equally, as [GridCells.Fixed] would share it.
+ */
+internal class CameraGridCells(private val twoAbreastWhenTheyFit: Boolean) : GridCells {
+    override fun Density.calculateCrossAxisCellSizes(availableSize: Int, spacing: Int): List<Int> {
+        fun fitting(minWidth: Dp): Int = (availableSize + spacing) / (minWidth.roundToPx() + spacing)
+        val fit = fitting(CAMERA_CARD_MIN_WIDTH)
+        val count = when {
+            fit < 2 && twoAbreastWhenTheyFit && fitting(CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH) >= 2 -> 2
+            else -> fit.coerceIn(1, CAMERA_GRID_MAX_COLUMNS)
+        }
+        val shared = availableSize - spacing * (count - 1)
+        // Whole pixels each; the first few columns take the remainder, one apiece.
+        return List(count) { index -> shared / count + if (index < shared % count) 1 else 0 }
+    }
+
+    override fun equals(other: Any?): Boolean = other is CameraGridCells && other.twoAbreastWhenTheyFit == twoAbreastWhenTheyFit
+
+    override fun hashCode(): Int = twoAbreastWhenTheyFit.hashCode()
+}
+
+/**
+ * The narrowest a camera card gets before the grid gives up a column: wide enough that a phone
+ * held upright (even a small one, 360dp less its gutters) shows one card per row, as it always has.
+ */
+private val CAMERA_CARD_MIN_WIDTH: Dp = 300.dp
+
+/** The narrowest a card gets on a phone on its side, where two abreast matter more than their size. */
+private val CAMERA_CARD_SIDE_BY_SIDE_MIN_WIDTH: Dp = 200.dp
+
+/** Three generous cards across; a wider window centres the grid rather than growing a fourth column. */
+private const val CAMERA_GRID_MAX_COLUMNS = 3
+
+/** Between two cards side by side; tighter than the 24dp between rows, which also separates sections. */
+private val CAMERA_CARD_COLUMN_GAP: Dp = 16.dp
+
+/** The widest the grid's three columns get; past this it centres. */
+private val HOME_GRID_MAX_WIDTH: Dp = 1280.dp
 
 /** The camera cards' corner radius; the loading skeleton and the in-flight video clip use the same. */
 internal val CAMERA_CARD_CORNER_RADIUS: Dp = SkeletonCardCornerRadius

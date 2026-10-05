@@ -11,11 +11,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
@@ -63,8 +65,10 @@ import coil3.compose.AsyncImage
 import com.meticulouscreations.homesafe.domain.model.MaskLayer
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.EditorPolygon
 import com.meticulouscreations.homesafe.ui.components.MaskPolygonEditor
+import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.EditorShape
@@ -122,6 +126,11 @@ import org.jetbrains.compose.resources.stringResource
  * the first corner (or Done) to close the shape, drag corners to adjust. Nothing reaches the
  * server until Save: a save bar appears the moment there's something to save, and leaving with
  * unsaved work asks first.
+ *
+ * Upright, the frame is the full width of the page and its tools scroll beneath it. On a phone on
+ * its side that frame would be taller than the window, with its tools a scroll away from the
+ * shape they act on — so there the frame stands at the left, as large as the height allows, and
+ * the tools have a column of their own beside it.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -149,18 +158,11 @@ fun DetectionZonesScreen(
     Column(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Header(cameraName = cameraName, uiState = uiState, onBack = requestBack, onSave = viewModel::save)
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp)
-                .padding(bottom = bottomNavClearance()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            LayerPicker(editor = uiState.editor, onSelect = viewModel::switchLayer)
-
+        // The frame (or what stands in for it while it loads, or fails to), and the tools that
+        // act on it: the same two pieces either way round, only arranged differently.
+        val frame: @Composable () -> Unit = {
             when {
-                uiState.isLoading -> Box(modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f), contentAlignment = Alignment.Center) {
+                uiState.isLoading -> Box(modifier = Modifier.aspectRatio(VIDEO_ASPECT), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                 }
 
@@ -168,7 +170,8 @@ fun DetectionZonesScreen(
 
                 else -> EditorCanvas(uiState = uiState, viewModel = viewModel)
             }
-
+        }
+        val tools: @Composable () -> Unit = {
             if (!uiState.isLoading && uiState.loadError == null) {
                 Toolbar(uiState = uiState, viewModel = viewModel)
                 StatusLine(uiState = uiState)
@@ -178,6 +181,41 @@ fun DetectionZonesScreen(
                 if (uiState.editor.layer == MaskLayer.ZONES) {
                     ZoneList(uiState = uiState, viewModel = viewModel)
                 }
+            }
+        }
+
+        if (isCompactLandscape()) {
+            Row(
+                modifier = Modifier.weight(1f).padding(horizontal = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+            ) {
+                Box(modifier = Modifier.weight(EDITOR_FRAME_WEIGHT).fillMaxHeight().padding(bottom = 16.dp), contentAlignment = Alignment.TopCenter) { frame() }
+                Column(
+                    modifier = Modifier
+                        // Its share of the width, up to what it has any use for.
+                        .weight(1f, fill = false)
+                        .widthIn(max = EDITOR_TOOLS_MAX_WIDTH)
+                        .fillMaxHeight()
+                        .verticalScroll(rememberScrollState())
+                        .padding(bottom = bottomNavClearance()),
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    LayerPicker(editor = uiState.editor, onSelect = viewModel::switchLayer)
+                    tools()
+                }
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = contentGutter(EDITOR_FRAME_MAX_WIDTH))
+                    .padding(bottom = bottomNavClearance()),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                LayerPicker(editor = uiState.editor, onSelect = viewModel::switchLayer)
+                frame()
+                tools()
             }
         }
     }
@@ -208,6 +246,15 @@ fun DetectionZonesScreen(
     }
 }
 
+/** The widest the tools' column gets beside the frame on a phone on its side: the three-button toolbar on one line. */
+private val EDITOR_TOOLS_MAX_WIDTH = 360.dp
+
+/** The frame's share of the width beside the tools (theirs is 1): a little the larger half. */
+private const val EDITOR_FRAME_WEIGHT = 1.1f
+
+/** The widest the frame is drawn in a scrolling page; past it, a tablet would show nothing but the frame. */
+private val EDITOR_FRAME_MAX_WIDTH = 840.dp
+
 @Composable
 private fun Header(cameraName: String, uiState: DetectionZonesUiState, onBack: () -> Unit, onSave: () -> Unit) {
     // This header replaces the shell's top bar (hidden while a nested screen is up), so it
@@ -216,7 +263,7 @@ private fun Header(cameraName: String, uiState: DetectionZonesUiState, onBack: (
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -299,10 +346,11 @@ private fun EditorCanvas(uiState: DetectionZonesUiState, viewModel: DetectionZon
     // Only the frame is clipped to the rounded shape. The editor sits on top unclipped, so a
     // corner handle on the very edge of the frame draws whole, over the border, instead of
     // being sliced in half by the clip.
+    //
+    // As large as its place allows at the frame's own shape: the full width in a scrolling
+    // page, or the full height where it has a pane to itself (see DetectionZonesScreen).
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(config.detectWidth.toFloat() / config.detectHeight.coerceAtLeast(1)),
+        modifier = Modifier.aspectRatio(config.detectWidth.toFloat() / config.detectHeight.coerceAtLeast(1)),
     ) {
         Box(
             modifier = Modifier

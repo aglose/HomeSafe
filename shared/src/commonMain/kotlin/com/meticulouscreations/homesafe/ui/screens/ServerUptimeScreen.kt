@@ -157,7 +157,7 @@ internal fun ServerUptimeContent(
             modifier = Modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING)
+                .padding(horizontal = contentGutter())
                 .padding(top = 8.dp, bottom = bottomNavClearance()),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
@@ -183,7 +183,7 @@ internal fun ServerUptimeContent(
 @Composable
 private fun UptimeHeader(isLoading: Boolean, onBack: () -> Unit, onRefresh: () -> Unit) {
     Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = 16.dp),
+        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
