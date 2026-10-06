@@ -26,10 +26,10 @@
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/CameraDetailScreen.kt">
         <error line="159" column="5" source="compose:modifier-missing-check" />
-        <error line="440" column="5" source="compose:state-param-check" />
-        <error line="443" column="5" source="compose:lambda-param-in-effect" />
-        <error line="443" column="5" source="compose:parameter-naming" />
-        <error line="700" column="47" source="compose:lambda-param-in-effect" />
+        <error line="441" column="5" source="compose:state-param-check" />
+        <error line="444" column="5" source="compose:lambda-param-in-effect" />
+        <error line="444" column="5" source="compose:parameter-naming" />
+        <error line="697" column="47" source="compose:lambda-param-in-effect" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/ClassifierLabelingScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />

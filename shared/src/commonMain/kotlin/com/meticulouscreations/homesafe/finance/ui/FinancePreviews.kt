@@ -28,6 +28,8 @@ import com.meticulouscreations.homesafe.finance.domain.ChartShader
 import com.meticulouscreations.homesafe.finance.domain.ChartStacking
 import com.meticulouscreations.homesafe.finance.domain.ChartStyle
 import com.meticulouscreations.homesafe.finance.domain.ChartValueFormat
+import com.meticulouscreations.homesafe.finance.domain.Contribution
+import com.meticulouscreations.homesafe.finance.domain.ContributionYear
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
@@ -223,6 +225,17 @@ internal object FinanceFixtures {
             listOf(AffordabilityPoint("Spring 2027", 11_100.0, 5_900.0), AffordabilityPoint("Fall 2028", 9_800.0, 7_200.0), AffordabilityPoint("Fall 2031", 8_100.0, 8_900.0)),
         ),
         oldHouse = HouseSale(512_000.0, 689_000.0, 61_400.0, 0.17, 233_000.0),
+        contributions = (2023..2025).mapIndexed { i, y ->
+            ContributionYear(
+                y,
+                listOf(
+                    Contribution("401k", Owner.Person("Alex"), 9_800.0 + i * 800),
+                    Contribution("401k", Owner.Person("Sam"), 12_200.0 + i * 800),
+                    Contribution("529", Owner.Joint, 2_400.0),
+                    Contribution("Joint brokerage", Owner.Joint, 4_000.0 + i * 500),
+                ),
+            )
+        },
         charts = sheetCharts(),
     )
 
@@ -473,13 +486,14 @@ private fun FinanceChartSettingsSharpPreview() {
     }
 }
 
-/** The fixture household having a harder year: thin cash, a costly card, a smaller monthly gap. */
+/** The fixture household having a harder year: thin cash, a costly card, a smaller monthly gap, little into the 401(k)s. */
 internal val strugglingFinance: PersonalFinance = FinanceFixtures.finance.let { f ->
     f.copy(
         monthlyExpenses = 12_960.0,
         netMonthly = 1_210.0,
         accounts = f.accounts.map { if (it.category == AccountCategory.CASH) it.copy(balance = it.balance / 3.2) else it },
         debts = f.debts.map { if (it.name == "Credit cards") it.copy(balance = 8_430.0, apr = 24.9) else it },
+        contributions = f.contributions.map { y -> y.copy(lines = y.lines.map { if (it.beforeTakeHome) it.copy(amount = it.amount / 6) else it }) },
     )
 }
 
@@ -499,6 +513,16 @@ private fun FinanceCheckupBreakdownPreview() {
     FinanceStage {
         Box(Modifier.background(FinancePalette().surfaceRaised)) {
             CheckupPage(moneyCheckup(strugglingFinance, 4.33), CheckKind.EMERGENCY_FUND, {}, {})
+        }
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1400)
+@Composable
+private fun FinanceCheckupSavingBreakdownPreview() {
+    FinanceStage {
+        Box(Modifier.background(FinancePalette().surfaceRaised)) {
+            CheckupPage(moneyCheckup(FinanceFixtures.finance, 4.33), CheckKind.SAVINGS_RATE, {}, {})
         }
     }
 }

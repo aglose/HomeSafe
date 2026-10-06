@@ -13,7 +13,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,17 +59,18 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -88,7 +88,6 @@ import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
-import com.meticulouscreations.homesafe.ui.components.PinchZoomState
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
@@ -96,6 +95,7 @@ import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
+import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
 import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.formatClockTime
 import com.meticulouscreations.homesafe.ui.formatDuration
@@ -414,7 +414,8 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
  * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
  *
  * At rest this is a 16:9 strip at the top of the scroll.
- * Zooming in takes over the whole scroll viewport ([viewportHeight]): the surface grows downward
+ * Zooming in — a pinch, a double tap, or a finger held on the picture, as on a Home card — takes
+ * over the whole scroll viewport ([viewportHeight]): the surface grows downward
  * until it fills the screen, pushing the rest of the page out of view, and the video sits centred
  * in the part above the floating nav bar ([bottomInsetPx]), so the enlarged picture has the full
  * height of a portrait screen to spread into rather than being clipped to its own strip. Zooming
@@ -454,8 +455,8 @@ private fun PlayerSurface(
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
-    val scope = rememberCoroutineScope()
-    // Read by the tap handler, which is keyed on the zoom alone and must not restart on a rotation.
+    val haptic = LocalHapticFeedback.current
+    // Read by the tap handler, which must not restart on a rotation.
     val isFullScreen by rememberUpdatedState(fullScreen)
 
     // The chrome is up on arrival, so the way back is in sight, and goes after a few seconds of
@@ -466,6 +467,10 @@ private fun PlayerSurface(
     var chromeHeld by remember { mutableStateOf(false) }
     var chromeFocused by remember { mutableStateOf(false) }
     var chromeTouched by remember { mutableIntStateOf(0) }
+    // Remembered: the gesture node is keyed on them, and must not restart under a finger.
+    val onTap = remember(viewModel) { { if (isFullScreen) chromeShown = !chromeShown else viewModel.togglePlayPause() } }
+    // The same tick a held Home card gives as its video lifts out.
+    val onHoldZoom = remember(haptic) { { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } }
     // The chrome reports its menus and its focus while it is composed, and it can leave with
     // either still set — turned upright with a menu open, hidden by a tap. Whenever it goes,
     // or comes back afresh, nothing is holding it.
@@ -581,7 +586,8 @@ private fun PlayerSurface(
                 // Once the chrome has faded this layer is the only way to it, so full screen it is
                 // a button in its own right: named for a screen reader, which can activate it, and
                 // focusable, so Enter or Space on a keyboard does what a tap does. The pointer
-                // input stays as it was — a clickable would swallow the double tap that zooms.
+                // input stays as it was — a clickable would swallow the double tap and the hold
+                // that zoom.
                 val toggleChromeLabel = stringResource(if (chromeShown) Res.string.camera_hide_controls else Res.string.camera_show_controls)
                 Box(
                     modifier = Modifier
@@ -606,16 +612,7 @@ private fun PlayerSurface(
                                 Modifier
                             },
                         )
-                        .pointerInput(zoom) {
-                            detectTapGestures(
-                                onTap = { if (isFullScreen) chromeShown = !chromeShown else viewModel.togglePlayPause() },
-                                onDoubleTap = { tapAt ->
-                                    scope.launch {
-                                        if (zoom.isZoomed) zoom.animateReset() else zoom.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
-                                    }
-                                },
-                            )
-                        },
+                        .zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom),
                 )
             }
 

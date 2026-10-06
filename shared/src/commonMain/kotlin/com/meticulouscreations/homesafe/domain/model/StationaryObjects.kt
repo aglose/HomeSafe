@@ -41,6 +41,13 @@ import kotlin.time.Instant
  * app has no evidence either way and says nothing rather than something stale. And it is only
  * reported at all when some sighting in the stay was recognized: the classifier names a car on
  * some frames and misses it on others, so the stay is judged as a whole, not sighting by sighting.
+ *
+ * A sighting still in progress is the exception to both halves of that. Frigate can keep one open
+ * on a parked car for hours while shorter sightings come and go on top of its box — the cars that
+ * pass a car at the kerb, which the classifier is quick to give a household name. That open
+ * sighting is the car that is there, so it stays the stay's latest whatever folds in after it,
+ * and the name Frigate has on it now is the car's name, however sure a passing guess was. It is
+ * also what the tagging screen draws, so the strip and the boxes say the same thing.
  */
 object StationaryObjects {
     /**
@@ -60,7 +67,8 @@ object StationaryObjects {
  * the two ends of the stay: [thumbnailEventId], [label], [cameraName] and [zones] from the most
  * recent sighting (where the car is *now*), [firstSeenEpochSeconds] from the first (when it got
  * there), and [subLabel] from the best-scored sighting that put a name to it — the classifier
- * recognizes a car on some frames and not others.
+ * recognizes a car on some frames and not others — unless the most recent sighting is still in
+ * progress and named, in which case it is that one's.
  */
 data class StationaryObject(
     /** The most recent sighting's event id: its thumbnail is the freshest crop of the car in place. */
@@ -191,11 +199,18 @@ private data class Stay(
     val sightings: Int = first.sightings,
 ) {
     /**
+     * The sighting that names the car: the latest one while it is still in progress and has a
+     * name, because that is the object Frigate is tracking and what it calls it now; otherwise
+     * [named], the surest of the stay.
+     */
+    val namedBy: MomentEvent? get() = latest.takeIf { it.isInProgress && it.isRecognized } ?: named
+
+    /**
      * Which car this is: the classifier's name for it, folded to one case so two spellings of one
      * name are one car. Null until some sighting names it, which [stationaryObjects] has already
      * required by the time it groups on this.
      */
-    val carName: String? get() = named?.subLabel?.lowercase()
+    val carName: String? get() = namedBy?.subLabel?.lowercase()
 
     /**
      * Two runs of sightings of the same car as one stay. There is no continuity between them to
@@ -214,7 +229,9 @@ private data class Stay(
      * This stay with one more sighting of the same vehicle at the same spot folded into it. The
      * fresher of the two stays the latest: a sighting that began earlier and is still in progress —
      * the one event Frigate has kept on the car since it pulled in — outlives a blip on the same
-     * box that began after it and has ended, and it is the one that says whether the car is there.
+     * box that began after it and has ended, and of two that have ended the one seen later does. A
+     * sighting that has ended says less about now than one that hasn't, and one that ended first
+     * says less than the one that watched the car afterwards, perhaps as it drove off.
      */
     fun folding(event: MomentEvent): Stay = copy(
         latest = if (event.seenUntil >= latest.seenUntil) event else latest,
@@ -233,7 +250,7 @@ private data class Stay(
         thumbnailEventId = latest.id,
         cameraName = latest.cameraName,
         label = latest.label,
-        subLabel = named?.subLabel,
+        subLabel = namedBy?.subLabel,
         zones = latest.zones,
         firstSeenEpochSeconds = first.startEpochSeconds,
         lastSeenEpochSeconds = latest.endEpochSeconds ?: latest.startEpochSeconds,

@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.finance.data
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
 import com.meticulouscreations.homesafe.finance.domain.AffordabilityPoint
+import com.meticulouscreations.homesafe.finance.domain.Contribution
+import com.meticulouscreations.homesafe.finance.domain.ContributionYear
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
@@ -85,6 +87,7 @@ object PersonalFinanceParser {
             taxYears = forecasts?.let(::taxYears).orEmpty(),
             mortgagePlan = newHouse?.let(::mortgagePlan),
             oldHouse = oldHouse?.let(::houseSale),
+            contributions = forecasts?.let { contributions(it, people.map { p -> p.second }) }.orEmpty(),
         )
         val totals = listOfNotNull(finance.monthlyIncome, finance.monthlyExpenses, finance.netMonthly).size
         if (totals in 1..2) notes += ParseNote(SheetSection.TOTALS, UiText.plural(Res.plurals.fin_data_note_totals_partial, totals))
@@ -102,6 +105,7 @@ object PersonalFinanceParser {
                 if (historyHeader(home) != null) add(SheetSection.HISTORY)
             }
             if (forecasts != null && taxHeader(forecasts) != null) add(SheetSection.TAX_YEARS)
+            if (forecasts != null && contributionsHeader(forecasts, people.map { it.second }) != null) add(SheetSection.CONTRIBUTIONS)
             if (newHouse != null) add(SheetSection.MORTGAGE)
             if (oldHouse != null) add(SheetSection.HOUSE_SALE)
         }
@@ -145,6 +149,7 @@ object PersonalFinanceParser {
             health(SheetSection.WATCHLIST, counted(f.watchlist.size, Res.plurals.fin_data_found_tickers)),
             health(SheetSection.HISTORY, counted(f.history.size, Res.plurals.fin_data_found_snapshots)),
             health(SheetSection.TAX_YEARS, counted(f.taxYears.size, Res.plurals.fin_data_found_years)),
+            health(SheetSection.CONTRIBUTIONS, counted(f.contributions.size, Res.plurals.fin_data_found_years)),
             health(SheetSection.MORTGAGE, f.mortgagePlan?.let { read }),
             health(SheetSection.HOUSE_SALE, f.oldHouse?.soldPrice?.let { read }),
         )
@@ -503,6 +508,90 @@ object PersonalFinanceParser {
             )
         }
         return out
+    }
+
+    /** The yearly investments table's title column, the row with the people's names, and their columns. */
+    private class ContributionsHeader(val column: Int, val row: Int, val columns: List<Pair<Int, String>>)
+
+    /**
+     * The yearly investments table's title: an "Investments" cell with the people's names heading
+     * the columns to its right a row or two down (any words there, when the people aren't known).
+     */
+    private fun contributionsHeader(grid: SheetGrid, people: List<String>): ContributionsHeader? {
+        var from = 0
+        while (true) {
+            val (r0, c0) = grid.findLabel("Investments", rowsFrom = from) ?: return null
+            for (r in r0 + 1..r0 + 3) {
+                // Not the title's own merge running across the columns.
+                val found = (c0 + 1..c0 + HEADER_REACH).mapNotNull { col ->
+                    grid.text(r, col)
+                        ?.takeIf { t -> !grid.isMergeTail(r, col) && if (people.isEmpty()) SheetGrid.parseLooseNumber(t) == null else people.any { it.equals(t, true) } }
+                        ?.let { col to it }
+                }
+                if (found.isNotEmpty()) return ContributionsHeader(c0, r, found)
+            }
+            from = r0 + 1
+        }
+    }
+
+    /**
+     * What was invested each year: under the table's header a block per year, the year alone in
+     * the label column, then a row per account (each person's amount, or one merged across their
+     * columns for a joint one) down to the block's "Total".
+     */
+    private fun contributions(grid: SheetGrid, people: List<String>): List<ContributionYear> {
+        val header = contributionsHeader(grid, people) ?: return emptyList()
+        val c = header.column
+        val columns = header.columns
+        val out = mutableListOf<ContributionYear>()
+        var year: Int? = null
+        var lines = mutableListOf<Contribution>()
+        fun close() {
+            year?.let { if (lines.isNotEmpty()) out += ContributionYear(it, lines) }
+            year = null
+            lines = mutableListOf()
+        }
+        var blanks = 0
+        var r = header.row + 1
+        while (r < grid.rowCount && blanks <= BLOCK_GAP) {
+            val label = grid.text(r, c)
+            val asYear = grid.number(r, c)?.takeIf { it in 1900.0..2200.0 && columns.all { (col, _) -> grid.isBlank(r, col) } }
+            when {
+                grid.isMergeTail(r, c) -> Unit
+
+                asYear != null -> {
+                    close()
+                    year = asYear.roundToInt()
+                    blanks = 0
+                }
+
+                label == null -> blanks++
+
+                label.lowercase().startsWith("total") -> {
+                    close()
+                    blanks = 0
+                }
+
+                else -> {
+                    blanks = 0
+                    // A row above the first year belongs to no year, and is left out.
+                    if (year != null) {
+                        val first = columns.first().first
+                        val merge = grid.mergeAt(r, first)
+                        if (merge != null && merge.endColumn > columns.last().first) {
+                            grid.number(r, first)?.takeIf { it > 0 }?.let { lines += Contribution(label, Owner.Joint, it) }
+                        } else {
+                            columns.forEach { (col, name) ->
+                                grid.number(r, col)?.takeIf { it > 0 }?.let { lines += Contribution(label, Owner.Person(name), it) }
+                            }
+                        }
+                    }
+                }
+            }
+            r++
+        }
+        close()
+        return out.sortedBy { it.year }
     }
 
     private fun mortgagePlan(grid: SheetGrid): MortgagePlan? {

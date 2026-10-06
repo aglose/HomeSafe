@@ -2,11 +2,14 @@ package com.meticulouscreations.homesafe.finance.ui
 
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.Contribution
+import com.meticulouscreations.homesafe.finance.domain.ContributionYear
 import com.meticulouscreations.homesafe.finance.domain.Debt
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.domain.IncomeLine
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
+import com.meticulouscreations.homesafe.finance.domain.TaxYear
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -24,13 +27,26 @@ import homesafe.shared.generated.resources.checkup_ratio_step_mortgage
 import homesafe.shared.generated.resources.checkup_ratio_whatif_still_owed
 import homesafe.shared.generated.resources.checkup_retirement_step_reach_away
 import homesafe.shared.generated.resources.checkup_retirement_step_uneven
+import homesafe.shared.generated.resources.checkup_savings_item_in_year
 import homesafe.shared.generated.resources.checkup_savings_ledger_kept
 import homesafe.shared.generated.resources.checkup_savings_ledger_other
+import homesafe.shared.generated.resources.checkup_savings_ledger_pay
+import homesafe.shared.generated.resources.checkup_savings_ledger_saved
+import homesafe.shared.generated.resources.checkup_savings_ledger_set_aside
+import homesafe.shared.generated.resources.checkup_savings_ledger_share
 import homesafe.shared.generated.resources.checkup_savings_ledger_spending
+import homesafe.shared.generated.resources.checkup_savings_note_paycheck
+import homesafe.shared.generated.resources.checkup_savings_rule_with_paycheck
+import homesafe.shared.generated.resources.checkup_savings_step_401k
+import homesafe.shared.generated.resources.checkup_savings_step_above
 import homesafe.shared.generated.resources.checkup_savings_step_reach
+import homesafe.shared.generated.resources.checkup_savings_step_sheet_year
 import homesafe.shared.generated.resources.checkup_savings_step_trim_expense
+import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_list_separator
+import homesafe.shared.generated.resources.fin_data_owner_joint
 import homesafe.shared.generated.resources.finance_wallet_per_month
+import homesafe.shared.generated.resources.layman_checkup_saving_detail_with_paycheck
 import homesafe.shared.generated.resources.narrator_two_sentences
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -54,6 +70,8 @@ class MoneyCheckupTest {
             Debt("Car loan", Owner.Person("Sam"), 10_000.0, 3.0, null),
             Debt("Mortgage", Owner.Joint, 300_000.0, 6.0, null),
         ),
+        contributions: List<ContributionYear> = emptyList(),
+        taxYears: List<TaxYear> = emptyList(),
     ) = PersonalFinance(
         title = "Test",
         fetchedAtEpochSeconds = 0,
@@ -78,9 +96,10 @@ class MoneyCheckupTest {
         vesting = emptyList(),
         watchlist = emptyList(),
         history = emptyList(),
-        taxYears = emptyList(),
+        taxYears = taxYears,
         mortgagePlan = null,
         oldHouse = null,
+        contributions = contributions,
     )
 
     private val checkup = moneyCheckup(household(), fedRate = 4.33)
@@ -130,6 +149,78 @@ class MoneyCheckupTest {
         val c = moneyCheckup(household(netMonthly = 800.0), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
         val other = c.ledger.single { it.label == Res.string.checkup_savings_ledger_other }
         assertEquals("$200".asUiText(), other.amount)
+    }
+
+    /** $24,000 a year into the 401(k)s, $2,000 a month that never reaches take-home, and $6,000 into a brokerage account that does. */
+    private val invested = listOf(
+        ContributionYear(2024, listOf(Contribution("401k", Owner.Person("Sam"), 60_000.0))),
+        ContributionYear(
+            2025,
+            listOf(
+                Contribution("401k", Owner.Person("Alex"), 9_600.0),
+                Contribution("401k", Owner.Person("Sam"), 14_400.0),
+                Contribution("Joint Brokerage", Owner.Joint, 6_000.0),
+            ),
+        ),
+    )
+
+    @Test
+    fun moneyTakenFromThePaycheckCountsAsSavedAndAsPay() {
+        val c = moneyCheckup(household(contributions = invested), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
+        // $1,000 left over + $2,000 set aside, of $10,000 take-home + $2,000 set aside.
+        assertEquals("25.0%".asUiText(), c.figure)
+        assertTrue(c.ok)
+        assertEquals(UiText.of(Res.string.layman_checkup_saving_detail_with_paycheck, "25.0%", "$2,000"), c.detail)
+        assertEquals(Res.string.checkup_savings_rule_with_paycheck, c.rule)
+        assertEquals(Res.string.checkup_savings_note_paycheck, c.note)
+        val setAside = c.ledger.single { it.label == Res.string.checkup_savings_ledger_set_aside }
+        assertEquals("$2,000".asUiText(), setAside.amount)
+        assertEquals(listOf("401k".asUiText(), "401k".asUiText()), setAside.items.map { it.label }, "the brokerage account is paid from take-home")
+        val sam = setAside.items.first()
+        assertEquals(UiText.of(Res.string.finance_wallet_per_month, "$1,200"), sam.amount, "biggest first")
+        assertEquals(UiText.Joined(listOf("Sam".asUiText(), UiText.of(Res.string.checkup_savings_item_in_year, "$14,400", "2025")), UiText.of(Res.string.common_dot_separator)), sam.detail)
+        assertEquals("+$3,000".asUiText(), c.ledger.single { it.label == Res.string.checkup_savings_ledger_saved }.amount)
+        assertEquals("$12,000".asUiText(), c.ledger.single { it.label == Res.string.checkup_savings_ledger_pay }.amount)
+        assertEquals(Res.string.checkup_savings_ledger_share, c.ledger.last().label)
+        assertEquals("25.0%".asUiText(), c.ledger.last().amount)
+        // 15% of $12,000 is $1,800.
+        assertEquals(UiText.of(Res.string.checkup_savings_step_above, "$1,200"), c.steps.first())
+    }
+
+    @Test
+    fun aSetAsideThatStillFallsShortSaysHowMuchMoreOfTheWholePayReaches15Percent() {
+        val small = listOf(ContributionYear(2025, listOf(Contribution("403(b)", Owner.Joint, 2_400.0))))
+        val c = moneyCheckup(household(contributions = small), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
+        // $1,200 saved of $10,200: 15% is $1,530.
+        assertEquals("11.8%".asUiText(), c.figure)
+        assertFalse(c.ok)
+        assertEquals(UiText.of(Res.string.checkup_savings_step_reach, "$330"), c.steps.first())
+        assertTrue(c.steps.none { it == UiText.of(Res.string.checkup_savings_step_401k) }, "the paycheck's share is already in the figure")
+        assertEquals(UiText.of(Res.string.fin_data_owner_joint), (c.ledger.single { it.label == Res.string.checkup_savings_ledger_set_aside }.items.single().detail as UiText.Joined).parts.first())
+        assertFalse(c.whatIf!!.outcome(325.0).ok)
+        assertTrue(c.whatIf.outcome(350.0).ok)
+    }
+
+    @Test
+    fun aSheetThatListsNoPaycheckPlansKeepsTheTakeHomeFigure() {
+        val brokerageOnly = listOf(ContributionYear(2025, listOf(Contribution("Joint Brokerage", Owner.Joint, 6_000.0))))
+        val c = moneyCheckup(household(contributions = brokerageOnly), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
+        assertEquals("10.0%".asUiText(), c.figure)
+        assertEquals(Res.string.checkup_savings_ledger_kept, c.ledger.last().label)
+        assertNull(c.note)
+        assertTrue(c.steps.any { it == UiText.of(Res.string.checkup_savings_step_401k) })
+    }
+
+    @Test
+    fun theSheetsOwnYearlyCountIsQuotedBesideTheMonthlyFigure() {
+        val years = listOf(
+            TaxYear(2024, 150_000.0, 40_000.0, 110_000.0, 0.2667, 22_000.0, 0.2),
+            TaxYear(2025, 160_000.0, 40_000.0, 120_000.0, 0.25, 30_000.0, null),
+            TaxYear(2026, 170_000.0, null, null, null, null, null),
+        )
+        val c = moneyCheckup(household(contributions = invested, taxYears = years), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
+        // The latest year with a figure; its share worked out from take-home when the sheet has none.
+        assertEquals(UiText.of(Res.string.checkup_savings_step_sheet_year, "2025", "$30,000", "25.0%"), c.steps.last())
     }
 
     @Test

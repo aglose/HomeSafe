@@ -357,8 +357,8 @@
     <string name="explainer_cashflow_why_you">What's left over is what builds wealth. The bar shows your take-home pay split into your expenses, with the white sliver being what you keep.</string>
 
     <string name="explainer_savingsrate_title">Savings rate</string>
-    <string name="explainer_savingsrate_one_liner">The share of your take-home pay left over after monthly expenses.</string>
-    <string name="explainer_savingsrate_why_you">A common rule of thumb is to save 15–20% of income for retirement and goals. Contributions taken out before your paycheck (like a 401(k)) are on top of this.</string>
+    <string name="explainer_savingsrate_one_liner">The share of your pay you don't spend: what's left of take-home after monthly expenses, plus anything saved straight from the paycheck.</string>
+    <string name="explainer_savingsrate_why_you">A common rule of thumb is to save 15–20% of income for retirement and goals. Contributions taken out before your paycheck (like a 401(k)) count toward it: the checkup adds them when the sheet lists what went in each year.</string>
 
     <string name="explainer_runway_title">Cash runway</string>
     <string name="explainer_runway_technical">Emergency fund</string>
