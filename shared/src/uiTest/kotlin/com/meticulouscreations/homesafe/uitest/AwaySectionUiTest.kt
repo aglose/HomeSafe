@@ -27,7 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * The Settings tab's "Away mode" section and its "This phone decides home/away" switch, rendered
+ * The Away mode page's card and its "This phone decides home/away" switch, rendered
  * for real: which phone decides, as the relay's presence snapshot says, and what the switch and
  * the device list make of it. [AwaySection] is stateless, so every state is a [SettingsUiState]
  * fixture and the switch is checked by the callback it fires.

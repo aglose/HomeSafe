@@ -6,8 +6,6 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -96,7 +94,6 @@ import homesafe.shared.generated.resources.alerts_send_test
 import homesafe.shared.generated.resources.alerts_test_sent
 import homesafe.shared.generated.resources.alerts_time_am
 import homesafe.shared.generated.resources.alerts_time_pm
-import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.alerts_what_to_hear
 import homesafe.shared.generated.resources.alerts_zones_caption
 import homesafe.shared.generated.resources.common_cancel
@@ -105,8 +102,8 @@ import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
 
 /**
- * The Settings tab's "Alerts" section: the notifications switch and, once it's on, what to hear
- * about and when. The rules are per place — every zone on every camera, plus each camera's
+ * The Alerts page's one card ([AlertsSettingsScreen]): the notifications switch and, once it's on,
+ * what to hear about and when. The rules are per place — every zone on every camera, plus each camera's
  * "anywhere else" — which on a real install is a couple of dozen switches, so they're led by a
  * row of presets and only laid out in full when the user asks, or when they've been tuned into
  * something no preset describes. Where last week's detections say a rule would be noisy, its
@@ -129,7 +126,7 @@ internal fun AlertsSection(
     onOpenSettings: () -> Unit,
     onSendTest: () -> Unit,
 ) {
-    SettingsSection(title = stringResource(Res.string.alerts_title), icon = Icons.Filled.Notifications) {
+    SettingsCard {
         if (!state.notificationsSupported) {
             SettingsToggleRow(
                 title = stringResource(Res.string.alerts_notifications),
@@ -138,7 +135,7 @@ internal fun AlertsSection(
                 enabled = false,
                 onCheckedChange = {},
             )
-            return@SettingsSection
+            return@SettingsCard
         }
         val blocked = state.notificationPermission == NotificationPermission.DENIED
         SettingsToggleRow(
@@ -417,7 +414,7 @@ private fun noisiestRuleHint(alerts: AlertSettings, cameras: List<CameraPipeline
     }
 }
 
-private fun presetLabel(preset: AlertPreset): StringResource = when (preset) {
+internal fun presetLabel(preset: AlertPreset): StringResource = when (preset) {
     AlertPreset.PEOPLE_ONLY -> Res.string.alerts_preset_people_only
     AlertPreset.PEOPLE_AND_DRIVEWAY_CARS -> Res.string.alerts_preset_people_driveway_cars
     AlertPreset.PEOPLE_AND_VEHICLES -> Res.string.alerts_preset_people_vehicles
@@ -433,10 +430,13 @@ private fun presetDescription(preset: AlertPreset): StringResource = when (prese
 
 /** "10:00 PM" — minutes after midnight, on the same 12-hour clock as the rest of the app. */
 @Composable
-internal fun formatMinuteOfDay(minuteOfDay: Int): String {
+internal fun formatMinuteOfDay(minuteOfDay: Int): String = minuteOfDayText(minuteOfDay).resolve()
+
+/** [formatMinuteOfDay] for text put together outside a composable, such as the Alerts row's summary. */
+internal fun minuteOfDayText(minuteOfDay: Int): UiText {
     val hour = (minuteOfDay / 60) % 24
     val minute = minuteOfDay % 60
-    return stringResource(if (hour < 12) Res.string.alerts_time_am else Res.string.alerts_time_pm, (hour + 11) % 12 + 1, minute.toString().padStart(2, '0'))
+    return UiText.of(if (hour < 12) Res.string.alerts_time_am else Res.string.alerts_time_pm, (hour + 11) % 12 + 1, minute.toString().padStart(2, '0'))
 }
 
 /** A week's estimate, give or take the hour the sample might fall short by. */

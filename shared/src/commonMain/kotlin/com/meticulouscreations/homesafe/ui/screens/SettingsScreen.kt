@@ -25,8 +25,10 @@ import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.PersonSearch
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -64,6 +66,7 @@ import com.meticulouscreations.homesafe.domain.model.formatPercent
 import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
+import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -72,6 +75,7 @@ import com.meticulouscreations.homesafe.viewmodel.SettingsUiState
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.common_cancel
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_retry
@@ -179,6 +183,7 @@ import homesafe.shared.generated.resources.settings_storage_total
 import homesafe.shared.generated.resources.settings_storage_unreported
 import homesafe.shared.generated.resources.settings_storage_used
 import homesafe.shared.generated.resources.settings_value_missing
+import homesafe.shared.generated.resources.tone_settings_title
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.roundToInt
@@ -186,24 +191,21 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 /**
- * The "Settings" tab, everyday things first: this device's alert preferences, away mode, and
- * teaching the server faces and cars. Then the per-camera detection switches — rarely touched,
- * but a control rather than a readout, and one that decides whether a camera alerts at all, so
- * they stay on this page. Then how the finance app talks about the economy. Last, one row into
- * what the server is and is doing (live, from its stats and config), summarised in a line.
+ * The "Settings" tab: a short list of rows, everyday things first, each saying in a line how its
+ * section stands. See [SettingsHome] for what's on it. [onOpen] is handed the route of the page a
+ * row opens ([AlertsRoute], [ClassifierRoute], …).
  */
 @Composable
 fun SettingsTabContent(
-    onOpenClassifier: (String) -> Unit = {},
-    onOpenFaces: () -> Unit = {},
-    onOpenServer: () -> Unit = {},
+    onOpen: (Any) -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // Coming back from the OS notification settings screen must be reflected without a relaunch,
-    // and a classifier added on the server since the last visit should appear too.
+    // The rows' summaries are read from the same things their pages are: coming back from the OS
+    // notification settings must show without a relaunch, the other phone may have flipped its
+    // switch, and a classifier added on the server since the last visit should appear too.
     LifecycleResumeEffect(Unit) {
         viewModel.refreshNotificationPermission()
         viewModel.refreshClassifiers()
@@ -213,7 +215,17 @@ fun SettingsTabContent(
 
     val scrollState = rememberScrollState()
     LaunchedEffect(scrollState, scrollToTopRequests) { scrollToTopRequests.collect { scrollState.animateScrollTo(0) } }
-    Column(
+    SettingsHome(
+        state = state,
+        onOpenAlerts = { onOpen(AlertsRoute) },
+        onOpenAway = { onOpen(AwayRoute) },
+        onOpenClassifier = { onOpen(ClassifierRoute(it)) },
+        onOpenFaces = { onOpen(FacesRoute) },
+        onOpenServer = { onOpen(ServerRoute) },
+        onDetection = viewModel::setCameraDetection,
+        onMotion = viewModel::setCameraMotion,
+        onDismissCameraError = viewModel::dismissCameraError,
+        onTone = viewModel::setEconomyTone,
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
@@ -221,44 +233,83 @@ fun SettingsTabContent(
             // Applied after verticalScroll, so this is content padding: the page scrolls under
             // the shell's floating top bar and the bottom nav rather than stopping short of them.
             .padding(top = shellTopBarClearance() + 8.dp, bottom = bottomNavClearance()),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        AlertsSection(
-            state = state,
-            onPushNotifications = viewModel::setPushNotifications,
-            onZoneCategory = viewModel::setZoneCategory,
-            onPreset = viewModel::applyAlertPreset,
-            onQuietHours = viewModel::setQuietHours,
-            onOnlyWhenAway = viewModel::setOnlyWhenAway,
-            onQuietFamiliar = viewModel::setQuietFamiliarPeople,
-            onLoadVolume = viewModel::loadAlertVolume,
-            onOpenSettings = viewModel::openNotificationSettings,
-            onSendTest = viewModel::sendTestNotification,
-        )
-        AwaySection(
-            state = state,
-            onAway = viewModel::setAway,
-            onDecides = viewModel::setDecidesPresence,
-            onAutomatic = viewModel::setAutomaticPresence,
-            onRequestLocation = viewModel::requestLocationAccess,
-            onSetHomeHere = viewModel::setHomeHere,
-            onClearHome = viewModel::clearHome,
-            onRemoveDevice = viewModel::removeDevice,
-        )
+    )
+}
+
+/** The rows of the main Settings page that open out in place rather than onto a page of their own. */
+internal enum class SettingsFold { CAMERAS, ECONOMY }
+
+/**
+ * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: this device's alerts
+ * and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
+ * detection switches and how Finance talks about the economy — a few controls each, so they open
+ * out in place — and last the way into what the server is and is doing. Every row's second line
+ * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
+ *
+ * One fold is open at a time, so the page never grows back into the long list it replaced;
+ * [initialFold] is the one open to begin with, for previews and tests.
+ */
+@Composable
+internal fun SettingsHome(
+    state: SettingsUiState,
+    onOpenAlerts: () -> Unit,
+    onOpenAway: () -> Unit,
+    onOpenClassifier: (String) -> Unit,
+    onOpenFaces: () -> Unit,
+    onOpenServer: () -> Unit,
+    onDetection: (String, Boolean) -> Unit,
+    onMotion: (String, Boolean) -> Unit,
+    onDismissCameraError: () -> Unit,
+    onTone: (EconomyTone) -> Unit,
+    modifier: Modifier = Modifier,
+    initialFold: SettingsFold? = null,
+) {
+    var openFold by rememberSaveable { mutableStateOf(initialFold) }
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(20.dp)) {
+        SettingsGroup {
+            SettingsNavRow(
+                icon = Icons.Filled.Notifications,
+                title = stringResource(Res.string.alerts_title),
+                summary = alertsSummary(state).resolve(),
+                onClick = onOpenAlerts,
+            )
+            SettingsRowDivider()
+            SettingsNavRow(
+                icon = Icons.Filled.Home,
+                title = stringResource(Res.string.presence_title),
+                summary = awaySummary(state).resolve(),
+                onClick = onOpenAway,
+            )
+        }
         RecognitionSection(
             models = state.classifiers,
             faceRecognitionEnabled = state.overview?.faceRecognitionEnabled,
             onOpen = onOpenClassifier,
             onOpenFaces = onOpenFaces,
         )
-        DetectionSection(
-            state = state,
-            onDetection = viewModel::setCameraDetection,
-            onMotion = viewModel::setCameraMotion,
-            onDismissError = viewModel::dismissCameraError,
-        )
-        EconomyToneSection(tone = state.economyTone, onTone = viewModel::setEconomyTone)
-        ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError).resolve(), onOpen = onOpenServer)
+        SettingsGroup {
+            SettingsExpandableRow(
+                icon = Icons.Filled.Videocam,
+                title = stringResource(Res.string.settings_cameras_title),
+                summary = detectionSummary(state.overview).resolve(),
+                expanded = openFold == SettingsFold.CAMERAS,
+                onToggle = { openFold = SettingsFold.CAMERAS.takeIf { it != openFold } },
+            ) {
+                CameraDetectionRows(state = state, onDetection = onDetection, onMotion = onMotion, onDismissError = onDismissCameraError)
+            }
+            SettingsRowDivider()
+            SettingsExpandableRow(
+                icon = Icons.Filled.Public,
+                title = stringResource(Res.string.tone_settings_title),
+                summary = stringResource(state.economyTone.label),
+                expanded = openFold == SettingsFold.ECONOMY,
+                onToggle = { openFold = SettingsFold.ECONOMY.takeIf { it != openFold } },
+            ) {
+                EconomyToneOptions(tone = state.economyTone, onTone = onTone)
+            }
+            SettingsRowDivider()
+            ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError).resolve(), onOpen = onOpenServer)
+        }
     }
 }
 
@@ -359,19 +410,24 @@ internal fun StorageSection(overview: ServerOverview?) {
     }
 }
 
+/**
+ * What the Cameras row opens out to: every camera's detection switches. Rarely touched, but they
+ * decide whether a camera alerts at all, so they stay on the main page rather than a tap further in.
+ */
 @Composable
-private fun DetectionSection(
+private fun CameraDetectionRows(
     state: SettingsUiState,
     onDetection: (String, Boolean) -> Unit,
     onMotion: (String, Boolean) -> Unit,
     onDismissError: () -> Unit,
 ) {
-    SettingsSection(title = stringResource(Res.string.settings_cameras_title), icon = Icons.Filled.PersonSearch) {
-        val overview = state.overview
-        if (overview == null) {
-            LoadingRow(stringResource(Res.string.settings_cameras_loading))
-            return@SettingsSection
-        }
+    val overview = state.overview
+    if (overview == null) {
+        LoadingRow(stringResource(Res.string.settings_cameras_loading))
+        return
+    }
+    // One emitter at the top level; the spacing matches the card sections elsewhere.
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (!overview.canEditConfig) {
             SettingsCaption(stringResource(Res.string.settings_cameras_viewer_read_only))
         }
@@ -460,7 +516,7 @@ private fun CameraPipelineRows(
 }
 
 /**
- * Away mode: this phone's "I'm away" switch, whether this phone alone decides (the relay's
+ * The Away mode page's one card ([AwaySettingsScreen]): this phone's "I'm away" switch, whether this phone alone decides (the relay's
  * presence authority), the household's phones, automatic presence, and what happens once the
  * last one leaves. The relay on the Frigate box keeps the answer, so both phones see the same thing.
  */
@@ -475,7 +531,7 @@ internal fun AwaySection(
     onClearHome: () -> Unit,
     onRemoveDevice: (String) -> Unit,
 ) {
-    SettingsSection(title = stringResource(Res.string.presence_title), icon = Icons.Filled.Home) {
+    SettingsCard {
         val relayUnreachable = state.presence == HouseholdPresence.EMPTY && state.awayError != null
         val switchEnabled = !state.awayBusy && !relayUnreachable
         val me = state.presence.thisDevice
@@ -726,17 +782,10 @@ private fun presenceDeviceName(device: PresenceDevice): String =
 
 private data class InfoItem(val label: String, val value: String, val note: String? = null)
 
+/** A card of settings under a heading, for a page made of several. */
 @Composable
 internal fun SettingsSection(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
-            .padding(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
+    SettingsCard {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 imageVector = icon,
@@ -748,6 +797,21 @@ internal fun SettingsSection(title: String, icon: ImageVector, content: @Composa
         }
         content()
     }
+}
+
+/** The card alone, for a page that is one section: its header already says which. */
+@Composable
+internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), RoundedCornerShape(16.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        content = content,
+    )
 }
 
 @Composable
