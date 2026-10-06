@@ -66,6 +66,7 @@ import homesafe.shared.generated.resources.checkup_not_itemised_detail
 import homesafe.shared.generated.resources.checkup_op_divide
 import homesafe.shared.generated.resources.checkup_op_equals
 import homesafe.shared.generated.resources.checkup_op_minus
+import homesafe.shared.generated.resources.checkup_op_plus
 import homesafe.shared.generated.resources.checkup_op_versus
 import homesafe.shared.generated.resources.checkup_priority_costly_debt
 import homesafe.shared.generated.resources.checkup_priority_debt_ratio
@@ -103,17 +104,25 @@ import homesafe.shared.generated.resources.checkup_retirement_step_uneven
 import homesafe.shared.generated.resources.checkup_retirement_whatif
 import homesafe.shared.generated.resources.checkup_retirement_whatif_in_accounts
 import homesafe.shared.generated.resources.checkup_retirement_whatif_saved
+import homesafe.shared.generated.resources.checkup_savings_item_in_year
 import homesafe.shared.generated.resources.checkup_savings_ledger_kept
 import homesafe.shared.generated.resources.checkup_savings_ledger_left_over
 import homesafe.shared.generated.resources.checkup_savings_ledger_other
+import homesafe.shared.generated.resources.checkup_savings_ledger_pay
+import homesafe.shared.generated.resources.checkup_savings_ledger_saved
+import homesafe.shared.generated.resources.checkup_savings_ledger_set_aside
+import homesafe.shared.generated.resources.checkup_savings_ledger_share
 import homesafe.shared.generated.resources.checkup_savings_ledger_spending
 import homesafe.shared.generated.resources.checkup_savings_ledger_take_home
+import homesafe.shared.generated.resources.checkup_savings_note_paycheck
 import homesafe.shared.generated.resources.checkup_savings_rule
+import homesafe.shared.generated.resources.checkup_savings_rule_with_paycheck
 import homesafe.shared.generated.resources.checkup_savings_step_401k
 import homesafe.shared.generated.resources.checkup_savings_step_above
 import homesafe.shared.generated.resources.checkup_savings_step_more_pay
 import homesafe.shared.generated.resources.checkup_savings_step_past_stretch
 import homesafe.shared.generated.resources.checkup_savings_step_reach
+import homesafe.shared.generated.resources.checkup_savings_step_sheet_year
 import homesafe.shared.generated.resources.checkup_savings_step_stretch
 import homesafe.shared.generated.resources.checkup_savings_step_trim_expense
 import homesafe.shared.generated.resources.checkup_savings_whatif
@@ -144,7 +153,9 @@ import homesafe.shared.generated.resources.layman_checkup_retirement_tip_low
 import homesafe.shared.generated.resources.layman_checkup_retirement_tip_ok
 import homesafe.shared.generated.resources.layman_checkup_retirement_title
 import homesafe.shared.generated.resources.layman_checkup_saving_detail
+import homesafe.shared.generated.resources.layman_checkup_saving_detail_with_paycheck
 import homesafe.shared.generated.resources.layman_checkup_saving_tip_low
+import homesafe.shared.generated.resources.layman_checkup_saving_tip_low_counted
 import homesafe.shared.generated.resources.layman_checkup_saving_tip_ok
 import homesafe.shared.generated.resources.layman_checkup_saving_title
 import homesafe.shared.generated.resources.narrator_two_sentences
@@ -472,12 +483,20 @@ private fun emergencyFund(finance: PersonalFinance): Check? {
 }
 
 private fun savingsRate(finance: PersonalFinance): Check? {
-    val r = finance.savingsRate ?: return null
+    val leftOverRate = finance.savingsRate ?: return null
     val income = finance.monthlyIncome ?: finance.income.sumOf { it.monthly }.takeIf { it > 0 } ?: return null
-    val net = r * income
+    val net = leftOverRate * income
     val spend = finance.monthlyExpenses ?: (income - net)
+    // Money a workplace plan takes from the paycheck is saved before it's ever take-home, so it's
+    // counted on both sides: as saved, and as pay.
+    val early = finance.paycheckSavings
+    val setAside = (early?.total ?: 0.0) / 12
+    val counted = early != null && setAside > 0
+    val pay = income + setAside
+    val saved = net + setAside
+    val r = saved / pay
     val ok = r >= SAVINGS_GOAL
-    val gap = SAVINGS_GOAL * income - net
+    val gap = SAVINGS_GOAL * pay - saved
     val steps = buildList {
         if (!ok) {
             add(UiText.of(Res.string.checkup_savings_step_reach, atLeast(gap)))
@@ -485,14 +504,19 @@ private fun savingsRate(finance: PersonalFinance): Check? {
                 add(UiText.of(Res.string.checkup_savings_step_trim_expense, e.name, money(e.monthly), pct(gap / e.monthly)))
             }
             add(UiText.of(Res.string.checkup_savings_step_more_pay, atLeast(gap / (1 - SAVINGS_GOAL))))
-            add(UiText.of(Res.string.checkup_savings_step_401k))
+            if (!counted) add(UiText.of(Res.string.checkup_savings_step_401k))
         } else {
             add(UiText.of(Res.string.checkup_savings_step_above, money(-gap)))
             if (r < SAVINGS_STRETCH) {
-                add(UiText.of(Res.string.checkup_savings_step_stretch, money(SAVINGS_STRETCH * income - net)))
+                add(UiText.of(Res.string.checkup_savings_step_stretch, money(SAVINGS_STRETCH * pay - saved)))
             } else {
                 add(UiText.of(Res.string.checkup_savings_step_past_stretch))
             }
+        }
+        // The sheet's own count for a whole year: everything invested, against all of that year's pay.
+        finance.taxYears.lastOrNull { it.invested != null && (it.investedRate != null || (it.takeHome ?: 0.0) > 0) }?.let { y ->
+            val share = y.investedRate ?: (y.invested!! / y.takeHome!!)
+            add(UiText.of(Res.string.checkup_savings_step_sheet_year, y.year.toString(), money(y.invested!!), pct(share, 1)))
         }
     }
     val ledger = buildList {
@@ -510,17 +534,39 @@ private fun savingsRate(finance: PersonalFinance): Check? {
         val other = income - spend - net
         if (abs(other) >= 1) add(CheckLedgerRow(Res.string.checkup_op_minus, Res.string.checkup_savings_ledger_other, figure(money(other))))
         add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_left_over, figure(FinanceFormat.signedMoney(net, 0))))
-        add(CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_savings_ledger_take_home, figure(money(income))))
-        add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_kept, figure(pct(r, 1)), result = true))
+        if (early != null && counted) {
+            val items = early.lines.sortedByDescending { it.amount }.map { line ->
+                CheckItem(
+                    line.name.asUiText(),
+                    UiText.Joined(listOf(line.owner.label, UiText.of(Res.string.checkup_savings_item_in_year, money(line.amount), early.year.toString())), dot),
+                    perMonth(line.amount / 12),
+                )
+            }
+            add(CheckLedgerRow(Res.string.checkup_op_plus, Res.string.checkup_savings_ledger_set_aside, figure(money(setAside)), items))
+            add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_saved, figure(FinanceFormat.signedMoney(saved, 0))))
+            add(CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_savings_ledger_pay, figure(money(pay))))
+            add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_share, figure(pct(r, 1)), result = true))
+        } else {
+            add(CheckLedgerRow(Res.string.checkup_op_divide, Res.string.checkup_savings_ledger_take_home, figure(money(income))))
+            add(CheckLedgerRow(Res.string.checkup_op_equals, Res.string.checkup_savings_ledger_kept, figure(pct(r, 1)), result = true))
+        }
     }
     return Check(
         kind = CheckKind.SAVINGS_RATE,
         ok = ok,
         title = Res.string.layman_checkup_saving_title,
         figure = figure(pct(r, 1)),
-        detail = UiText.of(Res.string.layman_checkup_saving_detail, pct(r, 1)),
-        tip = if (ok) Res.string.layman_checkup_saving_tip_ok else Res.string.layman_checkup_saving_tip_low,
-        rule = Res.string.checkup_savings_rule,
+        detail = if (counted) {
+            UiText.of(Res.string.layman_checkup_saving_detail_with_paycheck, pct(r, 1), money(setAside))
+        } else {
+            UiText.of(Res.string.layman_checkup_saving_detail, pct(r, 1))
+        },
+        tip = when {
+            ok -> Res.string.layman_checkup_saving_tip_ok
+            counted -> Res.string.layman_checkup_saving_tip_low_counted
+            else -> Res.string.layman_checkup_saving_tip_low
+        },
+        rule = if (counted) Res.string.checkup_savings_rule_with_paycheck else Res.string.checkup_savings_rule,
         explainerId = "savingsrate",
         gauge = CheckGauge(
             r.coerceAtLeast(0.0),
@@ -535,16 +581,17 @@ private fun savingsRate(finance: PersonalFinance): Check? {
         steps = steps,
         whatIf = WhatIf(
             label = Res.string.checkup_savings_whatif,
-            max = roundUp(min(max(gap * 1.5, income * 0.1), spend.coerceAtLeast(100.0)), 100.0),
+            max = roundUp(min(max(gap * 1.5, pay * 0.1), spend.coerceAtLeast(100.0)), 100.0),
             step = 25.0,
         ) { x ->
-            val r2 = (net + x) / income
+            val r2 = (saved + x) / pay
             WhatIfOutcome(
                 UiText.of(Res.string.checkup_savings_whatif_kept, pct(r2, 1)),
                 r2 >= SAVINGS_GOAL,
                 UiText.of(Res.string.checkup_savings_whatif_left_over, FinanceFormat.signedMoney(net + x, 0)),
             )
         },
+        note = Res.string.checkup_savings_note_paycheck.takeIf { counted },
     )
 }
 

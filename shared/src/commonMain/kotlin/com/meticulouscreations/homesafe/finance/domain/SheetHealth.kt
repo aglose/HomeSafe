@@ -7,6 +7,8 @@ import homesafe.shared.generated.resources.fin_data_section_accounts
 import homesafe.shared.generated.resources.fin_data_section_accounts_looked_for
 import homesafe.shared.generated.resources.fin_data_section_cash
 import homesafe.shared.generated.resources.fin_data_section_cash_looked_for
+import homesafe.shared.generated.resources.fin_data_section_contributions
+import homesafe.shared.generated.resources.fin_data_section_contributions_looked_for
 import homesafe.shared.generated.resources.fin_data_section_debts
 import homesafe.shared.generated.resources.fin_data_section_debts_looked_for
 import homesafe.shared.generated.resources.fin_data_section_expenses
@@ -51,6 +53,7 @@ enum class SheetSection(val label: StringResource, val lookedFor: StringResource
     WATCHLIST(Res.string.fin_data_section_watchlist, Res.string.fin_data_section_watchlist_looked_for),
     HISTORY(Res.string.fin_data_section_history, Res.string.fin_data_section_history_looked_for),
     TAX_YEARS(Res.string.fin_data_section_tax_years, Res.string.fin_data_section_tax_years_looked_for),
+    CONTRIBUTIONS(Res.string.fin_data_section_contributions, Res.string.fin_data_section_contributions_looked_for),
     MORTGAGE(Res.string.fin_data_section_mortgage, Res.string.fin_data_section_mortgage_looked_for),
     HOUSE_SALE(Res.string.fin_data_section_house_sale, Res.string.fin_data_section_house_sale_looked_for),
 }

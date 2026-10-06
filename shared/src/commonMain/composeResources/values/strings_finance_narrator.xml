@@ -459,8 +459,11 @@
     <string name="layman_checkup_saving_title">Saving each month</string>
     <!-- %1$s a percentage, e.g. "18.2%" -->
     <string name="layman_checkup_saving_detail">You keep %1$s of take-home pay after expenses.</string>
+    <!-- %1$s a percentage, %2$s a monthly amount, e.g. "$1,900" -->
+    <string name="layman_checkup_saving_detail_with_paycheck">You save %1$s of your pay, counting the %2$s a month set aside before take-home.</string>
     <string name="layman_checkup_saving_tip_ok">At or above the common 15% goal.</string>
     <string name="layman_checkup_saving_tip_low">The common goal is 15–20% (401(k) contributions taken from your paycheck count on top). Trimming a big recurring expense moves this most.</string>
+    <string name="layman_checkup_saving_tip_low_counted">The common goal is 15–20%. Trimming a big recurring expense moves this most.</string>
     <string name="layman_checkup_debt_title">Costly debt</string>
     <!-- %1$s a percentage, e.g. "5%" -->
     <string name="layman_checkup_debt_none">None of your loans charge more than about %1$s.</string>
