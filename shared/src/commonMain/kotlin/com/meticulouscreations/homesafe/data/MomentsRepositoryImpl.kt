@@ -336,7 +336,8 @@ class MomentsRepositoryImpl(
      * Sarah's car and Andrew's Tesla had been tracked for two and a half and four and a half
      * hours, so neither sighting reached the strip, which had no card for Sarah's car at all,
      * while the tagging screen, which asks what is being tracked, boxed both. So every poll asks
-     * that as well and reads the two answers as one list. What is tracked now is not held to the
+     * that as well ([fetchTracking], which reads it to the end rather than stopping at a page of
+     * its own) and reads the two answers as one list. What is tracked now is not held to the
      * lookback window: a car still in sight is in view however long ago it pulled in. If only
      * that second question fails, the page stands on its own, as it used to.
      *
@@ -364,7 +365,7 @@ class MomentsRepositoryImpl(
                 val lookbackStart = now - STATIONARY_LOOKBACK_SECONDS
                 val (page, tracking) = coroutineScope {
                     val page = async { apiClient.getEvents(server.url, limit = PAGE_SIZE, afterEpochSeconds = lookbackStart) }
-                    val tracking = async { apiClient.getEvents(server.url, limit = PAGE_SIZE, inProgress = true) }
+                    val tracking = async { fetchTracking(server.url) }
                     page.await() to tracking.await()
                 }
                 val fetched = page
@@ -380,7 +381,7 @@ class MomentsRepositoryImpl(
                         val placed = events.map { it.toDomain() }.inZones(zones)
                         // Only the tracked sightings the page didn't reach; ended ones are the page's to report.
                         val pageIds = events.mapTo(HashSet()) { it.id }
-                        val tracked = tracking.getOrDefault(emptyList())
+                        val tracked = tracking
                             .filter { it.endTime == null && it.id !in pageIds }
                             .map { it.toDomain() }
                             .inZones(zones)
@@ -401,6 +402,26 @@ class MomentsRepositoryImpl(
                 withTimeoutOrNull(nextPollDelayMs(failures)) { stationaryNudges.first() }
             }
         }
+    }
+
+    /**
+     * Everything Frigate is tracking, on every camera, for [observeStationaryObjects]. Paged until
+     * a page comes back short or [TRACKING_MAX_PAGES] have been read: one page is the newest
+     * [PAGE_SIZE] by start again, and the car that has been there longest is exactly the one a
+     * full page would drop. Empty when the server didn't answer the first page; what had been
+     * read when a later one failed.
+     */
+    private suspend fun fetchTracking(url: String): List<FrigateEvent> {
+        val tracking = ArrayList<FrigateEvent>()
+        var cursor: Double? = null
+        for (page in 0 until TRACKING_MAX_PAGES) {
+            val events = apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = cursor, inProgress = true).getOrElse { break }
+            tracking += events
+            cursor = events.minOfOrNull { it.startTime } ?: break
+            if (events.size < PAGE_SIZE) break
+        }
+        // The cursor is rounded to the millisecond on its way out, so a page can open on the row the last one closed on.
+        return tracking.distinctBy { it.id }
     }
 
     override fun refreshStationaryObjects() {
@@ -804,6 +825,13 @@ class MomentsRepositoryImpl(
          * hour, which even a busy camera fills with far fewer than a thousand detections.
          */
         const val RANGE_MAX_PAGES = 10
+
+        /**
+         * The most pages [fetchTracking] reads per poll. One is every home's ordinary day; five
+         * hundred objects tracked at once is past anything a household's cameras produce, and a
+         * poll that runs every thirty seconds needs an end.
+         */
+        const val TRACKING_MAX_PAGES = 5
 
         /**
          * How far back the in-view strip looks for the vehicles standing in the yard. Long enough

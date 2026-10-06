@@ -40,9 +40,12 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.double
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -144,7 +147,7 @@ class MomentsRepositoryImplTest {
                         ?: eventsFor?.invoke(before)
                         ?: events
                     // Asked what is being tracked, Frigate answers with the unfinished ones only.
-                    val answer = if (req.url.parameters["in_progress"] == "1") tracking ?: unfinished(body) else body
+                    val answer = if (req.url.parameters["in_progress"] == "1") trackingPage(tracking ?: unfinished(body), before) else body
                     respond(answer, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
@@ -181,6 +184,12 @@ class MomentsRepositoryImplTest {
 
             private fun unfinished(events: String): String =
                 JsonArray(Json.parseToJsonElement(events).jsonArray.filter { (it.jsonObject["end_time"] ?: JsonNull) is JsonNull }).toString()
+
+            /** A page of [events] as Frigate cuts one: the hundred newest that started before [before]. An answer that isn't JSON goes out as it is. */
+            private fun trackingPage(events: String, before: Double?): String = runCatching {
+                fun start(event: JsonElement) = event.jsonObject.getValue("start_time").jsonPrimitive.double
+                JsonArray(Json.parseToJsonElement(events).jsonArray.filter { before == null || start(it) < before }.sortedByDescending(::start).take(100)).toString()
+            }.getOrDefault(events)
         }
     }
 
@@ -780,6 +789,38 @@ class MomentsRepositoryImplTest {
 
             eventually("the page to reach the device") { kept.page(SERVER_URL, null, null, limit = 200).any { it.id == "andrews" } }
             assertEquals(false, kept.page(SERVER_URL, null, null, limit = 200).any { it.id == "sarahs" }, "no page would ever tell the cache it had ended")
+        } finally {
+            Harness.tracking = null
+        }
+    }
+
+    @Test
+    fun aCarTrackedLongerThanAFullPageOfOtherTrackedThingsIsStillInView() = runTest {
+        // What is being tracked is paged like anything else, newest first: a hundred newer open
+        // sightings would bury the long-parked car exactly as the newest detections did.
+        val now = 1_788_802_600L
+        val others = (0 until 100).joinToString(",") { i ->
+            """{"id":"t$i","label":"person","sub_label":null,"camera":"amcrest_1","start_time":${now - 60 - i}.0,"end_time":null,
+                "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+        }
+        val sarahs = """{"id":"sarahs","label":"car","sub_label":"sarahs_car","camera":"hikvision_1","start_time":${now - 9_100}.0,"end_time":null,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.8,"top_score":0.9,"sub_label_score":0.98,"box":[0.50,0.06,0.18,0.16],"path_data":[[[0.59,0.22],${now - 9_100}.0],[[0.60,0.23],${now - 1_100}.0]]}}"""
+        Harness.events = "[]"
+        Harness.tracking = "[$others,$sarahs]"
+        try {
+            val h = Harness(this, clock = FakeClock(now))
+
+            var inView = emptyList<StationaryObject>()
+            backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+            eventually("the car on the second page") { inView.isNotEmpty() }
+
+            assertEquals("sarahs_car", inView.single().subLabel)
+            assertEquals(
+                listOf("limit=100&in_progress=1", "limit=100&before=${now - 159}.000&in_progress=1"),
+                h.eventQueries.distinct().filter { "in_progress=1" in it },
+                "read to the end: the full first page, then what started before its oldest row",
+            )
         } finally {
             Harness.tracking = null
         }
