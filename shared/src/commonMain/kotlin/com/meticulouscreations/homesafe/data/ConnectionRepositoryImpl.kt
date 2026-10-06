@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.network.CredentialsRejectedException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateCamera
 import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.network.LocalNetworkAccess
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.SessionCheck
 import com.meticulouscreations.homesafe.network.swapUrlScheme
@@ -81,6 +82,13 @@ import kotlin.time.ExperimentalTime
  * ([refreshRoute]), which keeps trying until the server answers. Only a server that answers can
  * refuse: a password it rejects still ends the saved login on the spot ([signInWithBiometrics]),
  * and a first sign-in still needs the server. See [resumeOffline].
+ *
+ * **Permission.** Where the system keeps the local network from an app until the user allows it
+ * (Android 17), a LAN address that is right there times out like one that isn't, and nothing says
+ * why. So a sign-in that has a LAN address to try asks first ([LocalNetworkAccess.request]) and
+ * only then probes; the probe is still what decides the route. A user who refused can change
+ * their mind in system settings, which no network event reports, so the answer is read again
+ * whenever the app comes back on screen and a new grant re-checks the route there and then.
  */
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -92,6 +100,7 @@ class ConnectionRepositoryImpl(
     private val cameraDao: CameraDao,
     private val biometricCredentialStore: BiometricCredentialStore,
     networkMonitor: NetworkMonitor,
+    private val localNetworkAccess: LocalNetworkAccess,
     private val appScope: CoroutineScope,
     private val clock: Clock,
 ) : ConnectionRepository {
@@ -133,6 +142,9 @@ class ConnectionRepositoryImpl(
 
     /** When the app last left the foreground, or null while it is on screen (or has never left). */
     private var backgroundedAtMillis: Long? = null
+
+    /** Whether the local network was the app's to use when last looked at; see [localNetworkAccessGained]. */
+    private var localNetworkAllowed = localNetworkAccess.isGranted()
     private var revalidationJob: Job? = null
 
     init {
@@ -153,9 +165,14 @@ class ConnectionRepositoryImpl(
         localUrl: String?,
         username: String,
         password: String,
-    ): Result<SavedCredentials> = signInMutex.withLock {
+    ): Result<SavedCredentials> {
         val normalizedLocalUrl = localUrl?.trim()?.takeIf { it.isNotEmpty() }
-        signIn(serverUrl, normalizedLocalUrl, username, password)
+        // Only with a LAN address to probe: a sign-in that will never touch the local network
+        // has no business asking for it. Outside the lock: the system's dialog can stay up as
+        // long as the user likes, and a route check a network change set off meanwhile
+        // shouldn't queue behind it.
+        if (normalizedLocalUrl != null) localNetworkAllowed = localNetworkAccess.request()
+        return signInMutex.withLock { signIn(serverUrl, normalizedLocalUrl, username, password) }
     }
 
     override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> {
@@ -248,12 +265,24 @@ class ConnectionRepositoryImpl(
         }
         val since = backgroundedAtMillis ?: return
         backgroundedAtMillis = null
-        if (clock.now().toEpochMilliseconds() - since < REVALIDATE_AFTER_BACKGROUND_MS) return
+        val longAway = clock.now().toEpochMilliseconds() - since >= REVALIDATE_AFTER_BACKGROUND_MS
+        // A trip to system settings to allow the local network takes a few seconds and changes
+        // no network, so neither the absence nor the network monitor would notice it.
+        val accessGained = localNetworkAccessGained()
+        if (!longAway && !accessGained) return
         // The OS may have moved the phone between networks while the app was suspended (iOS
         // delivers no path events to a suspended app), and a long enough absence outlives the
         // session cookie. One pass fixes both before the first card asks for anything.
         if (revalidationJob?.isActive == true) return
-        revalidationJob = appScope.launch { refreshRoute(verifySession = true) }
+        revalidationJob = appScope.launch { refreshRoute(verifySession = longAway) }
+    }
+
+    /** True once for each time the local network goes from withheld to allowed between two looks. */
+    private fun localNetworkAccessGained(): Boolean {
+        val allowed = localNetworkAccess.isGranted()
+        val gained = allowed && !localNetworkAllowed
+        localNetworkAllowed = allowed
+        return gained
     }
 
     override suspend fun reconnect() {
