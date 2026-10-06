@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Finance: the bank sync page, where banks, brokerages and lenders are linked through Plaid and
+  their balances are written to the budget sheet's feed. fin_bank_* throughout.
+  Plaid is a company's name and stays as it is. Text in “curly quotes” is the name of a tab the
+  server makes in the feed sheet, and VLOOKUP / IMPORTRANGE are Google Sheets functions: keep all
+  of those as written.
+-->
+<resources>
+    <string name="fin_bank_title">Bank sync</string>
+
+    <!-- The way in, on the sheet sync page. -->
+    <string name="fin_bank_entry_title">Linked accounts</string>
+    <string name="fin_bank_entry_body">Have your banks and brokerages fill in the sheet's balances every day.</string>
+
+    <!-- What is being linked: the choices, and what each brings. -->
+    <string name="fin_bank_kind_title">What are you linking?</string>
+    <string name="fin_bank_kind_bank">A bank or credit card</string>
+    <string name="fin_bank_kind_bank_detail">Checking, savings and cards, plus any loans or investments held at the same bank</string>
+    <string name="fin_bank_kind_investments">Investments or retirement</string>
+    <string name="fin_bank_kind_investments_detail">A brokerage, a 401(k) or an IRA provider, with what each account holds</string>
+    <string name="fin_bank_kind_loans">A loan or mortgage</string>
+    <string name="fin_bank_kind_loans_detail">A student loan servicer or a mortgage lender, with its rate and next payment</string>
+
+    <!-- Account types, shown when Plaid gives no narrower word for the account. -->
+    <string name="fin_bank_type_cash">Cash</string>
+    <string name="fin_bank_type_credit">Credit card</string>
+    <string name="fin_bank_type_loan">Loan</string>
+    <string name="fin_bank_type_investment">Investments</string>
+    <string name="fin_bank_type_other">Account</string>
+
+    <!-- The status card. -->
+    <string name="fin_bank_status_none">Nothing linked yet</string>
+    <plurals name="fin_bank_status_linked">
+        <item quantity="one">%1$d institution linked</item>
+        <item quantity="other">%1$d institutions linked</item>
+    </plurals>
+    <string name="fin_bank_status_intro">Link a bank, a brokerage or a lender once, and its balances are read every morning and written to your budget sheet. You sign in on Plaid's page, at your bank's own sign-in where it has one. This app never sees your password.</string>
+    <string name="fin_bank_status_sandbox">Sandbox: Plaid's practice banks, with made-up money</string>
+    <string name="fin_bank_status_reading">Reading your accounts…</string>
+    <string name="fin_bank_status_last_read">Last read %1$s</string>
+    <string name="fin_bank_status_last_read_next">Last read %1$s · next around %2$s</string>
+    <string name="fin_bank_status_never_read">Not read yet</string>
+    <string name="fin_bank_action_link">Link an institution</string>
+    <string name="fin_bank_action_link_starting">Opening Plaid…</string>
+    <string name="fin_bank_action_sync">Sync now</string>
+    <string name="fin_bank_action_syncing">Syncing…</string>
+
+    <!-- While Plaid's page is open in the browser. -->
+    <string name="fin_bank_linking_title">Finish in your browser</string>
+    <string name="fin_bank_linking_body">Choose your institution on Plaid's page and sign in. Come back here when it says you're done, and this page catches up by itself.</string>
+    <string name="fin_bank_linking_reopen">Open Plaid's page again</string>
+
+    <!-- One line about how the last action went. -->
+    <string name="fin_bank_notice_linked">Linked. Reading its accounts…</string>
+    <string name="fin_bank_notice_linked_named">%1$s is linked. Reading its accounts…</string>
+    <string name="fin_bank_notice_exited">Linking was left unfinished. Nothing was linked.</string>
+    <string name="fin_bank_notice_expired">That link ran out before it was finished. Start again when you're ready.</string>
+    <string name="fin_bank_notice_unlinked">%1$s is unlinked.</string>
+
+    <!-- An institution and its accounts. -->
+    <string name="fin_bank_institution_read">Read %1$s</string>
+    <string name="fin_bank_institution_relink">%1$s wants you to sign in again before its balances can be read.</string>
+    <string name="fin_bank_institution_relink_action">Sign in again</string>
+    <string name="fin_bank_institution_failed">The last read didn't work: %1$s. These are the balances from the read before.</string>
+    <string name="fin_bank_institution_no_accounts">No accounts read yet</string>
+    <string name="fin_bank_institution_unlink">Unlink</string>
+    <string name="fin_bank_institution_unlinking">Unlinking…</string>
+    <string name="fin_bank_account_masked">%1$s ··%2$s</string>
+    <string name="fin_bank_account_apr">%1$s APR</string>
+    <plurals name="fin_bank_account_holdings">
+        <item quantity="one">%1$d holding</item>
+        <item quantity="other">%1$d holdings</item>
+    </plurals>
+    <string name="fin_bank_unlink_title">Unlink %1$s?</string>
+    <string name="fin_bank_unlink_body">Plaid is told to forget it, the server deletes its key, and its rows leave the feed, so any cell in your budget sheet that looks them up will show an error until you change it.</string>
+    <string name="fin_bank_unlink_confirm">Unlink</string>
+
+    <!-- The feed: the Google Sheet the balances are written to. -->
+    <string name="fin_bank_feed_title">Budget sheet feed</string>
+    <string name="fin_bank_feed_subtitle">Where the balances are written for your sheet to look up</string>
+    <string name="fin_bank_feed_written">Written %1$s to the “Bank feed” and “Holdings feed” tabs.</string>
+    <string name="fin_bank_feed_not_written">Nothing has been written yet. It's written after the next read.</string>
+    <string name="fin_bank_feed_not_configured">The server has no feed sheet, so the balances show here but aren't written to Google Sheets. Add FINANCE_FEED_SHEET_ID to plaid.env on the server and deploy the relay again.</string>
+    <string name="fin_bank_feed_not_shared">The server can't write to the feed sheet. Open the sheet, tap Share, and add this address as an Editor:</string>
+    <string name="fin_bank_feed_not_found">The server can't find the feed sheet. Check FINANCE_FEED_SHEET_ID in plaid.env on the server.</string>
+    <string name="fin_bank_feed_failed">The last write didn't work: %1$s</string>
+    <string name="fin_bank_feed_failed_plain">The last write to the feed sheet didn't work.</string>
+    <string name="fin_bank_feed_open">Open the feed sheet</string>
+    <string name="fin_bank_feed_how">Each account has a key in the feed's first column and its balance in the second. In your budget sheet, replace a typed balance with a lookup of its key: =VLOOKUP("key", IMPORTRANGE("feed sheet address", "Bank feed!A:B"), 2, FALSE)</string>
+
+    <!-- The page can't be shown. -->
+    <string name="fin_bank_setup_title">Bank sync isn't set up yet</string>
+    <string name="fin_bank_setup_body">The server needs a Plaid client id and secret before anything can be linked. Put them in plaid.env beside the relay (docs/bank-sync.md has the steps) and deploy the relay again.</string>
+    <string name="fin_bank_problem_outdated_title">Update the server's relay</string>
+    <string name="fin_bank_problem_signed_out_title">Sign in to link accounts</string>
+    <string name="fin_bank_problem_signed_out_body">Bank sync runs on your PercySafe server, so it shows once you're connected.</string>
+    <string name="fin_bank_problem_other_title">Couldn't load bank sync</string>
+
+    <string name="fin_bank_how">Plaid reads balances, holdings and loan terms. Nothing here can move money. Your server keeps one read-only key per institution and this phone never holds one. Everything is read again each morning, and Sync now reads it at once.</string>
+
+    <!-- Errors. -->
+    <string name="fin_bank_error_relay_outdated">The relay on the server is older than bank sync. Copy relay/ to the server and run docker compose up -d --build there.</string>
+    <string name="fin_bank_error_plaid">Plaid said: %1$s</string>
+    <string name="fin_bank_error_generic">Couldn't reach the server</string>
+</resources>

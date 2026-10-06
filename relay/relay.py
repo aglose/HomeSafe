@@ -275,6 +275,22 @@ def db() -> sqlite3.Connection:
     # the next), and which account each VIN is reached through (see "Tesla").
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_accounts (account TEXT PRIMARY KEY, refresh TEXT, access TEXT, expires REAL, updated REAL)")
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_vehicles (vin TEXT PRIMARY KEY, account TEXT, name TEXT, updated REAL)")
+    # The institutions linked through Plaid (see "bank sync"): each one's read-only access token,
+    # what Plaid can tell about it (`products`, a JSON list) and how its last sync went (`error`
+    # is Plaid's error code). Then each of its accounts as last read, and what each investment
+    # account holds.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_items (item_id TEXT PRIMARY KEY, access TEXT, institution_id TEXT, institution TEXT,"
+        " products TEXT, linked_by TEXT, linked_at REAL, synced_at REAL, error TEXT, error_message TEXT, consent_expires TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_accounts (account_id TEXT PRIMARY KEY, item_id TEXT, name TEXT, official_name TEXT, mask TEXT,"
+        " type TEXT, subtype TEXT, current REAL, available REAL, credit_limit REAL, currency TEXT, apr REAL, min_payment REAL, due TEXT, updated REAL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_holdings (account_id TEXT, security_id TEXT, item_id TEXT, ticker TEXT, name TEXT, kind TEXT,"
+        " quantity REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, PRIMARY KEY (account_id, security_id))"
+    )
     # What the notification policy made of each alert and each household car coming or going (see
     # "notification policy"), whether it was acted on or only logged: `key` is the review id, or
     # "car:<name>:<time>"; `route` "instant", "update", "fold", "digest", "car" or, for what the
@@ -4333,6 +4349,7 @@ def startup() -> None:
     threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
     threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
+    threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
@@ -5724,6 +5741,607 @@ def get_finance_sheet(request: Request, response: Response, refresh: bool = Fals
         return body
     finally:
         _finance_lock.release()
+
+
+# ---------------------------------------------------------------- bank sync
+#
+# The budget sheet's balances used to be typed in by hand. Plaid reads them instead: each bank,
+# brokerage or lender is linked once, on Plaid's own page (the institution's own sign-in where it
+# has one), and from then on the relay asks Plaid once a day what every account holds and writes
+# that into two feed tabs of a Google Sheet, which the budget sheet's cells look up. The app goes
+# on reading the budget sheet as it always has (see "finance").
+#
+# What is kept on the box is one access token per institution, in relay.db. The relay reads
+# balances, holdings and loan terms with it; no product that can move money is ever asked for.
+# The phone never sees a token, only what the relay read with it, and only when signed in as
+# someone who may see the finances.
+#
+# Linking is Plaid's Hosted Link: the relay asks Plaid for a link token with a `hosted_link_url`,
+# the app opens that in the browser, and the relay asks Plaid how the session ended when the app
+# asks (`/link/token/get`). No webhook, so nothing more of the relay is published to the internet.
+#
+# Setup (docs/bank-sync.md): a Plaid account's client id and secret in plaid.env on the box, and
+# FINANCE_FEED_SHEET_ID, a sheet shared with the service account as an Editor. Off without the
+# first two. Without the third the balances are still read and shown in the app, only not written.
+
+PLAID_CLIENT_ID = os.environ.get("PLAID_CLIENT_ID", "").strip()
+PLAID_SECRET = os.environ.get("PLAID_SECRET", "").strip()
+# "production" (a Trial plan's keys are production keys) or "sandbox".
+PLAID_ENV = os.environ.get("PLAID_ENV", "").strip().lower() or "production"
+PLAID_API = os.environ.get("PLAID_API", f"https://{PLAID_ENV}.plaid.com").rstrip("/")
+PLAID_COUNTRIES = [c.strip().upper() for c in os.environ.get("PLAID_COUNTRIES", "US").split(",") if c.strip()]
+# Only for a bank whose sign-in hands over to its own phone app; it must be registered in Plaid's dashboard.
+PLAID_REDIRECT_URI = os.environ.get("PLAID_REDIRECT_URI", "").strip()
+# What a link asks an institution for, by what the person said they were linking. The product
+# named here is the one the institution must have (Link only lists those that do); investments and
+# liabilities also come along wherever the institution has them, so one sign-in to a bank that
+# holds the mortgage and a brokerage account too brings all three. Transactions are only the
+# product a bank is linked by: the relay never asks Plaid for the transactions themselves.
+PLAID_KINDS = {"bank": "transactions", "investments": "investments", "loans": "liabilities"}
+PLAID_EXTRAS = ("investments", "liabilities")
+# How long a link stays good (Plaid's own lifetime for a hosted link it doesn't deliver itself).
+PLAID_LINK_SECONDS = 1800
+PLAID_LINKS_KEY = "plaid_links"
+PLAID_SYNCED_KEY = "plaid_synced"
+PLAID_FEED_KEY = "plaid_feed"
+PLAID_FEED_ROWS_KEY = "plaid_feed_rows"
+# Plaid's ways of saying an institution has nothing of a kind: not a failed sync.
+PLAID_NOTHING_THERE = {"NO_INVESTMENT_ACCOUNTS", "NO_LIABILITY_ACCOUNTS", "PRODUCTS_NOT_SUPPORTED"}
+# ...of saying the person has to sign in at the institution again (Link's update mode)...
+PLAID_RELINK = {"ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION", "PENDING_DISCONNECT"}
+# ...and of saying it no longer knows the link at all.
+PLAID_GONE = {"ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"}
+
+# The hour, on the household's clock, at which every institution is read each day. Plaid itself
+# refreshes an institution about once a day, holdings after the markets close, so asking more
+# often would mostly read the same numbers again.
+BANK_SYNC_HOUR = min(23, max(0, int(os.environ.get("BANK_SYNC_HOUR", "6"))))
+BANK_CHECK_SECONDS = 300
+# "Sync now" in the app, however often it is tapped.
+BANK_MIN_SYNC_SECONDS = 60
+
+# Where the balances are written: a sheet of its own that the budget sheet looks up with
+# IMPORTRANGE (so the relay can still only read the budget sheet), or the budget sheet's own id to
+# have the two tabs added to it. Either way the relay writes these two tabs and nothing else.
+FINANCE_FEED_SHEET_ID = os.environ.get("FINANCE_FEED_SHEET_ID", "").strip()
+SHEETS_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+FEED_ACCOUNTS_TAB = "Bank feed"
+FEED_HOLDINGS_TAB = "Holdings feed"
+# The key comes first and the balance second, so a cell's formula is VLOOKUP(key, A:B, 2, FALSE).
+FEED_ACCOUNT_COLUMNS = ["Key", "Balance", "Available", "Limit", "Institution", "Account", "Mask", "Type", "Subtype", "APR %", "Minimum payment", "Payment due", "Currency", "Updated"]
+FEED_HOLDING_COLUMNS = ["Account key", "Ticker", "Name", "Quantity", "Price", "Value", "Cost basis", "Kind", "Institution", "Currency", "Price as of"]
+
+_bank_lock = threading.Lock()
+# A link is finished by one request at a time: Plaid's public token can be swapped for an access token only once.
+_link_lock = threading.Lock()
+_feed_google: dict[str, Any] = {"session": None, "account": None}
+
+
+class PlaidError(Exception):
+    """Plaid refused: its `error_code`, and its own words for it."""
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(f"{code}: {message}" if message else code)
+        self.code, self.message = code, message
+
+
+class BankLink(BaseModel):
+    # What is being linked: a key of PLAID_KINDS.
+    kind: str = "bank"
+    # An institution already linked, to sign in to again (Link's update mode); `kind` is then ignored.
+    institution: str | None = None
+
+
+def plaid_on() -> bool:
+    return bool(PLAID_CLIENT_ID and PLAID_SECRET)
+
+
+def plaid_post(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """One call to Plaid. The request carries the secret and often an access token, so it is never logged."""
+    r = requests.post(f"{PLAID_API}{path}", json={"client_id": PLAID_CLIENT_ID, "secret": PLAID_SECRET, **body}, timeout=30)
+    try:
+        answer = r.json()
+    except ValueError:
+        answer = {}
+    if not isinstance(answer, dict):
+        answer = {}
+    if r.status_code != 200:
+        raise PlaidError(str(answer.get("error_code") or f"HTTP_{r.status_code}"), str(answer.get("display_message") or answer.get("error_message") or ""))
+    return answer
+
+
+def plaid_link_request(user: str, kind: str, access: str | None = None) -> dict[str, Any]:
+    """
+    The `/link/token/create` body for a hosted link: a new institution of `kind`, or with `access`
+    a fresh sign-in to one already linked. Plaid is told who is linking only as a hash.
+    """
+    body: dict[str, Any] = {
+        "client_name": "HomeSafe",
+        "language": "en",
+        "country_codes": PLAID_COUNTRIES,
+        "user": {"client_user_id": hashlib.sha256(f"homesafe:{user}".encode()).hexdigest()[:32]},
+        "hosted_link": {},
+    }
+    if PLAID_REDIRECT_URI:
+        body["redirect_uri"] = PLAID_REDIRECT_URI
+    if access:
+        body["access_token"] = access
+    else:
+        product = PLAID_KINDS[kind]
+        body["products"] = [product]
+        body["required_if_supported_products"] = [p for p in PLAID_EXTRAS if p != product]
+    return body
+
+
+def plaid_link_start(user: str, kind: str = "bank", item_id: str | None = None, now: float | None = None) -> dict[str, Any]:
+    """A page to open in the browser that links an institution (or signs in again to `item_id`), and the token to ask about it by."""
+    now = time.time() if now is None else now
+    access = None
+    if item_id:
+        row = with_db(lambda c: c.execute("SELECT access FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
+        if not row:
+            raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+        access = row[0]
+    elif kind not in PLAID_KINDS:
+        raise HTTPException(400, {"error": "bad_kind", "message": f"kind is one of {', '.join(PLAID_KINDS)}"})
+    answer = plaid_post("/link/token/create", plaid_link_request(user, kind, access))
+    token, url = answer.get("link_token"), answer.get("hosted_link_url")
+    if not token or not url:
+        raise PlaidError("NO_HOSTED_LINK", "Plaid made a link without a page to open. Hosted Link may not be switched on for this Plaid account.")
+    links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now}
+    links[token] = {"expires": now + PLAID_LINK_SECONDS, "by": user, "item": item_id}
+    state_set(PLAID_LINKS_KEY, links)
+    return {"token": token, "url": url, "expires_at": now + PLAID_LINK_SECONDS}
+
+
+def plaid_save_item(item_id: str, access: str, institution: dict[str, Any], user: str, now: float) -> None:
+    with_db(lambda c: (c.execute(
+        "INSERT OR REPLACE INTO plaid_items (item_id, access, institution_id, institution, products, linked_by, linked_at) VALUES (?,?,?,?,?,?,?)",
+        (item_id, access, institution.get("institution_id"), institution.get("name") or "", "[]", user, now),
+    ), c.commit()))
+
+
+def plaid_link_finish(token: str, now: float | None = None) -> dict[str, Any]:
+    """
+    How a link from `plaid_link_start` is getting on: "pending" while the person is still on
+    Plaid's page, "linked" once they finished (each new institution's token is kept and a sync
+    started), "exited" when they left without finishing, "expired" for a link too old or unknown.
+    """
+    now = time.time() if now is None else now
+    links = state_get(PLAID_LINKS_KEY) or {}
+    link = links.get(token)
+    if link is None:
+        return {"status": "expired"}
+    if link.get("done") is not None:
+        return {"status": "linked", "institutions": link["done"]}
+    answer = plaid_post("/link/token/get", {"link_token": token})
+    sessions = [s for s in answer.get("link_sessions") or [] if isinstance(s, dict)]
+    added = [r for s in sessions for r in ((s.get("results") or {}).get("item_add_results") or []) if isinstance(r, dict) and r.get("public_token")]
+    relinked = link.get("item")
+    if relinked and (added or any(s.get("finished_at") and not s.get("exit") for s in sessions)):
+        # Signed in again: the token kept is still the one; only its error goes.
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=NULL, error_message=NULL WHERE item_id=?", (relinked,)), c.commit()))
+        row = with_db(lambda c: c.execute("SELECT institution FROM plaid_items WHERE item_id=?", (relinked,)).fetchone())
+        names = [row[0]] if row else []
+    elif added and not relinked:
+        names = []
+        for result in added:
+            exchanged = plaid_post("/item/public_token/exchange", {"public_token": result["public_token"]})
+            institution = result.get("institution") if isinstance(result.get("institution"), dict) else {}
+            plaid_save_item(exchanged["item_id"], exchanged["access_token"], institution, str(link.get("by") or "?"), now)
+            names.append(institution.get("name") or "")
+            log.info("bank: %s linked %s", link.get("by"), institution.get("name") or exchanged["item_id"])
+    elif link.get("expires", 0) <= now:
+        return {"status": "expired"}
+    elif any(s.get("exit") or s.get("finished_at") for s in sessions):
+        return {"status": "exited"}
+    else:
+        return {"status": "pending"}
+    links[token] = {**link, "done": names}
+    state_set(PLAID_LINKS_KEY, links)
+    bank_sync_in_background()
+    return {"status": "linked", "institutions": names}
+
+
+def plaid_liability_terms(liabilities: Any) -> dict[str, dict[str, Any]]:
+    """Each loan's and card's rate, next payment and when it's due, by account, from a `/liabilities/get` answer."""
+    terms: dict[str, dict[str, Any]] = {}
+    if not isinstance(liabilities, dict):
+        return terms
+    for card in liabilities.get("credit") or []:
+        aprs = [a for a in card.get("aprs") or [] if isinstance(a, dict)]
+        # The rate purchases are charged, not a cash advance's or a transfer offer's.
+        purchase = next((a for a in aprs if a.get("apr_type") == "purchase_apr"), aprs[0] if aprs else {})
+        terms[card.get("account_id")] = {"apr": purchase.get("apr_percentage"), "min_payment": card.get("minimum_payment_amount"), "due": card.get("next_payment_due_date")}
+    for loan in liabilities.get("student") or []:
+        terms[loan.get("account_id")] = {"apr": loan.get("interest_rate_percentage"), "min_payment": loan.get("minimum_payment_amount"), "due": loan.get("next_payment_due_date")}
+    for loan in liabilities.get("mortgage") or []:
+        rate = loan.get("interest_rate") if isinstance(loan.get("interest_rate"), dict) else {}
+        terms[loan.get("account_id")] = {"apr": rate.get("percentage"), "min_payment": loan.get("next_monthly_payment"), "due": loan.get("next_payment_due_date")}
+    return terms
+
+
+def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, dict[str, Any]], holdings: list[dict[str, Any]] | None,
+                securities: dict[str, dict[str, Any]], now: float) -> None:
+    """
+    Replaces what is kept of an institution with what Plaid just said: its accounts, and what
+    they hold. `holdings` None leaves the holdings as they were (Plaid hadn't them ready), but
+    still drops those of an account that is gone.
+    """
+    def write(c: sqlite3.Connection) -> None:
+        c.execute("DELETE FROM plaid_accounts WHERE item_id=?", (item_id,))
+        for a in accounts:
+            balances = a.get("balances") if isinstance(a.get("balances"), dict) else {}
+            term = terms.get(a.get("account_id"), {})
+            c.execute(
+                "INSERT OR REPLACE INTO plaid_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (a.get("account_id"), item_id, a.get("name") or "", a.get("official_name"), a.get("mask"), a.get("type"), a.get("subtype"),
+                 balances.get("current"), balances.get("available"), balances.get("limit"),
+                 balances.get("iso_currency_code") or balances.get("unofficial_currency_code"),
+                 term.get("apr"), term.get("min_payment"), term.get("due"), now),
+            )
+        if holdings is None:
+            c.execute("DELETE FROM plaid_holdings WHERE item_id=? AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE item_id=?)", (item_id, item_id))
+        else:
+            c.execute("DELETE FROM plaid_holdings WHERE item_id=?", (item_id,))
+            for h in holdings:
+                security = securities.get(h.get("security_id"), {})
+                c.execute(
+                    "INSERT OR REPLACE INTO plaid_holdings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (h.get("account_id"), h.get("security_id"), item_id, security.get("ticker_symbol"), security.get("name") or "", security.get("type"),
+                     h.get("quantity"), h.get("institution_price"), h.get("institution_price_as_of"), h.get("institution_value"), h.get("cost_basis"),
+                     h.get("iso_currency_code") or h.get("unofficial_currency_code")),
+                )
+        c.commit()
+
+    with_db(write)
+
+
+def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
+    """
+    Reads one institution from Plaid into relay.db: its accounts' balances, what its investment
+    accounts hold, and its loans' terms. Answers Plaid's error code when it refused, having kept
+    what was read before (an old balance beats none) and noted the refusal on the institution.
+    """
+    try:
+        item = plaid_post("/item/get", {"access_token": access}).get("item") or {}
+        products = sorted({str(p) for p in item.get("products") or []})
+        accounts = [a for a in plaid_post("/accounts/get", {"access_token": access}).get("accounts") or [] if isinstance(a, dict)]
+        holdings: list[dict[str, Any]] | None = []
+        securities: dict[str, dict[str, Any]] = {}
+        if "investments" in products:
+            try:
+                answer = plaid_post("/investments/holdings/get", {"access_token": access})
+                holdings = [h for h in answer.get("holdings") or [] if isinstance(h, dict)]
+                securities = {s.get("security_id"): s for s in answer.get("securities") or [] if isinstance(s, dict)}
+            except PlaidError as e:
+                if e.code == "PRODUCT_NOT_READY":
+                    holdings = None
+                elif e.code not in PLAID_NOTHING_THERE:
+                    raise
+        terms: dict[str, dict[str, Any]] = {}
+        if "liabilities" in products:
+            try:
+                terms = plaid_liability_terms(plaid_post("/liabilities/get", {"access_token": access}).get("liabilities"))
+            except PlaidError as e:
+                if e.code != "PRODUCT_NOT_READY" and e.code not in PLAID_NOTHING_THERE:
+                    raise
+        plaid_store(item_id, accounts, terms, holdings, securities, now)
+        # The link itself can be on its way out while the data still comes (a consent about to lapse).
+        warning = item.get("error") if isinstance(item.get("error"), dict) else {}
+        with_db(lambda c: (c.execute(
+            "UPDATE plaid_items SET products=?, synced_at=?, error=?, error_message=?, consent_expires=?, institution_id=COALESCE(?, institution_id) WHERE item_id=?",
+            (json.dumps(products), now, warning.get("error_code"), warning.get("error_message"), item.get("consent_expiration_time"), item.get("institution_id"), item_id),
+        ), c.commit()))
+        return None
+    except PlaidError as e:
+        log.warning("bank: %s didn't sync: %s", item_id[:8], e.code)
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", (e.code, e.message, item_id)), c.commit()))
+        return e.code
+    except Exception as e:
+        # Plaid unreachable, or an answer in a shape this doesn't know. Not the detail: it may quote the request.
+        log.warning("bank: %s didn't sync: %s", item_id[:8], type(e).__name__)
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", ("UNREACHABLE", "Couldn't reach Plaid", item_id)), c.commit()))
+        return "UNREACHABLE"
+
+
+def feed_keys(labels: list[tuple[str, str]]) -> dict[str, str]:
+    """
+    The name each account goes by in the feed, from (account id, "Institution Account 1234") in a
+    settled order: the label itself, or with " (2)", " (3)" for a second and third of the same.
+    """
+    seen: dict[str, int] = {}
+    keys = {}
+    for account_id, label in labels:
+        seen[label] = seen.get(label, 0) + 1
+        keys[account_id] = label if seen[label] == 1 else f"{label} ({seen[label]})"
+    return keys
+
+
+def bank_institutions() -> list[dict[str, Any]]:
+    """Every linked institution with its accounts as last read, the oldest link first. Never a token."""
+    items = with_db(lambda c: c.execute(
+        "SELECT item_id, institution, linked_at, synced_at, error, error_message, consent_expires FROM plaid_items ORDER BY linked_at, item_id"
+    ).fetchall())
+    accounts = with_db(lambda c: c.execute(
+        "SELECT account_id, item_id, name, official_name, mask, type, subtype, current, available, credit_limit, currency, apr, min_payment, due, updated"
+        " FROM plaid_accounts ORDER BY type, name, account_id"
+    ).fetchall())
+    held = dict(with_db(lambda c: c.execute("SELECT account_id, COUNT(*) FROM plaid_holdings GROUP BY account_id").fetchall()))
+    names = {item[0]: item[1] or "" for item in items}
+    ordered = [a for item in items for a in accounts if a[1] == item[0]]
+    keys = feed_keys([(a[0], " ".join(part for part in (names[a[1]], a[2], a[4]) if part)) for a in ordered])
+    institutions = []
+    for item_id, name, linked_at, synced_at, error, error_message, consent_expires in items:
+        institutions.append({
+            "id": item_id,
+            "name": name or "",
+            "linked_at": linked_at,
+            "synced_at": synced_at,
+            "error": error,
+            "error_message": error_message,
+            "needs_relink": error in PLAID_RELINK,
+            "consent_expires": consent_expires,
+            "accounts": [
+                {"id": a[0], "key": keys[a[0]], "name": a[2], "official_name": a[3], "mask": a[4], "type": a[5], "subtype": a[6], "balance": a[7],
+                 "available": a[8], "limit": a[9], "currency": a[10], "apr": a[11], "min_payment": a[12], "due": a[13], "updated": a[14],
+                 "holdings": held.get(a[0], 0)}
+                for a in ordered if a[1] == item_id
+            ],
+        })
+    return institutions
+
+
+def feed_tables(institutions: list[dict[str, Any]], holdings: list[tuple], zone: ZoneInfo | None) -> dict[str, list[list[Any]]]:
+    """
+    The two feed tabs' cells, headers first: every account (see FEED_ACCOUNT_COLUMNS) and every
+    holding (`holdings` as (account id, ticker, name, quantity, price, value, cost basis, kind,
+    currency, price as of)). An empty cell is "", which clears it; None would leave what was there.
+    """
+    def cells(row: list[Any]) -> list[Any]:
+        return ["" if v is None else v for v in row]
+
+    accounts = [FEED_ACCOUNT_COLUMNS]
+    keyed: dict[str, tuple[str, str]] = {}
+    for institution in institutions:
+        for a in institution["accounts"]:
+            keyed[a["id"]] = (a["key"], institution["name"])
+            updated = datetime.fromtimestamp(a["updated"], zone or timezone.utc).strftime("%Y-%m-%d %H:%M") if a["updated"] else None
+            accounts.append(cells([a["key"], a["balance"], a["available"], a["limit"], institution["name"], a["name"], a["mask"], a["type"], a["subtype"],
+                                   a["apr"], a["min_payment"], a["due"], a["currency"], updated]))
+    held = [FEED_HOLDING_COLUMNS]
+    for account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of in holdings:
+        if account_id in keyed:
+            key, institution_name = keyed[account_id]
+            held.append(cells([key, ticker, name, quantity, price, value, cost_basis, kind, institution_name, currency, price_as_of]))
+    return {FEED_ACCOUNTS_TAB: accounts, FEED_HOLDINGS_TAB: held}
+
+
+def feed_google() -> Any:
+    """The Sheets session that may write, used for the feed sheet alone; the budget sheet's own (`finance_google`) stays read-only."""
+    if _feed_google["session"] is None:
+        if not os.path.exists(FINANCE_SHEET_KEY):
+            raise HTTPException(503, {"error": "no_key", "message": "The relay has no service-account key to write the feed with"})
+        try:
+            creds = service_account.Credentials.from_service_account_file(FINANCE_SHEET_KEY, scopes=[SHEETS_WRITE_SCOPE])
+        except (ValueError, KeyError) as e:
+            raise HTTPException(503, {"error": "no_key", "message": "The relay's key isn't a service-account key"}) from e
+        _feed_google["account"] = creds.service_account_email
+        _feed_google["session"] = AuthorizedSession(creds)
+    return _feed_google["session"]
+
+
+def feed_write(tables: dict[str, list[list[Any]]]) -> None:
+    """
+    Writes each tab of `tables` from its A1, adding a tab the sheet hasn't got. Nothing is cleared
+    first: rows the last write had and this one doesn't are overwritten blank in the same call, so
+    a formula looking the feed up never finds it empty. Raises HTTPException with the setup
+    problem when Google refuses (see `sheet_problem`; "not_shared" here means not as an Editor).
+    """
+    session = feed_google()
+    account = _feed_google["account"]
+    base = f"{SHEETS_API}/{FINANCE_FEED_SHEET_ID}"
+
+    def answered(response: Any) -> Any:
+        if response.status_code != 200:
+            raise HTTPException(*sheet_problem(response.status_code, _google_json(response), account))
+        return _google_json(response)
+
+    meta = answered(session.get(base, params={"fields": "sheets(properties(title,sheetType))"}, timeout=15))
+    missing = [tab for tab in tables if tab not in grid_titles(meta)]
+    if missing:
+        answered(session.post(f"{base}:batchUpdate", json={"requests": [{"addSheet": {"properties": {"title": tab}}} for tab in missing]}, timeout=15))
+    before = state_get(PLAID_FEED_ROWS_KEY) or {}
+    data = []
+    for tab, rows in tables.items():
+        blanks = [[""] * len(rows[0])] * max(0, int(before.get(tab, 0)) - len(rows))
+        data.append({"range": f"{sheet_range(tab)}!A1", "majorDimension": "ROWS", "values": rows + blanks})
+    # RAW: an account's "0123" stays those four characters rather than becoming the number 123.
+    answered(session.post(f"{base}/values:batchUpdate", json={"valueInputOption": "RAW", "data": data}, timeout=20))
+    state_set(PLAID_FEED_ROWS_KEY, {tab: len(rows) for tab, rows in tables.items()})
+
+
+def write_bank_feed(now: float) -> None:
+    """Writes what relay.db holds to the feed sheet, if there is one, and keeps how that went for the app to show."""
+    if not FINANCE_FEED_SHEET_ID:
+        return
+    holdings = with_db(lambda c: c.execute(
+        "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings ORDER BY account_id, value DESC, security_id"
+    ).fetchall())
+    try:
+        feed_write(feed_tables(bank_institutions(), holdings, household_zone()))
+        state_set(PLAID_FEED_KEY, {"at": now, "error": None, "message": None})
+        # The budget sheet's cells follow the feed: the next read of it shouldn't be a minute-old one.
+        _finance_cache["at"] = 0.0
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {}
+        log.warning("bank: the feed sheet wasn't written: %s", detail.get("error") or e.status_code)
+        state_set(PLAID_FEED_KEY, {
+            "at": now, "error": detail.get("error") or "google_error", "message": detail.get("message"),
+            "activation_url": detail.get("activation_url"), "service_account": detail.get("service_account"),
+        })
+    except Exception as e:
+        log.warning("bank: the feed sheet wasn't written: %s", e)
+        state_set(PLAID_FEED_KEY, {"at": now, "error": "google_error", "message": "Couldn't reach Google"})
+
+
+def plaid_sync_all(now: float | None = None, wait: bool = False) -> bool:
+    """
+    Every linked institution from Plaid, then the feed sheet. One at a time: False when a sync is
+    already under way, unless `wait` says to queue behind it (a link just made must not be missed
+    by a sync that began before it).
+    """
+    if not _bank_lock.acquire(blocking=wait):
+        return False
+    try:
+        now = time.time() if now is None else now
+        items = with_db(lambda c: c.execute("SELECT item_id, access FROM plaid_items ORDER BY linked_at, item_id").fetchall())
+        failed = [item_id for item_id, access in items if plaid_sync_item(item_id, access, now)]
+        state_set(PLAID_SYNCED_KEY, {"at": now, "institutions": len(items), "failed": len(failed)})
+        log.info("bank: synced %d institutions, %d failed", len(items), len(failed))
+        write_bank_feed(now)
+        return True
+    finally:
+        _bank_lock.release()
+
+
+def bank_sync_in_background() -> None:
+    threading.Thread(target=lambda: plaid_sync_all(wait=True), name="bank-sync-now", daemon=True).start()
+
+
+def bank_sync_slot(now: float, zone: ZoneInfo | None) -> datetime:
+    """The latest BANK_SYNC_HOUR at or before `now`, on the household's clock (UTC when unknown)."""
+    local = datetime.fromtimestamp(now, zone or timezone.utc)
+    slot = local.replace(hour=BANK_SYNC_HOUR, minute=0, second=0, microsecond=0)
+    return slot if slot <= local else slot - timedelta(days=1)
+
+
+def bank_sync_due(now: float, last: float, zone: ZoneInfo | None) -> bool:
+    """Whether the day's sync is still owed: nothing has synced since the latest BANK_SYNC_HOUR."""
+    return last < bank_sync_slot(now, zone).timestamp()
+
+
+def bank_forever() -> None:
+    """Once a day at BANK_SYNC_HOUR, and on a start that slept through it: every institution, then the feed."""
+    while True:
+        time.sleep(BANK_CHECK_SECONDS)
+        try:
+            if not plaid_on():
+                continue
+            last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
+            linked = with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0])
+            if linked and bank_sync_due(time.time(), last, household_zone()):
+                plaid_sync_all()
+        except Exception:
+            log.exception("bank sync failed")
+
+
+def bank_status(now: float | None = None) -> dict[str, Any]:
+    """What the app's bank sync page shows: the institutions and their accounts, when they were last read and are next, and how the feed sheet's last write went."""
+    now = time.time() if now is None else now
+    synced = state_get(PLAID_SYNCED_KEY) or {}
+    feed = state_get(PLAID_FEED_KEY) or {}
+    return {
+        "configured": plaid_on(),
+        "environment": PLAID_ENV,
+        "institutions": bank_institutions(),
+        "synced_at": synced.get("at"),
+        "syncing": _bank_lock.locked(),
+        "next_sync_at": (bank_sync_slot(now, household_zone()) + timedelta(days=1)).timestamp(),
+        "feed": {
+            "configured": bool(FINANCE_FEED_SHEET_ID),
+            "url": f"https://docs.google.com/spreadsheets/d/{FINANCE_FEED_SHEET_ID}/edit" if FINANCE_FEED_SHEET_ID else None,
+            "written_at": feed.get("at") if not feed.get("error") else None,
+            "error": feed.get("error"),
+            "message": feed.get("message"),
+            "activation_url": feed.get("activation_url"),
+            "service_account": _feed_google["account"] or feed.get("service_account") or _finance_google["account"],
+        },
+    }
+
+
+def require_bank(request: Request, response: Response) -> str:
+    """A signed-in user who may see the finances, on a relay with Plaid set up; their username."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    if not plaid_on():
+        raise HTTPException(503, {"error": "not_configured", "message": "Plaid isn't set up on the relay"})
+    return user
+
+
+def plaid_problem(e: PlaidError) -> HTTPException:
+    return HTTPException(502, {"error": "plaid_error", "code": e.code, "message": e.message or f"Plaid answered {e.code}"})
+
+
+@app.get("/finance/bank")
+def get_bank(request: Request, response: Response) -> dict[str, Any]:
+    """The linked institutions and how their sync is going (see "bank sync"). Answers without Plaid set up too, to say so."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    return bank_status()
+
+
+@app.post("/finance/bank/link")
+def post_bank_link(body: BankLink, request: Request, response: Response) -> dict[str, Any]:
+    """Starts linking an institution: the page to open, and the token `GET /finance/bank/link/{token}` follows it by."""
+    user = require_bank(request, response)
+    try:
+        return plaid_link_start(user, body.kind, body.institution)
+    except PlaidError as e:
+        log.warning("bank: no link for %s: %s", user, e.code)
+        raise plaid_problem(e) from e
+
+
+@app.get("/finance/bank/link/{token}")
+def get_bank_link(token: str, request: Request, response: Response) -> dict[str, Any]:
+    """How a link is getting on (see `plaid_link_finish`), with the institutions as they stand once it is made."""
+    require_bank(request, response)
+    try:
+        with _link_lock:
+            result = plaid_link_finish(token)
+    except PlaidError as e:
+        log.warning("bank: linking failed: %s", e.code)
+        raise plaid_problem(e) from e
+    if result["status"] == "linked":
+        # The sync just started may not hold the lock yet: say it is on its way regardless.
+        result["bank"] = {**bank_status(), "syncing": True}
+    return result
+
+
+@app.post("/finance/bank/sync")
+def post_bank_sync(request: Request, response: Response) -> dict[str, Any]:
+    """Reads every institution now rather than at the next BANK_SYNC_HOUR. Answers at once; `syncing` says it is under way."""
+    require_bank(request, response)
+    last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
+    if _bank_lock.locked() or time.time() - last < BANK_MIN_SYNC_SECONDS:
+        return bank_status()
+    bank_sync_in_background()
+    return {**bank_status(), "syncing": True}
+
+
+@app.delete("/finance/bank/institutions/{item_id}")
+def delete_bank_institution(item_id: str, request: Request, response: Response) -> dict[str, Any]:
+    """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go."""
+    user = require_bank(request, response)
+    row = with_db(lambda c: c.execute("SELECT access, institution FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
+    if not row:
+        raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+    try:
+        plaid_post("/item/remove", {"access_token": row[0]})
+    except PlaidError as e:
+        # Plaid already not knowing it is the result wanted; anything else and the token is kept to try again.
+        if e.code not in PLAID_GONE:
+            raise plaid_problem(e) from e
+
+    def forget(c: sqlite3.Connection) -> None:
+        for table in ("plaid_holdings", "plaid_accounts", "plaid_items"):
+            c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
+        c.commit()
+
+    with_db(forget)
+    log.info("bank: %s unlinked %s", user, row[1] or item_id[:8])
+    threading.Thread(target=write_bank_feed, args=(time.time(),), name="bank-feed", daemon=True).start()
+    return bank_status()
 
 
 # ---------------------------------------------------------------- Tesla

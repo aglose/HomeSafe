@@ -109,6 +109,12 @@ Tapping it opens **Sheet sync**, which lists every part with what it found ("22 
 snapshots") or the title it looks for, every chart, and anything left out, with Sync now and Open the
 sheet.
 
+### Balances from the banks
+
+The balances in the sheet don't have to be typed. **Linked accounts**, at the top of Sheet sync,
+links each bank, brokerage and lender through Plaid; the relay then reads every account each
+morning and writes it to a feed the sheet's cells look up. See [bank-sync.md](bank-sync.md).
+
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add
 their username to `FINANCE_USERS` (comma-separated) in `finance.env`. Admins keep access either
