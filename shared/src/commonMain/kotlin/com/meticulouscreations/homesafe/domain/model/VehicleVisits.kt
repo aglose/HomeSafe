@@ -79,31 +79,36 @@ fun MomentEvent.isStill(): Boolean {
 
 /**
  * True when the vehicle is sitting still at [nowEpochSeconds] — or was when the sighting ended —
- * whatever it did to get there: it is [isStill], or it is within r = max(box width, box height) on
- * both axes of where it stood [VehicleVisits.SETTLED_SECONDS] before it was last seen.
+ * whatever it did before: it is within r = max(box width, box height) on both axes of where it
+ * stood [VehicleVisits.SETTLED_SECONDS] before it was last seen. A sighting whose path doesn't
+ * reach back that far, or has no times ([MomentEvent.pathEpochSeconds] empty), has only its shape
+ * to go by, and is parked when it is [isStill].
  *
- * [isStill] alone can't answer this for a car Frigate keeps in one event from the street to hours
- * after it parked. Frigate only records a path point when the object travels ~5% of the frame, so
- * such a path is its arrival and little else, and the share of it near the median says how long
- * the drive in was, not whether the car is parked. Measured on the Front Yard, 2026-10-05: Sarah's
- * car, in view for 151 minutes, had 17 points, 15 of them from its first 23 seconds; Andrew's
- * Tesla, 270 minutes, had 27 with 25 from its first 32. The times say what the shape can't: the
- * last point is when the car last went anywhere, and the points since [VehicleVisits.SETTLED_SECONDS]
- * ago are everything it has done lately. A box that flickers adds a point or two beside the spot
- * and the car is still within r of where it was; a car pulling out has left that behind within a
- * box's length, and one that only just pulled in has no "where it stood" that long ago at all.
+ * The shape alone can't answer this for a car Frigate keeps in one event for hours, in either
+ * direction. Frigate only records a path point when the object travels ~5% of the frame, so the
+ * path of a car tracked from the street to long after it parked is its arrival and little else,
+ * and the share of it near the median says how long the drive in was, not whether the car is
+ * parked. Measured on the Front Yard, 2026-10-05: Sarah's car, in view for 151 minutes, had 17
+ * points, 15 of them from its first 23 seconds; Andrew's Tesla, 270 minutes, had 27 with 25 from
+ * its first 32. And a car that has sat in one event all day, its box flickering a point or two at
+ * a time, has a path that stays [isStill] while it drives off, until the drive is 30% of it.
  *
- * Without the times ([MomentEvent.pathEpochSeconds] empty) this is [isStill]. The relay has no
- * counterpart: its `is_still` mirrors [isStill], for the same "is this news" question, and where
- * the cars are *now* it answers from its own memory of arrivals and departures.
+ * The times say what the shape can't: where the car stood [VehicleVisits.SETTLED_SECONDS] ago,
+ * and so whether it has gone anywhere since. A flicker of the box comes as a pair, away and back,
+ * and leaves the car within r of where it was; a car pulling out has left that behind within a
+ * box's length, however long it sat first; and one that only just pulled in has no "where it
+ * stood" that long ago at all. So once the path reaches back that far, the comparison decides and
+ * the shape is not asked.
+ *
+ * The relay has no counterpart: its `is_still` mirrors [isStill], for the same "is this news"
+ * question, and where the cars are *now* it answers from its own memory of arrivals and departures.
  */
 fun MomentEvent.isParked(nowEpochSeconds: Double): Boolean {
-    if (isStill()) return true
     val box = box ?: return false
-    val here = pathPoints.lastOrNull() ?: return false
-    if (pathEpochSeconds.size != pathPoints.size) return false
     val settledSince = (endEpochSeconds ?: nowEpochSeconds) - VehicleVisits.SETTLED_SECONDS
-    val then = pathPoints.getOrNull(pathEpochSeconds.indexOfLast { it <= settledSince }) ?: return false
+    val then = pathPoints.takeIf { it.size == pathEpochSeconds.size }?.getOrNull(pathEpochSeconds.indexOfLast { it <= settledSince })
+        ?: return isStill()
+    val here = pathPoints.last()
     val r = maxOf(box.w, box.h)
     return abs(here.x - then.x) <= r && abs(here.y - then.y) <= r
 }

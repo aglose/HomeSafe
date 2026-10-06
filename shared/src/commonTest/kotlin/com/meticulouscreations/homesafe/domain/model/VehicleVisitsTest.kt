@@ -112,6 +112,21 @@ class VehicleVisitsTest {
     }
 
     @Test
+    fun aCarThatSatAllMorningIsNotParkedOnceItDrivesOffThoughItsPathIsStillByShape() {
+        // The 2026-09-07 shape, given the times a car tracked for an hour would have: a flicker of
+        // the box every ten minutes, then the four points of leaving. 12 of 16 sit at the spot.
+        val start = at(6, 6)
+        val times = List(12) { start + (it / 2) * 600.0 + (it % 2) * 0.2 } + List(4) { start + 3_600.0 + it }
+        val tracked = event("tracked", start, end = null).copy(pathEpochSeconds = times)
+
+        assertTrue(tracked.isStill(), "by its shape it never went anywhere")
+        assertTrue(tracked.copy(pathPoints = tracked.pathPoints.take(12), pathEpochSeconds = times.take(12)).isParked(start + 3_599), "and before it left it was parked")
+        assertFalse(tracked.isParked(start + 3_604), "but it is two thirds of the frame from where it stood five minutes ago")
+        assertFalse(tracked.copy(endEpochSeconds = start + 3_610).isParked(start + 3_610 + 20 * 60), "and stays gone once the event ends")
+        assertTrue(tracked.copy(pathEpochSeconds = emptyList()).isParked(start + 3_604), "without the times, the shape is all there is")
+    }
+
+    @Test
     fun aCarThatParkedAndWasLostFromViewWasParkedWhenLastSeen() {
         val lost = TrackedCars.sarahParked.copy(endEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT)
         assertTrue(lost.isParked(TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT + 20 * 60))
