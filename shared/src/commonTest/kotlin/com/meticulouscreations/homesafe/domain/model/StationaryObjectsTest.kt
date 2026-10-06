@@ -125,6 +125,38 @@ class StationaryObjectsTest {
     }
 
     @Test
+    fun aCarStillBeingTrackedKeepsItsPlaceAndItsNameWhenAPassingCarFoldsIntoIt() {
+        // Sarah's car at the kerb, tracked for hours as one open sighting. A car drives past on top
+        // of its box and the classifier calls it Andrew's, surer than it is of Sarah's (the scores
+        // are 2026-10-05's, when such a car missed her box by a little). Folded in as the stay's
+        // latest and best name, it would take Sarah's car off the strip: the stay becomes a second
+        // Andrew's Tesla, and one that has left.
+        val kerb = listOf(
+            sighting("tracked", at(18, 0), end = null, subLabel = "sarahs_car", subLabelScore = 0.98, zones = listOf("street")),
+            sighting("passing", at(20, 12), end = at(20, 13), subLabel = "andrews_tesla", subLabelScore = 0.997, zones = listOf("street")),
+        ).stationaryObjects(nowEpochSeconds = at(20, 31))
+
+        val car = kerb.single()
+        assertEquals("sarahs_car", car.subLabel, "what Frigate calls the car it is tracking, which is what the tagging screen draws")
+        assertEquals("tracked", car.thumbnailEventId, "the open sighting is where the car is now, not the one that ended")
+        assertTrue(car.seenRecently)
+        assertEquals(at(18, 0), car.firstSeenEpochSeconds)
+        assertEquals(2, car.sightings)
+    }
+
+    @Test
+    fun aTrackedCarNobodyHasNamedYetTakesTheStaysBestName() {
+        // The open sighting only overrides with a name of its own; without one the stay is still judged as a whole.
+        val stay = listOf(
+            sighting("s1", at(8, 0), subLabel = "sarahs_tesla", subLabelScore = 0.7),
+            sighting("s2", at(8, 10), end = null, subLabel = null, subLabelScore = null),
+        ).stationaryObjects(nowEpochSeconds = at(8, 25))
+
+        assertEquals("sarahs_tesla", stay.single().subLabel)
+        assertEquals("s2", stay.single().thumbnailEventId)
+    }
+
+    @Test
     fun onlyVehiclesCount() {
         val mixed = listOf(
             sighting("person", at(8, 0), label = "person"),
