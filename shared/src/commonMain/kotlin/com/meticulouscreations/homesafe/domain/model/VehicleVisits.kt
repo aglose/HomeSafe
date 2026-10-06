@@ -28,6 +28,20 @@ object VehicleVisits {
     const val STILL_FRACTION = 0.7
 
     /**
+     * The most "the box's size" may be for [isStill], as a share of the frame. The box is the best
+     * frame's, and for a car that drives in and parks by the camera that is the close-up, not the
+     * car as it was along the way. Front Yard, 2026-10-05: Andrew's Tesla came up the street,
+     * turned and came down to the garage, three quarters of the frame in 32 seconds, with a box
+     * 0.36 of the frame tall — which held 22 of the arrival's 25 points, so the arrival was
+     * "still": no moment, no notification. A parked car's jitter doesn't grow with its box like
+     * that. In the 6,000 vehicle events of that day and the one before, no path that stayed in one
+     * place needed more than 0.17 to hold [STILL_FRACTION] of its points, whatever its box; at 0.2
+     * every one of them stays still, and each of the 28 that become moved crossed a third of the
+     * frame or more.
+     */
+    const val STILL_RADIUS_CAP = 0.2
+
+    /**
      * A path shorter than this is still whatever its shape. Frigate records a point when the
      * object first appears, another on its next look, and then one per ~5% of the frame travelled,
      * so three points is a single jump — the detector's box flipping between the whole car and
@@ -47,9 +61,9 @@ object VehicleVisits {
 
 /**
  * True when the object barely moved: at least [VehicleVisits.STILL_FRACTION] of its path points lie
- * within r = max(box width, box height) of the path's median point on both axes. A path of fewer
- * than [VehicleVisits.MOVED_MIN_POINTS] points is still; an event with no box is never still (there
- * is nothing to match it on).
+ * within r = max(box width, box height), and no more than [VehicleVisits.STILL_RADIUS_CAP], of the
+ * path's median point on both axes. A path of fewer than [VehicleVisits.MOVED_MIN_POINTS] points is
+ * still; an event with no box is never still (there is nothing to match it on).
  *
  * This decides two things: how long a moment stays open for another sighting (a parked car is
  * expected to be re-detected for hours; a moving one is not), and whether a sighting that continues
@@ -60,7 +74,7 @@ fun MomentEvent.isStill(): Boolean {
     if (pathPoints.size < VehicleVisits.MOVED_MIN_POINTS) return true
     val mx = median(pathPoints.map { it.x })
     val my = median(pathPoints.map { it.y })
-    val r = maxOf(box.w, box.h)
+    val r = minOf(maxOf(box.w, box.h), VehicleVisits.STILL_RADIUS_CAP)
     val near = pathPoints.count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
     return near.toDouble() / pathPoints.size >= VehicleVisits.STILL_FRACTION
 }

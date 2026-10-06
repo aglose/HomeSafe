@@ -847,6 +847,13 @@ def awaiting_recognition(item: dict[str, Any]) -> bool:
 VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle", "bicycle", "boat", "train", "vehicle"}
 # Share of the path that must sit within the box's size of the path's median for `is_still`.
 STILL_FRACTION = 0.7
+# The most "the box's size" may be, as a share of the frame. The box is the best frame's, and for a
+# car that drives in and parks by the camera that is the close-up: Andrew's Tesla crossed three
+# quarters of the Front Yard in 32 seconds on 2026-10-05 with a box 0.36 of the frame tall, which
+# held 22 of the arrival's 25 points, so the arrival was "still" and never pushed. A parked car's
+# jitter doesn't grow with its box like that: of 6,000 vehicle events over those two days, no path
+# that stayed in one place needed more than 0.17 to hold STILL_FRACTION of its points.
+STILL_RADIUS_CAP = 0.2
 # A path shorter than this is still whatever its shape. Frigate records a point when the object
 # first appears, another on its next look, and then one per ~5% of the frame travelled, so three
 # points is a single jump — the detector's box flipping between the whole car and part of it —
@@ -887,10 +894,10 @@ def path_points(event: dict[str, Any]) -> list[tuple[float, float]]:
 def is_still(event: dict[str, Any]) -> bool:
     """
     True when the object barely moved: at least STILL_FRACTION of its path points lie within
-    r = max(box width, box height) of the path's median point on both axes. A path of fewer than
-    MOVED_MIN_POINTS points is still (nothing has happened yet); an event with no box is never
-    still (there is nothing to judge it by). Same rule, same numbers, as the app's
-    `MomentEvent.isStill`.
+    r = max(box width, box height), and no more than STILL_RADIUS_CAP, of the path's median point
+    on both axes. A path of fewer than MOVED_MIN_POINTS points is still (nothing has happened
+    yet); an event with no box is never still (there is nothing to judge it by). Same rule, same
+    numbers, as the app's `MomentEvent.isStill`.
     """
     box = (event.get("data") or {}).get("box")
     if not box or len(box) < 4 or box[2] <= 0 or box[3] <= 0:
@@ -900,7 +907,7 @@ def is_still(event: dict[str, Any]) -> bool:
         return True
     mx = median(x for x, _ in points)
     my = median(y for _, y in points)
-    r = max(float(box[2]), float(box[3]))
+    r = min(max(float(box[2]), float(box[3])), STILL_RADIUS_CAP)
     near = sum(1 for x, y in points if abs(x - mx) <= r and abs(y - my) <= r)
     return near / len(points) >= STILL_FRACTION
 
@@ -946,8 +953,9 @@ def motion_verdict(item: dict[str, Any]) -> str:
 # learnt them, a person who stayed put *anywhere* and that it calls a phantom is one too.
 #
 # Staying put is stricter than a car's `is_still`, which lets 30% of the path stray and the rest
-# wander a whole box: up close, as at a front door, a person's box is half the frame, and someone
-# climbing the steps to the door moves less than that. A phantom's box only jitters.
+# wander a whole box, up to a fifth of the frame: up close, as at a front door, a person's box is
+# half the frame, and most of a climb up the steps to the door fits within that fifth. A phantom's
+# box only jitters.
 PHANTOM_IOU = 0.3
 # Every path point within this share of the box's longer side of the path's median.
 PHANTOM_DRIFT = 0.25

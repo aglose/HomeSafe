@@ -49,6 +49,9 @@ class VehicleVisitsTest {
     /** Twenty samples spread along the street. */
     private val driveThrough: List<Pair<Double, Double>> = List(20) { 0.10 + it * 0.0447 to 0.30 }
 
+    /** How many of [TrackedCars.andrewsPath]'s points are the drive in; the rest are flickers of the box once parked. */
+    private val andrewsArrivalPoints = 25
+
     @Test
     fun parkedCarWithJitterAndAStolenTrackerBurstIsStill() {
         assertTrue(event("parked", at(6, 6)).isStill(), "12 of 16 points sit at the spot: still")
@@ -57,6 +60,43 @@ class VehicleVisitsTest {
     @Test
     fun carDrivingThroughIsMoved() {
         assertFalse(event("drive", at(9, 43), box = DetectionBox(0.62, 0.24, 0.14, 0.10), path = driveThrough).isStill())
+    }
+
+    @Test
+    fun anArrivalThatEndsUpCloseToTheCameraIsMovedHoweverLargeItsBestFrameBox() {
+        // Front Yard, 2026-10-05: Andrew's Tesla came up the street, turned and came down to the
+        // garage, 0.76 of the frame in 32 seconds. Its best frame is the close-up by the garage,
+        // a box 0.36 of the frame tall, and 22 of these 25 points are within that of the median.
+        val arrival = TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, TrackedCars.andrewsPath.take(andrewsArrivalPoints), "andrews_tesla", endedAfter = 32.0)
+        assertTrue(maxOf(TrackedCars.andrewsBox.w, TrackedCars.andrewsBox.h) > VehicleVisits.STILL_RADIUS_CAP, "the box alone would allow more than the cap")
+        assertFalse(arrival.isStill(), "it crossed three quarters of the frame")
+        assertEquals(listOf(arrival), listOf(arrival).mergeVehicleVisits(), "so the arrival is a moment")
+
+        // And it stays one as the box flickers at the garage for the rest of the afternoon.
+        assertFalse(TrackedCars.andrewParked.isStill())
+        assertFalse(TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, TrackedCars.andrewsPath, "andrews_tesla").isStill())
+    }
+
+    @Test
+    fun aCarParkedCloseToTheCameraStaysStill() {
+        // The same car at the garage once it has stopped: the last four points of the arrival and
+        // the twelve flickers that followed, all within 0.13 of the frame of one another.
+        val flickers = TrackedCars.andrewsPath.drop(andrewsArrivalPoints - 4)
+        assertTrue(TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, flickers, "andrews_tesla").isStill())
+    }
+
+    @Test
+    fun aSmallBoxIsJudgedByItsOwnSize() {
+        // Sarah's car at the curb across the street: a box of 0.12, well under the cap.
+        assertTrue(maxOf(TrackedCars.sarahsBox.w, TrackedCars.sarahsBox.h) < VehicleVisits.STILL_RADIUS_CAP)
+        val arrival = TrackedCars.sarahsPathParked.take(TrackedCars.SARAHS_ARRIVAL_POINTS)
+        assertFalse(TrackedCars.event("sarah", TrackedCars.SARAH_ARRIVED, TrackedCars.sarahsBox, arrival, "sarahs_car").isStill())
+        assertFalse(TrackedCars.sarahParked.isStill())
+        assertFalse(TrackedCars.event("passing", TrackedCars.SARAH_ARRIVED, TrackedCars.passingBox, TrackedCars.passingPath, "andrews_tesla", endedAfter = 13.0).isStill())
+        // A path that strays 0.15 from its median is still under a 0.21 box and moved under a 0.12 one.
+        val strays = listOf(0.50 to 0.30, 0.50 to 0.30, 0.50 to 0.30, 0.65 to 0.30, 0.65 to 0.30)
+        assertTrue(event("large", at(6, 6), path = strays).isStill())
+        assertFalse(event("small", at(6, 6), box = DetectionBox(0.44, 0.18, 0.12, 0.12), path = strays).isStill())
     }
 
     @Test

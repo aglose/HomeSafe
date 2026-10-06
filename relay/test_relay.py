@@ -82,6 +82,21 @@ PARKED_PATH = [(0.3125, 0.6056), (0.3375, 0.5806), (0.3406, 0.5833), (0.3406, 0.
 FLICKER_PATH = [(0.3406, 0.5833), (0.3406, 0.5806)]
 # A car crossing the frame.
 DRIVE_PATH = [(0.10 + i * 0.0447, 0.30) for i in range(20)]
+# Front Yard, 2026-10-05, event 1791241252.491864-h433y2: Andrew's Tesla up the street, round, and
+# down to the garage in 32 seconds, then the box flickering there for hours. The best frame is the
+# close-up by the garage, so the box is over a third of the frame tall. The same path as the app's
+# `TrackedCars.andrewsPath`.
+GARAGE_BOX = [0.0453, 0.1528, 0.2828, 0.3625]
+GARAGE_ARRIVAL = [
+    (0.3922, 0.0625), (0.4328, 0.0653), (0.5094, 0.1069), (0.5859, 0.1361), (0.6883, 0.1667), (0.7484, 0.2194), (0.8773, 0.3278),
+    (0.9398, 0.3389), (0.8938, 0.2764), (0.8227, 0.2319), (0.7516, 0.1917), (0.6852, 0.2056), (0.6211, 0.2181), (0.5617, 0.2333),
+    (0.5055, 0.2639), (0.4453, 0.2917), (0.3859, 0.3222), (0.3273, 0.3472), (0.2695, 0.3861), (0.2219, 0.4347), (0.1812, 0.4792),
+    (0.2359, 0.3972), (0.1812, 0.4833), (0.2055, 0.3972), (0.1844, 0.4847),
+]
+GARAGE_FLICKERS = [
+    (0.2594, 0.3944), (0.1797, 0.4861), (0.2078, 0.4319), (0.1883, 0.4875), (0.2039, 0.4153), (0.1938, 0.5028),
+    (0.2008, 0.4069), (0.1805, 0.4847), (0.1906, 0.4222), (0.1898, 0.4861), (0.2094, 0.3806), (0.2117, 0.4639),
+]
 
 
 class IsStill(unittest.TestCase):
@@ -110,6 +125,21 @@ class IsStill(unittest.TestCase):
         burst = [(0.84, 0.54), (0.85, 0.40)] * 6 + [(0.60, 0.30), (0.45, 0.28), (0.30, 0.25), (0.15, 0.22)]
         self.assertTrue(relay.is_still(event([0.75, 0.34, 0.18, 0.21], burst)))
 
+    def test_an_arrival_that_ends_close_to_the_camera_moved_however_large_its_best_frame_box(self):
+        # 22 of the 25 points are within the box's 0.36 of the median; the car crossed 0.76 of the frame.
+        self.assertGreater(max(GARAGE_BOX[2:]), relay.STILL_RADIUS_CAP)
+        self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL)))
+        self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL + GARAGE_FLICKERS)), "and the flickers since don't undo it")
+
+    def test_a_car_parked_close_to_the_camera_stays_still(self):
+        self.assertTrue(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL[-4:] + GARAGE_FLICKERS)))
+
+    def test_a_small_box_is_judged_by_its_own_size(self):
+        # A path that strays 0.15 from its median: still under a 0.21 box, moved under a 0.12 one.
+        strays = [(0.50, 0.30)] * 3 + [(0.65, 0.30)] * 2
+        self.assertTrue(relay.is_still(event([0.75, 0.34, 0.18, 0.21], strays)))
+        self.assertFalse(relay.is_still(event([0.44, 0.18, 0.12, 0.12], strays)))
+
 
 class MotionVerdict(unittest.TestCase):
     def setUp(self):
@@ -136,6 +166,11 @@ class MotionVerdict(unittest.TestCase):
     def test_a_car_that_moved_pushes(self):
         self.events["c"] = event([0.62, 0.24, 0.14, 0.10], DRIVE_PATH)
         self.assertEqual("push", relay.motion_verdict(self.item(["car", "car-verified"], ["c"], ended=False)))
+
+    def test_a_car_that_drove_in_and_parked_by_the_camera_pushes(self):
+        self.events["c"] = event(GARAGE_BOX, GARAGE_ARRIVAL)
+        self.assertEqual("push", relay.motion_verdict(self.item(["car"], ["c"], ended=False)))
+        self.assertEqual("push", relay.motion_verdict(self.item(["car"], ["c"], ended=True)))
 
     def test_a_still_car_waits_while_the_alert_is_open_and_is_skipped_once_it_ends(self):
         self.events["c"] = event(PARKED_BOX, FLICKER_PATH)
