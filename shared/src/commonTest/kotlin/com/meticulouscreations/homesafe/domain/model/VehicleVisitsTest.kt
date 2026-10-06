@@ -52,6 +52,24 @@ class VehicleVisitsTest {
     /** How many of [TrackedCars.andrewsPath]'s points are the drive in; the rest are flickers of the box once parked. */
     private val andrewsArrivalPoints = 25
 
+    /**
+     * Front Yard, 2026-10-05 11:26, one event of 3 h 19 min: Andrew's Tesla down to the garage (18
+     * points), its box flickering there (17), and back up the street and away (13).
+     */
+    private val morningVisit: List<Pair<Double, Double>> = listOf(
+        0.4945 to 0.1028, 0.5047 to 0.1097, 0.5531 to 0.1444, 0.6164 to 0.1833, 0.6906 to 0.3028, 0.7219 to 0.1944, 0.7922 to 0.1903, 0.7297 to 0.1833,
+        0.675 to 0.2028, 0.6188 to 0.2194, 0.5594 to 0.2306, 0.5039 to 0.2653, 0.4492 to 0.2903, 0.3875 to 0.3236, 0.3336 to 0.3486, 0.2687 to 0.3931,
+        0.2211 to 0.4375, 0.1766 to 0.4819,
+        0.1859 to 0.4014, 0.1719 to 0.4889, 0.1734 to 0.4264, 0.1711 to 0.4875, 0.2195 to 0.3861, 0.1719 to 0.4917, 0.2289 to 0.4319, 0.1375 to 0.4431,
+        0.1719 to 0.4931, 0.2164 to 0.4431, 0.1727 to 0.4917, 0.2289 to 0.4403, 0.1719 to 0.4944, 0.2352 to 0.3986, 0.1336 to 0.4597, 0.2297 to 0.4347,
+        0.1336 to 0.4556,
+        0.1883 to 0.4764, 0.2367 to 0.4319, 0.2945 to 0.375, 0.3578 to 0.3444, 0.4125 to 0.3139, 0.4758 to 0.2806, 0.5359 to 0.25, 0.6008 to 0.2333,
+        0.6711 to 0.2333, 0.732 to 0.2458, 0.8016 to 0.2708, 0.8664 to 0.325, 0.9258 to 0.3514,
+    )
+    private val morningBox = DetectionBox(0.0203, 0.1875, 0.3047, 0.3056)
+    private val morningArrivalPoints = 18
+    private val morningLeavingPoints = 13
+
     @Test
     fun parkedCarWithJitterAndAStolenTrackerBurstIsStill() {
         assertTrue(event("parked", at(6, 6)).isStill(), "12 of 16 points sit at the spot: still")
@@ -72,7 +90,7 @@ class VehicleVisitsTest {
         assertFalse(arrival.isStill(), "it crossed three quarters of the frame")
         assertEquals(listOf(arrival), listOf(arrival).mergeVehicleVisits(), "so the arrival is a moment")
 
-        // And it stays one as the box flickers at the garage for the rest of the afternoon.
+        // As it stood at 270 and at 279 minutes, with 2 and then 12 flickers of the box at the garage.
         assertFalse(TrackedCars.andrewParked.isStill())
         assertFalse(TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, TrackedCars.andrewsPath, "andrews_tesla").isStill())
     }
@@ -83,6 +101,48 @@ class VehicleVisitsTest {
         // the twelve flickers that followed, all within 0.13 of the frame of one another.
         val flickers = TrackedCars.andrewsPath.drop(andrewsArrivalPoints - 4)
         assertTrue(TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, flickers, "andrews_tesla").isStill())
+    }
+
+    @Test
+    fun sittingAfterwardsDoesNotUndoADrive() {
+        // Frigate keeps the one event on the car for as long as it sits, and every flicker of its
+        // box adds a point at the garage: 12 in the first four and a half hours. Three times that
+        // and the points at the garage are 70% of the path, the drive in among them.
+        val arrival = TrackedCars.andrewsPath.take(andrewsArrivalPoints)
+        val flickers = TrackedCars.andrewsPath.drop(andrewsArrivalPoints)
+        for (times in listOf(3, 20)) {
+            val path = arrival + List(times) { flickers }.flatten()
+            assertFalse(TrackedCars.event("andrew", TrackedCars.ANDREW_ARRIVED, TrackedCars.andrewsBox, path, "andrews_tesla").isStill(), "${flickers.size * times} points at the garage")
+        }
+    }
+
+    @Test
+    fun aCarThatCameSatAndLeftInOneEventMoved() {
+        assertFalse(event("visit", at(11, 26), box = morningBox, path = morningVisit).isStill())
+        // The same visit had it sat all day: the flickers outnumber the drive in and the drive out together.
+        val flickers = morningVisit.subList(morningArrivalPoints, morningVisit.size - morningLeavingPoints)
+        val allDay = morningVisit.take(morningArrivalPoints) + List(6) { flickers }.flatten() + morningVisit.takeLast(morningLeavingPoints)
+        assertFalse(event("visit", at(11, 26), box = morningBox, path = allDay).isStill())
+    }
+
+    @Test
+    fun aCarFirstSeenParkedIsStillThoughItsPathEndsInAFewPointsOfTravel() {
+        // What a stolen tracker leaves, and what this car's own leaving looks like without the
+        // drive in: the path can't tell the two apart, so the points at the spot still decide.
+        val flickers = morningVisit.subList(morningArrivalPoints, morningVisit.size - morningLeavingPoints)
+        val path = List(3) { flickers }.flatten() + morningVisit.takeLast(morningLeavingPoints)
+        assertTrue(event("parked", at(11, 26), box = morningBox, path = path).isStill())
+    }
+
+    @Test
+    fun aBoxJumpingBetweenTwoPlacesIsNotTravel() {
+        // Front Yard, 2026-10-05: a car parked across the street whose box jumps 0.12 sideways,
+        // just over its 0.11 width. With five points, three at one place and two at the other,
+        // the path isn't gathered; but it has gone nowhere, and with eight it is.
+        val here = 0.47 to 0.03
+        val there = 0.35 to 0.02
+        val jumping = listOf(here, here, there, here, there, here, there, there)
+        assertTrue(event("jumping", at(6, 6), box = DetectionBox(0.41, 0.0, 0.11, 0.05), path = jumping).isStill())
     }
 
     @Test

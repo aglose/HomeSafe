@@ -129,7 +129,28 @@ class IsStill(unittest.TestCase):
         # 22 of the 25 points are within the box's 0.36 of the median; the car crossed 0.76 of the frame.
         self.assertGreater(max(GARAGE_BOX[2:]), relay.STILL_RADIUS_CAP)
         self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL)))
-        self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL + GARAGE_FLICKERS)), "and the flickers since don't undo it")
+        self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL + GARAGE_FLICKERS)))
+
+    def test_sitting_afterwards_does_not_undo_a_drive(self):
+        # Every flicker of the box adds a point at the garage: 12 in four and a half hours. Three
+        # times that and the points there are 70% of the path, the drive in among them.
+        for times in (3, 20):
+            self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL + GARAGE_FLICKERS * times)), times)
+
+    def test_a_car_that_came_sat_and_left_in_one_event_moved(self):
+        leaving = GARAGE_ARRIVAL[20::-1]
+        self.assertFalse(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL + GARAGE_FLICKERS * 20 + leaving)))
+
+    def test_a_car_first_seen_parked_is_still_though_its_path_ends_in_a_few_points_of_travel(self):
+        # A stolen tracker or its own leaving: the path can't tell, so the points at the spot decide.
+        leaving = GARAGE_ARRIVAL[20:8:-1]
+        self.assertTrue(relay.is_still(event(GARAGE_BOX, GARAGE_FLICKERS * 4 + leaving)))
+
+    def test_a_box_jumping_between_two_places_is_not_travel(self):
+        # 0.12 apart under a 0.11 box: three points here and two there aren't gathered, but have gone nowhere.
+        here, there = (0.47, 0.03), (0.35, 0.02)
+        self.assertFalse(relay.gathered([here, here, there, here, there], 0.11))
+        self.assertTrue(relay.is_still(event([0.41, 0.0, 0.11, 0.05], [here, here, there, here, there, here, there, there])))
 
     def test_a_car_parked_close_to_the_camera_stays_still(self):
         self.assertTrue(relay.is_still(event(GARAGE_BOX, GARAGE_ARRIVAL[-4:] + GARAGE_FLICKERS)))

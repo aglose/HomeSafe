@@ -24,7 +24,7 @@ import kotlin.math.abs
  * relay/relay.py), so a phone hears about the same vehicles the feed shows.
  */
 object VehicleVisits {
-    /** Share of the path that must sit within the box's size of the path's median for [isStill]. */
+    /** Share of a path that must sit within the box's size of the path's median for it to be gathered ([isStill]). */
     const val STILL_FRACTION = 0.7
 
     /**
@@ -60,10 +60,21 @@ object VehicleVisits {
 }
 
 /**
- * True when the object barely moved: at least [VehicleVisits.STILL_FRACTION] of its path points lie
- * within r = max(box width, box height), and no more than [VehicleVisits.STILL_RADIUS_CAP], of the
- * path's median point on both axes. A path of fewer than [VehicleVisits.MOVED_MIN_POINTS] points is
- * still; an event with no box is never still (there is nothing to match it on).
+ * True when the object never went anywhere. A path is *gathered* when at least
+ * [VehicleVisits.STILL_FRACTION] of its points lie within r = max(box width, box height), and no
+ * more than [VehicleVisits.STILL_RADIUS_CAP], of its median point on both axes. The object is
+ * still when its whole path is gathered and it had not travelled before: no earlier stretch of the
+ * path, from its first point on, both reached further than 2r across and was not gathered. A path
+ * of fewer than [VehicleVisits.MOVED_MIN_POINTS] points is still; an event with no box is never
+ * still (there is nothing to match it on).
+ *
+ * The earlier stretches are there because sitting doesn't undo a drive. Frigate can keep one event
+ * on a car from the street until hours after it parked, and every flicker of its box adds a point
+ * at the resting place: Andrew's Tesla (Front Yard, 2026-10-05) took 25 points to arrive and had
+ * 12 more from the garage four and a half hours later. Enough of those and the whole path is
+ * gathered around the garage, arrival and all. The 2r is the width gathered points fit in; without
+ * it a short path decides on a single point, and a far car whose box jumps between two places
+ * just over r apart would be "travel" the moment it had an odd number of them.
  *
  * This decides two things: how long a moment stays open for another sighting (a parked car is
  * expected to be re-detected for hours; a moving one is not), and whether a sighting that continues
@@ -72,11 +83,12 @@ object VehicleVisits {
 fun MomentEvent.isStill(): Boolean {
     val box = box ?: return false
     if (pathPoints.size < VehicleVisits.MOVED_MIN_POINTS) return true
-    val mx = median(pathPoints.map { it.x })
-    val my = median(pathPoints.map { it.y })
     val r = minOf(maxOf(box.w, box.h), VehicleVisits.STILL_RADIUS_CAP)
-    val near = pathPoints.count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
-    return near.toDouble() / pathPoints.size >= VehicleVisits.STILL_FRACTION
+    if (!pathPoints.isGathered(r)) return false
+    return (VehicleVisits.MOVED_MIN_POINTS until pathPoints.size).none { count ->
+        val stretch = pathPoints.subList(0, count)
+        stretch.span() > 2 * r && !stretch.isGathered(r)
+    }
 }
 
 private fun median(values: List<Double>): Double {
@@ -84,6 +96,17 @@ private fun median(values: List<Double>): Double {
     val mid = sorted.size / 2
     return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2 else sorted[mid]
 }
+
+/** At least [VehicleVisits.STILL_FRACTION] of these points within [r] of their median on both axes. */
+private fun List<MaskPoint>.isGathered(r: Double): Boolean {
+    val mx = median(map { it.x })
+    val my = median(map { it.y })
+    val near = count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
+    return near.toDouble() / size >= VehicleVisits.STILL_FRACTION
+}
+
+/** How far these points reach across the frame: the larger of their extents along the two axes. */
+private fun List<MaskPoint>.span(): Double = maxOf(maxOf { it.x } - minOf { it.x }, maxOf { it.y } - minOf { it.y })
 
 /**
  * The same vehicle in the same place, time aside: same camera, both vehicles, and boxes overlapping

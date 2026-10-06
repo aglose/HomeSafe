@@ -845,7 +845,7 @@ def awaiting_recognition(item: dict[str, Any]) -> bool:
 # So a vehicle is only news once it has gone somewhere. Mirrors the app's VehicleVisits.isStill
 # and DetectionAlertService, which apply the same rule to the Moments feed and the in-app poller.
 VEHICLE_LABELS = {"car", "truck", "bus", "motorcycle", "bicycle", "boat", "train", "vehicle"}
-# Share of the path that must sit within the box's size of the path's median for `is_still`.
+# Share of a path that must sit within the box's size of the path's median for it to be `gathered`.
 STILL_FRACTION = 0.7
 # The most "the box's size" may be, as a share of the frame. The box is the best frame's, and for a
 # car that drives in and parks by the camera that is the close-up: Andrew's Tesla crossed three
@@ -891,13 +891,33 @@ def path_points(event: dict[str, Any]) -> list[tuple[float, float]]:
     return points
 
 
+def gathered(points: list[tuple[float, float]], r: float) -> bool:
+    """At least STILL_FRACTION of `points` within `r` of their median on both axes."""
+    mx = median(x for x, _ in points)
+    my = median(y for _, y in points)
+    near = sum(1 for x, y in points if abs(x - mx) <= r and abs(y - my) <= r)
+    return near / len(points) >= STILL_FRACTION
+
+
+def path_span(points: list[tuple[float, float]]) -> float:
+    """How far `points` reach across the frame: the larger of their extents along the two axes."""
+    xs, ys = [x for x, _ in points], [y for _, y in points]
+    return max(max(xs) - min(xs), max(ys) - min(ys))
+
+
 def is_still(event: dict[str, Any]) -> bool:
     """
-    True when the object barely moved: at least STILL_FRACTION of its path points lie within
-    r = max(box width, box height), and no more than STILL_RADIUS_CAP, of the path's median point
-    on both axes. A path of fewer than MOVED_MIN_POINTS points is still (nothing has happened
-    yet); an event with no box is never still (there is nothing to judge it by). Same rule, same
-    numbers, as the app's `MomentEvent.isStill`.
+    True when the object never went anywhere: its whole path is `gathered` within
+    r = max(box width, box height), and no more than STILL_RADIUS_CAP, and it had not travelled
+    before, meaning no earlier stretch of the path, from its first point on, both reached further
+    than 2r across and was not gathered. Sitting doesn't undo a drive: Frigate can keep one event
+    on a car from the street until hours after it parked, and every flicker of its box adds a
+    point at the resting place until the whole path is gathered there, arrival and all. The 2r is
+    the width gathered points fit in; without it a short path decides on a single point.
+
+    A path of fewer than MOVED_MIN_POINTS points is still (nothing has happened yet); an event
+    with no box is never still (there is nothing to judge it by). Same rule, same numbers, as the
+    app's `MomentEvent.isStill`.
     """
     box = (event.get("data") or {}).get("box")
     if not box or len(box) < 4 or box[2] <= 0 or box[3] <= 0:
@@ -905,11 +925,11 @@ def is_still(event: dict[str, Any]) -> bool:
     points = path_points(event)
     if len(points) < MOVED_MIN_POINTS:
         return True
-    mx = median(x for x, _ in points)
-    my = median(y for _, y in points)
     r = min(max(float(box[2]), float(box[3])), STILL_RADIUS_CAP)
-    near = sum(1 for x, y in points if abs(x - mx) <= r and abs(y - my) <= r)
-    return near / len(points) >= STILL_FRACTION
+    if not gathered(points, r):
+        return False
+    stretches = (points[:count] for count in range(MOVED_MIN_POINTS, len(points)))
+    return not any(path_span(stretch) > 2 * r and not gathered(stretch, r) for stretch in stretches)
 
 
 def motion_verdict(item: dict[str, Any]) -> str:
