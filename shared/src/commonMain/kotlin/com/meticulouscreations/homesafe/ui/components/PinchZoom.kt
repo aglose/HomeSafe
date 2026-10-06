@@ -7,6 +7,7 @@ import androidx.compose.foundation.gestures.calculateCentroid
 import androidx.compose.foundation.gestures.calculateCentroidSize
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -20,9 +21,12 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /**
@@ -174,6 +178,79 @@ fun Modifier.pinchZoomGestures(state: PinchZoomState, onPinchEnded: () -> Unit =
                 onPinchEnded = onPinchEnded,
             )
         }
+
+/**
+ * The one-finger ways into a zoom, for a node that lies over the content and fills the viewport
+ * of [state] (so its touches are viewport-local). A double tap zooms in on the tapped spot, or
+ * back out. Holding a finger down zooms in on the held spot, and that finger can carry straight
+ * on into dragging the picture without lifting; a hold on a picture already zoomed in only takes
+ * hold of it to drag. A single tap is [onTap]'s.
+ *
+ * [onHoldZoom] runs as a hold zooms in — the place for a haptic tick. Both callbacks key the
+ * gesture node, so hand it remembered ones: fresh lambdas would restart it under a finger.
+ */
+fun Modifier.zoomTapGestures(state: PinchZoomState, onTap: () -> Unit, onHoldZoom: () -> Unit = {}): Modifier =
+    pointerInput(state, onTap, onHoldZoom) {
+        // Whether the press now down has turned into a hold.
+        var held = false
+        coroutineScope {
+            // Alongside the tap detector rather than inside it: once a long press has fired, that
+            // detector only swallows what the finger does next. Those moves are taken here whether
+            // or not it got to them first.
+            launch {
+                detectHeldDrag(
+                    isHeld = { held },
+                    requireUnconsumed = false,
+                    onDrag = state::panBy,
+                    onReleased = { held = false },
+                )
+            }
+            detectTapGestures(
+                onTap = { onTap() },
+                onDoubleTap = { tapAt ->
+                    launch {
+                        if (state.isZoomed) state.animateReset() else state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
+                    }
+                },
+                onLongPress = { pressAt ->
+                    held = true
+                    if (!state.isZoomed) {
+                        onHoldZoom()
+                        launch { state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, pressAt) }
+                    }
+                },
+            )
+        }
+    }
+
+/**
+ * Lets the finger whose long press took hold of something carry straight on into dragging it,
+ * without lifting: while [isHeld], each move of a lone finger goes to [onDrag] and is consumed,
+ * so nothing behind scrolls along. [requireUnconsumed] leaves alone the moves something nearer
+ * has already taken. [onReleased] runs when the fingers lift, held or not.
+ */
+internal suspend fun PointerInputScope.detectHeldDrag(
+    isHeld: () -> Boolean,
+    requireUnconsumed: Boolean = true,
+    onDrag: (Offset) -> Unit,
+    onReleased: () -> Unit = {},
+) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false)
+        do {
+            val event = awaitPointerEvent()
+            val finger = event.changes.filter { it.pressed }.singleOrNull()
+            if (finger != null && finger.previousPressed && !(requireUnconsumed && finger.isConsumed) && isHeld()) {
+                val delta = finger.positionChange()
+                if (delta != Offset.Zero) {
+                    onDrag(delta)
+                    finger.consume()
+                }
+            }
+        } while (event.changes.any { it.pressed })
+        onReleased()
+    }
+}
 
 /**
  * What a [pinchGestures] node reports. One remembered object rather than three lambdas: the

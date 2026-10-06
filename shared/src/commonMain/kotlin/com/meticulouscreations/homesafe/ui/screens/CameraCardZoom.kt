@@ -4,8 +4,6 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -42,7 +40,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
@@ -51,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.detectHeldDrag
 import com.meticulouscreations.homesafe.ui.components.liveSurfaceIsExclusive
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
@@ -242,21 +240,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
  * pans on its own.
  */
 internal fun Modifier.quickLookHeldDrag(state: CameraCardZoomState, cameraName: String): Modifier = pointerInput(state, cameraName) {
-    awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
-        do {
-            val event = awaitPointerEvent()
-            val finger = event.changes.filter { it.pressed }.singleOrNull()
-            if (finger != null && finger.previousPressed && !finger.isConsumed && state.target?.camera?.name == cameraName) {
-                val delta = finger.positionChange()
-                if (delta != Offset.Zero) {
-                    state.panFromCard(delta)
-                    // Keeps the list under the look from scrolling along.
-                    finger.consume()
-                }
-            }
-        } while (event.changes.any { it.pressed })
-    }
+    detectHeldDrag(isHeld = { state.target?.camera?.name == cameraName }, onDrag = state::panFromCard)
 }
 
 @Composable
