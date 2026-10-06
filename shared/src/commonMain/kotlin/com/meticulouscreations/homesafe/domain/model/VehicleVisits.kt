@@ -22,6 +22,11 @@ import kotlin.math.abs
  * into leaving this morning. And a still sighting that continues no visit is no moment at all: a
  * vehicle is only news once it has moved. The push relay applies the same rule (`is_still` in
  * relay/relay.py), so a phone hears about the same vehicles the feed shows.
+ *
+ * [isStill] asks whether a sighting *ever* went anywhere, which is what news is made of. Whether
+ * the vehicle is sitting there *now* is a different question with a different answer for the one
+ * sighting that is both: the car that drove in and has been parked, in a single Frigate event,
+ * ever since. That is [isParked], and it is what the home screen's strip and the zones ask.
  */
 object VehicleVisits {
     /** Share of the path that must sit within the box's size of the path's median for [isStill]. */
@@ -43,6 +48,13 @@ object VehicleVisits {
 
     /** A moving vehicle re-detected this soon at the same spot is still the same visit. */
     const val VISIT_GAP_SECONDS = 5.0 * 60.0
+
+    /**
+     * How long a vehicle that drove must have stayed within its box's size of one spot to count as
+     * parked there ([isParked]). The time a manoeuvre is given in [VISIT_GAP_SECONDS]: a car that
+     * hasn't gone a car's length in that long is not on its way anywhere.
+     */
+    const val SETTLED_SECONDS = 5.0 * 60.0
 }
 
 /**
@@ -63,6 +75,37 @@ fun MomentEvent.isStill(): Boolean {
     val r = maxOf(box.w, box.h)
     val near = pathPoints.count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
     return near.toDouble() / pathPoints.size >= VehicleVisits.STILL_FRACTION
+}
+
+/**
+ * True when the vehicle is sitting still at [nowEpochSeconds] — or was when the sighting ended —
+ * whatever it did to get there: it is [isStill], or it is within r = max(box width, box height) on
+ * both axes of where it stood [VehicleVisits.SETTLED_SECONDS] before it was last seen.
+ *
+ * [isStill] alone can't answer this for a car Frigate keeps in one event from the street to hours
+ * after it parked. Frigate only records a path point when the object travels ~5% of the frame, so
+ * such a path is its arrival and little else, and the share of it near the median says how long
+ * the drive in was, not whether the car is parked. Measured on the Front Yard, 2026-10-05: Sarah's
+ * car, in view for 151 minutes, had 17 points, 15 of them from its first 23 seconds; Andrew's
+ * Tesla, 270 minutes, had 27 with 25 from its first 32. The times say what the shape can't: the
+ * last point is when the car last went anywhere, and the points since [VehicleVisits.SETTLED_SECONDS]
+ * ago are everything it has done lately. A box that flickers adds a point or two beside the spot
+ * and the car is still within r of where it was; a car pulling out has left that behind within a
+ * box's length, and one that only just pulled in has no "where it stood" that long ago at all.
+ *
+ * Without the times ([MomentEvent.pathEpochSeconds] empty) this is [isStill]. The relay has no
+ * counterpart: its `is_still` mirrors [isStill], for the same "is this news" question, and where
+ * the cars are *now* it answers from its own memory of arrivals and departures.
+ */
+fun MomentEvent.isParked(nowEpochSeconds: Double): Boolean {
+    if (isStill()) return true
+    val box = box ?: return false
+    val here = pathPoints.lastOrNull() ?: return false
+    if (pathEpochSeconds.size != pathPoints.size) return false
+    val settledSince = (endEpochSeconds ?: nowEpochSeconds) - VehicleVisits.SETTLED_SECONDS
+    val then = pathPoints.getOrNull(pathEpochSeconds.indexOfLast { it <= settledSince }) ?: return false
+    val r = maxOf(box.w, box.h)
+    return abs(here.x - then.x) <= r && abs(here.y - then.y) <= r
 }
 
 private fun median(values: List<Double>): Double {

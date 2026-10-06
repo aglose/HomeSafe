@@ -223,7 +223,7 @@ class DetectionAlertService(
         if (!escalated && settings.value.ordinaryAlertsSilenced(localMinuteOfDay())) return
         val moment = event.toDomain()
         if (category == MomentCategory.VEHICLES && moment.isStill()) return
-        val placed = moment.inZones(zones[event.camera].orEmpty())
+        val placed = moment.inZones(zones[event.camera].orEmpty(), clock())
         if (!escalated && placed != null && isRepeatSighting(placed, recentVehicles)) return
         when {
             escalated -> notify(url, placed ?: moment, urgent = true)

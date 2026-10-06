@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import androidx.room3.ColumnInfo
 import androidx.room3.Entity
 import androidx.room3.Index
 import com.meticulouscreations.homesafe.domain.model.DetectionBox
@@ -45,6 +46,12 @@ data class MomentEventEntity(
     val boxW: Double?,
     val boxH: Double?,
     val subLabelScore: Double?,
+    /**
+     * [MomentEvent.pathEpochSeconds], one per point of [pathPoints], separated by ";". Empty on a
+     * row written before the column existed: such a path is judged by its shape alone until the
+     * next fetch rewrites the row.
+     */
+    @ColumnInfo(defaultValue = "") val pathEpochSeconds: String = "",
 )
 
 internal fun MomentEvent.toEntity(serverUrl: String): MomentEventEntity = MomentEventEntity(
@@ -65,6 +72,7 @@ internal fun MomentEvent.toEntity(serverUrl: String): MomentEventEntity = Moment
     boxW = box?.w,
     boxH = box?.h,
     subLabelScore = subLabelScore,
+    pathEpochSeconds = pathEpochSeconds.joinToString(POINT_SEPARATOR),
 )
 
 internal fun MomentEventEntity.toDomain(): MomentEvent = MomentEvent(
@@ -81,6 +89,7 @@ internal fun MomentEventEntity.toDomain(): MomentEvent = MomentEvent(
     pathPoints = pathPoints.split(POINT_SEPARATOR).mapNotNull { it.toMaskPointOrNull() },
     box = DetectionBox.fromFractions(listOfNotNull(boxX, boxY, boxW, boxH)),
     subLabelScore = subLabelScore,
+    pathEpochSeconds = pathEpochSeconds.split(POINT_SEPARATOR).mapNotNull { it.toDoubleOrNull() },
 )
 
 private const val ZONE_SEPARATOR = "\n"

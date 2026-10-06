@@ -53,7 +53,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         WatchedSymbolEntity::class,
         FinancePreferencesEntity::class,
     ],
-    version = 16,
+    version = 17,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -83,6 +83,10 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 15 -> 16: the finance app's preferences — the Economy tab's tone
         // ([FinancePreferencesEntity], a new table).
         AutoMigration(from = 15, to = 16),
+        // 16 -> 17: when each point of a cached detection's path was recorded
+        // (MomentEventEntity.pathEpochSeconds, default empty), so a car that drove in and has sat
+        // there since can be told from one still driving.
+        AutoMigration(from = 16, to = 17),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

@@ -24,6 +24,10 @@ data class AlertVolume(val perDay: Map<Pair<AlertZone, MomentCategory>, Double>,
          * the poller's folding of one car's re-detections into a single visit, so a busy vehicle
          * rule reads a little high.
          *
+         * The poller judges a detection as it begins, so each is placed here as it stood then: a
+         * car that drove in and has been parked since ([isParked]) was only a car driving in when
+         * its alert was decided, and gets no more from its name than it got then.
+         *
          * [events] are the newest [sampleLimit] detections since [windowStartEpochSeconds]. If the
          * sample is full it probably doesn't reach back that far, so the rate is taken over the
          * span it does cover — from its oldest detection to [nowEpochSeconds] — and never less
@@ -47,7 +51,7 @@ data class AlertVolume(val perDay: Map<Pair<AlertZone, MomentCategory>, Double>,
                 val category = event.category
                 if (category == MomentCategory.ALL) return@forEach
                 if (category == MomentCategory.VEHICLES && event.isStill()) return@forEach
-                val placed = event.inZones(zonesByCamera[event.cameraName].orEmpty()) ?: return@forEach
+                val placed = event.copy(endEpochSeconds = null).inZones(zonesByCamera[event.cameraName].orEmpty(), event.startEpochSeconds) ?: return@forEach
                 val places = placed.zones.filter { it.isNotBlank() }.distinct().map { AlertZone(event.cameraName, it) }
                     .ifEmpty { listOf(AlertZone(event.cameraName, null)) }
                 places.forEach { place -> counts[place to category] = (counts[place to category] ?: 0) + 1 }
