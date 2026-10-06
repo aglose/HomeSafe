@@ -95,7 +95,7 @@ internal object TrackedCars {
     ) = MomentEvent(
         id = id, cameraName = CAMERA, label = "car", subLabel = subLabel,
         startEpochSeconds = start, endEpochSeconds = endedAfter?.let { start + it }, topScore = 0.9, hasClip = true, hasSnapshot = true,
-        zones = zones, pathPoints = path.map { (x, y, _) -> MaskPoint(x, y) },
+        zones = zones, pathPoints = path.map { (x, y, _) -> MaskPoint(x, y) }, pathEpochSeconds = path.map { (_, _, t) -> start + t },
         box = box, subLabelScore = 0.98,
     )
 

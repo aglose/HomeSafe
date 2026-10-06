@@ -130,6 +130,8 @@ class FrigateClassifierApiTest {
 
         val noPath = Json { ignoreUnknownKeys = true }.decodeFromString(FrigateEventData.serializer(), """{"box":[0.25,0.5,0.5,0.25]}""")
         assertEquals(MaskPoint(0.5, 0.75), noPath.bottomCentreAt(1.0), "without a path, the best frame's bottom-centre")
+        assertEquals(listOf(1789612330.591865, 1789612330.784124, 1789612990.373736, 1789612990.591818), data.pathEpochSeconds(), "one time per path point")
+        assertEquals(emptyList(), noPath.pathEpochSeconds(), "the box's bottom-centre stands in for a path, but nothing says when")
     }
 
     @Test

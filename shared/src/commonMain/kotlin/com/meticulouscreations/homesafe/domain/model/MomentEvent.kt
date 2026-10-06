@@ -98,6 +98,13 @@ data class MomentEvent(
      * Empty when Frigate reported no path (an API-created event, say).
      */
     val pathPoints: List<MaskPoint> = emptyList(),
+    /**
+     * When each of [pathPoints] was recorded, in epoch seconds: Frigate adds a point when the
+     * object has travelled ~5% of the frame, so the last one is when it last went anywhere. The
+     * same length as [pathPoints], or empty when the times aren't known (a row cached by an older
+     * build, a path that is only the best frame's box). What [isParked] reads.
+     */
+    val pathEpochSeconds: List<Double> = emptyList(),
     /** The best frame's box; null for an API-created event. What [mergeVehicleVisits] matches sightings on. */
     val box: DetectionBox? = null,
     /** How sure the classifier was of [subLabel]; null when Frigate didn't say. */

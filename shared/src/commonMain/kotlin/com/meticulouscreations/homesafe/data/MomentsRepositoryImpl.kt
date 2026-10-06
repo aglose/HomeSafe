@@ -273,7 +273,7 @@ class MomentsRepositoryImpl(
             val events = apiClient.getEvents(url, limit = PAGE_SIZE, beforeEpochSeconds = oldest, cameras = listOf(cameraName))
                 .getOrElse { return if (page == 0) null else placed to oldest }
             val zones = stateLock.withLock { zonesByCamera }
-            placed = placed + events.map { it.toDomain() }.inZones(zones)
+            placed = placed + events.map { it.toDomain() }.inZones(zones, nowEpochSeconds())
             oldest = events.minOfOrNull { it.startTime } ?: oldest
             val enough = placed.mergeVehicleVisits().size >= limit && (oldest ?: cutoff) <= cutoff
             if (events.size < PAGE_SIZE || enough) break
@@ -308,7 +308,7 @@ class MomentsRepositoryImpl(
             val events = apiClient.getEvents(url, limit = PAGE_SIZE, afterEpochSeconds = after, beforeEpochSeconds = cursor, cameras = listOf(cameraName))
                 .getOrElse { return if (page == 0) null else placed }
             val zones = stateLock.withLock { zonesByCamera }
-            placed = placed + events.map { it.toDomain() }.inZones(zones)
+            placed = placed + events.map { it.toDomain() }.inZones(zones, nowEpochSeconds())
             cursor = events.minOfOrNull { it.startTime } ?: break
             if (events.size < PAGE_SIZE) break
         }
@@ -378,13 +378,13 @@ class MomentsRepositoryImpl(
                             lookbackStart
                         }
                         // Zones first: a car out on the street is not parked in the yard, whatever it is doing.
-                        val placed = events.map { it.toDomain() }.inZones(zones)
+                        val placed = events.map { it.toDomain() }.inZones(zones, now)
                         // Only the tracked sightings the page didn't reach; ended ones are the page's to report.
                         val pageIds = events.mapTo(HashSet()) { it.id }
                         val tracked = tracking
                             .filter { it.endTime == null && it.id !in pageIds }
                             .map { it.toDomain() }
-                            .inZones(zones)
+                            .inZones(zones, now)
                         send((placed + tracked).stationaryObjects(now, oldestFetched))
                         // The same slice the live feed files — the newest detections across every camera — so the
                         // two share one cache rather than fighting over it. [oldestFetched], not the raw oldest
@@ -504,7 +504,7 @@ class MomentsRepositoryImpl(
                         } else {
                             tail = tail + page
                             publish(lastPageFull = events.size >= PAGE_SIZE)
-                            page.inZones(zonesByCamera)
+                            page.inZones(zonesByCamera, nowEpochSeconds())
                         }
                     }
                     _error.value = null
@@ -671,7 +671,7 @@ class MomentsRepositoryImpl(
                 // prune below runs from it inclusive, and they are in the feed.
                 val freshIds = fresh.mapTo(HashSet()) { it.id }
                 val boundary = tail.filter { it.startEpochSeconds == freshOldest && it.id !in freshIds }
-                (fresh + boundary).inZones(zonesByCamera)
+                (fresh + boundary).inZones(zonesByCamera, nowEpochSeconds())
             }
         }
         if (placed != null) {
@@ -764,6 +764,9 @@ class MomentsRepositoryImpl(
         return true
     }
 
+    /** The clock, as Frigate counts time: what "parked" and "in view" are judged against. */
+    private fun nowEpochSeconds(): Double = clock.now().toEpochMilliseconds() / 1000.0
+
     /** Under [stateLock]. Where the loaded lists end: the oldest raw detection, which is where the next page down starts. */
     private fun loadedBottom(): Double? = (tail.lastOrNull() ?: head.lastOrNull())?.startEpochSeconds
 
@@ -775,7 +778,7 @@ class MomentsRepositoryImpl(
     private fun publish(lastPageFull: Boolean) {
         val seen = HashSet<String>()
         val raw = (head + tail).filter { seen.add(it.id) }
-        _moments.value = raw.inZones(zonesByCamera).mergeVehicleVisits()
+        _moments.value = raw.inZones(zonesByCamera, nowEpochSeconds()).mergeVehicleVisits()
         _paging.update { it.copy(hasOlder = raw.isNotEmpty() && lastPageFull) }
     }
 
@@ -854,6 +857,7 @@ internal fun FrigateEvent.toDomain(): MomentEvent = MomentEvent(
     hasSnapshot = hasSnapshot,
     zones = zones,
     pathPoints = data?.bottomCentrePath().orEmpty(),
+    pathEpochSeconds = data?.pathEpochSeconds().orEmpty(),
     box = DetectionBox.fromFractions(data?.box),
     subLabelScore = data?.subLabelScore,
 )

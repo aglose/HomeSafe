@@ -171,6 +171,84 @@ class VehicleVisitsTest {
     }
 
     @Test
+    fun aCarTrackedSinceItDroveInIsParkedThoughItsPathIsItsArrival() {
+        // Front Yard, 2026-10-05: one event from the street to the curb and for two and a half hours after.
+        val sarah = TrackedCars.sarahParked
+        val now = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT
+
+        assertFalse(sarah.isStill(), "10 of its 17 points are near the median: the path is the drive in, so by its shape it moved")
+        assertTrue(sarah.isParked(now), "but it last went anywhere 19 minutes ago, and then only a flicker of the box")
+        assertEquals(listOf(sarah), listOf(sarah).mergeVehicleVisits(), "and the feed still has the arrival to tell: it did move")
+
+        val andrew = TrackedCars.andrewParked
+        assertTrue(andrew.isParked(TrackedCars.ANDREW_ARRIVED + TrackedCars.ANDREW_READ_AT))
+    }
+
+    @Test
+    fun aCarIsNotParkedUntilItHasSatForTheSettlingTime() {
+        val arrival = TrackedCars.sarahsPathParked.take(TrackedCars.SARAHS_ARRIVAL_POINTS)
+        val pullingIn = TrackedCars.event("sarah", TrackedCars.SARAH_ARRIVED, TrackedCars.sarahsBox, arrival, "sarahs_car")
+        val stopped = TrackedCars.SARAH_ARRIVED + arrival.last().third
+
+        assertFalse(pullingIn.isParked(TrackedCars.SARAH_ARRIVED + 60), "a minute in, the path is all there is and it crosses the frame")
+        assertFalse(pullingIn.isParked(stopped + VehicleVisits.SETTLED_SECONDS - 10), "where it stood five minutes ago was still up the street")
+        assertTrue(pullingIn.isParked(stopped + VehicleVisits.SETTLED_SECONDS), "five minutes without a new point: it has stopped")
+    }
+
+    @Test
+    fun aFlickerOfTheBoxDoesNotUnparkIt() {
+        // The two points at 7960 s sit 0.06 and 0.08 of the frame from the spot; the box is 0.12 tall.
+        val justFlickered = TrackedCars.SARAH_ARRIVED + 7965
+        assertTrue(TrackedCars.sarahParked.isParked(justFlickered))
+    }
+
+    @Test
+    fun aCarPullingAwayStopsBeingParkedAndStaysThatWayOnceTheEventEnds() {
+        val leaving = TrackedCars.event("sarah", TrackedCars.SARAH_ARRIVED, TrackedCars.sarahsBox, TrackedCars.sarahsPathLeaving, "sarahs_car")
+        assertFalse(leaving.isParked(TrackedCars.SARAH_ARRIVED + 9536), "0.19 of the frame from where it sat, in three seconds")
+
+        val left = leaving.copy(endEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_LEFT_AT)
+        assertFalse(left.isParked(TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_LEFT_AT + 20 * 60), "judged at its end, not at the clock: it was driving when last seen")
+    }
+
+    @Test
+    fun aCarThatSatAllMorningIsNotParkedOnceItDrivesOffThoughItsPathIsStillByShape() {
+        // The 2026-09-07 shape, given the times a car tracked for an hour would have: a flicker of
+        // the box every ten minutes, then the four points of leaving. 12 of 16 sit at the spot.
+        val start = at(6, 6)
+        val times = List(12) { start + (it / 2) * 600.0 + (it % 2) * 0.2 } + List(4) { start + 3_600.0 + it }
+        val tracked = event("tracked", start, end = null).copy(pathEpochSeconds = times)
+
+        assertTrue(tracked.isStill(), "by its shape it never went anywhere")
+        assertTrue(tracked.copy(pathPoints = tracked.pathPoints.take(12), pathEpochSeconds = times.take(12)).isParked(start + 3_599), "and before it left it was parked")
+        assertFalse(tracked.isParked(start + 3_604), "but it is two thirds of the frame from where it stood five minutes ago")
+        assertFalse(tracked.copy(endEpochSeconds = start + 3_610).isParked(start + 3_610 + 20 * 60), "and stays gone once the event ends")
+        assertTrue(tracked.copy(pathEpochSeconds = emptyList()).isParked(start + 3_604), "without the times, the shape is all there is")
+    }
+
+    @Test
+    fun aCarThatParkedAndWasLostFromViewWasParkedWhenLastSeen() {
+        val lost = TrackedCars.sarahParked.copy(endEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT)
+        assertTrue(lost.isParked(TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT + 20 * 60))
+    }
+
+    @Test
+    fun aCarDrivingPastIsNeverParkedHoweverLateItIsJudged() {
+        val passing = TrackedCars.event("passing", TrackedCars.SARAH_ARRIVED, TrackedCars.passingBox, TrackedCars.passingPath, "andrews_tesla", endedAfter = 13.0)
+        assertFalse(passing.isStill())
+        assertFalse(passing.isParked(TrackedCars.SARAH_ARRIVED + 3_600))
+    }
+
+    @Test
+    fun withoutPathTimesParkedIsJudgedByShapeAlone() {
+        // A row cached before the times were kept: nothing says when the car last moved.
+        val untimed = TrackedCars.sarahParked.copy(pathEpochSeconds = emptyList())
+        assertFalse(untimed.isParked(TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT))
+        assertTrue(event("parked", at(6, 6)).isParked(at(6, 8)), "and a path that is still by its shape is parked without them")
+        assertFalse(event("boxless", at(6, 6), box = null, path = listOf(0.84 to 0.54)).isParked(at(6, 8)))
+    }
+
+    @Test
     fun boxOverlapIsSymmetricFullForTheSameBoxAndZeroWhenApart() {
         assertEquals(1.0, curb.iou(curb), 1e-9)
         assertEquals(0.0, curb.iou(DetectionBox(0.1, 0.1, 0.2, 0.2)), 1e-9)

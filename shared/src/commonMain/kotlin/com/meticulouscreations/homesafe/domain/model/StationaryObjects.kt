@@ -33,9 +33,10 @@ import kotlin.time.Instant
  * are grouped by the car at the end and reported once each. Two cards for one Tesla, in two
  * places, is not a thing that can be true of a parked car.
  *
- * A stay is reported when its *latest* sighting is [isStill]: a car on its way in or out is
- * moving, so it stops being furniture for as long as it is driving, and comes back the moment it
- * is re-detected parked. It is only claimed to be in view while Frigate keeps seeing it —
+ * A stay is reported when its *latest* sighting is parked ([isParked]): a car on its way in or
+ * out is moving, so it stops being furniture for as long as it is driving, and comes back once it
+ * is re-detected parked, or once the sighting that watched it drive in has watched it sit for
+ * [VehicleVisits.SETTLED_SECONDS]. It is only claimed to be in view while Frigate keeps seeing it —
  * [AT_REST_SECONDS] since the last sighting ended, or an event still in progress. Beyond that the
  * app has no evidence either way and says nothing rather than something stale. And it is only
  * reported at all when some sighting in the stay was recognized: the classifier names a car on
@@ -226,18 +227,21 @@ private data class Stay(
 
     /**
      * This stay with one more sighting of the same vehicle at the same spot folded into it. The
-     * newer sighting becomes the latest unless the one it follows is still in progress and it
-     * isn't: a sighting that has ended says less about now than one that hasn't.
+     * fresher of the two stays the latest: a sighting that began earlier and is still in progress —
+     * the one event Frigate has kept on the car since it pulled in — outlives a blip on the same
+     * box that began after it and has ended, and of two that have ended the one seen later does. A
+     * sighting that has ended says less about now than one that hasn't, and one that ended first
+     * says less than the one that watched the car afterwards, perhaps as it drove off.
      */
     fun folding(event: MomentEvent): Stay = copy(
-        latest = if (latest.isInProgress && !event.isInProgress) latest else event,
+        latest = if (event.seenUntil >= latest.seenUntil) event else latest,
         named = listOfNotNull(named, event.takeIf { it.isRecognized }).maxByOrNull { it.subLabelScore ?: 0.0 },
         sightings = sightings + event.sightings,
     )
 
     /** Parked, and seen recently enough to still be claimed: in progress, or ended within [StationaryObjects.AT_REST_SECONDS]. */
     fun isAtRest(nowEpochSeconds: Double): Boolean {
-        if (!latest.isStill()) return false
+        if (!latest.isParked(nowEpochSeconds)) return false
         val end = latest.endEpochSeconds ?: return true
         return nowEpochSeconds - end <= StationaryObjects.AT_REST_SECONDS
     }
