@@ -118,6 +118,24 @@ class AwaySectionUiTest {
         }
 
     @Test
+    fun aPhoneTheRelayListsSaysWhereItCounts() = runAway(SettingsUiState(presence = presence(decider = null))) {
+        onNodeWithText("This phone counts as home.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aHouseholdListedWithoutThisPhoneDoesNotSayThisPhoneIsHome() =
+        runAway(SettingsUiState(presence = presence(decider = null, devices = listOf(iphone)))) {
+            onNodeWithText("This phone isn't registered with the relay yet, so it doesn't count as home or away.").assertIsDisplayed()
+            onNodeWithText("This phone counts as home.").assertDoesNotExist()
+        }
+
+    @Test
+    fun untilTheRelayAnswersTheSwitchSaysItIsChecking() = runAway(SettingsUiState()) {
+        onNodeWithText("Checking with the relay…").assertIsDisplayed()
+        onNodeWithText("This phone counts as home.").assertDoesNotExist()
+    }
+
+    @Test
     fun anUnreachableRelayLocksTheSwitch() = runAway(SettingsUiState(presence = HouseholdPresence.EMPTY, awayError = "Relay unreachable".asUiText())) {
         switchFor(DECIDES).assertIsNotEnabled()
     }

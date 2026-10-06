@@ -284,6 +284,10 @@
     <string name="presence_im_away_leaving">This phone has left home; it counts as away in a few minutes unless it comes back.</string>
     <string name="presence_im_away_away">This phone counts as out of the house.</string>
     <string name="presence_im_away_home">This phone counts as home.</string>
+    <!-- The relay hasn't said who's home yet. -->
+    <string name="presence_im_away_checking">Checking with the relay…</string>
+    <!-- The relay lists the household's phones, but not this install. -->
+    <string name="presence_im_away_not_registered">This phone isn't registered with the relay yet, so it doesn't count as home or away.</string>
     <string name="presence_decides">This phone decides home/away</string>
     <string name="presence_decides_on">On — only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
     <string name="presence_decides_other">%1$s decides now. Turn this on to make it this phone instead. Every phone still gets notifications.</string>

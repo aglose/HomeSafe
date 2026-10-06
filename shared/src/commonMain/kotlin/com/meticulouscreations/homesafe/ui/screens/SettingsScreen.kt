@@ -102,9 +102,11 @@ import homesafe.shared.generated.resources.presence_home_not_set
 import homesafe.shared.generated.resources.presence_home_set
 import homesafe.shared.generated.resources.presence_im_away
 import homesafe.shared.generated.resources.presence_im_away_away
+import homesafe.shared.generated.resources.presence_im_away_checking
 import homesafe.shared.generated.resources.presence_im_away_debug
 import homesafe.shared.generated.resources.presence_im_away_home
 import homesafe.shared.generated.resources.presence_im_away_leaving
+import homesafe.shared.generated.resources.presence_im_away_not_registered
 import homesafe.shared.generated.resources.presence_im_away_other_decides
 import homesafe.shared.generated.resources.presence_im_away_relay_unreachable
 import homesafe.shared.generated.resources.presence_move_home_here
@@ -539,13 +541,17 @@ internal fun AwaySection(
         val otherDecider = state.presence.decidingDevice?.takeIf { !it.isThisDevice }?.let { presenceDeviceName(it) }
         // A debug install may still flip its own switch — the relay simply doesn't count it.
         val thisDeviceCounts = me?.countsForAway != false
+        // Without this phone's entry there is nothing to say where it counts as being: the relay
+        // either hasn't answered yet, or lists the household without this install (see awaySummary).
         SettingsToggleRow(
             title = stringResource(Res.string.presence_im_away),
             description = when {
                 relayUnreachable -> stringResource(Res.string.presence_im_away_relay_unreachable)
+                me == null && state.presence == HouseholdPresence.EMPTY -> stringResource(Res.string.presence_im_away_checking)
+                me == null -> stringResource(Res.string.presence_im_away_not_registered)
                 !thisDeviceCounts && otherDecider != null -> stringResource(Res.string.presence_im_away_other_decides, otherDecider)
                 !thisDeviceCounts -> stringResource(Res.string.presence_im_away_debug)
-                me?.pendingAway == true -> stringResource(Res.string.presence_im_away_leaving)
+                me.pendingAway -> stringResource(Res.string.presence_im_away_leaving)
                 state.thisDeviceAway -> stringResource(Res.string.presence_im_away_away)
                 else -> stringResource(Res.string.presence_im_away_home)
             },
