@@ -29,8 +29,22 @@ import kotlin.math.abs
  * ever since. That is [isParked], and it is what the home screen's strip and the zones ask.
  */
 object VehicleVisits {
-    /** Share of the path that must sit within the box's size of the path's median for [isStill]. */
+    /** Share of a path that must sit within the box's size of the path's median for it to be gathered ([isStill]). */
     const val STILL_FRACTION = 0.7
+
+    /**
+     * The most "the box's size" may be for [isStill], as a share of the frame. The box is the best
+     * frame's, and for a car that drives in and parks by the camera that is the close-up, not the
+     * car as it was along the way. Front Yard, 2026-10-05: Andrew's Tesla came up the street,
+     * turned and came down to the garage, three quarters of the frame in 32 seconds, with a box
+     * 0.36 of the frame tall — which held 22 of the arrival's 25 points, so the arrival was
+     * "still": no moment, no notification. A parked car's jitter doesn't grow with its box like
+     * that. In the 6,000 vehicle events of that day and the one before, no path that stayed in one
+     * place needed more than 0.17 to hold [STILL_FRACTION] of its points, whatever its box; at 0.2
+     * every one of them stays still, and each of the 28 that become moved crossed a third of the
+     * frame or more.
+     */
+    const val STILL_RADIUS_CAP = 0.2
 
     /**
      * A path shorter than this is still whatever its shape. Frigate records a point when the
@@ -58,10 +72,21 @@ object VehicleVisits {
 }
 
 /**
- * True when the object barely moved: at least [VehicleVisits.STILL_FRACTION] of its path points lie
- * within r = max(box width, box height) of the path's median point on both axes. A path of fewer
- * than [VehicleVisits.MOVED_MIN_POINTS] points is still; an event with no box is never still (there
- * is nothing to match it on).
+ * True when the object never went anywhere. A path is *gathered* when at least
+ * [VehicleVisits.STILL_FRACTION] of its points lie within r = max(box width, box height), and no
+ * more than [VehicleVisits.STILL_RADIUS_CAP], of its median point on both axes. The object is
+ * still when its whole path is gathered and it had not travelled before: no earlier stretch of the
+ * path, from its first point on, both reached further than 2r across and was not gathered. A path
+ * of fewer than [VehicleVisits.MOVED_MIN_POINTS] points is still; an event with no box is never
+ * still (there is nothing to match it on).
+ *
+ * The earlier stretches are there because sitting doesn't undo a drive. Frigate can keep one event
+ * on a car from the street until hours after it parked, and every flicker of its box adds a point
+ * at the resting place: Andrew's Tesla (Front Yard, 2026-10-05) took 25 points to arrive and had
+ * 12 more from the garage four and a half hours later. Enough of those and the whole path is
+ * gathered around the garage, arrival and all. The 2r is the width gathered points fit in; without
+ * it a short path decides on a single point, and a far car whose box jumps between two places
+ * just over r apart would be "travel" the moment it had an odd number of them.
  *
  * This decides two things: how long a moment stays open for another sighting (a parked car is
  * expected to be re-detected for hours; a moving one is not), and whether a sighting that continues
@@ -70,17 +95,19 @@ object VehicleVisits {
 fun MomentEvent.isStill(): Boolean {
     val box = box ?: return false
     if (pathPoints.size < VehicleVisits.MOVED_MIN_POINTS) return true
-    val mx = median(pathPoints.map { it.x })
-    val my = median(pathPoints.map { it.y })
-    val r = maxOf(box.w, box.h)
-    val near = pathPoints.count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
-    return near.toDouble() / pathPoints.size >= VehicleVisits.STILL_FRACTION
+    val r = minOf(maxOf(box.w, box.h), VehicleVisits.STILL_RADIUS_CAP)
+    if (!pathPoints.isGathered(r)) return false
+    return (VehicleVisits.MOVED_MIN_POINTS until pathPoints.size).none { count ->
+        val stretch = pathPoints.subList(0, count)
+        stretch.span() > 2 * r && !stretch.isGathered(r)
+    }
 }
 
 /**
  * True when the vehicle is sitting still at [nowEpochSeconds] — or was when the sighting ended —
- * whatever it did before: it is within r = max(box width, box height) on both axes of where it
- * stood [VehicleVisits.SETTLED_SECONDS] before it was last seen. A sighting whose path doesn't
+ * whatever it did before: it is within r on both axes of where it stood
+ * [VehicleVisits.SETTLED_SECONDS] before it was last seen, r being [isStill]'s — max(box width,
+ * box height), and no more than [VehicleVisits.STILL_RADIUS_CAP]. A sighting whose path doesn't
  * reach back that far, or has no times ([MomentEvent.pathEpochSeconds] empty), has only its shape
  * to go by, and is parked when it is [isStill].
  *
@@ -109,7 +136,7 @@ fun MomentEvent.isParked(nowEpochSeconds: Double): Boolean {
     val then = pathPoints.takeIf { it.size == pathEpochSeconds.size }?.getOrNull(pathEpochSeconds.indexOfLast { it <= settledSince })
         ?: return isStill()
     val here = pathPoints.last()
-    val r = maxOf(box.w, box.h)
+    val r = minOf(maxOf(box.w, box.h), VehicleVisits.STILL_RADIUS_CAP)
     return abs(here.x - then.x) <= r && abs(here.y - then.y) <= r
 }
 
@@ -118,6 +145,17 @@ private fun median(values: List<Double>): Double {
     val mid = sorted.size / 2
     return if (sorted.size % 2 == 0) (sorted[mid - 1] + sorted[mid]) / 2 else sorted[mid]
 }
+
+/** At least [VehicleVisits.STILL_FRACTION] of these points within [r] of their median on both axes. */
+private fun List<MaskPoint>.isGathered(r: Double): Boolean {
+    val mx = median(map { it.x })
+    val my = median(map { it.y })
+    val near = count { abs(it.x - mx) <= r && abs(it.y - my) <= r }
+    return near.toDouble() / size >= VehicleVisits.STILL_FRACTION
+}
+
+/** How far these points reach across the frame: the larger of their extents along the two axes. */
+private fun List<MaskPoint>.span(): Double = maxOf(maxOf { it.x } - minOf { it.x }, maxOf { it.y } - minOf { it.y })
 
 /**
  * The same vehicle in the same place, time aside: same camera, both vehicles, and boxes overlapping

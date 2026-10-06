@@ -32,8 +32,9 @@ escalation too. The feed hides it as well (`GET /phantoms`, `MomentEvent.isPhant
 clears every re-detection at that spot.
 
 A real person at the same spot still gets through, because they walked there. The rule for
-staying put is deliberately stricter than a car's `is_still`. Up close, a person's box is half the
-frame, and someone climbing the steps moves less than that.
+staying put is deliberately stricter than a car's `is_still`, which allows a whole box, up to a
+fifth of the frame. Up close, a person's box is half the frame, and most of a climb up the steps
+fits within that fifth.
 
 While an alert is still open and young (under 10 minutes), it waits instead of being skipped.
 That gives a person who just appeared time to show that they move. Undo
