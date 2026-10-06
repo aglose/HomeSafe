@@ -12,8 +12,9 @@ import kotlin.test.assertTrue
 /**
  * The Settings tab against a real server: the Server row's summary and the Server page behind it
  * (read from `/api/stats` and `/api/config` by the real status repository), the per-camera
- * detection switches writing through `PUT /api/config/set` and following what the server then
- * says, and what the page tells a viewer account or a device that can't post notifications.
+ * detection switches under the Cameras row writing through `PUT /api/config/set` and following
+ * what the server then says, the Alerts and Away mode pages a tap below, and what the tab tells
+ * a viewer account or a device that can't post notifications.
  *
  * Both journey hosts — the desktop JVM and an Android test context with no activity — have no
  * notification surface, so the alert rules (presets, zones, quiet hours) never appear here; the
@@ -168,6 +169,7 @@ class SettingsJourneyTest {
         settings.awaitDetection("Back Yard", on = false, enabled = true)
         awaitText("Off — no detections or alerts from this camera.")
         settings.awaitMotion("Back Yard", on = true, enabled = true)
+        settings.awaitCamerasSummary("Detection on for 2 of 3 cameras")
         assertFalse(state.camera("back_yard")!!.detectEnabled, "the server applied the write")
         assertTrue(state.camera("back_yard")!!.motionEnabled, "motion was left alone")
         assertTrue(state.camera("front_door")!!.detectEnabled, "no other camera was touched")
@@ -211,6 +213,7 @@ class SettingsJourneyTest {
         val settings = SettingsRobot(this)
         signIn.signInAs(FakeFrigateState.VIEWER)
         settings.open()
+        settings.showCameras()
 
         awaitText(SettingsRobot.VIEWER_CAPTION)
         for (camera in listOf("Front Door", "Driveway", "Back Yard")) {
@@ -247,12 +250,51 @@ class SettingsJourneyTest {
         signIn.signInAs()
         settings.open()
 
+        settings.awaitAlertsSummary(SettingsRobot.ALERTS_SUMMARY_UNAVAILABLE)
+        settings.openAlerts()
         awaitText(SettingsRobot.NOTIFICATIONS_UNAVAILABLE)
         settings.awaitSwitchInRow("Notifications", on = false, enabled = false)
         // The rules only open up under a working notifications switch.
         assertFalse(exists(hasText("What to hear about")), "no alert rules without notifications")
         assertFalse(exists(hasText("Quiet hours")), "no quiet hours without notifications")
         assertFalse(exists(hasText("Send test notification")), "no test button without notifications")
+    }
+
+    @Test
+    fun theCamerasRowKeepsTheSwitchesFoldedAwayUntilItIsTapped() = runAppJourney {
+        val settings = SettingsRobot(this)
+        signIn.signInAs()
+        settings.open()
+
+        settings.awaitCamerasSummary("Detection on for all 3 cameras")
+        assertFalse(exists(hasText("Object detection")), "no switches on the page until the row is opened out")
+        assertFalse(exists(hasText("Back Yard")), "no cameras listed until the row is opened out")
+
+        settings.showCameras()
+        for (camera in listOf("Front Door", "Driveway", "Back Yard")) settings.awaitDetection(camera, on = true, enabled = true)
+
+        settings.hideCameras()
+        awaitGone(hasText("Back Yard"), "the cameras' switches")
+        settings.awaitCamerasSummary("Detection on for all 3 cameras")
+    }
+
+    @Test
+    fun theAlertsAndAwayModeRowsOpenPagesOfTheirOwnAndBackReturnsToSettings() = runAppJourney {
+        val settings = SettingsRobot(this)
+        signIn.signInAs()
+        settings.open()
+        assertFalse(exists(hasText("I'm away")), "the away switch is on its own page, not this one")
+
+        settings.openAlerts()
+        awaitText("Notifications")
+        awaitGone(SettingsRobot.SERVER_ROW, "the Settings rows")
+        settings.backFromAlerts()
+
+        settings.openAway()
+        awaitText("I'm away")
+        awaitText("This phone decides home/away")
+        settings.backFromAway()
+        awaitNode(SettingsRobot.ALERTS_ROW, "the Alerts row")
     }
 
     @Test

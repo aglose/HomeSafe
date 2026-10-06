@@ -1,28 +1,8 @@
 package com.meticulouscreations.homesafe.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.ServerOverview
@@ -30,9 +10,7 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.common_dot_separator
-import homesafe.shared.generated.resources.settings_refresh
 import homesafe.shared.generated.resources.settings_server_subtitle
 import homesafe.shared.generated.resources.settings_server_summary_checking
 import homesafe.shared.generated.resources.settings_server_summary_disk_full
@@ -56,42 +34,17 @@ fun ServerSettingsScreen(onBack: () -> Unit, modifier: Modifier = Modifier, onOp
     val viewModel: SettingsViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    Column(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        Header(onBack = onBack, onRefresh = viewModel::retryOverview)
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = contentGutter())
-                // Content padding, as on the main page: the last card scrolls clear of the floating nav.
-                .padding(top = 8.dp, bottom = bottomNavClearance()),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            ServerSection(state, onRetry = viewModel::retryOverview)
-            UptimeLinkRow(onOpen = onOpenUptime)
-            StorageSection(state.overview)
-            AiFeaturesSection(state.overview)
-        }
-    }
-}
-
-@Composable
-private fun Header(onBack: () -> Unit, onRefresh: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 24.dp, vertical = nestedHeaderVerticalPadding()),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
+    SettingsPage(
+        title = stringResource(Res.string.settings_server_title),
+        subtitle = stringResource(Res.string.settings_server_subtitle),
+        onBack = onBack,
+        modifier = modifier,
+        onRefresh = viewModel::retryOverview,
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = MaterialTheme.colorScheme.primary)
-        }
-        Column(modifier = Modifier.weight(1f).padding(horizontal = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(text = stringResource(Res.string.settings_server_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface, maxLines = 1, textAlign = TextAlign.Center)
-            Text(text = stringResource(Res.string.settings_server_subtitle), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
-        }
-        IconButton(onClick = onRefresh) {
-            Icon(Icons.Filled.Refresh, contentDescription = stringResource(Res.string.settings_refresh), tint = MaterialTheme.colorScheme.primary)
-        }
+        ServerSection(state, onRetry = viewModel::retryOverview)
+        UptimeLinkRow(onOpen = onOpenUptime)
+        StorageSection(state.overview)
+        AiFeaturesSection(state.overview)
     }
 }
 

@@ -1,29 +1,18 @@
 package com.meticulouscreations.homesafe.ui.screens
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.MonitorHeart
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.SnapshotStateList
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
@@ -45,6 +34,12 @@ import org.jetbrains.compose.resources.stringResource
 /** The Settings tab's root; the shell watches the back stack's depth to hide its own bar on nested screens. */
 data object SettingsHomeRoute
 
+/** This device's alert preferences: the notifications switch, what to hear about, and when. */
+data object AlertsRoute
+
+/** Away mode: who's home, the household's phones, and automatic presence. */
+data object AwayRoute
+
 /** The labelling screen for one of Frigate's custom classifiers. */
 data class ClassifierRoute(val modelName: String)
 
@@ -58,14 +53,15 @@ data object ServerRoute
 data object UptimeRoute
 
 /**
- * The Settings tab's own nested navigation: the settings page, and drilling into a classifier's
- * labelling screen, the face library, or the server's diagnostics and its uptime record. [content] renders the
- * settings page and receives the callbacks that open them.
+ * The Settings tab's own nested navigation: the settings page, and the pages its rows open —
+ * alerts, away mode, a classifier's labelling screen, the face library, and the server's
+ * diagnostics with its uptime record below them. [content] renders the settings page and
+ * receives `open`, which pushes the route it is given.
  */
 @Composable
 fun SettingsTabNav(
     backStack: SnapshotStateList<Any>,
-    content: @Composable (openClassifier: (String) -> Unit, openFaces: () -> Unit, openServer: () -> Unit) -> Unit,
+    content: @Composable (open: (Any) -> Unit) -> Unit,
 ) {
     NavDisplay(
         backStack = backStack,
@@ -74,13 +70,9 @@ fun SettingsTabNav(
         popTransitionSpec = { sharedAxis(forward = false) },
         predictivePopTransitionSpec = { sharedAxis(forward = false) },
         entryProvider = entryProvider {
-            entry<SettingsHomeRoute> {
-                content(
-                    { modelName -> backStack.add(ClassifierRoute(modelName)) },
-                    { backStack.add(FacesRoute) },
-                    { backStack.add(ServerRoute) },
-                )
-            }
+            entry<SettingsHomeRoute> { content { route -> backStack.add(route) } }
+            entry<AlertsRoute> { AlertsSettingsScreen(onBack = { backStack.removeLastOrNull() }) }
+            entry<AwayRoute> { AwaySettingsScreen(onBack = { backStack.removeLastOrNull() }) }
             entry<ClassifierRoute> { route ->
                 ClassifierLabelingScreen(
                     modelName = route.modelName,
@@ -106,24 +98,33 @@ fun RecognitionSection(
     onOpen: (String) -> Unit,
     onOpenFaces: () -> Unit,
 ) {
-    if (models.isEmpty() && faceRecognitionEnabled != true) return
-    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(text = stringResource(Res.string.settings_recognition_title), style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.onSurface)
-        if (faceRecognitionEnabled == true) {
-            SettingsLinkRow(
-                icon = Icons.Filled.Face,
-                title = stringResource(Res.string.settings_recognition_faces),
-                description = stringResource(Res.string.settings_recognition_faces_description),
-                onClick = onOpenFaces,
-            )
-        }
-        models.forEach { model ->
-            SettingsLinkRow(
-                icon = Icons.Filled.DirectionsCar,
-                title = model.displayName,
-                description = stringResource(Res.string.settings_recognition_classifier_description, objectList(model.objects)),
-                onClick = { onOpen(model.name) },
-            )
+    val faces = faceRecognitionEnabled == true
+    if (models.isEmpty() && !faces) return
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            text = stringResource(Res.string.settings_recognition_title),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 16.dp),
+        )
+        SettingsGroup {
+            if (faces) {
+                SettingsNavRow(
+                    icon = Icons.Filled.Face,
+                    title = stringResource(Res.string.settings_recognition_faces),
+                    summary = stringResource(Res.string.settings_recognition_faces_description),
+                    onClick = onOpenFaces,
+                )
+            }
+            models.forEachIndexed { index, model ->
+                if (faces || index > 0) SettingsRowDivider()
+                SettingsNavRow(
+                    icon = Icons.Filled.DirectionsCar,
+                    title = model.displayName,
+                    summary = stringResource(Res.string.settings_recognition_classifier_description, objectList(model.objects)),
+                    onClick = { onOpen(model.name) },
+                )
+            }
         }
     }
 }
@@ -134,45 +135,23 @@ fun RecognitionSection(
  */
 @Composable
 internal fun ServerSummaryRow(summary: String, onOpen: () -> Unit) {
-    SettingsLinkRow(icon = Icons.Filled.Dns, title = stringResource(Res.string.settings_server_title), description = summary, onClick = onOpen)
+    SettingsNavRow(icon = Icons.Filled.Dns, title = stringResource(Res.string.settings_server_title), summary = summary, onClick = onOpen)
 }
 
-/** The way from the server's diagnostics into its uptime record ([ServerUptimeScreen]). */
+/** The way from the server's diagnostics into its uptime record ([ServerUptimeScreen]), a card of its own between the others. */
 @Composable
 internal fun UptimeLinkRow(onOpen: () -> Unit) {
-    SettingsLinkRow(
-        icon = Icons.Filled.MonitorHeart,
-        title = stringResource(Res.string.uptime_title),
-        description = stringResource(Res.string.uptime_link_description),
-        onClick = onOpen,
-    )
+    SettingsGroup {
+        SettingsNavRow(
+            icon = Icons.Filled.MonitorHeart,
+            title = stringResource(Res.string.uptime_title),
+            summary = stringResource(Res.string.uptime_link_description),
+            onClick = onOpen,
+        )
+    }
 }
 
 /** A classifier's Frigate labels, which are data, as one phrase: "car", "car and truck". */
 @Composable
 private fun objectList(objects: List<String>): String =
     UiText.Joined(objects.map { it.asUiText() }, UiText.of(Res.string.settings_recognition_objects_separator)).resolve()
-
-/** One row that opens a page of its own: an icon, what it is, a line about it, and a chevron. */
-@Composable
-private fun SettingsLinkRow(icon: ImageVector, title: String, description: String, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(16.dp)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surface)
-            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(text = title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurface)
-            Text(text = description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}

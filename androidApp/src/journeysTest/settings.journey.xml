@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <journey name="Server details and the face library">
     <description>
-        The Settings tab reports on the server and leads to the face library.
+        The Settings tab is a short list of rows: it reports on the server, folds the camera switches away, and leads to the face library.
     </description>
     <actions>
         <action>Clear the server URL field and type http://10.0.2.2:8971, type admin as the username and correct-horse as the password, then tap "Connect"</action>
@@ -10,7 +10,11 @@
         <action>Tap the "Server" row</action>
         <action>Verify that the Server page shows the server's version, 0.17.2-test (scroll down if needed)</action>
         <action>Press the system back button</action>
-        <action>Scroll to the recognition section and tap "Faces"</action>
+        <action>Verify that no "Object detection" switch is shown on the Settings screen</action>
+        <action>Tap the "Cameras" row</action>
+        <action>Verify that an "Object detection" switch is shown for the "Back Yard" camera (scroll down if needed)</action>
+        <action>Tap the "Cameras" row again (scroll up if needed)</action>
+        <action>Tap "Faces" under "Recognition"</action>
         <action>Verify that the face library lists the people "Alice" and "Bob"</action>
         <action>Press the system back button</action>
         <action>Verify that the Settings screen is shown again</action>

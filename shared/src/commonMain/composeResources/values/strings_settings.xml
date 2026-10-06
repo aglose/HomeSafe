@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The Settings tab (alerts, away mode, recognition, cameras, the server's diagnostics) and the
-  sign-in screen. Keys: settings_* (the tab and the server page), alerts_* (the Alerts section),
-  presence_* (away mode and the household's devices), connection_* (sign-in and connection routes).
+  sign-in screen. Keys: settings_* (the tab, its rows' one-line summaries and the server page),
+  alerts_* (the Alerts page), presence_* (the Away mode page and the household's devices),
+  connection_* (sign-in and connection routes).
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
@@ -72,6 +73,43 @@
     <string name="settings_dismiss">Dismiss</string>
     <string name="settings_refresh">Refresh</string>
 
+    <!-- The main page's rows: each carries a one-line summary of the page or section it opens. -->
+    <string name="settings_alerts_subtitle">What this phone hears about, and when</string>
+    <string name="settings_alerts_summary_unsupported">Not available on this platform</string>
+    <string name="settings_alerts_summary_blocked">Blocked in system settings</string>
+    <string name="settings_alerts_summary_off">Off</string>
+    <string name="settings_alerts_summary_only_away">Only when everyone's away</string>
+    <!-- The parts of the Alerts row's summary while notifications are on, joined with " · ": "On · People only · quiet 10:00 PM – 7:00 AM". -->
+    <string name="settings_alerts_summary_on">On</string>
+    <string name="settings_alerts_summary_relay">from the relay</string>
+    <string name="settings_alerts_summary_custom">custom rules</string>
+    <!-- %1$s, %2$s: times of day, e.g. "10:00 PM" and "7:00 AM". -->
+    <string name="settings_alerts_summary_quiet">quiet %1$s – %2$s</string>
+    <string name="settings_alerts_summary_strangers">strangers only</string>
+    <string name="settings_away_subtitle">Who's home and who decides</string>
+    <string name="settings_away_summary_unreachable">Can't reach the relay</string>
+    <string name="settings_away_summary_checking">Checking who's home…</string>
+    <string name="settings_away_summary_nobody_home">Nobody home</string>
+    <!-- The relay lists the household's phones, but not this install. -->
+    <string name="settings_away_summary_not_registered">This phone isn't registered with the relay</string>
+    <string name="settings_away_summary_leaving">This phone is leaving</string>
+    <string name="settings_away_summary_away">This phone is away</string>
+    <string name="settings_away_summary_home">This phone is home</string>
+    <!-- Follows one of the above after " · " while the geofence flips the switch: "This phone is home · automatic". -->
+    <string name="settings_away_summary_automatic">automatic</string>
+    <string name="settings_cameras_summary_none">No cameras on this server</string>
+    <!-- %1$d: how many cameras the server has switched on. -->
+    <plurals name="settings_cameras_summary_all">
+        <item quantity="one">Detection on for %1$d camera</item>
+        <item quantity="other">Detection on for all %1$d cameras</item>
+    </plurals>
+    <!-- %1$d: cameras with object detection on; %2$d: all of them, which also picks the plural. -->
+    <plurals name="settings_cameras_summary_some">
+        <item quantity="one">Detection on for %1$d of %2$d camera</item>
+        <item quantity="other">Detection on for %1$d of %2$d cameras</item>
+    </plurals>
+    <string name="settings_cameras_summary_off">Detection off on every camera</string>
+
     <!-- Server: the row on the main page and the diagnostics page -->
     <string name="settings_server_title">Server</string>
     <string name="settings_server_subtitle">What Frigate is and is doing</string>
@@ -130,7 +168,7 @@
     <string name="settings_ai_semantic_search">Semantic search</string>
     <string name="settings_ai_caption">These AI features are set in Frigate's config.yml and need a Frigate restart to change.</string>
 
-    <!-- Cameras section: each camera's detection pipeline -->
+    <!-- Cameras row, opened out: each camera's detection pipeline -->
     <string name="settings_cameras_title">Cameras</string>
     <string name="settings_cameras_loading">Reading camera pipelines…</string>
     <string name="settings_cameras_viewer_read_only">Signed in as a viewer: the switches below are read-only. An admin account can change them.</string>
@@ -159,14 +197,14 @@
     <!-- Between the object labels in settings_recognition_classifier_description. -->
     <string name="settings_recognition_objects_separator"> and </string>
 
-    <!-- The test notification the Alerts section sends -->
+    <!-- The test notification the Alerts page sends -->
     <string name="settings_test_notification_title">Test alert</string>
     <string name="settings_test_notification_body">Notifications from HomeSafe are working. Detections will look like this.</string>
 
     <!-- Saving a stretch of continuous recording (clip editor), when the failure says nothing itself. -->
     <string name="settings_recording_clip_save_failed">Couldn't save the clip</string>
 
-    <!-- Alerts section -->
+    <!-- Alerts page -->
     <string name="alerts_title">Alerts</string>
     <string name="alerts_notifications">Notifications</string>
     <string name="alerts_notifications_unsupported">Not available on this platform. Use the Android or iOS app for alerts.</string>
@@ -180,7 +218,7 @@
     <string name="alerts_only_when_away_off">Stay quiet while anyone's home, and hear only the Away alerts once the house is empty.</string>
     <string name="alerts_only_strangers">Only strangers</string>
     <string name="alerts_only_strangers_on">On — people Frigate recognises come and go quietly. Anyone it can't place still notifies.</string>
-    <string name="alerts_only_strangers_off">Skip the notification when Frigate recognises the person. Name faces under Recognition below.</string>
+    <string name="alerts_only_strangers_off">Skip the notification when Frigate recognises the person. Name faces under Recognition in Settings.</string>
     <string name="alerts_only_strangers_faces_off">Needs face recognition, which is off in Frigate's config.</string>
     <string name="alerts_only_strangers_faces_unknown">Needs face recognition on the server.</string>
     <string name="alerts_send_test">Send test notification</string>
@@ -236,7 +274,7 @@
     <string name="alerts_preset_people_vehicles_description">People and vehicles anywhere, street traffic included. The out-of-the-box rules.</string>
     <string name="alerts_preset_everything_description">People, vehicles and animals anywhere.</string>
 
-    <!-- Away mode -->
+    <!-- Away mode page -->
     <string name="presence_title">Away mode</string>
     <string name="presence_im_away">I'm away</string>
     <string name="presence_im_away_relay_unreachable">The push relay on the Frigate box can't be reached, so presence can't be changed right now.</string>
@@ -246,12 +284,16 @@
     <string name="presence_im_away_leaving">This phone has left home; it counts as away in a few minutes unless it comes back.</string>
     <string name="presence_im_away_away">This phone counts as out of the house.</string>
     <string name="presence_im_away_home">This phone counts as home.</string>
+    <!-- The relay hasn't said who's home yet. -->
+    <string name="presence_im_away_checking">Checking with the relay…</string>
+    <!-- The relay lists the household's phones, but not this install. -->
+    <string name="presence_im_away_not_registered">This phone isn't registered with the relay yet, so it doesn't count as home or away.</string>
     <string name="presence_decides">This phone decides home/away</string>
     <string name="presence_decides_on">On — only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
     <string name="presence_decides_other">%1$s decides now. Turn this on to make it this phone instead. Every phone still gets notifications.</string>
     <string name="presence_decides_off">Only this phone's location says whether the house is empty. Every phone still gets notifications.</string>
     <string name="presence_nobody_home">Nobody home — alerts are escalated on both phones.</string>
-    <string name="presence_caption">When everyone is away, every person seen on any camera notifies loudly on both phones — on its own "Away alerts" channel, ignoring the zone rules above. Flip the switch back when you're home.</string>
+    <string name="presence_caption">When everyone is away, every person seen on any camera notifies loudly on both phones — on its own "Away alerts" channel, whatever the rules under Alerts say. Flip the switch back when you're home.</string>
     <string name="presence_automatic">Automatic</string>
     <string name="presence_automatic_unsupported">Not available on this platform. The switch above is manual here.</string>
     <string name="presence_automatic_off">Let a geofence around home and your home Wi-Fi flip the switch for you.</string>

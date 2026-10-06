@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The voice the finance app's Economy and Risk tabs speak in (EconomyTone.kt): its two choices,
-  as the Economy tab's chips and the Settings section (EconomyToneSection.kt) show them.
+  as the Economy tab's chips and the Settings row (EconomyToneOptions.kt) show them.
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
@@ -10,7 +10,7 @@
     <string name="tone_bright_side_label">Bright side</string>
     <string name="tone_bright_side_blurb">The same numbers, with the upsides they can bring and what has tended to go right. Still pragmatic about the risks.</string>
 
-    <!-- The Settings section -->
+    <!-- The Settings row, and the caption over its choices once it's opened out -->
     <string name="tone_settings_title">Economy commentary</string>
     <string name="tone_settings_caption">How Finance describes the economy. The readings, charts and warning lines are the same in both.</string>
 </resources>

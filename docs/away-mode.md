@@ -229,7 +229,9 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   `AlertNotification.urgent = true` and title prefix `Away: `. `AlertNotifier.android.kt` posts
   urgent ones on the new `away_alerts` channel (IMPORTANCE_HIGH, alarm sound, `CATEGORY_ALARM`);
   `HomeSafeMessagingService` does the same for pushes carrying `away=1`.
-- Settings tab: an "Away mode" section after Alerts — "I'm away" switch for this phone, then the
+- Settings tab: an "Away mode" row after Alerts, saying in a line where this phone stands
+  (`awaySummary`), which opens the Away mode page (`AwaySettingsScreen`, route `AwayRoute`) —
+  "I'm away" switch for this phone, then the
   devices as `HouseholdDeviceList` splits them: counted phones heard from in the last week first,
   and this phone (even a debug build), each with its status (`away since 4:12 PM` / `home` /
   `leaving…`), when it was last seen, and `debug, not counted` greyed out for a device the relay
@@ -240,7 +242,7 @@ applies the same rule via `AlertSettings.ordinaryAlertsSilenced`.
   on its next connect. Then a caption explaining the escalation. Disabled with a caption when push isn't supported on the platform or the relay
   couldn't be reached. `SettingsViewModel` carries `presence`, `awayBusy`, `awayError`,
   `locationAccess`, `geofenceSupported`, `homeBusy`, `homeError`; presence is refreshed in the
-  tab's `LifecycleResumeEffect`.
+  tab's and the page's `LifecycleResumeEffect`.
 - Home tab: a slim "Away mode · nobody home · alerts escalated" banner with an "I'm back" button
   (`SetAwayUseCase(false)`) while `everyoneAway`; the status line reads "Away Mode" instead of
   "System Secure".
