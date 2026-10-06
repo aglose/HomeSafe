@@ -221,6 +221,9 @@ class MoneyCheckupTest {
         val c = moneyCheckup(household(contributions = invested, taxYears = years), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
         // The latest year with a figure; its share worked out from take-home when the sheet has none.
         assertEquals(UiText.of(Res.string.checkup_savings_step_sheet_year, "2025", "$30,000", "25.0%"), c.steps.last())
+        // A sheet that lists its years newest first says the same.
+        val newestFirst = moneyCheckup(household(contributions = invested, taxYears = years.reversed()), fedRate = null).byKind(CheckKind.SAVINGS_RATE)!!
+        assertEquals(c.steps.last(), newestFirst.steps.last())
     }
 
     @Test

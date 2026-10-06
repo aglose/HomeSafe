@@ -514,7 +514,8 @@ private fun savingsRate(finance: PersonalFinance): Check? {
             }
         }
         // The sheet's own count for a whole year: everything invested, against all of that year's pay.
-        finance.taxYears.lastOrNull { it.invested != null && (it.investedRate != null || (it.takeHome ?: 0.0) > 0) }?.let { y ->
+        // The latest such year, whichever way up the sheet lists them.
+        finance.taxYears.filter { it.invested != null && (it.investedRate != null || (it.takeHome ?: 0.0) > 0) }.maxByOrNull { it.year }?.let { y ->
             val share = y.investedRate ?: (y.invested!! / y.takeHome!!)
             add(UiText.of(Res.string.checkup_savings_step_sheet_year, y.year.toString(), money(y.invested!!), pct(share, 1)))
         }

@@ -165,8 +165,7 @@ class PersonalFinanceParserTest {
 
     // ---- The "Forecasts" tab: a distractor "Year" table above the real one -------------------
 
-    private val forecastsGrid = sheetGrid(
-        "Forecasts",
+    private val forecastsCells: Map<String, Any> =
         mapOf(
             "A3" to "Year", "B3" to "Some Other Metric",
 
@@ -190,9 +189,9 @@ class PersonalFinanceParserTest {
             "R31" to "401k", "S31" to 8400.0, "T31" to 12000.0,
             "R32" to "Backdoor Roth", "S32" to 3000.0, "T32" to 3000.0,
             "R33" to "Total", "S33" to 26400.0,
-        ),
-        listOf("R20:T20", "R21:T21", "S26:T26", "S27:T27", "S28:T28", "R29:T29", "S33:T33"),
-    )
+        )
+    private val forecastsMerges = listOf("R20:T20", "R21:T21", "S26:T26", "S27:T27", "S28:T28", "R29:T29", "S33:T33")
+    private val forecastsGrid = sheetGrid("Forecasts", forecastsCells, forecastsMerges)
 
     // ---- The "New House" tab: mortgage calculator plus one affordability row -----------------
 
@@ -458,6 +457,31 @@ class PersonalFinanceParserTest {
         assertEquals(emptyList(), read.contributions)
         assertNull(read.paycheckSavings)
         assertEquals(SectionStatus.MISSING, read.health.sections.first { it.section == SheetSection.CONTRIBUTIONS }.status)
+    }
+
+    @Test
+    fun theYearlyTableIsReadWithoutTheIncomeTableBesideIt() {
+        // The same tab with its "Year" / "Take Home" table gone: nothing marks it as the forecasts tab.
+        val alone = sheetGrid("Forecasts", forecastsCells.filterKeys { it.trimStart { c -> c.isLetter() }.toInt() >= 20 }, forecastsMerges)
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(homeGrid, alone, newHouseGrid, oldHouseGrid))
+        assertEquals(emptyList(), read.taxYears)
+        assertEquals(finance.contributions, read.contributions)
+        assertEquals(24000.0, read.paycheckSavings?.total)
+        val status = read.health.sections.associate { it.section to it.status }
+        assertEquals(SectionStatus.MISSING, status[SheetSection.TAX_YEARS])
+        assertEquals(SectionStatus.OK, status[SheetSection.CONTRIBUTIONS])
+    }
+
+    @Test
+    fun anotherInvestmentsCellOnTheTitlesRowDoesNotHideTheYearlyTable() {
+        // A figure labelled the same, left of the title on its row, and one more above it.
+        val read = PersonalFinanceParser.parse(
+            "Budget",
+            0L,
+            listOf(homeGrid, sheetGrid("Forecasts", forecastsCells + ("D20" to "Investments") + ("E20" to 164000.0) + ("B15" to "Investments"), forecastsMerges)),
+        )
+        assertEquals(finance.contributions, read.contributions)
+        assertEquals(SectionStatus.OK, read.health.sections.first { it.section == SheetSection.CONTRIBUTIONS }.status)
     }
 
     // ---- Mortgage plan and old house (New House / Old House tabs) ------------------------

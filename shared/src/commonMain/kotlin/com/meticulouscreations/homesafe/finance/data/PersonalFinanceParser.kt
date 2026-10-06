@@ -63,6 +63,9 @@ object PersonalFinanceParser {
         val oldHouse = sheets.firstOrNull { it.contains("Sold Price") }
 
         val people = home?.let(::people).orEmpty()
+        // The yearly investments are found by their own title, wherever they sit: usually beside
+        // the income table, but they don't depend on it being there.
+        val invested = (listOfNotNull(forecasts) + sheets).firstOrNull { contributionsHeader(it, people.map { p -> p.second }) != null }
         val accounts = home?.let { accounts(it, people.map { p -> p.second }) }.orEmpty() + home?.let(::cashAccounts).orEmpty()
         val notes = mutableListOf<ParseNote>()
         val finance = PersonalFinance(
@@ -87,7 +90,7 @@ object PersonalFinanceParser {
             taxYears = forecasts?.let(::taxYears).orEmpty(),
             mortgagePlan = newHouse?.let(::mortgagePlan),
             oldHouse = oldHouse?.let(::houseSale),
-            contributions = forecasts?.let { contributions(it, people.map { p -> p.second }) }.orEmpty(),
+            contributions = invested?.let { contributions(it, people.map { p -> p.second }) }.orEmpty(),
         )
         val totals = listOfNotNull(finance.monthlyIncome, finance.monthlyExpenses, finance.netMonthly).size
         if (totals in 1..2) notes += ParseNote(SheetSection.TOTALS, UiText.plural(Res.plurals.fin_data_note_totals_partial, totals))
@@ -105,7 +108,7 @@ object PersonalFinanceParser {
                 if (historyHeader(home) != null) add(SheetSection.HISTORY)
             }
             if (forecasts != null && taxHeader(forecasts) != null) add(SheetSection.TAX_YEARS)
-            if (forecasts != null && contributionsHeader(forecasts, people.map { it.second }) != null) add(SheetSection.CONTRIBUTIONS)
+            if (invested != null) add(SheetSection.CONTRIBUTIONS)
             if (newHouse != null) add(SheetSection.MORTGAGE)
             if (oldHouse != null) add(SheetSection.HOUSE_SALE)
         }
@@ -518,9 +521,11 @@ object PersonalFinanceParser {
      * the columns to its right a row or two down (any words there, when the people aren't known).
      */
     private fun contributionsHeader(grid: SheetGrid, people: List<String>): ContributionsHeader? {
-        var from = 0
-        while (true) {
-            val (r0, c0) = grid.findLabel("Investments", rowsFrom = from) ?: return null
+        // Every "Investments" cell is tried, row by row and along each row: another one beside or
+        // above the table's title (a figure labelled the same) isn't the table.
+        var at = grid.findLabel("Investments")
+        while (at != null) {
+            val (r0, c0) = at
             for (r in r0 + 1..r0 + 3) {
                 // Not the title's own merge running across the columns.
                 val found = (c0 + 1..c0 + HEADER_REACH).mapNotNull { col ->
@@ -530,8 +535,10 @@ object PersonalFinanceParser {
                 }
                 if (found.isNotEmpty()) return ContributionsHeader(c0, r, found)
             }
-            from = r0 + 1
+            at = grid.findLabel("Investments", rowsFrom = r0, rowsTo = r0 + 1, columns = c0 + 1 until grid.columnCount(r0))
+                ?: grid.findLabel("Investments", rowsFrom = r0 + 1)
         }
+        return null
     }
 
     /**
