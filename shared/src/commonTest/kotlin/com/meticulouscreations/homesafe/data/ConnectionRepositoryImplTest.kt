@@ -190,6 +190,23 @@ class ConnectionRepositoryImplTest {
         override fun clear() = Unit
     }
 
+    /** The system's local network permission: [granted] is its state, and asking sets it to [answer]. */
+    private class FakeLocalNetworkAccess(var granted: Boolean = true, var answer: Boolean = granted) : LocalNetworkAccess {
+        var asked = 0
+
+        /** Runs as the user answers, so a test can change what the LAN does once access is given. */
+        var onAnswer: () -> Unit = {}
+
+        override fun isGranted() = granted
+
+        override suspend fun request(): Boolean {
+            asked++
+            granted = answer
+            onAnswer()
+            return granted
+        }
+    }
+
     private object NoBiometrics : BiometricCredentialStore {
         override fun isAvailable() = false
         override fun displayName() = Res.string.biometric_name_generic
@@ -242,7 +259,7 @@ class ConnectionRepositoryImplTest {
         val biometrics: BiometricCredentialStore = NoBiometrics,
         /** Shared between two harnesses to stand in for what a previous launch left on the device. */
         val cameraDao: InMemoryCameraDao = InMemoryCameraDao(),
-        localNetworkAccess: LocalNetworkAccess = LocalNetworkAccess { true },
+        val localNetwork: FakeLocalNetworkAccess = FakeLocalNetworkAccess(),
     ) {
         val frigate = FakeFrigate(tailscaleHost, localHost)
         val network = FakeNetworkMonitor()
@@ -263,7 +280,7 @@ class ConnectionRepositoryImplTest {
             cameraDao = cameraDao,
             biometricCredentialStore = biometrics,
             networkMonitor = network,
-            localNetworkAccess = localNetworkAccess,
+            localNetworkAccess = localNetwork,
             appScope = scope.backgroundScope,
             clock = clock,
         ).apply {
@@ -278,34 +295,47 @@ class ConnectionRepositoryImplTest {
     @Test
     fun asksForLocalNetworkAccessBeforeProbingTheLan() = runTest {
         // Android 17 before the grant: the LAN address answers nothing until the user allows it.
-        lateinit var h: Harness
-        var asked = 0
-        h = Harness(
-            this,
-            localNetworkAccess = LocalNetworkAccess {
-                asked++
-                h.frigate.localReachable = true
-                true
-            },
-        )
+        val h = Harness(this, localNetwork = FakeLocalNetworkAccess(granted = false, answer = true))
         h.frigate.localReachable = false
+        h.localNetwork.onAnswer = { h.frigate.localReachable = true }
 
         val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
 
         assertTrue(result.isSuccess)
-        assertEquals(1, asked)
+        assertEquals(1, h.localNetwork.asked)
         assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
     }
 
     @Test
     fun signsInOverTailscaleWhenLocalNetworkAccessIsRefused() = runTest {
-        val h = Harness(this, localNetworkAccess = LocalNetworkAccess { false })
+        val h = Harness(this, localNetwork = FakeLocalNetworkAccess(granted = false))
         h.frigate.localReachable = false
 
         val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
 
         assertTrue(result.isSuccess)
         assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+    }
+
+    @Test
+    fun aGrantMadeInSystemSettingsMovesTheRouteOnReturn_howeverShortTheTrip() = runTest {
+        val h = Harness(this, localNetwork = FakeLocalNetworkAccess(granted = false))
+        h.frigate.localReachable = false
+        h.repository.connect(serverUrl, localUrl, "andrew", "pw").getOrThrow()
+        advanceUntilIdle()
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
+
+        // Out to system settings and back in a few seconds: no network changed, and the absence
+        // is too short for the usual revalidation.
+        h.repository.onAppVisibilityChanged(visible = false)
+        h.localNetwork.granted = true
+        h.frigate.localReachable = true
+        h.clock.nowMillis += 3_000
+        h.repository.onAppVisibilityChanged(visible = true)
+        eventually("the route to move to the LAN") { h.repository.currentServerUrl.value == localUrl }
+
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
+        assertEquals(1, h.frigate.logins(tailscaleHost), "the session moved; nobody signed in again")
     }
 
     @Test
@@ -395,6 +425,15 @@ class ConnectionRepositoryImplTest {
         assertNull(connection.localUrl)
         assertEquals(0, h.frigate.probes(localHost))
         assertEquals(0, h.frigate.probes(tailscaleHost))
+    }
+
+    @Test
+    fun withoutALanAddressLocalNetworkAccessIsNotAskedFor() = runTest {
+        val h = Harness(this, localNetwork = FakeLocalNetworkAccess(granted = false))
+
+        h.repository.connect(serverUrl, null, "andrew", "pw").getOrThrow()
+
+        assertEquals(0, h.localNetwork.asked)
     }
 
     @Test

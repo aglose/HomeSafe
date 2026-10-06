@@ -22,8 +22,8 @@ private const val ANDROID_17 = 37
  * answer true without a prompt.
  *
  * After two refusals Android stops showing the dialog and answers the request with a denial
- * straight away, so asking again on a later sign-in costs nothing; a grant made in system
- * settings is picked up by the route check the app runs when it comes back to the foreground.
+ * straight away, so asking again on a later sign-in costs nothing. From then on only system
+ * settings can grant it, which is why [isGranted] reads the system's answer afresh every time.
  */
 private class AndroidLocalNetworkAccess(private val context: Context, activity: FragmentActivity?) : LocalNetworkAccess {
     private var pendingRequest: CompletableDeferred<Boolean>? = null
@@ -38,8 +38,11 @@ private class AndroidLocalNetworkAccess(private val context: Context, activity: 
         pendingRequest = null
     }
 
+    override fun isGranted(): Boolean =
+        Build.VERSION.SDK_INT < ANDROID_17 ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
+
     override suspend fun request(): Boolean {
-        if (Build.VERSION.SDK_INT < ANDROID_17) return true
         if (isGranted()) return true
         // No Activity (a geofence or boot receiver woke the app): nowhere to ask from.
         val launcher = permissionLauncher ?: return false
@@ -49,9 +52,6 @@ private class AndroidLocalNetworkAccess(private val context: Context, activity: 
         launcher.launch(Manifest.permission.ACCESS_LOCAL_NETWORK)
         return request.await()
     }
-
-    private fun isGranted(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_LOCAL_NETWORK) == PackageManager.PERMISSION_GRANTED
 }
 
 actual fun createLocalNetworkAccess(context: PlatformContext): LocalNetworkAccess =
