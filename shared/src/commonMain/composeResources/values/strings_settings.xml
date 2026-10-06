@@ -90,6 +90,8 @@
     <string name="settings_away_summary_unreachable">Can't reach the relay</string>
     <string name="settings_away_summary_checking">Checking who's home…</string>
     <string name="settings_away_summary_nobody_home">Nobody home</string>
+    <!-- The relay lists the household's phones, but not this install. -->
+    <string name="settings_away_summary_not_registered">This phone isn't registered with the relay</string>
     <string name="settings_away_summary_leaving">This phone is leaving</string>
     <string name="settings_away_summary_away">This phone is away</string>
     <string name="settings_away_summary_home">This phone is home</string>

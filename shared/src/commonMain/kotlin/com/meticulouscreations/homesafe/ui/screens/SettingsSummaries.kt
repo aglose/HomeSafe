@@ -23,6 +23,7 @@ import homesafe.shared.generated.resources.settings_away_summary_checking
 import homesafe.shared.generated.resources.settings_away_summary_home
 import homesafe.shared.generated.resources.settings_away_summary_leaving
 import homesafe.shared.generated.resources.settings_away_summary_nobody_home
+import homesafe.shared.generated.resources.settings_away_summary_not_registered
 import homesafe.shared.generated.resources.settings_away_summary_unreachable
 import homesafe.shared.generated.resources.settings_cameras_loading
 import homesafe.shared.generated.resources.settings_cameras_summary_all
@@ -61,7 +62,8 @@ internal fun alertsSummary(state: SettingsUiState): UiText {
                 places.isEmpty() -> null
                 else -> alerts.matchingPreset(places)?.let { UiText.of(presetLabel(it)) } ?: UiText.of(Res.string.settings_alerts_summary_custom)
             }
-            val quiet = alerts.quietHours.takeIf { it.enabled }?.let {
+            // A window that starts where it ends is empty (the page says so), so there is no quiet time to report.
+            val quiet = alerts.quietHours.takeIf { it.enabled && it.startMinute != it.endMinute }?.let {
                 UiText.of(Res.string.settings_alerts_summary_quiet, minuteOfDayText(it.startMinute), minuteOfDayText(it.endMinute))
             }
             // The stranger rule only does anything with face recognition on, which is also when its switch can be.
@@ -75,6 +77,8 @@ internal fun alertsSummary(state: SettingsUiState): UiText {
 /**
  * The Away mode row: the household first — "Nobody home" outranks anything about one phone —
  * then this phone as the relay has it, and "automatic" once the geofence is doing the flipping.
+ * The relay can list the household without this install in it (presence is read whether or not
+ * the device has registered), and then the row says so rather than guess where the phone is.
  */
 internal fun awaySummary(state: SettingsUiState): UiText {
     val presence = state.presence
@@ -83,11 +87,13 @@ internal fun awaySummary(state: SettingsUiState): UiText {
         presence == HouseholdPresence.EMPTY && state.awayError != null -> Res.string.settings_away_summary_unreachable
         presence == HouseholdPresence.EMPTY -> Res.string.settings_away_summary_checking
         presence.everyoneAway -> Res.string.settings_away_summary_nobody_home
-        me?.pendingAway == true -> Res.string.settings_away_summary_leaving
-        me?.away == true -> Res.string.settings_away_summary_away
+        me == null -> Res.string.settings_away_summary_not_registered
+        me.pendingAway -> Res.string.settings_away_summary_leaving
+        me.away -> Res.string.settings_away_summary_away
         else -> Res.string.settings_away_summary_home
     }
-    return summaryOf(UiText.of(status), UiText.of(Res.string.settings_away_summary_automatic).takeIf { state.automaticPresenceActive })
+    // Nothing flips a switch the relay doesn't have.
+    return summaryOf(UiText.of(status), UiText.of(Res.string.settings_away_summary_automatic).takeIf { me != null && state.automaticPresenceActive })
 }
 
 /**

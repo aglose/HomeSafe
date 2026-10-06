@@ -35,6 +35,7 @@ import homesafe.shared.generated.resources.settings_away_summary_checking
 import homesafe.shared.generated.resources.settings_away_summary_home
 import homesafe.shared.generated.resources.settings_away_summary_leaving
 import homesafe.shared.generated.resources.settings_away_summary_nobody_home
+import homesafe.shared.generated.resources.settings_away_summary_not_registered
 import homesafe.shared.generated.resources.settings_away_summary_unreachable
 import homesafe.shared.generated.resources.settings_cameras_loading
 import homesafe.shared.generated.resources.settings_cameras_summary_all
@@ -141,6 +142,12 @@ class SettingsSummariesTest {
         )
     }
 
+    @Test
+    fun aQuietWindowThatStartsWhereItEndsIsEmptySoTheAlertsRowLeavesItOut() {
+        val alerts = AlertSettings(pushNotificationsEnabled = true, quietHours = QuietHours(enabled = true, startMinute = 22 * 60, endMinute = 22 * 60))
+        assertEquals(summary(on, text(Res.string.alerts_preset_people_vehicles)), alertsSummary(alertsOn(alerts = alerts)))
+    }
+
     // ---- Away mode ------------------------------------------------------------------------------
 
     private fun thisPhone(away: Boolean = false, pendingAway: Boolean = false) =
@@ -172,6 +179,23 @@ class SettingsSummariesTest {
         assertEquals(summary(text(Res.string.settings_away_summary_unreachable)), awaySummary(SettingsUiState(awayError = "timeout".asUiText())))
         // A failed change with the household still listed is the page's to explain; the row keeps saying who's home.
         assertEquals(summary(text(Res.string.settings_away_summary_home)), awaySummary(SettingsUiState(presence = household(), awayError = "timeout".asUiText())))
+    }
+
+    @Test
+    fun aHouseholdListedWithoutThisPhoneIsNotTakenForThisPhoneBeingHome() {
+        val others = HouseholdPresence(devices = listOf(otherPhone.copy(away = false)), everyoneAway = false, home = HomeLocation(40.0, -75.0, 150.0))
+        assertEquals(summary(text(Res.string.settings_away_summary_not_registered)), awaySummary(SettingsUiState(presence = others)))
+        // Nor is anything "automatic" for a phone the relay has no switch for.
+        val wanted = AlertSettings(pushNotificationsEnabled = false, automaticPresence = true)
+        assertEquals(
+            summary(text(Res.string.settings_away_summary_not_registered)),
+            awaySummary(SettingsUiState(alerts = wanted, presence = others, locationAccess = LocationAccess.ALWAYS)),
+        )
+        // The household's answer still comes first.
+        assertEquals(
+            summary(text(Res.string.settings_away_summary_nobody_home)),
+            awaySummary(SettingsUiState(presence = others.copy(devices = listOf(otherPhone), everyoneAway = true))),
+        )
     }
 
     @Test
