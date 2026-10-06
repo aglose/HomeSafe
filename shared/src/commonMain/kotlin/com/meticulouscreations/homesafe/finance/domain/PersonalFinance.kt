@@ -105,6 +105,30 @@ data class TaxYear(
     val investedRate: Double?,
 )
 
+/**
+ * One line of the sheet's yearly "Investments" table: what went into an account over a year, and
+ * whose it was. [name] is the sheet's own label for it.
+ */
+@Immutable
+data class Contribution(val name: String, val owner: Owner, val amount: Double) {
+    /**
+     * Whether the money is taken from the paycheck before it's paid out: a workplace plan, by its
+     * name, so it never shows in take-home pay. Anything else (an IRA, a 529, a brokerage account)
+     * is paid in from take-home.
+     */
+    val beforeTakeHome: Boolean get() = PAYCHECK_PLAN_WORDS.any { it in name.lowercase() }
+
+    private companion object {
+        val PAYCHECK_PLAN_WORDS = listOf("401", "403", "457", "tsp", "pension", "hsa")
+    }
+}
+
+/** A year of the sheet's "Investments" table. */
+@Immutable
+data class ContributionYear(val year: Int, val lines: List<Contribution>) {
+    val total: Double get() = lines.sumOf { it.amount }
+}
+
 /** The sheet's mortgage calculator inputs, which seed the interactive one. Rate as a fraction. */
 @Immutable
 data class MortgagePlan(
@@ -154,6 +178,8 @@ data class PersonalFinance(
     val taxYears: List<TaxYear>,
     val mortgagePlan: MortgagePlan?,
     val oldHouse: HouseSale?,
+    /** What was invested each year, account by account; the sheet's "Investments" table. */
+    val contributions: List<ContributionYear> = emptyList(),
     /** The sheet's own charts, in the order they sit in it. */
     val charts: List<SheetChart> = emptyList(),
     /** How this read of the sheet went, part by part (see [SheetHealth]). */
@@ -178,6 +204,16 @@ data class PersonalFinance(
         val net = netMonthly ?: monthlyExpenses?.let { inc - it } ?: return null
         return net / inc
     }
+
+    /**
+     * What's set aside from pay before it becomes take-home (see [Contribution.beforeTakeHome]),
+     * from the latest year the sheet lists any for: that year, and those lines. Null when the
+     * sheet has none.
+     */
+    val paycheckSavings: ContributionYear? get() =
+        contributions.map { y -> ContributionYear(y.year, y.lines.filter { it.beforeTakeHome }) }
+            .filter { it.lines.isNotEmpty() }
+            .maxByOrNull { it.year }
 
     fun accountsTotal(owner: Owner): Double = accounts.filter { it.owner == owner }.sumOf { it.balance }
 }
