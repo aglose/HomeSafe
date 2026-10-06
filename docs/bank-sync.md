@@ -37,8 +37,10 @@ The relay writes two tabs, and nothing else, in the sheet named by `FINANCE_FEED
 | **Holdings feed** | position in an investment account | Account key, Ticker, Name, Quantity, Price, Value, Cost basis, Kind, Institution, Currency, Price as of |
 
 The **key** is the institution, the account's name and its last four digits, for example
-`Chase Total Checking 0123`. A second account with the same three gets ` (2)`. A card's or a loan's
-balance is what is owed, as a positive number.
+`Chase Total Checking 0123`. A second account with the same three gets ` (2)`. A key is given once
+and kept: closing one of two same-named accounts doesn't hand its key to the other, and a bank
+renaming an account doesn't change its key. An institution unlinked and linked again comes back
+under the keys it had. A card's or a loan's balance is what is owed, as a positive number.
 
 In the budget sheet, replace a typed balance with a lookup of its key. There are two ways to set
 the feed up, and the formula differs:

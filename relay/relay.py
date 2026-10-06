@@ -291,6 +291,9 @@ def db() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS plaid_holdings (account_id TEXT, security_id TEXT, item_id TEXT, ticker TEXT, name TEXT, kind TEXT,"
         " quantity REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, PRIMARY KEY (account_id, security_id))"
     )
+    # The name each account's row goes by in the feed sheet, given once and kept while the account
+    # is there: the budget sheet's formulas look accounts up by it.
+    conn.execute("CREATE TABLE IF NOT EXISTS plaid_feed_keys (account_id TEXT PRIMARY KEY, key TEXT)")
     # What the notification policy made of each alert and each household car coming or going (see
     # "notification policy"), whether it was acted on or only logged: `key` is the review id, or
     # "car:<name>:<time>"; `route` "instant", "update", "fold", "digest", "car" or, for what the
@@ -5799,6 +5802,8 @@ BANK_SYNC_HOUR = min(23, max(0, int(os.environ.get("BANK_SYNC_HOUR", "6"))))
 BANK_CHECK_SECONDS = 300
 # "Sync now" in the app, however often it is tapped.
 BANK_MIN_SYNC_SECONDS = 60
+# How long an unlinking waits for a sync under way to finish before it says to try again.
+BANK_UNLINK_WAIT_SECONDS = 25
 
 # Where the balances are written: a sheet of its own that the budget sheet looks up with
 # IMPORTRANGE (so the relay can still only read the budget sheet), or the budget sheet's own id to
@@ -5811,9 +5816,15 @@ FEED_HOLDINGS_TAB = "Holdings feed"
 FEED_ACCOUNT_COLUMNS = ["Key", "Balance", "Available", "Limit", "Institution", "Account", "Mask", "Type", "Subtype", "APR %", "Minimum payment", "Payment due", "Currency", "Updated"]
 FEED_HOLDING_COLUMNS = ["Account key", "Ticker", "Name", "Quantity", "Price", "Value", "Cost basis", "Kind", "Institution", "Currency", "Price as of"]
 
+# Held by whatever is changing what relay.db keeps of the institutions and writing the feed from
+# it: a sync, or an unlinking. One at a time, so a sync can't put back what an unlinking removed.
 _bank_lock = threading.Lock()
-# A link is finished by one request at a time: Plaid's public token can be swapped for an access token only once.
+# Held around every change to the links under way (PLAID_LINKS_KEY), and for the whole of finishing
+# one: Plaid's public token can be swapped for an access token only once.
 _link_lock = threading.Lock()
+# "Sync now" is let in by one request at a time, and when the last one was.
+_sync_ask_lock = threading.Lock()
+_sync_asked = {"at": 0.0}
 _feed_google: dict[str, Any] = {"session": None, "account": None}
 
 
@@ -5888,9 +5899,10 @@ def plaid_link_start(user: str, kind: str = "bank", item_id: str | None = None, 
     token, url = answer.get("link_token"), answer.get("hosted_link_url")
     if not token or not url:
         raise PlaidError("NO_HOSTED_LINK", "Plaid made a link without a page to open. Hosted Link may not be switched on for this Plaid account.")
-    links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now}
-    links[token] = {"expires": now + PLAID_LINK_SECONDS, "by": user, "item": item_id}
-    state_set(PLAID_LINKS_KEY, links)
+    with _link_lock:
+        links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now}
+        links[token] = {"expires": now + PLAID_LINK_SECONDS, "by": user, "item": item_id}
+        state_set(PLAID_LINKS_KEY, links)
     return {"token": token, "url": url, "expires_at": now + PLAID_LINK_SECONDS}
 
 
@@ -5907,7 +5919,11 @@ def plaid_link_finish(token: str, now: float | None = None) -> dict[str, Any]:
     Plaid's page, "linked" once they finished (each new institution's token is kept and a sync
     started), "exited" when they left without finishing, "expired" for a link too old or unknown.
     """
-    now = time.time() if now is None else now
+    with _link_lock:
+        return _plaid_link_finish(token, time.time() if now is None else now)
+
+
+def _plaid_link_finish(token: str, now: float) -> dict[str, Any]:
     links = state_get(PLAID_LINKS_KEY) or {}
     link = links.get(token)
     if link is None:
@@ -5961,18 +5977,23 @@ def plaid_liability_terms(liabilities: Any) -> dict[str, dict[str, Any]]:
     return terms
 
 
-def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, dict[str, Any]], holdings: list[dict[str, Any]] | None,
+def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, dict[str, Any]] | None, holdings: list[dict[str, Any]] | None,
                 securities: dict[str, dict[str, Any]], now: float) -> None:
     """
-    Replaces what is kept of an institution with what Plaid just said: its accounts, and what
-    they hold. `holdings` None leaves the holdings as they were (Plaid hadn't them ready), but
-    still drops those of an account that is gone.
+    Replaces what is kept of an institution with what Plaid just said: its accounts, their loan
+    terms, and what they hold. `terms` or `holdings` None leaves those as they were (Plaid hadn't
+    them ready), though an account that is gone still takes its holdings with it. Each account
+    new to the relay is given its key in the feed (see `plaid_assign_keys`).
     """
     def write(c: sqlite3.Connection) -> None:
+        kept = terms
+        if kept is None:
+            kept = {row[0]: {"apr": row[1], "min_payment": row[2], "due": row[3]}
+                    for row in c.execute("SELECT account_id, apr, min_payment, due FROM plaid_accounts WHERE item_id=?", (item_id,))}
         c.execute("DELETE FROM plaid_accounts WHERE item_id=?", (item_id,))
         for a in accounts:
             balances = a.get("balances") if isinstance(a.get("balances"), dict) else {}
-            term = terms.get(a.get("account_id"), {})
+            term = kept.get(a.get("account_id"), {})
             c.execute(
                 "INSERT OR REPLACE INTO plaid_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (a.get("account_id"), item_id, a.get("name") or "", a.get("official_name"), a.get("mask"), a.get("type"), a.get("subtype"),
@@ -5992,6 +6013,7 @@ def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, d
                      h.get("quantity"), h.get("institution_price"), h.get("institution_price_as_of"), h.get("institution_value"), h.get("cost_basis"),
                      h.get("iso_currency_code") or h.get("unofficial_currency_code")),
                 )
+        plaid_assign_keys(c)
         c.commit()
 
     with_db(write)
@@ -6019,12 +6041,14 @@ def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
                     holdings = None
                 elif e.code not in PLAID_NOTHING_THERE:
                     raise
-        terms: dict[str, dict[str, Any]] = {}
+        terms: dict[str, dict[str, Any]] | None = {}
         if "liabilities" in products:
             try:
                 terms = plaid_liability_terms(plaid_post("/liabilities/get", {"access_token": access}).get("liabilities"))
             except PlaidError as e:
-                if e.code != "PRODUCT_NOT_READY" and e.code not in PLAID_NOTHING_THERE:
+                if e.code == "PRODUCT_NOT_READY":
+                    terms = None
+                elif e.code not in PLAID_NOTHING_THERE:
                     raise
         plaid_store(item_id, accounts, terms, holdings, securities, now)
         # The link itself can be on its way out while the data still comes (a consent about to lapse).
@@ -6045,17 +6069,36 @@ def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
         return "UNREACHABLE"
 
 
-def feed_keys(labels: list[tuple[str, str]]) -> dict[str, str]:
+def feed_key(label: str, taken: set[str]) -> str:
+    """A key no other account has: `label` ("Institution Account 1234") itself, or with the first of " (2)", " (3)"… that is free."""
+    label = label or "Account"
+    if label not in taken:
+        return label
+    n = 2
+    while f"{label} ({n})" in taken:
+        n += 1
+    return f"{label} ({n})"
+
+
+def plaid_assign_keys(c: sqlite3.Connection) -> None:
     """
-    The name each account goes by in the feed, from (account id, "Institution Account 1234") in a
-    settled order: the label itself, or with " (2)", " (3)" for a second and third of the same.
+    Gives each account that hasn't one its key in the feed, and frees the keys of accounts that
+    are gone. A key once given stays that account's whatever happens around it: the budget
+    sheet's formulas look accounts up by key, so closing or unlinking one of two accounts of the
+    same name must not hand its key to the other, nor a bank renaming an account change its key.
+    A freed key goes to the next new account of that name, which is what makes an institution
+    unlinked and linked again come back under the keys it had. The caller commits.
     """
-    seen: dict[str, int] = {}
-    keys = {}
-    for account_id, label in labels:
-        seen[label] = seen.get(label, 0) + 1
-        keys[account_id] = label if seen[label] == 1 else f"{label} ({seen[label]})"
-    return keys
+    c.execute("DELETE FROM plaid_feed_keys WHERE account_id NOT IN (SELECT account_id FROM plaid_accounts)")
+    taken = {row[0] for row in c.execute("SELECT key FROM plaid_feed_keys")}
+    new = c.execute(
+        "SELECT a.account_id, i.institution, a.name, a.mask FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id"
+        " WHERE a.account_id NOT IN (SELECT account_id FROM plaid_feed_keys) ORDER BY i.linked_at, i.item_id, a.type, a.name, a.account_id"
+    ).fetchall()
+    for account_id, institution, name, mask in new:
+        key = feed_key(" ".join(part for part in (institution, name, mask) if part), taken)
+        taken.add(key)
+        c.execute("INSERT INTO plaid_feed_keys VALUES (?,?)", (account_id, key))
 
 
 def bank_institutions() -> list[dict[str, Any]]:
@@ -6068,9 +6111,7 @@ def bank_institutions() -> list[dict[str, Any]]:
         " FROM plaid_accounts ORDER BY type, name, account_id"
     ).fetchall())
     held = dict(with_db(lambda c: c.execute("SELECT account_id, COUNT(*) FROM plaid_holdings GROUP BY account_id").fetchall()))
-    names = {item[0]: item[1] or "" for item in items}
-    ordered = [a for item in items for a in accounts if a[1] == item[0]]
-    keys = feed_keys([(a[0], " ".join(part for part in (names[a[1]], a[2], a[4]) if part)) for a in ordered])
+    keys = dict(with_db(lambda c: c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall()))
     institutions = []
     for item_id, name, linked_at, synced_at, error, error_message, consent_expires in items:
         institutions.append({
@@ -6083,10 +6124,10 @@ def bank_institutions() -> list[dict[str, Any]]:
             "needs_relink": error in PLAID_RELINK,
             "consent_expires": consent_expires,
             "accounts": [
-                {"id": a[0], "key": keys[a[0]], "name": a[2], "official_name": a[3], "mask": a[4], "type": a[5], "subtype": a[6], "balance": a[7],
+                {"id": a[0], "key": keys.get(a[0]) or a[2], "name": a[2], "official_name": a[3], "mask": a[4], "type": a[5], "subtype": a[6], "balance": a[7],
                  "available": a[8], "limit": a[9], "currency": a[10], "apr": a[11], "min_payment": a[12], "due": a[13], "updated": a[14],
                  "holdings": held.get(a[0], 0)}
-                for a in ordered if a[1] == item_id
+                for a in accounts if a[1] == item_id
             ],
         })
     return institutions
@@ -6297,8 +6338,7 @@ def get_bank_link(token: str, request: Request, response: Response) -> dict[str,
     """How a link is getting on (see `plaid_link_finish`), with the institutions as they stand once it is made."""
     require_bank(request, response)
     try:
-        with _link_lock:
-            result = plaid_link_finish(token)
+        result = plaid_link_finish(token)
     except PlaidError as e:
         log.warning("bank: linking failed: %s", e.code)
         raise plaid_problem(e) from e
@@ -6312,10 +6352,14 @@ def get_bank_link(token: str, request: Request, response: Response) -> dict[str,
 def post_bank_sync(request: Request, response: Response) -> dict[str, Any]:
     """Reads every institution now rather than at the next BANK_SYNC_HOUR. Answers at once; `syncing` says it is under way."""
     require_bank(request, response)
-    last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
-    if _bank_lock.locked() or time.time() - last < BANK_MIN_SYNC_SECONDS:
-        return bank_status()
-    bank_sync_in_background()
+    with _sync_ask_lock:
+        # The last sync asked for counts as well as the last one done: a second tap lands before
+        # the first one's worker holds the lock, and would otherwise queue a second sync behind it.
+        last = max(float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0), _sync_asked["at"])
+        if _bank_lock.locked() or time.time() - last < BANK_MIN_SYNC_SECONDS:
+            return bank_status()
+        _sync_asked["at"] = time.time()
+        bank_sync_in_background()
     return {**bank_status(), "syncing": True}
 
 
@@ -6323,24 +6367,32 @@ def post_bank_sync(request: Request, response: Response) -> dict[str, Any]:
 def delete_bank_institution(item_id: str, request: Request, response: Response) -> dict[str, Any]:
     """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go."""
     user = require_bank(request, response)
-    row = with_db(lambda c: c.execute("SELECT access, institution FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
-    if not row:
-        raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+    # Behind any sync under way, and ahead of the next: a sync that read this institution before
+    # it was forgotten would otherwise store its accounts again, and write them back to the feed.
+    if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
+        raise HTTPException(503, {"error": "busy", "message": "The accounts are being read just now. Try again in a minute."})
     try:
-        plaid_post("/item/remove", {"access_token": row[0]})
-    except PlaidError as e:
-        # Plaid already not knowing it is the result wanted; anything else and the token is kept to try again.
-        if e.code not in PLAID_GONE:
-            raise plaid_problem(e) from e
+        row = with_db(lambda c: c.execute("SELECT access, institution FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
+        if not row:
+            raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+        try:
+            plaid_post("/item/remove", {"access_token": row[0]})
+        except PlaidError as e:
+            # Plaid already not knowing it is the result wanted; anything else and the token is kept to try again.
+            if e.code not in PLAID_GONE:
+                raise plaid_problem(e) from e
 
-    def forget(c: sqlite3.Connection) -> None:
-        for table in ("plaid_holdings", "plaid_accounts", "plaid_items"):
-            c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
-        c.commit()
+        def forget(c: sqlite3.Connection) -> None:
+            for table in ("plaid_holdings", "plaid_accounts", "plaid_items"):
+                c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
+            plaid_assign_keys(c)
+            c.commit()
 
-    with_db(forget)
-    log.info("bank: %s unlinked %s", user, row[1] or item_id[:8])
-    threading.Thread(target=write_bank_feed, args=(time.time(),), name="bank-feed", daemon=True).start()
+        with_db(forget)
+        log.info("bank: %s unlinked %s", user, row[1] or item_id[:8])
+        write_bank_feed(time.time())
+    finally:
+        _bank_lock.release()
     return bank_status()
 
 

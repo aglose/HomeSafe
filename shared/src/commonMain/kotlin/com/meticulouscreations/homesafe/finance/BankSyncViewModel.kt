@@ -84,6 +84,9 @@ class BankSyncViewModel(
     private var linkJob: Job? = null
     private var syncJob: Job? = null
 
+    /** A sync being asked for, or an unlinking. */
+    private var actionJob: Job? = null
+
     /** The page came up, or asked again. */
     fun load() {
         if (loadJob?.isActive == true) return
@@ -96,9 +99,31 @@ class BankSyncViewModel(
                 }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
+                    // Anything else (the server out of reach) leaves the balances already shown in place.
                     _uiState.update { it.copy(loading = false, problem = (e as? BankSyncException)?.problem ?: BankProblem.OTHER, problemText = e.shown()) }
                 }
         }
+    }
+
+    /**
+     * Whether [e] is the relay refusing this account or session. The household's balances aren't
+     * left on screen for someone the relay no longer shows them to: what was read goes, whatever
+     * was under way stops (so a late answer can't bring it back), and the page says why.
+     */
+    private fun shutOut(e: Throwable): Boolean {
+        val problem = (e as? BankSyncException)?.problem
+        if (problem != BankProblem.NOT_ALLOWED && problem != BankProblem.SIGNED_OUT) return false
+        val text = e.shown()
+        // The job this is called from is cancelled with the rest; its state is written first.
+        _uiState.value = BankSyncUiState(loading = false, problem = problem, problemText = text)
+        val running = listOf(loadJob, linkJob, syncJob, actionJob)
+        loadJob = null
+        linkJob = null
+        syncJob = null
+        actionJob = null
+        running.forEach { it?.cancel() }
+        return true
     }
 
     fun link(kind: BankLinkKind) = startLink { repository.startLink(kind) }
@@ -107,9 +132,10 @@ class BankSyncViewModel(
     fun relink(institutionId: String) = startLink { repository.startRelink(institutionId) }
 
     private fun startLink(start: suspend () -> Result<BankLinkStart>) {
-        if (_uiState.value.startingLink) return
-        linkJob?.cancel()
-        _uiState.update { it.copy(startingLink = true, linking = null, notice = null) }
+        // One link at a time: starting another would stop asking about the one open in the browser,
+        // and a sign-in finished there would never be collected. It has to be cancelled first.
+        if (_uiState.value.startingLink || _uiState.value.linking != null) return
+        _uiState.update { it.copy(startingLink = true, notice = null) }
         linkJob = viewModelScope.launch {
             start()
                 .onSuccess { link ->
@@ -118,6 +144,7 @@ class BankSyncViewModel(
                 }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
                     _uiState.update { it.copy(startingLink = false, notice = BankNotice(e.shown(), isError = true)) }
                 }
         }
@@ -134,21 +161,27 @@ class BankSyncViewModel(
 
     private suspend fun followLink(link: BankLinkStart) {
         var failures = 0
+        val expired = BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true)
         while (true) {
             delay(LINK_POLL_MS)
-            if (clock.now().epochSeconds >= link.expiresAtEpochSeconds) return endLink(BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true))
+            // The relay is asked first, even past the link's own deadline: a sign-in finished while
+            // the app sat suspended behind the browser is still there to collect, and the relay
+            // looks for one before it calls a link expired.
             val result = repository.linkProgress(link.token)
+            val lapsed = clock.now().epochSeconds >= link.expiresAtEpochSeconds
             val progress = result.getOrNull()
             if (progress == null) {
                 val e = result.exceptionOrNull()
                 if (e is CancellationException) throw e
+                if (e != null && shutOut(e)) return
+                if (lapsed) return endLink(expired)
                 // A dropped request while the app was behind the browser isn't the link failing.
                 if (++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e?.shown() ?: UiText.of(Res.string.fin_bank_error_generic), isError = true))
                 continue
             }
             failures = 0
             when (progress.status) {
-                BankLinkStatus.PENDING -> Unit
+                BankLinkStatus.PENDING -> if (lapsed) return endLink(expired)
 
                 BankLinkStatus.LINKED -> {
                     val names = progress.institutions
@@ -161,7 +194,7 @@ class BankSyncViewModel(
 
                 BankLinkStatus.EXITED -> return endLink(BankNotice(UiText.of(Res.string.fin_bank_notice_exited)))
 
-                BankLinkStatus.EXPIRED -> return endLink(BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true))
+                BankLinkStatus.EXPIRED -> return endLink(expired)
             }
         }
     }
@@ -169,9 +202,9 @@ class BankSyncViewModel(
     private fun endLink(notice: BankNotice) = _uiState.update { it.copy(linking = null, notice = notice) }
 
     fun syncNow() {
-        if (_uiState.value.syncing) return
+        if (_uiState.value.syncing || _uiState.value.unlinking != null) return
         _uiState.update { it.copy(syncRequested = true, notice = null) }
-        viewModelScope.launch {
+        actionJob = viewModelScope.launch {
             repository.syncNow()
                 .onSuccess { bank ->
                     _uiState.update { it.copy(bank = bank, syncRequested = false) }
@@ -179,6 +212,7 @@ class BankSyncViewModel(
                 }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
                     _uiState.update { it.copy(syncRequested = false, notice = BankNotice(e.shown(), isError = true)) }
                 }
         }
@@ -191,7 +225,12 @@ class BankSyncViewModel(
             var asked = 0
             while (isActive && asked++ < SYNC_POLL_LIMIT) {
                 delay(SYNC_POLL_MS)
-                val bank = repository.status().getOrNull() ?: continue
+                val result = repository.status()
+                result.exceptionOrNull()?.let { e ->
+                    if (e is CancellationException) throw e
+                    if (shutOut(e)) return@launch
+                }
+                val bank = result.getOrNull() ?: continue
                 _uiState.update { it.copy(bank = bank) }
                 if (!bank.syncing) return@launch
             }
@@ -201,14 +240,15 @@ class BankSyncViewModel(
     }
 
     fun unlink(institutionId: String) {
-        if (_uiState.value.unlinking != null) return
+        if (_uiState.value.unlinking != null || _uiState.value.syncRequested) return
         val name = _uiState.value.bank?.institutions?.firstOrNull { it.id == institutionId }?.name.orEmpty()
         _uiState.update { it.copy(unlinking = institutionId, notice = null) }
-        viewModelScope.launch {
+        actionJob = viewModelScope.launch {
             repository.unlink(institutionId)
                 .onSuccess { bank -> _uiState.update { it.copy(bank = bank, unlinking = null, notice = BankNotice(UiText.of(Res.string.fin_bank_notice_unlinked, name.asUiText()))) } }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
                     _uiState.update { it.copy(unlinking = null, notice = BankNotice(e.shown(), isError = true)) }
                 }
         }

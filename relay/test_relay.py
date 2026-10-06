@@ -3778,9 +3778,59 @@ class BankSyncTest(_ScratchDb):
         self.assertEqual(["card", "chk"], sorted(a["id"] for a in relay.bank_institutions()[0]["accounts"]))
         self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0]))
 
+    def test_a_key_is_the_label_or_its_first_free_number(self):
+        self.assertEqual("Fidelity Roth IRA", relay.feed_key("Fidelity Roth IRA", set()))
+        self.assertEqual("Fidelity Roth IRA (2)", relay.feed_key("Fidelity Roth IRA", {"Fidelity Roth IRA"}))
+        self.assertEqual("Fidelity Roth IRA (2)", relay.feed_key("Fidelity Roth IRA", {"Fidelity Roth IRA", "Fidelity Roth IRA (3)"}))
+        self.assertEqual("Account", relay.feed_key("", set()))
+
+    TWINS = [{"account_id": "a", "name": "Roth IRA", "type": "investment", "balances": {"current": 1.0}},
+             {"account_id": "b", "name": "Roth IRA", "type": "investment", "balances": {"current": 2.0}}]
+
+    def keys(self):
+        return {a["id"]: a["key"] for i in relay.bank_institutions() for a in i["accounts"]}
+
     def test_two_accounts_of_one_name_get_keys_of_their_own(self):
-        self.assertEqual({"a": "Fidelity Roth IRA", "b": "Fidelity Roth IRA (2)", "c": "Fidelity 401k 5544"},
-                         relay.feed_keys([("a", "Fidelity Roth IRA"), ("b", "Fidelity Roth IRA"), ("c", "Fidelity 401k 5544")]))
+        self.link(name="Fidelity")
+        relay.plaid_store("item1", self.TWINS, {}, [], {}, self.T)
+        self.assertEqual({"a": "Fidelity Roth IRA", "b": "Fidelity Roth IRA (2)"}, self.keys())
+
+    def test_closing_one_of_two_does_not_hand_its_key_to_the_other(self):
+        self.link(name="Fidelity")
+        relay.plaid_store("item1", self.TWINS, {}, [], {}, self.T)
+        relay.plaid_store("item1", self.TWINS[1:], {}, [], {}, self.T + 60)
+        self.assertEqual({"b": "Fidelity Roth IRA (2)"}, self.keys(), "a formula for the closed account must not start reading the other one")
+        # A new account of that name takes the key that was freed, never the survivor's.
+        relay.plaid_store("item1", self.TWINS[1:] + [dict(self.TWINS[0], account_id="c")], {}, [], {}, self.T + 120)
+        self.assertEqual({"b": "Fidelity Roth IRA (2)", "c": "Fidelity Roth IRA"}, self.keys())
+
+    def test_a_renamed_account_keeps_its_key(self):
+        self.link()
+        relay.plaid_store("item1", self.ACCOUNTS[:1], {}, [], {}, self.T)
+        relay.plaid_store("item1", [dict(self.ACCOUNTS[0], name="Chase Checking Plus")], {}, [], {}, self.T + 60)
+        self.assertEqual({"chk": "Chase Total Checking 0123"}, self.keys())
+
+    def test_an_institution_linked_again_comes_back_under_its_keys(self):
+        self.link()
+        relay.plaid_store("item1", self.ACCOUNTS[:1], {}, [], {}, self.T)
+        relay.with_db(lambda c: (c.execute("DELETE FROM plaid_accounts"), c.execute("DELETE FROM plaid_items"), relay.plaid_assign_keys(c), c.commit()))
+        self.link("item2")
+        relay.plaid_store("item2", [dict(self.ACCOUNTS[0], account_id="chk-again")], {}, [], {}, self.T + 60)
+        self.assertEqual({"chk-again": "Chase Total Checking 0123"}, self.keys())
+
+    def test_loan_terms_not_ready_yet_leave_the_last_ones_in_place(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        self.synced(liabilities_get=relay.PlaidError("PRODUCT_NOT_READY"))
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T + 60))
+        card = next(a for a in relay.bank_institutions()[0]["accounts"] if a["id"] == "card")
+        self.assertEqual((21.49, 40.0, "2026-10-20"), (card["apr"], card["min_payment"], card["due"]))
+        # ...but an answer with no terms in it is the terms gone.
+        self.synced(liabilities_get={"liabilities": {"credit": [], "student": [], "mortgage": []}})
+        relay.plaid_sync_item("item1", "access-item1", self.T + 120)
+        card = next(a for a in relay.bank_institutions()[0]["accounts"] if a["id"] == "card")
+        self.assertEqual((None, None, None), (card["apr"], card["min_payment"], card["due"]))
 
     def test_the_feed_has_every_account_and_holding_with_blanks_for_what_is_unknown(self):
         self.link()
@@ -3889,7 +3939,8 @@ class BankSyncTest(_ScratchDb):
 class BankRoutesTest(_ScratchDb):
     """The bank routes: who gets in, what Plaid's refusals become, and that unlinking forgets the token."""
 
-    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "require_finance_user", "write_bank_feed", "PLAID_CLIENT_ID", "PLAID_SECRET", "FINANCE_FEED_SHEET_ID")
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "require_finance_user", "write_bank_feed", "PLAID_CLIENT_ID", "PLAID_SECRET",
+                                "FINANCE_FEED_SHEET_ID", "BANK_UNLINK_WAIT_SECONDS")
 
     def setUp(self):
         super().setUp()
@@ -3897,7 +3948,9 @@ class BankRoutesTest(_ScratchDb):
         relay.require_finance_user = lambda request: "alex"
         self.background = []
         relay.bank_sync_in_background = lambda: self.background.append(True)
-        relay.write_bank_feed = lambda now: None
+        self.fed = []
+        relay.write_bank_feed = lambda now: self.fed.append(relay._bank_lock.locked())
+        relay._sync_asked["at"] = 0.0
         self.response = types.SimpleNamespace(headers={})
         relay.plaid_save_item("item1", "access-item1", {"institution_id": "ins_3", "name": "Chase"}, "alex", 1_791_000_000.0)
 
@@ -3936,14 +3989,34 @@ class BankRoutesTest(_ScratchDb):
         self.assertFalse(relay.post_bank_sync(object(), self.response)["syncing"])
         self.assertEqual([True], self.background)
 
+    def test_a_second_tap_before_the_first_sync_has_begun_does_not_queue_another(self):
+        self.assertTrue(relay.post_bank_sync(object(), self.response)["syncing"])
+        relay.post_bank_sync(object(), self.response)
+        self.assertEqual([True], self.background, "the first one's worker hasn't taken the lock or recorded a sync yet")
+
     def test_unlinking_tells_plaid_and_forgets_the_token_and_accounts(self):
         relay.plaid_post = _FakePlaid()
         relay.plaid_store("item1", BankSyncTest.ACCOUNTS, {}, BankSyncTest.HOLDINGS["holdings"], {}, 1_791_000_000.0)
         body = relay.delete_bank_institution("item1", object(), self.response)
         self.assertEqual([("/item/remove", {"access_token": "access-item1"})], relay.plaid_post.calls)
         self.assertEqual([], body["institutions"])
-        for table in ("plaid_items", "plaid_accounts", "plaid_holdings"):
+        for table in ("plaid_items", "plaid_accounts", "plaid_holdings", "plaid_feed_keys"):
             self.assertEqual(0, relay.with_db(lambda c: c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]), table)
+        self.assertEqual([True], self.fed, "the feed is rewritten before a sync can run again")
+        self.assertFalse(relay._bank_lock.locked())
+
+    def test_unlinking_waits_its_turn_behind_a_sync_and_says_so_when_it_cannot(self):
+        relay.plaid_post = _FakePlaid()
+        relay.BANK_UNLINK_WAIT_SECONDS = 0.05
+        relay._bank_lock.acquire()
+        try:
+            with self.assertRaises(relay.HTTPException) as busy:
+                relay.delete_bank_institution("item1", object(), self.response)
+        finally:
+            relay._bank_lock.release()
+        self.assertEqual((503, "busy"), (busy.exception.status_code, busy.exception.detail["error"]))
+        self.assertEqual([], relay.plaid_post.calls, "Plaid isn't told while the sync that might put it back is running")
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
 
     def test_unlinking_what_plaid_already_forgot_still_forgets_it_here(self):
         relay.plaid_post = _FakePlaid(item_remove=relay.PlaidError("ITEM_NOT_FOUND"))
@@ -3955,6 +4028,7 @@ class BankRoutesTest(_ScratchDb):
             relay.delete_bank_institution("item1", object(), self.response)
         self.assertEqual(502, failed.exception.status_code)
         self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
+        self.assertFalse(relay._bank_lock.locked(), "a refusal lets go of the lock")
         with self.assertRaises(relay.HTTPException) as unknown:
             relay.delete_bank_institution("nope", object(), self.response)
         self.assertEqual(404, unknown.exception.status_code)

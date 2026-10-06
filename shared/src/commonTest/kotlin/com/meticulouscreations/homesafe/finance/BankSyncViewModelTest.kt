@@ -329,6 +329,102 @@ class BankSyncViewModelTest {
         assertEquals(BankNotice("try later".asUiText(), isError = true), vm.uiState.value.notice)
     }
 
+    @Test
+    fun aSignInFinishedWhileTheAppSleptPastTheDeadlineIsStillCollected() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            // A link whose own deadline has gone by the time the app next asks about it.
+            link = Result.success(BankLinkStart("link-1", "https://secure.plaid.com/hl/abc", START + 2))
+            statuses += Result.success(bank("Chase"))
+            progress += Result.success(BankLinkProgress(BankLinkStatus.LINKED, listOf("Chase"), bank("Chase", syncing = true)))
+        }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS + 1)
+        assertEquals(1, repo.progressCalls, "the relay is asked before the link is called expired")
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Chase".asUiText())), vm.uiState.value.notice)
+        assertEquals(listOf("Chase"), vm.uiState.value.bank?.institutions?.map { it.name })
+    }
+
+    @Test
+    fun anotherLinkIsNotStartedWhileOneIsOpenInTheBrowser() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { progress += Result.success(BankLinkProgress(BankLinkStatus.PENDING)) }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        runCurrent()
+        val first = assertNotNull(vm.uiState.value.linking)
+
+        vm.relink("fidelity")
+        vm.link(BankLinkKind.LOANS)
+        runCurrent()
+        assertEquals(emptyList(), repo.relinked)
+        assertEquals(listOf(BankLinkKind.BANK), repo.linked)
+        assertEquals(first, vm.uiState.value.linking)
+        // ...and the one that is open is still being asked about.
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS + 1)
+        assertEquals(1, repo.progressCalls)
+
+        // Cancelled, the next one may start.
+        vm.cancelLink()
+        vm.relink("fidelity")
+        runCurrent()
+        assertEquals(listOf("fidelity"), repo.relinked)
+        vm.cancelLink()
+    }
+
+    @Test
+    fun balancesAreTakenDownWhenTheRelayStopsShowingThemToThisAccount() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            statuses += Result.failure(BankSyncException(BankProblem.NOT_ALLOWED, "admins only".asUiText()))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        assertNotNull(vm.uiState.value.bank)
+
+        vm.load()
+        runCurrent()
+        val state = vm.uiState.value
+        assertNull(state.bank, "nothing of the household's money stays on screen")
+        assertEquals(BankProblem.NOT_ALLOWED, state.problem)
+        assertEquals("admins only".asUiText(), state.problemText)
+    }
+
+    @Test
+    fun aRefusalMidLinkStopsEverythingSoALateAnswerCannotBringTheBalancesBack() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase", syncing = true))
+            progress += Result.failure(BankSyncException(BankProblem.SIGNED_OUT, "signed out".asUiText()))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNull(vm.uiState.value.bank)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankProblem.SIGNED_OUT, vm.uiState.value.problem)
+
+        // The sync that was being followed would have answered with the balances again.
+        val asked = repo.statusCalls
+        advanceTimeBy(10 * BankSyncViewModel.SYNC_POLL_MS)
+        assertEquals(asked, repo.statusCalls)
+        assertNull(vm.uiState.value.bank)
+    }
+
+    @Test
+    fun aServerOutOfReachLeavesTheBalancesAlreadyShown() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            statuses += Result.failure(IllegalStateException("timeout"))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        vm.load()
+        runCurrent()
+        assertEquals(listOf("Chase"), vm.uiState.value.bank?.institutions?.map { it.name })
+    }
+
     private companion object {
         const val START = 1_790_000_000L
     }
