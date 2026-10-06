@@ -117,11 +117,13 @@ class ZoomTapGesturesUiTest {
         waitForIdle()
         assertEquals(PinchZoomState.DOUBLE_TAP_SCALE, zoom.scale, 0.01f)
 
+        // Held past the long-press timeout before it moves, so this is the hold's drag and not
+        // the one-finger pan a zoomed picture takes from any drag.
+        onNodeWithTag(PLAYER_TAG).performTouchInput { down(center) }
+        mainClock.advanceTimeBy(SETTLE_MS)
         var playerWidth = 0f
         onNodeWithTag(PLAYER_TAG).performTouchInput {
             playerWidth = width.toFloat()
-            down(center)
-            advanceEventTime(viewConfiguration.longPressTimeoutMillis + 100)
             repeat(4) { moveBy(Offset(width * 0.05f, 0f)) }
             up()
         }

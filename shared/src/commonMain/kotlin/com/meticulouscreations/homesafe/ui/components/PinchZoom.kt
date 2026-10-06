@@ -21,10 +21,11 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToDown
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -196,8 +197,10 @@ fun Modifier.zoomTapGestures(state: PinchZoomState, onTap: () -> Unit, onHoldZoo
         coroutineScope {
             // Alongside the tap detector rather than inside it: once a long press has fired, that
             // detector only swallows what the finger does next. Those moves are taken here whether
-            // or not it got to them first.
-            launch {
+            // or not it got to them first. Undispatched, so it is listening before this block
+            // returns: pointer input starts on the first touch it is sent, and a watcher launched
+            // the ordinary way would miss that finger landing, and with it the whole first gesture.
+            launch(start = CoroutineStart.UNDISPATCHED) {
                 detectHeldDrag(
                     isHeld = { held },
                     requireUnconsumed = false,
@@ -241,7 +244,8 @@ internal suspend fun PointerInputScope.detectHeldDrag(
             val event = awaitPointerEvent()
             val finger = event.changes.filter { it.pressed }.singleOrNull()
             if (finger != null && finger.previousPressed && !(requireUnconsumed && finger.isConsumed) && isHeld()) {
-                val delta = finger.positionChange()
+                // Not positionChange(), which is zero for a move something else has consumed.
+                val delta = finger.positionChangeIgnoreConsumed()
                 if (delta != Offset.Zero) {
                     onDrag(delta)
                     finger.consume()
