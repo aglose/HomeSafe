@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StaleBiometricCredentialsException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.LocalNetworkAccess
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_fingerprint
@@ -241,6 +242,7 @@ class ConnectionRepositoryImplTest {
         val biometrics: BiometricCredentialStore = NoBiometrics,
         /** Shared between two harnesses to stand in for what a previous launch left on the device. */
         val cameraDao: InMemoryCameraDao = InMemoryCameraDao(),
+        localNetworkAccess: LocalNetworkAccess = LocalNetworkAccess { true },
     ) {
         val frigate = FakeFrigate(tailscaleHost, localHost)
         val network = FakeNetworkMonitor()
@@ -261,6 +263,7 @@ class ConnectionRepositoryImplTest {
             cameraDao = cameraDao,
             biometricCredentialStore = biometrics,
             networkMonitor = network,
+            localNetworkAccess = localNetworkAccess,
             appScope = scope.backgroundScope,
             clock = clock,
         ).apply {
@@ -270,6 +273,39 @@ class ConnectionRepositoryImplTest {
         }
 
         suspend fun cameraNames(): List<String> = cameraDao.observeByServer(serverUrl).first().map { it.name }.sorted()
+    }
+
+    @Test
+    fun asksForLocalNetworkAccessBeforeProbingTheLan() = runTest {
+        // Android 17 before the grant: the LAN address answers nothing until the user allows it.
+        lateinit var h: Harness
+        var asked = 0
+        h = Harness(
+            this,
+            localNetworkAccess = LocalNetworkAccess {
+                asked++
+                h.frigate.localReachable = true
+                true
+            },
+        )
+        h.frigate.localReachable = false
+
+        val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
+
+        assertTrue(result.isSuccess)
+        assertEquals(1, asked)
+        assertEquals(ConnectionRoute.LOCAL_NETWORK, h.repository.activeConnection.value?.route)
+    }
+
+    @Test
+    fun signsInOverTailscaleWhenLocalNetworkAccessIsRefused() = runTest {
+        val h = Harness(this, localNetworkAccess = LocalNetworkAccess { false })
+        h.frigate.localReachable = false
+
+        val result = h.repository.connect(serverUrl, localUrl, "andrew", "pw")
+
+        assertTrue(result.isSuccess)
+        assertEquals(ConnectionRoute.TAILSCALE, h.repository.activeConnection.value?.route)
     }
 
     @Test

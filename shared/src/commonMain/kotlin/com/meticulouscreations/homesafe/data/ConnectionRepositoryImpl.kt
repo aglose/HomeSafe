@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.network.CredentialsRejectedException
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.FrigateCamera
 import com.meticulouscreations.homesafe.network.FrigateResponseException
+import com.meticulouscreations.homesafe.network.LocalNetworkAccess
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.SessionCheck
 import com.meticulouscreations.homesafe.network.swapUrlScheme
@@ -81,6 +82,11 @@ import kotlin.time.ExperimentalTime
  * ([refreshRoute]), which keeps trying until the server answers. Only a server that answers can
  * refuse: a password it rejects still ends the saved login on the spot ([signInWithBiometrics]),
  * and a first sign-in still needs the server. See [resumeOffline].
+ *
+ * **Permission.** Where the system keeps the local network from an app until the user allows it
+ * (Android 17), a LAN address that is right there times out like one that isn't, and nothing says
+ * why. So a sign-in asks first ([LocalNetworkAccess.request]) and only then probes; what the user
+ * answers isn't consulted again, because the probe is what decides the route either way.
  */
 @OptIn(ExperimentalTime::class)
 @Inject
@@ -92,6 +98,7 @@ class ConnectionRepositoryImpl(
     private val cameraDao: CameraDao,
     private val biometricCredentialStore: BiometricCredentialStore,
     networkMonitor: NetworkMonitor,
+    private val localNetworkAccess: LocalNetworkAccess,
     private val appScope: CoroutineScope,
     private val clock: Clock,
 ) : ConnectionRepository {
@@ -153,9 +160,14 @@ class ConnectionRepositoryImpl(
         localUrl: String?,
         username: String,
         password: String,
-    ): Result<SavedCredentials> = signInMutex.withLock {
-        val normalizedLocalUrl = localUrl?.trim()?.takeIf { it.isNotEmpty() }
-        signIn(serverUrl, normalizedLocalUrl, username, password)
+    ): Result<SavedCredentials> {
+        // Outside the lock: the system's dialog can stay up as long as the user likes, and a
+        // route check a network change set off meanwhile shouldn't queue behind it.
+        localNetworkAccess.request()
+        return signInMutex.withLock {
+            val normalizedLocalUrl = localUrl?.trim()?.takeIf { it.isNotEmpty() }
+            signIn(serverUrl, normalizedLocalUrl, username, password)
+        }
     }
 
     override suspend fun signInWithBiometrics(onCredentialsUnlocked: () -> Unit): Result<SavedCredentials> {
