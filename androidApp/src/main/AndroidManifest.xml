@@ -70,6 +70,16 @@
 
                 <data android:scheme="homesafe" android:host="weather" />
             </intent-filter>
+            <!-- Plain text shared from another app (a note, from a notes app's Share menu): workout
+                 notes, which open on the fitness app's import page to be looked over before
+                 anything is saved (FitnessShare.kt). The label is what the share sheet shows. -->
+            <intent-filter android:label="@string/share_workout_notes">
+                <action android:name="android.intent.action.SEND" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- Receives pushes from the HomeSafe relay (see androidApp/.../push/) and fresh FCM tokens. -->

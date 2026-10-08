@@ -57,8 +57,13 @@ class PropertyPlanDropped : AutoMigrationSpec
         WeatherReportEntity::class,
         WeatherNoticeEntity::class,
         MapTileEntity::class,
+        FitnessExerciseEntity::class,
+        FitnessSetEntity::class,
+        FitnessWorkoutEntity::class,
+        FitnessPhaseEntity::class,
+        FitnessBodyweightEntity::class,
     ],
-    version = 18,
+    version = 19,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -95,6 +100,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 17 -> 18: the weather app — its saved places, preferences, each place's last forecast,
         // the notifications it has sent and the radar map's tiles, all new tables (WeatherEntities.kt).
         AutoMigration(from = 17, to = 18),
+        // 18 -> 19: the fitness app — its exercises, every set, the workouts, the phases and the
+        // weigh-ins, all new tables (FitnessEntities.kt).
+        AutoMigration(from = 18, to = 19),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -104,6 +112,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun settingsDao(): SettingsDao
     abstract fun momentsDao(): MomentsDao
     abstract fun weatherDao(): WeatherDao
+    abstract fun fitnessDao(): FitnessDao
 }
 
 // The Room compiler generates the `actual` implementations for each target.
@@ -118,10 +127,11 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
  * `createXDao` call returns a DAO from that same instance, never opening a second connection.
  * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
  * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
- * [InMemorySettingsDao], [InMemoryMomentsDao], [InMemoryWeatherDao]).
+ * [InMemorySettingsDao], [InMemoryMomentsDao], [InMemoryWeatherDao], [InMemoryFitnessDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
 expect fun createCameraDao(context: PlatformContext): CameraDao
 expect fun createSettingsDao(context: PlatformContext): SettingsDao
 expect fun createMomentsDao(context: PlatformContext): MomentsDao
 expect fun createWeatherDao(context: PlatformContext): WeatherDao
+expect fun createFitnessDao(context: PlatformContext): FitnessDao

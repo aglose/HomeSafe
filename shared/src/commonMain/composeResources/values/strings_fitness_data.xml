@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the fitness app says about the training log: the names of body parts, muscles, equipment
+  and phases, how a weight is written, and the sentences of coaching beside a target. The
+  screens' own words are in strings_fitness.xml. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The shelves exercises are kept on -->
+    <string name="fitness_part_chest">Chest</string>
+    <string name="fitness_part_back">Back</string>
+    <string name="fitness_part_legs">Legs</string>
+    <string name="fitness_part_shoulders">Shoulders</string>
+    <string name="fitness_part_biceps">Biceps</string>
+    <string name="fitness_part_triceps">Triceps</string>
+    <string name="fitness_part_core">Core</string>
+
+    <!-- What a workout is for -->
+    <string name="fitness_focus_chest">Chest</string>
+    <string name="fitness_focus_back">Back</string>
+    <string name="fitness_focus_legs">Legs</string>
+    <string name="fitness_focus_shoulders">Shoulders</string>
+    <string name="fitness_focus_arms">Arms</string>
+
+    <!-- Muscles, for the week's volume -->
+    <string name="fitness_muscle_chest">Chest</string>
+    <string name="fitness_muscle_back">Back</string>
+    <string name="fitness_muscle_traps">Traps</string>
+    <string name="fitness_muscle_front_delts">Front delts</string>
+    <string name="fitness_muscle_side_delts">Side delts</string>
+    <string name="fitness_muscle_rear_delts">Rear delts</string>
+    <string name="fitness_muscle_biceps">Biceps</string>
+    <string name="fitness_muscle_triceps">Triceps</string>
+    <string name="fitness_muscle_forearms">Forearms</string>
+    <string name="fitness_muscle_abs">Abs</string>
+    <string name="fitness_muscle_quads">Quads</string>
+    <string name="fitness_muscle_hamstrings">Hamstrings</string>
+    <string name="fitness_muscle_glutes">Glutes</string>
+    <string name="fitness_muscle_adductors">Adductors</string>
+    <string name="fitness_muscle_calves">Calves</string>
+
+    <string name="fitness_equipment_barbell">Barbell</string>
+    <string name="fitness_equipment_dumbbell">Dumbbells</string>
+    <string name="fitness_equipment_machine">Machine</string>
+    <string name="fitness_equipment_cable">Cable</string>
+    <string name="fitness_equipment_plate_loaded">Plate loaded</string>
+    <string name="fitness_equipment_smith">Smith machine</string>
+    <string name="fitness_equipment_bodyweight">Bodyweight</string>
+    <string name="fitness_equipment_other">Other</string>
+
+    <!-- How an exercise's weight is counted -->
+    <string name="fitness_load_weight">Pounds</string>
+    <string name="fitness_load_per_hand">Pounds a hand</string>
+    <string name="fitness_load_plates">Plates a side</string>
+    <string name="fitness_load_level">Pin number</string>
+    <string name="fitness_load_bodyweight">Bodyweight</string>
+
+    <string name="fitness_phase_bulk">Bulk</string>
+    <string name="fitness_phase_cut">Cut</string>
+    <string name="fitness_phase_maintain">Maintain</string>
+
+    <!-- A weight, written the way its exercise counts it. %1$s is the number, already formatted -->
+    <string name="fitness_weight_pounds">%1$s lb</string>
+    <!-- A pair of dumbbells: %1$s is one of them -->
+    <string name="fitness_weight_per_hand">%1$s lb × 2</string>
+    <!-- A machine's pin -->
+    <string name="fitness_weight_level">Pin %1$s</string>
+    <string name="fitness_weight_bodyweight">Bodyweight</string>
+    <!-- Bodyweight with %1$s pounds hung on -->
+    <string name="fitness_weight_bodyweight_plus">Bodyweight + %1$s lb</string>
+    <plurals name="fitness_weight_plates">
+        <item quantity="one">%1$d plate</item>
+        <item quantity="other">%1$d plates</item>
+    </plurals>
+    <!-- %1$d plates a side and %2$s pounds more a side -->
+    <plurals name="fitness_weight_plates_plus">
+        <item quantity="one">%1$d plate + %2$s</item>
+        <item quantity="other">%1$d plates + %2$s</item>
+    </plurals>
+    <!-- A set in one breath: %1$s the weight as written above, %2$d the reps -->
+    <string name="fitness_set_line">%1$s × %2$d</string>
+
+    <!-- The line of coaching beside a target -->
+    <string name="fitness_reason_benchmark">From your notes. Find this level again, then build.</string>
+    <string name="fitness_reason_add_rep">One more rep than last time.</string>
+    <string name="fitness_reason_add_weight">You topped the rep range. Go heavier.</string>
+    <string name="fitness_reason_hold">On a cut: match last time. Holding the weight holds the muscle.</string>
+    <string name="fitness_reason_back_off">Reps slipped under the range. Step down and keep the sets strong.</string>
+    <!-- %1$d percent of the all-time best -->
+    <string name="fitness_reason_rebuild">Rebuilding: at %1$d% of your best. It comes back faster than it was built.</string>
+    <string name="fitness_reason_ease_in">Back after a break. Start under your last numbers; they return within a few sessions.</string>
+
+    <!-- What a record is of -->
+    <string name="fitness_record_all_time_weight">Heaviest ever</string>
+    <string name="fitness_record_all_time_reps">Most reps ever at this weight</string>
+    <string name="fitness_record_phase_cut">Best of this cut</string>
+    <string name="fitness_record_phase_bulk">Best of this bulk</string>
+    <string name="fitness_record_phase_maintain">Best in a while</string>
+
+    <!-- How the week's sets for a muscle stand -->
+    <string name="fitness_volume_none">Not trained</string>
+    <string name="fitness_volume_low">Light</string>
+    <string name="fitness_volume_building">Building</string>
+    <string name="fitness_volume_on_target">On target</string>
+    <string name="fitness_volume_high">Plenty</string>
+
+    <!-- How the bodyweight trend reads for the phase. %1$s is the weekly change, like "0.7%" -->
+    <string name="fitness_pace_cut_on">Losing %1$s a week: the pace that keeps muscle.</string>
+    <string name="fitness_pace_cut_fast">Losing %1$s a week: fast enough to cost strength. Ease the deficit.</string>
+    <string name="fitness_pace_cut_slow">%1$s a week: barely moving for a cut.</string>
+    <string name="fitness_pace_bulk_on">Gaining %1$s a week: a lean bulk's pace.</string>
+    <string name="fitness_pace_bulk_fast">Gaining %1$s a week: faster than muscle is built. The rest is fat.</string>
+    <string name="fitness_pace_bulk_slow">%1$s a week: not much of a surplus yet.</string>
+    <string name="fitness_pace_steady">%1$s a week.</string>
+</resources>

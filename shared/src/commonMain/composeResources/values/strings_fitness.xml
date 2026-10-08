@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's screens: Today, a workout and its set logger, Lifts, an exercise, Progress,
+  the notes import, and the drawer's card. What is said about the log itself (body parts,
+  muscles, how a weight is written, the coaching beside a target) is in strings_fitness_data.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Shell: tabs, top bar, pushed pages -->
+    <string name="fitness_title">Fitness</string>
+    <string name="fitness_tab_today">Today</string>
+    <string name="fitness_tab_lifts">Lifts</string>
+    <string name="fitness_tab_progress">Progress</string>
+    <string name="fitness_title_exercise">Exercise</string>
+    <string name="fitness_title_edit">Edit exercise</string>
+    <string name="fitness_title_import">Bring in notes</string>
+    <string name="fitness_close">Close fitness</string>
+
+    <!-- Drawer -->
+    <string name="fitness_drawer_title">Fitness</string>
+    <string name="fitness_drawer_subtitle">Lifts, records and progress</string>
+    <string name="fitness_drawer_open">Open fitness</string>
+    <string name="fitness_drawer_empty">Log workouts and chase your records</string>
+    <plurals name="fitness_drawer_week">
+        <item quantity="one">%1$d session in the last 7 days</item>
+        <item quantity="other">%1$d sessions in the last 7 days</item>
+    </plurals>
+
+    <!-- When something was, by the calendar -->
+    <string name="fitness_when_today">Today</string>
+    <string name="fitness_when_yesterday">Yesterday</string>
+    <plurals name="fitness_when_days_ago">
+        <item quantity="one">%1$d day ago</item>
+        <item quantity="other">%1$d days ago</item>
+    </plurals>
+    <!-- A date in figures: %1$d the month, %2$d the day -->
+    <string name="fitness_date_month_day">%1$d/%2$d</string>
+    <!-- %3$s the year's last two digits -->
+    <string name="fitness_date_month_day_year">%1$d/%2$d/%3$s</string>
+
+    <!-- The phase pill: %1$s the phase, %2$d which day of it this is -->
+    <string name="fitness_phase_day">%1$s · day %2$d</string>
+
+    <!-- Today -->
+    <!-- %1$s the workout: Chest, Back, Legs -->
+    <string name="fitness_today_headline_working">%1$s day, in progress</string>
+    <string name="fitness_today_headline_due">%1$s day is up next</string>
+    <string name="fitness_today_headline_idle">Ready when you are</string>
+    <string name="fitness_today_headline_empty">Your training, in one place</string>
+    <!-- %1$s how long ago: "6 days ago" -->
+    <string name="fitness_today_last">Last trained %1$s</string>
+    <string name="fitness_today_never">Not trained here yet</string>
+    <string name="fitness_today_week">Last 7 days</string>
+    <string name="fitness_today_week_sessions">Sessions</string>
+    <string name="fitness_today_week_sets">Sets</string>
+    <string name="fitness_today_week_records">Records</string>
+    <string name="fitness_today_start">Start a workout</string>
+    <string name="fitness_today_start_focus">Start a %1$s workout</string>
+    <string name="fitness_today_up_next">Up next</string>
+    <plurals name="fitness_today_exercises">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
+    <!-- An exercise and what to aim for on it: "Hack squat · 320 lb × 11" -->
+    <string name="fitness_today_lift_line">%1$s · %2$s</string>
+    <string name="fitness_today_resume">Resume workout</string>
+    <plurals name="fitness_today_resume_detail">
+        <item quantity="one">%1$d set logged</item>
+        <item quantity="other">%1$d sets logged</item>
+    </plurals>
+    <string name="fitness_today_records">Recent records</string>
+    <string name="fitness_today_no_records">Records you set will show up here.</string>
+    <string name="fitness_today_import_title">Start from your notes</string>
+    <string name="fitness_today_import_body">Paste your workout notes and every exercise, weight and rep count comes with you. They become the numbers to beat.</string>
+    <string name="fitness_today_import_button">Bring in notes</string>
+    <string name="fitness_today_add_button">Add an exercise by hand</string>
+
+    <!-- A workout -->
+    <string name="fitness_workout_title">%1$s day</string>
+    <!-- Words under a count: minutes since the workout started, sets, records -->
+    <string name="fitness_workout_elapsed">min</string>
+    <plurals name="fitness_workout_sets">
+        <item quantity="one">set</item>
+        <item quantity="other">sets</item>
+    </plurals>
+    <plurals name="fitness_workout_records">
+        <item quantity="one">record</item>
+        <item quantity="other">records</item>
+    </plurals>
+    <string name="fitness_workout_finish">Finish workout</string>
+    <string name="fitness_workout_cancel">Cancel workout</string>
+    <!-- %1$s last session's best set, %2$s how long ago -->
+    <string name="fitness_workout_last">Last %1$s · %2$s</string>
+    <string name="fitness_workout_from_notes">From your notes</string>
+    <string name="fitness_workout_new">Not done yet</string>
+    <plurals name="fitness_workout_done">
+        <item quantity="one">%1$d set today</item>
+        <item quantity="other">%1$d sets today</item>
+    </plurals>
+    <!-- For a screen reader: the target on a row. %1$s like "320 lb × 11" -->
+    <string name="fitness_workout_target">Aim for %1$s</string>
+    <string name="fitness_workout_expand">Log %1$s</string>
+    <string name="fitness_workout_history">Ladder and history</string>
+    <string name="fitness_workout_empty_shelf">Nothing on these shelves yet. Add an exercise below.</string>
+    <string name="fitness_workout_add">New exercise</string>
+    <string name="fitness_workout_add_hint">Name it: Seated cable row</string>
+    <string name="fitness_workout_add_confirm">Add</string>
+
+    <!-- The rest timer -->
+    <string name="fitness_rest_label">Rest</string>
+    <string name="fitness_rest_go">Go</string>
+    <string name="fitness_rest_minus_short">−15</string>
+    <string name="fitness_rest_plus_short">+15</string>
+    <string name="fitness_rest_minus">15 seconds less rest</string>
+    <string name="fitness_rest_plus">15 seconds more rest</string>
+    <string name="fitness_rest_skip">Skip rest</string>
+    <!-- For a screen reader: %1$s like "1:30" -->
+    <string name="fitness_rest_remaining">%1$s of rest left</string>
+
+    <!-- The set logger -->
+    <string name="fitness_logger_aim">Aim for %1$s</string>
+    <string name="fitness_logger_weight">Weight, lb</string>
+    <string name="fitness_logger_weight_each">Each hand, lb</string>
+    <string name="fitness_logger_added">Added, lb</string>
+    <string name="fitness_logger_pin">Pin</string>
+    <string name="fitness_logger_reps">Reps</string>
+    <string name="fitness_logger_less_weight">Less weight</string>
+    <string name="fitness_logger_more_weight">More weight</string>
+    <string name="fitness_logger_less_reps">One rep fewer</string>
+    <string name="fitness_logger_more_reps">One rep more</string>
+    <!-- Under the weight: the size of one press of its buttons -->
+    <string name="fitness_logger_step">Steps of %1$s</string>
+    <!-- Under the reps: what has been done at the weight showing -->
+    <string name="fitness_logger_at_weight_best">Best here: %1$d</string>
+    <!-- %1$d the most ever, %2$d the most this phase -->
+    <string name="fitness_logger_at_weight_phase">Best %1$d · lately %2$d</string>
+    <string name="fitness_logger_at_weight_new">A new weight</string>
+    <!-- A rung of the ladder on a chip: the weight and the most reps done at it -->
+    <string name="fitness_logger_rung">%1$s · %2$d</string>
+    <string name="fitness_logger_log">Log set</string>
+    <string name="fitness_logger_log_another">Log another set</string>
+    <string name="fitness_logger_delete_set">Delete set</string>
+    <!-- For a screen reader: a logged set that was a record. %1$s the set, %2$s what record -->
+    <string name="fitness_logger_set_record">%1$s, %2$s</string>
+    <string name="fitness_logger_keypad_backspace">Delete digit</string>
+    <string name="fitness_logger_keypad_done">Done</string>
+
+    <!-- Lifts -->
+    <string name="fitness_lifts_all">All</string>
+    <string name="fitness_lifts_empty">No exercises yet. Bring in your notes, or add one below.</string>
+    <string name="fitness_lifts_import">Bring in notes</string>
+    <!-- How last session stands against the best ever -->
+    <string name="fitness_lifts_of_best">%1$d% of best</string>
+    <string name="fitness_lifts_untrained">Not trained here yet</string>
+
+    <!-- An exercise -->
+    <string name="fitness_exercise_edit">Edit exercise</string>
+    <!-- What it is done on and what it works: "Machine · Quads" -->
+    <string name="fitness_exercise_kind">%1$s · %2$s</string>
+    <string name="fitness_exercise_target">Next time</string>
+    <string name="fitness_exercise_ladder">The ladder</string>
+    <string name="fitness_exercise_ladder_caption">A bar for each weight, as tall as your most reps there. The lit part is this phase.</string>
+    <plurals name="fitness_exercise_ladder_described">
+        <item quantity="one">The ladder: %1$d weight</item>
+        <item quantity="other">The ladder: %1$d weights</item>
+    </plurals>
+    <string name="fitness_exercise_log">Log a set</string>
+    <string name="fitness_exercise_best">Best ever</string>
+    <!-- %1$s the phase: "Best this Cut" -->
+    <string name="fitness_exercise_phase_best">Best this %1$s</string>
+    <string name="fitness_exercise_none">Nothing yet</string>
+    <string name="fitness_exercise_standing">At %1$d% of your best</string>
+    <plurals name="fitness_exercise_sessions">
+        <item quantity="one">%1$d session</item>
+        <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <string name="fitness_exercise_chart">Strength over time</string>
+    <string name="fitness_exercise_chart_caption">Each session's best set, as the one-rep max it works out to. The line across is your best; shaded stretches are cuts.</string>
+    <string name="fitness_exercise_chart_described">%1$s, strength over time</string>
+
+    <!-- Editing an exercise -->
+    <string name="fitness_edit_name">Name</string>
+    <string name="fitness_edit_shelf">Shelf</string>
+    <string name="fitness_edit_muscle">Mainly works</string>
+    <string name="fitness_edit_load">Weight is counted in</string>
+    <string name="fitness_edit_reps">Rep range</string>
+    <string name="fitness_edit_reps_band">%1$d to %2$d reps</string>
+    <string name="fitness_edit_step">Usual jump in weight</string>
+    <string name="fitness_edit_rest">Rest between sets</string>
+    <string name="fitness_edit_note">Note</string>
+    <string name="fitness_edit_note_hint">Seat height, grip, a cue</string>
+    <string name="fitness_edit_save">Save</string>
+    <string name="fitness_edit_delete">Delete exercise and its sets</string>
+    <string name="fitness_edit_delete_confirm">Tap again to delete for good</string>
+
+    <!-- Progress -->
+    <string name="fitness_progress_phase">Phase</string>
+    <string name="fitness_progress_standing">%1$d%</string>
+    <string name="fitness_progress_standing_none">–</string>
+    <string name="fitness_progress_standing_label">of your best</string>
+    <string name="fitness_progress_phase_about_bulk">Eating to grow. Add a rep or a little weight every session.</string>
+    <string name="fitness_progress_phase_about_cut">Leaning out. The win is holding your weights; records wait for the bulk.</string>
+    <string name="fitness_progress_phase_about_maintain">Holding steady. Progress is still there for the taking, just slower.</string>
+    <string name="fitness_progress_phase_switch">Start a new phase</string>
+    <!-- %1$s the phase -->
+    <string name="fitness_progress_phase_confirm">Start %1$s today</string>
+    <string name="fitness_progress_phase_cancel">Not now</string>
+    <string name="fitness_progress_weight">Bodyweight</string>
+    <string name="fitness_progress_weight_trend">Trend</string>
+    <!-- The last weigh-in itself, beside the smoothed trend -->
+    <string name="fitness_progress_weight_today">Scale: %1$s lb</string>
+    <string name="fitness_progress_weight_empty">Weigh in a few mornings a week and the trend shows what a cut or a bulk is really doing, without the daily noise.</string>
+    <string name="fitness_progress_weight_chart">Bodyweight trend</string>
+    <string name="fitness_progress_weight_log">Log today's weight</string>
+    <string name="fitness_progress_weight_less">Lighter</string>
+    <string name="fitness_progress_weight_more">Heavier</string>
+    <string name="fitness_progress_weight_save">Save weigh-in</string>
+    <string name="fitness_progress_map">This week on the body</string>
+    <string name="fitness_progress_map_described">The muscles trained in the last 7 days</string>
+    <string name="fitness_progress_map_caption">Sets logged in the last 7 days. A set counts in full for the muscle it is for and half for the ones that help. The band on each bar is the range to aim for.</string>
+    <!-- %1$s a count of sets, possibly with a half: "6.5" -->
+    <string name="fitness_progress_volume_sets">%1$s sets</string>
+    <string name="fitness_progress_calendar">Last 12 weeks</string>
+    <!-- For a screen reader: %1$d days trained, %2$d weeks -->
+    <string name="fitness_progress_calendar_described">%1$d days trained in the last %2$d weeks</string>
+    <string name="fitness_progress_board">Where each lift stands</string>
+    <!-- Last session's best set against the best ever: "290 lb × 8 · best 300 lb × 10" -->
+    <string name="fitness_progress_board_line">%1$s · best %2$s</string>
+    <string name="fitness_progress_board_empty">Once you've logged a lift here, it shows against the best you've ever done.</string>
+
+    <!-- Bringing notes in -->
+    <string name="fitness_import_body">Paste a note here, or share it to this app from your notes. One exercise name on a line, then a line for each weight with the reps you did. Several notes can go in one after another.</string>
+    <string name="fitness_import_hint">Hack squat\n- 290lbs - 12 reps\n- 320lbs - 10 reps</string>
+    <string name="fitness_import_shelf">These notes are for</string>
+    <string name="fitness_import_auto">Work it out</string>
+    <string name="fitness_import_preview">What these notes hold</string>
+    <!-- %1$s like "12 new exercises", %2$s like "40 sets" -->
+    <string name="fitness_import_summary">%1$s and %2$s to bring in</string>
+    <string name="fitness_import_nothing_new">Everything here is already in your log.</string>
+    <string name="fitness_import_unread">Nothing here reads as an exercise yet.</string>
+    <string name="fitness_import_confirm">Import</string>
+    <plurals name="fitness_import_row_new">
+        <item quantity="one">%1$d new exercise</item>
+        <item quantity="other">%1$d new exercises</item>
+    </plurals>
+    <plurals name="fitness_import_row_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <string name="fitness_import_row_known">Already here</string>
+    <!-- An exercise's shelf and its heaviest set: "Legs · 320 lb × 10" -->
+    <string name="fitness_import_row_detail">%1$s · %2$s</string>
+    <string name="fitness_import_skipped">Lines that didn't read as a set</string>
+    <!-- Under the first few of those lines: how many more there are -->
+    <plurals name="fitness_import_skipped_more">
+        <item quantity="one">and %1$d more line</item>
+        <item quantity="other">and %1$d more lines</item>
+    </plurals>
+    <!-- %1$s like "12 new exercises", %2$s like "40 sets" -->
+    <string name="fitness_import_done">Brought in %1$s and %2$s</string>
+    <string name="fitness_import_done_more">Paste another note, or head back and start a workout.</string>
+    <string name="fitness_import_done_button">Done</string>
+</resources>

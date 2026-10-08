@@ -18,3 +18,6 @@ actual fun createMomentsDao(context: PlatformContext): MomentsDao =
 
 actual fun createWeatherDao(context: PlatformContext): WeatherDao =
     InMemoryWeatherDao()
+
+actual fun createFitnessDao(context: PlatformContext): FitnessDao =
+    InMemoryFitnessDao()

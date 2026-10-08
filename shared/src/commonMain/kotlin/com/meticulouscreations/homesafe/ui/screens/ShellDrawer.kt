@@ -37,6 +37,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
@@ -81,6 +82,9 @@ import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinancePalette
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
+import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.ui.FitnessPalette
+import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.weather.WeatherUiState
@@ -91,6 +95,14 @@ import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyScene
 import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_drawer_empty
+import homesafe.shared.generated.resources.fitness_drawer_open
+import homesafe.shared.generated.resources.fitness_drawer_subtitle
+import homesafe.shared.generated.resources.fitness_drawer_title
+import homesafe.shared.generated.resources.fitness_drawer_week
+import homesafe.shared.generated.resources.fitness_today_headline_due
+import homesafe.shared.generated.resources.fitness_today_headline_working
+import homesafe.shared.generated.resources.fitness_today_resume_detail
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_drawer_cameras
 import homesafe.shared.generated.resources.shell_drawer_change_today
@@ -108,6 +120,7 @@ import homesafe.shared.generated.resources.weather_drawer_open
 import homesafe.shared.generated.resources.weather_drawer_subtitle
 import homesafe.shared.generated.resources.weather_drawer_title
 import homesafe.shared.generated.resources.weather_place_current
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 
@@ -115,8 +128,9 @@ private val DrawerWidth = 304.dp
 
 /**
  * The app drawer the top bar's menu button opens: the camera app's own tabs, and below them the
- * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside, and
- * Finance, whose card carries a live S&P 500 line — so the drawer is worth a glance on its own.
+ * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside,
+ * Fitness, whose card says which workout is up next, and Finance, whose card carries a live
+ * S&P 500 line — so the drawer is worth a glance on its own.
  * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it.
  */
 @OptIn(ExperimentalComposeUiApi::class)
@@ -126,9 +140,11 @@ internal fun ShellDrawer(
     selectedTab: TopLevelRoute,
     finance: FinanceUiState,
     weather: WeatherUiState,
+    fitness: FitnessUiState,
     onSelectTab: (TopLevelRoute) -> Unit,
     onOpenFinance: (Offset) -> Unit,
     onOpenWeather: (Offset) -> Unit,
+    onOpenFitness: (Offset) -> Unit,
     onClose: () -> Unit,
 ) {
     val progress by animateFloatAsState(
@@ -192,6 +208,8 @@ internal fun ShellDrawer(
                 Spacer(Modifier.height(24.dp))
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
                 WeatherDrawerCard(weather, animated = open, onOpen = onOpenWeather)
+                Spacer(Modifier.height(12.dp))
+                FitnessDrawerCard(fitness, animated = open, onOpen = onOpenFitness)
                 Spacer(Modifier.height(12.dp))
                 FinanceDrawerCard(finance, onOpenFinance)
             }
@@ -354,7 +372,72 @@ private fun WeatherDrawerCard(weather: WeatherUiState, animated: Boolean, onOpen
 }
 
 /**
- * An app opened from the drawer ([content]: finance, weather), over the whole shell, opening as
+ * The fitness app's door: muscle fibre in the colours of the workout that is up next (or the one
+ * in progress), moving while the drawer is open, with which day that is and how the week has gone.
+ */
+@Composable
+private fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen: (Offset) -> Unit) {
+    var center by remember { mutableStateOf(Offset.Zero) }
+    val shape = RoundedCornerShape(22.dp)
+    val palette = remember { FitnessPalette() }
+    val workout = fitness.workout
+    val due = fitness.days.firstOrNull { it.due }
+    val tints = (workout?.workout?.focus ?: due?.focus)?.let(palette::focus) ?: palette.phase(fitness.phase.kind)
+    val secondary = Color(0xD1FFFFFF)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { center = it.boundsInRoot().center }
+            .clip(shape)
+            .border(1.dp, Color(0x33FFFFFF), shape)
+            .clickable(onClickLabel = stringResource(Res.string.fitness_drawer_open)) { onOpen(center) }
+            .testTag("drawer_fitness"),
+    ) {
+        // Small enough to draw live, and stopped when the drawer is shut.
+        FiberField(tints.first, tints.second, seed = 0.4f, Modifier.matchParentSize(), energy = if (workout != null) 1f else 0.4f, running = animated)
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x4D000000), Color(0x99000000)))))
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.FitnessCenter, contentDescription = null, tint = Color(0xFFD9441A), modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.fitness_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(stringResource(Res.string.fitness_drawer_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = secondary)
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
+            }
+            Spacer(Modifier.height(14.dp))
+            when {
+                workout != null -> {
+                    Text(
+                        stringResource(Res.string.fitness_today_headline_working, stringResource(workout.workout.focus.label)),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                    Text(pluralStringResource(Res.plurals.fitness_today_resume_detail, workout.setCount, workout.setCount), style = MaterialTheme.typography.labelSmall, color = secondary)
+                }
+
+                due != null -> {
+                    Text(stringResource(Res.string.fitness_today_headline_due, stringResource(due.focus.label)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                    Text(
+                        pluralStringResource(Res.plurals.fitness_drawer_week, fitness.week.sessions, fitness.week.sessions),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = secondary,
+                        maxLines = 1,
+                    )
+                }
+
+                else -> Text(stringResource(Res.string.fitness_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
+            }
+        }
+    }
+}
+
+/**
+ * An app opened from the drawer ([content]: finance, weather, fitness), over the whole shell, opening as
  * a circle that grows from [origin] (the drawer card that was tapped) to cover the screen, and
  * draining back toward the menu button when it closes. [onCovering] reports when it fully covers
  * the screen, so the shell can stop drawing — and stop streaming — the cameras underneath.
