@@ -299,6 +299,7 @@ jobs:
           path: |
             build/bench/**
             build/startup-perf/*.log
+            build/startup-perf/failure-screen.*
             build/startup-perf/go2rtc.yaml
           retention-days: 14
 

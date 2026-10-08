@@ -35,22 +35,60 @@ def adb(serial, *args, check=True):
     return subprocess.run([ADB, "-s", serial, *args], capture_output=True, text=True, check=check).stdout
 
 
+class NotOnScreen(TimeoutError):
+    """The screen a run starts from never showed what it needs: nothing was timed yet."""
+
+
+def screen(serial):
+    """The nodes uiautomator sees, or None when it couldn't read the screen (it never went idle, or the device is busy)."""
+    xml = adb(serial, "exec-out", "uiautomator", "dump", "/dev/tty", check=False)
+    xml = xml[: xml.rfind(">") + 1]
+    try:
+        return list(ET.fromstring(xml).iter("node"))
+    except ET.ParseError:
+        return None
+
+
+def centre(node):
+    x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
+    return (x1 + x2) // 2, (y1 + y2) // 2
+
+
+def focused_window(serial):
+    focus = re.search(r"mCurrentFocus=(.*)", adb(serial, "shell", "dumpsys", "window", check=False))
+    return focus.group(1).strip() if focus else "unknown"
+
+
 def find_bounds(serial, text, timeout_s):
     """Centre of the first node whose text is [text], polling uiautomator until it appears."""
     deadline = time.monotonic() + timeout_s
+    seen = None
     while time.monotonic() < deadline:
-        xml = adb(serial, "exec-out", "uiautomator", "dump", "/dev/tty", check=False)
-        xml = xml[: xml.rfind(">") + 1]
-        try:
-            root = ET.fromstring(xml)
-        except ET.ParseError:
-            continue
-        for node in root.iter("node"):
-            if node.get("text") == text:
-                x1, y1, x2, y2 = map(int, re.findall(r"\d+", node.get("bounds")))
-                return (x1 + x2) // 2, (y1 + y2) // 2
+        nodes = screen(serial)
+        if nodes is not None:
+            for node in nodes:
+                if node.get("text") == text:
+                    return centre(node)
+            seen = [n.get("text") for n in nodes if n.get("text")]
         time.sleep(0.2)
-    raise TimeoutError(f"'{text}' not on screen after {timeout_s}s")
+    # What was there instead is the whole diagnosis: a system dialog, the launcher, a blank screen.
+    if seen is None:
+        instead = "the screen could not be read"
+    else:
+        instead = "on screen: " + (", ".join(repr(t) for t in seen[:12]) or "nothing with text")
+    raise NotOnScreen(f"'{text}' not on screen after {timeout_s}s ({instead}; focus {focused_window(serial)})")
+
+
+def clear_the_way(serial):
+    """Before another try at a run whose first screen never appeared: wake the screen, and send away
+    an "isn't responding" dialog, which an emulator fresh from boot on a busy runner puts over
+    everything ("Wait" keeps the process it complains about)."""
+    adb(serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP", check=False)
+    adb(serial, "shell", "wm", "dismiss-keyguard", check=False)
+    for node in screen(serial) or []:
+        if node.get("text") == "Wait":
+            adb(serial, "shell", "input", "tap", *map(str, centre(node)), check=False)
+            break
 
 
 def wait_for_idle_go2rtc(go2rtc, ignore_agent=None, count_local=False, timeout_s=90):
@@ -106,7 +144,7 @@ def run_once(serial, package, cameras, timeout_s, settle_s, taps, launch_only=Fa
         find_bounds(serial, "Autofill test credentials", 15)
     adb(serial, "shell", "input", "tap", *map(str, taps["autofill"]))
     if "connect" not in taps:
-        taps["connect"] = find_bounds(serial, "Connect", 5)
+        taps["connect"] = find_bounds(serial, "Connect", 15)
     adb(serial, "shell", "input", "tap", *map(str, taps["connect"]))
     deadline = time.monotonic() + timeout_s
     marks = {}
@@ -274,6 +312,7 @@ def main():
     p.add_argument("--compare", nargs=2, metavar=("A", "B"))
     p.add_argument("--stages", nargs="+", metavar="LABEL", help="per-stage durations for these labels, side by side")
     p.add_argument("--launch-only", action="store_true", help="time only the cold launch (a build without the milestones)")
+    p.add_argument("--retries", type=int, default=0, help="tries again at a run whose sign-in screen never appeared (nothing was timed); a camera that never drew is never retried")
     p.add_argument("--gate", nargs=2, metavar=("BASE", "HEAD"), help="fail if HEAD's medians regressed against BASE's")
     p.add_argument("--max-regression", type=float, default=0.15, help="for --gate: allowed slowdown as a fraction of the base median")
     args = p.parse_args()
@@ -291,13 +330,25 @@ def main():
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     rows, taps = [], {}
     for i in range(args.runs):
-        if args.go2rtc:
-            adb(args.serial, "shell", "am", "force-stop", args.package)
-            waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent, args.go2rtc_count_local)
-            if waited > 0.5:
-                print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
-            time.sleep(args.idle_extra)
-        marks = run_once(args.serial, args.package, args.cameras, args.timeout, args.settle, taps, args.launch_only)
+        failed = 0
+        while True:
+            if args.go2rtc:
+                adb(args.serial, "shell", "am", "force-stop", args.package)
+                waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent, args.go2rtc_count_local)
+                if waited > 0.5:
+                    print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
+                time.sleep(args.idle_extra)
+            try:
+                marks = run_once(args.serial, args.package, args.cameras, args.timeout, args.settle, taps, args.launch_only)
+                break
+            except NotOnScreen as stuck:
+                # The run never got as far as being timed, so trying again biases nothing; a build
+                # that really can't show its sign-in screen fails every try and still fails here.
+                failed += 1
+                if failed > args.retries:
+                    raise
+                print(f"  (try {failed} of run {i + 1} never started: {stuck}; trying again)", flush=True)
+                clear_the_way(args.serial)
         row = {"label": args.label, "run": i, "marks": marks, "derived": derived(marks)}
         rows.append(row)
         with open(OUT, "a") as f:
