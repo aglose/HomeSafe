@@ -183,7 +183,8 @@ class WeatherViewModel(
             }
             // The place last shown comes back, whichever of the list and the preferences is read
             // first; once the reader has picked one, that stands for as long as it's on the list.
-            val wanted = if (picked) state.selectedId else remembered ?: state.selectedId
+            // With neither, it opens on where the phone is, as soon as that is known.
+            val wanted = if (picked) state.selectedId else remembered ?: here?.id ?: state.selectedId
             val selected = wanted?.takeIf { id -> rebuilt.any { it.place.id == id } }
                 ?: state.selectedId?.takeIf { id -> rebuilt.any { it.place.id == id } }
                 ?: rebuilt.firstOrNull()?.place?.id

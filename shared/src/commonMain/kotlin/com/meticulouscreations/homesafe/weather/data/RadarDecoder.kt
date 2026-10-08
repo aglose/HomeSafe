@@ -57,6 +57,11 @@ internal object RadarDecoder {
                 continue
             }
             val rgb = argb and 0xFFFFFF
+            // Black is every table's "nothing here", whether or not the tile troubled to make it clear.
+            if (rgb == 0) {
+                pixels[i] = 0
+                continue
+            }
             val grey = known[rgb] ?: guessed.getOrPut(rgb) { greyOf(nearest(rgb, table), table) }
             pixels[i] = if (grey == 0) 0 else (0xFF shl 24) or (grey shl 16) or (grey shl 8) or grey
         }

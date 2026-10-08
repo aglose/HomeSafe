@@ -40,6 +40,7 @@ import com.meticulouscreations.homesafe.weather.domain.MapCamera
 import com.meticulouscreations.homesafe.weather.domain.PlacedTile
 import com.meticulouscreations.homesafe.weather.domain.RadarFrame
 import com.meticulouscreations.homesafe.weather.domain.RadarTimeline
+import com.meticulouscreations.homesafe.weather.ui.LocalWeatherShaders
 import com.meticulouscreations.homesafe.weather.ui.shader.MAP_NIGHT_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.RADAR_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock
@@ -95,8 +96,9 @@ internal fun RadarMap(
 ) {
     val density = LocalDensity.current.density
     val tilePx = MAP_TILE_DP * density
-    val night = remember { weatherShaderOrNull(MAP_NIGHT_SHADER) }
-    val radar = remember { weatherShaderOrNull(RADAR_SHADER) }
+    val shaded = LocalWeatherShaders.current
+    val night = remember(shaded) { if (shaded) weatherShaderOrNull(MAP_NIGHT_SHADER) else null }
+    val radar = remember(shaded) { if (shaded) weatherShaderOrNull(RADAR_SHADER) else null }
     val arrivals by tiles.arrivals.collectAsStateWithLifecycle()
     val clock = rememberWeatherShaderClock(running = animated)
     val scope = rememberCoroutineScope()

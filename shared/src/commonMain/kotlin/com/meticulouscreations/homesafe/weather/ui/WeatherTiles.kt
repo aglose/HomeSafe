@@ -452,7 +452,8 @@ internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Mo
 /** The moon at [cycle] (0 new, 0.5 full), by [MOON_SHADER]; a plain disc with a shadow slid over it where shaders can't be had. */
 @Composable
 internal fun MoonDisc(cycle: Float, modifier: Modifier = Modifier) {
-    val shader = remember { weatherShaderOrNull(MOON_SHADER) }
+    val shaded = LocalWeatherShaders.current
+    val shader = remember(shaded) { if (shaded) weatherShaderOrNull(MOON_SHADER) else null }
     Canvas(modifier) {
         if (shader != null) {
             shader.setUniform("size", size.width, size.height)

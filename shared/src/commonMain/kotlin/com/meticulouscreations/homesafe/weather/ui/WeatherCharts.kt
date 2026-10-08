@@ -163,7 +163,7 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
                     close()
                 }
                 val stops = hours.mapIndexed { i, hour -> (i + 0.5f) / hours.size to colors.temperature(hour.temperatureC) }.toTypedArray()
-                drawPath(fill, Brush.verticalGradient(listOf(Color(0x30FFFFFF), Color.Transparent), startY = curveTop, endY = curveTop + curveHeight))
+                drawPath(fill, Brush.verticalGradient(listOf(Color(0x1CFFFFFF), Color.Transparent), startY = curveTop + curveHeight * 0.3f, endY = curveTop + curveHeight))
                 drawPath(line, Brush.horizontalGradient(*stops, startX = 0f, endX = size.width), style = Stroke(2.6.dp.toPx(), cap = StrokeCap.Round))
                 drawCircle(Color.White, 4.5.dp.toPx(), points.first())
                 drawCircle(colors.temperature(hours.first().temperatureC), 2.6.dp.toPx(), points.first())

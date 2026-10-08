@@ -121,6 +121,14 @@ class WeatherTypography(family: FontFamily) {
 
 val LocalWeatherTypography = staticCompositionLocalOf { WeatherTypography(FontFamily.Default) }
 
+/**
+ * Whether the sky, the radar and the moon are drawn by their shaders. Always, in the app. A UI
+ * test that isn't about them turns it off: off a GPU a shader runs on the CPU, where every frame
+ * of a full-screen sky costs seconds, and the plain gradient that stands in says the same things
+ * to a test.
+ */
+val LocalWeatherShaders = staticCompositionLocalOf { true }
+
 /** The units the reader chose, for every number on the weather screens. */
 val LocalWeatherUnits = staticCompositionLocalOf { WeatherUnits() }
 

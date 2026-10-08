@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
+import com.meticulouscreations.homesafe.weather.ui.LocalWeatherShaders
 import com.meticulouscreations.homesafe.weather.ui.shader.CELESTIAL_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.CLOUD_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.GLASS_SHADER
@@ -50,8 +51,8 @@ data class SkyFreeze(val time: Float = 14f, val boltAge: Float = -1f)
  * [freeze] holds it on one frame. The clock stops while the app is in the background, and while
  * [running] is false.
  *
- * Where the shaders can't be compiled (Android Studio's preview renderer) it is the scene's
- * gradient alone.
+ * Where the shaders can't be compiled (Android Studio's preview renderer), or are switched off
+ * ([LocalWeatherShaders]), it is the scene's gradient alone.
  */
 @Composable
 fun WeatherSky(
@@ -61,10 +62,11 @@ fun WeatherSky(
     running: Boolean = true,
     freeze: SkyFreeze? = null,
 ) {
-    val celestial = remember { weatherShaderOrNull(CELESTIAL_SHADER) }
-    val clouds = remember { weatherShaderOrNull(CLOUD_SHADER) }
-    val precip = remember { weatherShaderOrNull(PRECIP_SHADER) }
-    val drops = remember(glass) { if (glass) weatherShaderOrNull(GLASS_SHADER) else null }
+    val shaded = LocalWeatherShaders.current
+    val celestial = remember(shaded) { if (shaded) weatherShaderOrNull(CELESTIAL_SHADER) else null }
+    val clouds = remember(shaded) { if (shaded) weatherShaderOrNull(CLOUD_SHADER) else null }
+    val precip = remember(shaded) { if (shaded) weatherShaderOrNull(PRECIP_SHADER) else null }
+    val drops = remember(shaded, glass) { if (shaded && glass) weatherShaderOrNull(GLASS_SHADER) else null }
     val animator = remember { SkyAnimator() }
     val held = freeze ?: if (LocalInspectionMode.current) SkyFreeze() else null
     val palette = remember(scene) { SkyPalette.of(scene) }
