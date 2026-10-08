@@ -1,15 +1,19 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -27,6 +31,7 @@ import com.meticulouscreations.homesafe.ui.screens.ShellSkeleton
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * The shell's own chrome, drawn by Compose: the floating bottom nav and the top bar that fades
@@ -178,6 +183,25 @@ class ShellChromeUiTest {
         }
         onNodeWithText("Offline").assertIsDisplayed()
         onNodeWithText("Tailscale").assertDoesNotExist()
+    }
+
+    @Test
+    fun theLocalNetworkBadgeIsShortEnoughToClearTheTitle() = runComposeUiTest {
+        setContent {
+            FrigatePreview {
+                Box(Modifier.width(360.dp)) {
+                    FrigateTopBar(
+                        activeConnection = ActiveConnection(serverUrl = "http://100.64.0.1:5000", localUrl = "http://192.168.1.65:5000", route = ConnectionRoute.LOCAL_NETWORK),
+                        appVersion = "1.0.62 (431)",
+                    )
+                }
+            }
+        }
+        // "Local network" is the route's name everywhere else; here it ran into the centred title.
+        onNodeWithText("Local network").assertDoesNotExist()
+        val title = onNodeWithText("PERCYSAFE").getUnclippedBoundsInRoot()
+        val badge = onNodeWithText("Local").getUnclippedBoundsInRoot()
+        assertTrue(badge.left >= title.right, "the badge starts at ${badge.left}, the title ends at ${title.right}")
     }
 
     @Test
