@@ -1691,6 +1691,18 @@ private fun com.meticulouscreations.homesafe.finance.ui.nodeValue(node: com.meti
     - state: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.rememberEconAxis(): com.meticulouscreations.homesafe.finance.ui.components.ChartAxis
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
+public fun com.meticulouscreations.homesafe.finance.ui.rememberFinanceDates(): com.meticulouscreations.homesafe.finance.ui.FinanceDates
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.roleLabel(role: com.meticulouscreations.homesafe.finance.domain.CardRole): kotlin.String
   skippable: false
   restartable: false
