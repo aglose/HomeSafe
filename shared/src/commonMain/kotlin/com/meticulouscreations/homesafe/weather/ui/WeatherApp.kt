@@ -108,6 +108,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import com.meticulouscreations.homesafe.weather.domain.WeatherStory
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 import com.meticulouscreations.homesafe.weather.ui.radar.RadarScreen
+import com.meticulouscreations.homesafe.weather.ui.shader.WeatherShaderWarmUp
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyScene
 import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
@@ -265,6 +266,8 @@ internal fun WeatherAppContent(
         val pagePadding = PaddingValues(top = top + 6.dp, bottom = nav.calculateBottomPadding() + 28.dp)
 
         Box(modifier.fillMaxSize().background(Color(0xFF05080E)).testTag("weather_app")) {
+            // Under the sky, which covers it: drawn, and never seen.
+            if (active) WeatherShaderWarmUp()
             WeatherSky(
                 scene = scene,
                 modifier = Modifier.fillMaxSize(),

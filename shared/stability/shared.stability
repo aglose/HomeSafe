@@ -5361,6 +5361,13 @@ private fun com.meticulouscreations.homesafe.weather.ui.radar.relativeTime(epoch
     - nowEpochSeconds: STABLE (primitive type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.weather.ui.shader.WeatherShaderWarmUp(modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock(running: kotlin.Boolean, wrapSeconds: kotlin.Float): androidx.compose.runtime.FloatState
   skippable: false
   restartable: false
