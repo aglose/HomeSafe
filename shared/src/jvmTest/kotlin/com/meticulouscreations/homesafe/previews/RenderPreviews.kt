@@ -67,10 +67,14 @@ class RenderPreviews {
 
         outDir.deleteRecursively()
         outDir.mkdirs()
+        // Each picture is written and let go, and only its size kept: a tall screen is twenty
+        // megabytes of pixels, and holding every one to the end ran the test's heap out.
         val results = previews.map { preview ->
-            val image = runCatching { render(preview) }
-            image.getOrNull()?.let { ImageIO.write(it, "png", File(outDir, "${preview.id}.png")) }
-            preview to image
+            preview to runCatching {
+                val image = render(preview)
+                ImageIO.write(image, "png", File(outDir, "${preview.id}.png"))
+                IntSize(image.width, image.height)
+            }
         }
         writeManifest(outDir, results)
 
@@ -116,9 +120,13 @@ class RenderPreviews {
             }
         }
         try {
-            // A few frames' worth of time, so first-frame effects, fades-in and resource loads land.
+            // Half a second of the frame clock, so first-frame effects, fades-in and resource loads
+            // land: the first frames one by one (effects that hand on from frame to frame), then
+            // in strides, since what moves by the clock is in the same place at the end however
+            // many frames it took. Each frame of a screen with a sky on it is that many shaders
+            // run on the CPU, and drawing all thirty was most of the time the whole run took.
             var image = scene.render(0)
-            for (frame in 1..SETTLE_FRAMES) image = scene.render(frame * FRAME_NANOS)
+            for (frame in SETTLE_FRAMES) image = scene.render(frame * FRAME_NANOS)
             val bitmap = image.toComposeImageBitmap().toAwtImage()
             val width = contentSize.width.coerceIn(1, bitmap.width)
             val height = contentSize.height.coerceIn(1, bitmap.height)
@@ -128,7 +136,7 @@ class RenderPreviews {
         }
     }
 
-    private fun writeManifest(outDir: File, results: List<Pair<PreviewFunction, Result<BufferedImage>>>) {
+    private fun writeManifest(outDir: File, results: List<Pair<PreviewFunction, Result<IntSize>>>) {
         fun String.json() = "\"" + replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\""
         val entries = results.joinToString(",\n") { (preview, image) ->
             val fields = buildList {
@@ -155,7 +163,7 @@ class RenderPreviews {
 
         /** Pixels per dp. Phones are 2.625–3; 2 keeps the images small enough to read back cheaply. */
         const val DENSITY = 2f
-        const val SETTLE_FRAMES = 30
+        val SETTLE_FRAMES = intArrayOf(1, 2, 3, 4, 10, 20, 30)
         const val FRAME_NANOS = 16_000_000L
         const val STACK_LINES = 25
     }
