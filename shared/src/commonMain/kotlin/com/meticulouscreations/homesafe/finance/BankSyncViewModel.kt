@@ -180,8 +180,8 @@ class BankSyncViewModel(
                 if (e != null && shutOut(e)) return
                 if (lapsed) return endLink(expired)
                 // Nothing answering isn't the link failing: the relay keeps the sign-in until the link
-                // lapses, and only collects it when asked. Someone who turned on another VPN to sign in
-                // to their bank has Tailscale off until they switch back, so keep asking till then.
+                // lapses, and asking is how this page hears it's done. Someone who turned on another VPN
+                // to sign in to their bank has Tailscale off until they switch back, so keep asking till then.
                 val unanswered = when ((e as? BankSyncException)?.problem) {
                     BankProblem.TAILSCALE_OFF -> Res.string.fin_bank_linking_tailscale_off
                     BankProblem.UNREACHABLE -> Res.string.fin_bank_linking_unreachable
