@@ -6489,9 +6489,12 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
 # Each card is given a role, by its key in the feed (which outlives a card being linked again):
 # "split" for a card two people carry, "family" for one whose spending is everyone's, "person:<name>"
 # for one person's own card, "ignore" for one that is no part of the budget. A purchase on a split
-# card belongs to whoever the bank says made it, which it rarely says, or to whoever its merchant
-# was said to always be, or to nobody yet: someone then tags it in the app, and a tag made by
-# hand outranks everything else.
+# card belongs to whoever the bank says made it, or to whoever its merchant was said to always
+# be, or to nobody yet: someone then tags it in the app, and a tag made by hand outranks
+# everything else. How a bank says who made it differs: American Express names the cardholder
+# ("SARAH GAN 1006"), Capital One gives only the last four digits of the card that was used
+# ("1203"). So each such mark on a card can be said once to be one person's (the card's
+# "holders"), and a mark that holds a person's name needs no telling.
 #
 # The limits, the roles and the two numbers the relay can't work out for itself (the month's
 # take-home and the bills that aren't paid by card, both of which only the app reads out of the
@@ -6542,6 +6545,8 @@ class BudgetPatch(BaseModel):
     people: list[str] | None = None
     limits: dict[str, Any] | None = None
     roles: dict[str, Any] | None = None
+    # By card key, then by the bank's mark for a cardholder: whose card that is. A null takes one away.
+    holders: dict[str, dict[str, Any]] | None = None
     card_paid_lines: list[str] | None = None
     alerts: dict[str, bool] | None = None
     sheet: dict[str, Any] | None = None
@@ -6751,6 +6756,7 @@ def budget_config() -> dict[str, Any]:
         "people": people,
         "limits": {"total": limits.get("total"), "people": {p: (limits.get("people") or {}).get(p) for p in people}, "family": limits.get("family")},
         "roles": dict(kept.get("roles") or {}),
+        "holders": {card: dict(marks) for card, marks in (kept.get("holders") or {}).items() if marks},
         "card_paid_lines": list(kept.get("card_paid_lines") or []),
         "alerts": {name: bool((kept.get("alerts") or {}).get(name)) for name in BUDGET_ALERT_NAMES},
         "sheet": {"take_home": sheet.get("take_home"), "bills_off_card": sheet.get("bills_off_card"), "at": sheet.get("at")},
@@ -6806,6 +6812,16 @@ def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
                 config["roles"][str(key)[:200]] = role
             else:
                 raise _budget_refusal(f"a card is {BUDGET_SPLIT}, {BUDGET_FAMILY}, {BUDGET_IGNORE} or {BUDGET_PERSON}<one of the people>")
+    if patch.get("holders") is not None:
+        for card, marks in patch["holders"].items():
+            kept = config["holders"].setdefault(str(card)[:200], {})
+            for mark, person in (marks or {}).items():
+                if person is None:
+                    kept.pop(str(mark), None)
+                elif person in config["people"]:
+                    kept[str(mark)[:200]] = person
+                else:
+                    raise _budget_refusal(f"{person} isn't one of the budget's people")
     if patch.get("card_paid_lines") is not None:
         config["card_paid_lines"] = sorted({str(line)[:200] for line in patch["card_paid_lines"]})
     if patch.get("alerts") is not None:
@@ -6818,6 +6834,8 @@ def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
         config["sheet"] = {"take_home": _budget_amount(sheet.get("take_home"), "take-home"), "bills_off_card": _budget_amount(sheet.get("bills_off_card"), "the bills"), "at": now}
     # A role naming someone who has since left the budget goes back to unset.
     config["roles"] = {key: role for key, role in config["roles"].items() if not role.startswith(BUDGET_PERSON) or role in budget_buckets(config["people"])}
+    # Likewise a cardholder's mark said to be theirs.
+    config["holders"] = {card: marks for card, marks in ((card, {m: p for m, p in marks.items() if p in config["people"]}) for card, marks in config["holders"].items()) if marks}
     state_set(BUDGET_KEY, config)
     return config
 
@@ -6827,18 +6845,22 @@ def budget_rules() -> dict[str, str]:
     return dict(with_db(lambda c: c.execute("SELECT merchant_key, bucket FROM budget_rules ORDER BY merchant_key").fetchall()))
 
 
-def budget_bucket(tag: str | None, role: str, owner: str | None, key: str | None, people: list[str], rules: dict[str, str]) -> tuple[str | None, str]:
+def budget_bucket(tag: str | None, role: str, owner: str | None, key: str | None, people: list[str], rules: dict[str, str],
+                  holder: str | None = None) -> tuple[str | None, str]:
     """
     Whose a purchase is, and how that is known: a tag made by hand ("manual"); else the card it
-    was on being one person's own ("account"); else, on a card two people carry, the one person
-    the bank names ("bank"); else what its merchant was said to always be ("rule"); else the
-    family's when the card is the family's ("account"); else nobody's yet (None, "none").
+    was on being one person's own ("account"); else, on a card two people carry, whoever the
+    bank's mark for the cardholder was said to be (`holder`) or the one person it names ("bank");
+    else what its merchant was said to always be ("rule"); else the family's when the card is
+    the family's ("account"); else nobody's yet (None, "none").
     """
     buckets = budget_buckets(people)
     if tag in buckets:
         return tag, "manual"
     if role.startswith(BUDGET_PERSON) and role in buckets:
         return role, "account"
+    if role == BUDGET_SPLIT and holder in people:
+        return BUDGET_PERSON + holder, "bank"
     if role == BUDGET_SPLIT and owner:
         words = set(re.findall(r"[a-z]+", owner.lower()))
         named = [p for p in people if p.lower() in words]
@@ -6860,18 +6882,32 @@ def month_before(month: str, months: int = 1) -> str:
     return f"{index // 12:04d}-{index % 12 + 1:02d}"
 
 
-def budget_cards(roles: dict[str, str]) -> list[dict[str, Any]]:
-    """Every linked credit card: what it is, its role in the budget if it has one, and whether its purchases can be read."""
+def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | None = None, people: list[str] | None = None) -> list[dict[str, Any]]:
+    """
+    Every linked credit card: what it is, its role in the budget if it has one, whether its
+    purchases can be read, and each mark the bank puts on them for who made them (`holders`:
+    the mark, how many purchases carry it, and whose it was said to be), the commonest first.
+    """
     rows = with_db(lambda c: c.execute(
-        "SELECT k.key, i.item_id, i.institution, a.name, a.mask, a.current, a.credit_limit, i.error, i.products"
+        "SELECT k.key, i.item_id, i.institution, a.name, a.mask, a.current, a.credit_limit, i.error, i.products, a.account_id"
         " FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id"
         " WHERE a.type = 'credit' ORDER BY i.linked_at, i.item_id, a.name, a.account_id"
     ).fetchall())
-    return [
-        {"key": key or name, "institution_id": item_id, "institution": institution or "", "name": name, "mask": mask, "role": roles.get(key or name),
-         "balance": current, "limit": limit, "error": error, "needs_relink": error in PLAID_RELINK, "transactions": "transactions" in (products or "")}
-        for key, item_id, institution, name, mask, current, limit, error, products in rows
-    ]
+    marks: dict[str, list[tuple[str, int]]] = {}
+    for account_id, owner, count in with_db(lambda c: c.execute(
+        "SELECT account_id, owner, COUNT(*) FROM plaid_transactions WHERE removed_at IS NULL AND kind != 'payment' AND owner IS NOT NULL AND owner != ''"
+        " GROUP BY account_id, owner ORDER BY COUNT(*) DESC, owner"
+    ).fetchall()):
+        marks.setdefault(account_id, []).append((owner, count))
+    cards = []
+    for key, item_id, institution, name, mask, current, limit, error, products, account_id in rows:
+        said = (holders or {}).get(key or name) or {}
+        cards.append({
+            "key": key or name, "institution_id": item_id, "institution": institution or "", "name": name, "mask": mask, "role": roles.get(key or name),
+            "balance": current, "limit": limit, "error": error, "needs_relink": error in PLAID_RELINK, "transactions": "transactions" in (products or ""),
+            "holders": [{"mark": mark, "count": count, "person": said.get(mark) if said.get(mark) in (people or []) else None} for mark, count in marks.get(account_id, [])],
+        })
+    return cards
 
 
 def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict[str, Any]]:
@@ -6894,7 +6930,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
-        bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules)
+        bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, holder=(config["holders"].get(card) or {}).get(owner or ""))
         purchases.append({
             "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
@@ -6962,7 +6998,7 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         "next_sync_at": float(synced.get("at") or now) + TXN_SYNC_SECONDS,
         # False while Plaid is still fetching a card's first transactions: the month isn't all there yet.
         "ready": all(status in TXN_READY for status, _ in reading),
-        "cards": budget_cards(config["roles"]),
+        "cards": budget_cards(config["roles"], config["holders"], config["people"]),
         "config": {**config, "rules": [{"merchant": key, "bucket": to} for key, to in rules.items()]},
         "savings_line": round(take_home - bills, 2) if take_home is not None and bills is not None else None,
         "spent": round(sum(p["amount"] for p in purchases), 2),
@@ -7105,9 +7141,9 @@ def put_budget_config(body: BudgetPatch, request: Request, response: Response) -
     """Changes the budget's settings: the people, the limits, each card's role, the alerts, and what the app read from the sheet."""
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     user = require_finance_user(request)
-    patch = {name: getattr(body, name, None) for name in ("people", "limits", "roles", "card_paid_lines", "alerts", "sheet")}
+    patch = {name: getattr(body, name, None) for name in ("people", "limits", "roles", "holders", "card_paid_lines", "alerts", "sheet")}
     budget_config_save(patch, time.time())
-    if any(patch[name] is not None for name in ("people", "limits", "roles", "alerts")):
+    if any(patch[name] is not None for name in ("people", "limits", "roles", "holders", "alerts")):
         log.info("budget: %s changed the settings", user)
     # A limit just lowered under what is already spent is a line crossed.
     budget_check_in_background()

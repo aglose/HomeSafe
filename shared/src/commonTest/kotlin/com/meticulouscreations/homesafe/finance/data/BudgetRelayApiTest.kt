@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.text.UiText
@@ -58,7 +59,8 @@ class BudgetRelayApiTest {
         {"configured":true,"environment":"sandbox","month":"2026-10","today":"2026-10-07","day":7,"days_in_month":31,
          "synced_at":1791374000.0,"changed_at":1791360000.5,"syncing":false,"next_sync_at":1791377600.0,"ready":false,
          "cards":[{"key":"Summit Bank Voyager 4410","institution_id":"item-1","institution":"Summit Bank","name":"Voyager","mask":"4410","role":"split",
-                   "balance":812.4,"limit":10000,"error":"ITEM_LOGIN_REQUIRED","needs_relink":true,"transactions":true},
+                   "balance":812.4,"limit":10000,"error":"ITEM_LOGIN_REQUIRED","needs_relink":true,"transactions":true,
+                   "holders":[{"mark":"7726","count":38,"person":null},{"mark":"4410","count":12,"person":"Alex"}]},
                   {"key":"Northwind Platinum 2207","institution_id":"item-2","institution":"Northwind","name":"Platinum","mask":"","role":null,
                    "balance":null,"limit":null,"error":null,"needs_relink":false,"transactions":false}],
          "config":{"people":["Alex","Sam"],"limits":{"total":4500.0,"people":{"Alex":1200.0,"Sam":null},"family":2100.0},
@@ -103,6 +105,9 @@ class BudgetRelayApiTest {
         assertNull(platinum.mask)
         assertFalse(platinum.readsPurchases)
         assertEquals(listOf(voyager), budget.budgetCards)
+        assertEquals(listOf(CardHolder("7726", 38, null), CardHolder("4410", 12, "Alex")), voyager.holders)
+        assertEquals(listOf(CardHolder("7726", 38, null)), voyager.unsaidHolders)
+        assertTrue(platinum.holders.isEmpty())
 
         assertEquals(BudgetLimits(total = 4_500.0, people = mapOf("Alex" to 1_200.0, "Sam" to null), family = 2_100.0), budget.config.limits)
         assertEquals(BudgetAlertSwitches(total = true, savings = false, buckets = true), budget.config.alerts)
@@ -160,6 +165,11 @@ class BudgetRelayApiTest {
         val body = BudgetConfigPatch(cardPaidLines = listOf("Groceries"), sheet = BudgetSheetFigures(14_170.0, 9_000.0), alerts = BudgetAlertSwitches(total = true), people = listOf("Alex")).toJson()
         assertEquals(setOf("people", "card_paid_lines", "alerts", "sheet"), body.keys)
         assertEquals("9000.0", body.getValue("sheet").jsonObject.getValue("bills_off_card").jsonPrimitive.content)
+        // Whose card is which: by card, then by the bank's mark; a null takes the say-so back.
+        val holders = BudgetConfigPatch(holders = mapOf("Card A" to mapOf("7726" to "Sam", "4410" to null))).toJson()
+        assertEquals(setOf("holders"), holders.keys)
+        assertEquals("Sam", holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("7726").jsonPrimitive.content)
+        assertEquals(JsonNull, holders.getValue("holders").jsonObject.getValue("Card A").jsonObject.getValue("4410"))
         assertEquals("true", body.getValue("alerts").jsonObject.getValue("total").jsonPrimitive.content)
     }
 

@@ -67,6 +67,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetBucket
 import com.meticulouscreations.homesafe.finance.domain.BudgetCard
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetPace
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.PaceStatus
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
@@ -135,6 +136,9 @@ import homesafe.shared.generated.resources.fin_budget_hero_day
 import homesafe.shared.generated.resources.fin_budget_hero_limit
 import homesafe.shared.generated.resources.fin_budget_hero_month
 import homesafe.shared.generated.resources.fin_budget_hero_no_limit
+import homesafe.shared.generated.resources.fin_budget_holder_ending
+import homesafe.shared.generated.resources.fin_budget_holders_body
+import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_how
 import homesafe.shared.generated.resources.fin_budget_link_body
 import homesafe.shared.generated.resources.fin_budget_link_title
@@ -237,6 +241,7 @@ internal fun BudgetRoute(
         contentPadding = contentPadding,
         onTag = viewModel::tag,
         onSetRole = { card, role -> viewModel.save(BudgetConfigPatch(roles = mapOf(card to role))) },
+        onSetHolder = { card, mark, person -> viewModel.save(BudgetConfigPatch(holders = mapOf(card to mapOf(mark to person)))) },
         onShowMonth = viewModel::showMonth,
         onSyncNow = viewModel::syncNow,
         onRetry = viewModel::refresh,
@@ -257,6 +262,7 @@ internal fun BudgetScreen(
     contentPadding: PaddingValues,
     onTag: (purchaseId: String, bucket: BucketId, remember: Boolean) -> Unit,
     onSetRole: (cardKey: String, role: CardRole) -> Unit,
+    onSetHolder: (cardKey: String, mark: String, person: String?) -> Unit,
     onShowMonth: (String?) -> Unit,
     onSyncNow: () -> Unit,
     onRetry: () -> Unit,
@@ -296,6 +302,22 @@ internal fun BudgetScreen(
                 item(key = "status") { StatusBlock(state, budget, onSyncNow, onOpenSettings, onOpenLinkedAccounts) }
                 if (unset.isNotEmpty()) {
                     item(key = "roles") { RoleSetupCard(unset, saving = state.saving, onSetRole = onSetRole) }
+                }
+                // A shared card whose bank marks each purchase with the card that made it: said once, they sort themselves.
+                val unsaid = budget.cards.filter { it.unsaidHolders.isNotEmpty() }
+                if (unsaid.isNotEmpty() && budget.config.people.isNotEmpty()) {
+                    item(key = "holders") {
+                        FinanceCard(Modifier.padding(top = 16.dp).testTag("finance_budget_holders")) {
+                            Text(stringResource(Res.string.fin_budget_holders_title), style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(Res.string.fin_budget_holders_body), style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
+                            unsaid.forEach { card ->
+                                Spacer(Modifier.height(14.dp))
+                                Text(cardLabel(card), style = FinanceTheme.type.bodyStrong, color = FinanceTheme.colors.textPrimary)
+                                CardHolders(card, budget.config.people, enabled = !state.saving, onSay = { mark, person -> onSetHolder(card.key, mark, person) })
+                            }
+                        }
+                    }
                 }
                 if (budget.budgetCards.isNotEmpty()) {
                     val toSort = budget.unassigned
@@ -662,6 +684,49 @@ internal fun RoleChips(selected: CardRole, people: List<String>, enabled: Boolea
                     .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onPick(role) }
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
+        }
+    }
+}
+
+/** How a cardholder's mark reads: a bare card number as "Card ending 1203", anything else (a name) as the bank wrote it. */
+@Composable
+private fun holderLabel(holder: CardHolder): String =
+    if (holder.mark.length in 3..6 && holder.mark.all { it.isDigit() }) stringResource(Res.string.fin_budget_holder_ending, holder.mark) else holder.mark
+
+/**
+ * Whose card is which: each mark the bank puts on [card]'s purchases, with the budget's people
+ * to pick from. Picking the person already picked takes the say-so back.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CardHolders(card: BudgetCard, people: List<String>, enabled: Boolean, onSay: (mark: String, person: String?) -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    Column(modifier.fillMaxWidth()) {
+        card.holders.forEach { holder ->
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(holderLabel(holder), style = FinanceTheme.type.body, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                Text(pluralStringResource(Res.plurals.fin_budget_purchases_count, holder.count, holder.count), style = FinanceTheme.type.label, color = colors.textTertiary)
+            }
+            Spacer(Modifier.height(6.dp))
+            FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                people.forEach { person ->
+                    val isSelected = holder.person == person
+                    val color = bucketColor(BucketId.Person(person), people)
+                    Text(
+                        person,
+                        style = FinanceTheme.type.label,
+                        color = if (isSelected) color else colors.textSecondary,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (isSelected) color.copy(alpha = 0.18f) else colors.surfaceRaised)
+                            .border(1.dp, if (isSelected) color.copy(alpha = 0.6f) else Color.Transparent, CircleShape)
+                            .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onSay(holder.mark, if (isSelected) null else person) }
+                            .testTag("finance_budget_holder_${holder.mark}_$person")
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
         }
     }
 }

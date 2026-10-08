@@ -4335,6 +4335,35 @@ class BudgetMonthTest(_Budget):
         self.assertEqual((70.0, 20.0, 100.0, 12.5), tuple(self.bucket(b)["spent"] for b in ("person:Andrew", "person:Sarah", "family", "unassigned")))
         self.assertEqual(202.5, self.month()["spent"])
 
+    def test_a_card_s_last_four_is_whose_it_was_said_to_be(self):
+        # Capital One marks each purchase with the card that made it, not with a name.
+        self.store(_txn("mine", 20.0, account_owner="0035"), _txn("hers", 30.0, account_owner="1203"), _txn("hers2", 5.0, account_owner="1203"),
+                   _txn("paid", -900.0, account_owner="0035", name="AUTOPAY PAYMENT", merchant=None, category="LOAN_PAYMENTS"), _txn("blank", 7.0))
+        venture = next(card for card in self.month()["cards"] if card["key"] == self.VENTURE)
+        self.assertEqual([{"mark": "1203", "count": 2, "person": None}, {"mark": "0035", "count": 1, "person": None}], venture["holders"])
+        self.assertEqual({"unassigned": 62.0}, {b["id"]: b["spent"] for b in self.month()["buckets"] if b["spent"]})
+
+        relay.budget_config_save({"holders": {self.VENTURE: {"0035": "Andrew", "1203": "Sarah"}}}, self.NOW)
+        month = self.month()
+        self.assertEqual({"mine": ("person:Andrew", "bank"), "hers": ("person:Sarah", "bank"), "hers2": ("person:Sarah", "bank"), "blank": (None, "none")},
+                         {t["id"]: (t["bucket"], t["source"]) for t in month["transactions"]})
+        self.assertEqual(["Sarah", "Andrew"], [h["person"] for h in next(card for card in month["cards"] if card["key"] == self.VENTURE)["holders"]])
+        # A tag by hand still outranks the card, and taking the say-so back unsorts them again.
+        relay.put_budget_transaction("hers2", types.SimpleNamespace(bucket="family", remember=False), object(), self.response)
+        self.assertEqual("family", next(t["bucket"] for t in self.month()["transactions"] if t["id"] == "hers2"))
+        relay.budget_config_save({"holders": {self.VENTURE: {"1203": None}}}, self.NOW)
+        self.assertEqual({self.VENTURE: {"0035": "Andrew"}}, relay.budget_config()["holders"])
+        self.assertIsNone(next(t["bucket"] for t in self.month()["transactions"] if t["id"] == "hers"))
+
+    def test_a_cardholder_s_mark_means_nothing_on_the_family_s_card_and_goes_with_the_person(self):
+        self.store(_txn("f", 100.0, account="platinum", account_owner="SARAH GLOSE 1006"), item="amex")
+        relay.budget_config_save({"holders": {self.PLATINUM: {"SARAH GLOSE 1006": "Sarah"}, self.VENTURE: {"1203": "Sarah"}}}, self.NOW)
+        self.assertEqual(("family", "account"), next((t["bucket"], t["source"]) for t in self.month()["transactions"]))
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.budget_config_save({"holders": {self.VENTURE: {"0035": "Nobody"}}}, self.NOW)
+        self.assertEqual("bad_budget", refused.exception.detail["error"])
+        self.assertEqual({}, relay.budget_config_save({"people": ["Andrew"]}, self.NOW)["holders"])
+
     def test_a_card_of_one_person_s_own_is_theirs_and_a_tag_by_hand_outranks_it(self):
         relay.budget_config_save({"roles": {self.VENTURE: "person:Sarah"}}, self.NOW)
         self.store(_txn("t1", 20.0), _txn("t2", 30.0))
