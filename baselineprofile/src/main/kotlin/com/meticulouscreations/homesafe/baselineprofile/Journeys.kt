@@ -172,7 +172,7 @@ fun MacrobenchmarkScope.scrollWeather() {
     Thread.sleep(500)
     stroke(down = true, steps = 8)
     stroke(down = false, steps = 8)
-    device.findObject(By.res("weather_tab_today"))?.click()
-    device.wait(Until.hasObject(By.res(WEATHER_TODAY)), UI_TIMEOUT_MS)
+    device.findObject(By.res("weather_tab_today"))?.click() ?: error("No Today tab")
+    check(device.wait(Until.hasObject(By.res(WEATHER_TODAY)), UI_TIMEOUT_MS)) { "$WEATHER_TODAY not back on screen" }
     Thread.sleep(500)
 }

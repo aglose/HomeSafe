@@ -23,11 +23,18 @@ import org.junit.runner.RunWith
  * - `Partial(Require)`: what ships, the committed Baseline Profile compiled at install;
  * - `Full`: everything compiled ahead of time, the most any profile could give.
  *
- * If `Full` is no smoother than `None` the time is not going to the interpreter, and the place to
- * look is the GPU: `frameDurationCpuMs` stops when the UI thread hands the frame over, while
- * `frameOverrunMs` runs to when the frame was actually presented, shaders included. A frame whose
- * CPU time is small and whose overrun is positive was late because of what was drawn, not what
- * was composed. The two trace sections split the CPU side into composition and layout.
+ * If `Full` is no smoother than `None`, the time is not going to the interpreter. To see where it
+ * is going, read the two frame metrics together with the trace:
+ * - `frameDurationCpuMs` is the CPU's part of a frame, on the UI thread and then the RenderThread,
+ *   up to the frame being handed to the GPU;
+ * - `frameOverrunMs` is how far past its deadline the frame was finished (negative: with time to
+ *   spare), whatever made it late: composition, the RenderThread's work, or the GPU's.
+ *
+ * So a late frame whose CPU time was small points at what was drawn (the sky's shaders), and one
+ * whose CPU time was large points at the app's own threads, but neither number says which alone:
+ * the iteration's Perfetto trace does (`Choreographer#doFrame` on the main thread, `DrawFrames`
+ * on the RenderThread, and the frame timeline's jank type). The two trace sections split the UI
+ * thread's side into composition and layout.
  */
 @OptIn(ExperimentalMetricApi::class)
 @RunWith(AndroidJUnit4::class)
