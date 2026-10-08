@@ -510,7 +510,7 @@ private fun PositionEditor(symbol: String, unitLabel: String, costLabel: String,
 }
 
 @Composable
-private fun NumberField(label: String, value: String, onChange: (String) -> Unit, error: Boolean, testTag: String, prefix: String? = null) {
+internal fun NumberField(label: String, value: String, onChange: (String) -> Unit, error: Boolean, testTag: String, prefix: String? = null) {
     val colors = FinanceTheme.colors
     val type = FinanceTheme.type
     Column {

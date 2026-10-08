@@ -13,12 +13,14 @@ In the app: **Finance → Wallet → the sync line → Linked accounts**.
   (Chase, Schwab, Fidelity and most large institutions). The app asks the relay for a link, opens
   it in the browser, and the relay asks Plaid how it ended. HomeSafe never sees a bank password.
 - **What is kept** is one access token per institution, in `relay.db` on the Frigate box. The
-  relay only asks Plaid for balances, investment holdings and loan terms. No product that can move
+  relay asks Plaid for balances, investment holdings and loan terms, and for what was bought on
+  the credit cards (kept in `relay.db` too; see [budget.md](budget.md)). No product that can move
   money (Auth, Transfer, Payment Initiation) is ever requested. The phone never holds a token.
 - **Every day at 6:00** on the household's clock (`BANK_SYNC_HOUR`), a thread in the relay reads
   every institution and rewrites the feed. There is no cron job; it is part of the relay container.
   A relay that was down at 6:00 catches up within five minutes of starting. **Sync now** in the app
-  does the same at once, at most once a minute.
+  does the same at once, at most once a minute. The cards' purchases are read every hour as well,
+  for the Budget tab.
 - **Nothing new is public.** The relay polls Plaid instead of receiving webhooks, so no route is
   added to Tailscale Funnel.
 - Only accounts that may see the finances (Frigate admins, or `FINANCE_USERS`) can use any of it.

@@ -10,6 +10,10 @@ import homesafe.shared.generated.resources.explainer_bitcoin_one_liner
 import homesafe.shared.generated.resources.explainer_bitcoin_technical
 import homesafe.shared.generated.resources.explainer_bitcoin_title
 import homesafe.shared.generated.resources.explainer_bitcoin_why_you
+import homesafe.shared.generated.resources.explainer_budgetpace_how_it_works
+import homesafe.shared.generated.resources.explainer_budgetpace_one_liner
+import homesafe.shared.generated.resources.explainer_budgetpace_title
+import homesafe.shared.generated.resources.explainer_budgetpace_why_you
 import homesafe.shared.generated.resources.explainer_cashflow_one_liner
 import homesafe.shared.generated.resources.explainer_cashflow_title
 import homesafe.shared.generated.resources.explainer_cashflow_why_you
@@ -217,6 +221,10 @@ import homesafe.shared.generated.resources.explainer_sahm_one_liner
 import homesafe.shared.generated.resources.explainer_sahm_technical
 import homesafe.shared.generated.resources.explainer_sahm_title
 import homesafe.shared.generated.resources.explainer_sahm_why_you
+import homesafe.shared.generated.resources.explainer_savingsline_how_it_works
+import homesafe.shared.generated.resources.explainer_savingsline_one_liner
+import homesafe.shared.generated.resources.explainer_savingsline_title
+import homesafe.shared.generated.resources.explainer_savingsline_why_you
 import homesafe.shared.generated.resources.explainer_savingsrate_one_liner
 import homesafe.shared.generated.resources.explainer_savingsrate_title
 import homesafe.shared.generated.resources.explainer_savingsrate_why_you
@@ -863,6 +871,24 @@ object Explainers {
             oneLiner = Res.string.explainer_cashflow_one_liner,
             whyYou = Res.string.explainer_cashflow_why_you,
             related = listOf("savingsrate"),
+        ),
+        Explainer(
+            id = "budgetpace",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = Res.string.explainer_budgetpace_title,
+            oneLiner = Res.string.explainer_budgetpace_one_liner,
+            whyYou = Res.string.explainer_budgetpace_why_you,
+            howItWorks = Res.string.explainer_budgetpace_how_it_works,
+            related = listOf("savingsline", "cashflow"),
+        ),
+        Explainer(
+            id = "savingsline",
+            topic = ExplainerTopic.YOUR_MONEY,
+            title = Res.string.explainer_savingsline_title,
+            oneLiner = Res.string.explainer_savingsline_one_liner,
+            whyYou = Res.string.explainer_savingsline_why_you,
+            howItWorks = Res.string.explainer_savingsline_how_it_works,
+            related = listOf("budgetpace", "savingsrate", "runway"),
         ),
         Explainer(
             id = "savingsrate",

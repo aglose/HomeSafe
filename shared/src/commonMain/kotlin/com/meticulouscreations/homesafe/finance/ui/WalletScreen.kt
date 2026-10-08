@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.Account
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.HomeEquity
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
 import com.meticulouscreations.homesafe.finance.domain.MortgagePlan
@@ -193,6 +194,8 @@ internal fun WalletScreen(
     onRetrySheet: () -> Unit,
     onOpenSync: () -> Unit = {},
     onAddSymbol: (() -> Unit)? = null,
+    budget: Budget? = null,
+    onOpenBudget: () -> Unit = {},
 ) {
     val finance = state.finance
     val fedRate = state.readings[IndicatorCatalog.fedFunds.id]?.latest
@@ -211,6 +214,8 @@ internal fun WalletScreen(
                 state,
                 checkup,
                 flash,
+                budget,
+                onOpenBudget,
                 onOpenCheckup = { page ->
                     checkupPage = page
                     checkupOpen = true
@@ -273,7 +278,15 @@ private fun Flashable(lit: Boolean, content: @Composable () -> Unit) {
     Box(Modifier.fillMaxWidth().drawBehind { drawRect(accent.copy(alpha = glow)) }) { content() }
 }
 
-private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUiState, checkup: Checkup, flash: WalletSection?, onOpenCheckup: (CheckKind?) -> Unit) {
+private fun LazyListScope.walletItems(
+    finance: PersonalFinance,
+    state: FinanceUiState,
+    checkup: Checkup,
+    flash: WalletSection?,
+    budget: Budget?,
+    onOpenBudget: () -> Unit,
+    onOpenCheckup: (CheckKind?) -> Unit,
+) {
     item(key = "hero") { NetWorthHero(finance) }
     item(key = "quick") { QuickStats(finance) }
     item(key = "checkup") { CascadeIn(1) { MoneyCheckup(checkup, onOpenCheckup, Modifier.padding(top = 16.dp)) } }
@@ -304,6 +317,10 @@ private fun LazyListScope.walletItems(finance: PersonalFinance, state: FinanceUi
             }
         }
         item(key = "flow") { CascadeIn(2) { CashFlowBlock(finance) } }
+    }
+    // The plan above; what the month is actually costing is the Budget tab's, one line of it here.
+    if (budget != null && budget.isCurrentMonth && budget.budgetCards.isNotEmpty()) {
+        item(key = "budget") { BudgetTeaser(budget, onOpenBudget, Modifier.padding(top = 12.dp)) }
     }
     val flowHistory = finance.history.filter { it.monthlyExpenses != null && it.monthlyIncome != null }.takeLast(12)
     if (flowHistory.size > 2) {
