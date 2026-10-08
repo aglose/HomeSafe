@@ -176,7 +176,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BudgetRoute(finance: co
     - onOpenSettings: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.BudgetScreen(state: com.meticulouscreations.homesafe.finance.BudgetUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onTag: kotlin.Function3<@[ParameterName(name = \, onSetRole: kotlin.Function2<@[ParameterName(name = \, onShowMonth: kotlin.Function1<kotlin.String?, kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, onOpenLinkedAccounts: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.BudgetScreen(state: com.meticulouscreations.homesafe.finance.BudgetUiState, listState: androidx.compose.foundation.lazy.LazyListState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onTag: kotlin.Function3<@[ParameterName(name = \, onSetRole: kotlin.Function2<@[ParameterName(name = \, onSetHolder: kotlin.Function3<@[ParameterName(name = \, onShowMonth: kotlin.Function1<kotlin.String?, kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>, onOpenLinkedAccounts: kotlin.Function0<kotlin.Unit>, onOpenSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -185,6 +185,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BudgetScreen(state: com
     - contentPadding: STABLE (marked @Stable or @Immutable)
     - onTag: STABLE (function type)
     - onSetRole: STABLE (function type)
+    - onSetHolder: STABLE (function type)
     - onShowMonth: STABLE (function type)
     - onSyncNow: STABLE (function type)
     - onRetry: STABLE (function type)
@@ -236,6 +237,17 @@ internal fun com.meticulouscreations.homesafe.finance.ui.Callout(heading: kotlin
     - icon: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.CardHolders(card: com.meticulouscreations.homesafe.finance.domain.BudgetCard, people: kotlin.collections.List<kotlin.String>, enabled: kotlin.Boolean, onSay: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - card: STABLE (marked @Stable or @Immutable)
+    - people: RUNTIME (requires runtime check)
+    - enabled: STABLE (primitive type)
+    - onSay: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.CashFlowBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit
@@ -1675,6 +1687,13 @@ internal fun com.meticulouscreations.homesafe.finance.ui.formatChange(change: ko
   params:
     - change: STABLE (primitive type)
     - format: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.holderLabel(holder: com.meticulouscreations.homesafe.finance.domain.CardHolder): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - holder: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.label(): kotlin.String

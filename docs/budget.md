@@ -55,9 +55,15 @@ role.
 
 ### Whose a purchase is
 
-In this order: a tag someone made by hand; the card being one person's own; on a shared card, the
-one person the bank names as the cardholder (banks rarely say); a remembered shop; the family, when
-the card is the family's; otherwise nobody yet.
+In this order: a tag someone made by hand; the card being one person's own; on a shared card,
+whoever the bank's mark for the cardholder belongs to; a remembered shop; the family, when the card
+is the family's; otherwise nobody yet.
+
+**Whose card is which.** Banks mark each purchase with who made it, each in its own way. American
+Express writes the cardholder's name ("SAM RIVERA 1006"), which is matched to the budget's people by
+itself. Capital One writes only the last four digits of the card that was used ("1203"), which
+nobody can match to a person without being told: the page asks once ("Whose card is which?"), and
+from then on those purchases sort themselves. The same choices are under **Limits and cards → Cards**.
 
 Tap a name under a purchase to tag it. Tap the purchase itself for the sheet, where **Always for
 …** remembers the shop, so every purchase from it, past and future, goes the same way. Remembered
