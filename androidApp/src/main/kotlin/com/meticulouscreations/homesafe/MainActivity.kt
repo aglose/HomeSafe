@@ -14,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
+import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
@@ -92,6 +94,8 @@ class MainActivity : FragmentActivity() {
             WeatherDeepLinks.open()
             return
         }
+        // A budget notification's tap asks for the finance app instead (`homesafe://finance`).
+        intent.dataString?.let(FinanceDeepLink::fromUri)?.let { return FinanceDeepLinks.open(it) }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)
             ?: MomentDeepLink.from { key -> intent.getStringExtra(key) }
             ?: return

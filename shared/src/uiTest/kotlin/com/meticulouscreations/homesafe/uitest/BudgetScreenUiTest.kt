@@ -10,6 +10,8 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -20,6 +22,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.domain.BucketId
+import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
@@ -128,6 +131,26 @@ class BudgetScreenUiTest {
             onAllNodesWithText("Insurance")[1].performSemanticsAction(SemanticsActions.OnClick)
         }
         assertEquals(listOf(BudgetFixtures.onPace.config.cardPaidLines + "Insurance"), saved.map { it.cardPaidLines })
+    }
+
+    @Test
+    fun switchingAnAlertOnSavesItAndLeavesTheOthersAsTheyWere() {
+        val saved = mutableListOf<BudgetConfigPatch>()
+        val budget = BudgetFixtures.onPace.let { it.copy(config = it.config.copy(alerts = BudgetAlertSwitches(total = true))) }
+        runComposeUiTest {
+            setContent {
+                FinanceStage {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
+                            BudgetSettingsScreen(BudgetFixtures.state(budget), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {})
+                        }
+                    }
+                }
+            }
+            onNodeWithTag("finance_budget_alert_total").assertIsOn()
+            onNodeWithTag("finance_budget_alert_savings").assertIsOff().performSemanticsAction(SemanticsActions.OnClick)
+        }
+        assertEquals(listOf(BudgetConfigPatch(alerts = BudgetAlertSwitches(total = true, savings = true))), saved)
     }
 
     @Test

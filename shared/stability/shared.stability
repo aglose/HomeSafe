@@ -64,6 +64,27 @@ internal fun com.meticulouscreations.homesafe.finance.ui.AddSymbolSheet(search: 
     - onDismiss: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.AlertSwitchRow(title: kotlin.String, note: kotlin.String, on: kotlin.Boolean, enabled: kotlin.Boolean, testTag: kotlin.String, onChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - title: STABLE (String is immutable)
+    - note: STABLE (String is immutable)
+    - on: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - testTag: STABLE (String is immutable)
+    - onChange: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.AlertSwitches(alerts: com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, enabled: kotlin.Boolean, onChange: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - alerts: STABLE (marked @Stable or @Immutable)
+    - enabled: STABLE (primitive type)
+    - onChange: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.AllocationBlock(accounts: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.Account>): kotlin.Unit
   skippable: false
   restartable: true
@@ -434,13 +455,15 @@ private fun com.meticulouscreations.homesafe.finance.ui.FilterChips(budget: com.
     - onSelect: STABLE (function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onClose: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - active: STABLE (primitive type)
+    - requestedTab: STABLE (class with no mutable properties)
+    - onShowRequestedTab: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FinanceBottomNav(selected: com.meticulouscreations.homesafe.finance.ui.FinanceTab, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.FinanceTab, kotlin.Unit>): kotlin.Unit

@@ -72,6 +72,15 @@ To compare, on the box:
 SELECT route, COUNT(*) FROM notify_log WHERE at > strftime('%s','now','-1 day') GROUP BY route;
 ```
 
+## Not the cameras: budget alerts
+
+The relay also tells the phones when the month's card spending crosses a line the household asked
+to hear about (see [budget.md](budget.md), "Alerts"). They are no part of the policy above: they
+come from `budget_check`, not from Frigate's alerts, they go only to phones last signed in to by
+someone who may see the finances, and on Android they have a **Budget** channel of their own
+(`budget=1` in the push's data, `notif_id=budget-<month>-<line>`). Quiet hours hold them back;
+"only when everyone's away" and "only strangers" don't apply to them.
+
 ## Weather
 
 The weather app's notifications (rain on the way, the day ahead, government warnings) are a

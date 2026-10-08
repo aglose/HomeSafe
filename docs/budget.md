@@ -82,11 +82,29 @@ role are kept by name, so a renamed person starts without either.
 
 ## Alerts
 
-The relay can tell the phones when a line is crossed: 80% and 100% of the month's limit, the
-savings line, and each person's or the family card's own limit. Each phone hears about each line
-once a month, only phones last signed in to by someone who may see the finances are told, and a
-phone in its quiet hours hears after them. The switches are off until the app that words these
-notifications itself is installed (the next change after this one).
+Under **Limits and cards → Alerts** are three switches, all off to begin with:
+
+| Switch | A notification when |
+|---|---|
+| **The month's limit** | Spending reaches four fifths of it, and again when it is passed |
+| **Into savings** | The cards pass what take-home leaves after the bills |
+| **Each person and the family card** | One passes its own limit |
+
+- The switches are the household's, kept by the relay. Each phone hears about each line **once a
+  month**. A month already over a limit when a switch goes on says so once, not once for each
+  line it passed on the way.
+- Only phones last signed in to by someone who may see the finances are told. The relay learns
+  whose phone it is when the app registers, which it does every time it opens.
+- A phone in its quiet hours hears at the first hourly check after them. "Only when everyone's
+  away" doesn't hold them back: that choice is about the cameras.
+- On Android they arrive on a **Budget** notification channel of their own, at an ordinary
+  importance, worded on the phone from the amounts in the push. Turning that channel off in the
+  phone's settings silences them on that phone. A tap opens Finance on the Budget tab.
+- **iPhones don't get them yet**: the relay has no way to push to one until APNs is set up.
+- Spending shows up when the bank passes it on, which can be hours after the purchase, so the
+  "over" notification can come after the fact.
+- Every Android phone in the household should have a build with the Budget channel before a
+  switch goes on: an older build shows any push it doesn't know as a camera alert.
 
 ## Setup
 
@@ -106,6 +124,9 @@ notifications itself is installed (the next change after this one).
   `budget_check` (the alerts), and the `/finance/budget…` routes. Tests: `BudgetSyncTest`,
   `BudgetMonthTest`, `BudgetAlertsTest`, `BudgetRoutesTest`, `DeviceOwnerTest` in
   `relay/test_relay.py`.
+- Alerts on Android: `HomeSafeMessagingService` hands a `budget=1` push to
+  `BudgetNotificationPoster` (`BudgetAlert` reads the push's data); the tap is
+  `homesafe://finance?tab=budget` (`FinanceDeepLink`), which `ShellNavigation` opens.
 - App: `BudgetRelayApi` → `BudgetRepository` → `BudgetViewModel` → `BudgetScreen` and
   `BudgetSettingsScreen` (`finance/`), with `BudgetPace` for the projection and `BudgetNarrator`
   for the sentence. The tank and the meters are the shaders `BUDGET_TANK_SHADER` and

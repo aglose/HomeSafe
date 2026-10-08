@@ -175,6 +175,15 @@
     <string name="fin_budget_settings_limit_family">The family card</string>
     <string name="fin_budget_settings_limit_suggest">Use the sheet's %1$s</string>
     <string name="fin_budget_settings_saving">Saving…</string>
+    <string name="fin_budget_settings_alerts_title">Alerts</string>
+    <string name="fin_budget_settings_alerts_subtitle">A notification when the month crosses a line</string>
+    <string name="fin_budget_settings_alert_total">The month's limit</string>
+    <string name="fin_budget_settings_alert_total_note">At four fifths of it, and again when it is passed</string>
+    <string name="fin_budget_settings_alert_savings">Into savings</string>
+    <string name="fin_budget_settings_alert_savings_note">When the cards pass what take-home leaves after the bills</string>
+    <string name="fin_budget_settings_alert_buckets">Each person and the family card</string>
+    <string name="fin_budget_settings_alert_buckets_note">When one passes its own limit</string>
+    <string name="fin_budget_settings_alerts_note">These are the household's: they go to every Android phone signed in as someone who can see Finance, once a month for each line, and wait out a phone's quiet hours. To silence them on one phone, turn off its “Budget” notifications in the phone's settings. iPhones don't get them yet.</string>
     <string name="fin_budget_settings_cards_title">Cards</string>
     <string name="fin_budget_settings_cards_subtitle">What each card is to the budget</string>
     <string name="fin_budget_settings_cards_none">No credit card is linked yet.</string>
