@@ -174,7 +174,9 @@ object WeatherStory {
         val start = (1 until slices.size).firstOrNull { i ->
             slices[i].isWet && (slices[i].ratePerHourMm >= 1.0 || slices.getOrNull(i + 1)?.isWet == true)
         } ?: return NearTerm.Dry
-        val end = (start + 1 until slices.size).firstOrNull { i -> !slices[i].isWet && slices.getOrNull(i + 1)?.isWet != true }
+        // An end is two dry quarter-hours in a row, as a stop is; a dry one at the very edge of what
+        // the forecast shows isn't known to be an end.
+        val end = (start + 1 until slices.lastIndex).firstOrNull { i -> !slices[i].isWet && !slices[i + 1].isWet }
         return NearTerm.Starting(
             startEpochSeconds = slices[start].epochSeconds,
             endEpochSeconds = end?.let { slices[it].epochSeconds },
@@ -239,38 +241,35 @@ object WeatherStory {
      */
     fun outdoorWindow(report: WeatherReport, nowEpochSeconds: Long = report.current.epochSeconds): OutdoorWindow? {
         val today = report.dayIndexAt(nowEpochSeconds)
-        val horizon = report.daily.getOrNull(today + 1)?.let { it.epochSeconds + WeatherReport.DAY_SECONDS } ?: (nowEpochSeconds + WeatherReport.DAY_SECONDS)
+        val horizon = report.daily.getOrNull(today + 1)?.takeIf { today >= 0 }?.let { it.epochSeconds + WeatherReport.DAY_SECONDS }
+            ?: (nowEpochSeconds + 36 * WeatherReport.HOUR_SECONDS)
         val hours = report.hoursFrom(nowEpochSeconds).filter { it.epochSeconds < horizon }
-        if (hours.size < 2) return null
+        if (hours.size < MIN_WINDOW_HOURS) return null
         val scores = hours.map { comfort(it) }
         var best: OutdoorWindow? = null
-        var i = 0
-        while (i < hours.size) {
-            if (scores[i] < FAIR_SCORE) {
-                i++
-                continue
-            }
-            // Grow the stretch while the hours stay within a few points of where it began.
-            var j = i
+        var bestRank = 0.0
+        // Every stretch of two to five hours in a row that are all at least fair, from every start.
+        for (start in hours.indices) {
             var sum = 0
-            while (j < hours.size && scores[j] >= FAIR_SCORE && scores[j] >= scores[i] - 12 && j - i < 5 && hours[j].epochSeconds - hours[i].epochSeconds == (j - i) * WeatherReport.HOUR_SECONDS) {
-                sum += scores[j]
-                j++
-            }
-            val length = j - i
-            if (length >= 2) {
-                val average = sum / length
-                // A longer stretch is worth a little more than a short one that scores the same.
-                if (best == null || average + length > best.score + ((best.endEpochSeconds - best.startEpochSeconds) / WeatherReport.HOUR_SECONDS).toInt()) {
+            for (end in start until minOf(start + MAX_WINDOW_HOURS, hours.size)) {
+                val consecutive = hours[end].epochSeconds - hours[start].epochSeconds == (end - start) * WeatherReport.HOUR_SECONDS
+                if (scores[end] < FAIR_SCORE || !consecutive) break
+                sum += scores[end]
+                val length = end - start + 1
+                if (length < MIN_WINDOW_HOURS) continue
+                val average = sum.toDouble() / length
+                // The better hours win; between stretches as good as each other, the longer one does.
+                val rank = average + (length - MIN_WINDOW_HOURS) * LENGTH_BONUS
+                if (best == null || rank > bestRank) {
+                    bestRank = rank
                     best = OutdoorWindow(
-                        startEpochSeconds = hours[i].epochSeconds,
-                        endEpochSeconds = hours[j - 1].epochSeconds + WeatherReport.HOUR_SECONDS,
-                        score = average,
-                        temperatureC = hours.subList(i, j).map { it.feelsLikeC }.average(),
+                        startEpochSeconds = hours[start].epochSeconds,
+                        endEpochSeconds = hours[end].epochSeconds + WeatherReport.HOUR_SECONDS,
+                        score = average.toInt(),
+                        temperatureC = hours.subList(start, end + 1).map { it.feelsLikeC }.average(),
                     )
                 }
             }
-            i = max(j, i + 1)
         }
         return best
     }
@@ -341,4 +340,9 @@ object WeatherStory {
     private const val NOTABLE_C = 2.0
 
     private const val FAIR_SCORE = 55
+    private const val MIN_WINDOW_HOURS = 2
+    private const val MAX_WINDOW_HOURS = 5
+
+    /** What an extra hour is worth against a point of average comfort: enough to break a tie, not to dilute a fine pair of hours. */
+    private const val LENGTH_BONUS = 1.5
 }

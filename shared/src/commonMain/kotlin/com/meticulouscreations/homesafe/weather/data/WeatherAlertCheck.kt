@@ -66,6 +66,9 @@ class WeatherAlertCheck(
         if (!notifier.isSupported) return 0
         val prefs = preferences.observe().first()
         if (!prefs.notices.enabled) return 0
+        // Not allowed to notify: nothing is fetched, and nothing is marked as said, so the morning's
+        // outlook is still there to send if permission comes later that morning.
+        if (!notifier.isAllowed()) return 0
         val place = place() ?: return 0
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
         val now = clock.now().epochSeconds

@@ -115,8 +115,15 @@ internal fun RadarMap(
             val width = viewport.width.toFloat()
             val height = viewport.height.toFloat()
             if (width <= 0f || height <= 0f) return@collectLatest
-            tiles.request(camera.tiles(width, height, tilePx, camera.level).map { baseTileUrl(it.z, it.x, it.y) }, scope, keep = true)
-            val frames = timeline?.frames ?: return@collectLatest
+            val base = camera.tiles(width, height, tilePx, camera.level).map { baseTileUrl(it.z, it.x, it.y) }
+            val frames = timeline?.frames
+            if (frames != null && wholeLoop && frames.isNotEmpty()) {
+                // The loop is only smooth if every frame's tiles can be in memory at once.
+                val perFrame = camera.tiles(width, height, tilePx, radarLevel(camera, frames.first())).size
+                tiles.reserve(base.size + perFrame * frames.size)
+            }
+            tiles.request(base, scope, keep = true)
+            if (frames == null) return@collectLatest
             val current = key.last()
             // The frame on screen first, then outward from it in both directions.
             frames.indices.sortedBy { abs(it - current) }.take(if (wholeLoop) frames.size else 1).forEach { i ->
@@ -170,7 +177,8 @@ internal fun RadarMap(
         ) {
             // Read so a tile's arrival redraws the map.
             arrivals
-            drawRect(Color(0xFFDDDDDD))
+            // The map's own colour for open land, so a tile still on its way is a gap in the detail, not a hole.
+            drawRect(Color(0xFFF2EFE9))
             val camera = state.camera
             camera.tiles(size.width, size.height, tilePx, camera.level).forEach { tile ->
                 drawTile(tiles, tile, ::baseTileUrl, ancestors = 4, quality = FilterQuality.Medium)

@@ -68,7 +68,7 @@ object WeatherFormat {
         TemperatureUnit.CELSIUS -> celsius
     }
 
-    /** "72°". Rounded half away from zero, and never "-0°". */
+    /** "72°". Rounded to the nearest degree, and never "-0°". */
     fun degrees(celsius: Double, units: WeatherUnits): String = "${whole(toDisplay(celsius, units))}°"
 
     /** A difference between two temperatures, as a size: "6°". */

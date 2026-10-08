@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.data.WeatherPreferencesEntity
 import com.meticulouscreations.homesafe.data.WeatherReportEntity
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
+import com.meticulouscreations.homesafe.finance.data.suspendRunCatching
 import com.meticulouscreations.homesafe.weather.domain.MeasureSystem
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.RadarTimeline
@@ -33,8 +34,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 @Inject
 @SingleIn(AppScope::class)
@@ -53,7 +57,7 @@ class WeatherRepositoryImpl(
     private val fetching = HashMap<String, Mutex>()
     private val guard = Mutex()
     private val searches = HashMap<String, List<Place>>()
-    private val names = HashMap<String, Pair<String, String>?>()
+    private val names = HashMap<String, Pair<String, String>>()
     private var radar: Pair<Long, RadarTimeline>? = null
     private var radarInUs: Boolean? = null
 
@@ -67,7 +71,7 @@ class WeatherRepositoryImpl(
             fresh(place, maxAgeSeconds)?.let { return@withLock Result.success(it) }
             fetch(place).onSuccess { report ->
                 guard.withLock { reports[place.id] = Held(place, report) }
-                runCatching {
+                suspendRunCatching {
                     dao.upsertReport(WeatherReportEntity(place.id, weatherJson.encodeToString(WeatherReport.serializer(), report), report.fetchedAtEpochSeconds, place.latitude, place.longitude))
                 }
             }
@@ -78,22 +82,31 @@ class WeatherRepositoryImpl(
         reports[place.id]?.takeIf { sameSpot(it.place, place) && now() - it.report.fetchedAtEpochSeconds <= maxAgeSeconds }?.report
     }
 
-    /** The forecast is the report; air quality and alerts ride along when they answer, and are left off when they don't. */
+    /**
+     * The forecast is the report; air quality and alerts ride along when they answer in a few
+     * seconds, and are left off when they don't: a slow side service must not hold the forecast up.
+     */
     private suspend fun fetch(place: Place): Result<WeatherReport> = coroutineScope {
         val forecast = async { openMeteo.forecast(place.latitude, place.longitude, now()) }
-        val air = async { openMeteo.airQuality(place.latitude, place.longitude) }
+        val air = async { withTimeoutOrNull(SIDE_CALL_TIMEOUT_MS) { openMeteo.airQuality(place.latitude, place.longitude).getOrNull() } }
         val alerts = async {
-            if (NwsApi.covers(place.latitude, place.longitude)) nws.alerts(place.latitude, place.longitude) else Result.success(emptyList())
+            if (!NwsApi.covers(place.latitude, place.longitude)) return@async emptyList()
+            withTimeoutOrNull(SIDE_CALL_TIMEOUT_MS) { nws.alerts(place.latitude, place.longitude).getOrNull() }.orEmpty()
         }
         val base = forecast.await()
-        val airQuality = air.await().getOrNull()
-        val inForce = alerts.await().getOrDefault(emptyList())
+        if (base.isFailure) {
+            air.cancel()
+            alerts.cancel()
+            return@coroutineScope base
+        }
+        val airQuality = air.await()
+        val inForce = alerts.await()
         base.map { it.copy(air = airQuality, alerts = inForce) }
     }
 
     override suspend fun lastReport(place: Place): WeatherReport? {
         guard.withLock { reports[place.id]?.takeIf { sameSpot(it.place, place) }?.report }?.let { return it }
-        val row = runCatching { dao.report(place.id) }.getOrNull() ?: return null
+        val row = suspendRunCatching { dao.report(place.id) }.getOrNull() ?: return null
         if (abs(row.latitude - place.latitude) > SAME_SPOT_DEGREES || abs(row.longitude - place.longitude) > SAME_SPOT_DEGREES) return null
         return runCatching { weatherJson.decodeFromString(WeatherReport.serializer(), row.json) }.getOrNull()
     }
@@ -107,9 +120,9 @@ class WeatherRepositoryImpl(
     override suspend fun nameOf(latitude: Double, longitude: Double): Pair<String, String>? {
         if (!NwsApi.covers(latitude, longitude)) return null
         val key = Place.idFor(latitude, longitude)
-        guard.withLock { if (key in names) return names[key] }
-        // A miss is remembered only for this run of the app: the service may simply have been down.
-        return nws.nameOf(latitude, longitude).also { name -> guard.withLock { names[key] = name } }
+        guard.withLock { names[key] }?.let { return it }
+        // A miss isn't remembered: the service may simply have been down, and this is asked rarely.
+        return nws.nameOf(latitude, longitude)?.also { name -> guard.withLock { names[key] = name } }
     }
 
     override suspend fun radar(latitude: Double, longitude: Double): Result<RadarTimeline> {
@@ -131,6 +144,9 @@ class WeatherRepositoryImpl(
 
         /** A new radar frame is published every couple of minutes at the soonest. */
         const val RADAR_MAX_AGE_SECONDS = 120L
+
+        /** How long the forecast waits for air quality and alerts before going on without them. */
+        const val SIDE_CALL_TIMEOUT_MS = 4_000L
     }
 }
 
@@ -150,7 +166,7 @@ class WeatherPlacesRepositoryImpl(private val dao: WeatherDao) : WeatherPlacesRe
 
     override suspend fun remove(id: String) = mutex.withLock {
         dao.deletePlace(id)
-        runCatching { dao.deleteReport(id) }
+        suspendRunCatching { dao.deleteReport(id) }
         Unit
     }
 
@@ -262,8 +278,21 @@ class WeatherLocator(
         if (current == LocationAccess.NOT_ASKED || current == LocationAccess.DENIED) monitor.requestAccess()
     }
 
-    /** Where the phone is now, as the app's "current" place, or null without permission or a fix. */
-    suspend fun locate(): Place? {
+    private val fixing = Mutex()
+    private var lastFix: Pair<TimeSource.Monotonic.ValueTimeMark, Place>? = null
+
+    /**
+     * Where the phone is now, as the app's "current" place, or null without permission or a fix.
+     * One fix at a time, and a fix a few seconds old answers the next asker: the app opening asks
+     * twice at once (for its first page and for its notifications), and a platform's location
+     * manager has one slot for the answer.
+     */
+    suspend fun locate(): Place? = fixing.withLock {
+        lastFix?.takeIf { it.first.elapsedNow() < FIX_GOOD_FOR }?.let { return@withLock it.second }
+        fix()?.also { lastFix = TimeSource.Monotonic.markNow() to it }
+    }
+
+    private suspend fun fix(): Place? {
         if (!monitor.isSupported) return null
         val point = monitor.currentLocation() ?: return null
         val known = preferences.observe().first().lastKnown
@@ -286,6 +315,10 @@ class WeatherLocator(
         preferences.observe().first().lastKnown?.let { return it }
         val home = runCatching { identity.cachedHome() }.getOrNull() ?: return null
         return Place(Place.CURRENT_ID, "", "", home.latitude, home.longitude)
+    }
+
+    private companion object {
+        val FIX_GOOD_FOR = 30.seconds
     }
 
     /** [place] with the name the weather service gives its position, when it has none yet and the service has one. */

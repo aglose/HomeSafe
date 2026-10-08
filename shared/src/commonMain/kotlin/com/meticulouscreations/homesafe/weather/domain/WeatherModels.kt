@@ -196,7 +196,10 @@ enum class AlertSeverity {
 @Immutable
 @Serializable
 data class WeatherAlert(
+    /** This message's id. An update to the same warning is a new message, with a new one. */
     val id: String,
+    /** What stays the same through a warning's updates, where the agency gives such a thing; otherwise its [id]. */
+    val key: String = id,
     /** "Winter Storm Warning". */
     val event: String,
     val headline: String = "",

@@ -9,6 +9,8 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 actual fun createWeatherNotifier(platformContext: PlatformContext): WeatherNotifier = object : WeatherNotifier {
     override val isSupported = false
 
+    override suspend fun isAllowed() = false
+
     override fun notify(notification: WeatherNotification) = Unit
 }
 

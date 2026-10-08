@@ -75,7 +75,7 @@ internal const val WEATHER_USER_AGENT = "(HomeSafe, https://github.com/aglose/Ho
 
 internal val weatherJson = Json {
     ignoreUnknownKeys = true
-    // An hour the model has nothing for arrives as null inside an array of numbers.
+    // A value absent from the answer, or sent as null, is read as the field's default.
     explicitNulls = false
     isLenient = true
 }
@@ -294,6 +294,9 @@ class RadarApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
          * run at [initEpochSeconds], which is a couple of hours old by the time it's published.
          */
         internal fun forecastFrames(initEpochSeconds: Long, newestObserved: Long): List<RadarFrame> {
+            // The address of a forecast tile names how far into the run it is, not which run: the
+            // same address is a different picture an hour later. The run is added to it (the
+            // server ignores the query) so that nothing cached by address outlives its run.
             val firstMinute = (((newestObserved - initEpochSeconds) / FUTURE_STEP_SECONDS) + 1).coerceAtLeast(0) * 15
             return (0 until FUTURE_FRAMES).mapNotNull { i ->
                 val minute = firstMinute + i * 15
@@ -302,7 +305,7 @@ class RadarApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
                 RadarFrame(
                     epochSeconds = initEpochSeconds + minute * 60,
                     forecast = true,
-                    tileUrl = "$IEM/cache/tile.py/1.0.0/hrrr::REFD-F${minute.toString().padStart(4, '0')}-0/{z}/{x}/{y}.png",
+                    tileUrl = "$IEM/cache/tile.py/1.0.0/hrrr::REFD-F${minute.toString().padStart(4, '0')}-0/{z}/{x}/{y}.png?run=$initEpochSeconds",
                     maxZoom = US_MAX_ZOOM,
                 )
             }
@@ -387,8 +390,12 @@ internal class MinutelyDto(
     val precipitation: List<Double?> = emptyList(),
     val snowfall: List<Double?> = emptyList(),
 ) {
+    /**
+     * The service stamps an amount at the end of the quarter-hour it fell in; a slice here is
+     * the quarter-hour that starts at its time, so each takes the amount stamped one step on.
+     */
     fun toSlices(): List<PrecipSlice> = time.mapIndexed { i, at ->
-        PrecipSlice(at, precipitation.getOrNull(i) ?: 0.0, snowfall.getOrNull(i) ?: 0.0)
+        PrecipSlice(at, precipitation.getOrNull(i + 1) ?: 0.0, snowfall.getOrNull(i + 1) ?: 0.0)
     }
 }
 
@@ -412,7 +419,14 @@ internal class HourlyDto(
     @SerialName("uv_index") val uvIndex: List<Double?> = emptyList(),
     @SerialName("is_day") val isDay: List<Int?> = emptyList(),
 ) {
-    /** An hour with no temperature is past the model's reach, and left out with every hour after it. */
+    /**
+     * An hour with no temperature is past the model's reach, and left out with every hour after it.
+     *
+     * Temperature, wind and the rest are the state of things at the hour's start. What falls is
+     * different: the service stamps an amount (and the chance of one) at the end of the hour it
+     * covers, so an hour here takes those from the entry one step on, and "the hour starting at
+     * three" means the same thing for every number in it.
+     */
     fun toHours(): List<HourForecast> = time.indices.asSequence().map { i ->
         val t = temperature.getOrNull(i) ?: return@map null
         HourForecast(
@@ -421,9 +435,9 @@ internal class HourlyDto(
             feelsLikeC = apparent.getOrNull(i) ?: t,
             humidityPercent = humidity.getOrNull(i)?.roundToInt() ?: 0,
             dewPointC = dewPoint.getOrNull(i),
-            precipitationProbability = probability.getOrNull(i)?.roundToInt(),
-            precipitationMm = precipitation.getOrNull(i) ?: 0.0,
-            snowfallCm = snowfall.getOrNull(i) ?: 0.0,
+            precipitationProbability = probability.getOrNull(i + 1)?.roundToInt(),
+            precipitationMm = precipitation.getOrNull(i + 1) ?: 0.0,
+            snowfallCm = snowfall.getOrNull(i + 1) ?: 0.0,
             weatherCode = weatherCode.getOrNull(i) ?: 3,
             cloudCoverPercent = cloudCover.getOrNull(i)?.roundToInt() ?: 0,
             visibilityM = visibility.getOrNull(i),
@@ -533,12 +547,14 @@ internal class AlertPropertiesDto(
     val effective: String? = null,
     val ends: String? = null,
     val expires: String? = null,
+    val parameters: AlertParametersDto? = null,
 ) {
     fun toAlert(): WeatherAlert? {
-        val key = id ?: return null
+        val messageId = id ?: return null
         val name = event?.takeIf { it.isNotBlank() } ?: return null
         return WeatherAlert(
-            id = key,
+            id = messageId,
+            key = parameters?.vtec?.firstNotNullOfOrNull(::eventKey) ?: messageId,
             event = name,
             headline = headline.orEmpty(),
             description = description.orEmpty().trim(),
@@ -549,6 +565,20 @@ internal class AlertPropertiesDto(
             endsEpochSeconds = RadarApi.parseInstant(ends ?: expires),
         )
     }
+}
+
+@Serializable
+internal class AlertParametersDto(@SerialName("VTEC") val vtec: List<String>? = null)
+
+/**
+ * What names a warning through its life, from its VTEC string
+ * (`/O.CON.KJAX.CF.W.0001.000000T0000Z-261008T2100Z/`): the office, what it's for, how serious,
+ * and its number that year. Every update to a warning is a new message with a new id, but these
+ * four stay put, so they are what "this warning" means. Null for a string that isn't one.
+ */
+internal fun eventKey(vtec: String): String? {
+    val parts = vtec.trim('/').split('.')
+    return if (parts.size >= 6 && parts.subList(2, 6).all { it.isNotBlank() }) parts.subList(2, 6).joinToString(".") else null
 }
 
 @Serializable

@@ -106,13 +106,15 @@ change what you do with your day, each said once:
 | **Rain (snow, storms) starting in about N min** | It is dry now, and the quarter-hour forecast has it starting within 75 minutes: two wet quarter-hours in a row, or one of 1 mm/h or more. One per shower: nothing more for three hours |
 | **Rain today** | Once, between 6 and 11 in the morning, when the rest of the day has a spell of at least a millimetre (or a centimetre of snow): when, and about how much |
 | **Rain tomorrow** | Once, between 6 and 10 in the evening, the same for tomorrow, with its high |
-| Added to those two with *Wind, heat, cold, sun and air* | Gusts of 40 mph or more, feeling like 100 °F or hotter, feeling like 0 °F or colder, a UV index of 8 or more, an air quality index of 151 or more, a first freeze, a high 14 °F or more above or below today's |
-| **A government warning** | Severe or extreme ones, whatever the hour |
+| Added to those two with *Wind, heat, cold, sun and air* | Gusts of 40 mph or more, feeling like 100 °F or hotter, feeling like 0 °F or colder, an air quality index of 151 or more, a first freeze, a high 8 °C (14 °F) or more above or below today's. Any of these is also reason enough for the notification by itself. A UV index of 8 or more is mentioned when there is one, but never sends one alone: in summer that would be every clear morning |
+| **A government warning** | Severe or extreme ones, whatever the hour, once each: an update to a warning already announced is the same warning (told apart by its VTEC event number, not its message id) |
 
 Nothing but warnings is sent between 10 PM and 6 AM. What has been sent is remembered for five
 days by what it was about (this warning, this morning, this shower), which is what stops repeats.
 
-They are for where the phone is. The check runs:
+They are for where the phone is; with no position to go on at all, for the first city on the list.
+Nothing is fetched or marked as sent while the OS has notifications switched off for the app. The
+check runs:
 
 - **Android**: every half hour or so as WorkManager work (`WeatherCheckWorker`), needing only a
   network; it survives the app being closed and the phone restarting. It takes a fix if the app

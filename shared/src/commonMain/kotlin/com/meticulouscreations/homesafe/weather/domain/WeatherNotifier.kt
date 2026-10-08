@@ -12,6 +12,9 @@ interface WeatherNotifier {
     /** False where the platform has no notifications this app can post (desktop, a browser tab). */
     val isSupported: Boolean
 
+    /** Whether the OS would show one now: the permission is the app's one notification permission, asked for elsewhere. */
+    suspend fun isAllowed(): Boolean
+
     fun notify(notification: WeatherNotification)
 }
 

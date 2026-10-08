@@ -126,14 +126,23 @@ class WeatherViewModel(
     private var locatedAt = 0L
     private var searchJob: Job? = null
     private var radarJob: Job? = null
+    private var radarWanted = false
     private val fetches = HashMap<String, Job>()
+
+    /** The place the app was showing when it was last closed, until the reader picks one this time. */
+    private var remembered: String? = null
+    private var picked = false
 
     private fun now(): Long = clock.now().epochSeconds
 
     init {
         viewModelScope.launch {
             preferences.observe().collect { prefs ->
-                _uiState.update { it.copy(preferences = prefs, selectedId = it.selectedId ?: prefs.selectedPlaceId) }
+                _uiState.update { it.copy(preferences = prefs) }
+                if (!picked && remembered != prefs.selectedPlaceId) {
+                    remembered = prefs.selectedPlaceId
+                    rebuild()
+                }
             }
         }
         viewModelScope.launch {
@@ -172,7 +181,12 @@ class WeatherViewModel(
                 // The phone has moved on: the forecast it had was for somewhere else.
                 if (before != null && sameSpot(before.place, place)) before.copy(place = place) else PlaceWeather(place)
             }
-            val selected = state.selectedId?.takeIf { id -> rebuilt.any { it.place.id == id } } ?: rebuilt.firstOrNull()?.place?.id
+            // The place last shown comes back, whichever of the list and the preferences is read
+            // first; once the reader has picked one, that stands for as long as it's on the list.
+            val wanted = if (picked) state.selectedId else remembered ?: state.selectedId
+            val selected = wanted?.takeIf { id -> rebuilt.any { it.place.id == id } }
+                ?: state.selectedId?.takeIf { id -> rebuilt.any { it.place.id == id } }
+                ?: rebuilt.firstOrNull()?.place?.id
             state.copy(places = rebuilt, selectedId = selected, settled = savedLoaded && hereLoaded)
         }
     }
@@ -184,7 +198,14 @@ class WeatherViewModel(
         this.full = active && full
         pollJob?.cancel()
         pollJob = null
-        if (!active) return
+        radarJob?.cancel()
+        radarJob = null
+        if (!active) {
+            // Off screen: the map's pictures can go too.
+            tiles.trim()
+            return
+        }
+        if (radarWanted) startRadar()
         pollJob = viewModelScope.launch {
             while (isActive) {
                 _uiState.update { it.copy(nowEpochSeconds = now()) }
@@ -248,8 +269,12 @@ class WeatherViewModel(
     }
 
     private fun load(place: Place, maxAgeSeconds: Long) {
-        if (fetches[place.id]?.isActive == true) return
-        fetches[place.id] = viewModelScope.launch {
+        // By where as well as which: the phone's place keeps its id as it moves, and a fetch on its
+        // way for where it was must not stand in for one for where it is.
+        val key = "${place.id}@${Place.idFor(place.latitude, place.longitude)}"
+        if (fetches[key]?.isActive == true) return
+        fetches.values.removeAll { !it.isActive }
+        fetches[key] = viewModelScope.launch {
             if (entry(place)?.report == null) {
                 update(place) { it.copy(loading = true) }
                 // What was on the device from last time, while the network answers.
@@ -286,6 +311,8 @@ class WeatherViewModel(
 
     fun select(placeId: String) {
         if (_uiState.value.places.none { it.place.id == placeId }) return
+        if (_uiState.value.selectedId == placeId && picked) return
+        picked = true
         _uiState.update { it.copy(selectedId = placeId, radar = RadarLoad()) }
         viewModelScope.launch { preferences.update { it.copy(selectedPlaceId = placeId) } }
         _uiState.value.selected?.place?.let { load(it, MAX_AGE_SECONDS) }
@@ -318,6 +345,7 @@ class WeatherViewModel(
     fun addPlace(place: Place) {
         viewModelScope.launch {
             placesRepository.add(place)
+            picked = true
             _uiState.update { it.copy(selectedId = place.id, radar = RadarLoad()) }
             preferences.update { it.copy(selectedPlaceId = place.id) }
         }
@@ -338,9 +366,13 @@ class WeatherViewModel(
 
     /** The radar screen is up ([visible]) for the place in view: fetch its loop and keep it current. */
     fun setRadarVisible(visible: Boolean) {
+        radarWanted = visible
         radarJob?.cancel()
         radarJob = null
-        if (!visible) return
+        if (visible && active) startRadar()
+    }
+
+    private fun startRadar() {
         radarJob = viewModelScope.launch {
             while (isActive) {
                 loadRadar(force = false)

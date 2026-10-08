@@ -31,10 +31,11 @@ half4 main(float2 fragCoord) {
     float3 turned = clamp(2.0 * mean - inv, 0.0, 1.0);
     float lum = dot(turned, float3(0.299, 0.587, 0.114));
     float3 col = mix(float3(lum), turned, 0.42);
-    // Deepen the darks (land, sea) and keep the lights (roads' edges, lettering) apart from them.
-    col = pow(col, float3(1.35));
-    col = col * float3(0.78, 0.86, 1.0) * 0.82 + float3(0.035, 0.045, 0.07);
-    col *= 1.0 - 0.35 * dim;
+    // Cooled, and lifted off black: land comes out a dark slate, water a deep blue a clear step
+    // lighter than it, lettering pale. A map that went to black would lose its coastlines.
+    col = pow(col, float3(1.08));
+    col = col * float3(0.78, 0.86, 1.0) * 0.9 + float3(0.055, 0.066, 0.092);
+    col *= 1.0 - 0.15 * dim;
     return half4(half3(col * float(src.a)), src.a);
 }
 """

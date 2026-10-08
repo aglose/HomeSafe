@@ -45,15 +45,21 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
 
     override val isSupported = true
 
+    override suspend fun isAllowed(): Boolean = allowed()
+
+    private fun allowed(): Boolean =
+        ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED && manager.areNotificationsEnabled()
+
     override fun notify(notification: WeatherNotification) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
+        if (!allowed()) return
         ensureChannels()
         val posted = NotificationCompat.Builder(context, if (notification.urgent) SEVERE_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_weather)
             .setContentTitle(notification.title)
             .setContentText(notification.body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body))
-            .setCategory(if (notification.urgent) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_STATUS)
+            // No category: a warning is loud on its own channel, but it is not an alarm, and
+            // doesn't claim the pass through Do Not Disturb that one gets.
             .setPriority(if (notification.urgent) NotificationCompat.PRIORITY_HIGH else NotificationCompat.PRIORITY_DEFAULT)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)

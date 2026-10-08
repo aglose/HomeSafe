@@ -5,7 +5,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
-import com.meticulouscreations.homesafe.weather.PlaceSearch
 import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.WeatherUiState
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
@@ -212,6 +211,8 @@ internal object NoTiles : MapTileSource {
     override fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable?) = Unit
 }
 
+// A handful of whole screens, not every state: each is drawn by the sky's shaders, which the
+// preview renderers run on the CPU, a frame at a time. SkyPreviews.kt has the skies themselves, small.
 @Preview
 @Composable
 private fun WeatherTodayPreview() {
@@ -223,12 +224,6 @@ private fun WeatherTodayPreview() {
 private fun WeatherTodayRainPreview() {
     // Seven that evening, in the shower, with a warning in force.
     WeatherAppContent(WeatherFixtures.state(WeatherFixtures.TODAY + 19 * 3_600L, listOf(WeatherFixtures.windAdvisory)), NoTiles, WeatherActions())
-}
-
-@Preview
-@Composable
-private fun WeatherTodayNightPreview() {
-    WeatherAppContent(WeatherFixtures.state(WeatherFixtures.TODAY + 2 * 86_400L + 23 * 3_600L), NoTiles, WeatherActions())
 }
 
 @Preview
@@ -251,34 +246,6 @@ private fun WeatherPlacesPreview() {
 
 @Preview
 @Composable
-private fun WeatherPlacesSearchPreview() {
-    WeatherAppContent(
-        WeatherFixtures.state().copy(search = PlaceSearch("Sea", listOf(WeatherFixtures.seattle, Place(Place.idFor(37.57, 126.98), "Seoul", "South Korea", 37.57, 126.98)))),
-        NoTiles,
-        WeatherActions(),
-        initialPage = WeatherPage.Places,
-    )
-}
-
-@Preview
-@Composable
 private fun WeatherSettingsPreview() {
     WeatherAppContent(WeatherFixtures.state(), NoTiles, WeatherActions(), initialPage = WeatherPage.Settings)
-}
-
-@Preview
-@Composable
-private fun WeatherAlertPreview() {
-    WeatherAppContent(
-        WeatherFixtures.state(alerts = listOf(WeatherFixtures.windAdvisory)),
-        NoTiles,
-        WeatherActions(),
-        initialPage = WeatherPage.Alert(WeatherFixtures.windAdvisory.id),
-    )
-}
-
-@Preview
-@Composable
-private fun WeatherWelcomePreview() {
-    WeatherAppContent(WeatherUiState(locationSupported = true, locationAccess = LocationAccess.NOT_ASKED, nowEpochSeconds = WeatherFixtures.NOW, settled = true), NoTiles, WeatherActions())
 }

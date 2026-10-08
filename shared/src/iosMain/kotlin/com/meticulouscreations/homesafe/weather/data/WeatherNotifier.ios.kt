@@ -9,15 +9,20 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.BackgroundTasks.BGAppRefreshTaskRequest
 import platform.BackgroundTasks.BGTaskScheduler
 import platform.Foundation.NSBundle
 import platform.Foundation.NSDate
 import platform.Foundation.dateWithTimeIntervalSinceNow
+import platform.UserNotifications.UNAuthorizationStatusAuthorized
+import platform.UserNotifications.UNAuthorizationStatusEphemeral
+import platform.UserNotifications.UNAuthorizationStatusProvisional
 import platform.UserNotifications.UNMutableNotificationContent
 import platform.UserNotifications.UNNotificationRequest
 import platform.UserNotifications.UNNotificationSound
 import platform.UserNotifications.UNUserNotificationCenter
+import kotlin.coroutines.resume
 
 /**
  * Local notifications through `UNUserNotificationCenter`, marked with [WeatherDeepLink.KEY] so
@@ -26,6 +31,13 @@ import platform.UserNotifications.UNUserNotificationCenter
  */
 private class IosWeatherNotifier : WeatherNotifier {
     override val isSupported = true
+
+    override suspend fun isAllowed(): Boolean = suspendCancellableCoroutine { continuation ->
+        UNUserNotificationCenter.currentNotificationCenter().getNotificationSettingsWithCompletionHandler { settings ->
+            val status = settings?.authorizationStatus
+            continuation.resume(status == UNAuthorizationStatusAuthorized || status == UNAuthorizationStatusProvisional || status == UNAuthorizationStatusEphemeral)
+        }
+    }
 
     override fun notify(notification: WeatherNotification) {
         val content = UNMutableNotificationContent().apply {
@@ -59,8 +71,6 @@ object IosWeatherRefresh {
 
     private var registered = false
 
-    /** Whether the notification switch is on, as last told: a refresh that fires after it was switched off asks for no more. */
-    private var wanted = false
 
     fun register() {
         if (registered) return
@@ -70,21 +80,30 @@ object IosWeatherRefresh {
         if (permitted?.contains(TASK_ID) != true) return
         registered = true
         BGTaskScheduler.sharedScheduler.registerForTaskWithIdentifier(TASK_ID, usingQueue = null) { task ->
+            // Handed back exactly once, by whichever comes first: the check finishing or iOS calling time.
+            var done = false
+            fun finish(success: Boolean) {
+                if (done) return
+                done = true
+                task?.setTaskCompletedWithSuccess(success)
+            }
             val job = MainScope().launch {
-                val posted = runCatching { IosApp.graph.weatherAlertCheck.run() }.isSuccess
-                if (wanted) submit()
-                task?.setTaskCompletedWithSuccess(posted)
+                val check = IosApp.graph.weatherAlertCheck
+                check.run()
+                // Asks for the next one if the switch (read from the database, since iOS may have
+                // launched the app for this with no screen ever built) is still on.
+                runCatching { check.syncSchedule() }
+                finish(true)
             }
             // Out of time: iOS wants the task handed back promptly or it counts against the app.
             task?.expirationHandler = {
                 job.cancel()
-                task?.setTaskCompletedWithSuccess(false)
+                finish(false)
             }
         }
     }
 
     fun schedule(enabled: Boolean) {
-        wanted = enabled
         if (!registered) return
         if (enabled) submit() else BGTaskScheduler.sharedScheduler.cancelTaskRequestWithIdentifier(TASK_ID)
     }

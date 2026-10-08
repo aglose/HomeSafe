@@ -46,7 +46,7 @@ internal object RadarDecoder {
 
     /** The same on bare ARGB values, in place. */
     fun decode(pixels: IntArray, table: RadarColorTable): IntArray {
-        val known = lookup(table)
+        val known = table.greys
         // A tile has a few dozen colours at most; anything not in the table (a provider that
         // changed a shade, a smoothed edge) is matched once to its nearest entry and remembered.
         val guessed = HashMap<Int, Int>()
@@ -63,17 +63,15 @@ internal object RadarDecoder {
         return pixels
     }
 
-    private val lookups = HashMap<RadarColorTable, Map<Int, Int>>()
-
-    /** Colour to grey level (0 meaning no echo) for every entry of [table], built once. */
-    private fun lookup(table: RadarColorTable): Map<Int, Int> = lookups.getOrPut(table) {
+    /** Colour to grey level (0 meaning no echo) for every entry of [table]: see [RadarColorTable.greys]. */
+    internal fun lookup(table: RadarColorTable): Map<Int, Int> {
         val map = HashMap<Int, Int>(table.colors.size * 2)
         // A colour used for a run of values stands for the lowest of them.
         for (i in table.colors.indices) {
             val rgb = table.colors[i]
             if (rgb != 0 && rgb !in map) map[rgb] = greyOf(i, table)
         }
-        map
+        return map
     }
 
     private fun greyOf(index: Int, table: RadarColorTable): Int {

@@ -297,19 +297,18 @@ half4 main(float2 fragCoord) {
         float s = clamp(size.y / (unit * 64.0), 1.2, 18.0);
         float2 q = ceilingAt(uv, aspect, s);
         float2 qs = ceilingAt(float2(sun.x, clamp(sun.y, -0.4, 1.2)), aspect, s);
-        float2 toSun = qs - q;
-        // Mostly one direction for the whole sky (from its middle toward the sun), bent a little
-        // toward the sun from here, and fading out at the sun itself, where "toward" stops meaning
-        // anything. A direction that turned freely from pixel to pixel would comb the cloud into arcs.
+        // One direction for the whole sky: from its middle toward the sun. A direction worked out
+        // afresh at each pixel would sample the cloud along lines that converge on the sun, and
+        // comb the shading into rays from it.
         float2 fromMiddle = qs - ceilingAt(float2(0.5, 0.45), aspect, s);
-        float2 l = fromMiddle / (length(fromMiddle) + 0.9) * 0.7 + toSun / (length(toSun) + 1.6) * 0.3;
+        float2 l = fromMiddle / (length(fromMiddle) + 0.9);
         q.x += drift.x;
 
-        // Two fields, one for each way the cloud is pushed: pushed both ways by the same one it
-        // would only ever be smeared along a line, and comb out into streaks.
-        float2 wq = q * 0.45 + float2(drift.y, -drift.y * 0.6);
-        // A closed deck is pushed about less: it is a sheet, not a field of separate clouds.
-        float2 warp = (float2(fbm2(wq), fbm2(wq + float2(31.7, 17.3))) - 0.5) * mix(1.5, 0.7, smoothstep(0.6, 1.0, cover));
+        // Pushed about by a slower field, so shapes billow and never just slide; less so as the sky
+        // closes over, since a deck is a sheet and not a field of separate clouds. The push is along
+        // one line: two independent pushes shear the fine detail into brush-strokes.
+        float w = fbm2(q * 0.45 + float2(drift.y, -drift.y * 0.6));
+        float2 warp = float2(w, w * 0.7 - 0.3) * mix(1.15, 0.5, smoothstep(0.6, 1.0, cover));
         float n0 = deck(q, warp);
         float n1 = deck(q + l * 0.42, warp);
 

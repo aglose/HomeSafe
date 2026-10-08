@@ -67,6 +67,12 @@ private const val RAINVIEWER_HEX =
 /** One provider's table: [colors] as 0xRRGGBB, the reflectivity each stands for starting at [firstDbz] and rising by [stepDbz]. */
 class RadarColorTable(val colors: IntArray, val firstDbz: Float, val stepDbz: Float) {
     fun dbz(index: Int): Float = firstDbz + index * stepDbz
+
+    /**
+     * Colour to grey level (0 meaning no echo) for every entry, built on first use. Here and
+     * lazy, not in a map of tables: tiles are decoded several at a time on background threads.
+     */
+    internal val greys: Map<Int, Int> by lazy { RadarDecoder.lookup(this) }
 }
 
 internal object RadarPalettes {

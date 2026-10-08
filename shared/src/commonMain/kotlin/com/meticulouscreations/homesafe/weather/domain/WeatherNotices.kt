@@ -98,7 +98,8 @@ object WeatherNoticePlanner {
                 .filter { it.isUrgent && (it.endsEpochSeconds == null || it.endsEpochSeconds > nowEpochSeconds) }
                 .forEach { alert ->
                     notices += WeatherNotice(
-                        key = "alert:${alert.id}",
+                        // By what the warning is, not by its message: an update to it is not a new warning.
+                        key = "alert:${alert.key}",
                         kind = WeatherNoticeKind.SEVERE_ALERT,
                         title = alert.event.asUiText(),
                         body = alert.headline.ifBlank { alert.description }.take(ALERT_BODY_CHARS).asUiText(),
@@ -160,11 +161,13 @@ object WeatherNoticePlanner {
             if (hottest != null && hottest >= HOT_FEELS_C) items += Res.string.weather_notice_title_heat to UiText.of(Res.string.weather_notice_heat, WeatherFormat.degrees(hottest, units))
             val coldest = hours.minOfOrNull { it.feelsLikeC }
             if (coldest != null && coldest <= BITTER_FEELS_C) items += Res.string.weather_notice_title_cold to UiText.of(Res.string.weather_notice_cold, WeatherFormat.degrees(coldest, units))
-            val uv = hours.filter { it.isDay }.maxOfOrNull { it.uvIndex ?: 0.0 } ?: 0.0
-            if (uv >= STRONG_UV) items += Res.string.weather_notice_title_uv to UiText.of(Res.string.weather_notice_uv, uv.toInt())
             report.air?.takeIf { it.usAqi >= UNHEALTHY_AQI }?.let { air ->
                 items += Res.string.weather_notice_title_air to UiText.of(Res.string.weather_notice_air, air.usAqi)
             }
+            // Strong sun is worth a mention on a day that has something else to say, and not a
+            // notification of its own: in summer that would be one every clear morning.
+            val uv = hours.filter { it.isDay }.maxOfOrNull { it.uvIndex ?: 0.0 } ?: 0.0
+            if (uv >= STRONG_UV && items.isNotEmpty()) items += Res.string.weather_notice_title_uv to UiText.of(Res.string.weather_notice_uv, uv.toInt())
         }
         if (items.isEmpty()) return null
         return WeatherNotice("today:${day.epochSeconds}", WeatherNoticeKind.TODAY, UiText.of(items.first().first), dotted(items.map { it.second }))

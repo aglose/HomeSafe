@@ -1,8 +1,10 @@
 package com.meticulouscreations.homesafe.weather.data
 
+import androidx.compose.runtime.Stable
 import androidx.compose.ui.graphics.ImageBitmap
 import com.meticulouscreations.homesafe.data.MapTileEntity
 import com.meticulouscreations.homesafe.data.WeatherDao
+import com.meticulouscreations.homesafe.finance.data.suspendRunCatching
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.Named
@@ -25,7 +27,11 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.decodeToImageBitmap
 import kotlin.time.Clock
 
-/** Somewhere a map can get its tiles from: [MapTileStore] in the app, a handful of pictures in a preview or a test. */
+/**
+ * Somewhere a map can get its tiles from: [MapTileStore] in the app, a handful of pictures in a
+ * preview or a test. Stable for Compose: what changes is announced through [arrivals].
+ */
+@Stable
 interface MapTileSource {
     /** Goes up each time a tile arrives: something to observe so the map redraws with it. */
     val arrivals: StateFlow<Int>
@@ -40,6 +46,12 @@ interface MapTileSource {
      * [RadarDecoder]), which is the picture kept.
      */
     fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable? = null)
+
+    /** Says how many tiles the map on screen draws from (the base map and every frame of the loop), so that many are held at once. */
+    fun reserve(count: Int) = Unit
+
+    /** The map has gone: let go of all but a screenful. */
+    fun trim() = Unit
 }
 
 /**
@@ -62,6 +74,7 @@ class MapTileStore(
     private val loading = HashMap<String, Job>()
     private val failedAt = HashMap<String, Long>()
     private val downloads = Semaphore(MAX_DOWNLOADS)
+    private var capacity = MIN_IMAGES
     private val _arrivals = MutableStateFlow(0)
 
     override val arrivals: StateFlow<Int> = _arrivals.asStateFlow()
@@ -73,33 +86,50 @@ class MapTileStore(
         return image
     }
 
+    override fun reserve(count: Int) {
+        // A loop on a large window draws from more tiles than a phone's does; held to fewer, it
+        // would evict the frames it is about to play and fetch them again, for ever.
+        capacity = (count + count / 8).coerceIn(MIN_IMAGES, MAX_IMAGES)
+    }
+
+    override fun trim() {
+        capacity = MIN_IMAGES
+        while (images.size > KEPT_AFTER_TRIM) images.remove(images.keys.first())
+        failedAt.clear()
+    }
+
     override fun request(urls: Collection<String>, scope: CoroutineScope, keep: Boolean, radar: RadarColorTable?) {
         val now = clock.now().epochSeconds
+        if (failedAt.size > MAX_FAILURES_REMEMBERED) failedAt.values.removeAll { now - it >= RETRY_SECONDS }
         for (url in urls) {
             if (url in images || loading[url]?.isActive == true) continue
             if (now - (failedAt[url] ?: 0L) < RETRY_SECONDS) continue
-            loading[url] = scope.launch {
+            lateinit var job: Job
+            job = scope.launch {
                 try {
                     val image = load(url, keep)?.let { loaded ->
                         if (radar == null) loaded else withContext(Dispatchers.Default) { runCatching { RadarDecoder.decode(loaded, radar) }.getOrNull() }
                     }
                     if (image != null) {
                         images[url] = image
-                        while (images.size > MAX_IMAGES) images.remove(images.keys.first())
+                        while (images.size > capacity) images.remove(images.keys.first())
                         _arrivals.value++
                     } else {
                         failedAt[url] = clock.now().epochSeconds
                     }
                 } finally {
-                    loading.remove(url)
+                    // Only its own entry: a cancelled job must not take a newer one's place with it.
+                    if (loading[url] === job) loading.remove(url)
                 }
             }
+            // A job that finished before it could be filed has already cleaned up after itself.
+            if (job.isActive) loading[url] = job
         }
     }
 
     private suspend fun load(url: String, keep: Boolean): ImageBitmap? {
         if (keep) {
-            val saved = runCatching { dao.tile(url) }.getOrNull()
+            val saved = suspendRunCatching { dao.tile(url) }.getOrNull()
             if (saved != null) decode(saved.bytes)?.let { return it }
         }
         val bytes = try {
@@ -114,7 +144,7 @@ class MapTileStore(
         } ?: return null
         val image = decode(bytes) ?: return null
         if (keep) {
-            runCatching {
+            suspendRunCatching {
                 dao.upsertTile(MapTileEntity(url, bytes, clock.now().epochSeconds))
                 val over = dao.tileCount() - MAX_SAVED
                 if (over > 0) dao.deleteOldestTiles(over + MAX_SAVED / 10)
@@ -128,8 +158,15 @@ class MapTileStore(
     }
 
     private companion object {
-        /** A screenful of map and a loop's worth of radar, at about a quarter megabyte each decoded. */
-        const val MAX_IMAGES = 200
+        /** A phone's screenful of map and a loop's worth of radar, at about a quarter megabyte each decoded. */
+        const val MIN_IMAGES = 200
+
+        /** As far as [reserve] can raise it, for a loop on a desktop's window. */
+        const val MAX_IMAGES = 520
+
+        /** What stays in memory once the map has gone: enough to draw it again at once. */
+        const val KEPT_AFTER_TRIM = 48
+        const val MAX_FAILURES_REMEMBERED = 400
         const val MAX_SAVED = 500
         const val MAX_DOWNLOADS = 6
 
