@@ -105,6 +105,8 @@ class FitnessViewModel(
     private var log = FitnessLog()
     private var follow: Job? = null
     private var tick: Job? = null
+    private var starting: Job? = null
+    private var importing: Job? = null
     private var flashes = 0
 
     /** The drawer ([full] false) or the app itself came on screen; [active] false when both are gone. */
@@ -132,17 +134,16 @@ class FitnessViewModel(
     }
 
     fun startWorkout(focus: WorkoutFocus) {
-        if (_uiState.value.workout != null) return
-        viewModelScope.launch { repository.startWorkout(focus, now()) }
+        // A second tap before the first has been read back is the same request, not another workout.
+        if (_uiState.value.workout != null || starting?.isActive == true) return
+        starting = viewModelScope.launch { repository.startWorkout(focus, now()) }
     }
 
     fun finishWorkout() {
         val workout = _uiState.value.workout ?: return
         _uiState.update { it.copy(rest = null) }
-        viewModelScope.launch {
-            // One with nothing in it was opened by mistake: it leaves no trace.
-            if (workout.setCount == 0) repository.discardWorkout(workout.workout.id) else repository.finishWorkout(workout.workout.id, now())
-        }
+        // Whether it has anything in it is the repository's to say, at the moment it closes it: a set still on its way in counts.
+        viewModelScope.launch { repository.finishWorkout(workout.workout.id, now()) }
     }
 
     /**
@@ -247,11 +248,11 @@ class FitnessViewModel(
 
     fun confirmImport() {
         val plan = _uiState.value.import.plan ?: return
-        if (plan.isEmpty) return
-        viewModelScope.launch {
-            repository.saveExercises(plan.exercises.filter { it.isNew }.map { it.exercise })
-            repository.addSets(plan.exercises.flatMap { it.sets })
-            _uiState.update { it.copy(import = ImportState(importedExercises = plan.newExercises, importedSets = plan.newSets)) }
+        // One import at a time: a second tap while the first is being saved has nothing more to add.
+        if (plan.isEmpty || importing?.isActive == true) return
+        importing = viewModelScope.launch {
+            val added = repository.importNotes(plan.exercises.filter { it.isNew }.map { it.exercise }, plan.exercises.flatMap { it.sets })
+            _uiState.update { it.copy(import = ImportState(importedExercises = plan.newExercises, importedSets = added)) }
         }
     }
 
@@ -269,12 +270,12 @@ class FitnessViewModel(
     /** A workout left open for hours was walked away from: it is closed at its last set, or dropped if it has none. */
     private fun closeAbandonedWorkouts(log: FitnessLog) {
         val at = now()
-        val abandoned = log.workouts.filter { it.finishedAtEpochSeconds == null && at - it.startedAtEpochSeconds >= FitnessBoardBuilder.STALE_WORKOUT_SECONDS }
+        val abandoned = log.workouts.filter { it.finishedAtEpochSeconds == null && !it.isInProgress(at) }
         if (abandoned.isEmpty()) return
         viewModelScope.launch {
             for (workout in abandoned) {
                 val lastSet = log.sets.filter { it.workoutId == workout.id }.maxOfOrNull { it.epochSeconds }
-                if (lastSet == null) repository.discardWorkout(workout.id) else repository.finishWorkout(workout.id, lastSet)
+                repository.finishWorkout(workout.id, lastSet ?: workout.startedAtEpochSeconds)
             }
         }
     }

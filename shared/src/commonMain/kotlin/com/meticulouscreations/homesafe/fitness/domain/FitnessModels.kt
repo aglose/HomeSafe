@@ -190,7 +190,15 @@ data class Workout(
     val focus: WorkoutFocus,
     val startedAtEpochSeconds: Long,
     val finishedAtEpochSeconds: Long? = null,
-)
+) {
+    /** Open, and begun recently enough at [nowEpochSeconds] to still be the one in progress. */
+    fun isInProgress(nowEpochSeconds: Long): Boolean = finishedAtEpochSeconds == null && nowEpochSeconds - startedAtEpochSeconds < STALE_AFTER_SECONDS
+
+    companion object {
+        /** A workout left open this long was walked away from: it no longer counts as the one in progress. */
+        const val STALE_AFTER_SECONDS = 8 * 3600L
+    }
+}
 
 /** A phase begins at [startedAtEpochSeconds] and runs until the next one does. */
 @Immutable

@@ -46,6 +46,7 @@ import homesafe.shared.generated.resources.fitness_import_row_new
 import homesafe.shared.generated.resources.fitness_import_row_sets
 import homesafe.shared.generated.resources.fitness_import_shelf
 import homesafe.shared.generated.resources.fitness_import_skipped
+import homesafe.shared.generated.resources.fitness_import_skipped_more
 import homesafe.shared.generated.resources.fitness_import_summary
 import homesafe.shared.generated.resources.fitness_import_unread
 import org.jetbrains.compose.resources.pluralStringResource
@@ -131,13 +132,25 @@ internal fun ImportScreen(
             if (plan.skipped.isNotEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 CardLabel(stringResource(Res.string.fitness_import_skipped), color = colors.amber)
-                plan.skipped.take(12).forEach { line ->
+                plan.skipped.take(SKIPPED_SHOWN).forEach { line ->
                     Text(line, style = type.label, color = colors.textMuted, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                }
+                val more = plan.skipped.size - SKIPPED_SHOWN
+                if (more > 0) {
+                    Text(
+                        pluralStringResource(Res.plurals.fitness_import_skipped_more, more, more),
+                        style = type.label,
+                        color = colors.amber,
+                        modifier = Modifier.padding(top = 6.dp).testTag("fitness_import_skipped_more"),
+                    )
                 }
             }
         }
     }
 }
+
+/** How many unread lines the preview lists before it gives the rest as a count. */
+private const val SKIPPED_SHOWN = 12
 
 /** An exercise the notes hold: its name and shelf, the heaviest rung read for it, and how much of it is new. */
 @Composable

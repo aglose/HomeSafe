@@ -121,8 +121,7 @@ data class FitnessLog(
 
 /** Works the screens' [FitnessBoards] out of a [FitnessLog]. Pure, so it can be tested without a view model. */
 object FitnessBoardBuilder {
-    /** A workout left open this long was walked away from: it no longer counts as the one in progress. */
-    const val STALE_WORKOUT_SECONDS = 8 * 3600L
+    const val STALE_WORKOUT_SECONDS = Workout.STALE_AFTER_SECONDS
     private const val RECENT_RECORD_DAYS = 30L
     private const val WEEK_SECONDS = 7 * SECONDS_PER_DAY
 
@@ -137,7 +136,7 @@ object FitnessBoardBuilder {
 
         fun epochDay(epochSeconds: Long) = (epochSeconds + utcOffsetSeconds).floorDiv(SECONDS_PER_DAY)
 
-        val open = log.workouts.lastOrNull { it.finishedAtEpochSeconds == null && nowEpochSeconds - it.startedAtEpochSeconds < STALE_WORKOUT_SECONDS }
+        val open = log.workouts.lastOrNull { it.isInProgress(nowEpochSeconds) }
         val records = ArrayList<RecordEvent>()
         val recordById = HashMap<Long, Record>()
         val boards = log.exercises.filter { !it.archived }.map { exercise ->

@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.fitness.FitnessTestData.exercise
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Equipment
+import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
@@ -65,8 +66,9 @@ class FitnessRepositoryImplTest {
 
     @Test
     fun aSetCarriesEverythingItsDraftDid() = runTest {
-        val added = repository.addSets(listOf(SetDraft("legs/squat", 225.0, 5, 77, bodyweight = 180.0, note = "belt", imported = true, workoutId = 9)))
-        val expected = LoggedSet(1, "legs/squat", 225.0, 5, 77, workoutId = 9, bodyweight = 180.0, note = "belt", imported = true)
+        val workout = repository.startWorkout(WorkoutFocus.LEGS, 70)
+        val added = repository.addSets(listOf(SetDraft("legs/squat", 225.0, 5, 77, bodyweight = 180.0, note = "belt", imported = true, workoutId = workout.id)))
+        val expected = LoggedSet(1, "legs/squat", 225.0, 5, 77, workoutId = workout.id, bodyweight = 180.0, note = "belt", imported = true)
         assertEquals(listOf(expected), added)
         assertEquals(listOf(expected), repository.sets.first())
     }
@@ -166,17 +168,44 @@ class FitnessRepositoryImplTest {
     @Test
     fun workoutIdsRiseAndAWorkoutStartsOpen() = runTest {
         val first = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        repository.addSets(listOf(draft(workoutId = first.id)))
+        repository.finishWorkout(first.id, 150)
         val second = repository.startWorkout(WorkoutFocus.LEGS, 200)
         assertEquals(Workout(1, WorkoutFocus.CHEST, 100), first)
         assertEquals(Workout(2, WorkoutFocus.LEGS, 200), second)
-        assertEquals(listOf(first, second), repository.workouts.first())
+        assertEquals(listOf(first.copy(finishedAtEpochSeconds = 150), second), repository.workouts.first())
+    }
+
+    @Test
+    fun startingAWorkoutWhileOneIsInProgressHandsThatOneBack() = runTest {
+        val first = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        assertEquals(first, repository.startWorkout(WorkoutFocus.LEGS, 200))
+        // Two asked for at once are still one.
+        val both = coroutineScope { (1..2).map { async { repository.startWorkout(WorkoutFocus.BACK, 300) } }.awaitAll() }
+        assertEquals(listOf(first, first), both)
+        assertEquals(listOf(first), repository.workouts.first())
+    }
+
+    @Test
+    fun aWorkoutLeftOpenTooLongDoesNotStopANewOne() = runTest {
+        val old = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        val fresh = repository.startWorkout(WorkoutFocus.LEGS, 100 + Workout.STALE_AFTER_SECONDS)
+        assertEquals(listOf(old.id, fresh.id), repository.workouts.first().map { it.id })
     }
 
     @Test
     fun finishingAWorkoutStampsItsEnd() = runTest {
         val workout = repository.startWorkout(WorkoutFocus.BACK, 100)
+        repository.addSets(listOf(draft(workoutId = workout.id)))
         repository.finishWorkout(workout.id, 4_000)
         assertEquals(listOf(Workout(workout.id, WorkoutFocus.BACK, 100, 4_000)), repository.workouts.first())
+    }
+
+    @Test
+    fun finishingAWorkoutWithNothingInItRemovesIt() = runTest {
+        val workout = repository.startWorkout(WorkoutFocus.BACK, 100)
+        repository.finishWorkout(workout.id, 4_000)
+        assertEquals(emptyList(), repository.workouts.first())
     }
 
     @Test
@@ -186,13 +215,35 @@ class FitnessRepositoryImplTest {
     }
 
     @Test
-    fun discardingAWorkoutRemovesItAndTheSetsLoggedInIt() = runTest {
-        val kept = repository.startWorkout(WorkoutFocus.CHEST, 100)
-        val dropped = repository.startWorkout(WorkoutFocus.BACK, 200)
-        repository.addSets(listOf(draft(workoutId = dropped.id), draft(workoutId = dropped.id), draft(workoutId = kept.id), draft()))
-        repository.discardWorkout(dropped.id)
-        assertEquals(listOf(kept.id), repository.workouts.first().map { it.id })
-        assertEquals(listOf(kept.id, null), repository.sets.first().map { it.workoutId })
+    fun aSetLoggedAsItsWorkoutIsFinishedIsNeitherLostNorLeftPointingAtNothing() = runTest {
+        val workout = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        // The set and the finish are asked for together: whichever goes first, the set is kept.
+        coroutineScope {
+            listOf(async { repository.addSets(listOf(draft(workoutId = workout.id))) }, async { repository.finishWorkout(workout.id, 500) }).awaitAll()
+        }
+        assertEquals(listOf(Workout(workout.id, WorkoutFocus.CHEST, 100, 500)), repository.workouts.first())
+        assertEquals(listOf(workout.id), repository.sets.first().map { it.workoutId })
+    }
+
+    @Test
+    fun aSetForAWorkoutThatHasGoneIsKeptOnItsOwn() = runTest {
+        val workout = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        repository.finishWorkout(workout.id, 200)
+        val saved = repository.addSets(listOf(draft(workoutId = workout.id)))
+        assertNull(saved.single().workoutId)
+    }
+
+    // ---- Imports ------------------------------------------------------------------------------
+
+    @Test
+    fun anImportConfirmedTwiceAddsItsSetsOnce() = runTest {
+        val bench = Exercise(id = "chest/bench-press", name = "Bench press", bodyPart = BodyPart.CHEST, primary = Muscle.CHEST)
+        val drafts = listOf(draft(epochSeconds = 0, reps = 8), draft(epochSeconds = 0, reps = 10), draft(epochSeconds = 0, reps = 8))
+        val added = coroutineScope { (1..2).map { async { repository.importNotes(listOf(bench), drafts) } }.awaitAll() }
+        // The plan's own repeat of a set is dropped too.
+        assertEquals(listOf(2, 0), added)
+        assertEquals(listOf(8, 10), repository.sets.first().map { it.reps })
+        assertEquals(listOf(bench), repository.exercises.first())
     }
 
     // ---- Phases and weigh-ins -----------------------------------------------------------------

@@ -125,6 +125,7 @@ class FitnessViewModelTest {
     @Test
     fun theFullAppMovesTheClockOnEachMinute() = runFitnessTest { h ->
         val started = h.repository.startWorkout(WorkoutFocus.CHEST, NOW - 3_600)
+        h.repository.addSets(listOf(SetDraft(benchId, 135.0, 8, NOW - 3_000, workoutId = started.id)))
         h.repository.finishWorkout(started.id, NOW - 1_800)
         h.repository.saveExercises(listOf(exercise()))
         val vm = h.viewModel()
@@ -878,5 +879,43 @@ class FitnessViewModelTest {
         runCurrent()
 
         assertNull(vm.uiState.value.workout)
+    }
+
+    // ---- Two taps, and things asked for at once ------------------------------------------------
+
+    @Test
+    fun twoTapsOnStartBeforeTheFirstIsReadBackOpenOneWorkout() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.startWorkout(WorkoutFocus.LEGS)
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        assertEquals(listOf(WorkoutFocus.LEGS), h.repository.workouts.first().map { it.focus })
+    }
+
+    @Test
+    fun finishingOnTheHeelsOfASetKeepsTheWorkoutAndTheSet() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        // The set has not been read back when Finish is pressed: the screen still says the workout is empty.
+        vm.logSet(benchId, 135.0, 8)
+        vm.finishWorkout()
+        runCurrent()
+        val workout = h.repository.workouts.first().single()
+        assertNotNull(workout.finishedAtEpochSeconds)
+        assertEquals(listOf(workout.id), h.repository.sets.first().map { it.workoutId })
+    }
+
+    @Test
+    fun twoTapsOnImportBringTheNotesInOnce() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText("Hack squat\n- 290lbs - 12 reps\n- 320lbs - 10 reps")
+        vm.confirmImport()
+        vm.confirmImport()
+        runCurrent()
+        assertEquals(2, h.repository.sets.first().size)
+        assertEquals(2, vm.uiState.value.import.importedSets)
     }
 }

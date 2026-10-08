@@ -90,8 +90,14 @@ interface FitnessDao {
     @Query("SELECT * FROM FitnessSetEntity ORDER BY epochSeconds, id")
     fun observeSets(): Flow<List<FitnessSetEntity>>
 
+    @Query("SELECT * FROM FitnessSetEntity")
+    suspend fun sets(): List<FitnessSetEntity>
+
     @Query("SELECT MAX(id) FROM FitnessSetEntity")
     suspend fun maxSetId(): Long?
+
+    @Query("SELECT COUNT(*) FROM FitnessSetEntity WHERE workoutId = :workoutId")
+    suspend fun countSetsOfWorkout(workoutId: Long): Int
 
     @Upsert
     suspend fun upsertSets(sets: List<FitnessSetEntity>)
@@ -102,14 +108,14 @@ interface FitnessDao {
     @Query("DELETE FROM FitnessSetEntity WHERE exerciseId = :exerciseId")
     suspend fun deleteSetsOfExercise(exerciseId: String)
 
-    @Query("DELETE FROM FitnessSetEntity WHERE workoutId = :workoutId")
-    suspend fun deleteSetsOfWorkout(workoutId: Long)
-
     @Query("SELECT * FROM FitnessWorkoutEntity ORDER BY startedAtEpochSeconds, id")
     fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>>
 
     @Query("SELECT * FROM FitnessWorkoutEntity WHERE id = :id")
     suspend fun workout(id: Long): FitnessWorkoutEntity?
+
+    @Query("SELECT * FROM FitnessWorkoutEntity WHERE finishedAtEpochSeconds IS NULL ORDER BY startedAtEpochSeconds DESC, id DESC LIMIT 1")
+    suspend fun openWorkout(): FitnessWorkoutEntity?
 
     @Query("SELECT MAX(id) FROM FitnessWorkoutEntity")
     suspend fun maxWorkoutId(): Long?
@@ -160,7 +166,11 @@ class InMemoryFitnessDao : FitnessDao {
 
     override fun observeSets(): Flow<List<FitnessSetEntity>> = sets
 
+    override suspend fun sets(): List<FitnessSetEntity> = sets.value
+
     override suspend fun maxSetId(): Long? = sets.value.maxOfOrNull { it.id }
+
+    override suspend fun countSetsOfWorkout(workoutId: Long): Int = sets.value.count { it.workoutId == workoutId }
 
     override suspend fun upsertSets(sets: List<FitnessSetEntity>) {
         val replaced = sets.associateBy { it.id }
@@ -177,13 +187,12 @@ class InMemoryFitnessDao : FitnessDao {
         sets.update { current -> current.filter { it.exerciseId != exerciseId } }
     }
 
-    override suspend fun deleteSetsOfWorkout(workoutId: Long) {
-        sets.update { current -> current.filter { it.workoutId != workoutId } }
-    }
-
     override fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>> = workouts
 
     override suspend fun workout(id: Long): FitnessWorkoutEntity? = workouts.value.firstOrNull { it.id == id }
+
+    override suspend fun openWorkout(): FitnessWorkoutEntity? =
+        workouts.value.filter { it.finishedAtEpochSeconds == null }.maxWithOrNull(compareBy({ it.startedAtEpochSeconds }, { it.id }))
 
     override suspend fun maxWorkoutId(): Long? = workouts.value.maxOfOrNull { it.id }
 

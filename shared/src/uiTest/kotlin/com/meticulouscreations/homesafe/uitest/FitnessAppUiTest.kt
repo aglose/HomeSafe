@@ -325,4 +325,19 @@ class FitnessAppUiTest {
         tap("fitness_import_confirm")
         assertEquals(1, calls.importConfirmed)
     }
+
+    @Test
+    fun unreadLinesPastTheFirstFewAreCountedNotDropped() = runComposeUiTest(testTimeout = 5.minutes) {
+        val few = FitnessFixtures.importing()
+        show(few, Calls(), page = FitnessPage.Import, tall = true)
+        assertNotShown("fitness_import_skipped_more")
+    }
+
+    @Test
+    fun aLongListOfUnreadLinesSaysHowManyMoreThereAre() = runComposeUiTest(testTimeout = 5.minutes) {
+        val few = FitnessFixtures.importing()
+        val many = few.copy(import = few.import.copy(plan = few.import.plan!!.copy(skipped = List(15) { "line $it" })))
+        show(many, Calls(), page = FitnessPage.Import, tall = true)
+        assertShown("fitness_import_skipped_more")
+    }
 }

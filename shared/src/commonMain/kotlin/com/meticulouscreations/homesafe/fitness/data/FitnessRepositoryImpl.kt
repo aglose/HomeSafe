@@ -33,8 +33,9 @@ import kotlinx.coroutines.sync.withLock
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
 class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
-    // Ids are handed out here, rising: one writer at a time, so two never get the same one.
-    private val ids = Mutex()
+    // One writer at a time. Ids are handed out here, rising, so two never get the same one; and a decision made on what
+    // the log holds (is this workout empty? is one already open? has this set been imported?) is made and acted on in one piece.
+    private val writes = Mutex()
 
     override val exercises: Flow<List<Exercise>> = dao.observeExercises().map { rows -> rows.map { it.toDomain() } }
     override val sets: Flow<List<LoggedSet>> = dao.observeSets().map { rows -> rows.map { it.toDomain() } }
@@ -55,14 +56,26 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun addSets(drafts: List<SetDraft>): List<LoggedSet> {
         if (drafts.isEmpty()) return emptyList()
-        return ids.withLock {
-            var next = (dao.maxSetId() ?: 0L) + 1
-            val rows = drafts.map { draft ->
-                FitnessSetEntity(next++, draft.exerciseId, draft.workoutId, draft.epochSeconds, draft.weight, draft.reps, draft.bodyweight, draft.note, draft.imported)
-            }
-            dao.upsertSets(rows)
-            rows.map { it.toDomain() }
+        return writes.withLock { insert(drafts) }
+    }
+
+    override suspend fun importNotes(exercises: List<Exercise>, drafts: List<SetDraft>): Int = writes.withLock {
+        if (exercises.isNotEmpty()) dao.upsertExercises(exercises.map { it.toEntity() })
+        val have = dao.sets().mapTo(HashSet()) { SetKey(it.exerciseId, it.weight, it.reps, it.epochSeconds) }
+        insert(drafts.filter { have.add(SetKey(it.exerciseId, it.weight, it.reps, it.epochSeconds)) }).size
+    }
+
+    /** Under [writes]. A set for a workout that has gone (cancelled a moment before the set landed) is kept, on its own. */
+    private suspend fun insert(drafts: List<SetDraft>): List<LoggedSet> {
+        if (drafts.isEmpty()) return emptyList()
+        val workouts = drafts.mapNotNull { it.workoutId }.distinct().associateWith { dao.workout(it) != null }
+        var next = (dao.maxSetId() ?: 0L) + 1
+        val rows = drafts.map { draft ->
+            val workoutId = draft.workoutId?.takeIf { workouts[it] == true }
+            FitnessSetEntity(next++, draft.exerciseId, workoutId, draft.epochSeconds, draft.weight, draft.reps, draft.bodyweight, draft.note, draft.imported)
         }
+        dao.upsertSets(rows)
+        return rows.map { it.toDomain() }
     }
 
     override suspend fun updateSet(set: LoggedSet) {
@@ -71,23 +84,19 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun deleteSet(id: Long) = dao.deleteSet(id)
 
-    override suspend fun startWorkout(focus: WorkoutFocus, atEpochSeconds: Long): Workout = ids.withLock {
+    override suspend fun startWorkout(focus: WorkoutFocus, atEpochSeconds: Long): Workout = writes.withLock {
+        dao.openWorkout()?.toDomain()?.takeIf { it.isInProgress(atEpochSeconds) }?.let { return@withLock it }
         val row = FitnessWorkoutEntity((dao.maxWorkoutId() ?: 0L) + 1, focus.name, atEpochSeconds, null)
         dao.upsertWorkout(row)
         row.toDomain()
     }
 
-    override suspend fun finishWorkout(id: Long, atEpochSeconds: Long) {
-        val row = dao.workout(id) ?: return
-        dao.upsertWorkout(row.copy(finishedAtEpochSeconds = atEpochSeconds))
+    override suspend fun finishWorkout(id: Long, atEpochSeconds: Long) = writes.withLock {
+        val row = dao.workout(id) ?: return@withLock
+        if (dao.countSetsOfWorkout(id) == 0) dao.deleteWorkout(id) else dao.upsertWorkout(row.copy(finishedAtEpochSeconds = atEpochSeconds))
     }
 
-    override suspend fun discardWorkout(id: Long) {
-        dao.deleteSetsOfWorkout(id)
-        dao.deleteWorkout(id)
-    }
-
-    override suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long) = ids.withLock {
+    override suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long) = writes.withLock {
         dao.upsertPhase(FitnessPhaseEntity((dao.maxPhaseId() ?: 0L) + 1, kind.name, atEpochSeconds))
     }
 
@@ -95,6 +104,8 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun deleteBodyweight(epochDay: Long) = dao.deleteBodyweight(epochDay)
 }
+
+private data class SetKey(val exerciseId: String, val weight: Double, val reps: Int, val epochSeconds: Long)
 
 private inline fun <reified E : Enum<E>> enumOr(name: String, fallback: E): E = enumValues<E>().firstOrNull { it.name == name } ?: fallback
 

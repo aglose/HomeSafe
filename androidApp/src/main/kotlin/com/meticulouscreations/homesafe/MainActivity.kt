@@ -94,8 +94,10 @@ class MainActivity : FragmentActivity() {
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
         // Text shared to the app from another one (a note, from a notes app's Share menu): workout notes for the fitness app to read.
         if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
-            // The note's title is its heading ("Legs"); apps differ on which of the two extras they put it in.
-            FitnessShares.offer(intent.getStringExtra(Intent.EXTRA_TEXT), intent.getStringExtra(Intent.EXTRA_SUBJECT) ?: intent.getStringExtra(Intent.EXTRA_TITLE))
+            // Shared text is a CharSequence, which a sender may hand over styled (not a String at all). The note's
+            // title is its heading ("Legs"); apps differ on which of the two extras they put it in.
+            val title = intent.getCharSequenceExtra(Intent.EXTRA_SUBJECT) ?: intent.getCharSequenceExtra(Intent.EXTRA_TITLE)
+            FitnessShares.offer(intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(), title?.toString())
             return
         }
         // A weather notification's tap: the weather app, not a camera.

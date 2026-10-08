@@ -251,6 +251,11 @@
     <!-- An exercise's shelf and its heaviest set: "Legs · 320 lb × 10" -->
     <string name="fitness_import_row_detail">%1$s · %2$s</string>
     <string name="fitness_import_skipped">Lines that didn't read as a set</string>
+    <!-- Under the first few of those lines: how many more there are -->
+    <plurals name="fitness_import_skipped_more">
+        <item quantity="one">and %1$d more line</item>
+        <item quantity="other">and %1$d more lines</item>
+    </plurals>
     <!-- %1$s like "12 new exercises", %2$s like "40 sets" -->
     <string name="fitness_import_done">Brought in %1$s and %2$s</string>
     <string name="fitness_import_done_more">Paste another note, or head back and start a workout.</string>
