@@ -3,8 +3,8 @@ package com.meticulouscreations.homesafe.weather.ui
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ContentTransform
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +37,7 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -81,17 +83,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -129,6 +134,8 @@ import homesafe.shared.generated.resources.weather_title_settings
 import homesafe.shared.generated.resources.weather_welcome_add
 import homesafe.shared.generated.resources.weather_welcome_body
 import homesafe.shared.generated.resources.weather_welcome_title
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -462,7 +469,8 @@ private fun PlacePager(
     }
 }
 
-/** One place's page: Today and Forecast, cross-faded as the tab changes, each keeping its own scroll. */
+/** One place's page: Today and Forecast, faded one into the other as the tab changes, each keeping its own scroll. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlacePage(
     entry: PlaceWeather,
@@ -479,8 +487,8 @@ private fun PlacePage(
     onRetry: () -> Unit,
     animated: Boolean,
 ) {
-    val todayList = rememberLazyListState()
-    val forecastList = rememberLazyListState()
+    val todayList = rememberLazyListState(cacheWindow = PageCacheWindow)
+    val forecastList = rememberLazyListState(cacheWindow = PageCacheWindow)
     val list = if (tab == WeatherTab.FORECAST) forecastList else todayList
     val dimmed by rememberUpdatedState(onDim)
     // How far the cards have come up over the sky, for the page in view: the sky dims behind them.
@@ -491,27 +499,84 @@ private fun PlacePage(
     val scrubbed = remember(scrubbedEpochSeconds, entry.report) {
         scrubbedEpochSeconds?.let { at -> entry.report?.hourly?.firstOrNull { it.epochSeconds == at } }
     }
-    Crossfade(tab, label = "placeTab") { shown ->
-        if (shown == WeatherTab.FORECAST) {
-            ForecastScreen(entry, state.nowEpochSeconds, forecastList, padding, onRetry)
-        } else {
-            TodayScreen(
-                entry = entry,
-                nowEpochSeconds = state.nowEpochSeconds,
-                scrubbed = scrubbed,
-                radar = state.radar.takeIf { current } ?: RadarLoad(),
-                tiles = tiles,
-                listState = todayList,
-                padding = padding,
-                onScrub = onScrub,
-                onOpenAlert = onOpenAlert,
-                onOpenRadar = onOpenRadar,
-                onRetry = onRetry,
-                animated = animated,
-            )
+    // Both tabs stay composed, the one not on show as a layer drawn at nothing: a change of tab is
+    // then a fade between two things already there, where composing the other from nothing (ten
+    // days of rows, or twenty-six hours of columns) took the frame it was asked for and three more.
+    // The first of them is put off until the one on show has been up a moment and is at rest.
+    val forecastUp = tab == WeatherTab.FORECAST
+    var both by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(OTHER_TAB_AFTER_MS)
+        snapshotFlow { todayList.isScrollInProgress || forecastList.isScrollInProgress }.first { !it }
+        both = true
+    }
+    val fade = animateFloatAsState(if (forecastUp) 1f else 0f, tween(300), label = "placeTab")
+    // The tab behind follows the forecast and the clock only while the lists are at rest, so a
+    // refresh or the minute's tick landing in the middle of a scroll recomposes the tab on show,
+    // as it always did, and not both of them in the one frame.
+    val live = TabInputs(entry, state.nowEpochSeconds)
+    var rested by remember { mutableStateOf(live) }
+    LaunchedEffect(live) {
+        snapshotFlow { todayList.isScrollInProgress || forecastList.isScrollInProgress }.first { !it }
+        rested = live
+    }
+    val today = if (forecastUp) rested else live
+    val forecast = if (forecastUp) live else rested
+    Box(Modifier.fillMaxSize()) {
+        if (!forecastUp || both) {
+            Box(Modifier.tabLayer(shown = !forecastUp) { 1f - fade.value }) {
+                TodayScreen(
+                    entry = today.entry,
+                    nowEpochSeconds = today.nowEpochSeconds,
+                    scrubbed = scrubbed,
+                    radar = state.radar.takeIf { current } ?: RadarLoad(),
+                    tiles = tiles,
+                    listState = todayList,
+                    padding = padding,
+                    onScrub = onScrub,
+                    onOpenAlert = onOpenAlert,
+                    onOpenRadar = onOpenRadar,
+                    onRetry = onRetry,
+                    // Nothing in a tab that isn't on show is worth a frame.
+                    animated = animated && !forecastUp,
+                )
+            }
+        }
+        if (forecastUp || both) {
+            Box(Modifier.tabLayer(shown = forecastUp) { fade.value }) {
+                ForecastScreen(forecast.entry, forecast.nowEpochSeconds, forecastList, padding, onRetry)
+            }
         }
     }
 }
+
+/**
+ * One of a place's two tabs as a layer: drawn at [alpha], which is read only when it is drawn,
+ * and while it isn't the one [shown], under the other (so no finger reaches it) and unsaid to
+ * screen readers and tests.
+ */
+private fun Modifier.tabLayer(shown: Boolean, alpha: () -> Float): Modifier =
+    zIndex(if (shown) 1f else 0f)
+        .graphicsLayer { this.alpha = alpha() }
+        .then(if (shown) Modifier else Modifier.clearAndSetSemantics { })
+
+/** What a place's tab is drawn from: the place's forecast, and the time. */
+@Immutable
+private data class TabInputs(val entry: PlaceWeather, val nowEpochSeconds: Long)
+
+/** How long a place's page has been up before its other tab is composed behind it. */
+private const val OTHER_TAB_AFTER_MS = 700L
+
+/**
+ * How much of a place's page is kept composed beyond what is on screen: two screens' worth either
+ * way, which is all of it. A page is a dozen cards and no more, and some of them are a great deal
+ * to compose (the details are nine tiles in one item, the hourly strip twenty-six columns): with
+ * the list's own window such a card can arrive under a dragging finger half built, and the rest
+ * of it is fifty milliseconds in one frame. Kept, it is built once, ahead of the scroll and in
+ * the time between frames.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+private val PageCacheWindow = LazyLayoutCacheWindow(aheadFraction = 2f, behindFraction = 2f)
 
 /** Nowhere to forecast for yet: say what the app does, and offer the two ways to give it somewhere. */
 @Composable
