@@ -173,8 +173,10 @@ gap of more than five seconds between readings adds nothing, so a workout done m
 screen off will show a short "recorded" time, not a wrong one.
 
 If the link drops mid-workout (out of range, band off) the panel says so and the app keeps
-looking, backing off from two seconds to thirty. A link that has said nothing for twelve seconds
-is treated as dropped without waiting for Android to notice.
+looking, in bursts: a scan of up to fifteen seconds, then a rest that grows from two seconds to
+thirty, so a band that isn't there doesn't keep the radio scanning flat out. A link that has
+said nothing for twelve seconds is treated as dropped without waiting for Android to notice.
+Looking for sensors to choose from stops after a minute.
 
 ## Bringing notes in
 

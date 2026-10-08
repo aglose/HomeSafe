@@ -68,7 +68,6 @@ class FitnessAppUiTest {
         var heartConnects = 0
         var heartForgotten = 0
         var heartSearchStops = 0
-        var noticesDismissed = 0
         val chosenSensors = mutableListOf<HeartSensor>()
         val heartProfiles = mutableListOf<HeartProfile>()
         val started = mutableListOf<WorkoutFocus>()
@@ -99,7 +98,6 @@ class FitnessAppUiTest {
             onForgetHeartSensor = { heartForgotten++ },
             onStopHeartSearch = { heartSearchStops++ },
             onSaveHeartProfile = { heartProfiles += it },
-            onDismissZoneNotice = { noticesDismissed++ },
         )
     }
 
@@ -316,14 +314,17 @@ class FitnessAppUiTest {
     }
 
     @Test
-    fun aChangeOfZoneIsWrittenOnThePanelAndTakesItselfAway() = runComposeUiTest(testTimeout = 5.minutes) {
-        val calls = Calls()
-        show(FitnessFixtures.state(working = true, resting = false), calls, page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 156, notice = true))
+    fun aChangeOfZoneIsWrittenOnThePanelForAsLongAsItStands() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true, resting = false), Calls(), page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 156, notice = true))
         onNodeWithTag("fitness_heart_notice", useUnmergedTree = true).assertExists()
         onNode(hasText("Up to zone 4 · Hard"), useUnmergedTree = true).assertExists()
-        assertEquals(0, calls.noticesDismissed)
-        mainClock.advanceTimeBy(4_000, ignoreFrameDuration = true)
-        assertEquals(1, calls.noticesDismissed)
+    }
+
+    @Test
+    fun withNoNoticeThePanelSaysNothingOfAChange() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true, resting = false), Calls(), page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 156))
+        assertShown("fitness_heart")
+        assertEquals(0, onAllNodesWithTag("fitness_heart_notice", useUnmergedTree = true).fetchSemanticsNodes(atLeastOneRootRequired = false).size)
     }
 
     @Test

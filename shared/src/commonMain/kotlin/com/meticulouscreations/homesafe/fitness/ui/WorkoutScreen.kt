@@ -180,7 +180,7 @@ internal fun WorkoutScreen(
                         )
                     }
                 }
-                if (heart.wanted) HeartPanel(heart, onOpenHeart, actions.onDismissZoneNotice, Modifier.padding(top = 14.dp))
+                if (heart.wanted) HeartPanel(heart, onOpenHeart, Modifier.padding(top = 14.dp))
                 AnimatedVisibility(state.rest != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                     state.rest?.let { rest ->
                         RestBar(rest, state.nowEpochSeconds * 1000, tints, actions.onAdjustRest, actions.onSkipRest, Modifier.padding(top = 14.dp)) {

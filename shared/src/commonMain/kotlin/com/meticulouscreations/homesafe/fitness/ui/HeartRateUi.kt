@@ -100,12 +100,8 @@ import homesafe.shared.generated.resources.fitness_heart_time_described
 import homesafe.shared.generated.resources.fitness_heart_zone_below
 import homesafe.shared.generated.resources.fitness_heart_zone_label
 import homesafe.shared.generated.resources.fitness_heart_zone_line
-import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.exp
-
-/** How long a change of zone stays written on the panel before it takes itself away. */
-private const val NOTICE_MILLIS = 4_000L
 
 /**
  * The heart rate on a workout: a heart beating in time with the wearer's, the beats a minute in
@@ -113,27 +109,19 @@ private const val NOTICE_MILLIS = 4_000L
  * all sized to be read from a phone lying on the bench. Under them the five zones as a strip,
  * the one the heart is in lit, with the time this workout has spent in each.
  *
- * When the heart settles into another zone the panel says so for a few seconds, its edge
- * thickening in the new zone's colour, and the phone buzzes once: long for up, short for down.
- * No sound. With no reading it says what the sensor is doing instead. A tap opens the heart-rate
- * page.
+ * When the heart settles into another zone the panel says so for as long as the notice stands
+ * (a few seconds; the view model takes it away), its edge thickening in the new zone's colour.
+ * The buzz that goes with it is [ZoneBuzz]. With no reading the panel says what the sensor is
+ * doing instead. A tap opens the heart-rate page.
  */
 @Composable
-internal fun HeartPanel(heart: HeartUiState, onOpen: () -> Unit, onDismissNotice: () -> Unit, modifier: Modifier = Modifier) {
+internal fun HeartPanel(heart: HeartUiState, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val bpm = heart.bpm
     val zone = heart.zone
     val tint by animateColorAsState(if (bpm != null && heart.bounds != null) colors.zone(zone) else colors.textFaint, tween(400), label = "heartTint")
     val notice = heart.notice
-    val haptics = LocalHapticFeedback.current
-    val dismiss by rememberUpdatedState(onDismissNotice)
-    LaunchedEffect(notice?.token) {
-        if (notice == null) return@LaunchedEffect
-        haptics.performHapticFeedback(if (notice.rising) HapticFeedbackType.LongPress else HapticFeedbackType.Confirm)
-        delay(NOTICE_MILLIS)
-        dismiss()
-    }
     val flare by animateFloatAsState(if (notice != null) 1f else 0f, tween(300), label = "heartNotice")
     val status = heartStatus(heart.sensor)
     val described = when {
@@ -184,6 +172,19 @@ internal fun HeartPanel(heart: HeartUiState, onOpen: () -> Unit, onDismissNotice
             Spacer(Modifier.height(10.dp))
             ZoneStrip(zone.takeIf { bpm != null }, heart.summary)
         }
+    }
+}
+
+/**
+ * The buzz for a change of zone: once for each notice, long for up and short for down. No sound.
+ * It sits at the top of the app and not in the panel, which is in a scrolling list and would
+ * buzz again each time it came back into view.
+ */
+@Composable
+internal fun ZoneBuzz(notice: ZoneNotice?) {
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(notice?.token) {
+        if (notice != null) haptics.performHapticFeedback(if (notice.rising) HapticFeedbackType.LongPress else HapticFeedbackType.Confirm)
     }
 }
 

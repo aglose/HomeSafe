@@ -33,7 +33,7 @@ sealed interface HeartSensorState {
     /** Looking for sensors to choose one from: every one seen so far, in the order they turned up. */
     data class Searching(val found: List<SensorSighting> = emptyList()) : HeartSensorState
 
-    /** Looking for the one sensor that was chosen. */
+    /** Looking for the one sensor that was chosen, which hasn't been heard yet. */
     data class Scanning(val sensor: HeartSensor) : HeartSensorState
 
     data class Connecting(val sensor: HeartSensor) : HeartSensorState
@@ -44,7 +44,7 @@ sealed interface HeartSensorState {
      */
     data class Connected(val sensor: HeartSensor, val bpm: Int? = null, val atEpochMillis: Long = 0) : HeartSensorState
 
-    /** The link dropped, or never came up; it is being tried again. */
+    /** The sensor was heard, and the link to it dropped or never came up; it is being tried again. */
     data class Lost(val sensor: HeartSensor) : HeartSensorState
 }
 
@@ -113,7 +113,11 @@ internal object UnsupportedHeartRateLink : HeartRateLink {
 interface HeartRateMonitor {
     val state: StateFlow<HeartSensorState>
 
-    /** Looks for sensors to choose from, asking for Bluetooth first if need be: [HeartSensorState.Searching] until [follow] or [stop]. */
+    /**
+     * Looks for sensors to choose from, asking for Bluetooth first if need be:
+     * [HeartSensorState.Searching] until [follow] or [stop]. The looking itself ends after a
+     * minute; what was found stays listed, and with nothing found it is [HeartSensorState.Off] again.
+     */
     fun search()
 
     /**

@@ -181,6 +181,7 @@ class FitnessViewModel(
     private var tally: HeartTally? = null
     private var zones = ZoneTracker()
     private var notices = 0
+    private var noticeExpiry: Job? = null
 
     /** The highest reading since the rest that is counting began. */
     private var restPeak: Int? = null
@@ -229,6 +230,7 @@ class FitnessViewModel(
         closing = id
         tally = null
         restPeak = null
+        clearZoneNotice()
         _heart.update { it.copy(summary = null, recovery = null) }
         // Whether it has anything in it is the repository's to say, at the moment it closes it: a set still on its way in counts.
         viewModelScope.launch {
@@ -395,7 +397,28 @@ class FitnessViewModel(
         viewModelScope.launch { repository.saveHeartProfile(profile) }
     }
 
-    fun dismissZoneNotice() = _heart.update { it.copy(notice = null) }
+    /**
+     * Raises a notice that the heart has settled into another zone, and takes it away again
+     * after [ZONE_NOTICE_MILLIS]. Timed here and not by the panel that shows it: the panel comes
+     * and goes (scrolled away, another page in front), and a notice left waiting for it would be
+     * shown, and buzzed, long after it was news.
+     */
+    private fun raiseZoneNotice(from: HeartZone?, to: HeartZone?): ZoneNotice {
+        val notice = ZoneNotice(++notices, from, to)
+        noticeExpiry?.cancel()
+        noticeExpiry = viewModelScope.launch {
+            delay(ZONE_NOTICE_MILLIS)
+            _heart.update { if (it.notice?.token == notice.token) it.copy(notice = null) else it }
+        }
+        return notice
+    }
+
+    /** A notice belongs to the workout and the moment it was raised in: gone when either is. */
+    private fun clearZoneNotice() {
+        noticeExpiry?.cancel()
+        noticeExpiry = null
+        _heart.update { if (it.notice != null) it.copy(notice = null) else it }
+    }
 
     private fun followHeart() {
         viewModelScope.launch {
@@ -423,6 +446,7 @@ class FitnessViewModel(
                 if (following != null || searching) monitor.stop()
                 following = null
                 searching = false
+                clearZoneNotice()
                 saveTally()
             }
 
@@ -463,7 +487,7 @@ class FitnessViewModel(
             if (workout != null) add(workout.id, bpm, zone, connected.atEpochMillis)
             val before = zones
             zones = zones.next(zone, connected.atEpochMillis)
-            if (workout != null && before.settled && zones.zone != before.zone) notice = ZoneNotice(++notices, before.zone, zones.zone)
+            if (workout != null && before.settled && zones.zone != before.zone) notice = raiseZoneNotice(before.zone, zones.zone)
         }
         val resting = _uiState.value.rest != null
         restPeak = when {
@@ -564,6 +588,8 @@ class FitnessViewModel(
             )
         }
         if (boards.workout?.workout?.id != closing) closing = null
+        // However the workout came to be closed (finished here, or left open too long), what was its alone goes with it.
+        if (boards.workout == null) clearZoneNotice()
         _heart.update { it.copy(last = lastHeart(), summary = it.summary.takeIf { boards.workout != null }) }
     }
 
@@ -574,6 +600,9 @@ class FitnessViewModel(
 
         /** How long a finished rest stays on screen, saying it is over, before it is cleared. */
         const val REST_LINGER_MS = 5 * 60_000L
+
+        /** How long a change of zone stays on screen. */
+        const val ZONE_NOTICE_MILLIS = 4_000L
 
         /** How much of a workout's heart may be added up before it is written down, so a killed app loses little of it. */
         const val HEART_SAVE_MILLIS = 30_000L

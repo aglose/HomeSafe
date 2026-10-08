@@ -1933,13 +1933,12 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.GhostButton(text: kotli
     - tint: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.HeartPanel(heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpen: kotlin.Function0<kotlin.Unit>, onDismissNotice: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.HeartPanel(heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpen: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - heart: STABLE (marked @Stable or @Immutable)
     - onOpen: STABLE (function type)
-    - onDismissNotice: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -2303,6 +2302,13 @@ private fun com.meticulouscreations.homesafe.fitness.ui.ZoneBadge(zone: com.meti
     - zone: STABLE (class with no mutable properties)
     - tint: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.ZoneBuzz(notice: com.meticulouscreations.homesafe.fitness.ZoneNotice?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - notice: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.ZoneStrip(current: com.meticulouscreations.homesafe.fitness.domain.HeartZone?, summary: com.meticulouscreations.homesafe.fitness.domain.HeartSummary?, modifier: androidx.compose.ui.Modifier): kotlin.Unit

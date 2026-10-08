@@ -121,11 +121,13 @@ class HeartRateMonitorImplTest {
     }
 
     @Test
-    fun aScanThatWillNotStartLeavesSearchingWithNothingFound() = runMonitorTest { h ->
+    fun aSearchWhoseScanWillNotStartIsOffAgainNotLeftLooking() = runMonitorTest { h ->
         h.link.scanFails = true
         h.monitor.search()
         runCurrent()
-        assertEquals(HeartSensorState.Searching(), h.state)
+        // Nothing is scanning and nothing was found: saying "looking" would be untrue.
+        assertEquals(HeartSensorState.Off, h.state)
+        assertEquals(0, h.link.scanning)
     }
 
     // ---- Following the chosen sensor ----------------------------------------------------------
@@ -297,7 +299,8 @@ class HeartRateMonitorImplTest {
         h.monitor.follow(TEST_BAND)
         runCurrent()
         assertEquals(1, h.link.scans)
-        assertEquals(HeartSensorState.Lost(TEST_BAND), h.state)
+        // Never heard, so not lost: still being looked for.
+        assertEquals(HeartSensorState.Scanning(TEST_BAND), h.state)
 
         advanceTimeBy(2_000)
         runCurrent()
@@ -308,6 +311,83 @@ class HeartRateMonitorImplTest {
         advanceTimeBy(2_000)
         runCurrent()
         assertEquals(3, h.link.scans)
+    }
+
+    @Test
+    fun aSensorThatIsNotThereIsScannedForInBurstsWithLongerAndLongerRests() = runMonitorTest { h ->
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        assertEquals(1, h.link.scanning)
+
+        // The first scan gives up; the radio rests two seconds, and the state still says it is being looked for.
+        advanceTimeBy(HeartRateMonitorImpl.SCAN_MILLIS)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        assertEquals(HeartSensorState.Scanning(TEST_BAND), h.state)
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(1, h.link.scanning)
+        assertEquals(2, h.link.scans)
+
+        // The second gives up; this time the rest is four.
+        advanceTimeBy(HeartRateMonitorImpl.SCAN_MILLIS)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(1, h.link.scanning)
+        assertEquals(3, h.link.scans)
+    }
+
+    @Test
+    fun overTenMinutesAnAbsentSensorCostsFewScansAndMostlyRest() = runMonitorTest { h ->
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        advanceTimeBy(600_000)
+        runCurrent()
+        // Fifteen seconds on, thirty off once the rests have grown: about one scan every three quarters of a minute.
+        assertTrue(h.link.scans in 12..16, "scans: ${h.link.scans}")
+    }
+
+    @Test
+    fun aSensorHeardInALaterBurstIsConnectedToAllTheSame() = runMonitorTest { h ->
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        advanceTimeBy(HeartRateMonitorImpl.SCAN_MILLIS + 2_000)
+        runCurrent()
+        h.link.advertise(TEST_BAND)
+        runCurrent()
+        h.link.ready()
+        h.link.measure(64)
+        runCurrent()
+        assertEquals(64, assertIs<HeartSensorState.Connected>(h.state).bpm)
+    }
+
+    @Test
+    fun aSearchThatFindsNothingStopsAfterAMinuteAndIsOffAgain() = runMonitorTest { h ->
+        h.monitor.search()
+        runCurrent()
+        advanceTimeBy(HeartRateMonitorImpl.SEARCH_MILLIS - 1)
+        runCurrent()
+        assertEquals(1, h.link.scanning)
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        assertEquals(HeartSensorState.Off, h.state)
+    }
+
+    @Test
+    fun aSearchThatFoundSomethingStopsScanningButKeepsItToChooseFrom() = runMonitorTest { h ->
+        h.monitor.search()
+        runCurrent()
+        h.link.advertise(TEST_BAND)
+        advanceTimeBy(HeartRateMonitorImpl.SEARCH_MILLIS)
+        runCurrent()
+        assertEquals(0, h.link.scanning)
+        assertEquals(listOf(SensorSighting(TEST_BAND, -55)), assertIs<HeartSensorState.Searching>(h.state).found)
     }
 
     @Test

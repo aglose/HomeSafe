@@ -94,26 +94,33 @@ class HeartRateMonitorImpl(
         val found = LinkedHashMap<String, SensorSighting>()
         _state.value = HeartSensorState.Searching()
         try {
-            link.scan().collect { sighting ->
-                // A sensor that named itself once keeps the name: not every advertisement carries it.
-                val known = found[sighting.sensor.address]
-                found[sighting.sensor.address] = if (sighting.sensor.name.isEmpty() && known != null) sighting.copy(sensor = known.sensor) else sighting
-                _state.value = HeartSensorState.Searching(found.values.toList())
+            // A band that is there and sharing is heard within seconds; a minute of looking is the most it gets.
+            withTimeoutOrNull(SEARCH_MILLIS) {
+                link.scan().collect { sighting ->
+                    // A sensor that named itself once keeps the name: not every advertisement carries it.
+                    val known = found[sighting.sensor.address]
+                    found[sighting.sensor.address] = if (sighting.sensor.name.isEmpty() && known != null) sighting.copy(sensor = known.sensor) else sighting
+                    _state.value = HeartSensorState.Searching(found.values.toList())
+                }
             }
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
             // The scan wouldn't start or was stopped under us; what was found so far is still there to choose from.
         }
+        // The scan is over. What it found stays up to be chosen from; with nothing found, it is back to being asked to look.
+        if (found.isEmpty()) _state.value = idle
     }
 
     private suspend fun hold(sensor: HeartSensor, ask: Boolean) {
         var known = sensor
         var failures = 0
-        var everLinked = false
+
+        // A link has been tried at least once. Until then the sensor hasn't been lost, only not found yet.
+        var tried = false
         while (true) {
-            if (!ready(ask && !everLinked && failures == 0)) return
-            _state.value = if (everLinked || failures > 0) HeartSensorState.Lost(known) else HeartSensorState.Scanning(known)
+            if (!ready(ask && !tried && failures == 0)) return
+            _state.value = if (tried) HeartSensorState.Lost(known) else HeartSensorState.Scanning(known)
             val seen = try {
                 find(known)
             } catch (e: CancellationException) {
@@ -122,31 +129,36 @@ class HeartRateMonitorImpl(
                 null
             }
             val reached = if (seen != null) session(seen) else Reach.NOTHING
-            if (reached != Reach.NOTHING) {
-                // It may have come back at a new address under its old name; that is where it is now.
-                known = seen ?: known
-                everLinked = true
-            }
+            if (seen != null) tried = true
+            // It may have come back at a new address under its old name; that is where it is now.
+            if (seen != null && reached != Reach.NOTHING) known = seen
             // Only a link that carried a heart rate counts as having worked: one that comes up and falls straight over
-            // again, time after time, has to be backed away from like one that never came up.
+            // again, time after time, has to be backed away from like one that never came up, and like a sensor that
+            // isn't there to be heard at all.
             if (reached == Reach.MEASURED) failures = 0 else failures++
-            _state.value = HeartSensorState.Lost(known)
+            _state.value = if (tried) HeartSensorState.Lost(known) else HeartSensorState.Scanning(known)
             delay(retryDelay(failures))
         }
     }
 
     /**
-     * Scans until [sensor] is heard. By its address at once; and, since a wearable may change
-     * the address it advertises from, by its name alone once the address has gone unheard for
+     * Scans for [sensor], for [SCAN_MILLIS] at most: null when it wasn't heard in that time (the
+     * band is off, out of range, or not sharing), so that the caller waits before scanning again
+     * and an absent sensor doesn't keep the radio scanning flat out for as long as the app is
+     * open. It is known by its address at once; and, since a wearable may change the address it
+     * advertises from, by its name alone once the address has gone unheard for
      * [ADDRESS_GRACE_MILLIS]. (Two bands of one name in the room can't be told apart that way:
      * forgetting the sensor and choosing it again settles it.)
      */
-    private suspend fun find(sensor: HeartSensor): HeartSensor {
+    private suspend fun find(sensor: HeartSensor): HeartSensor? {
         val since = now()
-        return link.scan().first { sighting ->
-            sighting.sensor.address == sensor.address ||
-                (sensor.name.isNotEmpty() && sighting.sensor.name == sensor.name && now() - since >= ADDRESS_GRACE_MILLIS)
-        }.sensor.let { if (it.name.isEmpty()) it.copy(name = sensor.name) else it }
+        val heard = withTimeoutOrNull(SCAN_MILLIS) {
+            link.scan().first { sighting ->
+                sighting.sensor.address == sensor.address ||
+                    (sensor.name.isNotEmpty() && sighting.sensor.name == sensor.name && now() - since >= ADDRESS_GRACE_MILLIS)
+            }
+        } ?: return null
+        return heard.sensor.let { if (it.name.isEmpty()) it.copy(name = sensor.name) else it }
     }
 
     /** One link to [sensor], from connecting until it drops or goes quiet, and how far it got. */
@@ -191,15 +203,22 @@ class HeartRateMonitorImpl(
         const val SILENCE_MILLIS = 12_000L
 
         const val ADDRESS_GRACE_MILLIS = 6_000L
+
+        /** How long one scan for the chosen sensor runs before it is given a rest (see [retryDelay]). */
+        const val SCAN_MILLIS = 15_000L
+
+        /** How long a search for sensors to choose from runs. */
+        const val SEARCH_MILLIS = 60_000L
         const val RADIO_POLL_MILLIS = 3_000L
         private const val RETRY_MILLIS = 2_000L
         private const val RETRY_MAX_MILLIS = 30_000L
 
         /**
          * How long to wait before looking again: two seconds after a link that had been up, and
-         * doubling from there for each attempt that came to nothing, up to half a minute. The
-         * floor matters as much as the ceiling: Android refuses an app that starts more than five
-         * scans in thirty seconds.
+         * doubling from there for each attempt that came to nothing (a scan that didn't hear the
+         * sensor, a link that never came up), up to half a minute. So a sensor that isn't there
+         * is scanned for a third of the time at most. The floor matters as much as the ceiling:
+         * Android refuses an app that starts more than five scans in thirty seconds.
          */
         fun retryDelay(failures: Int): Long = (RETRY_MILLIS shl (failures - 1).coerceIn(0, 4)).coerceAtMost(RETRY_MAX_MILLIS)
     }

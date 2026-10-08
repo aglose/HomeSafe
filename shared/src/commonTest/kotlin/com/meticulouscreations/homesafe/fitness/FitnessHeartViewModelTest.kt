@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -315,8 +316,108 @@ class FitnessHeartViewModelTest {
         h.read(144)
         runCurrent()
         assertEquals(notice, h.heart.notice)
+    }
 
-        h.vm.dismissZoneNotice()
+    @Test
+    fun aNoticeTakesItselfAwayAfterFourSecondsWhetherOrNotAnythingIsShowingIt() = runHeartTest { h ->
+        working(h)
+        h.read(120)
+        runCurrent()
+        h.read(140)
+        runCurrent()
+        h.read(140, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        assertNotNull(h.heart.notice)
+        advanceTimeBy(3_999)
+        runCurrent()
+        assertNotNull(h.heart.notice)
+        advanceTimeBy(1)
+        runCurrent()
+        assertNull(h.heart.notice)
+        // The zone it announced is still the zone.
+        assertEquals(HeartZone.MODERATE, h.heart.zone)
+    }
+
+    @Test
+    fun aLaterNoticeIsNotCutShortByTheOneBeforeIt() = runHeartTest { h ->
+        working(h)
+        h.read(120)
+        runCurrent()
+        h.read(140)
+        runCurrent()
+        h.read(140, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        advanceTimeBy(3_000)
+        h.read(160)
+        runCurrent()
+        h.read(160, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        // The first one's four seconds run out a second from now; the second's have only begun.
+        advanceTimeBy(1_500)
+        runCurrent()
+        assertEquals(HeartZone.HARD, h.heart.notice?.to)
+        advanceTimeBy(2_500)
+        runCurrent()
+        assertNull(h.heart.notice)
+    }
+
+    @Test
+    fun aNoticeDoesNotOutliveTheWorkoutItWasRaisedIn() = runHeartTest { h ->
+        working(h)
+        h.vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        h.read(120)
+        runCurrent()
+        h.read(140)
+        runCurrent()
+        h.read(140, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        assertNotNull(h.heart.notice)
+
+        h.vm.finishWorkout()
+        assertNull(h.heart.notice)
+        runCurrent()
+
+        // The next workout starts with nothing to announce, and a reading in the same zone raises nothing.
+        h.vm.startWorkout(WorkoutFocus.BACK)
+        runCurrent()
+        assertNotNull(h.vm.uiState.value.workout)
+        h.read(141)
+        runCurrent()
+        assertNull(h.heart.notice)
+    }
+
+    @Test
+    fun aWorkoutThatClosesByItselfTakesItsNoticeToo() = runHeartTest { h ->
+        val id = working(h)
+        h.vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        h.read(120)
+        runCurrent()
+        h.read(140)
+        runCurrent()
+        h.read(140, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        assertNotNull(h.heart.notice)
+
+        // Closed from somewhere else: the log says so, and the view model didn't do it.
+        h.repository.finishWorkout(id, NOW)
+        runCurrent()
+        assertNull(h.vm.uiState.value.workout)
+        assertNull(h.heart.notice)
+    }
+
+    @Test
+    fun leavingTheScreenTakesAPendingNoticeWithIt() = runHeartTest { h ->
+        working(h)
+        h.read(120)
+        runCurrent()
+        h.read(140)
+        runCurrent()
+        h.read(140, afterMillis = ZoneTracker.HOLD_MILLIS)
+        runCurrent()
+        assertNotNull(h.heart.notice)
+        h.vm.setActive(false)
         assertNull(h.heart.notice)
     }
 

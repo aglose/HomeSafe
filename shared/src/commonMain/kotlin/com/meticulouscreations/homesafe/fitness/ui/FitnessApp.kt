@@ -160,7 +160,6 @@ internal class FitnessActions(
     val onForgetHeartSensor: () -> Unit = {},
     val onStopHeartSearch: () -> Unit = {},
     val onSaveHeartProfile: (HeartProfile) -> Unit = {},
-    val onDismissZoneNotice: () -> Unit = {},
 )
 
 /**
@@ -202,7 +201,6 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onForgetHeartSensor = viewModel::forgetHeartSensor,
             onStopHeartSearch = viewModel::stopHeartSearch,
             onSaveHeartProfile = viewModel::saveHeartProfile,
-            onDismissZoneNotice = viewModel::dismissZoneNotice,
         )
     }
     FitnessAppContent(state, actions, modifier, active, heart = heart)
@@ -408,6 +406,7 @@ internal fun FitnessAppContent(
             }
 
             RecordCelebration(state.flash, state.phase.kind, actions.onDismissFlash)
+            ZoneBuzz(heart.notice)
         }
     }
 }
