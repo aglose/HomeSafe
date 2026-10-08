@@ -143,6 +143,15 @@ enum class BankProblem {
     /** Plaid refused; the text is its own explanation. */
     PLAID,
 
+    /**
+     * Nothing answered, and the server is reached through Tailscale while this device isn't on the
+     * tailnet: Tailscale is off, or another VPN took its place (a phone runs one VPN at a time).
+     */
+    TAILSCALE_OFF,
+
+    /** Nothing answered, and Tailscale isn't known to be why. */
+    UNREACHABLE,
+
     OTHER,
 }
 

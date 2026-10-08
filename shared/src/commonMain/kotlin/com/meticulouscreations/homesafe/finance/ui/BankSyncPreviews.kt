@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_relay_outdated
+import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_notice_linked_named
 import kotlin.time.Clock
 
@@ -126,4 +127,10 @@ private fun FinanceBankSyncSetupPreview() {
 @Composable
 private fun FinanceBankSyncProblemPreview() {
     BankSyncPreview(BankSyncUiState(loading = false, problem = BankProblem.RELAY_OUTDATED, problemText = UiText.of(Res.string.fin_bank_error_relay_outdated)))
+}
+
+@Preview(name = "Bank sync · Tailscale off", widthDp = 412, heightDp = 420)
+@Composable
+private fun FinanceBankSyncTailscaleOffPreview() {
+    BankSyncPreview(BankSyncUiState(loading = false, problem = BankProblem.TAILSCALE_OFF, problemText = UiText.of(Res.string.fin_bank_error_tailscale_off)))
 }
