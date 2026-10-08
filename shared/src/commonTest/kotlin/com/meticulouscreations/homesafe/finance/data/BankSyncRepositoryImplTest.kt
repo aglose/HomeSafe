@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.finance.data
 
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -38,7 +39,7 @@ import kotlin.test.fail
 class BankSyncRepositoryImplTest {
 
     private class FakeConnection(url: String?) : ConnectionRepository {
-        override val activeConnection = MutableStateFlow(null)
+        override val activeConnection = MutableStateFlow<ActiveConnection?>(null)
         override val serverUnreachable = MutableStateFlow(false)
         override val currentServerUrl = MutableStateFlow(url)
         override val mostRecentConnection = MutableStateFlow<ConnectionRecord?>(null)
