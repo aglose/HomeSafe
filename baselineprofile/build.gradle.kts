@@ -8,6 +8,9 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
  *       -Pandroid.testInstrumentationRunnerArguments.androidx.benchmark.enabledRules=Macrobenchmark
  *                                                       run the startup + scroll benchmarks
  *
+ * Add -PbenchmarkAppIdSuffix=.benchmark to either on a phone that has the real app installed: the
+ * benchmark build then installs beside it under its own package instead of failing to replace it.
+ *
  * Both need a connected device (a physical one for numbers that mean anything; the emulator is
  * accepted for smoke runs, see suppressErrors below) with the debug/benchmark sign-in credentials
  * in local.credentials.properties and the Frigate server reachable from it.
@@ -42,6 +45,10 @@ android {
         // Numbers from an emulator are not representative and Macrobenchmark refuses to run
         // there by default; allow it so the harness can be smoke-tested without a phone.
         testInstrumentationRunnerArguments["androidx.benchmark.suppressErrors"] = "EMULATOR,LOW-BATTERY,UNLOCKED"
+        // The package the journeys drive: the app's own, or with -PbenchmarkAppIdSuffix=.benchmark the
+        // side-by-side one that androidApp/build.gradle.kts gives the benchmark builds.
+        testInstrumentationRunnerArguments["targetAppId"] =
+            "com.meticulouscreations.homesafe" + providers.gradleProperty("benchmarkAppIdSuffix").getOrElse("")
     }
 
     targetProjectPath = ":androidApp"

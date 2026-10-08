@@ -35,6 +35,7 @@ class HomeScrollBenchmarks {
         iterations = 5,
         setupBlock = {
             pressHome()
+            grantPermissions()
             startActivityAndWait()
             signInToHome()
         },
