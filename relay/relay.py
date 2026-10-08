@@ -5860,6 +5860,8 @@ PLAID_KINDS = {"bank": "transactions", "investments": "investments", "loans": "l
 PLAID_EXTRAS = ("investments", "liabilities")
 # How long a link stays good (Plaid's own lifetime for a hosted link it doesn't deliver itself).
 PLAID_LINK_SECONDS = 1800
+# How long after one look for uncollected links (see `plaid_collect_links`) a request may start another.
+PLAID_COLLECT_SECONDS = 20
 PLAID_LINKS_KEY = "plaid_links"
 PLAID_SYNCED_KEY = "plaid_synced"
 PLAID_FEED_KEY = "plaid_feed"
@@ -5900,6 +5902,9 @@ _bank_lock = threading.Lock()
 _link_lock = threading.Lock()
 # "Sync now" is let in by one request at a time, and when the last one was.
 _sync_ask_lock = threading.Lock()
+# Held by a look for links nobody came back to collect, through the read of whatever it found.
+_collect_lock = threading.Lock()
+_collect_looked = {"at": 0.0}
 _sync_asked = {"at": 0.0}
 _feed_google: dict[str, Any] = {"session": None, "account": None}
 
@@ -5976,7 +5981,9 @@ def plaid_link_start(user: str, kind: str = "bank", item_id: str | None = None, 
     if not token or not url:
         raise PlaidError("NO_HOSTED_LINK", "Plaid made a link without a page to open. Hosted Link may not be switched on for this Plaid account.")
     with _link_lock:
-        links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now}
+        # Kept past its own end for as long again: a sign-in finished just before it lapsed can
+        # still be collected (see `plaid_collect_links`), and must not be dropped by the next link begun.
+        links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now - PLAID_LINK_SECONDS}
         links[token] = {"expires": now + PLAID_LINK_SECONDS, "by": user, "item": item_id}
         state_set(PLAID_LINKS_KEY, links)
     return {"token": token, "url": url, "expires_at": now + PLAID_LINK_SECONDS}
@@ -5989,17 +5996,18 @@ def plaid_save_item(item_id: str, access: str, institution: dict[str, Any], user
     ), c.commit()))
 
 
-def plaid_link_finish(token: str, now: float | None = None) -> dict[str, Any]:
+def plaid_link_finish(token: str, now: float | None = None, sync: bool = True) -> dict[str, Any]:
     """
     How a link from `plaid_link_start` is getting on: "pending" while the person is still on
     Plaid's page, "linked" once they finished (each new institution's token is kept and a sync
     started), "exited" when they left without finishing, "expired" for a link too old or unknown.
+    Without `sync` the institution is kept and reading it is left to the caller.
     """
     with _link_lock:
-        return _plaid_link_finish(token, time.time() if now is None else now)
+        return _plaid_link_finish(token, time.time() if now is None else now, sync)
 
 
-def _plaid_link_finish(token: str, now: float) -> dict[str, Any]:
+def _plaid_link_finish(token: str, now: float, sync: bool = True) -> dict[str, Any]:
     links = state_get(PLAID_LINKS_KEY) or {}
     link = links.get(token)
     if link is None:
@@ -6031,36 +6039,74 @@ def _plaid_link_finish(token: str, now: float) -> dict[str, Any]:
         return {"status": "pending"}
     links[token] = {**link, "done": names}
     state_set(PLAID_LINKS_KEY, links)
-    bank_sync_in_background()
+    if sync:
+        bank_sync_in_background()
     return {"status": "linked", "institutions": names}
+
+
+def plaid_links_pending(now: float) -> list[str]:
+    """The links nobody has been told are made: still open for all the relay knows, or within as long again of their end."""
+    return [token for token, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("done") is None and link.get("expires", 0) > now - PLAID_LINK_SECONDS]
 
 
 def plaid_collect_links(now: float | None = None) -> list[str]:
     """
-    Finishes every link that was started and never asked about again, and answers the
-    institutions that brought in. The app follows a link only while it remembers starting it,
-    and Android may well restart it while the person is away at their bank's sign-in: the
+    Finishes every link that was started and never asked about again, reads what that brought
+    in, and answers the institutions. The app follows a link only while it remembers starting
+    it, and Android may well restart it while the person is away at their bank's sign-in: the
     sign-in is then made on Plaid's side with nobody left to collect it, and Plaid's token for it
-    is good for half an hour. So the relay looks for itself, at every check and whenever the
-    linked accounts are asked for. A link still open, left or refused costs one question of Plaid
-    and is left as it was.
+    is good for half an hour. So the relay looks for itself, at every check and when the linked
+    accounts are asked for (`plaid_collect_soon`). A link still open, left or refused costs one
+    question of Plaid and is left as it was.
+
+    One look at a time (a second finds the first under way and leaves it to it), and one read of
+    the institutions for everything a look collected, made here rather than queued: `_collect_lock`
+    is held until what was collected has its accounts, which is what the page shows as syncing.
+    """
+    if not _collect_lock.acquire(blocking=False):
+        return []
+    try:
+        now = time.time() if now is None else now
+        _collect_looked["at"] = time.time()
+        collected: list[str] = []
+        for token in plaid_links_pending(now):
+            try:
+                result = plaid_link_finish(token, now, sync=False)
+            except PlaidError as e:
+                log.info("bank: a link nobody came back for couldn't be asked about: %s", e.code)
+                continue
+            except Exception as e:
+                # Plaid unreachable. Not the detail: it may quote the request.
+                log.info("bank: a link nobody came back for couldn't be asked about: %s", type(e).__name__)
+                continue
+            if result["status"] == "linked":
+                collected += result.get("institutions") or []
+        if collected:
+            plaid_sync_all(wait=True)
+        return collected
+    finally:
+        _collect_lock.release()
+
+
+def plaid_collect_in_background() -> None:
+    threading.Thread(target=plaid_collect_links, name="bank-collect", daemon=True).start()
+
+
+def plaid_collect_soon(now: float | None = None) -> bool:
+    """
+    For a request that mustn't wait on Plaid: starts a look for links nobody collected, unless
+    there are none or one was made in the last few seconds, and answers whether one is under way.
+    The page that asked shows that as syncing and asks again, so what a look finds appears on
+    it; a look that finds nothing is not repeated at every ask.
     """
     now = time.time() if now is None else now
-    pending = [token for token, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("done") is None and link.get("expires", 0) > now - PLAID_LINK_SECONDS]
-    collected: list[str] = []
-    for token in pending:
-        try:
-            result = plaid_link_finish(token, now)
-        except PlaidError as e:
-            log.info("bank: a link nobody came back for couldn't be asked about: %s", e.code)
-            continue
-        except Exception as e:
-            # Plaid unreachable. Not the detail: it may quote the request.
-            log.info("bank: a link nobody came back for couldn't be asked about: %s", type(e).__name__)
-            continue
-        if result["status"] == "linked":
-            collected += result.get("institutions") or []
-    return collected
+    if _collect_lock.locked():
+        return True
+    if now - _collect_looked["at"] < PLAID_COLLECT_SECONDS or not plaid_links_pending(now):
+        return False
+    _collect_looked["at"] = now
+    plaid_collect_in_background()
+    return True
 
 
 def plaid_liability_terms(liabilities: Any) -> dict[str, dict[str, Any]]:
@@ -6378,8 +6424,10 @@ def bank_forever() -> None:
         try:
             if not plaid_on():
                 continue
-            # A sign-in finished on Plaid's page that the app never came back to collect.
-            plaid_collect_links()
+            # A sign-in finished on Plaid's page that the app never came back to collect. What
+            # that finds it reads itself, institutions and all: nothing more is owed this round.
+            if plaid_collect_links():
+                continue
             last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
             linked = with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0])
             if linked and bank_sync_due(time.time(), last, household_zone()):
@@ -6400,7 +6448,7 @@ def bank_status(now: float | None = None) -> dict[str, Any]:
         "environment": PLAID_ENV,
         "institutions": bank_institutions(),
         "synced_at": synced.get("at"),
-        "syncing": _bank_lock.locked(),
+        "syncing": _bank_lock.locked() or _collect_lock.locked(),
         "next_sync_at": (bank_sync_slot(now, household_zone()) + timedelta(days=1)).timestamp(),
         "feed": {
             "configured": bool(FINANCE_FEED_SHEET_ID),
@@ -6432,9 +6480,10 @@ def get_bank(request: Request, response: Response) -> dict[str, Any]:
     """The linked institutions and how their sync is going (see "bank sync"). Answers without Plaid set up too, to say so."""
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
-    # Opening the page is the moment someone looks for what they just linked: collect it now
-    # rather than at the next check, if the app lost track of it (see `plaid_collect_links`).
-    if plaid_on() and plaid_collect_links():
+    # Opening the page is the moment someone looks for what they just linked: if the app lost
+    # track of it, look now rather than at the next check. Off this request, which the app gives
+    # ten seconds: Plaid may take longer than that to answer.
+    if plaid_on() and plaid_collect_soon():
         return {**bank_status(), "syncing": True}
     return bank_status()
 

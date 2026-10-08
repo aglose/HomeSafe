@@ -3643,7 +3643,8 @@ class _FeedSheets:
 class BankSyncTest(_ScratchDb):
     """Bank sync: linking through Plaid's hosted page, reading an institution into relay.db, the feed sheet's cells and the daily slot."""
 
-    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "feed_google", "FINANCE_FEED_SHEET_ID", "PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_REDIRECT_URI", "BANK_SYNC_HOUR")
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "plaid_sync_all", "feed_google", "FINANCE_FEED_SHEET_ID", "PLAID_CLIENT_ID", "PLAID_SECRET",
+                                "PLAID_REDIRECT_URI", "BANK_SYNC_HOUR")
     T = 1_791_000_000.0
     ACCOUNTS = [
         {"account_id": "chk", "name": "Total Checking", "official_name": "Chase Total Checking", "mask": "0123", "type": "depository", "subtype": "checking",
@@ -3761,43 +3762,98 @@ class BankSyncTest(_ScratchDb):
         self.assertEqual(1, plaid.paths().count("/item/public_token/exchange"))
         self.assertEqual([True], self.background)
 
+    def collecting(self):
+        """What the relay's own look for uncollected links read afterwards: one entry for each read of the institutions."""
+        reads = []
+        relay.plaid_sync_all = lambda now=None, wait=False: reads.append(wait) or True
+        relay._collect_looked["at"] = 0.0
+        return reads
+
+    FINISHED = {"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
+        {"public_token": "public-1", "institution": {"institution_id": "ins_128026", "name": "Capital One"}}]}}]}
+
     def test_a_link_finished_with_nobody_asking_is_collected_by_the_relay_itself(self):
         # The app was restarted while the person was at their bank: it never asks about link-1 again.
+        reads = self.collecting()
         self.start()
-        plaid = self.plaid(
-            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
-                {"public_token": "public-1", "institution": {"institution_id": "ins_128026", "name": "Capital One"}}]}}]},
-            item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"},
-        )
+        plaid = self.plaid(link_token_get=self.FINISHED, item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"})
         self.assertEqual(["Capital One"], relay.plaid_collect_links(now=self.T + 120))
         self.assertEqual([("item1", "Capital One", "alex")], relay.with_db(lambda c: c.execute("SELECT item_id, institution, linked_by FROM plaid_items").fetchall()))
-        self.assertEqual([True], self.background)
+        # Read by the look itself, waiting its turn; nothing queued besides.
+        self.assertEqual(([True], []), (reads, self.background))
+        self.assertFalse(relay._collect_lock.locked())
         # Collected once: the next look asks Plaid nothing, and the app asking late is told it is linked.
         asked = len(plaid.calls)
         self.assertEqual([], relay.plaid_collect_links(now=self.T + 420))
         self.assertEqual(asked, len(plaid.calls))
         self.assertEqual({"status": "linked", "institutions": ["Capital One"]}, relay.plaid_link_finish("link-1", now=self.T + 430))
 
+    def test_several_links_collected_in_one_look_are_read_once(self):
+        reads = self.collecting()
+        for n in (1, 2, 3):
+            self.plaid(link_token_create={"link_token": f"link-{n}", "hosted_link_url": "https://secure.plaid.com/hl/abc"})
+            relay.plaid_link_start("alex", "bank", now=self.T + n)
+        exchanged = iter(("item1", "item2", "item3"))
+
+        def plaid(path, body):
+            if path == "/link/token/get":
+                return self.FINISHED
+            item = next(exchanged)
+            return {"access_token": f"access-{item}", "item_id": item}
+
+        relay.plaid_post = plaid
+        self.assertEqual(["Capital One"] * 3, relay.plaid_collect_links(now=self.T + 120))
+        self.assertEqual(3, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
+        self.assertEqual(([True], []), (reads, self.background))
+
     def test_a_link_still_open_or_refused_is_left_as_it_was_and_looked_at_again(self):
+        reads = self.collecting()
         self.start()
         self.plaid(link_token_get={"link_sessions": []})
         self.assertEqual([], relay.plaid_collect_links(now=self.T + 60))
         self.plaid(link_token_get=relay.PlaidError("INVALID_LINK_TOKEN"))
         self.assertEqual([], relay.plaid_collect_links(now=self.T + 360))
         self.assertIsNone(relay.state_get(relay.PLAID_LINKS_KEY)["link-1"].get("done"))
-        self.assertEqual([], self.background)
+        self.assertEqual(([], []), (reads, self.background))
         # Finished just before Plaid's token for it lapses, and found a check later: still collected.
-        self.plaid(
-            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:29:00Z", "results": {"item_add_results": [
-                {"public_token": "public-1", "institution": {"name": "Chase"}}]}}]},
-            item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"},
-        )
-        self.assertEqual(["Chase"], relay.plaid_collect_links(now=self.T + relay.PLAID_LINK_SECONDS + 240))
+        self.plaid(link_token_get=self.FINISHED, item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"})
+        self.assertEqual(["Capital One"], relay.plaid_collect_links(now=self.T + relay.PLAID_LINK_SECONDS + 240))
+
+    def test_a_link_past_its_end_is_not_dropped_by_the_next_one_begun(self):
+        reads = self.collecting()
+        self.start()
+        # Someone else starts a link after link-1's own half hour, inside the half hour its sign-in can still be collected in.
+        self.plaid(link_token_create={"link_token": "link-2", "hosted_link_url": "https://secure.plaid.com/hl/def"})
+        relay.plaid_link_start("sam", "bank", now=self.T + relay.PLAID_LINK_SECONDS + 60)
+        self.assertEqual({"link-1", "link-2"}, set(relay.state_get(relay.PLAID_LINKS_KEY)))
+
+        def plaid(path, body):
+            if path == "/link/token/get":
+                return self.FINISHED if body["link_token"] == "link-1" else {"link_sessions": []}
+            return {"access_token": "access-item1", "item_id": "item1"}
+
+        relay.plaid_post = plaid
+        self.assertEqual(["Capital One"], relay.plaid_collect_links(now=self.T + relay.PLAID_LINK_SECONDS + 120))
+        self.assertEqual([True], reads)
+        # Once that grace is over too, the next link begun does drop it.
+        self.plaid(link_token_create={"link_token": "link-3", "hosted_link_url": "https://secure.plaid.com/hl/ghi"})
+        relay.plaid_link_start("sam", "bank", now=self.T + 2 * relay.PLAID_LINK_SECONDS + 1)
+        self.assertNotIn("link-1", relay.state_get(relay.PLAID_LINKS_KEY))
 
     def test_a_link_long_dead_is_not_asked_about_for_ever(self):
+        self.collecting()
         self.start()
         plaid = self.plaid(link_token_get={"link_sessions": []})
         self.assertEqual([], relay.plaid_collect_links(now=self.T + 2 * relay.PLAID_LINK_SECONDS + 1))
+        self.assertEqual([], plaid.calls)
+
+    def test_a_look_already_under_way_is_left_to_it(self):
+        self.collecting()
+        self.start()
+        plaid = self.plaid(link_token_get=self.FINISHED, item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"})
+        with relay._collect_lock:
+            self.assertEqual([], relay.plaid_collect_links(now=self.T + 120))
+            self.assertTrue(relay.bank_status(self.T + 120)["syncing"], "the page shows a look under way as syncing")
         self.assertEqual([], plaid.calls)
 
     def test_signing_in_again_clears_the_error_and_keeps_the_token(self):
@@ -4034,8 +4090,8 @@ class BankSyncTest(_ScratchDb):
 class BankRoutesTest(_ScratchDb):
     """The bank routes: who gets in, what Plaid's refusals become, and that unlinking forgets the token."""
 
-    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "require_finance_user", "write_bank_feed", "PLAID_CLIENT_ID", "PLAID_SECRET",
-                                "FINANCE_FEED_SHEET_ID", "BANK_UNLINK_WAIT_SECONDS")
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "plaid_collect_in_background", "require_finance_user", "write_bank_feed", "PLAID_CLIENT_ID",
+                                "PLAID_SECRET", "FINANCE_FEED_SHEET_ID", "BANK_UNLINK_WAIT_SECONDS")
 
     def setUp(self):
         super().setUp()
@@ -4058,22 +4114,30 @@ class BankRoutesTest(_ScratchDb):
             relay.post_bank_sync(object(), self.response)
         self.assertEqual((503, "not_configured"), (off.exception.status_code, off.exception.detail["error"]))
 
-    def test_opening_the_page_collects_a_link_the_app_lost_track_of(self):
-        relay.plaid_post = _FakePlaid(
-            link_token_create={"link_token": "link-9", "hosted_link_url": "https://secure.plaid.com/hl/abc"},
-            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
-                {"public_token": "public-9", "institution": {"name": "American Express"}}]}}]},
-            item_public_token_exchange={"access_token": "access-item9", "item_id": "item9"},
-        )
+    def test_opening_the_page_starts_a_look_for_a_link_the_app_lost_track_of_without_waiting_on_plaid(self):
+        looks = []
+        relay.plaid_collect_in_background = lambda: looks.append(True)
+        relay._collect_looked["at"] = 0.0
+        relay.plaid_post = _FakePlaid(link_token_create={"link_token": "link-9", "hosted_link_url": "https://secure.plaid.com/hl/abc"})
         relay.post_bank_link(types.SimpleNamespace(kind="bank", institution=None), object(), self.response)
-        body = relay.get_bank(object(), self.response)
-        self.assertEqual(["Chase", "American Express"], [i["name"] for i in body["institutions"]])
-        self.assertTrue(body["syncing"])
-        self.assertEqual([True], self.background)
-        # Nothing waiting: the page is answered without a word to Plaid.
         asked = len(relay.plaid_post.calls)
+        body = relay.get_bank(object(), self.response)
+        # Answered at once, as syncing, with the look left to a thread of its own: not a word to Plaid on the request.
+        self.assertTrue(body["syncing"])
+        self.assertEqual(([True], asked), (looks, len(relay.plaid_post.calls)))
+        # The page asks again every few seconds while it is told syncing: a look that found nothing isn't made again at each ask.
         self.assertFalse(relay.get_bank(object(), self.response)["syncing"])
-        self.assertEqual(asked, len(relay.plaid_post.calls))
+        self.assertEqual([True], looks)
+        relay._collect_looked["at"] -= relay.PLAID_COLLECT_SECONDS
+        self.assertTrue(relay.get_bank(object(), self.response)["syncing"])
+        self.assertEqual([True, True], looks)
+
+    def test_with_no_link_waiting_the_page_starts_no_look(self):
+        looks = []
+        relay.plaid_collect_in_background = lambda: looks.append(True)
+        relay._collect_looked["at"] = 0.0
+        self.assertFalse(relay.get_bank(object(), self.response)["syncing"])
+        self.assertEqual([], looks)
 
     def test_someone_who_may_not_see_the_finances_gets_nowhere(self):
         def refuse(request):
