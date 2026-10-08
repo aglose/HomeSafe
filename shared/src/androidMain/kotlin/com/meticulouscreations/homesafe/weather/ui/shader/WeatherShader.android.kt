@@ -29,3 +29,5 @@ private class AgslWeatherShader(private val shader: RuntimeShader) : WeatherShad
     // cached effect would keep the uniforms it was made with (see LiquidLens.android.kt).
     override fun renderEffect(): RenderEffect = AndroidRenderEffect.createRuntimeShaderEffect(shader, "content").asComposeRenderEffect()
 }
+
+internal actual val layersKeepTheirPixels: Boolean = true
