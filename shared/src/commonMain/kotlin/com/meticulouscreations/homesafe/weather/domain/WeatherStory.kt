@@ -123,9 +123,12 @@ object WeatherStory {
     /**
      * [spans] within the stretch from [fromEpochSeconds] to [toEpochSeconds] in one phrase:
      * "Rain around 3 PM", "Snow from 2 PM to 6 PM", "Rain all day", "On-and-off storms". Null
-     * when it stays dry.
+     * when it stays dry. [offsetAt] reads the place's clock at a moment ([WeatherReport.offsetAt]).
      */
-    fun spanPhrase(spans: List<WetSpan>, fromEpochSeconds: Long, toEpochSeconds: Long, utcOffsetSeconds: Int): UiText? {
+    fun spanPhrase(spans: List<WetSpan>, fromEpochSeconds: Long, toEpochSeconds: Long, utcOffsetSeconds: Int): UiText? =
+        spanPhrase(spans, fromEpochSeconds, toEpochSeconds) { utcOffsetSeconds }
+
+    fun spanPhrase(spans: List<WetSpan>, fromEpochSeconds: Long, toEpochSeconds: Long, offsetAt: (Long) -> Int): UiText? {
         if (spans.isEmpty()) return null
         val family = dominantFamily(spans)
         val first = spans.first()
@@ -140,12 +143,12 @@ object WeatherStory {
                 UiText.of(pick(family, ON_OFF))
 
             first.startEpochSeconds == last.startEpochSeconds && first.hours <= 1 ->
-                UiText.of(pick(family, AROUND), WeatherFormat.hour(first.startEpochSeconds, utcOffsetSeconds))
+                UiText.of(pick(family, AROUND), WeatherFormat.hour(first.startEpochSeconds, offsetAt(first.startEpochSeconds)))
 
             else -> UiText.of(
                 pick(family, FROM_TO),
-                WeatherFormat.hour(max(first.startEpochSeconds, fromEpochSeconds), utcOffsetSeconds),
-                WeatherFormat.hour(last.endEpochSeconds, utcOffsetSeconds),
+                max(first.startEpochSeconds, fromEpochSeconds).let { WeatherFormat.hour(it, offsetAt(it)) },
+                WeatherFormat.hour(last.endEpochSeconds, offsetAt(last.endEpochSeconds)),
             )
         }
     }
@@ -204,7 +207,7 @@ object WeatherStory {
         if (ahead.isNotEmpty()) {
             val from = ahead.first().epochSeconds
             val to = ahead.last().epochSeconds + WeatherReport.HOUR_SECONDS
-            spanPhrase(wetSpans(ahead), from, to, report.utcOffsetSeconds)?.let { return it }
+            spanPhrase(wetSpans(ahead), from, to, report::offsetAt)?.let { return it }
         }
 
         val today = report.today(nowEpochSeconds)

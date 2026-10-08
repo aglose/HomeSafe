@@ -89,10 +89,14 @@ internal class FakeWeatherNotifier(override var isSupported: Boolean = true) : W
     /** What the OS says about the notification permission. */
     var allowed = true
 
+    /** Whether the OS takes what it is handed. */
+    var accepts = true
+
     override suspend fun isAllowed(): Boolean = allowed
 
-    override fun notify(notification: WeatherNotification) {
-        posted += notification
+    override suspend fun notify(notification: WeatherNotification): Boolean {
+        if (accepts) posted += notification
+        return accepts
     }
 }
 

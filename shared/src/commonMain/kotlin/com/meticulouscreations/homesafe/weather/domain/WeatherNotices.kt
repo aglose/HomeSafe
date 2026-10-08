@@ -123,7 +123,7 @@ object WeatherNoticePlanner {
         // One shower, one notification: the next check will see the same start a little nearer.
         if (sent.any { (key, at) -> key.startsWith(SOON_PREFIX) && now - at < SOON_COOLDOWN_SECONDS }) return null
         val title = WeatherStory.nearTermPhrase(near, now) ?: return null
-        val at = WeatherFormat.clock(near.startEpochSeconds, report.utcOffsetSeconds)
+        val at = WeatherFormat.clock(near.startEpochSeconds, report.offsetAt(near.startEpochSeconds))
         val lasting = near.endEpochSeconds?.let { end -> WeatherFormat.roundedMinutes(end - near.startEpochSeconds) }
         val where = when {
             placeName != null && lasting != null -> UiText.of(Res.string.weather_notice_soon_body_lasting, at, placeName, lasting)
@@ -144,7 +144,7 @@ object WeatherNoticePlanner {
         val spans = WeatherStory.wetSpans(hours).filter { it.totalMm >= NOTABLE_MM || it.snowCm >= NOTABLE_SNOW_CM }
         if (spans.isNotEmpty() && hours.isNotEmpty()) {
             val family = WeatherStory.dominantFamily(spans)
-            val phrase = WeatherStory.spanPhrase(spans, hours.first().epochSeconds, end, report.utcOffsetSeconds)
+            val phrase = WeatherStory.spanPhrase(spans, hours.first().epochSeconds, end, report::offsetAt)
             if (phrase != null) {
                 items += when (family) {
                     Precipitation.SNOW -> Res.string.weather_notice_title_snow_today
@@ -182,7 +182,7 @@ object WeatherNoticePlanner {
         val spans = WeatherStory.wetSpans(hours).filter { it.totalMm >= NOTABLE_MM || it.snowCm >= NOTABLE_SNOW_CM }
         if (spans.isNotEmpty()) {
             val family = WeatherStory.dominantFamily(spans)
-            val phrase = WeatherStory.spanPhrase(spans, next.epochSeconds, next.epochSeconds + WeatherReport.DAY_SECONDS, report.utcOffsetSeconds)
+            val phrase = WeatherStory.spanPhrase(spans, next.epochSeconds, next.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt)
             if (phrase != null) {
                 items += when (family) {
                     Precipitation.SNOW -> Res.string.weather_notice_title_snow_tomorrow

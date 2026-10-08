@@ -232,7 +232,7 @@ private fun DayDetail(report: WeatherReport, place: Place, day: DayForecast, ind
     val offset = report.utcOffsetSeconds
     val hours = remember(report, day) { report.hoursOf(day) }
     val phrase = remember(hours, day) {
-        WeatherStory.spanPhrase(WeatherStory.wetSpans(hours), day.epochSeconds, day.epochSeconds + WeatherReport.DAY_SECONDS, offset)
+        WeatherStory.spanPhrase(WeatherStory.wetSpans(hours), day.epochSeconds, day.epochSeconds + WeatherReport.DAY_SECONDS, report::offsetAt)
     }
     // The day at one in the afternoon: its sky at its most itself.
     val scene = remember(day, place) {
@@ -273,8 +273,9 @@ private fun DayDetail(report: WeatherReport, place: Place, day: DayForecast, ind
                     ),
             )
             add(Res.string.weather_stat_wind to stringResource(Res.string.weather_stat_wind_gusts, WeatherFormat.speed(day.windMaxKmh, units).resolve(), WeatherFormat.speed(day.gustMaxKmh, units).resolve()))
-            day.sunriseEpochSeconds?.let { add(Res.string.weather_stat_sunrise to WeatherFormat.clock(it, offset).resolve()) }
-            day.sunsetEpochSeconds?.let { add(Res.string.weather_stat_sunset to WeatherFormat.clock(it, offset).resolve()) }
+            // By the clock as it will stand that morning and evening, which may not be today's.
+            day.sunriseEpochSeconds?.let { add(Res.string.weather_stat_sunrise to WeatherFormat.clock(it, report.offsetAt(it)).resolve()) }
+            day.sunsetEpochSeconds?.let { add(Res.string.weather_stat_sunset to WeatherFormat.clock(it, report.offsetAt(it)).resolve()) }
             day.uvIndexMax?.let { add(Res.string.weather_stat_uv to it.roundToInt().toString()) }
             if (day.feelsHighC != null && day.feelsLowC != null) {
                 add(Res.string.weather_stat_feels to stringResource(Res.string.weather_stat_high_low, WeatherFormat.degrees(day.feelsHighC, units), WeatherFormat.degrees(day.feelsLowC, units)))

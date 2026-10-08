@@ -4077,12 +4077,12 @@ private fun com.meticulouscreations.homesafe.weather.ui.AlertBanner(alert: com.m
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.AlertScreen(alert: com.meticulouscreations.homesafe.weather.domain.WeatherAlert, utcOffsetSeconds: kotlin.Int, padding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.AlertScreen(alert: com.meticulouscreations.homesafe.weather.domain.WeatherAlert, offsetAt: kotlin.Function1<kotlin.Long, kotlin.Int>, padding: androidx.compose.foundation.layout.PaddingValues, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - alert: STABLE (marked @Stable or @Immutable)
-    - utcOffsetSeconds: STABLE (primitive type)
+    - offsetAt: STABLE (function type)
     - padding: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
 

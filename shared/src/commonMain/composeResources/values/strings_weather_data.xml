@@ -167,10 +167,10 @@
     <string name="weather_notice_warmer_tomorrow">High of %1$s, %2$s above today</string>
     <string name="weather_notice_high_tomorrow">High of %1$s</string>
 
-    <!-- Failures. %1$d is the service's HTTP status. -->
-    <string name="weather_error_forecast_answered">The weather service answered %1$d</string>
+    <!-- Failures -->
+    <string name="weather_error_forecast_unavailable">The weather service isn't answering properly just now. Try again in a little while.</string>
     <string name="weather_error_no_forecast">The weather service had no forecast for this place</string>
-    <string name="weather_error_search_answered">The place search answered %1$d</string>
+    <string name="weather_error_search_unavailable">The place search isn't answering properly just now. Try again in a little while.</string>
     <string name="weather_error_forecast">Couldn't reach the weather service. Check your connection.</string>
     <string name="weather_error_search">Couldn't search just now. Check your connection.</string>
     <string name="weather_error_radar">The radar isn't answering</string>

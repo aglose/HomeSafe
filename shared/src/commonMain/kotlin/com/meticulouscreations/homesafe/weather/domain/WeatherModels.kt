@@ -1,7 +1,10 @@
 package com.meticulouscreations.homesafe.weather.domain
 
 import androidx.compose.runtime.Immutable
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.offsetAt
 import kotlinx.serialization.Serializable
+import kotlin.time.Instant
 
 /**
  * Somewhere the weather app shows a forecast for: the phone's own position, or a city the
@@ -244,29 +247,61 @@ data class WeatherReport(
 
     fun tomorrow(nowEpochSeconds: Long = current.epochSeconds): DayForecast? = dayIndexAt(nowEpochSeconds).let { if (it < 0) null else daily.getOrNull(it + 1) }
 
-    /** Today and the days after it: what the forecast list shows. */
+    /**
+     * Today and the days after it: what the forecast list shows. Nothing, once the clock has run
+     * past the last day of an old report kept on the device: its days are not the days ahead.
+     */
     fun daysFromToday(nowEpochSeconds: Long = current.epochSeconds): List<DayForecast> {
         val i = dayIndexAt(nowEpochSeconds)
-        return if (i < 0) daily else daily.drop(i)
+        return when {
+            i >= 0 -> daily.drop(i)
+            daily.isEmpty() || nowEpochSeconds >= daily.last().epochSeconds -> emptyList()
+            else -> daily
+        }
     }
 
-    /** The hour in progress and those after it. */
+    /** The hour in progress and those after it; none once the last hour is over. */
     fun hoursFrom(nowEpochSeconds: Long = current.epochSeconds): List<HourForecast> {
         val i = hourly.indexOfLast { it.epochSeconds <= nowEpochSeconds }
-        return if (i < 0) hourly else hourly.drop(i)
+        return when {
+            i < 0 -> hourly
+            hourly[i].epochSeconds + HOUR_SECONDS <= nowEpochSeconds -> emptyList()
+            else -> hourly.drop(i)
+        }
     }
 
-    /** The hours of the day that starts at [dayEpochSeconds]. */
-    fun hoursOf(day: DayForecast): List<HourForecast> = hourly.filter { it.epochSeconds >= day.epochSeconds && it.epochSeconds < day.epochSeconds + DAY_SECONDS }
+    /**
+     * The hours of [day]: from its start to the start of the next day the forecast has (the
+     * service's own days, whatever length it made them), or for twenty-four hours after the last.
+     */
+    fun hoursOf(day: DayForecast): List<HourForecast> {
+        val end = daily.firstOrNull { it.epochSeconds > day.epochSeconds }?.epochSeconds ?: (day.epochSeconds + DAY_SECONDS)
+        return hourly.filter { it.epochSeconds >= day.epochSeconds && it.epochSeconds < end }
+    }
 
-    /** The quarter-hours from the one in progress on. */
+    /** The quarter-hours from the one in progress on; none once the last of them is over. */
     fun slicesFrom(nowEpochSeconds: Long = current.epochSeconds): List<PrecipSlice> {
         val i = minutely.indexOfLast { it.epochSeconds <= nowEpochSeconds }
-        return if (i < 0) minutely.filter { it.epochSeconds > nowEpochSeconds } else minutely.drop(i)
+        return when {
+            i < 0 -> minutely.filter { it.epochSeconds > nowEpochSeconds }
+            minutely[i].epochSeconds + SLICE_SECONDS <= nowEpochSeconds -> emptyList()
+            else -> minutely.drop(i)
+        }
     }
 
+    /**
+     * What to add to [epochSeconds] to read the place's clock at that moment. The forecast's
+     * hours and days are cut with [utcOffsetSeconds] throughout (the service's own cut, kept so
+     * hours sit in the days it summed them into); this is for telling the time of a particular
+     * moment — a sunrise, when a warning ends — which is an hour different once the clocks have
+     * changed between now and then. Falls back to [utcOffsetSeconds] where the zone isn't known.
+     */
+    fun offsetAt(epochSeconds: Long): Int = zone?.offsetAt(Instant.fromEpochSeconds(epochSeconds))?.totalSeconds ?: utcOffsetSeconds
+
+    private val zone: TimeZone? by lazy { timeZoneId.takeIf { it.isNotBlank() }?.let { id -> runCatching { TimeZone.of(id) }.getOrNull() } }
+
     /** Seconds since local midnight at the place, at [epochSeconds]. */
-    fun secondOfDay(epochSeconds: Long): Int = ((epochSeconds + utcOffsetSeconds) % DAY_SECONDS + DAY_SECONDS).toInt() % DAY_SECONDS.toInt()
+    fun secondOfDay(epochSeconds: Long): Int = ((epochSeconds + offsetAt(epochSeconds)) % DAY_SECONDS + DAY_SECONDS).toInt() % DAY_SECONDS.toInt()
 
     /** The hour on the place's clock, 0–23. */
     fun localHour(epochSeconds: Long): Int = secondOfDay(epochSeconds) / 3600
@@ -274,5 +309,6 @@ data class WeatherReport(
     companion object {
         const val HOUR_SECONDS = 3_600L
         const val DAY_SECONDS = 86_400L
+        const val SLICE_SECONDS = 900L
     }
 }

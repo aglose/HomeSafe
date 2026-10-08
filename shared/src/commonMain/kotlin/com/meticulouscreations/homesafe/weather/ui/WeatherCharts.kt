@@ -170,7 +170,7 @@ internal fun HourlyStrip(report: WeatherReport, nowEpochSeconds: Long, onScrub: 
             },
     ) {
         hours.forEachIndexed { i, hour ->
-            val time = if (i == 0) nowLabel else WeatherFormat.hour(hour.epochSeconds, report.utcOffsetSeconds).resolve()
+            val time = if (i == 0) nowLabel else WeatherFormat.hour(hour.epochSeconds, report.offsetAt(hour.epochSeconds)).resolve()
             val temperature = WeatherFormat.degrees(hour.temperatureC, units)
             val chance = hour.precipitationProbability?.takeIf { (it >= 20 && hour.kind.isPrecipitation) || it >= 35 }
             val description = stringResource(Res.string.weather_hour_description, time, temperature, stringResource(hour.kind.label(hour.isDay)))
@@ -322,7 +322,7 @@ internal fun DayHoursChart(report: WeatherReport, day: DayForecast, modifier: Mo
             listOf(0, 6, 12, 18).forEach { hour ->
                 val at = day.epochSeconds + hour * WeatherReport.HOUR_SECONDS
                 Text(
-                    WeatherFormat.hour(at, report.utcOffsetSeconds).resolve(),
+                    WeatherFormat.hour(at, report.offsetAt(at)).resolve(),
                     style = WeatherTheme.type.micro.copy(letterSpacing = WeatherTheme.type.label.letterSpacing),
                     color = colors.onSkyFaint,
                     textAlign = TextAlign.Start,

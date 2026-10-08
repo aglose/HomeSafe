@@ -11,7 +11,7 @@ actual fun createWeatherNotifier(platformContext: PlatformContext): WeatherNotif
 
     override suspend fun isAllowed() = false
 
-    override fun notify(notification: WeatherNotification) = Unit
+    override suspend fun notify(notification: WeatherNotification) = false
 }
 
 actual fun createWeatherCheckScheduler(platformContext: PlatformContext): WeatherCheckScheduler = object : WeatherCheckScheduler {

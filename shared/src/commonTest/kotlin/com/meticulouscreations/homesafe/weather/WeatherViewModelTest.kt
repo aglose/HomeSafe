@@ -37,7 +37,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.weather_error_forecast
-import homesafe.shared.generated.resources.weather_error_forecast_answered
+import homesafe.shared.generated.resources.weather_error_forecast_unavailable
 import homesafe.shared.generated.resources.weather_error_radar
 import homesafe.shared.generated.resources.weather_error_search
 import kotlinx.coroutines.CompletableDeferred
@@ -343,7 +343,7 @@ class WeatherViewModelTest {
 
     @Test
     fun aServiceThatSaidWhatWentWrongIsQuotedInItsOwnWords() = runWeatherTest(saved = listOf(seattle), setUp = { fence.here = null }) { h ->
-        val said = UiText.of(Res.string.weather_error_forecast_answered, 503)
+        val said = UiText.of(Res.string.weather_error_forecast_unavailable)
         h.repository.onReport = { Result.failure(LocalizedException(said, technical = "HTTP 503")) }
         val vm = h.viewModel()
         vm.setActive(true)

@@ -23,10 +23,10 @@ import dev.zacsweers.metro.Named
 import dev.zacsweers.metro.Provides
 import dev.zacsweers.metro.SingleIn
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.weather_error_forecast_answered
+import homesafe.shared.generated.resources.weather_error_forecast_unavailable
 import homesafe.shared.generated.resources.weather_error_no_forecast
 import homesafe.shared.generated.resources.weather_error_radar
-import homesafe.shared.generated.resources.weather_error_search_answered
+import homesafe.shared.generated.resources.weather_error_search_unavailable
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -87,7 +87,13 @@ internal val weatherJson = Json {
  */
 private suspend inline fun <reified T> HttpResponse.decode(): T = weatherJson.decodeFromString(bodyAsText())
 
-/** A weather service answered, but not with a forecast. [status] is its HTTP status, for callers that care which. */
+/**
+ * A coordinate as the weather services are given it: to the hundredth of a degree, about a
+ * kilometre. Their grids are no finer, and it keeps the address the phone is at to ourselves.
+ */
+internal fun coarse(degrees: Double): String = WeatherFormat.decimal(degrees, 2)
+
+/** A weather service answered, but not with a forecast. [status] is its HTTP status, for callers and logs: it is kept out of the words shown. */
 class WeatherServiceException(text: UiText, val status: Int) : LocalizedException(text, technical = "HTTP $status")
 
 /**
@@ -104,8 +110,8 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
      */
     suspend fun forecast(latitude: Double, longitude: Double, nowEpochSeconds: Long): Result<WeatherReport> = suspendRunCatching {
         val response = httpClient.get("$FORECAST_BASE/v1/forecast") {
-            parameter("latitude", latitude)
-            parameter("longitude", longitude)
+            parameter("latitude", coarse(latitude))
+            parameter("longitude", coarse(longitude))
             parameter("current", CURRENT_VARIABLES)
             parameter("minutely_15", "precipitation,snowfall")
             parameter("past_minutely_15", 1)
@@ -126,8 +132,8 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
     suspend fun airQuality(latitude: Double, longitude: Double, timeoutMillis: Long? = null): Result<AirQuality?> = suspendRunCatching {
         val response = httpClient.get("$AIR_BASE/v1/air-quality") {
             if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
-            parameter("latitude", latitude)
-            parameter("longitude", longitude)
+            parameter("latitude", coarse(latitude))
+            parameter("longitude", coarse(longitude))
             parameter("current", "us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide")
             parameter("timeformat", "unixtime")
         }
@@ -148,7 +154,7 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
             parameter("format", "json")
         }
         if (!response.status.isSuccess()) {
-            throw WeatherServiceException(UiText.of(Res.string.weather_error_search_answered, response.status.value), response.status.value)
+            throw WeatherServiceException(UiText.of(Res.string.weather_error_search_unavailable), response.status.value)
         }
         // No matches comes back as no `results` at all.
         response.decode<GeocodingDto>().results.orEmpty().map { r ->
@@ -163,7 +169,7 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
     }
 
     private fun forecastFailed(status: HttpStatusCode) =
-        WeatherServiceException(UiText.of(Res.string.weather_error_forecast_answered, status.value), status.value)
+        WeatherServiceException(UiText.of(Res.string.weather_error_forecast_unavailable), status.value)
 
     companion object {
         private const val FORECAST_BASE = "https://api.open-meteo.com"
@@ -204,7 +210,7 @@ class NwsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
             header(HttpHeaders.Accept, "application/geo+json")
         }
         if (response.status == HttpStatusCode.NotFound || response.status == HttpStatusCode.BadRequest) return@suspendRunCatching emptyList()
-        if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.weather_error_forecast_answered, response.status.value), response.status.value)
+        if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.weather_error_forecast_unavailable), response.status.value)
         response.decode<AlertsDto>().features.mapNotNull { it.properties?.toAlert() }.distinctBy { it.id }.sortedBy { it.severity.ordinal }
     }
 
@@ -218,7 +224,7 @@ class NwsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
     }.getOrNull()
 
     /** The service wants no more than four decimal places, and redirects anything finer. */
-    private fun point(latitude: Double, longitude: Double) = "${WeatherFormat.decimal(latitude, 4)},${WeatherFormat.decimal(longitude, 4)}"
+    private fun point(latitude: Double, longitude: Double) = "${coarse(latitude)},${coarse(longitude)}"
 
     companion object {
         private const val BASE = "https://api.weather.gov"

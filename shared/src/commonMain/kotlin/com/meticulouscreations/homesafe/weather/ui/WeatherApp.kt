@@ -303,7 +303,7 @@ internal fun WeatherAppContent(
                         place = selected?.place,
                         radar = state.radar,
                         tiles = tiles,
-                        utcOffsetSeconds = report?.utcOffsetSeconds ?: localUtcOffsetSeconds(state.nowEpochSeconds.toDouble()),
+                        utcOffsetSeconds = report?.offsetAt(state.nowEpochSeconds) ?: localUtcOffsetSeconds(state.nowEpochSeconds.toDouble()),
                         nowEpochSeconds = state.nowEpochSeconds,
                         headline = remember(report, state.nowEpochSeconds) {
                             report?.let { WeatherStory.nearTermPhrase(WeatherStory.nearTerm(it, state.nowEpochSeconds), state.nowEpochSeconds) }
@@ -342,7 +342,7 @@ internal fun WeatherAppContent(
                     is WeatherPage.Alert -> {
                         val alert = report?.alerts?.firstOrNull { it.id == shown.id }
                         if (alert != null) {
-                            AlertScreen(alert, report.utcOffsetSeconds, pagePadding)
+                            AlertScreen(alert, report::offsetAt, pagePadding)
                         } else {
                             // The warning lapsed while its page was open.
                             Box(Modifier.fillMaxSize().background(palette.surface))

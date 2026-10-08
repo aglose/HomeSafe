@@ -131,7 +131,7 @@ class WeatherRepositoryImplTest {
         val h = harness()
         h.repository.report(portland)
         h.repository.report(portland.copy(latitude = 47.6, longitude = -122.3))
-        assertEquals("47.6", h.web.requestsTo("/v1/forecast").last().url.parameters["latitude"])
+        assertEquals("47.60", h.web.requestsTo("/v1/forecast").last().url.parameters["latitude"])
     }
 
     @Test

@@ -226,9 +226,13 @@ private fun SwitchRow(title: String, body: String, checked: Boolean, tag: String
     }
 }
 
-/** A government warning in full, in the agency's own words: what, until when, and what to do. */
+/**
+ * A government warning in full, in the agency's own words: what, until when, and what to do.
+ * [offsetAt] reads the place's clock at a moment, which for a warning running past a change of
+ * the clocks is not the same from its start to its end.
+ */
 @Composable
-internal fun AlertScreen(alert: WeatherAlert, utcOffsetSeconds: Int, padding: PaddingValues, modifier: Modifier = Modifier) {
+internal fun AlertScreen(alert: WeatherAlert, offsetAt: (Long) -> Int, padding: PaddingValues, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val type = WeatherTheme.type
     Column(
@@ -239,10 +243,10 @@ internal fun AlertScreen(alert: WeatherAlert, utcOffsetSeconds: Int, padding: Pa
             Text(alert.event, style = type.title, color = if (alert.isUrgent) colors.danger else colors.watch)
             Spacer(Modifier.height(6.dp))
             alert.onsetEpochSeconds?.let {
-                Text(stringResource(Res.string.weather_alert_from, stringResource(WeatherFormat.weekday(it, utcOffsetSeconds)), WeatherFormat.clock(it, utcOffsetSeconds).resolve()), style = type.label, color = colors.onSkyMuted)
+                Text(stringResource(Res.string.weather_alert_from, stringResource(WeatherFormat.weekday(it, offsetAt(it))), WeatherFormat.clock(it, offsetAt(it)).resolve()), style = type.label, color = colors.onSkyMuted)
             }
             alert.endsEpochSeconds?.let {
-                Text(stringResource(Res.string.weather_alert_until, stringResource(WeatherFormat.weekday(it, utcOffsetSeconds)), WeatherFormat.clock(it, utcOffsetSeconds).resolve()), style = type.label, color = colors.onSkyMuted)
+                Text(stringResource(Res.string.weather_alert_until, stringResource(WeatherFormat.weekday(it, offsetAt(it))), WeatherFormat.clock(it, offsetAt(it)).resolve()), style = type.label, color = colors.onSkyMuted)
             }
             if (alert.sender.isNotBlank()) {
                 Text(stringResource(Res.string.weather_alert_issued_by, alert.sender), style = type.label, color = colors.onSkyFaint)

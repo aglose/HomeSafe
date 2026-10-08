@@ -176,7 +176,7 @@ internal fun UvTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Modi
         },
     )
     val caption = peak?.takeIf { (it.uvIndex ?: 0.0) >= 3 }?.let {
-        stringResource(Res.string.weather_tile_uv_peak, (it.uvIndex ?: 0.0).roundToInt(), WeatherFormat.hour(it.epochSeconds, report.utcOffsetSeconds).resolve())
+        stringResource(Res.string.weather_tile_uv_peak, (it.uvIndex ?: 0.0).roundToInt(), WeatherFormat.hour(it.epochSeconds, report.offsetAt(it.epochSeconds)).resolve())
     } ?: word
     DetailTile(stringResource(Res.string.weather_tile_uv), Icons.Filled.WbSunny, now.roundToInt().toString(), caption, modifier, note = word) {
         ScaleBar((now / 11.0).toFloat(), UV_SCALE)
@@ -356,9 +356,8 @@ internal fun SunTile(report: WeatherReport, place: Place, nowEpochSeconds: Long,
     val sunrise = today.sunriseEpochSeconds ?: return
     val sunset = today.sunsetEpochSeconds ?: return
     val light = remember(today.epochSeconds, place.latitude, place.longitude) { Astronomy.dayLight(today.epochSeconds, place.latitude, place.longitude) }
-    val offset = report.utcOffsetSeconds
-    val rise = WeatherFormat.clock(sunrise, offset).resolve()
-    val set = WeatherFormat.clock(sunset, offset).resolve()
+    val rise = WeatherFormat.clock(sunrise, report.offsetAt(sunrise)).resolve()
+    val set = WeatherFormat.clock(sunset, report.offsetAt(sunset)).resolve()
     val description = stringResource(Res.string.weather_tile_sun_description, rise, set)
     // How far through the daylight it is, running on below the horizon either side of it.
     val progress = ((nowEpochSeconds - sunrise).toFloat() / (sunset - sunrise).coerceAtLeast(1)).coerceIn(-0.25f, 1.25f)
@@ -407,7 +406,7 @@ internal fun SunTile(report: WeatherReport, place: Place, nowEpochSeconds: Long,
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             SunTime(stringResource(Res.string.weather_tile_sunrise), rise)
             light.goldenEveningStart?.takeIf { it > nowEpochSeconds - 3600 }?.let { golden ->
-                SunTime(stringResource(Res.string.weather_tile_golden_hour), WeatherFormat.clock(golden, offset).resolve(), Alignment.CenterHorizontally)
+                SunTime(stringResource(Res.string.weather_tile_golden_hour), WeatherFormat.clock(golden, report.offsetAt(golden)).resolve(), Alignment.CenterHorizontally)
             }
             SunTime(stringResource(Res.string.weather_tile_sunset), set, Alignment.End)
         }
@@ -435,7 +434,7 @@ internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Mo
         val full = phase.cycle < 0.5
         full to Astronomy.nextMoon(nowEpochSeconds, full)
     }
-    val date = WeatherFormat.date(next.second, report.utcOffsetSeconds).resolve()
+    val date = WeatherFormat.date(next.second, report.offsetAt(next.second)).resolve()
     val caption = stringResource(if (next.first) Res.string.weather_tile_moon_next_full else Res.string.weather_tile_moon_next_new, date)
     WeatherCard(modifier.height(TileHeight), title = stringResource(Res.string.weather_tile_moon), icon = Icons.Filled.NightsStay) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {

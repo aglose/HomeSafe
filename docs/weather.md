@@ -83,7 +83,16 @@ services are asked directly, by a client of their own that never carries Frigate
 | Sun, moon, twilight, golden hour | Worked out on the device | `Astronomy`: Meeus's low-precision formulas |
 
 A forecast is kept for ten minutes in memory and its last copy stays in the database, so the app
-opens on what it had and refreshes behind it.
+opens on what it had and refreshes behind it. An old copy only shows what is still ahead: hours,
+quarter-hours and days that are over are dropped, so a forecast from last week opens empty rather
+than passing its last day off as today.
+
+The services are told where to forecast for to the hundredth of a degree, about a kilometre:
+their grids are no finer, and the phone's exact position stays on the phone.
+
+Times are told by the place's own clock (its time zone comes with the forecast), so a sunrise or
+the end of a warning on the far side of a daylight-saving change reads as the clock will then.
+The days themselves are the service's, which cuts all ten with the offset in force today.
 
 ## Places
 
@@ -91,6 +100,10 @@ The first place is wherever the phone is, once the app may see its location (the
 the home geofence uses; weather only ever needs "while using the app"). Without a fix it is where
 the phone last was, or failing that the household's home. Cities are added from Places, by search
 or from the suggestions, and can be reordered and removed with *Edit*.
+
+The last position is kept on the phone (so there is somewhere to forecast for when a fix can't be
+had) and goes nowhere but, rounded as above, to Open-Meteo and the National Weather Service. The
+permission prompts on iOS say so.
 
 ## Notifications
 
@@ -113,7 +126,8 @@ Nothing but warnings is sent between 10 PM and 6 AM. What has been sent is remem
 days by what it was about (this warning, this morning, this shower), which is what stops repeats.
 
 They are for where the phone is; with no position to go on at all, for the first city on the list.
-Nothing is fetched or marked as sent while the OS has notifications switched off for the app. The
+Nothing is fetched or marked as sent while the OS has notifications switched off for the app, and
+a notification the OS refuses isn't marked as sent either, so the next check tries it again. The
 check runs:
 
 - **Android**: every half hour or so as WorkManager work (`WeatherCheckWorker`), needing only a

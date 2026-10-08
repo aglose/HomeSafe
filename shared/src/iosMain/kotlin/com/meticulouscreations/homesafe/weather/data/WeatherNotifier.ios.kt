@@ -39,7 +39,8 @@ private class IosWeatherNotifier : WeatherNotifier {
         }
     }
 
-    override fun notify(notification: WeatherNotification) {
+    // The centre answers on a queue of its own once it has taken the request or refused it.
+    override suspend fun notify(notification: WeatherNotification): Boolean {
         val content = UNMutableNotificationContent().apply {
             setTitle(notification.title)
             setBody(notification.body)
@@ -47,7 +48,9 @@ private class IosWeatherNotifier : WeatherNotifier {
             setUserInfo(mapOf(WeatherDeepLink.KEY to "1"))
         }
         val request = UNNotificationRequest.requestWithIdentifier(notification.id, content, trigger = null)
-        UNUserNotificationCenter.currentNotificationCenter().addNotificationRequest(request, withCompletionHandler = null)
+        return suspendCancellableCoroutine { continuation ->
+            UNUserNotificationCenter.currentNotificationCenter().addNotificationRequest(request) { error -> continuation.resume(error == null) }
+        }
     }
 }
 

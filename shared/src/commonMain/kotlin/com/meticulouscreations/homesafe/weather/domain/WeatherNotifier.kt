@@ -15,7 +15,8 @@ interface WeatherNotifier {
     /** Whether the OS would show one now: the permission is the app's one notification permission, asked for elsewhere. */
     suspend fun isAllowed(): Boolean
 
-    fun notify(notification: WeatherNotification)
+    /** Posts [notification], and says whether the OS took it: false without permission, or when it refused. */
+    suspend fun notify(notification: WeatherNotification): Boolean
 }
 
 /**

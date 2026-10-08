@@ -50,8 +50,8 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
     private fun allowed(): Boolean =
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED && manager.areNotificationsEnabled()
 
-    override fun notify(notification: WeatherNotification) {
-        if (!allowed()) return
+    override suspend fun notify(notification: WeatherNotification): Boolean {
+        if (!allowed()) return false
         ensureChannels()
         val posted = NotificationCompat.Builder(context, if (notification.urgent) SEVERE_CHANNEL_ID else CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification_weather)
@@ -65,8 +65,9 @@ private class AndroidWeatherNotifier(private val context: Context) : WeatherNoti
             .setOnlyAlertOnce(true)
             .setContentIntent(openIntent())
             .build()
-        runCatching { manager.notify(notification.id, NOTIFICATION_ID, posted) }
+        return runCatching { manager.notify(notification.id, NOTIFICATION_ID, posted) }
             .onFailure { Log.w(TAG, "couldn't post ${notification.id}: ${it.message}") }
+            .isSuccess
     }
 
     private fun ensureChannels() {

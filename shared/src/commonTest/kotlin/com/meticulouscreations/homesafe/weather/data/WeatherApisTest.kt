@@ -8,10 +8,10 @@ import com.meticulouscreations.homesafe.weather.domain.HourForecast
 import com.meticulouscreations.homesafe.weather.domain.PrecipSlice
 import com.meticulouscreations.homesafe.weather.domain.RadarSource
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.weather_error_forecast_answered
+import homesafe.shared.generated.resources.weather_error_forecast_unavailable
 import homesafe.shared.generated.resources.weather_error_no_forecast
 import homesafe.shared.generated.resources.weather_error_radar
-import homesafe.shared.generated.resources.weather_error_search_answered
+import homesafe.shared.generated.resources.weather_error_search_unavailable
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
@@ -259,15 +259,15 @@ class WeatherApisTest {
     }
 
     @Test
-    fun forecastAsksForMetricUnixtimeAtTheCoordinates() = runTest {
+    fun forecastAsksForMetricUnixtimeAtTheCoordinatesToTheHundredth() = runTest {
         val web = FakeWeb().route("/v1/forecast", forecastBody)
         forecast(web).getOrThrow()
         val request = web.requests.single()
         assertEquals("api.open-meteo.com", request.url.host)
         assertEquals("/v1/forecast", request.url.encodedPath)
         val query = request.url.parameters
-        assertEquals("45.5234", query["latitude"])
-        assertEquals("-122.6762", query["longitude"])
+        assertEquals("45.52", query["latitude"])
+        assertEquals("-122.68", query["longitude"])
         assertEquals("auto", query["timezone"])
         assertEquals("unixtime", query["timeformat"])
         assertEquals("1", query["past_days"])
@@ -289,7 +289,7 @@ class WeatherApisTest {
         val result = forecast(FakeWeb().fail("/v1/forecast", HttpStatusCode.ServiceUnavailable))
         val error = assertIs<WeatherServiceException>(result.exceptionOrNull())
         assertEquals(503, error.status)
-        assertEquals(UiText.of(Res.string.weather_error_forecast_answered, 503), error.text)
+        assertEquals(UiText.of(Res.string.weather_error_forecast_unavailable), error.text)
         assertEquals("HTTP 503", error.message)
     }
 
@@ -457,7 +457,7 @@ class WeatherApisTest {
         val result = OpenMeteoApi(FakeWeb().fail("/v1/search", HttpStatusCode.BadGateway).client).search("Portland")
         val error = assertIs<WeatherServiceException>(result.exceptionOrNull())
         assertEquals(502, error.status)
-        assertEquals(UiText.of(Res.string.weather_error_search_answered, 502), error.text)
+        assertEquals(UiText.of(Res.string.weather_error_search_unavailable), error.text)
     }
 
     // ---- NwsApi.alerts ------------------------------------------------------------------------
@@ -547,22 +547,22 @@ class WeatherApisTest {
     }
 
     @Test
-    fun alertsAskForTheActualAlertsAtAPointWithFourDecimals() = runTest {
+    fun alertsAskForTheActualAlertsAtAPointToTheHundredth() = runTest {
         val web = FakeWeb().route("/alerts/active", alertsBody)
         alertsApi(web).alerts(45.52345678, -122.67618)
         val request = web.requests.single()
         assertEquals("api.weather.gov", request.url.host)
-        assertEquals("45.5235,-122.6762", request.url.parameters["point"])
+        assertEquals("45.52,-122.68", request.url.parameters["point"])
         assertEquals("actual", request.url.parameters["status"])
         assertEquals("alert,update", request.url.parameters["message_type"])
         assertEquals("application/geo+json", request.headers[HttpHeaders.Accept])
     }
 
     @Test
-    fun theAlertPointKeepsFourDecimalsEvenWhenTheyAreZeros() = runTest {
+    fun theAlertPointKeepsTwoDecimalsEvenWhenTheyAreZeros() = runTest {
         val web = FakeWeb().route("/alerts/active", "{}")
         alertsApi(web).alerts(45.5, -122.6)
-        assertEquals("45.5000,-122.6000", web.requests.single().url.parameters["point"])
+        assertEquals("45.50,-122.60", web.requests.single().url.parameters["point"])
     }
 
     // ---- Alert keys ---------------------------------------------------------------------------
@@ -641,7 +641,7 @@ class WeatherApisTest {
         val body = """{"properties": {"relativeLocation": {"properties": {"city": "Portland", "state": "OR"}}}}"""
         val web = FakeWeb().route("/points/", body)
         assertEquals("Portland" to "OR", NwsApi(web.client).nameOf(45.5234, -122.6762))
-        assertEquals("/points/45.5234,-122.6762", web.requests.single().url.encodedPath.replace("%2C", ","))
+        assertEquals("/points/45.52,-122.68", web.requests.single().url.encodedPath.replace("%2C", ","))
     }
 
     @Test

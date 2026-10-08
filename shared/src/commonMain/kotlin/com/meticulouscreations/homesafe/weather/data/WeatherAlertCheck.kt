@@ -73,11 +73,12 @@ class WeatherAlertCheck(
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
         val now = clock.now().epochSeconds
         val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
-        notices.forEach { notice ->
-            notifier.notify(WeatherNotification(notice.key, textLoader.load(notice.title), textLoader.load(notice.body), notice.urgent))
-            ledger.record(notice.key, now)
+        // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
+        return notices.count { notice ->
+            val posted = notifier.notify(WeatherNotification(notice.key, textLoader.load(notice.title), textLoader.load(notice.body), notice.urgent))
+            if (posted) ledger.record(notice.key, now)
+            posted
         }
-        return notices.size
     }
 
     private suspend fun place(): Place? =

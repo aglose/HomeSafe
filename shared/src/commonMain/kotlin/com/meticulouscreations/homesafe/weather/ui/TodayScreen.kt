@@ -143,14 +143,15 @@ internal fun TodayScreen(
         if (entry.error != null) {
             item(key = "stale") {
                 StaleNotice(
-                    stringResource(Res.string.weather_stale, WeatherFormat.clock(report.fetchedAtEpochSeconds, report.utcOffsetSeconds).resolve()),
+                    stringResource(Res.string.weather_stale, WeatherFormat.clock(report.fetchedAtEpochSeconds, report.offsetAt(report.fetchedAtEpochSeconds)).resolve()),
                     onRetry,
                     Modifier.cardWidth(),
                 )
             }
         }
         items(report.alerts.size, key = { "alert-${report.alerts[it].id}" }, contentType = { "alert" }) { i ->
-            AlertBanner(report.alerts[i], report.utcOffsetSeconds, onOpenAlert, Modifier.cardWidth())
+            val alert = report.alerts[i]
+            AlertBanner(alert, alert.endsEpochSeconds?.let(report::offsetAt) ?: report.utcOffsetSeconds, onOpenAlert, Modifier.cardWidth())
         }
         if (showNextHours) {
             item(key = "next", contentType = "card") {
@@ -182,7 +183,7 @@ internal fun TodayScreen(
         item(key = "footer", contentType = "footer") {
             Column(Modifier.cardWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
                 Text(
-                    stringResource(Res.string.weather_updated, WeatherFormat.clock(report.fetchedAtEpochSeconds, report.utcOffsetSeconds).resolve()),
+                    stringResource(Res.string.weather_updated, WeatherFormat.clock(report.fetchedAtEpochSeconds, report.offsetAt(report.fetchedAtEpochSeconds)).resolve()),
                     style = WeatherTheme.type.label,
                     color = WeatherTheme.colors.onSkyMuted,
                 )
@@ -214,7 +215,7 @@ private fun Hero(report: WeatherReport, nowEpochSeconds: Long, scrubbed: HourFor
                 Spacer(Modifier.height(2.dp))
                 if (hour != null) {
                     // The sky and these words are showing another hour: say which.
-                    Text(stringResource(Res.string.weather_scrub_at, WeatherFormat.hour(hour.epochSeconds, report.utcOffsetSeconds).resolve()), style = type.headline, color = colors.sun)
+                    Text(stringResource(Res.string.weather_scrub_at, WeatherFormat.hour(hour.epochSeconds, report.offsetAt(hour.epochSeconds)).resolve()), style = type.headline, color = colors.sun)
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         if (today != null) {
@@ -321,7 +322,11 @@ private fun OutdoorCard(report: WeatherReport, nowEpochSeconds: Long, modifier: 
         } else {
             val offset = report.utcOffsetSeconds
             val day = if (WeatherFormat.sameDay(window.startEpochSeconds, nowEpochSeconds, offset)) null else stringResource(WeatherFormat.weekday(window.startEpochSeconds, offset))
-            val range = stringResource(Res.string.weather_time_range, WeatherFormat.hour(window.startEpochSeconds, offset).resolve(), WeatherFormat.hour(window.endEpochSeconds, offset).resolve())
+            val range = stringResource(
+                Res.string.weather_time_range,
+                WeatherFormat.hour(window.startEpochSeconds, report.offsetAt(window.startEpochSeconds)).resolve(),
+                WeatherFormat.hour(window.endEpochSeconds, report.offsetAt(window.endEpochSeconds)).resolve(),
+            )
             Row(verticalAlignment = Alignment.Bottom) {
                 Text(range, style = WeatherTheme.type.value, color = colors.onSky)
                 if (day != null) {

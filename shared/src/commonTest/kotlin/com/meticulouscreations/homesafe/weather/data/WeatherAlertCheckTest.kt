@@ -122,6 +122,16 @@ class WeatherAlertCheckTest {
     }
 
     @Test
+    fun aNoticeTheOsWouldNotTakeIsNotMarkedAsSaidAndGoesOutNextTime() = runTest {
+        val h = harness().apply { notifier.accepts = false }
+        assertEquals(0, h.check.run(), "nothing went out")
+        assertTrue(h.ledger.sent(now).isEmpty(), "so nothing is marked as said")
+        h.notifier.accepts = true
+        assertEquals(2, h.check.run())
+        assertEquals(setOf("alert:urn:tornado", "soon:${at(0, 15, 30) / 3_600}"), h.ledger.sent(now).keys)
+    }
+
+    @Test
     fun aNoticeAlreadyInTheLedgerIsNotPostedAgain() = runTest {
         val h = harness()
         h.ledger.record("alert:urn:tornado", now - 600)

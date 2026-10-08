@@ -22,12 +22,14 @@
 	<!--
 	  Automatic presence (docs/away-mode.md): a geofence around home flips this phone's away
 	  switch. "While Using" is enough to set where home is; "Always" is what lets the fence
-	  notice you leaving with the app closed. Nothing is tracked or stored beyond that one circle.
+	  notice you leaving with the app closed. Weather (docs/weather.md) forecasts for where the
+	  phone is: it keeps the last position on the phone and asks the forecast services about it,
+	  rounded to about a kilometre. Both strings say so, since iOS shows them when it asks.
 	-->
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>HomeSafe uses your location to set where home is, so away mode can switch on by itself when everyone has left, and to show the weather where you are.</string>
+	<string>HomeSafe uses your location to set where home is, so away mode can switch on by itself when everyone has left, and to show the weather where you are. For weather, your last position is kept on this phone and sent, rounded to about a kilometre, to the forecast services (Open-Meteo, and the US National Weather Service).</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>With "Always", HomeSafe can notice you leaving or arriving home while the app is closed and switch away mode for you. Only the home geofence is watched; your location is never stored or shared.</string>
+	<string>With "Always", HomeSafe can notice you leaving or arriving home while the app is closed and switch away mode for you. For away mode only the home geofence is watched. For weather, your last position is kept on this phone and sent, rounded to about a kilometre, to the forecast services (Open-Meteo, and the US National Weather Service).</string>
 	<!--
 	  Frigate's go2rtc live-stream endpoint (port 1984) is plain HTTP by design — it relies
 	  on the network boundary (Tailscale, or the home LAN when connected over the server's
