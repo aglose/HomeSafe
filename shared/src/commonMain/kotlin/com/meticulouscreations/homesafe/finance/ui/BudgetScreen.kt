@@ -132,8 +132,9 @@ import homesafe.shared.generated.resources.fin_budget_fresh_read
 import homesafe.shared.generated.resources.fin_budget_fresh_read_changed
 import homesafe.shared.generated.resources.fin_budget_fresh_reading
 import homesafe.shared.generated.resources.fin_budget_hero_day
+import homesafe.shared.generated.resources.fin_budget_hero_limit
+import homesafe.shared.generated.resources.fin_budget_hero_month
 import homesafe.shared.generated.resources.fin_budget_hero_no_limit
-import homesafe.shared.generated.resources.fin_budget_hero_of_limit
 import homesafe.shared.generated.resources.fin_budget_how
 import homesafe.shared.generated.resources.fin_budget_link_body
 import homesafe.shared.generated.resources.fin_budget_link_title
@@ -266,6 +267,7 @@ internal fun BudgetScreen(
     // Which bucket's purchases the list shows (by key), and the purchase whose sheet is up (by id).
     var filter by rememberSaveable { mutableStateOf<String?>(null) }
     var tagging by rememberSaveable { mutableStateOf<String?>(null) }
+    val pace = remember(budget) { budget?.let(BudgetPace::of) }
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.testTag("finance_budget")) {
         when {
             budget == null && state.loading -> item(key = "loading") { BudgetSkeleton() }
@@ -286,8 +288,7 @@ internal fun BudgetScreen(
                 )
             }
 
-            else -> {
-                val pace = BudgetPace.of(budget)
+            pace != null -> {
                 val unset = budget.cards.filter { it.role == CardRole.Unset }
                 if (budget.budgetCards.isNotEmpty()) {
                     item(key = "hero") { BudgetHero(budget, pace, onBackToNow = { onShowMonth(null) }) }
@@ -307,7 +308,7 @@ internal fun BudgetScreen(
                             )
                         }
                         items(toSort.take(TO_SORT_SHOWN), key = { "sort-${it.id}" }) { purchase ->
-                            SortRow(purchase, budget.config.people, busy = state.tagging == purchase.id, onPick = { onTag(purchase.id, it, false) }, onOpen = { tagging = purchase.id })
+                            SortRow(purchase, budget.config.people, busy = purchase.id in state.tagging, onPick = { onTag(purchase.id, it, false) }, onOpen = { tagging = purchase.id })
                         }
                         if (toSort.size > TO_SORT_SHOWN) {
                             item(key = "sort-more") {
@@ -328,7 +329,7 @@ internal fun BudgetScreen(
                     }
                     if (budget.config.sheet.takeHome != null) {
                         item(key = "flow-h") { SectionHeader(stringResource(Res.string.fin_budget_flow_title), info = "savingsline") }
-                        item(key = "flow") { TakeHomeFlow(budget) }
+                        item(key = "flow") { TakeHomeFlow(budget, pace) }
                     }
                     if (budget.categories.isNotEmpty()) {
                         item(key = "what-h") { SectionHeader(stringResource(Res.string.fin_budget_what_title)) }
@@ -360,7 +361,7 @@ internal fun BudgetScreen(
                             )
                         }
                         items(purchases, key = { "p-${it.id}" }) { purchase ->
-                            PurchaseRow(purchase, budget, busy = state.tagging == purchase.id, onClick = { tagging = purchase.id })
+                            PurchaseRow(purchase, budget, busy = purchase.id in state.tagging, onClick = { tagging = purchase.id })
                         }
                     }
                     item(key = "how") { FinePrint(stringResource(Res.string.fin_budget_how), Modifier.padding(top = 20.dp)) }
@@ -502,15 +503,15 @@ private fun BudgetHero(budget: Budget, pace: BudgetPace, onBackToNow: () -> Unit
             Column(Modifier.weight(1f)) {
                 val month = FinanceFormat.month(budget.month, year = true)
                 Text(
-                    if (budget.isCurrentMonth) stringResource(Res.string.fin_budget_hero_day, month, budget.day, budget.daysInMonth) else month,
+                    if (budget.isCurrentMonth) stringResource(Res.string.fin_budget_hero_day, month, budget.day, budget.daysInMonth) else stringResource(Res.string.fin_budget_hero_month, month),
                     style = FinanceTheme.type.label,
                     color = colors.textSecondary,
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(stringResource(BudgetNarrator.headline(pace.status)), style = FinanceTheme.type.bodyStrong, color = statusColor(pace.status), modifier = Modifier.testTag("finance_budget_headline"))
+                Text(stringResource(BudgetNarrator.headline(pace.status, budget.isCurrentMonth)), style = FinanceTheme.type.bodyStrong, color = statusColor(pace.status), modifier = Modifier.testTag("finance_budget_headline"))
                 RollingNumber(FinanceFormat.money(budget.spent, 0), FinanceTheme.type.hero, colors.textPrimary)
                 Text(
-                    if (limit != null) stringResource(Res.string.fin_budget_hero_of_limit, FinanceFormat.money(limit, 0)) else stringResource(Res.string.fin_budget_hero_no_limit),
+                    if (limit != null) stringResource(Res.string.fin_budget_hero_limit, FinanceFormat.money(limit, 0)) else stringResource(Res.string.fin_budget_hero_no_limit),
                     style = FinanceTheme.type.label,
                     color = colors.textSecondary,
                 )
@@ -798,14 +799,15 @@ private fun BucketCard(bucket: BudgetBucket, budget: Budget, selected: Boolean, 
             Meter(if (budget.spent > 0) (bucket.spent / budget.spent).toFloat() else 0f, color)
         }
         Spacer(Modifier.height(6.dp))
-        val count = pluralStringResource(Res.plurals.fin_budget_purchases_count, bucket.count, bucket.count)
+        // How many purchases, then where the bucket stands: two phrases of their own, side by side.
+        val standing = when {
+            bucket.id == BucketId.Unassigned -> stringResource(Res.string.fin_budget_who_unsorted_note)
+            limit == null -> null
+            bucket.spent > limit -> stringResource(Res.string.fin_budget_who_over, FinanceFormat.money(bucket.spent - limit, 0))
+            else -> stringResource(Res.string.fin_budget_who_left, FinanceFormat.money(limit - bucket.spent, 0))
+        }
         Text(
-            when {
-                bucket.id == BucketId.Unassigned -> stringResource(Res.string.fin_budget_who_unsorted_note, count)
-                limit == null -> count
-                bucket.spent > limit -> stringResource(Res.string.fin_budget_who_over, count, FinanceFormat.money(bucket.spent - limit, 0))
-                else -> stringResource(Res.string.fin_budget_who_left, count, FinanceFormat.money(limit - bucket.spent, 0))
-            },
+            listOfNotNull(pluralStringResource(Res.plurals.fin_budget_purchases_count, bucket.count, bucket.count), standing).joinToString(stringResource(Res.string.common_dot_separator)),
             style = FinanceTheme.type.label,
             color = if (limit != null && bucket.spent > limit) colors.loss else colors.textSecondary,
         )
@@ -818,12 +820,12 @@ private fun BucketCard(bucket: BudgetBucket, budget: Budget, selected: Boolean, 
  * left and the line under it says how much is coming out of savings.
  */
 @Composable
-private fun TakeHomeFlow(budget: Budget) {
+private fun TakeHomeFlow(budget: Budget, pace: BudgetPace) {
     val colors = FinanceTheme.colors
     val takeHome = budget.config.sheet.takeHome ?: return
     val bills = budget.config.sheet.billsOffCard ?: 0.0
     val left = takeHome - bills - budget.spent
-    val tint = heatColor(BudgetPace.of(budget).heat, colors.gain, colors.watch, colors.loss)
+    val tint = heatColor(pace.heat, colors.gain, colors.watch, colors.loss)
     val whole = maxOf(takeHome, bills + budget.spent).takeIf { it > 0 } ?: return
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter).height(26.dp).clip(RoundedCornerShape(8.dp)).background(colors.surfaceRaised)) {
@@ -988,7 +990,7 @@ private fun PurchaseRow(purchase: Purchase, budget: Budget, busy: Boolean, onCli
 @Composable
 private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>, onPick: (BucketId, Boolean) -> Unit, onDismiss: () -> Unit) {
     val colors = FinanceTheme.colors
-    var remember by rememberSaveable(purchase.id) { mutableStateOf(false) }
+    var always by rememberSaveable(purchase.id) { mutableStateOf(false) }
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
@@ -1013,7 +1015,7 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .selectable(selected = isSelected, role = Role.RadioButton) { onPick(bucket, remember) }
+                            .selectable(selected = isSelected, role = Role.RadioButton) { onPick(bucket, always) }
                             .testTag("finance_budget_tag_${bucket.key}")
                             .minimumInteractiveComponentSize()
                             .padding(horizontal = PageGutter, vertical = 6.dp),
@@ -1035,7 +1037,7 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .toggleable(value = remember, role = Role.Switch) { remember = it }
+                    .toggleable(value = always, role = Role.Switch) { always = it }
                     .testTag("finance_budget_tag_remember")
                     .minimumInteractiveComponentSize()
                     .padding(horizontal = PageGutter, vertical = 6.dp),
@@ -1051,9 +1053,9 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
                 }
                 Spacer(Modifier.width(12.dp))
                 Icon(
-                    if (remember) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+                    if (always) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
                     contentDescription = null,
-                    tint = if (remember) colors.accent else colors.textTertiary,
+                    tint = if (always) colors.accent else colors.textTertiary,
                 )
             }
         }

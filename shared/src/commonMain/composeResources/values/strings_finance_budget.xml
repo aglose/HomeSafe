@@ -28,6 +28,7 @@
     <string name="fin_budget_headline_close">Close to the limit</string>
     <string name="fin_budget_headline_over">Over the limit</string>
     <string name="fin_budget_headline_dipping">Into savings</string>
+    <string name="fin_budget_headline_ended_under">Under the limit</string>
 
     <string name="fin_budget_verdict_no_limit">Set a monthly limit in the settings to see how the month is pacing.</string>
     <plurals name="fin_budget_verdict_under">
@@ -47,9 +48,10 @@
     <string name="fin_budget_verdict_ended_under">The month finished %1$s under the limit.</string>
     <string name="fin_budget_verdict_ended_over">The month finished %1$s over the limit.</string>
 
-    <string name="fin_budget_hero_day">%1$s · day %2$d of %3$d</string>
-    <string name="fin_budget_hero_of_limit">spent of %1$s</string>
-    <string name="fin_budget_hero_no_limit">spent this month</string>
+    <string name="fin_budget_hero_day">Spent in %1$s · day %2$d of %3$d</string>
+    <string name="fin_budget_hero_month">Spent in %1$s</string>
+    <string name="fin_budget_hero_limit">Limit for the month: %1$s</string>
+    <string name="fin_budget_hero_no_limit">No limit set for the month</string>
     <string name="fin_budget_back_to_now">Back to this month</string>
     <string name="fin_budget_tank_pace_mark">Line: an even pace</string>
     <string name="fin_budget_tank_share">%1$s of the limit</string>
@@ -98,15 +100,15 @@
     <string name="fin_budget_pace_stat_rate">A day costs</string>
     <string name="fin_budget_pace_stat_projected">Month ends near</string>
     <string name="fin_budget_pace_stat_allowance">Left per day</string>
-    <string name="fin_budget_pace_stat_limit_day">Limit reached</string>
+    <string name="fin_budget_pace_stat_limit_day">Limit hit</string>
     <string name="fin_budget_pace_stat_not_this_month">Not this month</string>
 
     <string name="fin_budget_who_title">Who spent what</string>
     <string name="fin_budget_who_subtitle">Tap one to see only its purchases</string>
     <string name="fin_budget_who_of_limit">%1$s of %2$s</string>
-    <string name="fin_budget_who_left">%1$s · %2$s left</string>
-    <string name="fin_budget_who_over">%1$s · %2$s over</string>
-    <string name="fin_budget_who_unsorted_note">%1$s · counted in the month, in nobody's limit yet</string>
+    <string name="fin_budget_who_left">%1$s left</string>
+    <string name="fin_budget_who_over">%1$s over</string>
+    <string name="fin_budget_who_unsorted_note">In the month's total, in nobody's limit yet</string>
 
     <string name="fin_budget_flow_title">Where take-home goes</string>
     <string name="fin_budget_flow_take_home">Take-home this month</string>

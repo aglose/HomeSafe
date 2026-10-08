@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -19,9 +20,13 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.domain.BucketId
+import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.CardRole
+import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.ui.BudgetFixtures
 import com.meticulouscreations.homesafe.finance.ui.BudgetScreen
+import com.meticulouscreations.homesafe.finance.ui.BudgetSettingsScreen
+import com.meticulouscreations.homesafe.finance.ui.FinanceFixtures
 import com.meticulouscreations.homesafe.finance.ui.FinanceStage
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -102,6 +107,27 @@ class BudgetScreenUiTest {
         // One row of choices a card, in the cards' order: the second card is the family's.
         onAllNodesWithText("The family's")[1].performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(BudgetFixtures.FAMILY to CardRole.Family as CardRole), calls.roles)
+    }
+
+    @Test
+    fun theSettingsListASheetWithTwoLinesOfTheSameName() {
+        val finance = FinanceFixtures.finance.let { it.copy(expenses = it.expenses + ExpenseLine("Insurance", 120.0)) }
+        val saved = mutableListOf<BudgetConfigPatch>()
+        runComposeUiTest {
+            setContent {
+                FinanceStage {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
+                            BudgetSettingsScreen(BudgetFixtures.state(BudgetFixtures.onPace), finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {})
+                        }
+                    }
+                }
+            }
+            // Both are there, and ticking one says the name is paid by card.
+            onAllNodesWithText("Insurance").assertCountEquals(2)
+            onAllNodesWithText("Insurance")[1].performSemanticsAction(SemanticsActions.OnClick)
+        }
+        assertEquals(listOf(BudgetFixtures.onPace.config.cardPaidLines + "Insurance"), saved.map { it.cardPaidLines })
     }
 
     @Test

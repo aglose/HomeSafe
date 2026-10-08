@@ -147,11 +147,26 @@ class BudgetViewModelTest {
         val sorted = october.copy(spent = 1.0)
         repo.changed = Result.success(sorted)
         vm.tag("p-1-0", BucketId.Person("Sam"), remember = true)
-        assertEquals("p-1-0", vm.uiState.value.tagging)
+        assertEquals(setOf("p-1-0"), vm.uiState.value.tagging)
         runCurrent()
         assertEquals(listOf(Triple("p-1-0", BucketId.Person("Sam") as BucketId, true)), repo.tagged)
-        assertNull(vm.uiState.value.tagging)
+        assertEquals(emptySet(), vm.uiState.value.tagging)
         assertEquals(sorted, vm.uiState.value.budget)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun purchasesTaggedOneAfterAnotherAllGoToTheRelayInTheOrderTapped() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val vm = shown(repo)
+        vm.tag("p-1-0", BucketId.Person("Sam"), remember = false)
+        vm.tag("p-2-0", BucketId.Person("Alex"), remember = false)
+        // The same one tapped twice before it is answered is one tag.
+        vm.tag("p-1-0", BucketId.Family, remember = false)
+        assertEquals(setOf("p-1-0", "p-2-0"), vm.uiState.value.tagging)
+        runCurrent()
+        assertEquals(listOf("p-1-0" to BucketId.Person("Sam"), "p-2-0" to BucketId.Person("Alex")), repo.tagged.map { it.first to it.second })
+        assertEquals(emptySet(), vm.uiState.value.tagging)
         vm.setActive(false)
     }
 
@@ -162,7 +177,7 @@ class BudgetViewModelTest {
         repo.changed = Result.failure(BankSyncException(BankProblem.OTHER, "That purchase isn't there any more".asUiText()))
         vm.tag("gone", BucketId.Family, remember = false)
         runCurrent()
-        assertNull(vm.uiState.value.tagging)
+        assertEquals(emptySet(), vm.uiState.value.tagging)
         assertEquals(BankNotice("That purchase isn't there any more".asUiText(), isError = true), vm.uiState.value.notice)
         assertEquals(october, vm.uiState.value.budget)
         vm.dismissNotice()
@@ -234,6 +249,21 @@ class BudgetViewModelTest {
         vm.onSheet(finance)
         runCurrent()
         assertEquals(1, repo.saved.size)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aReportOfTheSheetThatNeverArrivedIsSentAgain() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val behind = october.copy(config = october.config.copy(sheet = BudgetSheetFigures(takeHome = 1.0, billsOffCard = 1.0)))
+        val vm = shown(repo, behind)
+        repo.changed = Result.failure(IllegalStateException("connection reset"))
+        vm.onSheet(FinanceFixtures.finance)
+        runCurrent()
+        repo.changed = Result.success(behind)
+        vm.onSheet(FinanceFixtures.finance)
+        runCurrent()
+        assertEquals(2, repo.saved.size)
         vm.setActive(false)
     }
 

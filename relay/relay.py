@@ -4528,7 +4528,10 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     if not device.device_id and not device.token:
         raise HTTPException(status_code=400, detail="device_id or token required")
     device_id = device.device_id or device.token
-    user = authenticate(request, device_id)
+    # A session, when the request carries a good one, both lets it in and says whose phone this
+    # is. Only without one is the install's own secret (or a refusal) left to `authenticate`.
+    profile = frigate_profile(request)
+    user = str(profile.get("username") or "?") if profile else authenticate(request, device_id)
     now = time.time()
 
     def upsert(c: sqlite3.Connection) -> str:
@@ -4561,7 +4564,6 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     secret = with_db(upsert)
     # Whose phone it is, when the registration says: one made with the install's own secret and
     # no session (a push token rotating in the background) leaves who it was as it stood.
-    profile = frigate_profile(request)
     if profile and profile.get("username"):
         with_db(lambda c: (c.execute("UPDATE devices SET user=?, role=? WHERE device_id=?", (str(profile["username"]), profile.get("role"), device_id)), c.commit()))
     log.info(
@@ -6502,6 +6504,9 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
 # How often the cards are asked about. Plaid itself hears from a bank a few times a day, so most
 # asks find nothing new; the page says when something last did.
 TXN_SYNC_SECONDS = 3600
+# ...except a card linked in the last day whose first transactions Plaid is still fetching: its
+# month isn't on the page until they arrive, so it is asked at every check until they have.
+TXN_NEW_SECONDS = 86400
 TXN_PAGE = 500
 # More pages than any real card has in one ask: a cursor that never ends is given up on.
 TXN_MAX_PAGES = 100
@@ -6550,7 +6555,14 @@ class BudgetTag(BaseModel):
 
 
 def transactions_due(now: float, last: float) -> bool:
-    return now - last >= TXN_SYNC_SECONDS
+    """Whether the cards are to be asked now: an hour after the last time, or sooner while a new card's first transactions are awaited."""
+    return now - last >= TXN_SYNC_SECONDS or (now - last >= BANK_CHECK_SECONDS and transactions_awaited(now))
+
+
+def transactions_awaited(now: float) -> bool:
+    """Whether an institution linked in the last day for its transactions hasn't had its first ones from Plaid yet."""
+    rows = with_db(lambda c: c.execute("SELECT products, txn_status FROM plaid_items WHERE linked_at > ?", (now - TXN_NEW_SECONDS,)).fetchall())
+    return any("transactions" in (products or "") and status not in TXN_READY for products, status in rows)
 
 
 def merchant_key(merchant: str | None, name: str | None) -> str:
@@ -6923,7 +6935,10 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
     categories: dict[str, list[float]] = {}
     merchants: dict[str, list[Any]] = {}
     for p in purchases:
-        by_day[p["date"]] = by_day.get(p["date"], 0.0) + p["amount"]
+        # A purchase the bank dates past the household's today (its clock is ahead) is put on
+        # today, so the days still add up to what the month has spent.
+        on = min(p["date"], f"{month}-{day:02d}") if day else p["date"]
+        by_day[on] = by_day.get(on, 0.0) + p["amount"]
         tally = categories.setdefault(p["category"] or "OTHER", [0.0, 0])
         tally[0], tally[1] = tally[0] + p["amount"], tally[1] + 1
         shop = merchants.setdefault(p["merchant"] or p["name"].lower(), [p["name"], 0.0, 0])

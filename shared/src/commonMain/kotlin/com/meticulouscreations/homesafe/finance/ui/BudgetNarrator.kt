@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_budget_headline_close
 import homesafe.shared.generated.resources.fin_budget_headline_dipping
+import homesafe.shared.generated.resources.fin_budget_headline_ended_under
 import homesafe.shared.generated.resources.fin_budget_headline_no_limit
 import homesafe.shared.generated.resources.fin_budget_headline_over
 import homesafe.shared.generated.resources.fin_budget_headline_projected_over
@@ -31,13 +32,14 @@ import org.jetbrains.compose.resources.StringResource
  */
 internal object BudgetNarrator {
 
-    fun headline(status: PaceStatus): StringResource = when (status) {
+    /** For the month under way ([current]), how it is going; for one looked back at, how it ended. */
+    fun headline(status: PaceStatus, current: Boolean = true): StringResource = when (status) {
         PaceStatus.NO_LIMIT -> Res.string.fin_budget_headline_no_limit
-        PaceStatus.UNDER -> Res.string.fin_budget_headline_under
-        PaceStatus.PROJECTED_OVER -> Res.string.fin_budget_headline_projected_over
-        PaceStatus.CLOSE -> Res.string.fin_budget_headline_close
         PaceStatus.OVER -> Res.string.fin_budget_headline_over
         PaceStatus.DIPPING -> Res.string.fin_budget_headline_dipping
+        PaceStatus.UNDER -> if (current) Res.string.fin_budget_headline_under else Res.string.fin_budget_headline_ended_under
+        PaceStatus.PROJECTED_OVER -> if (current) Res.string.fin_budget_headline_projected_over else Res.string.fin_budget_headline_ended_under
+        PaceStatus.CLOSE -> if (current) Res.string.fin_budget_headline_close else Res.string.fin_budget_headline_ended_under
     }
 
     fun verdict(budget: Budget, pace: BudgetPace): UiText {

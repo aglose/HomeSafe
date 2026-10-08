@@ -1321,11 +1321,12 @@ private fun com.meticulouscreations.homesafe.finance.ui.TagSheet(purchase: com.m
     - onDismiss: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.TakeHomeFlow(budget: com.meticulouscreations.homesafe.finance.domain.Budget): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.TakeHomeFlow(budget: com.meticulouscreations.homesafe.finance.domain.Budget, pace: com.meticulouscreations.homesafe.finance.domain.BudgetPace): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - budget: STABLE (marked @Stable or @Immutable)
+    - pace: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.TaxBlock(finance: com.meticulouscreations.homesafe.finance.domain.PersonalFinance): kotlin.Unit

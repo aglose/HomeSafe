@@ -6,7 +6,10 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetPace
 import com.meticulouscreations.homesafe.finance.domain.PaceStatus
 import com.meticulouscreations.homesafe.text.UiText
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_budget_headline_close
 import homesafe.shared.generated.resources.fin_budget_headline_dipping
+import homesafe.shared.generated.resources.fin_budget_headline_ended_under
+import homesafe.shared.generated.resources.fin_budget_headline_over
 import homesafe.shared.generated.resources.fin_budget_headline_under
 import homesafe.shared.generated.resources.fin_budget_verdict_close
 import homesafe.shared.generated.resources.fin_budget_verdict_dipping
@@ -76,6 +79,10 @@ class BudgetNarratorTest {
     fun aMonthLookedBackAtIsSummedUp() {
         assertEquals(UiText.of(Res.string.fin_budget_verdict_ended_under, "$310"), verdict(month(day = 31, perDay = 90.0, current = false)))
         assertEquals(UiText.of(Res.string.fin_budget_verdict_ended_over, "$310"), verdict(month(day = 31, perDay = 110.0, current = false)))
+        // "Close to the limit" is said of a month that can still go over, not of one that didn't.
+        assertEquals(Res.string.fin_budget_headline_ended_under, BudgetNarrator.headline(PaceStatus.CLOSE, current = false))
+        assertEquals(Res.string.fin_budget_headline_close, BudgetNarrator.headline(PaceStatus.CLOSE))
+        assertEquals(Res.string.fin_budget_headline_over, BudgetNarrator.headline(PaceStatus.OVER, current = false))
     }
 
     @Test

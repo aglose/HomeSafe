@@ -4292,8 +4292,23 @@ class BudgetSyncTest(_Budget):
         self.assertEqual(54.2, self.month()["spent"])
 
     def test_the_cards_are_asked_again_an_hour_after_the_last_time(self):
+        for item in self.CARDS:
+            self.store(item=item)
         self.assertFalse(relay.transactions_due(self.NOW, self.NOW - 3599))
         self.assertTrue(relay.transactions_due(self.NOW, self.NOW - 3600))
+
+    def test_a_card_just_linked_is_asked_at_every_check_until_its_first_purchases_are_in(self):
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET linked_at=?", (self.NOW - 600,)), c.commit()))
+        self.store(item="amex")
+        self.store(status="NOT_READY")
+        self.assertTrue(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS + 1))
+        self.store(cursor="c2", status="INITIAL_UPDATE_COMPLETE")
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
+        # One that has gone a day without them is asked hourly like the rest, not every five minutes for ever.
+        self.store(cursor="c3", status="NOT_READY")
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET linked_at=?", (self.NOW - relay.TXN_NEW_SECONDS - 1,)), c.commit()))
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
 
 
 class BudgetMonthTest(_Budget):
@@ -4337,6 +4352,12 @@ class BudgetMonthTest(_Budget):
         month = self.month()
         self.assertEqual(("2026-10", "2026-10-07", 7, 31, 25.0), (month["month"], month["today"], month["day"], month["days_in_month"], month["spent"]))
         self.assertEqual([20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0], [d["spent"] for d in month["daily"]])
+        # The bank's clock ahead of the household's: tomorrow's purchase is in the month, and on today.
+        self.store(_txn("ahead", 11.0, date="2026-10-08"), cursor="c2")
+        month = self.month()
+        self.assertEqual((36.0, 16.0, 36.0), (month["spent"], month["daily"][-1]["spent"], sum(d["spent"] for d in month["daily"])))
+        self.store(removed=["ahead"], cursor="c3")
+        month = self.month()
         self.assertEqual({"month": "2026-09", "spent": 309.0, "days": 30}, month["history"][-1])
         self.assertEqual(5, len(month["history"]))
         september = self.month("2026-09")
@@ -4616,6 +4637,22 @@ class DeviceOwnerTest(_ScratchDb):
         self.profile = None
         self.register(authorization=f"Bearer {secret}")
         self.assertEqual(("alex", "admin"), self.owner())
+
+    def test_a_session_is_asked_of_frigate_once_a_registration(self):
+        asked = []
+        relay.requests.get = lambda url, headers=None, timeout=None: asked.append(url) or _Response(200, self.profile)
+        secret = self.register(cookie="frigate_token=abc")["secret"]
+        self.register(cookie="frigate_token=abc", authorization=f"Bearer {secret}")
+        self.assertEqual(2, len(asked))
+
+    def test_a_registration_nobody_vouches_for_is_refused(self):
+        relay.requests.get = lambda url, headers=None, timeout=None: _Response(401, {})
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.register(cookie="frigate_token=stale")
+        self.assertEqual(401, refused.exception.status_code)
+        with self.assertRaises(relay.HTTPException):
+            self.register(authorization="Bearer made-up")
+        self.assertIsNone(relay.find_device("d1"))
 
     def test_someone_else_signing_in_on_the_phone_takes_it_over(self):
         self.register(cookie="frigate_token=abc")

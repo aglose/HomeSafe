@@ -29,6 +29,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.abs
 import kotlin.time.Clock
 
@@ -45,8 +47,8 @@ data class BudgetUiState(
     val syncRequested: Boolean = false,
     /** The settings are being saved. */
     val saving: Boolean = false,
-    /** The purchase being put in a bucket, by id. */
-    val tagging: String? = null,
+    /** The purchases being put in a bucket, by id. */
+    val tagging: Set<String> = emptySet(),
     val notice: BankNotice? = null,
     /** When the page was last read, for saying how long ago the cards were. */
     val readAtEpochSeconds: Long = 0,
@@ -75,8 +77,11 @@ class BudgetViewModel(
     private var pollJob: Job? = null
     private var syncJob: Job? = null
 
-    /** A tag, a save, or a sync being asked for. */
+    /** A save, or a sync being asked for. */
     private var actionJob: Job? = null
+
+    /** Tags go to the relay one at a time, in the order they were tapped. */
+    private val tagOrder = Mutex()
 
     /** The month under way, once the relay has said which it is. */
     private var currentMonth: String? = null
@@ -190,15 +195,17 @@ class BudgetViewModel(
 
     /** Says whose a purchase is; with [remember], whose every purchase from its merchant is. */
     fun tag(purchaseId: String, bucket: BucketId, remember: Boolean) {
-        if (_uiState.value.tagging != null) return
-        _uiState.update { it.copy(tagging = purchaseId, notice = null) }
-        actionJob = viewModelScope.launch {
-            repository.tag(purchaseId, bucket, remember)
+        if (purchaseId in _uiState.value.tagging) return
+        _uiState.update { it.copy(tagging = it.tagging + purchaseId, notice = null) }
+        viewModelScope.launch {
+            // Several can be tapped before the first is answered. Each answer is the month as it
+            // then stood, so they are sent in turn: a later one's answer never lands before an earlier one's.
+            tagOrder.withLock { repository.tag(purchaseId, bucket, remember) }
                 .onSuccess { budget ->
-                    _uiState.update { it.copy(tagging = null) }
+                    _uiState.update { it.copy(tagging = it.tagging - purchaseId) }
                     applied(budget)
                 }
-                .onFailure { e -> failed(e) { it.copy(tagging = null) } }
+                .onFailure { e -> failed(e) { it.copy(tagging = it.tagging - purchaseId) } }
         }
     }
 
@@ -249,6 +256,8 @@ class BudgetViewModel(
                 .onSuccess { applied(it) }
                 .onFailure { e ->
                     if (e is CancellationException) throw e
+                    // Refused is refused; a request that never arrived is sent again the next time the sheet is looked at.
+                    if (e !is BankSyncException) reported = null
                     shutOut(e)
                 }
         }

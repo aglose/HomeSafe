@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
@@ -133,7 +134,8 @@ internal fun BudgetSettingsScreen(
         if (expenses.isEmpty()) {
             item(key = "lines-none") { FinePrint(stringResource(Res.string.fin_budget_settings_lines_none)) }
         } else {
-            items(expenses, key = { "line-${it.name}" }) { line ->
+            // By place, not by name: a sheet may have two lines called the same, and they are ticked together.
+            itemsIndexed(expenses, key = { index, _ -> "line-$index" }) { _, line ->
                 SheetLineRow(line, onCard = line.name in config.cardPaidLines, enabled = !state.saving) { onCard ->
                     onSave(BudgetConfigPatch(cardPaidLines = if (onCard) config.cardPaidLines + line.name else config.cardPaidLines - line.name))
                 }
