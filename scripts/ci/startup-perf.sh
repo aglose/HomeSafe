@@ -60,7 +60,9 @@ diagnose() {
   echo "::group::The emulator when the comparison failed"
   adb -s "$SERIAL" shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' || true
   adb -s "$SERIAL" exec-out screencap -p > build/startup-perf/failure-screen.png 2>/dev/null || true
-  adb -s "$SERIAL" exec-out uiautomator dump /dev/tty > build/startup-perf/failure-screen.xml 2>/dev/null || true
+  # uiautomator writes "UI hierchary dumped to: /dev/tty" after the document; keep what ends at the
+  # last tag (as screen() in bench-first-live-pixel.py does), so the file opens as XML.
+  adb -s "$SERIAL" exec-out uiautomator dump /dev/tty 2>/dev/null | sed -n 's/\(.*>\).*/\1/p' > build/startup-perf/failure-screen.xml || true
   adb -s "$SERIAL" logcat -d -b main,system,crash -v time > build/startup-perf/failure-logcat.log 2>/dev/null || true
   grep -E "ANR in|isn't responding|keeps stopping|FATAL EXCEPTION|AndroidRuntime: " build/startup-perf/failure-logcat.log | tail -n 60 || true
   echo "::endgroup::"
