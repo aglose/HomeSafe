@@ -335,7 +335,7 @@ composeCompiler {
     // Third-party types the Compose compiler can't see into but that are immutable in practice
     // (kotlinx.datetime values, kotlin.time.Instant) are declared stable here rather than by
     // wrapping every parameter. Review the file before adding to it.
-    stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability_config.conf"))
+    stabilityConfigurationFiles.add(isolated.rootProject.projectDirectory.file("compose_stability_config.conf"))
     // See androidApp/build.gradle.kts: reports land in shared/build/compose_compiler/ and are
     // read from the *release* android variant.
     if (providers.gradleProperty("composeCompilerReports").orNull == "true") {

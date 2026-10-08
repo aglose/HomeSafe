@@ -63,11 +63,15 @@ dependencies {
     androidTestUtil(libs.androidx.test.orchestrator)
 }
 
+// A file at the repo root. Through `isolated`, because with Gradle's Isolated Projects a project
+// may read where the root project is but not call into it (`rootProject.file(...)` is a violation).
+fun rootFile(path: String): File = isolated.rootProject.projectDirectory.file(path).asFile
+
 // Local, gitignored test credentials for the debug-only "Autofill test credentials" button
 // on SecureConnectionScreen. File may be absent (fresh checkout); missing values just leave
 // autofill blank. Never populated for release builds — see buildTypes below.
 val localCredentials = Properties().apply {
-    val file = rootProject.file("local.credentials.properties")
+    val file = rootFile("local.credentials.properties")
     if (file.exists()) {
         file.inputStream().use { load(it) }
     }
@@ -86,7 +90,7 @@ val localCredentials = Properties().apply {
 // workspace. The properties file wins wherever it exists, so this machine is unaffected.
 val keystoreProperties: Map<String, String> = run {
     val fromFile = Properties().apply {
-        val file = rootProject.file("keystore.properties")
+        val file = rootFile("keystore.properties")
         if (file.exists()) {
             file.inputStream().use { load(it) }
         }
@@ -160,7 +164,7 @@ android {
         // with a much worse message than the debug-key warning below.
         if (keystoreProperties.keys.containsAll(listOf("storeFile", "storePassword", "keyAlias", "keyPassword"))) {
             create("release") {
-                storeFile = rootProject.file(keystoreProperties.getValue("storeFile"))
+                storeFile = rootFile(keystoreProperties.getValue("storeFile"))
                 storePassword = keystoreProperties.getValue("storePassword")
                 keyAlias = keystoreProperties.getValue("keyAlias")
                 keyPassword = keystoreProperties.getValue("keyPassword")
@@ -196,14 +200,14 @@ android {
             signingConfig = signingConfigs.findByName("release")
                 ?: if (providers.gradleProperty("requireReleaseSigning").orNull == "true") {
                     throw GradleException(
-                        "androidApp: no release signing config — ${rootProject.file("keystore.properties")} is absent " +
+                        "androidApp: no release signing config — ${rootFile("keystore.properties")} is absent " +
                             "and ANDROID_KEYSTORE_FILE/_PASSWORD, ANDROID_KEY_ALIAS/_PASSWORD are not all set. " +
                             "-PrequireReleaseSigning=true, so refusing to sign the release build with the debug key."
                     )
                 } else {
                     signingConfigs.getByName("debug").also {
                         logger.warn(
-                            "androidApp: keystore.properties not found at ${rootProject.file("keystore.properties")} — " +
+                            "androidApp: keystore.properties not found at ${rootFile("keystore.properties")} — " +
                                 "signing the release build with the debug key. See androidApp/build.gradle.kts."
                         )
                     }
