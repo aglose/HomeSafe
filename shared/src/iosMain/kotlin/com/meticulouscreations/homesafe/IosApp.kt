@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.ui.components.IosWebRtc
 import com.meticulouscreations.homesafe.ui.components.IosWebRtcPeerFactory
+import com.meticulouscreations.homesafe.weather.data.IosWeatherRefresh
 
 /**
  * The iOS app's one graph, built at process start. It has to exist before any screen does:
@@ -21,6 +22,8 @@ object IosApp {
 fun startIosApp() {
     // First, so a notification tap that launched the app is heard (see IosNotificationTaps).
     IosNotificationTaps.install()
+    // Before launch finishes, as iOS requires of a background task's handler (see IosWeatherRefresh).
+    IosWeatherRefresh.register()
     IosApp.graph.deviceRegistrar.start()
     IosApp.graph.presenceAutomation.start()
 }

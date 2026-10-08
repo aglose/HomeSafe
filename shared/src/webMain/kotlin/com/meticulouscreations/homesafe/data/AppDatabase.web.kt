@@ -15,3 +15,6 @@ actual fun createSettingsDao(context: PlatformContext): SettingsDao =
 
 actual fun createMomentsDao(context: PlatformContext): MomentsDao =
     InMemoryMomentsDao()
+
+actual fun createWeatherDao(context: PlatformContext): WeatherDao =
+    InMemoryWeatherDao()

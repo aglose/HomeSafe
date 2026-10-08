@@ -21,6 +21,7 @@ import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import com.meticulouscreations.homesafe.viewmodel.ServerUptimeViewModel
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
+import com.meticulouscreations.homesafe.weather.WeatherViewModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -52,6 +53,7 @@ class AppGraphViewModelWiringTest {
                 BudgetViewModel::class,
                 ServerUptimeViewModel::class,
                 ConnectionNoticeViewModel::class,
+                WeatherViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )

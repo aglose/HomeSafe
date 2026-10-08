@@ -6,6 +6,8 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
@@ -90,7 +92,11 @@ private class NotificationCenterDelegate :
         withCompletionHandler: () -> Unit,
     ) {
         val info = didReceiveNotificationResponse.notification.request.content.userInfo
-        MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+        if (info[WeatherDeepLink.KEY] != null) {
+            WeatherDeepLinks.open()
+        } else {
+            MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
+        }
         withCompletionHandler()
     }
 }

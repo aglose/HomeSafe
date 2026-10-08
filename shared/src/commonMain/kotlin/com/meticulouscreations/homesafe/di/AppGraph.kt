@@ -12,6 +12,7 @@ import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.PushedAlertActions
 import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
+import com.meticulouscreations.homesafe.data.WeatherDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
@@ -22,6 +23,7 @@ import com.meticulouscreations.homesafe.data.createGeofenceMonitor
 import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
+import com.meticulouscreations.homesafe.data.createWeatherDao
 import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
@@ -47,6 +49,11 @@ import com.meticulouscreations.homesafe.network.createTailscaleApp
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.createLivePlayerPrefetch
+import com.meticulouscreations.homesafe.weather.data.WeatherAlertCheck
+import com.meticulouscreations.homesafe.weather.data.createWeatherCheckScheduler
+import com.meticulouscreations.homesafe.weather.data.createWeatherNotifier
+import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
+import com.meticulouscreations.homesafe.weather.domain.WeatherNotifier
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.DependencyGraph
 import dev.zacsweers.metro.Provider
@@ -123,6 +130,13 @@ interface AppGraph : ViewModelGraph {
     /** Started once by [com.meticulouscreations.homesafe.App]; starts the Home grid's players while a sign-in is in flight. */
     val liveStreamPrefetcher: LiveStreamPrefetcher
 
+    /**
+     * The weather app's look at the forecast for notifications. Started by
+     * [com.meticulouscreations.homesafe.App]; also what the platform's background job runs
+     * (Android's worker, iOS's background refresh), from a graph with no UI.
+     */
+    val weatherAlertCheck: WeatherAlertCheck
+
     @Provides
     fun providePlatform(): Platform = getPlatform()
 
@@ -154,6 +168,11 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideMomentsDao(platformContext: PlatformContext): MomentsDao =
         createMomentsDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideWeatherDao(platformContext: PlatformContext): WeatherDao =
+        createWeatherDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides
@@ -200,6 +219,14 @@ interface AppGraph : ViewModelGraph {
     @SingleIn(AppScope::class)
     @Provides
     fun provideDeviceInfo(platformContext: PlatformContext): DeviceInfo = createDeviceInfo(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideWeatherNotifier(platformContext: PlatformContext): WeatherNotifier = createWeatherNotifier(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideWeatherCheckScheduler(platformContext: PlatformContext): WeatherCheckScheduler = createWeatherCheckScheduler(platformContext)
 
     /** How often the finance app's nudges have been shown on this install. */
     @SingleIn(AppScope::class)

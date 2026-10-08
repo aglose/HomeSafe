@@ -155,6 +155,8 @@ kotlin {
             implementation(libs.stream.webrtc.android)
             implementation(libs.androidx.biometric)
             implementation(libs.androidx.fragment)
+            // The weather app's periodic background check (WeatherNotifier.android.kt).
+            implementation(libs.androidx.work.runtime)
         }
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)

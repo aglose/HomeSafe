@@ -25,13 +25,13 @@ class ShellFinanceNavigationTest {
         nav.drawerOpen = true
         val taps = launch { nav.openFinanceFromNotifications() }
         runCurrent()
-        assertFalse(nav.financeOpen)
+        assertFalse(nav.isOpen(InnerApp.FINANCE))
 
         FinanceDeepLinks.open(FinanceDeepLink(FinanceTab.BUDGET))
         runCurrent()
-        assertTrue(nav.financeOpen)
+        assertTrue(nav.isOpen(InnerApp.FINANCE))
         assertEquals(FinanceTab.BUDGET, nav.financeTab)
-        assertEquals(TopLevelRoute.Home, nav.financeHost)
+        assertEquals(TopLevelRoute.Home, nav.appHost)
         assertFalse(nav.drawerOpen)
         // Acted on: a later look finds nothing waiting.
         assertNull(FinanceDeepLinks.pending.value)
@@ -39,18 +39,27 @@ class ShellFinanceNavigationTest {
         // The app turned to the tab; it isn't asked to again.
         nav.onFinanceTabShown()
         assertNull(nav.financeTab)
-        assertTrue(nav.financeOpen)
+        assertTrue(nav.isOpen(InnerApp.FINANCE))
         taps.cancel()
     }
 
     @Test
     fun openedFromTheDrawerItAsksForNoTabAndClosingForgetsOneThatWasAsked() {
         val nav = ShellNavigation()
-        nav.openFinance(Offset(40f, 300f), TopLevelRoute.Moments)
+        nav.openApp(InnerApp.FINANCE, Offset(40f, 300f), TopLevelRoute.Moments)
         assertNull(nav.financeTab)
-        nav.openFinance(Offset.Zero, TopLevelRoute.Moments, FinanceTab.BUDGET)
-        nav.closeFinance()
+        nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Moments, FinanceTab.BUDGET)
+        nav.closeApp()
         assertNull(nav.financeTab)
-        assertFalse(nav.financeOpen)
+        assertFalse(nav.isOpen(InnerApp.FINANCE))
+    }
+
+    @Test
+    fun aTabAskedOfFinanceIsNotCarriedIntoAnotherApp() {
+        val nav = ShellNavigation()
+        nav.openApp(InnerApp.FINANCE, Offset.Zero, TopLevelRoute.Home, FinanceTab.BUDGET)
+        nav.openApp(InnerApp.WEATHER, Offset.Zero, TopLevelRoute.Home)
+        assertNull(nav.financeTab)
+        assertTrue(nav.isOpen(InnerApp.WEATHER))
     }
 }

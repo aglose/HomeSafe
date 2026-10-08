@@ -12,6 +12,10 @@
     <string name="notif_channel_away_description">A person on any camera while nobody is home</string>
     <string name="notif_channel_summaries_name">Summaries</string>
     <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
+    <string name="notif_channel_weather_name">Weather</string>
+    <string name="notif_channel_weather_description">Rain or snow on the way, and what today and tomorrow hold</string>
+    <string name="notif_channel_weather_severe_name">Severe weather</string>
+    <string name="notif_channel_weather_severe_description">Government warnings for where you are</string>
     <string name="notif_channel_budget_name">Budget</string>
     <string name="notif_channel_budget_description">The month\'s card spending close to a limit, over it, or into savings</string>
     <string name="notif_budget_close_title">Close to the month\'s budget</string>

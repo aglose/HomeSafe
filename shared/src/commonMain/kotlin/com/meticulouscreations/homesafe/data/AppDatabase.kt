@@ -52,8 +52,13 @@ class PropertyPlanDropped : AutoMigrationSpec
         ChartPreferencesEntity::class,
         WatchedSymbolEntity::class,
         FinancePreferencesEntity::class,
+        WeatherPlaceEntity::class,
+        WeatherPreferencesEntity::class,
+        WeatherReportEntity::class,
+        WeatherNoticeEntity::class,
+        MapTileEntity::class,
     ],
-    version = 17,
+    version = 18,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -87,6 +92,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // (MomentEventEntity.pathEpochSeconds, default empty), so a car that drove in and has sat
         // there since can be told from one still driving.
         AutoMigration(from = 16, to = 17),
+        // 17 -> 18: the weather app — its saved places, preferences, each place's last forecast,
+        // the notifications it has sent and the radar map's tiles, all new tables (WeatherEntities.kt).
+        AutoMigration(from = 17, to = 18),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
@@ -95,6 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun cameraDao(): CameraDao
     abstract fun settingsDao(): SettingsDao
     abstract fun momentsDao(): MomentsDao
+    abstract fun weatherDao(): WeatherDao
 }
 
 // The Room compiler generates the `actual` implementations for each target.
@@ -109,9 +118,10 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
  * `createXDao` call returns a DAO from that same instance, never opening a second connection.
  * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
  * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
- * [InMemorySettingsDao], [InMemoryMomentsDao]).
+ * [InMemorySettingsDao], [InMemoryMomentsDao], [InMemoryWeatherDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
 expect fun createCameraDao(context: PlatformContext): CameraDao
 expect fun createSettingsDao(context: PlatformContext): SettingsDao
 expect fun createMomentsDao(context: PlatformContext): MomentsDao
+expect fun createWeatherDao(context: PlatformContext): WeatherDao

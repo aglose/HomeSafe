@@ -80,3 +80,10 @@ come from `budget_check`, not from Frigate's alerts, they go only to phones last
 someone who may see the finances, and on Android they have a **Budget** channel of their own
 (`budget=1` in the push's data, `notif_id=budget-<month>-<line>`). Quiet hours hold them back;
 "only when everyone's away" and "only strangers" don't apply to them.
+
+## Weather
+
+The weather app's notifications (rain on the way, the day ahead, government warnings) are a
+separate thing from everything above: they don't come from the cameras or the relay. The phone
+checks the forecast itself and posts them on channels of their own, **Weather** and **Severe
+weather**. See [weather.md](weather.md#notifications).
