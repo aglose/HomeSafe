@@ -352,6 +352,14 @@
     <string name="explainer_allocation_one_liner">How your money is split between retirement accounts, other investments, cash, college savings and home equity.</string>
     <string name="explainer_allocation_why_you">The mix decides how much a stock market drop hurts you and how quickly you could get at your money in an emergency. Retirement and college accounts carry penalties for early withdrawal; cash doesn't.</string>
 
+    <string name="explainer_budgetpace_title">Budget pace</string>
+    <string name="explainer_budgetpace_one_liner">How fast the month's limit is being spent, and where the month ends if it keeps going this way.</string>
+    <string name="explainer_budgetpace_why_you">A limit only helps if you can see it coming. Spending that is ahead of an even pace on the 10th is easy to pull back; the same overshoot found on the 28th is already spent.</string>
+    <string name="explainer_budgetpace_how_it_works">The dashed line is the limit spread evenly over the month. The projection carries the month's daily rate so far to the last day, steadied early on by last month's rate so one big shop on the 2nd doesn't set the pace. It is a straight line, so a single large charge like a yearly fee still bends it.</string>
+    <string name="explainer_savingsline_title">The savings line</string>
+    <string name="explainer_savingsline_one_liner">What take-home leaves for the cards once the bills that aren't on a card are paid.</string>
+    <string name="explainer_savingsline_why_you">Card spending under this line is paid for by this month's income. Every dollar past it comes out of money you had already saved.</string>
+    <string name="explainer_savingsline_how_it_works">It is the budget sheet's monthly take-home, minus the sheet's expense lines that leave the bank directly (the mortgage, loans, anything not ticked as paid by card in the budget's settings). The month's card spending is then set against what is left.</string>
     <string name="explainer_cashflow_title">Monthly cash flow</string>
     <string name="explainer_cashflow_one_liner">What comes in each month, where it goes, and what's left.</string>
     <string name="explainer_cashflow_why_you">What's left over is what builds wealth. The bar shows your take-home pay split into your expenses, with the white sliver being what you keep.</string>

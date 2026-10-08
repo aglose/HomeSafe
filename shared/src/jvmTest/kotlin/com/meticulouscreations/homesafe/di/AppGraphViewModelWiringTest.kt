@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.finance.BankSyncViewModel
+import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
@@ -48,6 +49,7 @@ class AppGraphViewModelWiringTest {
                 FinanceViewModel::class,
                 ChartStyleViewModel::class,
                 BankSyncViewModel::class,
+                BudgetViewModel::class,
                 ServerUptimeViewModel::class,
                 ConnectionNoticeViewModel::class,
             ),

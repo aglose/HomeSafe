@@ -220,6 +220,23 @@ object FinanceFormat {
         return "${MONTHS[d.month.ordinal]} ${d.year}"
     }
 
+    /** "Oct 7" from a `YYYY-MM-DD` day; the text as it came when it isn't one. */
+    fun dayOfMonth(isoDay: String): String {
+        val month = isoDay.substring(5.coerceAtMost(isoDay.length), 7.coerceAtMost(isoDay.length)).toIntOrNull()
+        val day = isoDay.substringAfterLast('-').toIntOrNull()
+        return if (month == null || day == null || month !in 1..12) isoDay else "${MONTHS[month - 1]} $day"
+    }
+
+    /** "Oct 7" from a `YYYY-MM` month and a day of it. */
+    fun dayOfMonth(yearMonth: String, day: Int): String = dayOfMonth("$yearMonth-${day.toString().padStart(2, '0')}")
+
+    /** "Oct" from a `YYYY-MM` month (or a day in it), with [year] "Oct 2026"; the text as it came when it isn't one. */
+    fun month(yearMonth: String, year: Boolean = false): String {
+        val month = yearMonth.substring(5.coerceAtMost(yearMonth.length), 7.coerceAtMost(yearMonth.length)).toIntOrNull()
+        if (month == null || month !in 1..12) return yearMonth
+        return if (year) "${MONTHS[month - 1]} ${yearMonth.take(4)}" else MONTHS[month - 1]
+    }
+
     /** "'26". */
     fun shortYear(epochSeconds: Long): String = "'" + (local(epochSeconds, 0).year % 100).toString().padStart(2, '0')
 
