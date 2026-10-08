@@ -69,6 +69,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -161,11 +162,18 @@ internal sealed interface FinanceDetail {
  * look on true black — Wallet (the household's money, from the budget sheet), Budget (the month's
  * card spending against its limits), Markets (indices and the watchlist, live), Economy (inflation, the Treasury curve, rates) and Risk (the warning
  * lights for a downturn, blended into one gauge) — with quote and indicator pages pushed over
- * the tabs. Back pops a page, then leaves the app ([onClose]).
+ * the tabs. Back pops a page, then leaves the app ([onClose]). [requestedTab] turns it to a tab
+ * from outside (a notification's tap), and [onShowRequestedTab] says it has.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
-fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true) {
+fun FinanceApp(
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+    requestedTab: FinanceTab? = null,
+    onShowRequestedTab: () -> Unit = {},
+) {
     // The activity's instance, the one the drawer's teaser shares.
     val viewModel: FinanceViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -196,6 +204,17 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val openAddSymbol: () -> Unit = remember { { addingSymbol = true } }
     fun push(detail: FinanceDetail) {
         if (details.lastOrNull() != detail) details += detail
+    }
+    // A notification's tap asked for a tab (a budget alert's: Budget): whatever page or sheet was up gives way to it.
+    val requestShown by rememberUpdatedState(onShowRequestedTab)
+    LaunchedEffect(requestedTab) {
+        if (requestedTab != null) {
+            details.clear()
+            explaining = null
+            addingSymbol = false
+            tab = requestedTab
+            requestShown()
+        }
     }
 
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.

@@ -80,6 +80,7 @@ import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinancePalette
+import com.meticulouscreations.homesafe.finance.ui.FinanceTab
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
@@ -270,10 +271,19 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
  * The finance app over the whole shell, opening as a circle that grows from [origin] (the drawer
  * card that was tapped) to cover the screen, and draining back toward the menu button when it
  * closes. [onCovering] reports when it fully covers the screen, so the shell can stop drawing
- * — and stop streaming — the cameras underneath.
+ * — and stop streaming — the cameras underneath. [requestedTab] is the tab a notification asked
+ * it to open on, if one did.
  */
 @Composable
-internal fun FinanceOverlay(open: Boolean, origin: Offset, onClose: () -> Unit, onCovering: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+internal fun FinanceOverlay(
+    open: Boolean,
+    origin: Offset,
+    onClose: () -> Unit,
+    onCovering: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    requestedTab: FinanceTab? = null,
+    onShowRequestedTab: () -> Unit = {},
+) {
     val reveal = remember { Animatable(0f) }
     val reportCovering by rememberUpdatedState(onCovering)
     var shown by remember { mutableStateOf(open) }
@@ -311,7 +321,7 @@ internal fun FinanceOverlay(open: Boolean, origin: Offset, onClose: () -> Unit, 
                 alpha = (reveal.value * 2.5f).coerceAtMost(1f)
             },
     ) {
-        FinanceApp(onClose = onClose, active = open)
+        FinanceApp(onClose = onClose, active = open, requestedTab = requestedTab, onShowRequestedTab = onShowRequestedTab)
     }
 }
 

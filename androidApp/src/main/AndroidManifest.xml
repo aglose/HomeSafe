@@ -50,6 +50,16 @@
 
                 <data android:scheme="homesafe" android:host="moment" />
             </intent-filter>
+            <!-- homesafe://finance?tab=budget: the finance app, on one of its tabs (FinanceDeepLink.kt).
+                 Where a budget notification's tap lands. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="homesafe" android:host="finance" />
+            </intent-filter>
         </activity>
 
         <!-- Receives pushes from the HomeSafe relay (see androidApp/.../push/) and fresh FCM tokens. -->
