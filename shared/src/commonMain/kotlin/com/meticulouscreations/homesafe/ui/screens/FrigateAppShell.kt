@@ -129,7 +129,7 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     // stacking the shell bar above it would cost ~70dp of vertical space for no information.
     val homeBackStack: SnapshotStateList<Any> = mutableStateListOf(CameraListRoute)
 
-    // Same arrangement for Settings, which drills into a classifier's labelling screen.
+    // Same arrangement for Settings, whose rows open pages of their own (alerts, a classifier's labelling screen, the server).
     val settingsBackStack: SnapshotStateList<Any> = mutableStateListOf(SettingsHomeRoute)
 
     /** Whether the drawer the top bar's menu button opens is out. */
@@ -389,8 +389,8 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection, scrollToTopRequests = scrollToTop)
 
-        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { openClassifier, openFaces, openServer ->
-            SettingsTabContent(onOpenClassifier = openClassifier, onOpenFaces = openFaces, onOpenServer = openServer, scrollToTopRequests = scrollToTop)
+        TopLevelRoute.Settings -> SettingsTabNav(nav.settingsBackStack) { open ->
+            SettingsTabContent(onOpen = open, scrollToTopRequests = scrollToTop)
         }
     }
 }

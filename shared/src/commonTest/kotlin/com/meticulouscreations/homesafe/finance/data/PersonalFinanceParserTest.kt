@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.data
 
 import com.meticulouscreations.homesafe.finance.domain.AccountCategory
+import com.meticulouscreations.homesafe.finance.domain.Contribution
 import com.meticulouscreations.homesafe.finance.domain.Owner
 import com.meticulouscreations.homesafe.finance.domain.SectionStatus
 import com.meticulouscreations.homesafe.finance.domain.SheetSection
@@ -173,7 +174,24 @@ class PersonalFinanceParserTest {
             "N10" to "Effective Tax Rate", "O10" to "Investments Made", "P10" to "Investment Percentage",
             "J11" to 2022.0, "K11" to 138400.0, "L11" to 36900.0, "M11" to 101500.0, "N11" to 0.2531, "O11" to 18200.0, "P11" to 0.1793,
             "J12" to 2023.0, "K12" to 146700.0, "L12" to 38950.0, "M12" to 107750.0, "N12" to 0.2487, "O12" to 19600.0, "P12" to 0.1819,
+
+            // Yearly investments: a merged title, the people's names two rows down, then a block
+            // per year, newest first: the year alone, a row per account (one amount merged across
+            // both columns is joint), a "Total", and a merged blank row before the next year.
+            "R20" to "Investments",
+            "S22" to "Alex", "T22" to "Sam",
+            "R23" to 2023.0,
+            "R24" to "401k", "S24" to 9600.0, "T24" to 14400.0,
+            "R25" to "Backdoor Roth", "S25" to 0.0, "T25" to 0.0,
+            "R26" to "529B(2)", "S26" to 2400.0,
+            "R27" to "Joint Brokerage", "S27" to 6000.0,
+            "R28" to "Total", "S28" to 32400.0,
+            "R30" to 2022.0,
+            "R31" to "401k", "S31" to 8400.0, "T31" to 12000.0,
+            "R32" to "Backdoor Roth", "S32" to 3000.0, "T32" to 3000.0,
+            "R33" to "Total", "S33" to 26400.0,
         ),
+        listOf("R20:T20", "R21:T21", "S26:T26", "S27:T27", "S28:T28", "R29:T29", "S33:T33"),
     )
 
     // ---- The "New House" tab: mortgage calculator plus one affordability row -----------------
@@ -396,6 +414,52 @@ class PersonalFinanceParserTest {
         assertEquals(0.2531, y2022.effectiveRate)
     }
 
+    // ---- Yearly investments (Forecasts tab) ------------------------------------------------
+
+    @Test
+    fun yearlyInvestmentsReadEachYearsAccountsAndWhoseTheyAre() {
+        assertEquals(listOf(2022, 2023), finance.contributions.map { it.year })
+        val y2023 = finance.contributions.last()
+        assertEquals(
+            listOf(
+                Contribution("401k", Owner.Person("Alex"), 9600.0),
+                Contribution("401k", Owner.Person("Sam"), 14400.0),
+                Contribution("529B(2)", Owner.Joint, 2400.0),
+                Contribution("Joint Brokerage", Owner.Joint, 6000.0),
+            ),
+            y2023.lines,
+            "a row of zeros is left out, and the block's own total isn't a line",
+        )
+        assertEquals(32400.0, y2023.total)
+        assertEquals(26400.0, finance.contributions.first().total)
+    }
+
+    @Test
+    fun onlyTheWorkplacePlansOfTheLatestYearCountAsTakenFromThePaycheck() {
+        val early = assertNotNull(finance.paycheckSavings)
+        assertEquals(2023, early.year)
+        assertEquals(listOf("401k", "401k"), early.lines.map { it.name })
+        assertEquals(24000.0, early.total)
+    }
+
+    @Test
+    fun anInvestmentsCellWithoutThePeopleUnderItIsNotTheYearlyTable() {
+        val cells = mapOf(
+            "A1" to "Year",
+            "B1" to "Take Home",
+            // The house sale's "Investments" figure, and a list that only looks like the table.
+            "D3" to "Investments",
+            "E3" to 164000.0,
+            "D4" to 2023.0,
+            "D5" to "401k",
+            "E5" to 9600.0,
+        )
+        val read = PersonalFinanceParser.parse("Budget", 0L, listOf(homeGrid, sheetGrid("Forecasts", cells)))
+        assertEquals(emptyList(), read.contributions)
+        assertNull(read.paycheckSavings)
+        assertEquals(SectionStatus.MISSING, read.health.sections.first { it.section == SheetSection.CONTRIBUTIONS }.status)
+    }
+
     // ---- Mortgage plan and old house (New House / Old House tabs) ------------------------
 
     @Test
@@ -445,6 +509,7 @@ class PersonalFinanceParserTest {
         assertEquals(emptyList(), empty.watchlist)
         assertEquals(emptyList(), empty.history)
         assertEquals(emptyList(), empty.taxYears)
+        assertEquals(emptyList(), empty.contributions)
         assertNull(empty.mortgagePlan)
         assertNull(empty.oldHouse)
     }

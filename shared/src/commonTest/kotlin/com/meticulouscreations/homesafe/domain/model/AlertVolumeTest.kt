@@ -61,6 +61,18 @@ class AlertVolumeTest {
     }
 
     @Test
+    fun aNamedCarThatDroveUpTheStreetAndParkedCountsForNoMoreThanItsArrivalDid() {
+        // Front Yard, 2026-10-05: parked at the curb for two and a half hours, so the feed keeps it
+        // by its name; but its alert was decided as it drove in, when it was a car on the street.
+        val sarah = TrackedCars.sarahParked.copy(endEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT)
+        val later = TrackedCars.SARAH_ARRIVED + 3 * 3_600
+
+        val volume = AlertVolume.estimate(listOf(sarah), zones, later - 7 * 86_400.0, later, sampleLimit = 500)
+
+        assertEquals(emptyMap(), volume.perDay)
+    }
+
+    @Test
     fun aDetectionCountsOnceForEveryPlaceItTouched() {
         val zonesWithCarsOnTheStreet = mapOf("hikvision_1" to listOf(street.copy(objects = emptyList()), driveway))
         val turningIn = event("c", "car", path = listOf(0.1 to 0.2, 0.3 to 0.3, 0.5 to 0.6, 0.7 to 0.8), box = box)

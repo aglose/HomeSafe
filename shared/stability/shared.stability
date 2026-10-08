@@ -1683,6 +1683,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.AlertsSection(state: co
     - onSendTest: STABLE (function type)
 
 @Composable
+public fun com.meticulouscreations.homesafe.ui.screens.AlertsSettingsScreen(onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onBack: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, people: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.KnownPerson>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
@@ -1726,6 +1734,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.AwaySection(state: com.
     - onSetHomeHere: STABLE (function type)
     - onClearHome: STABLE (function type)
     - onRemoveDevice: STABLE (function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.AwaySettingsScreen(onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onBack: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.BannerAction(label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -1838,6 +1854,16 @@ public fun com.meticulouscreations.homesafe.ui.screens.CameraDetailScreen(camera
     - openAtEpochSeconds: STABLE (class with no mutable properties)
     - openedEventId: STABLE (class with no mutable properties)
     - tagCarOnOpen: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.CameraDetectionRows(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissError: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onDetection: STABLE (function type)
+    - onMotion: STABLE (function type)
+    - onDismissError: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MomentCameraOption>, selectedCameraName: kotlin.String?, selectedCameraLabel: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
@@ -2141,16 +2167,6 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CropCard(crop: com.meti
     - knownAs: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DetectionSection(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissError: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - state: STABLE (marked @Stable or @Immutable)
-    - onDetection: STABLE (function type)
-    - onMotion: STABLE (function type)
-    - onDismissError: STABLE (function type)
-
-@Composable
 public fun com.meticulouscreations.homesafe.ui.screens.DetectionZonesScreen(cameraName: kotlin.String, onBack: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -2187,12 +2203,13 @@ private fun com.meticulouscreations.homesafe.ui.screens.DrawerRow(icon: androidx
     - onClick: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneSection(tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneOptions(tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - tone: STABLE (class with no mutable properties)
     - onTone: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.EditorCanvas(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit
@@ -2418,14 +2435,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.Header(title: kotlin.Str
   params:
     - title: STABLE (String is immutable)
     - subtitle: STABLE (String is immutable)
-    - onBack: STABLE (function type)
-    - onRefresh: STABLE (function type)
-
-@Composable
-private fun com.meticulouscreations.homesafe.ui.screens.Header(onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
     - onBack: STABLE (function type)
     - onRefresh: STABLE (function type)
 
@@ -3107,6 +3116,60 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCaption(text: k
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsCard(content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsExpandableRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, summary: kotlin.String, expanded: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - title: STABLE (String is immutable)
+    - summary: STABLE (String is immutable)
+    - expanded: STABLE (primitive type)
+    - onToggle: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsGroup(modifier: androidx.compose.ui.Modifier, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onOpenAlerts: STABLE (function type)
+    - onOpenAway: STABLE (function type)
+    - onOpenClassifier: STABLE (function type)
+    - onOpenFaces: STABLE (function type)
+    - onOpenServer: STABLE (function type)
+    - onDetection: STABLE (function type)
+    - onMotion: STABLE (function type)
+    - onDismissCameraError: STABLE (function type)
+    - onTone: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - initialFold: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SettingsHomePreviewContent(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - initialFold: STABLE (class with no mutable properties)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.SettingsInfoGrid(items: kotlin.collections.List<com.meticulouscreations.homesafe.ui.screens.InfoItem>): kotlin.Unit
   skippable: false
   restartable: true
@@ -3114,14 +3177,45 @@ private fun com.meticulouscreations.homesafe.ui.screens.SettingsInfoGrid(items: 
     - items: RUNTIME (requires runtime check)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.SettingsLinkRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, description: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsNavRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, summary: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - icon: STABLE (marked @Stable or @Immutable)
     - title: STABLE (String is immutable)
-    - description: STABLE (String is immutable)
+    - summary: STABLE (String is immutable)
     - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsPage(title: kotlin.String, subtitle: kotlin.String, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onRefresh: kotlin.Function0<kotlin.Unit>?, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - title: STABLE (String is immutable)
+    - subtitle: STABLE (String is immutable)
+    - onBack: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - onRefresh: STABLE (function type)
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsRowDivider(modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SettingsRowLayout(icon: androidx.compose.ui.graphics.vector.ImageVector, title: kotlin.String, summary: kotlin.String, trailing: androidx.compose.ui.graphics.vector.ImageVector, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - title: STABLE (String is immutable)
+    - summary: STABLE (String is immutable)
+    - trailing: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.SettingsSection(title: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -3133,17 +3227,15 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsSection(title: 
     - content: STABLE (composable function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabContent(onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabContent(onOpen: kotlin.Function1<kotlin.Any, kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - onOpenClassifier: STABLE (function type)
-    - onOpenFaces: STABLE (function type)
-    - onOpenServer: STABLE (function type)
+    - onOpen: STABLE (function type)
     - scrollToTopRequests: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction3<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.SettingsTabNav(backStack: androidx.compose.runtime.snapshots.SnapshotStateList<kotlin.Any>, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:

@@ -40,7 +40,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * The Settings tab's "Alerts" section, rendered for real: the notifications switch in each of its
+ * The Alerts page's card, rendered for real: the notifications switch in each of its
  * states, and once it's on, the presets, the per-zone grid behind them, quiet hours with its
  * clock, the stranger rule and the test button. [AlertsSection] is stateless, so every state is
  * a [SettingsUiState] fixture and every control is checked by the callback it fires. Which preset
@@ -505,7 +505,7 @@ class AlertRulesUiTest {
     fun onlyStrangersCanBeSwitchedOnOnceFacesAreRecognised() {
         var asked: Boolean? = null
         runAlerts(alertsOn(), onQuietFamiliar = { asked = it }) {
-            reveal(onNodeWithText("Skip the notification when Frigate recognises the person. Name faces under Recognition below.")).assertIsDisplayed()
+            reveal(onNodeWithText("Skip the notification when Frigate recognises the person. Name faces under Recognition in Settings.")).assertIsDisplayed()
             reveal(switchFor("Only strangers")).assertIsOff().assertIsEnabled().performClick()
             assertEquals(true, asked)
         }

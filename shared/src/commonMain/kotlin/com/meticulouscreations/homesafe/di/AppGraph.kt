@@ -35,10 +35,12 @@ import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
+import com.meticulouscreations.homesafe.network.LocalNetworkAccess
 import com.meticulouscreations.homesafe.network.NetworkMonitor
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.network.TailnetProbe
 import com.meticulouscreations.homesafe.network.TailscaleApp
+import com.meticulouscreations.homesafe.network.createLocalNetworkAccess
 import com.meticulouscreations.homesafe.network.createNetworkMonitor
 import com.meticulouscreations.homesafe.network.createTailnetProbe
 import com.meticulouscreations.homesafe.network.createTailscaleApp
@@ -162,6 +164,11 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideNetworkMonitor(platformContext: PlatformContext): NetworkMonitor =
         createNetworkMonitor(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideLocalNetworkAccess(platformContext: PlatformContext): LocalNetworkAccess =
+        createLocalNetworkAccess(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

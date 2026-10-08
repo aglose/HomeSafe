@@ -39,6 +39,13 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.double
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -139,7 +146,9 @@ class MomentsRepositoryImplTest {
                     val body = server?.page(before, req.url.parameters["after"]?.toDouble())
                         ?: eventsFor?.invoke(before)
                         ?: events
-                    respond(body, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
+                    // Asked what is being tracked, Frigate answers with the unfinished ones only.
+                    val answer = if (req.url.parameters["in_progress"] == "1") trackingPage(tracking ?: unfinished(body), before) else body
+                    respond(answer, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
                 }
 
                 req.url.encodedPath.endsWith("/api/config") && config != null -> respond(config!!, HttpStatusCode.OK, headersOf(HttpHeaders.ContentType, "application/json"))
@@ -165,6 +174,22 @@ class MomentsRepositoryImplTest {
 
             /** When set, answers `/api/events` the way Frigate does, out of what it holds; see [PersonsServer]. */
             var server: PersonsServer? = null
+
+            /**
+             * When set, what `/api/events?in_progress=1` answers with: sightings Frigate is still
+             * tracking that the newest page no longer reaches. Otherwise it is the unfinished
+             * ones of whatever the page would have been.
+             */
+            var tracking: String? = null
+
+            private fun unfinished(events: String): String =
+                JsonArray(Json.parseToJsonElement(events).jsonArray.filter { (it.jsonObject["end_time"] ?: JsonNull) is JsonNull }).toString()
+
+            /** A page of [events] as Frigate cuts one: the hundred newest that started before [before]. An answer that isn't JSON goes out as it is. */
+            private fun trackingPage(events: String, before: Double?): String = runCatching {
+                fun start(event: JsonElement) = event.jsonObject.getValue("start_time").jsonPrimitive.double
+                JsonArray(Json.parseToJsonElement(events).jsonArray.filter { before == null || start(it) < before }.sortedByDescending(::start).take(100)).toString()
+            }.getOrDefault(events)
         }
     }
 
@@ -723,6 +748,99 @@ class MomentsRepositoryImplTest {
         assertEquals(true, tesla.seenRecently, "the latest sighting hadn't ended")
         assertEquals(true, tesla.sinceIsKnown, "a page short of the limit means the fetch really did reach back twelve hours")
         assertEquals(1, h.eventQueries.distinct().count { "after=" in it }, "one question per poll: every camera, from now")
+    }
+
+    @Test
+    fun aCarTrackedSinceBeforeTheNewestPageIsStillInView() = runTest {
+        // 2026-10-05: the strip read "Andrew's Tesla" alone while the tagging screen boxed Sarah's
+        // car too. Frigate had been tracking hers as one sighting for two and a half hours, and
+        // the hundred newest detections, most of them the street going by, reached back 73 minutes.
+        val now = 1_788_802_600L
+        val passing = (0 until 99).joinToString(",") { i ->
+            val start = now - 60 - i * 40
+            """{"id":"p$i","label":"car","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 5}.0,
+                "has_clip":true,"has_snapshot":false,"zones":[],
+                "data":{"type":"object","score":0.8,"top_score":0.8,"box":[0.05,0.02,0.05,0.04],"path_data":[[[0.07,0.06],$start.0],[[0.08,0.06],$start.5]]}}"""
+        }
+        // On the page: Andrew's Tesla, re-detected in the driveway a quarter of an hour ago.
+        val andrews = """{"id":"andrews","label":"car","sub_label":"andrews_tesla","camera":"hikvision_1","start_time":${now - 900}.5,"end_time":null,
+            "has_clip":true,"has_snapshot":false,"zones":["driveway"],
+            "data":{"type":"object","score":0.8,"top_score":0.9,"sub_label_score":0.97,"box":[0.05,0.30,0.28,0.30],"path_data":[[[0.19,0.60],${now - 900}.0],[[0.19,0.60],${now - 899}.0]]}}"""
+        // Off it: Sarah's car at the kerb, one sighting open since long before the page's oldest row.
+        val sarahs = """{"id":"sarahs","label":"car","sub_label":"sarahs_car","camera":"hikvision_1","start_time":${now - 9_100}.0,"end_time":null,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.8,"top_score":0.9,"sub_label_score":0.98,"box":[0.50,0.06,0.18,0.16],"path_data":[[[0.59,0.22],${now - 9_100}.0],[[0.60,0.23],${now - 1_100}.0]]}}"""
+        Harness.events = "[$andrews,$passing]"
+        Harness.tracking = "[$andrews,$sarahs]"
+        try {
+            val kept = InMemoryMomentsDao()
+            val h = Harness(this, clock = FakeClock(now), momentsDao = kept)
+
+            var inView = emptyList<StationaryObject>()
+            backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+            eventually("both cars on the strip") { inView.size == 2 }
+
+            assertEquals(listOf("andrews_tesla", "sarahs_car"), inView.map { it.subLabel }, "newest arrival first")
+            val sarahsCar = inView.last()
+            assertEquals("sarahs", sarahsCar.thumbnailEventId)
+            assertEquals(true, sarahsCar.seenRecently, "Frigate is tracking it this minute")
+            assertEquals(false, sarahsCar.sinceIsKnown, "it starts beyond what the page reached, so an earlier sighting can't be ruled out")
+            assertEquals(1, h.eventQueries.distinct().count { "in_progress=1" in it && "after=" !in it }, "what is tracked now, however long ago it started")
+
+            eventually("the page to reach the device") { kept.page(SERVER_URL, null, null, limit = 200).any { it.id == "andrews" } }
+            assertEquals(false, kept.page(SERVER_URL, null, null, limit = 200).any { it.id == "sarahs" }, "no page would ever tell the cache it had ended")
+        } finally {
+            Harness.tracking = null
+        }
+    }
+
+    @Test
+    fun aCarTrackedLongerThanAFullPageOfOtherTrackedThingsIsStillInView() = runTest {
+        // What is being tracked is paged like anything else, newest first: a hundred newer open
+        // sightings would bury the long-parked car exactly as the newest detections did.
+        val now = 1_788_802_600L
+        val others = (0 until 100).joinToString(",") { i ->
+            """{"id":"t$i","label":"person","sub_label":null,"camera":"amcrest_1","start_time":${now - 60 - i}.0,"end_time":null,
+                "has_clip":true,"has_snapshot":false,"zones":[],"data":{"type":"object","score":0.9,"top_score":0.9}}"""
+        }
+        val sarahs = """{"id":"sarahs","label":"car","sub_label":"sarahs_car","camera":"hikvision_1","start_time":${now - 9_100}.0,"end_time":null,
+            "has_clip":true,"has_snapshot":false,"zones":[],
+            "data":{"type":"object","score":0.8,"top_score":0.9,"sub_label_score":0.98,"box":[0.50,0.06,0.18,0.16],"path_data":[[[0.59,0.22],${now - 9_100}.0],[[0.60,0.23],${now - 1_100}.0]]}}"""
+        Harness.events = "[]"
+        Harness.tracking = "[$others,$sarahs]"
+        try {
+            val h = Harness(this, clock = FakeClock(now))
+
+            var inView = emptyList<StationaryObject>()
+            backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+            eventually("the car on the second page") { inView.isNotEmpty() }
+
+            assertEquals("sarahs_car", inView.single().subLabel)
+            assertEquals(
+                listOf("limit=100&in_progress=1", "limit=100&before=${now - 159}.000&in_progress=1"),
+                h.eventQueries.distinct().filter { "in_progress=1" in it },
+                "read to the end: the full first page, then what started before its oldest row",
+            )
+        } finally {
+            Harness.tracking = null
+        }
+    }
+
+    @Test
+    fun theInViewStripStandsOnThePageWhenTheTrackedSightingsCannotBeRead() = runTest {
+        Harness.events = parkedCarJson
+        Harness.tracking = "not json"
+        try {
+            val h = Harness(this, clock = FakeClock(1_788_802_600))
+
+            var inView = emptyList<StationaryObject>()
+            backgroundScope.launch { h.repo.observeStationaryObjects().collect { inView = it } }
+            eventually("the in-view strip") { inView.isNotEmpty() }
+
+            assertEquals("sarahs_tesla", inView.single().subLabel, "the page alone still answers, as it did before the second question existed")
+        } finally {
+            Harness.tracking = null
+        }
     }
 
     @Test

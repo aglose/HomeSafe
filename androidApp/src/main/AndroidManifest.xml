@@ -3,6 +3,10 @@
 
     <!-- Lets the app notice Wi-Fi ↔ cellular changes and re-pick the server's local vs Tailscale address. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Android 17 keeps an app that targets it off the Wi-Fi's own addresses until the user grants
+         this; without it the server's LAN address times out and everything goes over Tailscale.
+         Asked at sign-in (LocalNetworkAccess.android.kt). -->
+    <uses-permission android:name="android.permission.ACCESS_LOCAL_NETWORK" />
     <!-- Detection alerts are posted as local notifications (see AlertNotifier.android.kt); Android 13+ asks the user first. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

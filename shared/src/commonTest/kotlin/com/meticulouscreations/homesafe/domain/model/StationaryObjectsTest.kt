@@ -94,6 +94,62 @@ class StationaryObjectsTest {
     }
 
     @Test
+    fun aCarInOneEventSinceItDroveInIsInView() {
+        // Front Yard, 2026-10-05: Frigate never let go of either car, so there is no parked
+        // re-detection to fall back on: the event that watched it arrive is all the strip gets.
+        val sarahReadAt = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT
+        val events = listOf(TrackedCars.sarahParked, TrackedCars.andrewParked)
+
+        val inView = events.stationaryObjects(nowEpochSeconds = sarahReadAt)
+
+        assertEquals(listOf("sarahs_car", "andrews_tesla"), inView.map { it.subLabel }, "both, the later arrival first")
+        assertEquals(TrackedCars.SARAH_ARRIVED, inView[0].firstSeenEpochSeconds, "since it turned into the street")
+        assertTrue(inView[0].seenRecently, "the event is still in progress")
+    }
+
+    @Test
+    fun aCarStillPullingInIsNotInViewYet() {
+        val arrival = TrackedCars.sarahsPathParked.take(TrackedCars.SARAHS_ARRIVAL_POINTS)
+        val pullingIn = listOf(TrackedCars.event("sarah", TrackedCars.SARAH_ARRIVED, TrackedCars.sarahsBox, arrival, "sarahs_car"))
+
+        assertEquals(emptyList(), pullingIn.stationaryObjects(nowEpochSeconds = TrackedCars.SARAH_ARRIVED + 60))
+        assertEquals(1, pullingIn.stationaryObjects(nowEpochSeconds = TrackedCars.SARAH_ARRIVED + 6 * 60).size, "five minutes after it stopped, it is furniture")
+    }
+
+    @Test
+    fun aCarThatDroveOffInTheSameEventIsGoneAtOnce() {
+        val left = listOf(
+            TrackedCars.event("sarah", TrackedCars.SARAH_ARRIVED, TrackedCars.sarahsBox, TrackedCars.sarahsPathLeaving, "sarahs_car", endedAfter = TrackedCars.SARAH_LEFT_AT),
+        )
+
+        assertEquals(emptyList(), left.stationaryObjects(nowEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_LEFT_AT + 60))
+    }
+
+    @Test
+    fun aBlipThatEndedDoesNotHideTheSightingStillInProgress() {
+        // A second, short-lived object on the same car an hour in: it began later, but it is the
+        // long event that is still watching the car.
+        val blipStart = TrackedCars.SARAH_ARRIVED + 3_600
+        val blip = sighting(
+            id = "blip",
+            start = blipStart,
+            end = blipStart + 20,
+            camera = TrackedCars.CAMERA,
+            subLabel = "sarahs_car",
+            box = TrackedCars.sarahsBox,
+            path = listOf(0.6133 to 0.2292, 0.6140 to 0.2292),
+            zones = emptyList(),
+        )
+
+        val inView = listOf(TrackedCars.sarahParked, blip).stationaryObjects(nowEpochSeconds = TrackedCars.SARAH_ARRIVED + TrackedCars.SARAH_READ_AT)
+
+        assertEquals(1, inView.size, "the blip ended 91 minutes ago, but the car has not gone unseen for a second")
+        assertEquals("sarah", inView[0].thumbnailEventId)
+        assertEquals(2, inView[0].sightings)
+        assertTrue(inView[0].seenRecently)
+    }
+
+    @Test
     fun aCarNotSeenForHalfAnHourIsNoLongerClaimed() {
         val parked = listOf(sighting("parked", at(6, 0), end = at(6, 1)))
 
@@ -122,6 +178,38 @@ class StationaryObjectsTest {
 
         assertEquals("ron_judys_mercedes", stay.single().subLabel, "the classifier flips between similar cars; the surest sighting names the card")
         assertTrue(stay.single().isRecognized)
+    }
+
+    @Test
+    fun aCarStillBeingTrackedKeepsItsPlaceAndItsNameWhenAPassingCarFoldsIntoIt() {
+        // Sarah's car at the kerb, tracked for hours as one open sighting. A car drives past on top
+        // of its box and the classifier calls it Andrew's, surer than it is of Sarah's (the scores
+        // are 2026-10-05's, when such a car missed her box by a little). Folded in as the stay's
+        // latest and best name, it would take Sarah's car off the strip: the stay becomes a second
+        // Andrew's Tesla, and one that has left.
+        val kerb = listOf(
+            sighting("tracked", at(18, 0), end = null, subLabel = "sarahs_car", subLabelScore = 0.98, zones = listOf("street")),
+            sighting("passing", at(20, 12), end = at(20, 13), subLabel = "andrews_tesla", subLabelScore = 0.997, zones = listOf("street")),
+        ).stationaryObjects(nowEpochSeconds = at(20, 31))
+
+        val car = kerb.single()
+        assertEquals("sarahs_car", car.subLabel, "what Frigate calls the car it is tracking, which is what the tagging screen draws")
+        assertEquals("tracked", car.thumbnailEventId, "the open sighting is where the car is now, not the one that ended")
+        assertTrue(car.seenRecently)
+        assertEquals(at(18, 0), car.firstSeenEpochSeconds)
+        assertEquals(2, car.sightings)
+    }
+
+    @Test
+    fun aTrackedCarNobodyHasNamedYetTakesTheStaysBestName() {
+        // The open sighting only overrides with a name of its own; without one the stay is still judged as a whole.
+        val stay = listOf(
+            sighting("s1", at(8, 0), subLabel = "sarahs_tesla", subLabelScore = 0.7),
+            sighting("s2", at(8, 10), end = null, subLabel = null, subLabelScore = null),
+        ).stationaryObjects(nowEpochSeconds = at(8, 25))
+
+        assertEquals("sarahs_tesla", stay.single().subLabel)
+        assertEquals("s2", stay.single().thumbnailEventId)
     }
 
     @Test

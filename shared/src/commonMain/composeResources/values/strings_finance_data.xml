@@ -87,6 +87,8 @@
     <string name="fin_data_section_history_looked_for">a “Date” heading in the same row as “Total Assets”, with a date in each row under it</string>
     <string name="fin_data_section_tax_years">Income &amp; taxes</string>
     <string name="fin_data_section_tax_years_looked_for">a “Take Home” heading in the same row as “Year”, with a year in each row under it</string>
+    <string name="fin_data_section_contributions">Yearly investments</string>
+    <string name="fin_data_section_contributions_looked_for">a cell reading “Investments” with the people's names under it, then a year above each block of rows</string>
     <string name="fin_data_section_mortgage">Mortgage planner</string>
     <string name="fin_data_section_mortgage_looked_for">a cell reading “Mortgage Calculator” with “Home Price” under it</string>
     <string name="fin_data_section_house_sale">Last house sale</string>

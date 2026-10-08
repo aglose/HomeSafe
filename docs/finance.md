@@ -128,6 +128,14 @@ A few conventions the parser relies on:
   "IRA", "pension", "HSA", "retire" or a big plan record keeper (ADP, Empower, Voya and so on)
   is retirement; "checking", "savings" or "cash" is cash; anything else is investing. Rename an
   account in the sheet to move it, e.g. "… Pension".
+- **Saving each month** counts money that never reaches take-home. The Forecasts tab's
+  "Investments" table (the people's names under the title, then a block per year: the year, a row
+  per account, a "Total") says what went in each year. Its workplace-plan rows ("401", "403",
+  "457", "TSP", "pension", "HSA" in the name) come out of the paycheck first, so the latest year's
+  are spread over twelve months and added both to what's saved and to pay: (left over + set aside)
+  ÷ (take-home + set aside). The table's other rows (an IRA, a 529, a brokerage account) are paid
+  from money already taken home and aren't added again. Without the table the figure is left over
+  ÷ take-home.
 - **Net worth** is total assets less every debt except the mortgage. The sheet counts the house as
   the equity built in it, not its full value, so the mortgage against that full value isn't
   subtracted again. The sheet's own history does the same.

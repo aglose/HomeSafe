@@ -23,8 +23,8 @@ object PhantomPeople {
 
     /**
      * How far a phantom's path may stray from its median: this share of its box's longer side. The
-     * relay's `PHANTOM_DRIFT`. Stricter than [isStill], whose allowance of a whole box would count
-     * someone climbing the steps to a close camera as standing still.
+     * relay's `PHANTOM_DRIFT`. Stricter than [isStill], whose allowance of a whole box (up to a
+     * fifth of the frame) would count someone climbing the steps to a close camera as standing still.
      */
     const val PHANTOM_DRIFT = 0.25
 }

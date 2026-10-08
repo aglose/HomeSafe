@@ -11,9 +11,18 @@ package com.meticulouscreations.homesafe.domain.model
  * Tesla", at 0.98): it judges a 55-124 px crop from the detect frame and has only "none" to stand
  * for every other car in the world. Those names folded strangers into the household's routine and
  * hid them under "Unfamiliar only". So a named vehicle only keeps the exemption while it is parked
- * ([isStill]) — Sarah leaves her Tesla at the curb, and that is still worth a line — and one that
+ * ([isParked]) — Sarah leaves her Tesla at the curb, and that is still worth a line — and one that
  * drove down the street has to earn its place like an unnamed one, by entering a zone that wants
  * cars (the driveway). Passing traffic is what the classifier gets wrong, so that is what it loses.
+ *
+ * Parked is asked of the moment, not of the whole path: Frigate can keep one event open from the
+ * car turning into the street until hours after it stopped (2026-10-05: Andrew's Tesla, 270
+ * minutes and counting), and that car is as parked as one re-detected a minute ago. And a parked
+ * car is placed where it came to rest, not along the road it took. That event's path crosses the
+ * street on the way in; keeping "street" for it made the home screen say "Andrew's Tesla · Street"
+ * of a car that drove up it and has stood by the garage ever since. So what the exemption keeps
+ * for a parked vehicle is the zone its last path point is in, listed last because that is where it
+ * is; every other zone has to want it.
  *
  * Frigate can't express this on its own. It tracks every label in `objects.track` across the
  * whole frame and creates an event for each; a zone's `objects` list only decides which labels
@@ -25,11 +34,14 @@ package com.meticulouscreations.homesafe.domain.model
  * too, because the path is sampled sparsely and can miss a zone Frigate saw it in (the driveway
  * is a sliver a walker crosses between two samples).
  *
+ * @param nowEpochSeconds what "parked" is judged against for a detection still in progress.
  * @return the event with [MomentEvent.zones] set to where it was, in the order it got there —
- *   every zone for a recognized object (a vehicle only while parked), only the zones that wanted
- *   it otherwise; or null when nothing wanted it. A camera with no zones drawn has no opinion: its events pass unchanged.
+ *   every zone for a recognized person or animal; for a recognized vehicle that is parked, the
+ *   zones that wanted it and then the one it is parked in; only the zones that wanted it
+ *   otherwise — or null when nothing wanted it. A camera with no zones drawn has no opinion: its
+ *   events pass unchanged.
  */
-fun MomentEvent.inZones(cameraZones: List<DetectionZone>): MomentEvent? {
+fun MomentEvent.inZones(cameraZones: List<DetectionZone>, nowEpochSeconds: Double): MomentEvent? {
     if (cameraZones.isEmpty()) return this
     val byName = cameraZones.associateBy { it.name }
     val visited = LinkedHashSet<String>(zones.filter { it.isNotBlank() })
@@ -44,13 +56,20 @@ fun MomentEvent.inZones(cameraZones: List<DetectionZone>): MomentEvent? {
         zone.objects.isEmpty() || zone.objects.any { it.equals(label, ignoreCase = true) }
     }
     val placed = when {
-        isRecognized && (category != MomentCategory.VEHICLES || isStill()) -> visited.toList()
+        isRecognized && category != MomentCategory.VEHICLES -> visited.toList()
+
+        isRecognized && isParked(nowEpochSeconds) -> {
+            val restingIn = pathPoints.lastOrNull()?.let { rest -> visited.filter { byName[it]?.polygon?.contains(rest) == true } }.orEmpty()
+            wanted.filterNot { it in restingIn } + restingIn
+        }
+
         wanted.isEmpty() -> return null
+
         else -> wanted
     }
     return if (placed == zones) this else copy(zones = placed)
 }
 
 /** [inZones] over a feed: every camera's zones keyed by camera name; cameras absent from the map keep their events as they are. */
-fun List<MomentEvent>.inZones(zonesByCamera: Map<String, List<DetectionZone>>): List<MomentEvent> =
-    mapNotNull { event -> event.inZones(zonesByCamera[event.cameraName].orEmpty()) }
+fun List<MomentEvent>.inZones(zonesByCamera: Map<String, List<DetectionZone>>, nowEpochSeconds: Double): List<MomentEvent> =
+    mapNotNull { event -> event.inZones(zonesByCamera[event.cameraName].orEmpty(), nowEpochSeconds) }

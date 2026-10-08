@@ -59,6 +59,7 @@
 
     <!-- The sign in front of a line of the sum, read top to bottom like a sum on paper -->
     <string name="checkup_op_minus">−</string>
+    <string name="checkup_op_plus">+</string>
     <string name="checkup_op_divide">÷</string>
     <string name="checkup_op_equals">=</string>
     <!-- Against: the loans set against the line they're judged by -->
@@ -135,7 +136,18 @@
     <string name="checkup_savings_ledger_other">Other differences in the sheet</string>
     <string name="checkup_savings_ledger_left_over">Left over</string>
     <string name="checkup_savings_ledger_kept">Kept each month</string>
+    <!-- Money a workplace plan (a 401(k)) takes from the paycheck before it's paid out -->
+    <string name="checkup_savings_ledger_set_aside">Set aside before take-home</string>
+    <string name="checkup_savings_ledger_saved">Saved each month</string>
+    <string name="checkup_savings_ledger_pay">Take-home plus set aside</string>
+    <string name="checkup_savings_ledger_share">Share of pay saved</string>
+    <!-- Under a plan's name: %1$s what went into it over the year, %2$s the year, e.g. "$23,000 in 2025" -->
+    <string name="checkup_savings_item_in_year">%1$s in %2$s</string>
     <string name="checkup_savings_rule">A common goal is keeping 15% of take-home pay, with 20% a stretch. The checkup passes from 15%.</string>
+    <string name="checkup_savings_rule_with_paycheck">A common goal is saving 15% of pay, with 20% a stretch. Pay here is take-home plus what's set aside from paychecks before it. The checkup passes from 15%.</string>
+    <string name="checkup_savings_note_paycheck">The set-aside is the workplace plans (a 401(k) and the like) in the sheet's Investments table: the latest year there, spread over twelve months. The table's other lines (an IRA, a 529, a brokerage account) are paid in from money already taken home, so they aren't added on top.</string>
+    <!-- %1$s a year, %2$s an amount, %3$s a percentage: "Over 2025 the sheet counts $31,400 invested in all, 21.5% of that year's pay after tax." -->
+    <string name="checkup_savings_step_sheet_year">Over %1$s the sheet counts %2$s invested in all, %3$s of that year's pay after tax.</string>
     <string name="checkup_savings_whatif">Spend less each month</string>
     <!-- %1$s a percentage, e.g. "16.2%" -->
     <string name="checkup_savings_whatif_kept">%1$s kept</string>

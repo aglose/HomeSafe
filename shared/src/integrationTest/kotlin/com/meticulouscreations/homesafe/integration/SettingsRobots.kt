@@ -30,17 +30,19 @@ import kotlin.math.abs
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * The Settings tab's own page and the Server page one tap below it.
+ * The Settings tab's own page — a short list of rows — and the pages one tap below it: Alerts,
+ * Away mode and Server.
  *
  * Clicks here go through the node's click action ([press]) rather than a touch. The page scrolls
  * under the shell's floating top bar and bottom nav, so a row scrolled into view can end up
  * beneath the nav, and a touch there would change tabs. Pressing still waits for exactly one
  * match and lets the result settle, as [AppJourney.tap] does.
  *
- * Nothing on the page has a test tag, and each camera repeats the same "Object detection" and
- * "Motion detection" rows, so a camera's switches are found by where they are: the first two
- * switches at or below that camera's name. Positions come from [SemanticsNode.positionInRoot],
- * which isn't clipped, so this works for rows below the fold too.
+ * The cameras' switches are folded away under the Cameras row, which every camera step opens
+ * out first ([showCameras]). Nothing on the page has a test tag, and each camera repeats the same
+ * "Object detection" and "Motion detection" rows, so a camera's switches are found by where they
+ * are: the first two switches at or below that camera's name. Positions come from
+ * [SemanticsNode.positionInRoot], which isn't clipped, so this works for rows below the fold too.
  */
 @OptIn(ExperimentalTestApi::class)
 internal class SettingsRobot(private val journey: AppJourney) {
@@ -61,6 +63,49 @@ internal class SettingsRobot(private val journey: AppJourney) {
     /** Waits for the Server row's one-line summary to read exactly [summary]. */
     fun awaitSummary(summary: String) {
         journey.awaitNode(SERVER_ROW and hasText(summary), "the Server row reading \"$summary\"")
+    }
+
+    /** Waits for the Cameras row's one-line summary to read exactly [summary]. */
+    fun awaitCamerasSummary(summary: String) {
+        journey.awaitNode(CAMERAS_ROW and hasText(summary), "the Cameras row reading \"$summary\"")
+    }
+
+    /** Waits for the Alerts row's one-line summary to read exactly [summary]. */
+    fun awaitAlertsSummary(summary: String) {
+        journey.awaitNode(ALERTS_ROW and hasText(summary), "the Alerts row reading \"$summary\"")
+    }
+
+    /** Opens the Cameras row out, unless it already is, so the cameras' switches are on the page. */
+    fun showCameras() {
+        journey.awaitNode(CAMERAS_ROW, "the Cameras row")
+        if (journey.exists(CAMERAS_ROW and FOLDED)) press(CAMERAS_ROW and FOLDED, "the folded Cameras row")
+        journey.awaitNode(CAMERAS_ROW and OPENED_OUT, "the Cameras row opened out")
+    }
+
+    /** Folds the Cameras row away again. */
+    fun hideCameras() {
+        press(CAMERAS_ROW and OPENED_OUT, "the opened-out Cameras row")
+        journey.awaitNode(CAMERAS_ROW and FOLDED, "the Cameras row folded away")
+    }
+
+    fun openAlerts() {
+        press(ALERTS_ROW, "the Alerts row")
+        journey.awaitText(ALERTS_PAGE_SUBTITLE)
+    }
+
+    fun backFromAlerts() {
+        back(ALERTS_PAGE_SUBTITLE)
+        awaitPage()
+    }
+
+    fun openAway() {
+        press(AWAY_ROW, "the Away mode row")
+        journey.awaitText(AWAY_PAGE_SUBTITLE)
+    }
+
+    fun backFromAway() {
+        back(AWAY_PAGE_SUBTITLE)
+        awaitPage()
     }
 
     fun facesRow(): SemanticsMatcher = hasText(FACES_ROW_TITLE) and hasClickAction()
@@ -127,13 +172,25 @@ internal class SettingsRobot(private val journey: AppJourney) {
 
     // ---- Camera switches -------------------------------------------------------------------------
 
-    fun awaitDetection(camera: String, on: Boolean, enabled: Boolean) = awaitSwitch(camera, DETECTION, "$camera's object detection switch", on, enabled)
+    fun awaitDetection(camera: String, on: Boolean, enabled: Boolean) {
+        showCameras()
+        awaitSwitch(camera, DETECTION, "$camera's object detection switch", on, enabled)
+    }
 
-    fun awaitMotion(camera: String, on: Boolean, enabled: Boolean) = awaitSwitch(camera, MOTION, "$camera's motion detection switch", on, enabled)
+    fun awaitMotion(camera: String, on: Boolean, enabled: Boolean) {
+        showCameras()
+        awaitSwitch(camera, MOTION, "$camera's motion detection switch", on, enabled)
+    }
 
-    fun flipDetection(camera: String) = flip(camera, DETECTION, "$camera's object detection switch")
+    fun flipDetection(camera: String) {
+        showCameras()
+        flip(camera, DETECTION, "$camera's object detection switch")
+    }
 
-    fun flipMotion(camera: String) = flip(camera, MOTION, "$camera's motion detection switch")
+    fun flipMotion(camera: String) {
+        showCameras()
+        flip(camera, MOTION, "$camera's motion detection switch")
+    }
 
     /** The switch in the row titled [title] (the first switch that doesn't end above the title). */
     fun awaitSwitchInRow(title: String, on: Boolean, enabled: Boolean) = awaitSwitch(title, 0, "the \"$title\" switch", on, enabled)
@@ -199,12 +256,29 @@ internal class SettingsRobot(private val journey: AppJourney) {
     companion object {
         const val SERVER_ROW_TITLE = "Server"
         const val SERVER_PAGE_SUBTITLE = "What Frigate is and is doing"
+        const val ALERTS_ROW_TITLE = "Alerts"
+        const val ALERTS_PAGE_SUBTITLE = "What this phone hears about, and when"
+        const val AWAY_ROW_TITLE = "Away mode"
+        const val AWAY_PAGE_SUBTITLE = "Who's home and who decides"
+        const val CAMERAS_ROW_TITLE = "Cameras"
         const val FACES_ROW_TITLE = "Faces"
         const val VIEWER_CAPTION = "Signed in as a viewer: the switches below are read-only. An admin account can change them."
         const val NOTIFICATIONS_UNAVAILABLE = "Not available on this platform. Use the Android or iOS app for alerts."
+        const val ALERTS_SUMMARY_UNAVAILABLE = "Not available on this platform"
 
         /** The last row on the Settings page: the way into the Server page, with its one-line summary. */
         val SERVER_ROW: SemanticsMatcher = hasText(SERVER_ROW_TITLE) and hasClickAction()
+
+        /** The first rows on the page, each the way into a page of its own. */
+        val ALERTS_ROW: SemanticsMatcher = hasText(ALERTS_ROW_TITLE) and hasClickAction()
+        val AWAY_ROW: SemanticsMatcher = hasText(AWAY_ROW_TITLE) and hasClickAction()
+
+        /** The row the cameras' detection switches fold away under. */
+        val CAMERAS_ROW: SemanticsMatcher = hasText(CAMERAS_ROW_TITLE) and hasClickAction()
+
+        /** A row that opens out in place says which way it can go: one that can be expanded is folded. */
+        private val FOLDED = SemanticsMatcher.keyIsDefined(SemanticsActions.Expand)
+        private val OPENED_OUT = SemanticsMatcher.keyIsDefined(SemanticsActions.Collapse)
 
         private const val DETECTION = 0
         private const val MOTION = 1

@@ -27,7 +27,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 
 /**
- * The Settings tab's "Away mode" section and its "This phone decides home/away" switch, rendered
+ * The Away mode page's card and its "This phone decides home/away" switch, rendered
  * for real: which phone decides, as the relay's presence snapshot says, and what the switch and
  * the device list make of it. [AwaySection] is stateless, so every state is a [SettingsUiState]
  * fixture and the switch is checked by the callback it fires.
@@ -116,6 +116,24 @@ class AwaySectionUiTest {
         runAway(SettingsUiState(presence = presence(decider = null, devices = listOf(pixel.copy(id = null))))) {
             switchFor(DECIDES).assertIsNotEnabled()
         }
+
+    @Test
+    fun aPhoneTheRelayListsSaysWhereItCounts() = runAway(SettingsUiState(presence = presence(decider = null))) {
+        onNodeWithText("This phone counts as home.").assertIsDisplayed()
+    }
+
+    @Test
+    fun aHouseholdListedWithoutThisPhoneDoesNotSayThisPhoneIsHome() =
+        runAway(SettingsUiState(presence = presence(decider = null, devices = listOf(iphone)))) {
+            onNodeWithText("This phone isn't registered with the relay yet, so it doesn't count as home or away.").assertIsDisplayed()
+            onNodeWithText("This phone counts as home.").assertDoesNotExist()
+        }
+
+    @Test
+    fun untilTheRelayAnswersTheSwitchSaysItIsChecking() = runAway(SettingsUiState()) {
+        onNodeWithText("Checking with the relay…").assertIsDisplayed()
+        onNodeWithText("This phone counts as home.").assertDoesNotExist()
+    }
 
     @Test
     fun anUnreachableRelayLocksTheSwitch() = runAway(SettingsUiState(presence = HouseholdPresence.EMPTY, awayError = "Relay unreachable".asUiText())) {
