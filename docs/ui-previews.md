@@ -37,8 +37,11 @@ as big as its content, and on the JVM it's measured on a 412×915 dp canvas. Wra
   Repeated `@Preview`s and multipreview annotations like `@PreviewFontScale` are found too.
 - Each preview is called as compiled code would call it, inside an `ImageComposeScene` at 2× density, with
   `LocalInspectionMode` on.
-- About half a second of frames play before capture, so fades and first-frame effects have landed.
-- It needs only a JDK. It takes seconds after the first compile.
+- About half a second of the frame clock plays before capture, so fades and first-frame effects have landed:
+  the first four frames one by one, then in strides (eight frames drawn in all, not thirty).
+- It needs only a JDK. Most previews take a fraction of a second each after the first compile; the weather
+  ones take a few seconds, because their sky is shaders run on the CPU here. The whole set is a couple of minutes.
+- Each picture is written as it is drawn and not kept: the run's memory doesn't grow with the number of previews.
 - The app bundles its fonts (Albert Sans, Fraunces), so text matches Android. What differs is what Android draws
   itself: system bars, and platform `actual`s like the video players.
 - It honours `widthDp`, `heightDp`, `fontScale`, `showBackground` and `backgroundColor`. It skips previews that
