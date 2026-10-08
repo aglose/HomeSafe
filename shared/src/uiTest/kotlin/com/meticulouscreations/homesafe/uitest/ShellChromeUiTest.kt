@@ -1,7 +1,7 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.requiredWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -189,7 +189,10 @@ class ShellChromeUiTest {
     fun theLocalNetworkBadgeIsShortEnoughToClearTheTitle() = runComposeUiTest {
         setContent {
             FrigatePreview {
-                Box(Modifier.width(360.dp)) {
+                // requiredWidth: a phone's width whatever the test host's window is (FrigatePreview
+                // hands down the window's size as a minimum, which a plain width gives way to).
+                // 412dp is the Pixel the overlap was seen on; the bar needs about 376dp for this.
+                Box(Modifier.requiredWidth(412.dp)) {
                     FrigateTopBar(
                         activeConnection = ActiveConnection(serverUrl = "http://100.64.0.1:5000", localUrl = "http://192.168.1.65:5000", route = ConnectionRoute.LOCAL_NETWORK),
                         appVersion = "1.0.62 (431)",
