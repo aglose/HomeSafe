@@ -10,6 +10,8 @@
     <!-- Connection routes: which of the server's addresses the app is using. -->
     <string name="connection_route_local_network">Local network</string>
     <string name="connection_route_tailscale">Tailscale</string>
+    <!-- The local network route as the top bar's badge names it: short, so it clears the centred title. -->
+    <string name="connection_route_local_network_short">Local</string>
 
     <!-- Sign-in screen -->
     <string name="connection_brand_wordmark">PERCYSAFE</string>
