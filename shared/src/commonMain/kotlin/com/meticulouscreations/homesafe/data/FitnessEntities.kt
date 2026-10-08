@@ -76,6 +76,40 @@ data class FitnessBodyweightEntity(
     val pounds: Double,
 )
 
+/**
+ * A singleton row (always [id] = 0) holding the heart-rate settings: what the zones are worked
+ * out from, and the sensor that was chosen. Added in schema 20, with [FitnessHeartSummaryEntity].
+ * A missing row, like a null column, means "not set".
+ */
+@Entity
+data class FitnessHeartSettingsEntity(
+    @PrimaryKey val id: Int = 0,
+    val maxBpm: Int?,
+    val age: Int?,
+    val restingBpm: Int?,
+    val sensorAddress: String?,
+    val sensorName: String?,
+)
+
+/**
+ * A workout's heart, added up while it was open: the milliseconds spent under zone 1 and in
+ * each zone as the zones were set that day, the readings weighted by how long each stood (for
+ * the average), and the highest. One row a workout, and only for workouts a sensor was on for.
+ * The readings themselves are not kept.
+ */
+@Entity
+data class FitnessHeartSummaryEntity(
+    @PrimaryKey val workoutId: Long,
+    val belowMillis: Long,
+    val zone1Millis: Long,
+    val zone2Millis: Long,
+    val zone3Millis: Long,
+    val zone4Millis: Long,
+    val zone5Millis: Long,
+    val bpmMillis: Long,
+    val peakBpm: Int,
+)
+
 @Dao
 interface FitnessDao {
     @Query("SELECT * FROM FitnessExerciseEntity ORDER BY name")
@@ -143,6 +177,24 @@ interface FitnessDao {
 
     @Query("DELETE FROM FitnessBodyweightEntity WHERE epochDay = :epochDay")
     suspend fun deleteBodyweight(epochDay: Long)
+
+    @Query("SELECT * FROM FitnessHeartSettingsEntity WHERE id = 0")
+    fun observeHeartSettings(): Flow<FitnessHeartSettingsEntity?>
+
+    @Query("SELECT * FROM FitnessHeartSettingsEntity WHERE id = 0")
+    suspend fun heartSettings(): FitnessHeartSettingsEntity?
+
+    @Upsert
+    suspend fun upsertHeartSettings(settings: FitnessHeartSettingsEntity)
+
+    @Query("SELECT * FROM FitnessHeartSummaryEntity ORDER BY workoutId")
+    fun observeHeartSummaries(): Flow<List<FitnessHeartSummaryEntity>>
+
+    @Upsert
+    suspend fun upsertHeartSummary(summary: FitnessHeartSummaryEntity)
+
+    @Query("DELETE FROM FitnessHeartSummaryEntity WHERE workoutId = :workoutId")
+    suspend fun deleteHeartSummary(workoutId: Long)
 }
 
 /** [FitnessDao] in memory: for the web target, which has no database, and for tests. */
@@ -152,6 +204,8 @@ class InMemoryFitnessDao : FitnessDao {
     private val workouts = MutableStateFlow<List<FitnessWorkoutEntity>>(emptyList())
     private val phases = MutableStateFlow<List<FitnessPhaseEntity>>(emptyList())
     private val bodyweights = MutableStateFlow<List<FitnessBodyweightEntity>>(emptyList())
+    private val heartSettings = MutableStateFlow<FitnessHeartSettingsEntity?>(null)
+    private val heartSummaries = MutableStateFlow<List<FitnessHeartSummaryEntity>>(emptyList())
 
     override fun observeExercises(): Flow<List<FitnessExerciseEntity>> = exercises
 
@@ -224,5 +278,23 @@ class InMemoryFitnessDao : FitnessDao {
 
     override suspend fun deleteBodyweight(epochDay: Long) {
         bodyweights.update { current -> current.filter { it.epochDay != epochDay } }
+    }
+
+    override fun observeHeartSettings(): Flow<FitnessHeartSettingsEntity?> = heartSettings
+
+    override suspend fun heartSettings(): FitnessHeartSettingsEntity? = heartSettings.value
+
+    override suspend fun upsertHeartSettings(settings: FitnessHeartSettingsEntity) {
+        heartSettings.value = settings
+    }
+
+    override fun observeHeartSummaries(): Flow<List<FitnessHeartSummaryEntity>> = heartSummaries
+
+    override suspend fun upsertHeartSummary(summary: FitnessHeartSummaryEntity) {
+        heartSummaries.update { current -> (current.filter { it.workoutId != summary.workoutId } + summary).sortedBy { it.workoutId } }
+    }
+
+    override suspend fun deleteHeartSummary(workoutId: Long) {
+        heartSummaries.update { current -> current.filter { it.workoutId != workoutId } }
     }
 }

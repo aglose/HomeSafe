@@ -50,6 +50,7 @@ import com.meticulouscreations.homesafe.fitness.DayCard
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.PhaseStatus
 import com.meticulouscreations.homesafe.fitness.RecordEvent
+import com.meticulouscreations.homesafe.fitness.WorkoutHeart
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -85,8 +86,9 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The fitness app's front page: what stretch of the year it is, which workout has waited
- * longest, the three days as doors to start one, and the records lately set. With nothing in
- * the log yet it is one invitation: bring the notes in.
+ * longest, the three days as doors to start one, what the heart did last time if a sensor was
+ * on for it, and the records lately set. With nothing in the log yet it is one invitation: bring
+ * the notes in.
  */
 @Composable
 internal fun TodayScreen(
@@ -100,6 +102,7 @@ internal fun TodayScreen(
     onOpenExercise: (String) -> Unit,
     modifier: Modifier = Modifier,
     animated: Boolean = true,
+    lastHeart: WorkoutHeart? = null,
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -174,6 +177,9 @@ internal fun TodayScreen(
                 }
             }
         }
+
+        // While a workout is open its own heart is on its page; this is for looking back.
+        if (lastHeart != null && workout == null) LastHeartCard(lastHeart, state, Modifier.padding(top = 6.dp))
 
         FitnessCard(Modifier.padding(top = 6.dp), title = stringResource(Res.string.fitness_today_records)) {
             if (state.recentRecords.isEmpty()) {

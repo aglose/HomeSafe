@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.VolumeStatus
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -71,6 +72,19 @@ data class FitnessPalette(
         PhaseKind.BULK -> ember to Color(0xFFB3123A)
         PhaseKind.CUT -> ice to Color(0xFF2B4BCB)
         PhaseKind.MAINTAIN -> violet to Color(0xFF14808F)
+    }
+
+    /**
+     * A heart-rate zone's colour, the ones heart-rate monitors use: grey, blue, green, orange,
+     * red as the effort rises. Under zone 1 (null) there is none to speak of.
+     */
+    fun zone(zone: HeartZone?): Color = when (zone) {
+        null -> textFaint
+        HeartZone.VERY_LIGHT -> Color(0xFF9FB3C8)
+        HeartZone.LIGHT -> ice
+        HeartZone.MODERATE -> good
+        HeartZone.HARD -> amber
+        HeartZone.MAXIMUM -> danger
     }
 
     fun volume(status: VolumeStatus): Color = when (status) {
