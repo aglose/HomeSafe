@@ -32,6 +32,10 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlin.concurrent.atomics.AtomicInt
+import kotlin.concurrent.atomics.AtomicReference
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -44,7 +48,7 @@ import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 import kotlin.time.Instant
 
-@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class)
+@OptIn(ExperimentalCoroutinesApi::class, ExperimentalTime::class, ExperimentalAtomicApi::class)
 class ConnectionRepositoryImplTest {
 
     private val tailscaleHost = "100.64.0.1"
@@ -88,32 +92,40 @@ class ConnectionRepositoryImplTest {
         /** When true, only plain http is answered; https fails at the transport, as a plaintext port does. */
         var httpsRejected = false
 
-        val requests = mutableListOf<Pair<String, String>>()
+        // What the server keeps is written on the mock engine's thread and read on the test's (while
+        // `eventually` polls, a request can land mid-count), so each is a value swapped whole: a
+        // reader gets a list nobody is still adding to.
+        private val requestLog = AtomicReference<List<Pair<String, String>>>(emptyList())
+        private val probeCount = AtomicInt(0)
+        private val cookieProbes = AtomicReference<List<String>>(emptyList())
+        private val issuedTokens = AtomicReference<Set<String>>(emptySet())
+        private val nextToken = AtomicInt(0)
+
+        /** Every request so far, host and path, in the order they arrived. */
+        val requests: List<Pair<String, String>> get() = requestLog.load()
 
         /** Reachability probes (`/api/version`) answered, and those of them that carried a cookie. */
-        var probesAnswered = 0
-        val probesWithCookies = mutableListOf<String>()
-        private val issuedTokens = mutableSetOf<String>()
-        private var nextToken = 0
+        val probesAnswered: Int get() = probeCount.load()
+        val probesWithCookies: List<String> get() = cookieProbes.load()
 
         /** The server forgot every session it issued (restart, expiry): the next authenticated request gets a 401. */
-        fun expireSessions() = issuedTokens.clear()
+        fun expireSessions() = issuedTokens.store(emptySet())
 
         val engine = MockEngine { request ->
             val host = request.url.host
             val path = request.url.encodedPath
-            requests += host to path
+            requestLog.swap { it + (host to path) }
             if (host == localHost && !localReachable) error("No route to host")
             if (host == tailscaleHost && !tailscaleReachable) error("Connection timed out")
             // The compiled-in LAN address is some other house's: nothing answers there.
             if (host != localHost && host != tailscaleHost) error("No route to host")
             if (httpsRejected && request.url.protocol.name == "https") error("Unable to parse TLS packet header")
             val token = request.headers[HttpHeaders.Cookie]?.substringAfter("frigate_token=", "")?.substringBefore(';')?.takeIf { it.isNotEmpty() }
-            val authenticated = token != null && token in issuedTokens && !(host == localHost && rogueLocalHost)
+            val authenticated = token != null && token in issuedTokens.load() && !(host == localHost && rogueLocalHost)
             when {
                 path.endsWith("/api/version") -> {
-                    probesAnswered++
-                    if (request.headers[HttpHeaders.Cookie] != null) probesWithCookies += host
+                    probeCount.incrementAndFetch()
+                    if (request.headers[HttpHeaders.Cookie] != null) cookieProbes.swap { it + host }
                     if (host == localHost) localProbeGate?.await()
                     respond("0.15.0", HttpStatusCode.OK)
                 }
@@ -125,8 +137,8 @@ class ConnectionRepositoryImplTest {
                     } else if (rejectLogin) {
                         respond("", HttpStatusCode.Unauthorized)
                     } else {
-                        val issued = "t${++nextToken}@$host"
-                        issuedTokens += issued
+                        val issued = "t${nextToken.incrementAndFetch()}@$host"
+                        issuedTokens.swap { it + issued }
                         respond("", HttpStatusCode.OK, headersOf(HttpHeaders.SetCookie, "frigate_token=$issued; Path=/"))
                     }
                 }
@@ -941,5 +953,14 @@ class ConnectionRepositoryImplTest {
         assertEquals("andrew", result.getOrThrow().username)
         assertTrue(h.biometrics.hasSavedCredentials())
         assertNotNull(h.repository.activeConnection.value)
+    }
+}
+
+/** Replaces the value with [change] of it, again if another thread got in between. */
+@OptIn(ExperimentalAtomicApi::class)
+private inline fun <T> AtomicReference<T>.swap(change: (T) -> T) {
+    while (true) {
+        val now = load()
+        if (compareAndSet(now, change(now))) return
     }
 }
