@@ -96,5 +96,7 @@ Android 13-15 need.
   pop scrubbed by `rememberPredictiveBackTransition(target, previous, back, label).AnimatedContent { … }`.
 - A handler that only asks first (unsaved changes, then a dialog) stays still under the finger:
   don't draw a peek at a page Back won't reach.
-- Handlers are last-registered-first. A nested stack enables its handler only while it has
-  something to pop, so Back falls through to the surface around it.
+- Handlers are last-registered-first. A subtree drawn under something that owns Back (the shell
+  under an app from the drawer) sits in a `BackScope(enabled = false)`, so its newer handlers
+  stay quiet. A nested stack enables its handler only while it has something to pop, so Back
+  falls through to the surface around it.

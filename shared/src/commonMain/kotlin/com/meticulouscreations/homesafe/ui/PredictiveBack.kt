@@ -8,6 +8,7 @@ import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -23,6 +24,7 @@ import androidx.navigationevent.NavigationEventTransitionState
 import androidx.navigationevent.compose.LocalNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.NavigationEventState
+import androidx.navigationevent.compose.rememberNavigationEventDispatcherOwner
 import androidx.navigationevent.compose.rememberNavigationEventState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -157,4 +159,22 @@ internal fun <S : Any> rememberPredictiveBackTransition(target: S, previous: S?,
         }
     }
     return transition
+}
+
+/**
+ * [content] with a back dispatcher of its own, a child of the one around it, switched off while
+ * [enabled] is false: none of the handlers inside hear Back then, however recently they registered.
+ * For a subtree drawn under something that owns Back, like the shell under an app opened from the
+ * drawer, which a back swipe draws again to show through. Without this its `NavDisplay`, newer
+ * than the app's handler, would take a second swipe made while the first one settles.
+ */
+@Composable
+internal fun BackScope(enabled: Boolean, content: @Composable () -> Unit) {
+    val parent = LocalNavigationEventDispatcherOwner.current
+    if (parent == null) {
+        content()
+    } else {
+        val owner = rememberNavigationEventDispatcherOwner(enabled = enabled, parent = parent)
+        CompositionLocalProvider(LocalNavigationEventDispatcherOwner provides owner, content = content)
+    }
 }

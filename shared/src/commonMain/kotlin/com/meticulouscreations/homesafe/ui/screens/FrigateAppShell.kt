@@ -97,6 +97,7 @@ import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
+import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
@@ -625,7 +626,8 @@ internal fun ShellScaffold(
         // so focus can't wander behind the scrim to a camera or the menu button.
         Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {
-                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { content() }
+                // Back is the overlay's while one is up, even where the shell shows through it.
+                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
             }
 
             // Fades over the nested screen's own header, which is the same height in the same
