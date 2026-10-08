@@ -174,6 +174,14 @@ base is the commit main was at before. A base from before the milestones existed
 its cold launch compared, and the job says so. The medians land in the job summary; the raw runs
 are in the `startup-perf` artifact.
 
+A hosted emulator says it has booted before it has stopped starting things, so the script first
+waits for the launcher to be in front and readable, and hides the system's "isn't responding"
+dialogs about its own processes. A run whose sign-in screen never appears is tried again (twice
+at most, `--retries`): nothing was timed yet, so nothing is biased, and a build that really can't
+show its sign-in screen still fails. A camera that never draws is never retried. When the job
+fails, the error names what was on screen instead, and a screenshot, the view hierarchy and the
+logcat are in the artifact as `failure-screen.png`, `failure-screen.xml` and `failure-logcat.log`.
+
 Run the same comparison by hand with `python3 scripts/bench-first-live-pixel.py --gate A B`
 against any two labels recorded on one device.
 
