@@ -38,6 +38,7 @@ import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.Budget
+import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
@@ -51,6 +52,15 @@ import homesafe.shared.generated.resources.common_save
 import homesafe.shared.generated.resources.fin_budget_bucket_family
 import homesafe.shared.generated.resources.fin_budget_bucket_unsorted
 import homesafe.shared.generated.resources.fin_budget_error_generic
+import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets
+import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets_note
+import homesafe.shared.generated.resources.fin_budget_settings_alert_savings
+import homesafe.shared.generated.resources.fin_budget_settings_alert_savings_note
+import homesafe.shared.generated.resources.fin_budget_settings_alert_total
+import homesafe.shared.generated.resources.fin_budget_settings_alert_total_note
+import homesafe.shared.generated.resources.fin_budget_settings_alerts_note
+import homesafe.shared.generated.resources.fin_budget_settings_alerts_subtitle
+import homesafe.shared.generated.resources.fin_budget_settings_alerts_title
 import homesafe.shared.generated.resources.fin_budget_settings_cards_none
 import homesafe.shared.generated.resources.fin_budget_settings_cards_subtitle
 import homesafe.shared.generated.resources.fin_budget_settings_cards_title
@@ -118,6 +128,9 @@ internal fun BudgetSettingsScreen(
         }
         item(key = "limits-h") { SectionHeader(stringResource(Res.string.fin_budget_settings_limits_title), subtitle = stringResource(Res.string.fin_budget_settings_limits_subtitle)) }
         item(key = "limits") { LimitsCard(budget, finance, saving = state.saving, onSave = onSave) }
+
+        item(key = "alerts-h") { SectionHeader(stringResource(Res.string.fin_budget_settings_alerts_title), subtitle = stringResource(Res.string.fin_budget_settings_alerts_subtitle)) }
+        item(key = "alerts") { AlertSwitches(config.alerts, enabled = !state.saving, onChange = { onSave(BudgetConfigPatch(alerts = it)) }) }
 
         item(key = "cards-h") { SectionHeader(stringResource(Res.string.fin_budget_settings_cards_title), subtitle = stringResource(Res.string.fin_budget_settings_cards_subtitle)) }
         if (budget.cards.isEmpty()) item(key = "cards-none") { FinePrint(stringResource(Res.string.fin_budget_settings_cards_none)) }
@@ -229,6 +242,64 @@ private fun LimitsCard(budget: Budget, finance: PersonalFinance?, saving: Boolea
             if (ready) colors.accent else colors.textTertiary,
             onClick = { if (ready) onSave(BudgetConfigPatch(limits = typed)) },
             modifier = Modifier.testTag("finance_budget_limits_save"),
+        )
+    }
+}
+
+/**
+ * Which lines being crossed the household's phones are told about. The switches are the
+ * household's, kept by the relay: each phone silences its own share in its notification settings.
+ */
+@Composable
+private fun AlertSwitches(alerts: BudgetAlertSwitches, enabled: Boolean, onChange: (BudgetAlertSwitches) -> Unit) {
+    Column(Modifier.fillMaxWidth()) {
+        AlertSwitchRow(
+            stringResource(Res.string.fin_budget_settings_alert_total),
+            stringResource(Res.string.fin_budget_settings_alert_total_note),
+            alerts.total,
+            enabled,
+            "finance_budget_alert_total",
+        ) { onChange(alerts.copy(total = it)) }
+        AlertSwitchRow(
+            stringResource(Res.string.fin_budget_settings_alert_savings),
+            stringResource(Res.string.fin_budget_settings_alert_savings_note),
+            alerts.savings,
+            enabled,
+            "finance_budget_alert_savings",
+        ) { onChange(alerts.copy(savings = it)) }
+        AlertSwitchRow(
+            stringResource(Res.string.fin_budget_settings_alert_buckets),
+            stringResource(Res.string.fin_budget_settings_alert_buckets_note),
+            alerts.buckets,
+            enabled,
+            "finance_budget_alert_buckets",
+        ) { onChange(alerts.copy(buckets = it)) }
+        FinePrint(stringResource(Res.string.fin_budget_settings_alerts_note))
+    }
+}
+
+@Composable
+private fun AlertSwitchRow(title: String, note: String, on: Boolean, enabled: Boolean, testTag: String, onChange: (Boolean) -> Unit) {
+    val colors = FinanceTheme.colors
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .toggleable(value = on, enabled = enabled, role = Role.Switch, onValueChange = onChange)
+            .testTag(testTag)
+            .minimumInteractiveComponentSize()
+            .padding(horizontal = PageGutter, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = FinanceTheme.type.body, color = colors.textPrimary)
+            Text(note, style = FinanceTheme.type.label, color = colors.textSecondary)
+        }
+        Spacer(Modifier.width(12.dp))
+        Icon(
+            if (on) Icons.Filled.CheckCircle else Icons.Outlined.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (on) colors.accent else colors.textTertiary,
+            modifier = Modifier.size(22.dp),
         )
     }
 }

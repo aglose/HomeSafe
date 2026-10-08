@@ -12,6 +12,19 @@
     <string name="notif_channel_away_description">A person on any camera while nobody is home</string>
     <string name="notif_channel_summaries_name">Summaries</string>
     <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
+    <string name="notif_channel_budget_name">Budget</string>
+    <string name="notif_channel_budget_description">The month\'s card spending close to a limit, over it, or into savings</string>
+    <string name="notif_budget_close_title">Close to the month\'s budget</string>
+    <string name="notif_budget_over_title">Over the month\'s budget</string>
+    <string name="notif_budget_savings_title">Dipping into savings</string>
+    <string name="notif_budget_person_over_title">%1$s is over budget</string>
+    <string name="notif_budget_family_over_title">The family card is over budget</string>
+    <plurals name="notif_budget_body_spent">
+        <item quantity="one">%1$s spent of %2$s, with %3$d day left this month.</item>
+        <item quantity="other">%1$s spent of %2$s, with %3$d days left this month.</item>
+    </plurals>
+    <string name="notif_budget_body_spent_last_day">%1$s spent of %2$s, on the last day of the month.</string>
+    <string name="notif_budget_savings_body">The cards are at %1$s this month, past the %2$s that take-home leaves after the bills.</string>
     <string name="notif_action_tag_car">Tag car</string>
     <string name="notif_action_not_a_person">Not a person</string>
     <string name="notif_action_undo">Undo</string>

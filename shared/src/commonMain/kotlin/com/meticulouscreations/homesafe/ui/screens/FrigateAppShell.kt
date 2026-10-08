@@ -85,6 +85,8 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
+import com.meticulouscreations.homesafe.finance.ui.FinanceTab
+import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -153,15 +155,29 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     var financeHost by mutableStateOf<TopLevelRoute?>(null)
         private set
 
-    fun openFinance(origin: Offset, from: TopLevelRoute) {
+    /**
+     * The tab a notification asked the finance app to open on (see [openFinanceFromNotifications]),
+     * until the app has turned to it; null when it opens wherever it was left.
+     */
+    var financeTab by mutableStateOf<FinanceTab?>(null)
+        private set
+
+    fun openFinance(origin: Offset, from: TopLevelRoute, tab: FinanceTab? = null) {
         financeOrigin = origin
         financeHost = from
+        financeTab = tab
         financeOpen = true
         drawerOpen = false
     }
 
+    /** The finance app has turned to the tab it was asked for. */
+    fun onFinanceTabShown() {
+        financeTab = null
+    }
+
     fun closeFinance() {
         financeOpen = false
+        financeTab = null
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
         financeCovering = false
@@ -297,6 +313,19 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
             MomentDeepLinks.consume(link)
         }
     }
+
+    /**
+     * Opens the finance app on the tab a notification tap asks for (a budget alert's: Budget),
+     * for as long as the caller runs, over whichever tab is up. Consumed only here, once the
+     * shell exists, for the reason [openMomentsFromNotifications] does. With no drawer card to
+     * grow from, the app opens from the menu button's corner.
+     */
+    suspend fun openFinanceFromNotifications() {
+        FinanceDeepLinks.pending.filterNotNull().collect { link ->
+            openFinance(Offset.Zero, selectedTab, link.tab)
+            FinanceDeepLinks.consume(link)
+        }
+    }
 }
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
@@ -310,6 +339,7 @@ fun FrigateAppShell() {
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
     LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
+    LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
     val compactLandscape = isCompactLandscape()
     SideEffect { nav.compactLandscape = compactLandscape }
 
@@ -429,6 +459,8 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
             origin = nav.financeOrigin,
             onClose = nav::closeFinance,
             onCovering = { nav.financeCovering = it },
+            requestedTab = nav.financeTab,
+            onShowRequestedTab = nav::onFinanceTabShown,
         )
     }
 }
