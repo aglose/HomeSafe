@@ -10,8 +10,10 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -24,6 +26,7 @@ import com.meticulouscreations.homesafe.finance.BudgetUiState
 import com.meticulouscreations.homesafe.finance.domain.BucketId
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.ui.BudgetFixtures
@@ -158,8 +161,36 @@ class BudgetScreenUiTest {
     @Test
     fun aCardNumberTheBankMarksPurchasesWithIsSaidToBeSomeonesInOneTap() = onBudget(BudgetFixtures.state(BudgetFixtures.holdersUnsaid)) { calls ->
         onNodeWithText("Card ending 7726").assertExists()
-        onNodeWithTag("finance_budget_holder_7726_Sam").performSemanticsAction(SemanticsActions.OnClick)
+        // One of a set, with "Nobody yet" the one chosen until somebody is.
+        onNodeWithTag("finance_budget_holder_7726_nobody").assertIsSelected()
+        onNodeWithTag("finance_budget_holder_7726_nobody").performSemanticsAction(SemanticsActions.OnClick)
+        onNodeWithTag("finance_budget_holder_7726_Sam").assertIsNotSelected().performSemanticsAction(SemanticsActions.OnClick)
         assertEquals(listOf(Triple(BudgetFixtures.TRAVEL, "7726", "Sam" as String?)), calls.holders)
+    }
+
+    @Test
+    fun whoseACardIsCanBeTakenBackAndAMarkThatNamesSomeoneOffersOnlySomeoneElse() {
+        val saved = mutableListOf<BudgetConfigPatch>()
+        val budget = BudgetFixtures.onPace.let {
+            it.copy(cards = it.cards.map { card -> if (card.key == BudgetFixtures.TRAVEL) card.copy(holders = card.holders + CardHolder("SAM RIVERA 9001", 4, "Sam", said = false)) else card })
+        }
+        runComposeUiTest {
+            setContent {
+                FinanceStage {
+                    Box(Modifier.fillMaxSize()) {
+                        Box(Modifier.requiredSize(412.dp, 3_000.dp)) {
+                            BudgetSettingsScreen(BudgetFixtures.state(budget), FinanceFixtures.finance, PaddingValues(), onSave = { saved += it }, onForgetRule = {})
+                        }
+                    }
+                }
+            }
+            onNodeWithTag("finance_budget_holder_7726_Sam").assertIsSelected().performSemanticsAction(SemanticsActions.OnClick)
+            onNodeWithTag("finance_budget_holder_7726_nobody").performSemanticsAction(SemanticsActions.OnClick)
+            // Named by the bank, said by nobody: there is nothing to take back.
+            onNodeWithTag("finance_budget_holder_SAM RIVERA 9001_nobody").assertDoesNotExist()
+            onNodeWithTag("finance_budget_holder_SAM RIVERA 9001_Sam").assertIsSelected()
+        }
+        assertEquals(listOf(BudgetConfigPatch(holders = mapOf(BudgetFixtures.TRAVEL to mapOf("7726" to null)))), saved)
     }
 
     @Test

@@ -60,7 +60,7 @@ class BudgetRelayApiTest {
          "synced_at":1791374000.0,"changed_at":1791360000.5,"syncing":false,"next_sync_at":1791377600.0,"ready":false,
          "cards":[{"key":"Summit Bank Voyager 4410","institution_id":"item-1","institution":"Summit Bank","name":"Voyager","mask":"4410","role":"split",
                    "balance":812.4,"limit":10000,"error":"ITEM_LOGIN_REQUIRED","needs_relink":true,"transactions":true,
-                   "holders":[{"mark":"7726","count":38,"person":null},{"mark":"4410","count":12,"person":"Alex"}]},
+                   "holders":[{"mark":"7726","count":38,"person":null,"said":false},{"mark":"4410","count":12,"person":"Alex","said":true}]},
                   {"key":"Northwind Platinum 2207","institution_id":"item-2","institution":"Northwind","name":"Platinum","mask":"","role":null,
                    "balance":null,"limit":null,"error":null,"needs_relink":false,"transactions":false}],
          "config":{"people":["Alex","Sam"],"limits":{"total":4500.0,"people":{"Alex":1200.0,"Sam":null},"family":2100.0},
@@ -105,7 +105,7 @@ class BudgetRelayApiTest {
         assertNull(platinum.mask)
         assertFalse(platinum.readsPurchases)
         assertEquals(listOf(voyager), budget.budgetCards)
-        assertEquals(listOf(CardHolder("7726", 38, null), CardHolder("4410", 12, "Alex")), voyager.holders)
+        assertEquals(listOf(CardHolder("7726", 38, null), CardHolder("4410", 12, "Alex", said = true)), voyager.holders)
         assertEquals(listOf(CardHolder("7726", 38, null)), voyager.unsaidHolders)
         assertTrue(platinum.holders.isEmpty())
 

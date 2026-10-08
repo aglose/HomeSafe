@@ -84,10 +84,11 @@ sealed interface CardRole {
 /**
  * A mark the bank puts on a card's purchases for who made them, as it writes it: a cardholder's
  * name ("SAM RIVERA 1006"), or only the last four digits of the card that was used ("1203").
- * [count] purchases carry it; [person] is whose it was said to be, once someone has said.
+ * [count] purchases carry it. [person] is whose it is: whoever someone [said], or else the one
+ * person the mark itself names, which needs no saying; null while it is nobody's yet.
  */
 @Immutable
-data class CardHolder(val mark: String, val count: Int, val person: String?)
+data class CardHolder(val mark: String, val count: Int, val person: String?, val said: Boolean = false)
 
 /** A linked credit card. [key] is its name in the feed sheet, which is also what its [role] is kept by. */
 @Immutable

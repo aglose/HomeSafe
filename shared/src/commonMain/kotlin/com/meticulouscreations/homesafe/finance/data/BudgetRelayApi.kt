@@ -207,7 +207,7 @@ internal data class RelayBudget(
                 balance = card.balance,
                 needsRelink = card.needsRelink,
                 readsPurchases = card.transactions,
-                holders = card.holders.map { CardHolder(it.mark, it.count, it.person?.takeIf { person -> person.isNotBlank() }) },
+                holders = card.holders.map { CardHolder(it.mark, it.count, it.person?.takeIf { person -> person.isNotBlank() }, it.said) },
             )
         },
         config = BudgetConfig(
@@ -265,7 +265,7 @@ internal data class RelayBudgetCard(
 )
 
 @Serializable
-internal data class RelayCardHolder(val mark: String = "", val count: Int = 0, val person: String? = null)
+internal data class RelayCardHolder(val mark: String = "", val count: Int = 0, val person: String? = null, val said: Boolean = false)
 
 @Serializable
 internal data class RelayBudgetConfig(

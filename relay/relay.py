@@ -6845,27 +6845,38 @@ def budget_rules() -> dict[str, str]:
     return dict(with_db(lambda c: c.execute("SELECT merchant_key, bucket FROM budget_rules ORDER BY merchant_key").fetchall()))
 
 
+def budget_holder(mark: str | None, said: dict[str, str], people: list[str]) -> str | None:
+    """
+    Whose a bank's mark for a cardholder is: whoever it was said to be, else the one person it
+    names ("SARAH GAN 1006" is Sarah's; a mark naming two people, or nobody, is no one's until said).
+    """
+    if not mark:
+        return None
+    if said.get(mark) in people:
+        return said[mark]
+    words = set(re.findall(r"[^\W\d_]+", mark.lower()))
+    named = [p for p in people if p.lower() in words]
+    return named[0] if len(named) == 1 else None
+
+
 def budget_bucket(tag: str | None, role: str, owner: str | None, key: str | None, people: list[str], rules: dict[str, str],
-                  holder: str | None = None) -> tuple[str | None, str]:
+                  said: dict[str, str] | None = None) -> tuple[str | None, str]:
     """
     Whose a purchase is, and how that is known: a tag made by hand ("manual"); else the card it
     was on being one person's own ("account"); else, on a card two people carry, whoever the
-    bank's mark for the cardholder was said to be (`holder`) or the one person it names ("bank");
-    else what its merchant was said to always be ("rule"); else the family's when the card is
-    the family's ("account"); else nobody's yet (None, "none").
+    bank's mark for the cardholder belongs to (`budget_holder`, with what was `said` of this
+    card's marks: "bank"); else what its merchant was said to always be ("rule"); else the
+    family's when the card is the family's ("account"); else nobody's yet (None, "none").
     """
     buckets = budget_buckets(people)
     if tag in buckets:
         return tag, "manual"
     if role.startswith(BUDGET_PERSON) and role in buckets:
         return role, "account"
-    if role == BUDGET_SPLIT and holder in people:
-        return BUDGET_PERSON + holder, "bank"
-    if role == BUDGET_SPLIT and owner:
-        words = set(re.findall(r"[a-z]+", owner.lower()))
-        named = [p for p in people if p.lower() in words]
-        if len(named) == 1:
-            return BUDGET_PERSON + named[0], "bank"
+    if role == BUDGET_SPLIT:
+        holder = budget_holder(owner, said or {}, people)
+        if holder:
+            return BUDGET_PERSON + holder, "bank"
     if rules.get(key or "") in buckets:
         return rules[key], "rule"
     if role == BUDGET_FAMILY:
@@ -6882,11 +6893,13 @@ def month_before(month: str, months: int = 1) -> str:
     return f"{index // 12:04d}-{index % 12 + 1:02d}"
 
 
-def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | None = None, people: list[str] | None = None) -> list[dict[str, Any]]:
+def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | None = None, people: list[str] | None = None, since: str = "") -> list[dict[str, Any]]:
     """
     Every linked credit card: what it is, its role in the budget if it has one, whether its
-    purchases can be read, and each mark the bank puts on them for who made them (`holders`:
-    the mark, how many purchases carry it, and whose it was said to be), the commonest first.
+    purchases can be read, and each mark the bank puts on them for who made them, the commonest
+    first (`holders`: the mark; how many purchases from the day `since` on carry it, counted as
+    the budget counts purchases; whose it is, see `budget_holder`; and whether that was `said`
+    or only read from a name in the mark).
     """
     rows = with_db(lambda c: c.execute(
         "SELECT k.key, i.item_id, i.institution, a.name, a.mask, a.current, a.credit_limit, i.error, i.products, a.account_id"
@@ -6895,8 +6908,11 @@ def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | Non
     ).fetchall())
     marks: dict[str, list[tuple[str, int]]] = {}
     for account_id, owner, count in with_db(lambda c: c.execute(
-        "SELECT account_id, owner, COUNT(*) FROM plaid_transactions WHERE removed_at IS NULL AND kind != 'payment' AND owner IS NOT NULL AND owner != ''"
-        " GROUP BY account_id, owner ORDER BY COUNT(*) DESC, owner"
+        # By the day, which is indexed, so this reads the months the page shows and not every purchase ever kept.
+        "SELECT account_id, owner, COUNT(*) FROM plaid_transactions WHERE date >= ? AND removed_at IS NULL AND kind != 'payment' AND owner IS NOT NULL AND owner != ''"
+        " AND txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
+        " GROUP BY account_id, owner ORDER BY COUNT(*) DESC, owner",
+        (since,),
     ).fetchall()):
         marks.setdefault(account_id, []).append((owner, count))
     cards = []
@@ -6905,7 +6921,8 @@ def budget_cards(roles: dict[str, str], holders: dict[str, dict[str, str]] | Non
         cards.append({
             "key": key or name, "institution_id": item_id, "institution": institution or "", "name": name, "mask": mask, "role": roles.get(key or name),
             "balance": current, "limit": limit, "error": error, "needs_relink": error in PLAID_RELINK, "transactions": "transactions" in (products or ""),
-            "holders": [{"mark": mark, "count": count, "person": said.get(mark) if said.get(mark) in (people or []) else None} for mark, count in marks.get(account_id, [])],
+            "holders": [{"mark": mark, "count": count, "person": budget_holder(mark, said, people or []), "said": said.get(mark) in (people or [])}
+                        for mark, count in marks.get(account_id, [])],
         })
     return cards
 
@@ -6930,7 +6947,7 @@ def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict
         role = config["roles"].get(card) or ""
         if role in ("", BUDGET_IGNORE):
             continue
-        bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, holder=(config["holders"].get(card) or {}).get(owner or ""))
+        bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules, said=config["holders"].get(card))
         purchases.append({
             "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
             "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
@@ -6998,7 +7015,7 @@ def budget_month(month: str | None = None, now: float | None = None) -> dict[str
         "next_sync_at": float(synced.get("at") or now) + TXN_SYNC_SECONDS,
         # False while Plaid is still fetching a card's first transactions: the month isn't all there yet.
         "ready": all(status in TXN_READY for status, _ in reading),
-        "cards": budget_cards(config["roles"], config["holders"], config["people"]),
+        "cards": budget_cards(config["roles"], config["holders"], config["people"], since=f"{earliest}-01"),
         "config": {**config, "rules": [{"merchant": key, "bucket": to} for key, to in rules.items()]},
         "savings_line": round(take_home - bills, 2) if take_home is not None and bills is not None else None,
         "spent": round(sum(p["amount"] for p in purchases), 2),

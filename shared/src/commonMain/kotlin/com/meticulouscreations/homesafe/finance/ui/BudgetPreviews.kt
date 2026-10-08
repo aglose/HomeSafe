@@ -46,7 +46,7 @@ internal object BudgetFixtures {
             balance = 1_840.0,
             needsRelink = false,
             readsPurchases = true,
-            holders = listOf(CardHolder("4410", 61, "Alex"), CardHolder("7726", 38, "Sam")),
+            holders = listOf(CardHolder("4410", 61, "Alex", said = true), CardHolder("7726", 38, "Sam", said = true)),
         ),
         BudgetCard(FAMILY, "item-2", "Northwind", "Platinum", "2207", CardRole.Family, balance = 2_410.0, needsRelink = false, readsPurchases = true),
     )
@@ -146,7 +146,7 @@ internal object BudgetFixtures {
     val unsorted = month(day = 3).let { it.copy(cards = it.cards.map { card -> card.copy(role = CardRole.Unset) }, purchases = emptyList(), spent = 0.0, pending = 0.0, daily = emptyList(), buckets = emptyList(), categories = emptyList(), merchants = emptyList()) }
 
     /** The shared card's bank says which card made each purchase, and nobody has yet said whose each is. */
-    val holdersUnsaid = month().let { it.copy(cards = it.cards.map { card -> card.copy(holders = card.holders.map { holder -> holder.copy(person = null) }) }) }
+    val holdersUnsaid = month().let { it.copy(cards = it.cards.map { card -> card.copy(holders = card.holders.map { holder -> holder.copy(person = null, said = false) }) }) }
 
     val noCards = month(day = 3, cards = emptyList()).copy(purchases = emptyList(), spent = 0.0)
 

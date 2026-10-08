@@ -137,6 +137,7 @@ import homesafe.shared.generated.resources.fin_budget_hero_limit
 import homesafe.shared.generated.resources.fin_budget_hero_month
 import homesafe.shared.generated.resources.fin_budget_hero_no_limit
 import homesafe.shared.generated.resources.fin_budget_holder_ending
+import homesafe.shared.generated.resources.fin_budget_holder_nobody
 import homesafe.shared.generated.resources.fin_budget_holders_body
 import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_how
@@ -694,8 +695,9 @@ private fun holderLabel(holder: CardHolder): String =
     if (holder.mark.length in 3..6 && holder.mark.all { it.isDigit() }) stringResource(Res.string.fin_budget_holder_ending, holder.mark) else holder.mark
 
 /**
- * Whose card is which: each mark the bank puts on [card]'s purchases, with the budget's people
- * to pick from. Picking the person already picked takes the say-so back.
+ * Whose card is which: each mark the bank puts on [card]'s purchases, as a choice of one among
+ * the budget's people and "Nobody yet". A mark that is someone's only because it names them has
+ * no "Nobody yet": there is nothing said to take back, only someone else to say instead.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -709,20 +711,24 @@ internal fun CardHolders(card: BudgetCard, people: List<String>, enabled: Boolea
                 Text(pluralStringResource(Res.plurals.fin_budget_purchases_count, holder.count, holder.count), style = FinanceTheme.type.label, color = colors.textTertiary)
             }
             Spacer(Modifier.height(6.dp))
+            val named = holder.person != null && !holder.said
+            // Null is "Nobody yet".
+            val choices: List<String?> = if (named) people else people + null
             FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                people.forEach { person ->
+                choices.forEach { person ->
                     val isSelected = holder.person == person
-                    val color = bucketColor(BucketId.Person(person), people)
+                    val color = if (person != null) bucketColor(BucketId.Person(person), people) else colors.textSecondary
                     Text(
-                        person,
+                        person ?: stringResource(Res.string.fin_budget_holder_nobody),
                         style = FinanceTheme.type.label,
                         color = if (isSelected) color else colors.textSecondary,
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(if (isSelected) color.copy(alpha = 0.18f) else colors.surfaceRaised)
                             .border(1.dp, if (isSelected) color.copy(alpha = 0.6f) else Color.Transparent, CircleShape)
-                            .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onSay(holder.mark, if (isSelected) null else person) }
-                            .testTag("finance_budget_holder_${holder.mark}_$person")
+                            // One of a set: choosing the one already chosen changes nothing.
+                            .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { if (!isSelected) onSay(holder.mark, person) }
+                            .testTag("finance_budget_holder_${holder.mark}_${person ?: "nobody"}")
                             .padding(horizontal = 14.dp, vertical = 8.dp),
                     )
                 }
