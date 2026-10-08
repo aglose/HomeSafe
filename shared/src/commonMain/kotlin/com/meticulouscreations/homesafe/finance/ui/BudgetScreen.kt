@@ -354,7 +354,7 @@ internal fun BudgetScreen(
                     shown.groupBy { it.date }.forEach { (day, purchases) ->
                         item(key = "day-$day") {
                             Text(
-                                FinanceFormat.dayOfMonth(day),
+                                FinanceFormat.dayOfMonth(day).resolve(),
                                 style = FinanceTheme.type.label,
                                 color = FinanceTheme.colors.textTertiary,
                                 modifier = Modifier.padding(horizontal = PageGutter).padding(top = 14.dp, bottom = 2.dp),
@@ -501,7 +501,7 @@ private fun BudgetHero(budget: Budget, pace: BudgetPace, onBackToNow: () -> Unit
         AuroraBackground(tint, Modifier.matchParentSize(), intensity = 0.7f)
         Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                val month = FinanceFormat.month(budget.month, year = true)
+                val month = FinanceFormat.month(budget.month, year = true).resolve()
                 Text(
                     if (budget.isCurrentMonth) stringResource(Res.string.fin_budget_hero_day, month, budget.day, budget.daysInMonth) else stringResource(Res.string.fin_budget_hero_month, month),
                     style = FinanceTheme.type.label,
@@ -675,7 +675,7 @@ private fun SortRow(purchase: Purchase, people: List<String>, busy: Boolean, onP
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(12.dp))
-            Text(FinanceFormat.dayOfMonth(purchase.date), style = FinanceTheme.type.label, color = colors.textTertiary)
+            Text(FinanceFormat.dayOfMonth(purchase.date).resolve(), style = FinanceTheme.type.label, color = colors.textTertiary)
             Spacer(Modifier.width(10.dp))
             Text(FinanceFormat.money(purchase.amount), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
         }
@@ -737,7 +737,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         val scrubbed = scrub?.takeIf { it in 1..budget.daily.size }
         Text(
             if (scrubbed != null) {
-                stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed), FinanceFormat.money(soFar.values[scrubbed], 0))
+                stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed).resolve(), FinanceFormat.money(soFar.values[scrubbed], 0))
             } else {
                 stringResource(Res.string.fin_budget_pace_caption)
             },
@@ -766,7 +766,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
                 if (budget.isCurrentMonth) add(stringResource(Res.string.fin_budget_pace_stat_projected) to FinanceFormat.money(pace.projected, 0))
                 pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 }?.let { add(stringResource(Res.string.fin_budget_pace_stat_allowance) to FinanceFormat.money(it, 0)) }
                 if (limit != null) {
-                    val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it) }
+                    val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it).resolve() }
                     add(stringResource(Res.string.fin_budget_pace_stat_limit_day) to (day ?: stringResource(Res.string.fin_budget_pace_stat_not_this_month)))
                 }
             },
@@ -912,7 +912,7 @@ private fun MonthsBlock(budget: Budget, onShowMonth: (String?) -> Unit) {
     val months = budget.history.map { it.month to it.spent } + (budget.month to budget.spent)
     BarChart(
         bars = months.map { (month, spent) ->
-            Bar(FinanceFormat.month(month), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
+            Bar(FinanceFormat.month(month).resolve(), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
         },
         modifier = Modifier.fillMaxWidth().padding(horizontal = PageGutter).height(150.dp),
         selected = months.lastIndex,
@@ -1002,7 +1002,7 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
             Column(Modifier.padding(horizontal = PageGutter)) {
                 Text(purchase.name, style = FinanceTheme.type.section, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))
-                val about = listOfNotNull(FinanceFormat.dayOfMonth(purchase.date), FinanceFormat.money(purchase.amount), card?.name)
+                val about = listOfNotNull(FinanceFormat.dayOfMonth(purchase.date).resolve(), FinanceFormat.money(purchase.amount), card?.name)
                 Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary)
                 Spacer(Modifier.height(4.dp))
                 Text(stringResource(sourceNote(purchase.source)), style = FinanceTheme.type.label, color = colors.textTertiary)

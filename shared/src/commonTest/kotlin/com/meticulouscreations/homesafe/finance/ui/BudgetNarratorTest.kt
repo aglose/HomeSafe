@@ -21,6 +21,8 @@ import homesafe.shared.generated.resources.fin_budget_verdict_over
 import homesafe.shared.generated.resources.fin_budget_verdict_over_near_savings
 import homesafe.shared.generated.resources.fin_budget_verdict_projected_over_on
 import homesafe.shared.generated.resources.fin_budget_verdict_under
+import homesafe.shared.generated.resources.finance_date_month_day
+import homesafe.shared.generated.resources.finance_month_oct
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -49,7 +51,10 @@ class BudgetNarratorTest {
 
     @Test
     fun runningAheadSaysWhereTheMonthEndsAndWhenTheLimitGoes() {
-        assertEquals(UiText.of(Res.string.fin_budget_verdict_projected_over_on, "$4,408", "$1,308", "Oct 22"), verdict(month(day = 10, perDay = 150.0)))
+        assertEquals(
+            UiText.of(Res.string.fin_budget_verdict_projected_over_on, "$4,408", "$1,308", UiText.of(Res.string.finance_date_month_day, UiText.of(Res.string.finance_month_oct), 22)),
+            verdict(month(day = 10, perDay = 150.0)),
+        )
     }
 
     @Test

@@ -261,7 +261,7 @@ internal fun PriceHeroAndChart(
             // own date, which in winter is an hour off today's; written from midday they can't
             // slip back a day.
             val intraday = range == ChartRange.DAY || range == ChartRange.WEEK || range == ChartRange.MONTH
-            if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)
+            (if (intraday) FinanceFormat.dateTime(t, gmt) else FinanceFormat.date(t + 12 * 3600, gmt)).resolve()
         } else {
             caption
         }
@@ -371,8 +371,8 @@ private fun MarketStatus(sp: Quote?) {
         PulsingDot(color = if (open) colors.gain else colors.textTertiary, size = 6.dp, pulsing = open)
         Spacer(Modifier.width(6.dp))
         val text = when {
-            open -> stringResource(Res.string.finance_markets_open_closes, sp.sessionEndEpochSeconds?.let { FinanceFormat.time(it, sp.gmtOffsetSeconds) } ?: "")
-            sp.sessionStartEpochSeconds != null && now < sp.sessionStartEpochSeconds -> stringResource(Res.string.finance_markets_opens, FinanceFormat.time(sp.sessionStartEpochSeconds, sp.gmtOffsetSeconds))
+            open -> stringResource(Res.string.finance_markets_open_closes, sp.sessionEndEpochSeconds?.let { FinanceFormat.time(it, sp.gmtOffsetSeconds).resolve() } ?: "")
+            sp.sessionStartEpochSeconds != null && now < sp.sessionStartEpochSeconds -> stringResource(Res.string.finance_markets_opens, FinanceFormat.time(sp.sessionStartEpochSeconds, sp.gmtOffsetSeconds).resolve())
             else -> stringResource(Res.string.finance_markets_closed)
         }
         Text(text, style = FinanceTheme.type.micro, color = if (open) colors.gain else colors.textSecondary)
