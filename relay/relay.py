@@ -6035,6 +6035,34 @@ def _plaid_link_finish(token: str, now: float) -> dict[str, Any]:
     return {"status": "linked", "institutions": names}
 
 
+def plaid_collect_links(now: float | None = None) -> list[str]:
+    """
+    Finishes every link that was started and never asked about again, and answers the
+    institutions that brought in. The app follows a link only while it remembers starting it,
+    and Android may well restart it while the person is away at their bank's sign-in: the
+    sign-in is then made on Plaid's side with nobody left to collect it, and Plaid's token for it
+    is good for half an hour. So the relay looks for itself, at every check and whenever the
+    linked accounts are asked for. A link still open, left or refused costs one question of Plaid
+    and is left as it was.
+    """
+    now = time.time() if now is None else now
+    pending = [token for token, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("done") is None and link.get("expires", 0) > now - PLAID_LINK_SECONDS]
+    collected: list[str] = []
+    for token in pending:
+        try:
+            result = plaid_link_finish(token, now)
+        except PlaidError as e:
+            log.info("bank: a link nobody came back for couldn't be asked about: %s", e.code)
+            continue
+        except Exception as e:
+            # Plaid unreachable. Not the detail: it may quote the request.
+            log.info("bank: a link nobody came back for couldn't be asked about: %s", type(e).__name__)
+            continue
+        if result["status"] == "linked":
+            collected += result.get("institutions") or []
+    return collected
+
+
 def plaid_liability_terms(liabilities: Any) -> dict[str, dict[str, Any]]:
     """Each loan's and card's rate, next payment and when it's due, by account, from a `/liabilities/get` answer."""
     terms: dict[str, dict[str, Any]] = {}
@@ -6350,6 +6378,8 @@ def bank_forever() -> None:
         try:
             if not plaid_on():
                 continue
+            # A sign-in finished on Plaid's page that the app never came back to collect.
+            plaid_collect_links()
             last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
             linked = with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0])
             if linked and bank_sync_due(time.time(), last, household_zone()):
@@ -6402,6 +6432,10 @@ def get_bank(request: Request, response: Response) -> dict[str, Any]:
     """The linked institutions and how their sync is going (see "bank sync"). Answers without Plaid set up too, to say so."""
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
+    # Opening the page is the moment someone looks for what they just linked: collect it now
+    # rather than at the next check, if the app lost track of it (see `plaid_collect_links`).
+    if plaid_on() and plaid_collect_links():
+        return {**bank_status(), "syncing": True}
     return bank_status()
 
 

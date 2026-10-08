@@ -12,6 +12,9 @@ In the app: **Finance → Wallet → the sync line → Linked accounts**.
 - **Linking** happens on Plaid's own page, at the institution's own sign-in where it has one
   (Chase, Schwab, Fidelity and most large institutions). The app asks the relay for a link, opens
   it in the browser, and the relay asks Plaid how it ended. HomeSafe never sees a bank password.
+  The relay also looks for itself, every five minutes and whenever Linked accounts is opened:
+  Android can restart the app while you are away at the bank's sign-in, and a sign-in nobody
+  came back to collect is lost half an hour later.
 - **What is kept** is one access token per institution, in `relay.db` on the Frigate box. The
   relay asks Plaid for balances, investment holdings and loan terms, and for what was bought on
   the credit cards (kept in `relay.db` too; see [budget.md](budget.md)). No product that can move
@@ -73,9 +76,11 @@ shows how old they are.
 ## Setup (once)
 
 1. **Plaid account.** Sign up at <https://dashboard.plaid.com/signup> and choose **Personal use**.
-   That is Plaid's free Trial plan: real institutions, up to 10 linked institutions, with
-   Investments and Liabilities included and most of the big OAuth institutions available. Note the
-   **client id** and the **production secret** (Developers → Keys).
+   That is Plaid's free Trial plan: real institutions, 10 links in all, with Transactions,
+   Investments and Liabilities included and the big institutions that sign in on their own page
+   (Capital One, American Express, Chase and the like) available at once. **The 10 are for good:**
+   unlinking an institution does not give its place back, so link each one once and leave it
+   linked. Note the **client id** and the **production secret** (Developers → Keys).
 2. **Feed sheet.** Make a new, empty Google Sheet and share it with the relay's service account as
    an **Editor**. The address is the one the budget sheet is already shared with; the app shows it
    on the bank sync page if the share is missing. Note the sheet's id (the long part of its URL).
@@ -125,7 +130,10 @@ shows how old they are.
 - **"Plaid said: …"** when linking. Plaid's own explanation is shown as written. `INVALID_API_KEYS`
   means the secret doesn't match `PLAID_ENV`.
 - **The Trial plan's 10 institutions are used up.** Plaid refuses the next link and says so. Its
-  dashboard shows the count and how to apply for more.
+  dashboard shows the count and how to apply for more. Every link ever made counts, unlinked
+  ones too.
+- **You signed in at the bank and it isn't in the list.** Open Linked accounts again: the server
+  collects a finished sign-in when the page is asked for. It has half an hour from the sign-in.
 
 ## What stays manual
 
