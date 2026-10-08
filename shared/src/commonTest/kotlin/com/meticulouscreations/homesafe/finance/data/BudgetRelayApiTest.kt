@@ -11,8 +11,9 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.text.UiText
-import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_budget_error_purchase_gone
+import homesafe.shared.generated.resources.fin_budget_error_refused
 import homesafe.shared.generated.resources.fin_budget_error_relay_outdated
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
@@ -165,24 +166,28 @@ class BudgetRelayApiTest {
     @Test
     fun taggingAPurchaseSaysWhoseAndWhetherToRemember() = runTest {
         val calls = mutableListOf<String>()
+        var forgotten: String? = null
         val engine = MockEngine { request ->
+            request.url.parameters["merchant"]?.let { forgotten = it }
             calls += "${request.method.value} ${request.url.encodedPath} ${request.body.toByteArray().decodeToString()}"
             respond(month, HttpStatusCode.OK, jsonHeaders)
         }
         val api = api(engine)
         api.tag("http://frigate.local", "t1", BucketId.Person("Sam"), remember = true).getOrThrow()
         api.tag("http://frigate.local", "t1", BucketId.Unassigned, remember = false).getOrThrow()
-        api.forgetRule("http://frigate.local", "warehouse club").getOrThrow()
+        api.forgetRule("http://frigate.local", "東京/渋谷 12").getOrThrow()
         api.syncNow("http://frigate.local").getOrThrow()
         assertEquals(
             listOf(
                 """PUT /finance/budget/transactions/t1 {"bucket":"person:Sam","remember":true}""",
                 """PUT /finance/budget/transactions/t1 {"bucket":null,"remember":false}""",
-                "DELETE /finance/budget/rules/warehouse%20club ",
+                "DELETE /finance/budget/rules ",
                 "POST /finance/budget/sync ",
             ),
             calls,
         )
+        // One value, slash and all: in the path it would have been two segments and no such route.
+        assertEquals("東京/渋谷 12", forgotten)
     }
 
     @Test
@@ -200,8 +205,14 @@ class BudgetRelayApiTest {
         assertEquals(BankProblem.NOT_ALLOWED, notAllowed.problem)
 
         val gone = MockEngine { respond("""{"detail":{"error":"not_found","message":"That purchase isn't there any more"}}""", HttpStatusCode.NotFound, jsonHeaders) }
+        // The budget's own refusals are worded by the app; the relay's English is only the technical detail.
         val missing = assertIs<BankSyncException>(api(gone).tag("http://frigate.local", "t9", BucketId.Family, remember = false).exceptionOrNull())
         assertEquals(BankProblem.OTHER, missing.problem)
-        assertEquals("That purchase isn't there any more".asUiText(), missing.text)
+        assertEquals(UiText.of(Res.string.fin_budget_error_purchase_gone), missing.text)
+        assertEquals("That purchase isn't there any more", missing.message)
+
+        val bad = MockEngine { respond("""{"detail":{"error":"bad_budget","message":"the total limit is an amount of money, or nothing"}}""", HttpStatusCode.BadRequest, jsonHeaders) }
+        val refusedChange = assertIs<BankSyncException>(api(bad).save("http://frigate.local", BudgetConfigPatch()).exceptionOrNull())
+        assertEquals(UiText.of(Res.string.fin_budget_error_refused), refusedChange.text)
     }
 }

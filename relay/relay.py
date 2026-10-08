@@ -6567,11 +6567,12 @@ def transactions_awaited(now: float) -> bool:
 
 def merchant_key(merchant: str | None, name: str | None) -> str:
     """
-    What a merchant is remembered by: the first few words of its name, letters only, so that
-    "COSTCO WHSE #0123" and "Costco Whse #0456" are the same shop.
+    What a merchant is remembered by: the first few words of its name, letters only (any
+    alphabet's), so that "COSTCO WHSE #0123" and "Costco Whse #0456" are the same shop. A name
+    with no letters at all is remembered as it is written.
     """
     text = (merchant or name or "").lower().replace("'", "")
-    return " ".join(re.findall(r"[a-z]+", text)[:3]) or text.strip()
+    return " ".join(re.findall(r"[^\W\d_]+", text)[:3]) or text.strip()
 
 
 def txn_kind(amount: float, category: str | None, name: str | None, detail: str | None = None) -> str:
@@ -7141,12 +7142,16 @@ def put_budget_transaction(txn_id: str, body: BudgetTag, request: Request, respo
     return budget_month(row[0][:7])
 
 
-@app.delete("/finance/budget/rules/{key}")
-def delete_budget_rule(key: str, request: Request, response: Response) -> dict[str, Any]:
-    """Forgets that a merchant's purchases always go one way. The ones tagged by hand stay as they are."""
+@app.delete("/finance/budget/rules")
+def delete_budget_rule(merchant: str, request: Request, response: Response) -> dict[str, Any]:
+    """
+    Forgets that a merchant's purchases always go one way. The ones tagged by hand stay as they
+    are. The merchant is named in the query (`?merchant=`), not the path: its key is whatever
+    its name was, and a name can hold a slash.
+    """
     response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
     require_finance_user(request)
-    with_db(lambda c: (c.execute("DELETE FROM budget_rules WHERE merchant_key=?", (key,)), c.commit()))
+    with_db(lambda c: (c.execute("DELETE FROM budget_rules WHERE merchant_key=?", (merchant,)), c.commit()))
     return budget_month()
 
 

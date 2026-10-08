@@ -238,15 +238,16 @@ class BudgetViewModel(
     /**
      * The budget sheet was read. The relay can't read take-home or the bills out of it (only this
      * app parses the sheet), and needs both to know where spending starts to come out of savings,
-     * so they are reported whenever they differ from what it has. A relay that has no people yet
-     * is given the sheet's.
+     * so they are reported whenever they differ from what it has. The budget's people are the
+     * sheet's too, and follow it: someone added to the sheet, or renamed there, is told to the
+     * relay. A sheet that names nobody (a block the parser didn't find) changes nothing.
      */
     fun onSheet(finance: PersonalFinance?) {
         val budget = _uiState.value.budget ?: return
         if (finance == null || !budget.isCurrentMonth) return
         val figures = BudgetSheetFigures.of(finance, budget.config.cardPaidLines)
         val stale = figures.takeHome != null && figures.billsOffCard != null && !figures.sameAs(budget.config.sheet)
-        val people = finance.people.takeIf { budget.config.people.isEmpty() && it.isNotEmpty() }
+        val people = finance.people.map { it.trim() }.filter { it.isNotEmpty() }.takeIf { it.isNotEmpty() && it != budget.config.people }
         if (!stale && people == null) return
         val patch = BudgetConfigPatch(people = people, sheet = figures.takeIf { stale })
         if (patch == reported) return

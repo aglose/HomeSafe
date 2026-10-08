@@ -10,6 +10,8 @@
     <string name="fin_budget_settings_title">Budget settings</string>
 
     <string name="fin_budget_error_generic">Couldn't reach the server</string>
+    <string name="fin_budget_error_purchase_gone">That purchase isn't there any more</string>
+    <string name="fin_budget_error_refused">The server wouldn't take that change</string>
     <string name="fin_budget_error_relay_outdated">The relay on the server is older than the budget. Copy relay/ to the server and run docker compose up -d --build there.</string>
     <string name="fin_budget_problem_outdated_title">The server needs an update</string>
     <string name="fin_budget_problem_other_title">Couldn't read the budget</string>

@@ -293,6 +293,21 @@ class BudgetViewModelTest {
     }
 
     @Test
+    fun someoneAddedToTheSheetLaterIsToldToTheRelayAndASheetNamingNobodyChangesNothing() = runTest(dispatcher) {
+        val repo = FakeRepository()
+        val finance = FinanceFixtures.finance
+        val figures = BudgetSheetFigures.of(finance, october.config.cardPaidLines)
+        val vm = shown(repo, october.copy(config = october.config.copy(sheet = figures)))
+        vm.onSheet(finance.copy(people = emptyList()))
+        runCurrent()
+        assertEquals(emptyList(), repo.saved)
+        vm.onSheet(finance.copy(people = finance.people + " Robin "))
+        runCurrent()
+        assertEquals(listOf(BudgetConfigPatch(people = finance.people + "Robin")), repo.saved)
+        vm.setActive(false)
+    }
+
+    @Test
     fun forgettingAShopAsksTheRelayTo() = runTest(dispatcher) {
         val repo = FakeRepository()
         val vm = shown(repo)

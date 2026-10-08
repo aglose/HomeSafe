@@ -64,7 +64,9 @@ Tap a name under a purchase to tag it. Tap the purchase itself for the sheet, wh
 shops are listed in the settings and can be forgotten there. A tag stays with a pending purchase
 when it settles.
 
-The people are the budget sheet's (the names beside "Flow In").
+The people are the budget sheet's (the names beside "Flow In"), and follow it: add or rename
+someone there and the budget has them the next time the app reads the sheet. A limit and a card
+role are kept by name, so a renamed person starts without either.
 
 ### Limits and the savings line
 

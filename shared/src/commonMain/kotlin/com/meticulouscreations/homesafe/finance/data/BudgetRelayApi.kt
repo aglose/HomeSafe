@@ -21,6 +21,8 @@ import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.Inject
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fin_budget_error_purchase_gone
+import homesafe.shared.generated.resources.fin_budget_error_refused
 import homesafe.shared.generated.resources.fin_budget_error_relay_outdated
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -34,14 +36,17 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 
 /**
@@ -76,7 +81,8 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
     }
 
     suspend fun forgetRule(serverUrl: String, merchantKey: String): Result<Budget> = suspendRunCatching {
-        httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/rules/$merchantKey")).answer()
+        // In the query, not the path: the key is whatever the merchant's name was, and a name can hold a slash.
+        httpClient.delete(PushRelayApi.relayUrl(serverUrl, "/finance/budget/rules")) { parameter("merchant", merchantKey) }.answer()
     }
 
     suspend fun syncNow(serverUrl: String): Result<Budget> = suspendRunCatching {
@@ -85,11 +91,31 @@ class BudgetRelayApi(private val httpClient: HttpClient) {
         }.answer()
     }
 
-    private suspend fun HttpResponse.answer(): Budget {
-        if (status.isSuccess()) return body<RelayBudget>().toDomain()
-        val problem = BankSyncRelayApi.problemFrom(status, bodyAsText())
-        // A relay from before the budget answers its own 404, which bank sync's words would misname.
-        throw if (problem.problem == BankProblem.RELAY_OUTDATED) BankSyncException(BankProblem.RELAY_OUTDATED, UiText.of(Res.string.fin_budget_error_relay_outdated), "HTTP 404") else problem
+    private suspend fun HttpResponse.answer(): Budget = if (status.isSuccess()) body<RelayBudget>().toDomain() else throw problemFrom(status, bodyAsText())
+
+    internal companion object {
+        private val json = Json { ignoreUnknownKeys = true }
+
+        /**
+         * The relay's refusal as a typed problem in the app's own words. The budget's own refusals
+         * (`budget_month` and the routes after it in relay.py) are understood here, and the relay's
+         * English for them is kept only as the technical detail; anything else is bank sync's to
+         * read, except that a relay from before the budget is said to be that.
+         */
+        fun problemFrom(status: HttpStatusCode, body: String): BankSyncException {
+            val detail = runCatching { json.parseToJsonElement(body).jsonObject["detail"] as? JsonObject }.getOrNull()
+            fun field(name: String) = (detail?.get(name) as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val technical = field("message") ?: "The relay answered $status"
+            return when (field("error")) {
+                "not_found" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_purchase_gone), technical)
+
+                "bad_bucket", "bad_budget", "bad_month" -> BankSyncException(BankProblem.OTHER, UiText.of(Res.string.fin_budget_error_refused), technical)
+
+                else -> BankSyncRelayApi.problemFrom(status, body).let { problem ->
+                    if (problem.problem == BankProblem.RELAY_OUTDATED) BankSyncException(BankProblem.RELAY_OUTDATED, UiText.of(Res.string.fin_budget_error_relay_outdated), "HTTP 404") else problem
+                }
+            }
+        }
     }
 }
 

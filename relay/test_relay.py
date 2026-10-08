@@ -4260,6 +4260,16 @@ class BudgetSyncTest(_Budget):
         self.assertEqual(relay.merchant_key(None, "COSTCO WHSE #0123"), relay.merchant_key(None, "Costco Whse #0456"))
         self.assertEqual("trader joes", relay.merchant_key("Trader Joe's", "TRADER JOE S #552"))
         self.assertEqual("", relay.merchant_key(None, None))
+        # Letters of any alphabet are letters; a name with none is kept as written, slash and all.
+        self.assertEqual("café böhm", relay.merchant_key("Café Böhm #12", None))
+        self.assertEqual("12/34", relay.merchant_key(None, " 12/34 "))
+
+    def test_a_shop_whose_name_holds_a_slash_can_be_remembered_and_forgotten(self):
+        self.store(_txn("t1", 54.2, name="24/7 #12", merchant=None))
+        body = relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="person:Sarah", remember=True), object(), self.response)
+        (rule,) = body["config"]["rules"]
+        self.assertIn("/", rule["merchant"])
+        self.assertEqual([], relay.delete_budget_rule(rule["merchant"], object(), self.response)["config"]["rules"])
 
     def test_a_tag_stays_through_a_change_and_passes_from_the_pending_purchase_to_the_posted_one(self):
         self.store(_txn("p1", 54.2, pending=True))
