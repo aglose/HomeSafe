@@ -201,7 +201,7 @@ class NwsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
         }
         if (response.status == HttpStatusCode.NotFound || response.status == HttpStatusCode.BadRequest) return@suspendRunCatching emptyList()
         if (!response.status.isSuccess()) throw WeatherServiceException(UiText.of(Res.string.weather_error_forecast_answered, response.status.value), response.status.value)
-        response.decode<AlertsDto>().features.mapNotNull { it.properties?.toAlert() }.sortedBy { it.severity.ordinal }
+        response.decode<AlertsDto>().features.mapNotNull { it.properties?.toAlert() }.distinctBy { it.id }.sortedBy { it.severity.ordinal }
     }
 
     /** The nearest town and its state ("Portland" to "OR"), or null outside the US or when the service won't say. */

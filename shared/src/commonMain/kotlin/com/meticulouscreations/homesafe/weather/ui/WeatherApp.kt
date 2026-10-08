@@ -60,6 +60,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
@@ -77,9 +78,9 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -237,10 +238,15 @@ internal fun WeatherAppContent(
         }
     }
     val onSky = pages.isEmpty() && tab != WeatherTab.RADAR
+    // Today or Forecast, whichever the pager of places was last showing.
+    var lastPlaceTab by rememberSaveable { mutableStateOf(if (initialTab == WeatherTab.FORECAST) WeatherTab.FORECAST else WeatherTab.TODAY) }
+    LaunchedEffect(tab) { if (tab != WeatherTab.RADAR) lastPlaceTab = tab }
     LaunchedEffect(active, pages.isEmpty(), tab, selected?.place?.id) {
         // The radar loop is wanted by the Radar tab and by Today's small map of it.
         actions.onRadarVisible(active && pages.isEmpty() && tab != WeatherTab.FORECAST && selected != null)
     }
+    // Gone from the screen by any road (a tab switch can take the overlay away without closing it): nobody wants the loop.
+    DisposableEffect(actions) { onDispose { actions.onRadarVisible(false) } }
 
     val palette = remember { WeatherPalette() }
     // Remembered: a new instance through the static local would recompose the whole tree on every state change.
@@ -266,7 +272,7 @@ internal fun WeatherAppContent(
                 freeze = if (state.preferences.stillSky) SkyFreeze() else null,
             )
             // A little shade always, so white lettering reads on the brightest sky; more as the cards scroll up over it.
-            Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.08f + dim.floatValue * 0.5f }.background(Color.Black))
+            Box(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = 0.1f + dim.floatValue * 0.5f) })
 
             val target: Any = pages.lastOrNull() ?: tab
             AnimatedContent(
@@ -279,7 +285,8 @@ internal fun WeatherAppContent(
                 when (shown) {
                     WeatherTab.TODAY, WeatherTab.FORECAST -> PlacePager(
                         state = state,
-                        tab = if (tab == WeatherTab.RADAR) WeatherTab.TODAY else tab,
+                        // Its own tab while it is on its way out to the radar, not whatever came next.
+                        tab = if (tab == WeatherTab.RADAR) lastPlaceTab else tab,
                         scrubbedEpochSeconds = scrub,
                         tiles = tiles,
                         padding = padding,
@@ -289,6 +296,7 @@ internal fun WeatherAppContent(
                         onOpenAlert = { pages += WeatherPage.Alert(it) },
                         onOpenRadar = { tab = WeatherTab.RADAR },
                         onOpenPlaces = { pages += WeatherPage.Places },
+                        animated = active && !state.preferences.stillSky,
                     )
 
                     WeatherTab.RADAR -> RadarScreen(
@@ -398,6 +406,7 @@ private fun PlacePager(
     onOpenAlert: (String) -> Unit,
     onOpenRadar: () -> Unit,
     onOpenPlaces: () -> Unit,
+    animated: Boolean,
     modifier: Modifier = Modifier,
 ) {
     if (state.places.isEmpty()) {
@@ -447,6 +456,7 @@ private fun PlacePager(
                 onOpenAlert = onOpenAlert,
                 onOpenRadar = onOpenRadar,
                 onRetry = actions.onRefresh,
+                animated = animated,
             )
         }
     }
@@ -467,6 +477,7 @@ private fun PlacePage(
     onOpenAlert: (String) -> Unit,
     onOpenRadar: () -> Unit,
     onRetry: () -> Unit,
+    animated: Boolean,
 ) {
     val todayList = rememberLazyListState()
     val forecastList = rememberLazyListState()
@@ -482,7 +493,7 @@ private fun PlacePage(
     }
     Crossfade(tab, label = "placeTab") { shown ->
         if (shown == WeatherTab.FORECAST) {
-            ForecastScreen(entry, state.nowEpochSeconds, forecastList, padding)
+            ForecastScreen(entry, state.nowEpochSeconds, forecastList, padding, onRetry)
         } else {
             TodayScreen(
                 entry = entry,
@@ -496,6 +507,7 @@ private fun PlacePage(
                 onOpenAlert = onOpenAlert,
                 onOpenRadar = onOpenRadar,
                 onRetry = onRetry,
+                animated = animated,
             )
         }
     }

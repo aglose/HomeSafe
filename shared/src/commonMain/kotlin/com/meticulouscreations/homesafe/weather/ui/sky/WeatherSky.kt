@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -67,8 +68,10 @@ fun WeatherSky(
     val animator = remember { SkyAnimator() }
     val held = freeze ?: if (LocalInspectionMode.current) SkyFreeze() else null
     val palette = remember(scene) { SkyPalette.of(scene) }
-    // Set as part of composition, so the very first frame is already this scene.
+    // Set as part of composition, so the very first frame is already this scene; the redraw is
+    // asked for once composition is done, since asking is a write to state.
     remember(scene, held) { animator.aim(scene, palette, held) }
+    SideEffect { animator.redrawIfAimed() }
 
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val ticking = held == null && running && lifecycle.isAtLeast(Lifecycle.State.STARTED)
@@ -90,9 +93,11 @@ fun WeatherSky(
         modifier
             .clipToBounds()
             .graphicsLayer {
+                // Read first, whatever follows: it is the only thing here that says "look again",
+                // and the glass has to notice the rain starting as well as the rain going on.
+                animator.frame.intValue
                 val wet = animator.value(GLASS)
                 if (drops != null && wet > 0.01f && size.minDimension > 0f) {
-                    animator.frame.intValue
                     drops.setUniform("size", size.width, size.height)
                     drops.setUniform("time", animator.time)
                     drops.setUniform("unit", unit)
@@ -227,6 +232,7 @@ internal class SkyAnimator(private val random: Random = Random.Default) {
     private val current = FloatArray(SLOTS)
     private val target = FloatArray(SLOTS)
     private var primed = false
+    private var aimed = false
 
     /** Bumped once a frame; reading it in a draw is what makes that draw run again. */
     val frame = mutableIntStateOf(0)
@@ -295,13 +301,22 @@ internal class SkyAnimator(private val random: Random = Random.Default) {
         } else {
             heldBoltAge = null
         }
-        frame.intValue++
+        aimed = true
+    }
+
+    /** Has the draws run again if [aim] changed anything since they last did. */
+    fun redrawIfAimed() {
+        if (aimed) {
+            aimed = false
+            frame.intValue++
+        }
     }
 
     /** One frame on, [dt] seconds later. */
     fun step(dt: Float) {
-        // Wrapped well short of where a float runs out of room for the rain's fast clock; the
-        // strike is carried over so one in progress isn't cut off.
+        // Wrapped well short of where a float runs out of room for the rain's fast clock (everything
+        // timed by it re-deals itself at the wrap, once in ten minutes); the strike is carried over
+        // so one in progress isn't cut off.
         time += dt
         if (time > CLOCK_WRAP_SECONDS) {
             time -= CLOCK_WRAP_SECONDS

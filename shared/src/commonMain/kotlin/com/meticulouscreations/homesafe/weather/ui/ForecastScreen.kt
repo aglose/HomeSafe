@@ -25,9 +25,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.ShowChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -104,11 +104,15 @@ internal fun ForecastScreen(
     nowEpochSeconds: Long,
     listState: LazyListState,
     padding: PaddingValues,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val report = entry.report ?: return
-    val days = remember(report, nowEpochSeconds) { report.daysFromToday(nowEpochSeconds) }
-    if (days.isEmpty()) return
+    val report = entry.report
+    val days = remember(report, nowEpochSeconds) { report?.daysFromToday(nowEpochSeconds).orEmpty() }
+    if (report == null || days.isEmpty()) {
+        WaitingForForecast(entry, padding, onRetry, modifier)
+        return
+    }
     var opened by rememberSaveable(entry.place.id) { mutableLongStateOf(-1L) }
     val weekLow = remember(days) { days.minOf { it.lowC } }
     val weekHigh = remember(days) { days.maxOf { it.highC } }
@@ -120,7 +124,7 @@ internal fun ForecastScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "trend", contentType = "card") {
-            WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.Filled.ShowChart) {
+            WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.AutoMirrored.Filled.ShowChart) {
                 WeekTrendChart(report, nowEpochSeconds)
             }
         }

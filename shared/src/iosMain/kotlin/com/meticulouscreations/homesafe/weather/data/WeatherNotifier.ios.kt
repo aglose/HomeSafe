@@ -71,7 +71,6 @@ object IosWeatherRefresh {
 
     private var registered = false
 
-
     fun register() {
         if (registered) return
         // Registering an identifier the bundle doesn't list is an exception, not an error to handle:

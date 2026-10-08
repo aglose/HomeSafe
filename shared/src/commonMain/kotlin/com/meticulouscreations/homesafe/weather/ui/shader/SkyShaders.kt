@@ -530,7 +530,8 @@ float3 beads(float2 fc, float cell, float seed) {
     float swell = smoothstep(0.0, 0.25, life) * (1.0 - smoothstep(0.7, 1.0, life));
     float r = (0.07 + 0.19 * fract(h * 23.0)) * swell * step(1.0 - (0.12 + 0.38 * amount), fract(h * 3.7));
     float2 d = f - o;
-    float m = 1.0 - smoothstep(r * 0.55, r, length(d));
+    // No drop in most cells (r is 0), and smoothstep between two equal edges is nobody's promise.
+    float m = step(0.0005, r) * (1.0 - smoothstep(r * 0.55, max(r, 0.001), length(d)));
     return float3(d / max(r, 0.001) * m, m);
 }
 
@@ -622,6 +623,8 @@ half4 main(float2 fragCoord) {
     float3 face = float3(0.97, 0.95, 0.9) * albedo * (0.72 + 0.28 * z);
     float3 body = face * (0.07 + 0.93 * day);
     float edge = 1.0 - smoothstep(1.0 - 2.4 / r, 1.0, sqrt(d2));
-    return half4(half3(body * edge), half(edge));
+    // The glow carries on under the softened limb, so there is no clear ring between the two.
+    float under = halo * (1.0 - edge);
+    return half4(half3(body * edge + float3(0.75, 0.82, 1.0) * under), half(edge + under));
 }
 """

@@ -190,6 +190,7 @@ private val UV_SCALE = listOf(Color(0xFF6BD66B), Color(0xFFF5D93A), Color(0xFFF5
 private fun ScaleBar(fraction: Float, scale: List<Color>, modifier: Modifier = Modifier) {
     Canvas(modifier.fillMaxWidth().height(6.dp)) {
         drawRoundRect(Brush.horizontalGradient(scale), size = size, cornerRadius = CornerRadius(size.height / 2))
+        if (size.width <= size.height * 2) return@Canvas
         val x = (fraction.coerceIn(0f, 1f) * size.width).coerceIn(size.height / 2, size.width - size.height / 2)
         drawCircle(Color(0x99000000), size.height * 0.95f, Offset(x, size.height / 2))
         drawCircle(Color.White, size.height * 0.62f, Offset(x, size.height / 2))
@@ -429,7 +430,7 @@ internal fun MoonTile(report: WeatherReport, nowEpochSeconds: Long, modifier: Mo
     val colors = WeatherTheme.colors
     val phase = remember(nowEpochSeconds / 3600) { Astronomy.moonPhase(nowEpochSeconds) }
     val name = stringResource(phase.name.label())
-    val next = remember(nowEpochSeconds / 86_400) {
+    val next = remember(nowEpochSeconds / 3600) {
         // Whichever is nearer: the next full moon while it waxes, the next new one while it wanes.
         val full = phase.cycle < 0.5
         full to Astronomy.nextMoon(nowEpochSeconds, full)

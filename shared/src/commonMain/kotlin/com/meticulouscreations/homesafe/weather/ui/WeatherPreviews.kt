@@ -25,9 +25,10 @@ import kotlin.math.PI
 import kotlin.math.cos
 
 /**
- * A forecast made up for previews and tests: eleven days for Portland, Oregon, starting the day
+ * A forecast made up for previews and tests: twelve days for Portland, Oregon, starting the day
  * before [TODAY], with a bit of everything in them — a shower this evening, a storm midweek, a
  * fog, a cold snap with snow at the end — so every part of the screens has something to draw.
+ * A day with a wet spell in it is overcast for the rest of its hours.
  */
 internal object WeatherFixtures {
     /** Local midnight on 9 October 2025 in Portland (UTC−7). */
@@ -61,8 +62,9 @@ internal object WeatherFixtures {
         DayPlan(0, 4.0, -5.0),
     )
 
-    private fun hour(day: Int, hour: Int): HourForecast {
-        val plan = plans[day]
+    /** [shift] reads the plans that many days on, for a second place whose weather should differ from the first's at the same moment. */
+    private fun hour(day: Int, hour: Int, shift: Int = 0): HourForecast {
+        val plan = plans[(day + shift) % plans.size]
         val swing = (plan.high - plan.low) / 2
         val temperature = plan.low + swing + swing * cos((hour - 15) / 24.0 * 2 * PI)
         val wet = plan.wet?.contains(hour) == true
@@ -106,9 +108,14 @@ internal object WeatherFixtures {
         )
     }
 
-    val hours: List<HourForecast> = plans.indices.flatMap { day -> (0..23).map { hour(day, it) } }
+    val hours: List<HourForecast> = hours(shift = 0)
 
-    val days: List<DayForecast> = plans.mapIndexed { i, plan ->
+    val days: List<DayForecast> = days(shift = 0)
+
+    private fun hours(shift: Int): List<HourForecast> = plans.indices.flatMap { day -> (0..23).map { hour(day, it, shift) } }
+
+    private fun days(shift: Int): List<DayForecast> = plans.indices.map { i ->
+        val plan = plans[(i + shift) % plans.size]
         val start = TODAY + (i - 1) * DAY
         val wetHours = plan.wet?.count() ?: 0
         DayForecast(
@@ -122,7 +129,8 @@ internal object WeatherFixtures {
             sunsetEpochSeconds = start + 18 * HOUR + 2_040,
             moonriseEpochSeconds = start + 19 * HOUR,
             moonsetEpochSeconds = start + 9 * HOUR,
-            uvIndexMax = if (plan.wet == null) 6.0 else 3.0,
+            // What the day's hours actually reach, so the tile and the day's own number agree.
+            uvIndexMax = (0..23).maxOf { hour(i, it, shift).uvIndex ?: 0.0 },
             precipitationMm = wetHours * plan.mmPerHour,
             rainMm = if (plan.snow) 0.0 else wetHours * plan.mmPerHour,
             snowfallCm = if (plan.snow) wetHours * plan.mmPerHour * 0.9 else 0.0,
@@ -134,11 +142,17 @@ internal object WeatherFixtures {
         )
     }
 
-    /** Today at [NOW]: partly cloudy and mild, with this evening's shower still a couple of hours off. */
+    /** Today at [NOW]: overcast and mild, with this evening's shower still a couple of hours off. */
     val report: WeatherReport = reportAt(NOW)
 
-    /** The same forecast read at [nowEpochSeconds], with the quarter-hours from then drawn from the hours. */
-    fun reportAt(nowEpochSeconds: Long, alerts: List<WeatherAlert> = emptyList()): WeatherReport {
+    /**
+     * The same forecast read at [nowEpochSeconds], with the quarter-hours from then drawn from the
+     * hours. [shift] moves the weather on that many days while the clock stays put: another
+     * place's forecast for the same moment.
+     */
+    fun reportAt(nowEpochSeconds: Long, alerts: List<WeatherAlert> = emptyList(), shift: Int = 0): WeatherReport {
+        val hours = hours(shift)
+        val days = days(shift)
         val at = hours.last { it.epochSeconds <= nowEpochSeconds }
         val quarter = nowEpochSeconds - nowEpochSeconds % 900
         return WeatherReport(
@@ -190,8 +204,8 @@ internal object WeatherFixtures {
     fun state(nowEpochSeconds: Long = NOW, alerts: List<WeatherAlert> = emptyList()): WeatherUiState = WeatherUiState(
         places = listOf(
             PlaceWeather(portland, reportAt(nowEpochSeconds, alerts)),
-            PlaceWeather(seattle, reportAt(nowEpochSeconds + 2 * DAY)),
-            PlaceWeather(tokyo, reportAt(nowEpochSeconds + 4 * DAY + 9 * HOUR)),
+            PlaceWeather(seattle, reportAt(nowEpochSeconds, shift = 2)),
+            PlaceWeather(tokyo, reportAt(nowEpochSeconds, shift = 7)),
         ),
         selectedId = Place.CURRENT_ID,
         locationSupported = true,

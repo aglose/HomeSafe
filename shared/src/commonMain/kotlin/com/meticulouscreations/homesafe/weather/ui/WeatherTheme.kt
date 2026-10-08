@@ -48,10 +48,10 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherUnits
 @Immutable
 data class WeatherPalette(
     val onSky: Color = Color(0xFFFFFFFF),
-    val onSkyMuted: Color = Color(0xD1FFFFFF),
-    /** The small print: at least 4.5:1 on a card over the brightest sky the shaders draw. */
-    val onSkyFaint: Color = Color(0x99FFFFFF),
-    val card: Color = Color(0x570A1220),
+    val onSkyMuted: Color = Color(0xDBFFFFFF),
+    /** The small print: kept readable on a card over the brightest sky the shaders draw, which is what sets how dark the card's glass is. */
+    val onSkyFaint: Color = Color(0xB8FFFFFF),
+    val card: Color = Color(0x850A1220),
     /** A card that has to be read against a bright sky with nothing else behind it: the top bar's pills, the nav. */
     val cardSolid: Color = Color(0xB80A1220),
     val cardBorder: Color = Color(0x24FFFFFF),

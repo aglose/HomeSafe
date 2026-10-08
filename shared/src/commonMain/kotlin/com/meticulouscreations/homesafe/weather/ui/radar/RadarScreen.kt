@@ -77,6 +77,7 @@ import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.ui.WeatherCardShape
 import com.meticulouscreations.homesafe.weather.ui.WeatherTheme
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.weather_place_current
 import homesafe.shared.generated.resources.weather_radar_ago
 import homesafe.shared.generated.resources.weather_radar_ahead
 import homesafe.shared.generated.resources.weather_radar_credit_map
@@ -167,7 +168,8 @@ internal fun RadarScreen(
     val frameIndex by remember(timeline) { derivedStateOf { position.floatValue.roundToInt().coerceIn(0, lastIndex) } }
     val frame = timeline?.frames?.getOrNull(frameIndex)
     val timeLabel = frame?.let { WeatherFormat.clock(it.epochSeconds, utcOffsetSeconds).resolve() }
-    val mapDescription = stringResource(Res.string.weather_radar_map_description, place?.name.orEmpty(), timeLabel.orEmpty())
+    val placeName = place?.name?.takeIf { it.isNotBlank() } ?: stringResource(Res.string.weather_place_current)
+    val mapDescription = if (timeLabel != null) stringResource(Res.string.weather_radar_map_description, placeName, timeLabel) else stringResource(Res.string.weather_radar_loading)
 
     Box(modifier.fillMaxSize().testTag("weather_radar")) {
         RadarMap(
@@ -205,6 +207,8 @@ internal fun RadarScreen(
                 .clip(WeatherCardShape)
                 .background(colors.cardSolid)
                 .border(1.dp, colors.cardBorder, WeatherCardShape)
+                // The pane is not the map: a drag that starts on it doesn't move what is under it.
+                .pointerInput(Unit) {}
                 .padding(horizontal = 14.dp, vertical = 12.dp),
         ) {
             if (headline != null) {
@@ -222,6 +226,8 @@ internal fun RadarScreen(
                             touched = true
                             // From the end, play starts the loop over rather than sitting on the hold.
                             if (!playing && position.floatValue >= lastIndex) position.floatValue = 0f
+                            // Paused, it rests on a frame, the one the time beside the button names.
+                            if (playing) position.floatValue = position.floatValue.roundToInt().toFloat()
                             playing = !playing
                         }
                         .testTag("weather_radar_play"),

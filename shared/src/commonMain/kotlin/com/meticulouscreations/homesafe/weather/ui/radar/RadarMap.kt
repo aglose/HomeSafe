@@ -104,7 +104,7 @@ internal fun RadarMap(
     val framePosition by rememberUpdatedState(position)
 
     // Ask for what's in view whenever the view moves on to other tiles, or the loop does.
-    LaunchedEffect(tiles, timeline, tilePx, wholeLoop) {
+    LaunchedEffect(state, tiles, timeline, tilePx, wholeLoop) {
         snapshotFlow {
             val camera = state.camera
             val count = 1 shl camera.level
@@ -143,14 +143,14 @@ internal fun RadarMap(
                     Modifier
                 } else {
                     Modifier
-                        .pointerInput(tilePx) {
+                        .pointerInput(state, tilePx) {
                             detectTransformGestures { centroid, pan, zoom, _ ->
                                 state.camera = state.camera
                                     .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx)
                                     .panned(pan.x, pan.y, tilePx)
                             }
                         }
-                        .pointerInput(tilePx) {
+                        .pointerInput(state, tilePx) {
                             detectTapGestures(
                                 onDoubleTap = { at ->
                                     val start = state.camera
@@ -215,9 +215,12 @@ internal fun RadarMap(
                 val blend = at - a
                 val from = timeline.frames[a]
                 val to = timeline.frames[b]
-                val drewFrom = drawFrame(tiles, camera, tilePx, from, alpha = 1f - blend, plus = false)
+                // A frame fades into the next only once the next has arrived; until then it stays whole,
+                // or the rain would thin toward nothing and jump back at each step of a first play.
+                val fading = b != a && blend > 0f && hasFrame(tiles, camera, tilePx, to)
+                val drewFrom = drawFrame(tiles, camera, tilePx, from, alpha = if (fading) 1f - blend else 1f, plus = false)
                 // Added, not laid over: the layer then holds exactly the strength between the two.
-                val drewTo = if (b != a && blend > 0f) drawFrame(tiles, camera, tilePx, to, alpha = if (drewFrom) blend else 1f, plus = true) else false
+                val drewTo = if (fading) drawFrame(tiles, camera, tilePx, to, alpha = if (drewFrom) blend else 1f, plus = true) else false
                 // Nothing of either yet: the nearest frame that has arrived stands in.
                 if (!drewFrom && !drewTo) {
                     timeline.frames.indices.sortedBy { abs(it - a) }.firstOrNull { i ->
@@ -245,11 +248,18 @@ internal fun RadarMap(
 /** The tile level a frame is drawn from: one out from the map's (radar is coarser than a map and wants fewer, larger tiles), and no finer than the frame has. */
 internal fun radarLevel(camera: MapCamera, frame: RadarFrame): Int = (camera.level - 1).coerceIn(2, frame.maxZoom)
 
-/** Draws [frame]'s tiles over the view; false if none of them has arrived. */
+/** Whether any of [frame]'s tiles for this view has arrived, at its own level (a coarser stand-in doesn't count). */
+private fun DrawScope.hasFrame(tiles: MapTileSource, camera: MapCamera, tilePx: Float, frame: RadarFrame): Boolean =
+    camera.tiles(size.width, size.height, tilePx, radarLevel(camera, frame)).any { tiles.image(frame.url(it.z, it.x, it.y)) != null }
+
+/**
+ * Draws [frame]'s tiles over the view; false if none of them has arrived. A tile not here yet
+ * is stood in for by the coarser one it is part of, so zooming in a level doesn't blank the rain.
+ */
 private fun DrawScope.drawFrame(tiles: MapTileSource, camera: MapCamera, tilePx: Float, frame: RadarFrame, alpha: Float, plus: Boolean): Boolean {
     var drew = false
     camera.tiles(size.width, size.height, tilePx, radarLevel(camera, frame)).forEach { tile ->
-        if (drawTile(tiles, tile, frame::url, ancestors = 0, quality = FilterQuality.Low, alpha = alpha, blendMode = if (plus) BlendMode.Plus else BlendMode.SrcOver)) drew = true
+        if (drawTile(tiles, tile, frame::url, ancestors = 2, quality = FilterQuality.Low, alpha = alpha, blendMode = if (plus) BlendMode.Plus else BlendMode.SrcOver)) drew = true
     }
     return drew
 }
@@ -277,10 +287,13 @@ private fun DrawScope.drawTile(
             val span = 1 shl up
             val srcSize = IntSize(image.width / span, image.height / span)
             val srcOffset = IntOffset((tile.x - (x shl up)) * srcSize.width, (tile.y - (y shl up)) * srcSize.height)
-            // Whole pixels, and a hair's overlap, so neighbours meet without a seam.
-            val left = floor(tile.left).toInt()
-            val top = floor(tile.top).toInt()
-            val dstSize = IntSize(ceil(tile.left + tile.size).toInt() - left, ceil(tile.top + tile.size).toInt() - top)
+            // Whole pixels, each edge rounded the same way from either side of it: neighbours share
+            // the edge exactly, with no gap between them and no column drawn twice (which, where
+            // tiles are added together, would count the rain there double).
+            val left = tile.left.roundToInt()
+            val top = tile.top.roundToInt()
+            val dstSize = IntSize((tile.left + tile.size).roundToInt() - left, (tile.top + tile.size).roundToInt() - top)
+            if (dstSize.width <= 0 || dstSize.height <= 0) return true
             drawImage(image, srcOffset, srcSize, IntOffset(left, top), dstSize, alpha = alpha, blendMode = blendMode, filterQuality = quality)
             return true
         }

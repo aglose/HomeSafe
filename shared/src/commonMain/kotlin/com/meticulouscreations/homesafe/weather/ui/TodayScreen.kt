@@ -121,6 +121,7 @@ internal fun TodayScreen(
     onOpenRadar: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    animated: Boolean = true,
 ) {
     val report = entry.report
     if (report == null) {
@@ -176,7 +177,7 @@ internal fun TodayScreen(
             }
         }
         item(key = "outdoor", contentType = "card") { OutdoorCard(report, nowEpochSeconds, Modifier.cardWidth()) }
-        item(key = "radar", contentType = "card") { RadarCard(entry.place, radar, tiles, onOpenRadar, Modifier.cardWidth()) }
+        item(key = "radar", contentType = "card") { RadarCard(entry.place, radar, tiles, animated, onOpenRadar, Modifier.cardWidth()) }
         item(key = "details", contentType = "details") { DetailTiles(report, entry.place, nowEpochSeconds, Modifier.cardWidth()) }
         item(key = "footer", contentType = "footer") {
             Column(Modifier.cardWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
@@ -344,7 +345,7 @@ private fun OutdoorCard(report: WeatherReport, nowEpochSeconds: Long, modifier: 
 
 /** A window onto the radar: the newest frame over the place, still. A tap opens the radar itself. */
 @Composable
-private fun RadarCard(place: Place, radar: RadarLoad, tiles: MapTileSource, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun RadarCard(place: Place, radar: RadarLoad, tiles: MapTileSource, animated: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     val map = remember(place.id, place.latitude, place.longitude) { RadarMapState(MapCamera.at(place.latitude, place.longitude, 6.4)) }
     val timeline = radar.timeline
@@ -367,6 +368,7 @@ private fun RadarCard(place: Place, radar: RadarLoad, tiles: MapTileSource, onOp
             markerLongitude = place.longitude,
             interactive = false,
             wholeLoop = false,
+            animated = animated,
         )
         Row(
             Modifier.align(Alignment.TopStart).padding(10.dp).clip(CircleShape).background(colors.cardSolid).padding(horizontal = 10.dp, vertical = 6.dp),
@@ -410,7 +412,7 @@ private fun DetailTiles(report: WeatherReport, place: Place, nowEpochSeconds: Lo
 
 /** No forecast yet for this place: still on its way, or the fetch failed and there is nothing older to show. */
 @Composable
-private fun WaitingForForecast(entry: PlaceWeather, padding: PaddingValues, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+internal fun WaitingForForecast(entry: PlaceWeather, padding: PaddingValues, onRetry: () -> Unit, modifier: Modifier = Modifier) {
     val colors = WeatherTheme.colors
     Column(modifier.fillMaxSize().padding(padding).padding(horizontal = 28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         val error = entry.error

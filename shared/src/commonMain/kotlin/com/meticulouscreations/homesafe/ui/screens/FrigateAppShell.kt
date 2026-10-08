@@ -319,7 +319,11 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
      */
     suspend fun openWeatherFromNotifications() {
         WeatherDeepLinks.pending.filter { it }.collect {
-            openApp(InnerApp.WEATHER, Offset.Zero, selectedTab)
+            val host = selectedTab
+            openApp(InnerApp.WEATHER, Offset.Zero, host)
+            // Under a native tab bar the tab Compose last asked for may not be the one on screen;
+            // asking for it again puts the tab that holds the app in front.
+            onTabSelected(host)
             WeatherDeepLinks.consume()
         }
     }

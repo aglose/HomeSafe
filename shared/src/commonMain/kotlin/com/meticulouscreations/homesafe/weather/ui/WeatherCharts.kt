@@ -294,7 +294,8 @@ internal fun TemperatureRangeBar(lowC: Double, highC: Double, weekLowC: Double, 
             Size(to - from, size.height),
             radius,
         )
-        if (currentC != null) {
+        // (Not on a bar too short to hold it: a window squeezed that narrow has other problems.)
+        if (currentC != null && size.width > size.height * 2) {
             val x = xOf(currentC).coerceIn(size.height / 2, size.width - size.height / 2)
             drawCircle(Color(0x99000000), size.height * 0.95f, Offset(x, size.height / 2))
             drawCircle(Color.White, size.height * 0.62f, Offset(x, size.height / 2))
