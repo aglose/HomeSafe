@@ -68,7 +68,7 @@ fun SettingsTabNav(
         onBack = { backStack.removeLastOrNull() },
         transitionSpec = { sharedAxis(forward = true) },
         popTransitionSpec = { sharedAxis(forward = false) },
-        predictivePopTransitionSpec = { sharedAxis(forward = false) },
+        predictivePopTransitionSpec = { predictiveSharedAxis(it) },
         entryProvider = entryProvider {
             entry<SettingsHomeRoute> { content { route -> backStack.add(route) } }
             entry<AlertsRoute> { AlertsSettingsScreen(onBack = { backStack.removeLastOrNull() }) }

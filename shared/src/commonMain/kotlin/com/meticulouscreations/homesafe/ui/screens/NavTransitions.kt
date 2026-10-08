@@ -10,6 +10,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.ui.unit.IntOffset
 import androidx.navigation3.scene.Scene
+import androidx.navigationevent.NavigationEvent
 
 /**
  * The app's screen-change vocabulary. Navigation 3 ships a 700 ms cross-fade for every push
@@ -32,8 +33,25 @@ private const val SLIDE_DIVISOR = 10
  * while both slide together, and the incoming one fades up over the rest. [forward] slides
  * towards the start edge (drilling in, next tab); `false` reverses it (back, previous tab).
  */
-internal fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.sharedAxis(forward: Boolean): ContentTransform {
-    val towards = if (forward) SlideDirection.Start else SlideDirection.End
+internal fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.sharedAxis(forward: Boolean): ContentTransform =
+    sharedAxis(if (forward) SlideDirection.Start else SlideDirection.End)
+
+/**
+ * [sharedAxis] going back under a predictive back swipe, which Navigation 3 scrubs with the
+ * finger: the screens slide the way the swipe pulls — rightwards from the left edge, leftwards
+ * from the right — so the page follows the gesture rather than moving against it. A swipe that
+ * says no edge goes the way a plain Back does.
+ */
+internal fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.predictiveSharedAxis(swipeEdge: Int): ContentTransform =
+    sharedAxis(
+        when (swipeEdge) {
+            NavigationEvent.EDGE_LEFT -> SlideDirection.Right
+            NavigationEvent.EDGE_RIGHT -> SlideDirection.Left
+            else -> SlideDirection.End
+        },
+    )
+
+private fun <T : Any> AnimatedContentTransitionScope<Scene<T>>.sharedAxis(towards: SlideDirection): ContentTransform {
     val slide = tween<IntOffset>(NAV_TRANSITION_MS, easing = NavEnterEasing)
     return ContentTransform(
         targetContentEnter = fadeIn(tween(NAV_TRANSITION_MS * 2 / 3, delayMillis = NAV_TRANSITION_MS / 3, easing = LinearEasing)) +

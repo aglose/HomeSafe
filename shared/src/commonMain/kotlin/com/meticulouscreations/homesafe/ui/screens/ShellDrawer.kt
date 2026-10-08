@@ -47,16 +47,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -87,6 +88,7 @@ import com.meticulouscreations.homesafe.fitness.ui.FitnessPalette
 import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.weather.WeatherUiState
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherKind
@@ -126,6 +128,12 @@ import kotlin.math.hypot
 
 private val DrawerWidth = 304.dp
 
+/** How much of its width a full back swipe draws the drawer in by before letting go closes it. */
+private const val DRAWER_BACK_PEEK = 0.25f
+
+/** How much of an app opened from the drawer a full back swipe drains before letting go closes it. */
+private const val APP_BACK_PEEK = 0.35f
+
 /**
  * The app drawer the top bar's menu button opens: the camera app's own tabs, and below them the
  * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside,
@@ -153,10 +161,17 @@ internal fun ShellDrawer(
         label = "drawer",
     )
     if (!open && progress == 0f) return
-    BackHandler(enabled = open) { onClose() }
     val density = LocalDensity.current
     val widthPx = with(density) { DrawerWidth.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
+    // A back swipe draws the drawer toward its edge as the finger moves, as a drag on it would;
+    // let go past the commit point, the close carries on from there.
+    val back = rememberPredictiveBack(enabled = open) { releasedAt ->
+        drag = (drag - releasedAt * widthPx * DRAWER_BACK_PEEK).coerceIn(-widthPx, 0f)
+        onClose()
+    }
+    // How far the drawer stands off its open place: a drag on it, or a back swipe.
+    fun offset() = (drag - back.progress * widthPx * DRAWER_BACK_PEEK).coerceIn(-widthPx, 0f)
     // Reset as it opens, not as it closes: a swipe that closed it would snap back first.
     LaunchedEffect(open) { if (open) drag = 0f }
     val dragState = rememberDraggableState { delta -> drag = (drag + delta).coerceIn(-widthPx, 0f) }
@@ -167,7 +182,7 @@ internal fun ShellDrawer(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = progress * (1f + drag / widthPx) }
+                .graphicsLayer { alpha = progress * (1f + offset() / widthPx) }
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = stringResource(Res.string.shell_drawer_close), onClick = onClose),
         )
@@ -175,7 +190,7 @@ internal fun ShellDrawer(
             Modifier
                 .fillMaxHeight()
                 .width(DrawerWidth)
-                .graphicsLayer { translationX = -(1f - progress) * widthPx + drag }
+                .graphicsLayer { translationX = -(1f - progress) * widthPx + offset() }
                 .draggable(
                     dragState,
                     Orientation.Horizontal,
@@ -441,19 +456,44 @@ private fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen
  * a circle that grows from [origin] (the drawer card that was tapped) to cover the screen, and
  * draining back toward the menu button when it closes. [onCovering] reports when it fully covers
  * the screen, so the shell can stop drawing — and stop streaming — the cameras underneath.
+ *
+ * Back that the app has no page of its own to take ([onClose]) is this overlay's, and predictive:
+ * the swipe starts the drain under the finger, the shell showing through beneath, and letting go
+ * finishes it from there. The app's own page stack registers after this, so it hears Back first
+ * while it has somewhere to go back to.
  */
 @Composable
-internal fun InnerAppOverlay(open: Boolean, origin: Offset, onCovering: (Boolean) -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+internal fun InnerAppOverlay(
+    open: Boolean,
+    origin: Offset,
+    onCovering: (Boolean) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit,
+) {
     val reveal = remember { Animatable(0f) }
     val reportCovering by rememberUpdatedState(onCovering)
     var shown by remember { mutableStateOf(open) }
+    // Where a committed back swipe left the drain, held until the close below takes it on from there.
+    var heldBack by remember { mutableFloatStateOf(0f) }
+    val back = rememberPredictiveBack(enabled = open) { releasedAt ->
+        heldBack = releasedAt
+        onClose()
+    }
+    // The reveal as drawn: drained part of the way by a back swipe.
+    fun shownReveal() = reveal.value * (1f - APP_BACK_PEEK * maxOf(back.progress, heldBack))
+    // A swipe has started the drain (or let go and is settling back, or committed and is closing).
+    val peeking by remember(back) { derivedStateOf { back.inProgress || back.progress > 0f || heldBack > 0f } }
     LaunchedEffect(open) {
         if (open) {
             shown = true
             reveal.animateTo(1f, tween(460, easing = FastOutSlowInEasing))
-            reportCovering(true)
+            // Covering, until a back swipe starts to drain it: the shell is drawn again to show through.
+            snapshotFlow { peeking }.collect { reportCovering(!it) }
         } else {
             reportCovering(false)
+            reveal.snapTo(shownReveal())
+            heldBack = 0f
             reveal.animateTo(0f, tween(320, easing = FastOutSlowInEasing))
             shown = false
         }
@@ -466,7 +506,9 @@ internal fun InnerAppOverlay(open: Boolean, origin: Offset, onCovering: (Boolean
     // [origin] is in the root's coordinates; the reveal is drawn in this box's, which a display
     // cutout's padding can shift.
     var ownOrigin by remember { mutableStateOf(Offset.Zero) }
-    val center = if (open && origin != Offset.Zero) origin - ownOrigin else menuPoint
+    // A back swipe drains toward the menu button too. Mid-swipe the switch is unseen: a circle at
+    // full size covers the box from any centre.
+    val center = if (open && origin != Offset.Zero && !peeking) origin - ownOrigin else menuPoint
     Box(
         modifier
             .fillMaxSize()
@@ -474,11 +516,12 @@ internal fun InnerAppOverlay(open: Boolean, origin: Offset, onCovering: (Boolean
             .graphicsLayer {
                 clip = true
                 // Rebuilt each frame: the layer re-runs as the reveal animates.
-                shape = circleReveal(center, reveal.value)
-                val s = 0.94f + 0.06f * reveal.value
+                val fraction = shownReveal()
+                shape = circleReveal(center, fraction)
+                val s = 0.94f + 0.06f * fraction
                 scaleX = s
                 scaleY = s
-                alpha = (reveal.value * 2.5f).coerceAtMost(1f)
+                alpha = (fraction * 2.5f).coerceAtMost(1f)
             },
     ) {
         content()

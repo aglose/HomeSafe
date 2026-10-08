@@ -407,7 +407,8 @@ fun FrigateAppShell() {
             onBack = nav::back,
             transitionSpec = { tabHandOver() },
             popTransitionSpec = { tabHandOver() },
-            predictivePopTransitionSpec = { tabHandOver() },
+            // Back from a tab only ever returns to Home, so a swipe needs only its edge.
+            predictivePopTransitionSpec = { predictiveSharedAxis(it) },
             entryProvider = entryProvider {
                 entry<TopLevelRoute.Home> {
                     // Home stays under the other tabs as the start destination, and Back reveals
@@ -525,6 +526,7 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
             open = nav.appOpen,
             origin = nav.appOrigin,
             onCovering = { nav.appCovering = it },
+            onClose = nav::closeApp,
         ) {
             when (nav.app) {
                 InnerApp.FINANCE -> FinanceApp(
@@ -848,7 +850,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { sharedAxis(forward = true) },
             popTransitionSpec = { sharedAxis(forward = false) },
-            predictivePopTransitionSpec = { sharedAxis(forward = false) },
+            predictivePopTransitionSpec = { predictiveSharedAxis(it) },
             entryProvider = entryProvider {
                 entry<CameraListRoute> {
                     HomeTabContent(

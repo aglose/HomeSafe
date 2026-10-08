@@ -47,7 +47,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -69,6 +68,7 @@ import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.EditorPolygon
 import com.meticulouscreations.homesafe.ui.components.MaskPolygonEditor
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.EditorShape
@@ -146,9 +146,11 @@ fun DetectionZonesScreen(
     var showLeaveDialog by remember { mutableStateOf(false) }
     var leaveAfterSave by remember { mutableStateOf(false) }
 
-    // Both the header arrow and the system back go through the same guard.
+    // Both the header arrow and the system back go through the same guard. Clean, Back is the
+    // back stack's, whose predictive pop previews the camera page; dirty, it is caught here and
+    // only asks, so nothing moves under the finger (Material: no peek at a page Back won't reach).
     val requestBack = { if (dirty && !uiState.isSaving) showLeaveDialog = true else onBack() }
-    BackHandler(enabled = dirty) { requestBack() }
+    rememberPredictiveBack(enabled = dirty) { requestBack() }
     LaunchedEffect(Unit) { viewModel.reloadIfClean() }
     LaunchedEffect(uiState.justSaved, uiState.saveError) {
         if (leaveAfterSave && uiState.justSaved) onBack()
