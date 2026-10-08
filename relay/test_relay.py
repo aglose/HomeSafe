@@ -3609,5 +3609,1068 @@ class UptimeRecordTest(_ScratchDb):
         self.assertIn('aria-live="polite"', page.body)
 
 
+class _FakePlaid:
+    """Stands in for `plaid_post`: answers each path from `answers` (a dict, or an exception to raise), keeping the calls."""
+
+    def __init__(self, **answers):
+        self.answers, self.calls = answers, []
+
+    def __call__(self, path, body):
+        self.calls.append((path, body))
+        answer = self.answers.get(path.strip("/").replace("/", "_"), {})
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def paths(self):
+        return [path for path, _ in self.calls]
+
+
+class _FeedSheets:
+    """Stands in for the feed sheet's AuthorizedSession: the tabs it has, and every write made to it."""
+
+    def __init__(self, tabs=(), status=200, body=None):
+        self.tabs, self.status, self.body, self.posts = list(tabs), status, body, []
+
+    def get(self, url, params=None, timeout=None):
+        return _GoogleResponse(self.status, self.body or {"sheets": [{"properties": {"title": t}} for t in self.tabs]})
+
+    def post(self, url, json=None, timeout=None):
+        self.posts.append((url, json))
+        return _GoogleResponse(self.status, self.body or {})
+
+
+class BankSyncTest(_ScratchDb):
+    """Bank sync: linking through Plaid's hosted page, reading an institution into relay.db, the feed sheet's cells and the daily slot."""
+
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "feed_google", "FINANCE_FEED_SHEET_ID", "PLAID_CLIENT_ID", "PLAID_SECRET", "PLAID_REDIRECT_URI", "BANK_SYNC_HOUR")
+    T = 1_791_000_000.0
+    ACCOUNTS = [
+        {"account_id": "chk", "name": "Total Checking", "official_name": "Chase Total Checking", "mask": "0123", "type": "depository", "subtype": "checking",
+         "balances": {"current": 4200.5, "available": 4100.0, "limit": None, "iso_currency_code": "USD"}},
+        {"account_id": "card", "name": "Sapphire", "mask": "9911", "type": "credit", "subtype": "credit card",
+         "balances": {"current": 812.4, "available": 9187.6, "limit": 10000, "iso_currency_code": "USD"}},
+        {"account_id": "ira", "name": "Roth IRA", "mask": "7788", "type": "investment", "subtype": "roth",
+         "balances": {"current": 51000.0, "available": None, "limit": None, "iso_currency_code": "USD"}},
+    ]
+    HOLDINGS = {
+        "holdings": [{"account_id": "ira", "security_id": "s1", "quantity": 100, "institution_price": 510.0, "institution_price_as_of": "2026-10-02",
+                      "institution_value": 51000.0, "cost_basis": 40000.0, "iso_currency_code": "USD"}],
+        "securities": [{"security_id": "s1", "ticker_symbol": "VTI", "name": "Vanguard Total Stock Market ETF", "type": "etf"}],
+    }
+    LIABILITIES = {"liabilities": {
+        "credit": [{"account_id": "card", "aprs": [{"apr_type": "cash_apr", "apr_percentage": 29.99}, {"apr_type": "purchase_apr", "apr_percentage": 21.49}],
+                    "minimum_payment_amount": 40.0, "next_payment_due_date": "2026-10-20"}],
+        "student": [{"account_id": "loan", "interest_rate_percentage": 3.08, "minimum_payment_amount": 210.0, "next_payment_due_date": "2026-10-15"}],
+        "mortgage": [{"account_id": "house", "interest_rate": {"percentage": 6.25, "type": "fixed"}, "next_monthly_payment": 3100.0, "next_payment_due_date": "2026-11-01"}],
+    }}
+
+    def setUp(self):
+        super().setUp()
+        relay.PLAID_CLIENT_ID, relay.PLAID_SECRET, relay.PLAID_REDIRECT_URI = "client", "secret", ""
+        relay.FINANCE_FEED_SHEET_ID = ""
+        self.background = []
+        relay.bank_sync_in_background = lambda: self.background.append(True)
+
+    def plaid(self, **answers):
+        relay.plaid_post = _FakePlaid(**answers)
+        return relay.plaid_post
+
+    def link(self, item_id="item1", name="Chase"):
+        relay.plaid_save_item(item_id, f"access-{item_id}", {"institution_id": "ins_3", "name": name}, "alex", self.T)
+
+    def synced(self, **overrides):
+        answers = {"item_get": {"item": {"products": ["transactions", "investments", "liabilities"], "consent_expiration_time": None}},
+                   "accounts_get": {"accounts": self.ACCOUNTS}, "investments_holdings_get": self.HOLDINGS, "liabilities_get": self.LIABILITIES}
+        answers.update(overrides)
+        return self.plaid(**answers)
+
+    def test_a_link_asks_for_what_the_kind_must_have_and_the_rest_where_there_is_any(self):
+        bank = relay.plaid_link_request("alex", "bank")
+        self.assertEqual(["transactions"], bank["products"])
+        self.assertEqual(["investments", "liabilities"], bank["required_if_supported_products"])
+        self.assertEqual({}, bank["hosted_link"])
+        self.assertEqual(["investments"], relay.plaid_link_request("alex", "investments")["products"])
+        self.assertEqual(["liabilities"], relay.plaid_link_request("alex", "investments")["required_if_supported_products"])
+        self.assertEqual(["liabilities"], relay.plaid_link_request("alex", "loans")["products"])
+        # Nothing that moves money, whatever is linked.
+        for kind in relay.PLAID_KINDS:
+            asked = relay.plaid_link_request("alex", kind)
+            self.assertFalse({"auth", "transfer", "payment_initiation"} & set(asked["products"] + asked["required_if_supported_products"]))
+
+    def test_plaid_is_told_who_is_linking_only_as_a_hash(self):
+        asked = relay.plaid_link_request("alex", "bank")
+        self.assertNotIn("alex", json.dumps(asked))
+        self.assertEqual(asked["user"], relay.plaid_link_request("alex", "loans")["user"])
+        self.assertNotEqual(asked["user"], relay.plaid_link_request("sam", "bank")["user"])
+
+    def test_signing_in_again_sends_the_token_and_asks_for_nothing_new(self):
+        asked = relay.plaid_link_request("alex", "bank", access="access-item1")
+        self.assertEqual("access-item1", asked["access_token"])
+        self.assertNotIn("products", asked)
+
+    def test_starting_a_link_answers_the_page_and_remembers_the_token(self):
+        self.plaid(link_token_create={"link_token": "link-1", "hosted_link_url": "https://secure.plaid.com/hl/abc"})
+        started = relay.plaid_link_start("alex", "bank", now=self.T)
+        self.assertEqual({"token": "link-1", "url": "https://secure.plaid.com/hl/abc", "expires_at": self.T + relay.PLAID_LINK_SECONDS}, started)
+        self.assertEqual("alex", relay.state_get(relay.PLAID_LINKS_KEY)["link-1"]["by"])
+
+    def test_a_link_without_a_page_and_an_unknown_kind_are_refused(self):
+        self.plaid(link_token_create={"link_token": "link-1"})
+        with self.assertRaises(relay.PlaidError) as refused:
+            relay.plaid_link_start("alex", "bank", now=self.T)
+        self.assertEqual("NO_HOSTED_LINK", refused.exception.code)
+        with self.assertRaises(relay.HTTPException) as bad:
+            relay.plaid_link_start("alex", "crypto", now=self.T)
+        self.assertEqual(400, bad.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as unknown:
+            relay.plaid_link_start("alex", item_id="nope", now=self.T)
+        self.assertEqual(404, unknown.exception.status_code)
+
+    def start(self, item_id=None):
+        self.plaid(link_token_create={"link_token": "link-1", "hosted_link_url": "https://secure.plaid.com/hl/abc"})
+        relay.plaid_link_start("alex", "bank", item_id, now=self.T)
+
+    def test_a_link_still_open_is_pending_and_one_left_is_exited(self):
+        self.start()
+        self.plaid(link_token_get={"link_sessions": []})
+        self.assertEqual({"status": "pending"}, relay.plaid_link_finish("link-1", now=self.T + 60))
+        self.plaid(link_token_get={"link_sessions": [{"link_session_id": "s", "exit": {"metadata": {"status": "institution_not_found"}}}]})
+        self.assertEqual({"status": "exited"}, relay.plaid_link_finish("link-1", now=self.T + 60))
+        self.assertEqual([], self.background)
+
+    def test_a_link_too_old_or_never_made_is_expired(self):
+        self.start()
+        self.plaid(link_token_get={"link_sessions": []})
+        self.assertEqual({"status": "expired"}, relay.plaid_link_finish("link-1", now=self.T + relay.PLAID_LINK_SECONDS + 1))
+        self.assertEqual({"status": "expired"}, relay.plaid_link_finish("never", now=self.T))
+
+    def test_a_finished_link_keeps_the_token_once_and_starts_a_sync(self):
+        self.start()
+        plaid = self.plaid(
+            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
+                {"public_token": "public-1", "institution": {"institution_id": "ins_3", "name": "Chase"}}]}}]},
+            item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"},
+        )
+        self.assertEqual({"status": "linked", "institutions": ["Chase"]}, relay.plaid_link_finish("link-1", now=self.T + 90))
+        self.assertEqual([("item1", "access-item1", "Chase", "alex")],
+                         relay.with_db(lambda c: c.execute("SELECT item_id, access, institution, linked_by FROM plaid_items").fetchall()))
+        self.assertEqual([True], self.background)
+        # Asked again (the app polls), it answers from memory: the public token is good only once.
+        self.assertEqual({"status": "linked", "institutions": ["Chase"]}, relay.plaid_link_finish("link-1", now=self.T + 95))
+        self.assertEqual(1, plaid.paths().count("/item/public_token/exchange"))
+        self.assertEqual([True], self.background)
+
+    def test_signing_in_again_clears_the_error_and_keeps_the_token(self):
+        self.link()
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET error='ITEM_LOGIN_REQUIRED'"), c.commit()))
+        self.start(item_id="item1")
+        self.assertEqual("access-item1", relay.plaid_post.calls[0][1]["access_token"])
+        plaid = self.plaid(link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": []}}]})
+        self.assertEqual({"status": "linked", "institutions": ["Chase"]}, relay.plaid_link_finish("link-1", now=self.T + 90))
+        self.assertEqual([("access-item1", None)], relay.with_db(lambda c: c.execute("SELECT access, error FROM plaid_items").fetchall()))
+        self.assertNotIn("/item/public_token/exchange", plaid.paths())
+
+    def test_loan_terms_come_from_each_kind_of_liability(self):
+        terms = relay.plaid_liability_terms(self.LIABILITIES["liabilities"])
+        self.assertEqual({"apr": 21.49, "min_payment": 40.0, "due": "2026-10-20"}, terms["card"], "the purchase rate, not the cash advance's")
+        self.assertEqual({"apr": 3.08, "min_payment": 210.0, "due": "2026-10-15"}, terms["loan"])
+        self.assertEqual({"apr": 6.25, "min_payment": 3100.0, "due": "2026-11-01"}, terms["house"])
+        self.assertEqual({}, relay.plaid_liability_terms(None))
+
+    def test_a_sync_reads_balances_holdings_and_loan_terms(self):
+        self.link()
+        plaid = self.synced()
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T + 100))
+        self.assertTrue(all(body == {"access_token": "access-item1"} for _, body in plaid.calls))
+        chase, = relay.bank_institutions()
+        self.assertEqual(("Chase", self.T + 100, None, False), (chase["name"], chase["synced_at"], chase["error"], chase["needs_relink"]))
+        by_id = {a["id"]: a for a in chase["accounts"]}
+        self.assertEqual((4200.5, 4100.0, "Chase Total Checking 0123"), (by_id["chk"]["balance"], by_id["chk"]["available"], by_id["chk"]["key"]))
+        self.assertEqual((812.4, 10000, 21.49, "2026-10-20"), (by_id["card"]["balance"], by_id["card"]["limit"], by_id["card"]["apr"], by_id["card"]["due"]))
+        self.assertEqual(1, by_id["ira"]["holdings"])
+        self.assertNotIn("access", json.dumps(relay.bank_status(self.T)), "no token ever leaves the relay")
+
+    def test_a_bank_with_no_investments_or_loans_is_not_asked_for_them(self):
+        self.link()
+        plaid = self.synced(item_get={"item": {"products": ["transactions"]}})
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T))
+        self.assertEqual(["/item/get", "/accounts/get"], plaid.paths())
+
+    def test_nothing_of_a_kind_is_not_a_failure(self):
+        self.link()
+        self.synced(investments_holdings_get=relay.PlaidError("NO_INVESTMENT_ACCOUNTS"), liabilities_get=relay.PlaidError("NO_LIABILITY_ACCOUNTS"))
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T))
+        self.assertEqual(3, len(relay.bank_institutions()[0]["accounts"]))
+
+    def test_holdings_not_ready_yet_leave_the_last_ones_in_place(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        self.synced(investments_holdings_get=relay.PlaidError("PRODUCT_NOT_READY"))
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T + 60))
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0]))
+        # ...but an empty answer is the account sold out of everything.
+        self.synced(investments_holdings_get={"holdings": [], "securities": []})
+        relay.plaid_sync_item("item1", "access-item1", self.T + 120)
+        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0]))
+
+    def test_a_refused_sync_keeps_the_last_balances_and_says_to_sign_in_again(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        self.synced(accounts_get=relay.PlaidError("ITEM_LOGIN_REQUIRED", "the login details of this item have changed"))
+        self.assertEqual("ITEM_LOGIN_REQUIRED", relay.plaid_sync_item("item1", "access-item1", self.T + 86400))
+        chase, = relay.bank_institutions()
+        self.assertEqual(("ITEM_LOGIN_REQUIRED", True, self.T), (chase["error"], chase["needs_relink"], chase["synced_at"]))
+        self.assertEqual(3, len(chase["accounts"]))
+
+    def test_an_account_closed_at_the_bank_goes_with_what_it_held(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        self.synced(accounts_get={"accounts": self.ACCOUNTS[:2]}, investments_holdings_get=relay.PlaidError("PRODUCT_NOT_READY"))
+        relay.plaid_sync_item("item1", "access-item1", self.T + 60)
+        self.assertEqual(["card", "chk"], sorted(a["id"] for a in relay.bank_institutions()[0]["accounts"]))
+        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0]))
+
+    def test_a_key_is_the_label_or_its_first_free_number(self):
+        self.assertEqual("Fidelity Roth IRA", relay.feed_key("Fidelity Roth IRA", set()))
+        self.assertEqual("Fidelity Roth IRA (2)", relay.feed_key("Fidelity Roth IRA", {"Fidelity Roth IRA"}))
+        self.assertEqual("Fidelity Roth IRA (2)", relay.feed_key("Fidelity Roth IRA", {"Fidelity Roth IRA", "Fidelity Roth IRA (3)"}))
+        self.assertEqual("Account", relay.feed_key("", set()))
+
+    TWINS = [{"account_id": "a", "name": "Roth IRA", "type": "investment", "balances": {"current": 1.0}},
+             {"account_id": "b", "name": "Roth IRA", "type": "investment", "balances": {"current": 2.0}}]
+
+    def keys(self):
+        return {a["id"]: a["key"] for i in relay.bank_institutions() for a in i["accounts"]}
+
+    def test_two_accounts_of_one_name_get_keys_of_their_own(self):
+        self.link(name="Fidelity")
+        relay.plaid_store("item1", self.TWINS, {}, [], {}, self.T)
+        self.assertEqual({"a": "Fidelity Roth IRA", "b": "Fidelity Roth IRA (2)"}, self.keys())
+
+    def test_closing_one_of_two_does_not_hand_its_key_to_the_other(self):
+        self.link(name="Fidelity")
+        relay.plaid_store("item1", self.TWINS, {}, [], {}, self.T)
+        relay.plaid_store("item1", self.TWINS[1:], {}, [], {}, self.T + 60)
+        self.assertEqual({"b": "Fidelity Roth IRA (2)"}, self.keys(), "a formula for the closed account must not start reading the other one")
+        # A new account of that name takes the key that was freed, never the survivor's.
+        relay.plaid_store("item1", self.TWINS[1:] + [dict(self.TWINS[0], account_id="c")], {}, [], {}, self.T + 120)
+        self.assertEqual({"b": "Fidelity Roth IRA (2)", "c": "Fidelity Roth IRA"}, self.keys())
+
+    def test_a_renamed_account_keeps_its_key(self):
+        self.link()
+        relay.plaid_store("item1", self.ACCOUNTS[:1], {}, [], {}, self.T)
+        relay.plaid_store("item1", [dict(self.ACCOUNTS[0], name="Chase Checking Plus")], {}, [], {}, self.T + 60)
+        self.assertEqual({"chk": "Chase Total Checking 0123"}, self.keys())
+
+    def test_an_institution_linked_again_comes_back_under_its_keys(self):
+        self.link()
+        relay.plaid_store("item1", self.ACCOUNTS[:1], {}, [], {}, self.T)
+        relay.with_db(lambda c: (c.execute("DELETE FROM plaid_accounts"), c.execute("DELETE FROM plaid_items"), relay.plaid_assign_keys(c), c.commit()))
+        self.link("item2")
+        relay.plaid_store("item2", [dict(self.ACCOUNTS[0], account_id="chk-again")], {}, [], {}, self.T + 60)
+        self.assertEqual({"chk-again": "Chase Total Checking 0123"}, self.keys())
+
+    def test_loan_terms_not_ready_yet_leave_the_last_ones_in_place(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        self.synced(liabilities_get=relay.PlaidError("PRODUCT_NOT_READY"))
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T + 60))
+        card = next(a for a in relay.bank_institutions()[0]["accounts"] if a["id"] == "card")
+        self.assertEqual((21.49, 40.0, "2026-10-20"), (card["apr"], card["min_payment"], card["due"]))
+        # ...but an answer with no terms in it is the terms gone.
+        self.synced(liabilities_get={"liabilities": {"credit": [], "student": [], "mortgage": []}})
+        relay.plaid_sync_item("item1", "access-item1", self.T + 120)
+        card = next(a for a in relay.bank_institutions()[0]["accounts"] if a["id"] == "card")
+        self.assertEqual((None, None, None), (card["apr"], card["min_payment"], card["due"]))
+
+    def test_the_feed_has_every_account_and_holding_with_blanks_for_what_is_unknown(self):
+        self.link()
+        self.synced()
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+        holdings = relay.with_db(lambda c: c.execute(
+            "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings").fetchall())
+        tables = relay.feed_tables(relay.bank_institutions(), holdings, None)
+        accounts = tables[relay.FEED_ACCOUNTS_TAB]
+        self.assertEqual(relay.FEED_ACCOUNT_COLUMNS, accounts[0])
+        self.assertEqual(4, len(accounts))
+        checking = next(row for row in accounts if row[0] == "Chase Total Checking 0123")
+        self.assertEqual([4200.5, 4100.0, "", "Chase", "Total Checking", "0123", "depository", "checking", "", "", "", "USD"], checking[1:13])
+        self.assertTrue(all(len(row) == len(relay.FEED_ACCOUNT_COLUMNS) and None not in row for row in accounts))
+        self.assertEqual([relay.FEED_HOLDING_COLUMNS, ["Chase Roth IRA 7788", "VTI", "Vanguard Total Stock Market ETF", 100.0, 510.0, 51000.0, 40000.0, "etf", "Chase", "USD", "2026-10-02"]],
+                         tables[relay.FEED_HOLDINGS_TAB])
+
+    def write(self, sheets, tables):
+        relay.FINANCE_FEED_SHEET_ID = "feed123"
+        relay.feed_google = lambda: sheets
+        relay.feed_write(tables)
+
+    def test_the_feed_adds_its_tabs_once_and_writes_raw_from_a1(self):
+        sheets = _FeedSheets(tabs=["Sheet1", relay.FEED_ACCOUNTS_TAB])
+        self.write(sheets, {relay.FEED_ACCOUNTS_TAB: [["Key"], ["a"]], relay.FEED_HOLDINGS_TAB: [["Account key"]]})
+        (added_url, added), (written_url, written) = sheets.posts
+        self.assertTrue(added_url.endswith("/feed123:batchUpdate"))
+        self.assertEqual([{"addSheet": {"properties": {"title": relay.FEED_HOLDINGS_TAB}}}], added["requests"])
+        self.assertTrue(written_url.endswith("/feed123/values:batchUpdate"))
+        self.assertEqual("RAW", written["valueInputOption"])
+        self.assertEqual(["'Bank feed'!A1", "'Holdings feed'!A1"], [d["range"] for d in written["data"]])
+
+    def test_rows_that_went_are_blanked_in_the_same_write(self):
+        sheets = _FeedSheets(tabs=[relay.FEED_ACCOUNTS_TAB])
+        self.write(sheets, {relay.FEED_ACCOUNTS_TAB: [["Key", "Balance"], ["a", 1], ["b", 2], ["c", 3]]})
+        self.write(sheets, {relay.FEED_ACCOUNTS_TAB: [["Key", "Balance"], ["a", 1]]})
+        self.assertEqual([["Key", "Balance"], ["a", 1], ["", ""], ["", ""]], sheets.posts[-1][1]["data"][0]["values"])
+        self.assertEqual(2, len(sheets.posts), "no clearing call before either write")
+
+    def test_a_feed_sheet_not_shared_for_editing_is_kept_as_the_feed_s_problem(self):
+        self.link()
+        relay.FINANCE_FEED_SHEET_ID = "feed123"
+        relay.feed_google = lambda: _FeedSheets(status=403, body={"error": {"code": 403, "message": "The caller does not have permission", "status": "PERMISSION_DENIED"}})
+        relay.write_bank_feed(self.T)
+        feed = relay.bank_status(self.T)["feed"]
+        self.assertEqual((True, "not_shared", None), (feed["configured"], feed["error"], feed["written_at"]))
+
+    def test_a_written_feed_makes_the_next_read_of_the_budget_sheet_fresh(self):
+        self.link()
+        relay.FINANCE_FEED_SHEET_ID = "feed123"
+        relay.feed_google = lambda: _FeedSheets(tabs=[relay.FEED_ACCOUNTS_TAB, relay.FEED_HOLDINGS_TAB])
+        saved = dict(relay._finance_cache)
+        try:
+            relay._finance_cache["at"] = self.T
+            relay.write_bank_feed(self.T)
+            self.assertEqual(0.0, relay._finance_cache["at"])
+        finally:
+            relay._finance_cache.update(saved)
+        feed = relay.bank_status(self.T)["feed"]
+        self.assertEqual((self.T, None), (feed["written_at"], feed["error"]))
+
+    def test_without_a_feed_sheet_nothing_is_written(self):
+        relay.feed_google = lambda: self.fail("no feed sheet is configured")
+        relay.write_bank_feed(self.T)
+        self.assertFalse(relay.bank_status(self.T)["feed"]["configured"])
+
+    def test_a_sync_of_everything_counts_what_failed(self):
+        self.link("item1")
+        self.link("item2", "Fidelity")
+        answers = {"item_get": {"item": {"products": ["transactions"]}}, "accounts_get": {"accounts": self.ACCOUNTS[:1]}}
+        plaid = self.plaid(**answers)
+
+        def post(path, body):
+            if body.get("access_token") == "access-item2":
+                raise relay.PlaidError("INSTITUTION_DOWN")
+            return plaid(path, body)
+
+        relay.plaid_post = post
+        self.assertTrue(relay.plaid_sync_all(now=self.T + 10))
+        self.assertEqual({"at": self.T + 10, "institutions": 2, "failed": 1}, relay.state_get(relay.PLAID_SYNCED_KEY))
+        self.assertEqual([None, "INSTITUTION_DOWN"], [i["error"] for i in relay.bank_institutions()])
+
+    def test_only_one_sync_runs_at_a_time(self):
+        relay._bank_lock.acquire()
+        try:
+            self.assertFalse(relay.plaid_sync_all(now=self.T))
+            self.assertTrue(relay.bank_status(self.T)["syncing"])
+        finally:
+            relay._bank_lock.release()
+
+    def test_the_day_s_sync_is_owed_from_its_hour_until_it_has_run(self):
+        from zoneinfo import ZoneInfo
+
+        relay.BANK_SYNC_HOUR = 6
+        zone = ZoneInfo("America/Los_Angeles")
+        at = lambda hour, minute=0, day=5: relay.datetime(2026, 10, day, hour, minute, tzinfo=zone).timestamp()  # noqa: E731
+        self.assertFalse(relay.bank_sync_due(at(5, 59), last=at(6, 2, day=4), zone=zone), "yesterday's ran; today's hour hasn't come")
+        self.assertTrue(relay.bank_sync_due(at(6, 0), last=at(6, 2, day=4), zone=zone))
+        self.assertFalse(relay.bank_sync_due(at(18), last=at(6, 3), zone=zone))
+        self.assertTrue(relay.bank_sync_due(at(3), last=0, zone=zone), "never synced")
+        # A "Sync now" in the evening doesn't stand in for the next morning's.
+        self.assertTrue(relay.bank_sync_due(at(6, 1, day=6), last=at(21), zone=zone))
+        self.assertEqual(at(6, day=6), (relay.bank_sync_slot(at(18), zone) + relay.timedelta(days=1)).timestamp())
+
+
+class BankRoutesTest(_ScratchDb):
+    """The bank routes: who gets in, what Plaid's refusals become, and that unlinking forgets the token."""
+
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "require_finance_user", "write_bank_feed", "PLAID_CLIENT_ID", "PLAID_SECRET",
+                                "FINANCE_FEED_SHEET_ID", "BANK_UNLINK_WAIT_SECONDS")
+
+    def setUp(self):
+        super().setUp()
+        relay.PLAID_CLIENT_ID, relay.PLAID_SECRET, relay.FINANCE_FEED_SHEET_ID = "client", "secret", ""
+        relay.require_finance_user = lambda request: "alex"
+        self.background = []
+        relay.bank_sync_in_background = lambda: self.background.append(True)
+        self.fed = []
+        relay.write_bank_feed = lambda now: self.fed.append(relay._bank_lock.locked())
+        relay._sync_asked["at"] = 0.0
+        self.response = types.SimpleNamespace(headers={})
+        relay.plaid_save_item("item1", "access-item1", {"institution_id": "ins_3", "name": "Chase"}, "alex", 1_791_000_000.0)
+
+    def test_the_status_answers_without_plaid_set_up_and_is_never_cached(self):
+        relay.PLAID_CLIENT_ID = ""
+        body = relay.get_bank(object(), self.response)
+        self.assertFalse(body["configured"])
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
+        with self.assertRaises(relay.HTTPException) as off:
+            relay.post_bank_sync(object(), self.response)
+        self.assertEqual((503, "not_configured"), (off.exception.status_code, off.exception.detail["error"]))
+
+    def test_someone_who_may_not_see_the_finances_gets_nowhere(self):
+        def refuse(request):
+            raise relay.HTTPException(403, {"error": "not_allowed"})
+
+        relay.require_finance_user = refuse
+        for route in (lambda: relay.get_bank(object(), self.response), lambda: relay.post_bank_sync(object(), self.response),
+                      lambda: relay.get_bank_link("link-1", object(), self.response), lambda: relay.delete_bank_institution("item1", object(), self.response),
+                      lambda: relay.post_bank_link(types.SimpleNamespace(kind="bank", institution=None), object(), self.response)):
+            with self.assertRaises(relay.HTTPException) as refused:
+                route()
+            self.assertEqual(403, refused.exception.status_code)
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
+
+    def test_plaid_s_refusal_of_a_link_is_passed_on_with_its_code(self):
+        relay.plaid_post = _FakePlaid(link_token_create=relay.PlaidError("INVALID_API_KEYS", "invalid client_id or secret provided"))
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.post_bank_link(types.SimpleNamespace(kind="bank", institution=None), object(), self.response)
+        self.assertEqual((502, "plaid_error", "INVALID_API_KEYS"), (refused.exception.status_code, refused.exception.detail["error"], refused.exception.detail["code"]))
+
+    def test_sync_now_starts_one_sync_and_not_another_within_the_minute(self):
+        self.assertTrue(relay.post_bank_sync(object(), self.response)["syncing"])
+        self.assertEqual([True], self.background)
+        relay.state_set(relay.PLAID_SYNCED_KEY, {"at": time.time()})
+        self.assertFalse(relay.post_bank_sync(object(), self.response)["syncing"])
+        self.assertEqual([True], self.background)
+
+    def test_a_second_tap_before_the_first_sync_has_begun_does_not_queue_another(self):
+        self.assertTrue(relay.post_bank_sync(object(), self.response)["syncing"])
+        relay.post_bank_sync(object(), self.response)
+        self.assertEqual([True], self.background, "the first one's worker hasn't taken the lock or recorded a sync yet")
+
+    def test_unlinking_tells_plaid_and_forgets_the_token_and_accounts(self):
+        relay.plaid_post = _FakePlaid()
+        relay.plaid_store("item1", BankSyncTest.ACCOUNTS, {}, BankSyncTest.HOLDINGS["holdings"], {}, 1_791_000_000.0)
+        body = relay.delete_bank_institution("item1", object(), self.response)
+        self.assertEqual([("/item/remove", {"access_token": "access-item1"})], relay.plaid_post.calls)
+        self.assertEqual([], body["institutions"])
+        for table in ("plaid_items", "plaid_accounts", "plaid_holdings", "plaid_feed_keys"):
+            self.assertEqual(0, relay.with_db(lambda c: c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]), table)
+        self.assertEqual([True], self.fed, "the feed is rewritten before a sync can run again")
+        self.assertFalse(relay._bank_lock.locked())
+
+    def test_unlinking_waits_its_turn_behind_a_sync_and_says_so_when_it_cannot(self):
+        relay.plaid_post = _FakePlaid()
+        relay.BANK_UNLINK_WAIT_SECONDS = 0.05
+        relay._bank_lock.acquire()
+        try:
+            with self.assertRaises(relay.HTTPException) as busy:
+                relay.delete_bank_institution("item1", object(), self.response)
+        finally:
+            relay._bank_lock.release()
+        self.assertEqual((503, "busy"), (busy.exception.status_code, busy.exception.detail["error"]))
+        self.assertEqual([], relay.plaid_post.calls, "Plaid isn't told while the sync that might put it back is running")
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
+
+    def test_unlinking_what_plaid_already_forgot_still_forgets_it_here(self):
+        relay.plaid_post = _FakePlaid(item_remove=relay.PlaidError("ITEM_NOT_FOUND"))
+        self.assertEqual([], relay.delete_bank_institution("item1", object(), self.response)["institutions"])
+
+    def test_unlinking_keeps_the_token_when_plaid_could_not_be_told(self):
+        relay.plaid_post = _FakePlaid(item_remove=relay.PlaidError("INTERNAL_SERVER_ERROR"))
+        with self.assertRaises(relay.HTTPException) as failed:
+            relay.delete_bank_institution("item1", object(), self.response)
+        self.assertEqual(502, failed.exception.status_code)
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0]))
+        self.assertFalse(relay._bank_lock.locked(), "a refusal lets go of the lock")
+        with self.assertRaises(relay.HTTPException) as unknown:
+            relay.delete_bank_institution("nope", object(), self.response)
+        self.assertEqual(404, unknown.exception.status_code)
+
+
+class _PagedPlaid:
+    """Stands in for `plaid_post` where the same path is asked more than once: each path's answers in turn, the last one repeating."""
+
+    def __init__(self, **answers):
+        self.answers, self.calls = {path: list(pages) for path, pages in answers.items()}, []
+
+    def __call__(self, path, body):
+        self.calls.append((path, body))
+        pages = self.answers.get(path.strip("/").replace("/", "_")) or [{}]
+        answer = pages.pop(0) if len(pages) > 1 else pages[0]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    def asked(self, path):
+        return [body for asked, body in self.calls if asked == path]
+
+
+def _txn(txn_id, amount, date="2026-10-05", account="venture", name="COSTCO WHSE #0123", merchant="Costco", category="GENERAL_MERCHANDISE", **more):
+    return {"transaction_id": txn_id, "account_id": account, "amount": amount, "date": date, "authorized_date": date, "name": name, "merchant_name": merchant,
+            "iso_currency_code": "USD", "pending": False, "personal_finance_category": {"primary": category, "detailed": f"{category}_OTHER"}, **more}
+
+
+class _Budget(_ScratchDb):
+    """A scratch relay.db with two cards linked for their transactions: a Venture two people carry, and the family's Platinum."""
+
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "budget_sync_in_background", "budget_check_in_background", "require_finance_user",
+                                "write_bank_feed", "PLAID_CLIENT_ID", "PLAID_SECRET", "FINANCE_FEED_SHEET_ID", "FINANCE_USERS", "send_push")
+    # Noon on 7 October 2026, with no phone to say where: the household's clock is UTC.
+    NOW = 1_791_374_400.0
+    VENTURE, PLATINUM = "Capital One Venture 1234", "American Express Platinum Card 1009"
+    CARDS = {
+        "cap": ("Capital One", [{"account_id": "venture", "name": "Venture", "mask": "1234", "type": "credit", "subtype": "credit card", "balances": {"current": 812.4, "limit": 10000}},
+                                {"account_id": "checking", "name": "360 Checking", "mask": "5555", "type": "depository", "subtype": "checking", "balances": {"current": 4000.0}}]),
+        "amex": ("American Express", [{"account_id": "platinum", "name": "Platinum Card", "mask": "1009", "type": "credit", "subtype": "credit card", "balances": {"current": 2100.0}}]),
+    }
+
+    def setUp(self):
+        super().setUp()
+        relay.PLAID_CLIENT_ID, relay.PLAID_SECRET, relay.FINANCE_FEED_SHEET_ID, relay.FINANCE_USERS = "client", "secret", "", {"sam"}
+        relay.require_finance_user = lambda request: "alex"
+        self.background = []
+        relay.bank_sync_in_background = lambda: self.background.append("bank")
+        relay.budget_sync_in_background = lambda: self.background.append("budget")
+        relay.budget_check_in_background = lambda: self.background.append("check")
+        relay.write_bank_feed = lambda now: None
+        relay._txn_asked["at"] = 0.0
+        self.response = types.SimpleNamespace(headers={})
+        for item_id in self.CARDS:
+            self.link(item_id)
+        relay.budget_config_save({"people": ["Andrew", "Sarah"], "roles": {self.VENTURE: "split", self.PLATINUM: "family"}}, self.NOW)
+
+    def link(self, item_id, products=("transactions",), source=None):
+        name, accounts = self.CARDS[source or item_id]
+        relay.plaid_save_item(item_id, f"access-{item_id}", {"institution_id": "ins", "name": name}, "alex", self.NOW - 86400)
+        relay.plaid_store(item_id, [dict(a, account_id=a["account_id"] if source is None else f"{a['account_id']}-again") for a in accounts], {}, [], {}, self.NOW)
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET products=? WHERE item_id=?", (json.dumps(list(products)), item_id)), c.commit()))
+
+    def store(self, *added, item="cap", modified=(), removed=(), cursor="c1", status="HISTORICAL_UPDATE_COMPLETE", now=None):
+        return relay.plaid_transactions_store(item, {"added": list(added), "modified": list(modified), "removed": list(removed), "cursor": cursor, "status": status},
+                                              self.NOW if now is None else now)
+
+    def month(self, month=None):
+        return relay.budget_month(month, self.NOW)
+
+    def bucket(self, bucket_id, month=None):
+        return next(b for b in self.month(month)["buckets"] if b["id"] == bucket_id)
+
+    def phone(self, device_id, user="alex", role="admin", token="yes", **columns):
+        values = {"device_id": device_id, "token": f"token-{device_id}" if token == "yes" else token, "platform": "android", "user": user, "role": role, **columns}
+        relay.with_db(lambda c: (c.execute(f"INSERT INTO devices ({', '.join(values)}) VALUES ({', '.join('?' * len(values))})", tuple(values.values())), c.commit()))
+
+
+class BudgetSyncTest(_Budget):
+    """The cards' transactions: reading Plaid's pages, what is kept of them, and what a purchase is."""
+
+    def test_every_page_is_read_and_the_cursor_moves_only_when_they_all_were(self):
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[
+            {"added": [_txn("t1", 54.2)], "next_cursor": "page-2", "has_more": True},
+            {"added": [_txn("t2", 12.0)], "modified": [_txn("t0", 9.0)], "removed": [{"transaction_id": "gone"}], "next_cursor": "end", "has_more": False,
+             "transactions_update_status": "HISTORICAL_UPDATE_COMPLETE"},
+        ])
+        pulled = relay.plaid_transactions_pull("access-cap", "start")
+        self.assertEqual(["start", "page-2"], [body["cursor"] for body in plaid.asked("/transactions/sync")])
+        self.assertEqual((["t1", "t2"], ["t0"], ["gone"], "end", "HISTORICAL_UPDATE_COMPLETE"),
+                         ([t["transaction_id"] for t in pulled["added"]], [t["transaction_id"] for t in pulled["modified"]], pulled["removed"], pulled["cursor"], pulled["status"]))
+
+    def test_the_first_ask_carries_no_cursor(self):
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[{"next_cursor": "c1", "has_more": False}])
+        relay.plaid_transactions_pull("access-cap", None)
+        self.assertNotIn("cursor", plaid.asked("/transactions/sync")[0])
+
+    def test_transactions_changing_between_pages_start_the_read_over_from_where_it_began(self):
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[
+            {"added": [_txn("stale", 1.0)], "next_cursor": "page-2", "has_more": True},
+            relay.PlaidError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION"),
+            {"added": [_txn("t1", 54.2)], "next_cursor": "end", "has_more": False},
+        ])
+        pulled = relay.plaid_transactions_pull("access-cap", "start")
+        self.assertEqual(["start", "page-2", "start"], [body["cursor"] for body in plaid.asked("/transactions/sync")])
+        self.assertEqual(["t1"], [t["transaction_id"] for t in pulled["added"]])
+
+    def test_transactions_that_never_settle_are_given_up_on(self):
+        relay.plaid_post = _PagedPlaid(transactions_sync=[relay.PlaidError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION")])
+        with self.assertRaises(relay.PlaidError):
+            relay.plaid_transactions_pull("access-cap", "start")
+
+    def test_only_the_cards_purchases_are_kept(self):
+        self.store(_txn("t1", 54.2), _txn("paycheck", -3000.0, account="checking", name="ACME PAYROLL"), {"transaction_id": "broken"})
+        self.assertEqual(["t1"], [row[0] for row in relay.with_db(lambda c: c.execute("SELECT txn_id FROM plaid_transactions").fetchall())])
+
+    def test_an_institution_is_asked_only_if_it_was_linked_for_its_transactions_and_its_accounts_are_known(self):
+        self.link("amex", products=("liabilities",))
+        relay.plaid_save_item("new", "access-new", {"name": "Chase"}, "alex", self.NOW)
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET products='[\"transactions\"]' WHERE item_id='new'"), c.commit()))
+        plaid = relay.plaid_post = _PagedPlaid(transactions_sync=[{"added": [_txn("t1", 54.2)], "next_cursor": "c1", "has_more": False}])
+        relay.plaid_transactions_sync(self.NOW)
+        self.assertEqual(["access-cap"], [body["access_token"] for body in plaid.asked("/transactions/sync")])
+        self.assertEqual({"at": self.NOW, "institutions": 1, "failed": 0}, relay.state_get(relay.PLAID_TXN_SYNCED_KEY))
+        self.assertEqual(("c1", self.NOW), relay.with_db(lambda c: c.execute("SELECT txn_cursor, txn_changed_at FROM plaid_items WHERE item_id='cap'").fetchone()))
+
+    def test_a_read_that_finds_nothing_new_says_when_it_looked_but_not_that_anything_changed(self):
+        self.store(_txn("t1", 54.2), now=self.NOW - 7200)
+        self.store(cursor="c2")
+        self.assertEqual(("c2", self.NOW, self.NOW - 7200), relay.with_db(lambda c: c.execute("SELECT txn_cursor, txn_synced_at, txn_changed_at FROM plaid_items WHERE item_id='cap'").fetchone()))
+
+    def test_a_sign_in_that_lapsed_is_noted_at_once_and_the_cursor_stays(self):
+        self.store(_txn("t1", 54.2))
+        relay.plaid_post = _PagedPlaid(transactions_sync=[relay.PlaidError("ITEM_LOGIN_REQUIRED", "sign in again")])
+        relay.plaid_transactions_sync(self.NOW + 3600)
+        self.assertEqual(("c1", "ITEM_LOGIN_REQUIRED"), relay.with_db(lambda c: c.execute("SELECT txn_cursor, error FROM plaid_items WHERE item_id='cap'").fetchone()))
+        self.assertEqual(2, relay.state_get(relay.PLAID_TXN_SYNCED_KEY)["failed"])
+        self.assertTrue(next(card for card in self.month()["cards"] if card["key"] == self.VENTURE)["needs_relink"])
+
+    def test_plaid_being_out_of_reach_for_an_hour_is_not_an_institution_s_error(self):
+        relay.plaid_post = _PagedPlaid(transactions_sync=[OSError("no route")])
+        relay.plaid_transactions_sync(self.NOW)
+        self.assertIsNone(relay.with_db(lambda c: c.execute("SELECT error FROM plaid_items WHERE item_id='cap'").fetchone())[0])
+
+    def test_a_purchase_a_refund_and_paying_the_card_off_are_told_apart(self):
+        self.assertEqual("spend", relay.txn_kind(54.2, "GENERAL_MERCHANDISE", "COSTCO"))
+        self.assertEqual("refund", relay.txn_kind(-54.2, "GENERAL_MERCHANDISE", "COSTCO"))
+        self.assertEqual("payment", relay.txn_kind(-900.0, "LOAN_PAYMENTS", "CAPITAL ONE"))
+        self.assertEqual("payment", relay.txn_kind(-900.0, None, "AUTOPAY PAYMENT - THANK YOU"))
+        self.assertEqual("refund", relay.txn_kind(-15.0, "TRANSPORTATION", "APPLE PAY UBER CREDIT"))
+        # As Plaid's sandbox files a card's payment: under its own category, with the amount pointing out.
+        self.assertEqual("payment", relay.txn_kind(2078.5, "LOAN_PAYMENTS", "AUTOMATIC PAYMENT - THANK", "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"))
+
+    def test_a_transaction_as_plaid_really_sends_it_is_kept(self):
+        # The keys /transactions/sync answered with in the sandbox on 2026-10-07, values and all.
+        sent = {
+            "account_id": "venture", "account_owner": None, "amount": 500, "authorized_date": None, "authorized_datetime": None, "category": None, "category_id": None,
+            "check_number": None, "counterparties": [], "date": "2026-10-05", "datetime": None, "iso_currency_code": "USD",
+            "location": {"address": None, "city": None, "country": None, "lat": None, "lon": None, "postal_code": None, "region": None, "store_number": None},
+            "logo_url": None, "merchant_category_code": None, "merchant_entity_id": None, "merchant_name": None, "name": "United Airlines", "payment_channel": "in store",
+            "payment_meta": {"by_order_of": None, "payee": None, "payer": None, "payment_method": None, "payment_processor": None, "ppd_id": None, "reason": None, "reference_number": None},
+            "pending": False, "pending_transaction_id": None,
+            "personal_finance_category": {"confidence_level": "LOW", "detailed": "TRAVEL_FLIGHTS", "primary": "TRAVEL", "version": "v2"},
+            "personal_finance_category_icon_url": "https://plaid-category-icons.plaid.com/PFC_TRAVEL.png", "running_balance": None, "transaction_code": None,
+            "transaction_id": "sandbox-1", "transaction_type": "special", "unofficial_currency_code": None, "website": None,
+        }
+        self.store(sent)
+        (purchase,) = self.month()["transactions"]
+        self.assertEqual(("sandbox-1", "2026-10-05", 500.0, "United Airlines", "united airlines", "TRAVEL", "spend"),
+                         tuple(purchase[k] for k in ("id", "date", "amount", "name", "merchant", "category", "kind")))
+
+    def test_a_shop_is_the_same_shop_whichever_branch_it_was(self):
+        self.assertEqual(relay.merchant_key(None, "COSTCO WHSE #0123"), relay.merchant_key(None, "Costco Whse #0456"))
+        self.assertEqual("trader joes", relay.merchant_key("Trader Joe's", "TRADER JOE S #552"))
+        self.assertEqual("", relay.merchant_key(None, None))
+        # Letters of any alphabet are letters; a name with none is kept as written, slash and all.
+        self.assertEqual("café böhm", relay.merchant_key("Café Böhm #12", None))
+        self.assertEqual("12/34", relay.merchant_key(None, " 12/34 "))
+
+    def test_a_shop_whose_name_holds_a_slash_can_be_remembered_and_forgotten(self):
+        self.store(_txn("t1", 54.2, name="24/7 #12", merchant=None))
+        body = relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="person:Sarah", remember=True), object(), self.response)
+        (rule,) = body["config"]["rules"]
+        self.assertIn("/", rule["merchant"])
+        self.assertEqual([], relay.delete_budget_rule(rule["merchant"], object(), self.response)["config"]["rules"])
+
+    def test_a_tag_stays_through_a_change_and_passes_from_the_pending_purchase_to_the_posted_one(self):
+        self.store(_txn("p1", 54.2, pending=True))
+        relay.put_budget_transaction("p1", types.SimpleNamespace(bucket="person:Sarah", remember=False), object(), self.response)
+        self.store(modified=[_txn("p1", 56.0, pending=True)], cursor="c2")
+        self.assertEqual(56.0, self.bucket("person:Sarah")["spent"])
+        self.store(_txn("t1", 56.0, pending_transaction_id="p1"), removed=["p1"], cursor="c3")
+        month = self.month()
+        self.assertEqual([("t1", "person:Sarah", "manual")], [(t["id"], t["bucket"], t["source"]) for t in month["transactions"]])
+        self.assertEqual(56.0, month["spent"])
+
+    def test_a_pending_purchase_plaid_has_not_yet_taken_back_is_not_counted_twice(self):
+        self.store(_txn("p1", 54.2, pending=True), _txn("t1", 54.2, pending_transaction_id="p1"))
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_what_plaid_takes_back_leaves_the_month_and_is_forgotten_in_time(self):
+        self.store(_txn("t1", 54.2), _txn("t2", 10.0))
+        self.store(removed=["t2"], cursor="c2")
+        self.assertEqual(54.2, self.month()["spent"])
+        self.store(cursor="c3", now=self.NOW + relay.TXN_TOMBSTONE_SECONDS + 1)
+        self.assertEqual(1, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_transactions").fetchone()[0]))
+
+    def test_the_whole_sync_reads_the_transactions_too(self):
+        plaid = relay.plaid_post = _PagedPlaid(
+            item_get=[{"item": {"products": ["transactions"]}}], accounts_get=[{"accounts": self.CARDS["cap"][1]}],
+            transactions_sync=[{"added": [_txn("t1", 54.2)], "next_cursor": "c1", "has_more": False}])
+        relay.with_db(lambda c: (c.execute("DELETE FROM plaid_items WHERE item_id='amex'"), c.commit()))
+        self.assertTrue(relay.plaid_sync_all(self.NOW))
+        self.assertEqual(1, len(plaid.asked("/transactions/sync")))
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_the_cards_are_asked_again_an_hour_after_the_last_time(self):
+        for item in self.CARDS:
+            self.store(item=item)
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - 3599))
+        self.assertTrue(relay.transactions_due(self.NOW, self.NOW - 3600))
+
+    def test_a_card_just_linked_is_asked_at_every_check_until_its_first_purchases_are_in(self):
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET linked_at=?", (self.NOW - 600,)), c.commit()))
+        self.store(item="amex")
+        self.store(status="NOT_READY")
+        self.assertTrue(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS + 1))
+        self.store(cursor="c2", status="INITIAL_UPDATE_COMPLETE")
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
+        # One that has gone a day without them is asked hourly like the rest, not every five minutes for ever.
+        self.store(cursor="c3", status="NOT_READY")
+        relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET linked_at=?", (self.NOW - relay.TXN_NEW_SECONDS - 1,)), c.commit()))
+        self.assertFalse(relay.transactions_due(self.NOW, self.NOW - relay.BANK_CHECK_SECONDS))
+
+
+class BudgetMonthTest(_Budget):
+    """The month: whose each purchase is, what counts, and the settings."""
+
+    def test_a_purchase_goes_to_whoever_it_is_known_to_be(self):
+        relay.with_db(lambda c: (c.execute("INSERT INTO budget_rules VALUES ('barber shop', 'person:Andrew', 'alex', 0)"), c.commit()))
+        self.store(_txn("named", 20.0, account_owner="SARAH GLOSE"), _txn("both", 5.0, account_owner="ANDREW AND SARAH GLOSE"),
+                   _txn("rule", 30.0, name="BARBER SHOP 12", merchant=None), _txn("nobody", 7.5))
+        self.store(_txn("family", 100.0, account="platinum", account_owner="SARAH GLOSE"), _txn("his", 40.0, account="platinum", name="Barber Shop", merchant=None), item="amex")
+        found = {t["id"]: (t["bucket"], t["source"]) for t in self.month()["transactions"]}
+        self.assertEqual({"named": ("person:Sarah", "bank"), "both": (None, "none"), "rule": ("person:Andrew", "rule"), "nobody": (None, "none"),
+                          "family": ("family", "account"), "his": ("person:Andrew", "rule")}, found)
+        self.assertEqual((70.0, 20.0, 100.0, 12.5), tuple(self.bucket(b)["spent"] for b in ("person:Andrew", "person:Sarah", "family", "unassigned")))
+        self.assertEqual(202.5, self.month()["spent"])
+
+    def test_a_card_of_one_person_s_own_is_theirs_and_a_tag_by_hand_outranks_it(self):
+        relay.budget_config_save({"roles": {self.VENTURE: "person:Sarah"}}, self.NOW)
+        self.store(_txn("t1", 20.0), _txn("t2", 30.0))
+        relay.put_budget_transaction("t2", types.SimpleNamespace(bucket="family", remember=False), object(), self.response)
+        self.assertEqual((20.0, 30.0), (self.bucket("person:Sarah")["spent"], self.bucket("family")["spent"]))
+
+    def test_paying_the_card_off_is_not_spending_and_a_refund_comes_off(self):
+        self.store(_txn("t1", 100.0), _txn("back", -40.0), _txn("paid", -900.0, name="AUTOPAY PAYMENT", merchant=None, category="LOAN_PAYMENTS"),
+                   _txn("held", 15.0, pending=True))
+        month = self.month()
+        self.assertEqual((75.0, 15.0), (month["spent"], month["pending"]))
+        self.assertEqual(["t1", "held", "back"], [t["id"] for t in month["transactions"]])
+
+    def test_a_card_with_no_role_or_ignored_is_no_part_of_the_budget(self):
+        relay.budget_config_save({"roles": {self.VENTURE: "ignore", self.PLATINUM: None}}, self.NOW)
+        self.store(_txn("t1", 100.0))
+        self.store(_txn("t2", 50.0, account="platinum"), item="amex")
+        month = self.month()
+        self.assertEqual((0, []), (month["spent"], month["transactions"]))
+        self.assertEqual({self.VENTURE: "ignore", self.PLATINUM: None}, {card["key"]: card["role"] for card in month["cards"]})
+
+    def test_the_month_is_the_days_things_were_bought_on_the_household_s_clock(self):
+        self.store(_txn("sep", 300.0, date="2026-09-30"), _txn("oct", 20.0, date="2026-10-01"), _txn("today", 5.0, date="2026-10-07"),
+                   {**_txn("late", 9.0, date="2026-10-02"), "authorized_date": "2026-09-29"})
+        month = self.month()
+        self.assertEqual(("2026-10", "2026-10-07", 7, 31, 25.0), (month["month"], month["today"], month["day"], month["days_in_month"], month["spent"]))
+        self.assertEqual([20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 5.0], [d["spent"] for d in month["daily"]])
+        # The bank's clock ahead of the household's: tomorrow's purchase is in the month, and on today.
+        self.store(_txn("ahead", 11.0, date="2026-10-08"), cursor="c2")
+        month = self.month()
+        self.assertEqual((36.0, 16.0, 36.0), (month["spent"], month["daily"][-1]["spent"], sum(d["spent"] for d in month["daily"])))
+        self.store(removed=["ahead"], cursor="c3")
+        month = self.month()
+        self.assertEqual({"month": "2026-09", "spent": 309.0, "days": 30}, month["history"][-1])
+        self.assertEqual(5, len(month["history"]))
+        september = self.month("2026-09")
+        self.assertEqual((30, 30, 309.0), (september["day"], len(september["daily"]), september["spent"]))
+        self.assertEqual((0, []), (self.month("2026-11")["day"], self.month("2026-11")["daily"]))
+        with self.assertRaises(relay.HTTPException) as bad:
+            self.month("October")
+        self.assertEqual(400, bad.exception.status_code)
+
+    def test_what_it_went_on_and_where(self):
+        self.store(_txn("a", 60.0), _txn("b", 40.0, name="COSTCO WHSE #0456"), _txn("c", 30.0, name="CHEZ PANISSE", merchant="Chez Panisse", category="FOOD_AND_DRINK"))
+        month = self.month()
+        self.assertEqual([{"id": "GENERAL_MERCHANDISE", "spent": 100.0, "count": 2}, {"id": "FOOD_AND_DRINK", "spent": 30.0, "count": 1}], month["categories"])
+        self.assertEqual([{"name": "Costco", "spent": 100.0, "count": 2}, {"name": "Chez Panisse", "spent": 30.0, "count": 1}], month["merchants"])
+
+    def test_a_card_linked_again_keeps_its_role(self):
+        relay.with_db(lambda c: ([c.execute(f"DELETE FROM {table} WHERE item_id='cap'") for table in ("plaid_transactions", "plaid_accounts", "plaid_items")],
+                                 relay.plaid_assign_keys(c), c.commit()))
+        self.link("cap2", source="cap")
+        self.store(_txn("t1", 54.2, account="venture-again"), item="cap2")
+        self.assertEqual("split", next(card for card in self.month()["cards"] if card["key"] == self.VENTURE)["role"])
+        self.assertEqual(54.2, self.month()["spent"])
+
+    def test_the_month_is_not_all_there_while_plaid_is_still_fetching(self):
+        self.assertFalse(self.month()["ready"])
+        self.store(status="NOT_READY")
+        self.store(item="amex")
+        self.assertFalse(self.month()["ready"])
+        self.store(cursor="c2")
+        self.assertTrue(self.month()["ready"])
+
+    def test_the_settings_change_a_part_at_a_time(self):
+        relay.budget_config_save({"limits": {"total": 4500, "family": 2100, "people": {"Andrew": 1200}}}, self.NOW)
+        relay.budget_config_save({"limits": {"family": None}, "alerts": {"total": True}, "card_paid_lines": ["Groceries", "Dining"],
+                                  "sheet": {"take_home": 14170, "bills_off_card": 9000}}, self.NOW)
+        config = self.month()["config"]
+        self.assertEqual({"total": 4500.0, "people": {"Andrew": 1200.0, "Sarah": None}, "family": None}, config["limits"])
+        self.assertEqual({"total": True, "savings": False, "buckets": False}, config["alerts"])
+        self.assertEqual(["Dining", "Groceries"], config["card_paid_lines"])
+        self.assertEqual(5170.0, self.month()["savings_line"])
+        self.assertEqual(1200.0, self.bucket("person:Andrew")["limit"])
+
+    def test_someone_leaving_the_budget_takes_their_limit_and_their_card_s_role(self):
+        relay.budget_config_save({"limits": {"people": {"Sarah": 900}}, "roles": {self.VENTURE: "person:Sarah"}}, self.NOW)
+        config = relay.budget_config_save({"people": ["Andrew"]}, self.NOW)
+        self.assertEqual(({"Andrew": None}, {self.PLATINUM: "family"}), (config["limits"]["people"], config["roles"]))
+
+    def test_settings_that_are_not_what_they_should_be_change_nothing(self):
+        before = relay.budget_config()
+        for patch in ({"limits": {"total": -1}}, {"limits": {"total": "lots"}}, {"limits": {"people": {"Nobody": 5}}}, {"roles": {self.VENTURE: "person:Nobody"}},
+                      {"roles": {self.VENTURE: "mine"}}, {"people": ["Andrew", "andrew"]}, {"people": ["family"]}, {"people": ["a:b"]}, {"alerts": {"weekly": True}}):
+            with self.assertRaises(relay.HTTPException) as refused:
+                relay.budget_config_save(patch, self.NOW)
+            self.assertEqual((400, "bad_budget"), (refused.exception.status_code, refused.exception.detail["error"]), patch)
+        self.assertEqual(before, relay.budget_config())
+
+
+class BudgetAlertsTest(_Budget):
+    """Telling the phones: which lines, which phones, and each only once."""
+
+    def setUp(self):
+        super().setUp()
+        relay.budget_config_save({"limits": {"total": 1000, "family": 300, "people": {"Andrew": 200}}, "sheet": {"take_home": 5000, "bills_off_card": 3800}}, self.NOW)
+        self.pushed = []
+
+    def push(self, token, title, body, data):
+        self.pushed.append((token, data["budget_kind"]))
+        return "sent"
+
+    def spend(self, amount, txn_id="t1", **more):
+        self.store(_txn(txn_id, amount, **more), cursor=txn_id)
+
+    def check(self, now=None):
+        return relay.budget_check(self.NOW if now is None else now, push=self.push)
+
+    def test_nobody_is_told_anything_until_an_alert_is_switched_on(self):
+        self.phone("a")
+        self.spend(5000.0)
+        self.assertEqual([], self.check())
+        self.assertEqual([], self.pushed)
+
+    def test_each_phone_hears_once_that_the_month_is_nearly_spent_and_once_that_it_is(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("a")
+        self.spend(799.0)
+        self.assertEqual([], self.check())
+        self.spend(2.0, "t2")
+        self.assertEqual(["total_80"], self.check())
+        self.assertEqual([], self.check(self.NOW + 3600))
+        self.spend(300.0, "t3")
+        self.assertEqual(["total_100"], self.check(self.NOW + 7200))
+        self.assertEqual([], self.check(self.NOW + 10800))
+        self.assertEqual([("token-a", "total_80"), ("token-a", "total_100")], self.pushed)
+        self.assertEqual(["total_100", "total_80"], self.month()["alerts_sent"])
+
+    def test_a_month_already_over_when_the_alerts_come_on_says_so_once(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("a")
+        self.spend(1500.0)
+        self.assertEqual(["total_100"], self.check())
+        self.assertEqual([], self.check(self.NOW + 3600))
+        self.assertEqual([("token-a", "total_100")], self.pushed)
+
+    def test_only_the_phones_of_people_who_may_see_the_finances_are_told(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("admin")
+        self.phone("listed", user="sam", role="viewer")
+        self.phone("guest", user="kid", role="viewer")
+        self.phone("unknown", user=None, role=None)
+        self.phone("ipad", token=None)
+        self.spend(1500.0)
+        self.check()
+        self.assertEqual({"token-admin", "token-listed"}, {token for token, _ in self.pushed})
+
+    def test_a_phone_in_its_quiet_hours_hears_after_them_and_one_that_wants_only_away_alerts_still_hears(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("asleep", quiet_start=11 * 60, quiet_end=13 * 60, utc_offset=0)
+        self.phone("away", only_away=1)
+        self.spend(1500.0)
+        self.check()
+        self.assertEqual([("token-away", "total_100")], self.pushed)
+        self.assertEqual(["total_100"], self.check(self.NOW + 3600))
+        self.assertEqual([("token-away", "total_100"), ("token-asleep", "total_100")], self.pushed)
+
+    def test_a_push_that_did_not_arrive_is_tried_again(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("a")
+        self.spend(1500.0)
+        self.assertEqual([], relay.budget_check(self.NOW, push=lambda *args: "failed"))
+        self.assertEqual(["total_100"], self.check())
+
+    def test_each_person_and_the_family_card_have_their_own_line_and_so_do_the_savings(self):
+        relay.budget_config_save({"alerts": {"buckets": True, "savings": True}}, self.NOW)
+        self.phone("a")
+        self.spend(250.0, account_owner="ANDREW GLOSE")
+        self.assertEqual(["person:Andrew_100"], self.check())
+        self.store(_txn("t2", 301.0, account="platinum"), item="amex")
+        self.assertEqual(["family_100"], self.check())
+        self.spend(700.0, "t3")
+        self.assertEqual(["savings"], self.check())
+        self.assertEqual(["person_100", "family_100", "savings"], [kind for _, kind in self.pushed])
+
+    def test_a_new_month_starts_the_telling_over(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("a")
+        self.spend(1500.0)
+        self.check()
+        self.spend(1200.0, "nov", date="2026-11-02")
+        self.assertEqual(["total_100"], self.check(self.NOW + 30 * 86400))
+        self.assertEqual("2026-11", relay.state_get(relay.BUDGET_ALERTS_KEY)["month"])
+
+    def test_the_push_says_what_the_app_needs_to_word_it_itself(self):
+        relay.budget_config_save({"alerts": {"buckets": True}}, self.NOW)
+        self.phone("a")
+        self.spend(250.0, account_owner="ANDREW GLOSE")
+        sent = []
+        relay.budget_check(self.NOW, push=lambda token, title, body, data: sent.append((title, body, data)) or "sent")
+        title, body, data = sent[0]
+        self.assertEqual(("Andrew is over budget", "$250 spent of $200, with 24 days left this month."), (title, body))
+        self.assertEqual({"budget": "1", "budget_kind": "person_100", "month": "2026-10", "spent": "250.00", "limit": "200.00", "person": "Andrew", "days_left": "24",
+                          "notif_id": "budget-2026-10-person:Andrew_100"}, data)
+
+    def test_a_dead_token_is_dropped_like_any_other_push_s(self):
+        relay.budget_config_save({"alerts": {"total": True}}, self.NOW)
+        self.phone("a")
+        self.spend(1500.0)
+        relay.send_push = lambda token, title, body, data, away=False: (False, "404 UNREGISTERED")
+        self.assertEqual([], relay.budget_check(self.NOW))
+        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM devices").fetchone()[0]))
+
+
+class BudgetRoutesTest(_Budget):
+    """The budget routes: who gets in, tagging and remembering, and asking the cards now."""
+
+    def test_someone_who_may_not_see_the_finances_gets_nowhere(self):
+        def refuse(request):
+            raise relay.HTTPException(403, {"error": "not_allowed"})
+
+        relay.require_finance_user = refuse
+        self.store(_txn("t1", 54.2))
+        for route in (lambda: relay.get_budget(object(), self.response), lambda: relay.post_budget_sync(object(), self.response),
+                      lambda: relay.put_budget_config(types.SimpleNamespace(people=["Kid"]), object(), self.response),
+                      lambda: relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="family", remember=True), object(), self.response),
+                      lambda: relay.delete_budget_rule("costco", object(), self.response)):
+            with self.assertRaises(relay.HTTPException) as refused:
+                route()
+            self.assertEqual(403, refused.exception.status_code)
+        self.assertEqual(["Andrew", "Sarah"], relay.budget_config()["people"])
+        self.assertEqual({}, relay.budget_rules())
+
+    def test_the_month_answers_without_plaid_set_up_and_is_never_cached(self):
+        relay.PLAID_CLIENT_ID = ""
+        body = relay.get_budget(object(), self.response)
+        self.assertFalse(body["configured"])
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
+        with self.assertRaises(relay.HTTPException) as off:
+            relay.post_budget_sync(object(), self.response)
+        self.assertEqual((503, "not_configured"), (off.exception.status_code, off.exception.detail["error"]))
+
+    def test_remembering_a_shop_sorts_its_other_purchases_and_forgetting_it_leaves_the_tagged_one(self):
+        self.store(_txn("t1", 54.2), _txn("t2", 20.0, name="COSTCO WHSE #0456"), _txn("t3", 9.0, name="SHELL OIL", merchant="Shell"))
+        body = relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="person:Sarah", remember=True), object(), self.response)
+        self.assertEqual({"t1": ("person:Sarah", "manual", True), "t2": ("person:Sarah", "rule", True), "t3": (None, "none", False)},
+                         {t["id"]: (t["bucket"], t["source"], t["remembered"]) for t in body["transactions"]})
+        self.assertEqual([{"merchant": "costco", "bucket": "person:Sarah"}], body["config"]["rules"])
+        body = relay.delete_budget_rule("costco", object(), self.response)
+        self.assertEqual({"t1": "person:Sarah", "t2": None, "t3": None}, {t["id"]: t["bucket"] for t in body["transactions"]})
+
+    def test_a_tag_can_be_taken_off_and_the_answer_is_the_purchase_s_own_month(self):
+        self.store(_txn("old", 54.2, date="2026-09-12"))
+        relay.put_budget_transaction("old", types.SimpleNamespace(bucket="family", remember=True), object(), self.response)
+        body = relay.put_budget_transaction("old", types.SimpleNamespace(bucket=None, remember=True), object(), self.response)
+        self.assertEqual(("2026-09", [None]), (body["month"], [t["bucket"] for t in body["transactions"]]))
+        self.assertEqual({}, relay.budget_rules())
+
+    def test_a_purchase_that_is_gone_or_a_bucket_nobody_has_is_refused(self):
+        self.store(_txn("t1", 54.2))
+        with self.assertRaises(relay.HTTPException) as unknown:
+            relay.put_budget_transaction("nope", types.SimpleNamespace(bucket="family", remember=False), object(), self.response)
+        self.assertEqual(404, unknown.exception.status_code)
+        with self.assertRaises(relay.HTTPException) as bad:
+            relay.put_budget_transaction("t1", types.SimpleNamespace(bucket="person:Nobody", remember=False), object(), self.response)
+        self.assertEqual((400, "bad_bucket"), (bad.exception.status_code, bad.exception.detail["error"]))
+
+    def test_changing_the_settings_answers_the_month_and_looks_at_the_alerts(self):
+        body = relay.put_budget_config(types.SimpleNamespace(limits={"total": 4500}), object(), self.response)
+        self.assertEqual(4500.0, body["config"]["limits"]["total"])
+        self.assertEqual(["check"], self.background)
+
+    def test_sync_now_asks_the_cards_once_and_not_again_within_the_minute(self):
+        self.assertTrue(relay.post_budget_sync(object(), self.response)["syncing"])
+        relay.post_budget_sync(object(), self.response)
+        self.assertEqual(["budget"], self.background)
+        relay._txn_asked["at"] = 0.0
+        relay.state_set(relay.PLAID_TXN_SYNCED_KEY, {"at": time.time()})
+        self.assertFalse(relay.post_budget_sync(object(), self.response)["syncing"])
+        self.assertEqual(["budget"], self.background)
+
+    def test_unlinking_a_card_forgets_what_was_bought_on_it(self):
+        relay.plaid_post = _FakePlaid()
+        self.store(_txn("t1", 54.2))
+        relay.delete_bank_institution("cap", object(), self.response)
+        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_transactions").fetchone()[0]))
+        self.assertEqual([self.PLATINUM], [card["key"] for card in self.month()["cards"]])
+
+
+class DeviceOwnerTest(_ScratchDb):
+    """Whose phone a registration says it is: what a push about the money goes by."""
+
+    NAMES = _ScratchDb.NAMES + ("FINANCE_USERS",)
+
+    def setUp(self):
+        super().setUp()
+        self._get = relay.requests.get
+        self.profile = {"username": "alex", "role": "admin"}
+        relay.requests.get = lambda url, headers=None, timeout=None: _Response(200, self.profile)
+
+    def tearDown(self):
+        relay.requests.get = self._get
+        super().tearDown()
+
+    def register(self, **headers):
+        device = types.SimpleNamespace(device_id="d1", token="token-1", platform="android", name="Pixel", quiet_familiar=False, build="release",
+                                       quiet_start=None, quiet_end=None, only_away=False, tz="America/Los_Angeles", utc_offset=-420)
+        return relay.register(device, types.SimpleNamespace(headers=headers))
+
+    def owner(self):
+        return relay.with_db(lambda c: c.execute("SELECT user, role FROM devices WHERE device_id='d1'").fetchone())
+
+    def test_a_registration_with_a_session_says_whose_phone_it_is(self):
+        self.register(cookie="frigate_token=abc")
+        self.assertEqual(("alex", "admin"), self.owner())
+        self.assertEqual([("d1", "token-1")], relay.budget_recipients(time.time()))
+
+    def test_one_made_with_the_install_s_own_secret_leaves_that_as_it_stood(self):
+        secret = self.register(cookie="frigate_token=abc")["secret"]
+        self.profile = None
+        self.register(authorization=f"Bearer {secret}")
+        self.assertEqual(("alex", "admin"), self.owner())
+
+    def test_a_session_is_asked_of_frigate_once_a_registration(self):
+        asked = []
+        relay.requests.get = lambda url, headers=None, timeout=None: asked.append(url) or _Response(200, self.profile)
+        secret = self.register(cookie="frigate_token=abc")["secret"]
+        self.register(cookie="frigate_token=abc", authorization=f"Bearer {secret}")
+        self.assertEqual(2, len(asked))
+
+    def test_a_registration_nobody_vouches_for_is_refused(self):
+        relay.requests.get = lambda url, headers=None, timeout=None: _Response(401, {})
+        with self.assertRaises(relay.HTTPException) as refused:
+            self.register(cookie="frigate_token=stale")
+        self.assertEqual(401, refused.exception.status_code)
+        with self.assertRaises(relay.HTTPException):
+            self.register(authorization="Bearer made-up")
+        self.assertIsNone(relay.find_device("d1"))
+
+    def test_someone_else_signing_in_on_the_phone_takes_it_over(self):
+        self.register(cookie="frigate_token=abc")
+        self.profile = {"username": "kid", "role": "viewer"}
+        self.register(cookie="frigate_token=def")
+        self.assertEqual(("kid", "viewer"), self.owner())
+        self.assertEqual([], relay.budget_recipients(time.time()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -7,6 +7,7 @@ Robinhood's dark look: true black, one green for up and one orange-red for down.
 | Tab | What it shows | Where the data comes from |
 |---|---|---|
 | **Wallet** | Total assets over time, net worth, the sheet's own charts, accounts by owner, allocation, monthly cash flow, debts, home equity, a mortgage planner, RSU/ESPP vesting, income and taxes by year, the last house sale, and the sheet's watchlist with live prices | The household budget sheet (Google Sheets), through the relay. Quotes from Yahoo Finance |
+| **Budget** | The month's credit card spending against the household's limits: how fast the month is being spent, who spent what, where take-home goes, and every purchase | The linked cards, read hourly through Plaid by the relay. See [budget.md](budget.md) |
 | **Markets** | S&P 500, Dow, Nasdaq, Russell 2000 and VIX, with live charts from 1 day to 5 years; 10-year yield, gold, oil, bitcoin and the dollar; the watchlist | Yahoo Finance's public chart endpoints, polled every 15 s while markets are open |
 | **Economy** | Inflation (CPI, core CPI, core PCE against the Fed's 2%), the Treasury yield curve now and in the past, 2/10/30-year yields, the real interest rate, key rates | FRED (the St. Louis Fed), keyless CSV downloads |
 | **Risk** | Twenty warning lights for a downturn or crisis, each against its own watch and danger line, blended into one 0–100 stress gauge | FRED |
@@ -108,6 +109,12 @@ date). The Wallet's first line shows it:
 Tapping it opens **Sheet sync**, which lists every part with what it found ("22 lines", "25
 snapshots") or the title it looks for, every chart, and anything left out, with Sync now and Open the
 sheet.
+
+### Balances from the banks
+
+The balances in the sheet don't have to be typed. **Linked accounts**, at the top of Sheet sync,
+links each bank, brokerage and lender through Plaid; the relay then reads every account each
+morning and writes it to a feed the sheet's cells look up. See [bank-sync.md](bank-sync.md).
 
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add

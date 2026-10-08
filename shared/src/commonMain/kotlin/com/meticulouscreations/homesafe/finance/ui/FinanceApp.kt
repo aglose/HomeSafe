@@ -48,6 +48,7 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CreditCard
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Radar
 import androidx.compose.material.icons.filled.Refresh
@@ -89,6 +90,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
@@ -101,9 +103,12 @@ import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.fin_bank_title
+import homesafe.shared.generated.resources.fin_budget_settings_title
 import homesafe.shared.generated.resources.finance_close
 import homesafe.shared.generated.resources.finance_refresh
 import homesafe.shared.generated.resources.finance_refreshing
+import homesafe.shared.generated.resources.finance_tab_budget
 import homesafe.shared.generated.resources.finance_tab_economy
 import homesafe.shared.generated.resources.finance_tab_markets
 import homesafe.shared.generated.resources.finance_tab_risk
@@ -116,9 +121,10 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The finance app's four tabs, in bottom-nav order. */
+/** The finance app's five tabs, in bottom-nav order. */
 enum class FinanceTab(val label: StringResource, val icon: ImageVector) {
     WALLET(Res.string.finance_tab_wallet, Icons.Filled.AccountBalanceWallet),
+    BUDGET(Res.string.finance_tab_budget, Icons.Filled.CreditCard),
     MARKETS(Res.string.finance_tab_markets, Icons.AutoMirrored.Filled.ShowChart),
     ECONOMY(Res.string.finance_tab_economy, Icons.Filled.Public),
     RISK(Res.string.finance_tab_risk, Icons.Filled.Radar),
@@ -140,14 +146,20 @@ internal sealed interface FinanceDetail {
     /** How the budget sheet's last sync went, part by part. */
     data object SheetSync : FinanceDetail
 
+    /** The banks and brokerages linked through Plaid, whose balances fill the sheet in. */
+    data object BankSync : FinanceDetail
+
+    /** The month's limits, what each card is, and how its purchases are sorted. */
+    data object BudgetSettings : FinanceDetail
+
     /** How every chart looks and feels. */
     data object ChartSettings : FinanceDetail
 }
 
 /**
  * The finance app: an app of its own inside PercySafe, opened from the drawer. Robinhood's dark
- * look on true black — Wallet (the household's money, from the budget sheet), Markets (indices
- * and the watchlist, live), Economy (inflation, the Treasury curve, rates) and Risk (the warning
+ * look on true black — Wallet (the household's money, from the budget sheet), Budget (the month's
+ * card spending against its limits), Markets (indices and the watchlist, live), Economy (inflation, the Treasury curve, rates) and Risk (the warning
  * lights for a downturn, blended into one gauge) — with quote and indicator pages pushed over
  * the tabs. Back pops a page, then leaves the app ([onClose]).
  */
@@ -159,6 +171,10 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val chartStyleViewModel: ChartStyleViewModel = metroViewModel()
     val chartStyle by chartStyleViewModel.style.collectAsStateWithLifecycle()
+    // The Budget tab's own, here for the Wallet's line about the month and so a pull refreshes it too.
+    val budgetViewModel: BudgetViewModel = metroViewModel()
+    val budgetState by budgetViewModel.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { budgetViewModel.refresh() }
     var tab by rememberSaveable { mutableStateOf(FinanceTab.WALLET) }
     val details = remember { mutableStateListOf<FinanceDetail>() }
     val listStates = FinanceTab.entries.associateWith { rememberLazyListState() }
@@ -217,7 +233,10 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
         Box(modifier.fillMaxSize().background(palette.background).testTag("finance_app")) {
             PullToRefreshBox(
                 isRefreshing = state.refreshing,
-                onRefresh = viewModel::refresh,
+                onRefresh = {
+                    viewModel.refresh()
+                    budgetViewModel.refresh()
+                },
                 state = pullState,
                 modifier = Modifier.fillMaxSize(),
                 indicator = {
@@ -246,6 +265,16 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
                             onRetrySheet = viewModel::retrySheet,
                             onOpenSync = { push(FinanceDetail.SheetSync) },
                             onAddSymbol = openAddSymbol,
+                            budget = budgetState.budget,
+                            onOpenBudget = { tab = FinanceTab.BUDGET },
+                        )
+
+                        FinanceTab.BUDGET -> BudgetRoute(
+                            state.finance,
+                            listStates.getValue(FinanceTab.BUDGET),
+                            padding,
+                            onOpenLinkedAccounts = { push(FinanceDetail.BankSync) },
+                            onOpenSettings = { push(FinanceDetail.BudgetSettings) },
                         )
 
                         FinanceTab.MARKETS -> MarketsScreen(
@@ -286,7 +315,11 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
 
                         FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
 
-                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
+                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh, onOpenBankSync = { push(FinanceDetail.BankSync) })
+
+                        FinanceDetail.BankSync -> BankSyncRoute(detailPadding)
+
+                        FinanceDetail.BudgetSettings -> BudgetSettingsRoute(state.finance, detailPadding)
 
                         FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
                     }
@@ -377,6 +410,8 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     FinanceDetail.Connections -> stringResource(Res.string.finance_title_connections)
     FinanceDetail.Glossary -> stringResource(Res.string.finance_title_glossary)
     FinanceDetail.SheetSync -> stringResource(Res.string.finance_title_sheet_sync)
+    FinanceDetail.BankSync -> stringResource(Res.string.fin_bank_title)
+    FinanceDetail.BudgetSettings -> stringResource(Res.string.fin_budget_settings_title)
     FinanceDetail.ChartSettings -> stringResource(Res.string.finance_title_chart_settings)
 }
 
@@ -473,7 +508,8 @@ private fun FinanceBottomNav(selected: FinanceTab, onSelect: (FinanceTab) -> Uni
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        FinanceTab.entries.forEach { t -> FinanceNavItem(t, isSelected = t == selected, onSelect = onSelect) }
+        // Five tabs share the bar evenly: at their own widths they would run past a narrow phone's edge.
+        FinanceTab.entries.forEach { t -> FinanceNavItem(t, isSelected = t == selected, onSelect = onSelect, modifier = Modifier.weight(1f), horizontalPadding = 4.dp) }
     }
 }
 

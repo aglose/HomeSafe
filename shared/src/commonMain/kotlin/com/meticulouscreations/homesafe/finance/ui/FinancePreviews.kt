@@ -316,7 +316,7 @@ internal object FinanceFixtures {
 }
 
 @Composable
-private fun FinanceStage(content: @Composable () -> Unit) {
+internal fun FinanceStage(content: @Composable () -> Unit) {
     FrigateTheme {
         CompositionLocalProvider(LocalFinancePalette provides FinancePalette(), LocalFinanceTypography provides FinanceTypography(albertSansFontFamily())) {
             Box(Modifier.fillMaxSize().background(FinancePalette().background)) { content() }
@@ -324,7 +324,7 @@ private fun FinanceStage(content: @Composable () -> Unit) {
     }
 }
 
-private val previewPadding = PaddingValues(top = 24.dp, bottom = 24.dp)
+internal val previewPadding = PaddingValues(top = 24.dp, bottom = 24.dp)
 
 @Preview(widthDp = 412, heightDp = 1800)
 @Composable
@@ -350,6 +350,7 @@ private fun FinanceSheetSyncPreview() {
             FinanceFixtures.state.copy(finance = FinanceFixtures.finance.copy(health = FinanceFixtures.troubledHealth)),
             previewPadding,
             onSyncNow = {},
+            onOpenBankSync = {},
         )
     }
 }

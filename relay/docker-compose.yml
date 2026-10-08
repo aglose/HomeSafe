@@ -67,6 +67,10 @@ services:
         required: false
       - path: finance.env
         required: false
+      # PLAID_CLIENT_ID, PLAID_SECRET and FINANCE_FEED_SHEET_ID (relay.py, "bank sync";
+      # docs/bank-sync.md), only on the box. Without the first two the bank sync is off.
+      - path: plaid.env
+        required: false
       # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
       - path: tesla.env
         required: false

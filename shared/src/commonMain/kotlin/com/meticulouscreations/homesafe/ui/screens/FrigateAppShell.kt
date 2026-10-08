@@ -666,9 +666,10 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
 }
 
 /**
- * "Local network" vs "Tailscale" at a glance — the former is the fast, direct video path — or
- * "Offline" while the server can't be reached on either. A tap drops down the app's version,
- * which is how to tell which release is on the phone.
+ * "Local" (the local network) vs "Tailscale" at a glance — the former is the fast, direct video
+ * path — or "Offline" while the server can't be reached on either. The names are the routes'
+ * short ones: the badge shares the bar with the centred title, and "Local network" ran into it.
+ * A tap drops down the app's version, which is how to tell which release is on the phone.
  */
 @Composable
 private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, offline: Boolean) {
@@ -708,7 +709,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, off
             } else {
                 PulsingDot(color = tint, size = 6.dp, pulsing = false)
             }
-            Text(text = stringResource(if (offline) Res.string.shell_offline else route.label), style = MaterialTheme.typography.labelSmall, color = tint)
+            Text(text = stringResource(if (offline) Res.string.shell_offline else route.shortLabel), style = MaterialTheme.typography.labelSmall, color = tint)
         }
         DropdownMenu(expanded = showVersion, onDismissRequest = { showVersion = false }) {
             Text(

@@ -27,6 +27,7 @@ driveway" — see "vehicle memory". The local vision model checks those names ag
 of each car kept on the box.
 """
 
+import calendar
 import hashlib
 import html
 import http.client
@@ -275,6 +276,46 @@ def db() -> sqlite3.Connection:
     # the next), and which account each VIN is reached through (see "Tesla").
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_accounts (account TEXT PRIMARY KEY, refresh TEXT, access TEXT, expires REAL, updated REAL)")
     conn.execute("CREATE TABLE IF NOT EXISTS tesla_vehicles (vin TEXT PRIMARY KEY, account TEXT, name TEXT, updated REAL)")
+    # The institutions linked through Plaid (see "bank sync"): each one's read-only access token,
+    # what Plaid can tell about it (`products`, a JSON list) and how its last sync went (`error`
+    # is Plaid's error code). Then each of its accounts as last read, and what each investment
+    # account holds.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_items (item_id TEXT PRIMARY KEY, access TEXT, institution_id TEXT, institution TEXT,"
+        " products TEXT, linked_by TEXT, linked_at REAL, synced_at REAL, error TEXT, error_message TEXT, consent_expires TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_accounts (account_id TEXT PRIMARY KEY, item_id TEXT, name TEXT, official_name TEXT, mask TEXT,"
+        " type TEXT, subtype TEXT, current REAL, available REAL, credit_limit REAL, currency TEXT, apr REAL, min_payment REAL, due TEXT, updated REAL)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_holdings (account_id TEXT, security_id TEXT, item_id TEXT, ticker TEXT, name TEXT, kind TEXT,"
+        " quantity REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, PRIMARY KEY (account_id, security_id))"
+    )
+    # The name each account's row goes by in the feed sheet, given once and kept while the account
+    # is there: the budget sheet's formulas look accounts up by it.
+    conn.execute("CREATE TABLE IF NOT EXISTS plaid_feed_keys (account_id TEXT PRIMARY KEY, key TEXT)")
+    # What was bought on the credit cards (see "budget"): one row per transaction as Plaid last
+    # told it. `date` is the day it was spent (`posted` the day it settled), `amount` positive for
+    # a purchase, `kind` "spend", "refund" or "payment" (paying the card off, which is not
+    # spending), `owner` whose card the bank says it was (rarely said), and `tag` the bucket
+    # someone put it in by hand ("person:<name>" or "family"). A transaction Plaid took back keeps
+    # its row for a while with `removed_at` set, so the posted one that replaces a pending one
+    # can still take over its tag. Then the merchants someone said always belong to one bucket.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS plaid_transactions (txn_id TEXT PRIMARY KEY, item_id TEXT NOT NULL, account_id TEXT NOT NULL, date TEXT NOT NULL,"
+        " posted TEXT, amount REAL NOT NULL, currency TEXT, name TEXT, merchant TEXT, merchant_key TEXT, category TEXT, category_detail TEXT,"
+        " pending INTEGER NOT NULL DEFAULT 0, pending_id TEXT, owner TEXT, kind TEXT NOT NULL, tag TEXT, tag_by TEXT, removed_at REAL, updated REAL)"
+    )
+    conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_date ON plaid_transactions (date)")
+    conn.execute("CREATE INDEX IF NOT EXISTS plaid_transactions_pending ON plaid_transactions (pending_id)")
+    conn.execute("CREATE TABLE IF NOT EXISTS budget_rules (merchant_key TEXT PRIMARY KEY, bucket TEXT NOT NULL, by TEXT, at REAL)")
+    # Where each institution's transactions were read up to (Plaid's cursor), when they were last
+    # asked for and last changed, and whether Plaid has finished fetching their history.
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(plaid_items)")}
+    for column, declaration in (("txn_cursor", "TEXT"), ("txn_synced_at", "REAL"), ("txn_changed_at", "REAL"), ("txn_status", "TEXT")):
+        if column not in columns:
+            conn.execute(f"ALTER TABLE plaid_items ADD COLUMN {column} {declaration}")
     # What the notification policy made of each alert and each household car coming or going (see
     # "notification policy"), whether it was acted on or only logged: `key` is the review id, or
     # "car:<name>:<time>"; `route` "instant", "update", "fold", "digest", "car" or, for what the
@@ -322,6 +363,8 @@ def db() -> sqlite3.Connection:
     # Added after the device_id rebuild: each phone's quiet hours (minutes after its local
     # midnight, NULL while off), its "only when everyone's away" choice, and the clock to read
     # them by. Guarded like the ALTERs above so an existing relay.db picks them up on boot.
+    # Then who last signed in on it (`user`, and their Frigate `role`): a push about the
+    # household's money goes only to the phones of people who may see it (see `budget_push`).
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     for column, declaration in (
         ("quiet_start", "INTEGER"),
@@ -329,6 +372,8 @@ def db() -> sqlite3.Connection:
         ("only_away", "INTEGER NOT NULL DEFAULT 0"),
         ("tz", "TEXT"),
         ("utc_offset", "INTEGER"),
+        ("user", "TEXT"),
+        ("role", "TEXT"),
     ):
         if column not in columns:
             conn.execute(f"ALTER TABLE devices ADD COLUMN {column} {declaration}")
@@ -482,21 +527,23 @@ def broadcast(title: str, body: str, data: dict[str, str], away: bool = False, f
             quiet += 1
         else:
             tokens.append(token)
-    ok = dropped = failed = 0
-    for token in tokens:
-        sent, err = send_push(token, title, body, data, away=away)
-        if sent:
-            ok += 1
-        elif "UNREGISTERED" in err or "404" in err:
-            # The install behind this token is gone (uninstalled, or its token rotated and the new
-            # one has since re-registered its device_id); its presence row goes with it.
-            with_db(lambda c: (c.execute("DELETE FROM devices WHERE token=?", (token,)), c.commit()))
-            dropped += 1
-            log.info("dropped stale device token (%s)", err)
-        else:
-            failed += 1
-            log.warning("push failed: %s", err)
-    return {"sent": ok, "dropped": dropped, "failed": failed, "skipped_familiar": skipped, "skipped_quiet": quiet}
+    results = [deliver(token, title, body, data, away=away) for token in tokens]
+    return {"sent": results.count("sent"), "dropped": results.count("dropped"), "failed": results.count("failed"), "skipped_familiar": skipped, "skipped_quiet": quiet}
+
+
+def deliver(token: str, title: str, body: str, data: dict[str, str], away: bool = False) -> str:
+    """One push to one phone: "sent", "failed", or "dropped" when the token turned out to be dead (its row goes)."""
+    sent, err = send_push(token, title, body, data, away=away)
+    if sent:
+        return "sent"
+    if "UNREGISTERED" in err or "404" in err:
+        # The install behind this token is gone (uninstalled, or its token rotated and the new
+        # one has since re-registered its device_id); its presence row goes with it.
+        with_db(lambda c: (c.execute("DELETE FROM devices WHERE token=?", (token,)), c.commit()))
+        log.info("dropped stale device token (%s)", err)
+        return "dropped"
+    log.warning("push failed: %s", err)
+    return "failed"
 
 
 # ---------------------------------------------------------------- Frigate
@@ -4323,6 +4370,19 @@ def require_frigate_session(request: Request) -> str:
         return "?"
 
 
+def frigate_profile(request: Request) -> dict[str, Any] | None:
+    """Frigate's `/api/profile` for the session the request carries, or None when it carries none Frigate will vouch for. Never raises."""
+    cookie = request.headers.get("cookie")
+    if not cookie:
+        return None
+    try:
+        r = requests.get(f"{FRIGATE_AUTH}/api/profile", headers={"Cookie": cookie}, timeout=5)
+        profile = r.json() if r.status_code == 200 else None
+    except Exception:
+        return None
+    return profile if isinstance(profile, dict) else None
+
+
 def find_device(ident: str) -> tuple | None:
     """A device row by device_id, or — for the old apps and old rows — by push token."""
     return with_db(lambda c: c.execute(
@@ -4361,6 +4421,7 @@ def startup() -> None:
     threading.Thread(target=car_check_forever, name="car-check", daemon=True).start()
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
     threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
+    threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
@@ -4467,7 +4528,10 @@ def register(device: Device, request: Request) -> dict[str, Any]:
     if not device.device_id and not device.token:
         raise HTTPException(status_code=400, detail="device_id or token required")
     device_id = device.device_id or device.token
-    user = authenticate(request, device_id)
+    # A session, when the request carries a good one, both lets it in and says whose phone this
+    # is. Only without one is the install's own secret (or a refusal) left to `authenticate`.
+    profile = frigate_profile(request)
+    user = str(profile.get("username") or "?") if profile else authenticate(request, device_id)
     now = time.time()
 
     def upsert(c: sqlite3.Connection) -> str:
@@ -4498,6 +4562,10 @@ def register(device: Device, request: Request) -> dict[str, Any]:
         return secret
 
     secret = with_db(upsert)
+    # Whose phone it is, when the registration says: one made with the install's own secret and
+    # no session (a push token rotating in the background) leaves who it was as it stood.
+    if profile and profile.get("username"):
+        with_db(lambda c: (c.execute("UPDATE devices SET user=?, role=? WHERE device_id=?", (str(profile["username"]), profile.get("role"), device_id)), c.commit()))
     log.info(
         "device registered by %s: %s (%s %s, push=%s, strangers only=%s, quiet=%s-%s %s, only away=%s, counts for away=%s)",
         user, device.name or "unnamed", device.platform, device.build, device.token is not None, device.quiet_familiar,
@@ -5752,6 +5820,1352 @@ def get_finance_sheet(request: Request, response: Response, refresh: bool = Fals
         return body
     finally:
         _finance_lock.release()
+
+
+# ---------------------------------------------------------------- bank sync
+#
+# The budget sheet's balances used to be typed in by hand. Plaid reads them instead: each bank,
+# brokerage or lender is linked once, on Plaid's own page (the institution's own sign-in where it
+# has one), and from then on the relay asks Plaid once a day what every account holds and writes
+# that into two feed tabs of a Google Sheet, which the budget sheet's cells look up. The app goes
+# on reading the budget sheet as it always has (see "finance").
+#
+# What is kept on the box is one access token per institution, in relay.db. The relay reads
+# balances, holdings and loan terms with it, and what was bought on the credit cards (see
+# "budget"); no product that can move money is ever asked for. The phone never sees a token, only
+# what the relay read with it, and only when signed in as someone who may see the finances.
+#
+# Linking is Plaid's Hosted Link: the relay asks Plaid for a link token with a `hosted_link_url`,
+# the app opens that in the browser, and the relay asks Plaid how the session ended when the app
+# asks (`/link/token/get`). No webhook, so nothing more of the relay is published to the internet.
+#
+# Setup (docs/bank-sync.md): a Plaid account's client id and secret in plaid.env on the box, and
+# FINANCE_FEED_SHEET_ID, a sheet shared with the service account as an Editor. Off without the
+# first two. Without the third the balances are still read and shown in the app, only not written.
+
+PLAID_CLIENT_ID = os.environ.get("PLAID_CLIENT_ID", "").strip()
+PLAID_SECRET = os.environ.get("PLAID_SECRET", "").strip()
+# "production" (a Trial plan's keys are production keys) or "sandbox".
+PLAID_ENV = os.environ.get("PLAID_ENV", "").strip().lower() or "production"
+PLAID_API = os.environ.get("PLAID_API", f"https://{PLAID_ENV}.plaid.com").rstrip("/")
+PLAID_COUNTRIES = [c.strip().upper() for c in os.environ.get("PLAID_COUNTRIES", "US").split(",") if c.strip()]
+# Only for a bank whose sign-in hands over to its own phone app; it must be registered in Plaid's dashboard.
+PLAID_REDIRECT_URI = os.environ.get("PLAID_REDIRECT_URI", "").strip()
+# What a link asks an institution for, by what the person said they were linking. The product
+# named here is the one the institution must have (Link only lists those that do); investments and
+# liabilities also come along wherever the institution has them, so one sign-in to a bank that
+# holds the mortgage and a brokerage account too brings all three. Transactions are what a bank or
+# a card is linked by, and what the budget reads a card's purchases with (see "budget").
+PLAID_KINDS = {"bank": "transactions", "investments": "investments", "loans": "liabilities"}
+PLAID_EXTRAS = ("investments", "liabilities")
+# How long a link stays good (Plaid's own lifetime for a hosted link it doesn't deliver itself).
+PLAID_LINK_SECONDS = 1800
+PLAID_LINKS_KEY = "plaid_links"
+PLAID_SYNCED_KEY = "plaid_synced"
+PLAID_FEED_KEY = "plaid_feed"
+PLAID_FEED_ROWS_KEY = "plaid_feed_rows"
+# Plaid's ways of saying an institution has nothing of a kind: not a failed sync.
+PLAID_NOTHING_THERE = {"NO_INVESTMENT_ACCOUNTS", "NO_LIABILITY_ACCOUNTS", "PRODUCTS_NOT_SUPPORTED"}
+# ...of saying the person has to sign in at the institution again (Link's update mode)...
+PLAID_RELINK = {"ITEM_LOGIN_REQUIRED", "PENDING_EXPIRATION", "PENDING_DISCONNECT"}
+# ...and of saying it no longer knows the link at all.
+PLAID_GONE = {"ITEM_NOT_FOUND", "INVALID_ACCESS_TOKEN"}
+
+# The hour, on the household's clock, at which every institution is read each day. Plaid itself
+# refreshes an institution about once a day, holdings after the markets close, so asking more
+# often would mostly read the same numbers again.
+BANK_SYNC_HOUR = min(23, max(0, int(os.environ.get("BANK_SYNC_HOUR", "6"))))
+BANK_CHECK_SECONDS = 300
+# "Sync now" in the app, however often it is tapped.
+BANK_MIN_SYNC_SECONDS = 60
+# How long an unlinking waits for a sync under way to finish before it says to try again.
+BANK_UNLINK_WAIT_SECONDS = 25
+
+# Where the balances are written: a sheet of its own that the budget sheet looks up with
+# IMPORTRANGE (so the relay can still only read the budget sheet), or the budget sheet's own id to
+# have the two tabs added to it. Either way the relay writes these two tabs and nothing else.
+FINANCE_FEED_SHEET_ID = os.environ.get("FINANCE_FEED_SHEET_ID", "").strip()
+SHEETS_WRITE_SCOPE = "https://www.googleapis.com/auth/spreadsheets"
+FEED_ACCOUNTS_TAB = "Bank feed"
+FEED_HOLDINGS_TAB = "Holdings feed"
+# The key comes first and the balance second, so a cell's formula is VLOOKUP(key, A:B, 2, FALSE).
+FEED_ACCOUNT_COLUMNS = ["Key", "Balance", "Available", "Limit", "Institution", "Account", "Mask", "Type", "Subtype", "APR %", "Minimum payment", "Payment due", "Currency", "Updated"]
+FEED_HOLDING_COLUMNS = ["Account key", "Ticker", "Name", "Quantity", "Price", "Value", "Cost basis", "Kind", "Institution", "Currency", "Price as of"]
+
+# Held by whatever is changing what relay.db keeps of the institutions and writing the feed from
+# it: a sync, or an unlinking. One at a time, so a sync can't put back what an unlinking removed.
+_bank_lock = threading.Lock()
+# Held around every change to the links under way (PLAID_LINKS_KEY), and for the whole of finishing
+# one: Plaid's public token can be swapped for an access token only once.
+_link_lock = threading.Lock()
+# "Sync now" is let in by one request at a time, and when the last one was.
+_sync_ask_lock = threading.Lock()
+_sync_asked = {"at": 0.0}
+_feed_google: dict[str, Any] = {"session": None, "account": None}
+
+
+class PlaidError(Exception):
+    """Plaid refused: its `error_code`, and its own words for it."""
+
+    def __init__(self, code: str, message: str = "") -> None:
+        super().__init__(f"{code}: {message}" if message else code)
+        self.code, self.message = code, message
+
+
+class BankLink(BaseModel):
+    # What is being linked: a key of PLAID_KINDS.
+    kind: str = "bank"
+    # An institution already linked, to sign in to again (Link's update mode); `kind` is then ignored.
+    institution: str | None = None
+
+
+def plaid_on() -> bool:
+    return bool(PLAID_CLIENT_ID and PLAID_SECRET)
+
+
+def plaid_post(path: str, body: dict[str, Any]) -> dict[str, Any]:
+    """One call to Plaid. The request carries the secret and often an access token, so it is never logged."""
+    r = requests.post(f"{PLAID_API}{path}", json={"client_id": PLAID_CLIENT_ID, "secret": PLAID_SECRET, **body}, timeout=30)
+    try:
+        answer = r.json()
+    except ValueError:
+        answer = {}
+    if not isinstance(answer, dict):
+        answer = {}
+    if r.status_code != 200:
+        raise PlaidError(str(answer.get("error_code") or f"HTTP_{r.status_code}"), str(answer.get("display_message") or answer.get("error_message") or ""))
+    return answer
+
+
+def plaid_link_request(user: str, kind: str, access: str | None = None) -> dict[str, Any]:
+    """
+    The `/link/token/create` body for a hosted link: a new institution of `kind`, or with `access`
+    a fresh sign-in to one already linked. Plaid is told who is linking only as a hash.
+    """
+    body: dict[str, Any] = {
+        "client_name": "HomeSafe",
+        "language": "en",
+        "country_codes": PLAID_COUNTRIES,
+        "user": {"client_user_id": hashlib.sha256(f"homesafe:{user}".encode()).hexdigest()[:32]},
+        "hosted_link": {},
+    }
+    if PLAID_REDIRECT_URI:
+        body["redirect_uri"] = PLAID_REDIRECT_URI
+    if access:
+        body["access_token"] = access
+    else:
+        product = PLAID_KINDS[kind]
+        body["products"] = [product]
+        body["required_if_supported_products"] = [p for p in PLAID_EXTRAS if p != product]
+    return body
+
+
+def plaid_link_start(user: str, kind: str = "bank", item_id: str | None = None, now: float | None = None) -> dict[str, Any]:
+    """A page to open in the browser that links an institution (or signs in again to `item_id`), and the token to ask about it by."""
+    now = time.time() if now is None else now
+    access = None
+    if item_id:
+        row = with_db(lambda c: c.execute("SELECT access FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
+        if not row:
+            raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+        access = row[0]
+    elif kind not in PLAID_KINDS:
+        raise HTTPException(400, {"error": "bad_kind", "message": f"kind is one of {', '.join(PLAID_KINDS)}"})
+    answer = plaid_post("/link/token/create", plaid_link_request(user, kind, access))
+    token, url = answer.get("link_token"), answer.get("hosted_link_url")
+    if not token or not url:
+        raise PlaidError("NO_HOSTED_LINK", "Plaid made a link without a page to open. Hosted Link may not be switched on for this Plaid account.")
+    with _link_lock:
+        links = {t: link for t, link in (state_get(PLAID_LINKS_KEY) or {}).items() if link.get("expires", 0) > now}
+        links[token] = {"expires": now + PLAID_LINK_SECONDS, "by": user, "item": item_id}
+        state_set(PLAID_LINKS_KEY, links)
+    return {"token": token, "url": url, "expires_at": now + PLAID_LINK_SECONDS}
+
+
+def plaid_save_item(item_id: str, access: str, institution: dict[str, Any], user: str, now: float) -> None:
+    with_db(lambda c: (c.execute(
+        "INSERT OR REPLACE INTO plaid_items (item_id, access, institution_id, institution, products, linked_by, linked_at) VALUES (?,?,?,?,?,?,?)",
+        (item_id, access, institution.get("institution_id"), institution.get("name") or "", "[]", user, now),
+    ), c.commit()))
+
+
+def plaid_link_finish(token: str, now: float | None = None) -> dict[str, Any]:
+    """
+    How a link from `plaid_link_start` is getting on: "pending" while the person is still on
+    Plaid's page, "linked" once they finished (each new institution's token is kept and a sync
+    started), "exited" when they left without finishing, "expired" for a link too old or unknown.
+    """
+    with _link_lock:
+        return _plaid_link_finish(token, time.time() if now is None else now)
+
+
+def _plaid_link_finish(token: str, now: float) -> dict[str, Any]:
+    links = state_get(PLAID_LINKS_KEY) or {}
+    link = links.get(token)
+    if link is None:
+        return {"status": "expired"}
+    if link.get("done") is not None:
+        return {"status": "linked", "institutions": link["done"]}
+    answer = plaid_post("/link/token/get", {"link_token": token})
+    sessions = [s for s in answer.get("link_sessions") or [] if isinstance(s, dict)]
+    added = [r for s in sessions for r in ((s.get("results") or {}).get("item_add_results") or []) if isinstance(r, dict) and r.get("public_token")]
+    relinked = link.get("item")
+    if relinked and (added or any(s.get("finished_at") and not s.get("exit") for s in sessions)):
+        # Signed in again: the token kept is still the one; only its error goes.
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=NULL, error_message=NULL WHERE item_id=?", (relinked,)), c.commit()))
+        row = with_db(lambda c: c.execute("SELECT institution FROM plaid_items WHERE item_id=?", (relinked,)).fetchone())
+        names = [row[0]] if row else []
+    elif added and not relinked:
+        names = []
+        for result in added:
+            exchanged = plaid_post("/item/public_token/exchange", {"public_token": result["public_token"]})
+            institution = result.get("institution") if isinstance(result.get("institution"), dict) else {}
+            plaid_save_item(exchanged["item_id"], exchanged["access_token"], institution, str(link.get("by") or "?"), now)
+            names.append(institution.get("name") or "")
+            log.info("bank: %s linked %s", link.get("by"), institution.get("name") or exchanged["item_id"])
+    elif link.get("expires", 0) <= now:
+        return {"status": "expired"}
+    elif any(s.get("exit") or s.get("finished_at") for s in sessions):
+        return {"status": "exited"}
+    else:
+        return {"status": "pending"}
+    links[token] = {**link, "done": names}
+    state_set(PLAID_LINKS_KEY, links)
+    bank_sync_in_background()
+    return {"status": "linked", "institutions": names}
+
+
+def plaid_liability_terms(liabilities: Any) -> dict[str, dict[str, Any]]:
+    """Each loan's and card's rate, next payment and when it's due, by account, from a `/liabilities/get` answer."""
+    terms: dict[str, dict[str, Any]] = {}
+    if not isinstance(liabilities, dict):
+        return terms
+    for card in liabilities.get("credit") or []:
+        aprs = [a for a in card.get("aprs") or [] if isinstance(a, dict)]
+        # The rate purchases are charged, not a cash advance's or a transfer offer's.
+        purchase = next((a for a in aprs if a.get("apr_type") == "purchase_apr"), aprs[0] if aprs else {})
+        terms[card.get("account_id")] = {"apr": purchase.get("apr_percentage"), "min_payment": card.get("minimum_payment_amount"), "due": card.get("next_payment_due_date")}
+    for loan in liabilities.get("student") or []:
+        terms[loan.get("account_id")] = {"apr": loan.get("interest_rate_percentage"), "min_payment": loan.get("minimum_payment_amount"), "due": loan.get("next_payment_due_date")}
+    for loan in liabilities.get("mortgage") or []:
+        rate = loan.get("interest_rate") if isinstance(loan.get("interest_rate"), dict) else {}
+        terms[loan.get("account_id")] = {"apr": rate.get("percentage"), "min_payment": loan.get("next_monthly_payment"), "due": loan.get("next_payment_due_date")}
+    return terms
+
+
+def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, dict[str, Any]] | None, holdings: list[dict[str, Any]] | None,
+                securities: dict[str, dict[str, Any]], now: float) -> None:
+    """
+    Replaces what is kept of an institution with what Plaid just said: its accounts, their loan
+    terms, and what they hold. `terms` or `holdings` None leaves those as they were (Plaid hadn't
+    them ready), though an account that is gone still takes its holdings with it. Each account
+    new to the relay is given its key in the feed (see `plaid_assign_keys`).
+    """
+    def write(c: sqlite3.Connection) -> None:
+        kept = terms
+        if kept is None:
+            kept = {row[0]: {"apr": row[1], "min_payment": row[2], "due": row[3]}
+                    for row in c.execute("SELECT account_id, apr, min_payment, due FROM plaid_accounts WHERE item_id=?", (item_id,))}
+        c.execute("DELETE FROM plaid_accounts WHERE item_id=?", (item_id,))
+        for a in accounts:
+            balances = a.get("balances") if isinstance(a.get("balances"), dict) else {}
+            term = kept.get(a.get("account_id"), {})
+            c.execute(
+                "INSERT OR REPLACE INTO plaid_accounts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (a.get("account_id"), item_id, a.get("name") or "", a.get("official_name"), a.get("mask"), a.get("type"), a.get("subtype"),
+                 balances.get("current"), balances.get("available"), balances.get("limit"),
+                 balances.get("iso_currency_code") or balances.get("unofficial_currency_code"),
+                 term.get("apr"), term.get("min_payment"), term.get("due"), now),
+            )
+        if holdings is None:
+            c.execute("DELETE FROM plaid_holdings WHERE item_id=? AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE item_id=?)", (item_id, item_id))
+        else:
+            c.execute("DELETE FROM plaid_holdings WHERE item_id=?", (item_id,))
+            for h in holdings:
+                security = securities.get(h.get("security_id"), {})
+                c.execute(
+                    "INSERT OR REPLACE INTO plaid_holdings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (h.get("account_id"), h.get("security_id"), item_id, security.get("ticker_symbol"), security.get("name") or "", security.get("type"),
+                     h.get("quantity"), h.get("institution_price"), h.get("institution_price_as_of"), h.get("institution_value"), h.get("cost_basis"),
+                     h.get("iso_currency_code") or h.get("unofficial_currency_code")),
+                )
+        plaid_assign_keys(c)
+        c.commit()
+
+    with_db(write)
+
+
+def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
+    """
+    Reads one institution from Plaid into relay.db: its accounts' balances, what its investment
+    accounts hold, and its loans' terms. Answers Plaid's error code when it refused, having kept
+    what was read before (an old balance beats none) and noted the refusal on the institution.
+    """
+    try:
+        item = plaid_post("/item/get", {"access_token": access}).get("item") or {}
+        products = sorted({str(p) for p in item.get("products") or []})
+        accounts = [a for a in plaid_post("/accounts/get", {"access_token": access}).get("accounts") or [] if isinstance(a, dict)]
+        holdings: list[dict[str, Any]] | None = []
+        securities: dict[str, dict[str, Any]] = {}
+        if "investments" in products:
+            try:
+                answer = plaid_post("/investments/holdings/get", {"access_token": access})
+                holdings = [h for h in answer.get("holdings") or [] if isinstance(h, dict)]
+                securities = {s.get("security_id"): s for s in answer.get("securities") or [] if isinstance(s, dict)}
+            except PlaidError as e:
+                if e.code == "PRODUCT_NOT_READY":
+                    holdings = None
+                elif e.code not in PLAID_NOTHING_THERE:
+                    raise
+        terms: dict[str, dict[str, Any]] | None = {}
+        if "liabilities" in products:
+            try:
+                terms = plaid_liability_terms(plaid_post("/liabilities/get", {"access_token": access}).get("liabilities"))
+            except PlaidError as e:
+                if e.code == "PRODUCT_NOT_READY":
+                    terms = None
+                elif e.code not in PLAID_NOTHING_THERE:
+                    raise
+        plaid_store(item_id, accounts, terms, holdings, securities, now)
+        # The link itself can be on its way out while the data still comes (a consent about to lapse).
+        warning = item.get("error") if isinstance(item.get("error"), dict) else {}
+        with_db(lambda c: (c.execute(
+            "UPDATE plaid_items SET products=?, synced_at=?, error=?, error_message=?, consent_expires=?, institution_id=COALESCE(?, institution_id) WHERE item_id=?",
+            (json.dumps(products), now, warning.get("error_code"), warning.get("error_message"), item.get("consent_expiration_time"), item.get("institution_id"), item_id),
+        ), c.commit()))
+        return None
+    except PlaidError as e:
+        log.warning("bank: %s didn't sync: %s", item_id[:8], e.code)
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", (e.code, e.message, item_id)), c.commit()))
+        return e.code
+    except Exception as e:
+        # Plaid unreachable, or an answer in a shape this doesn't know. Not the detail: it may quote the request.
+        log.warning("bank: %s didn't sync: %s", item_id[:8], type(e).__name__)
+        with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", ("UNREACHABLE", "Couldn't reach Plaid", item_id)), c.commit()))
+        return "UNREACHABLE"
+
+
+def feed_key(label: str, taken: set[str]) -> str:
+    """A key no other account has: `label` ("Institution Account 1234") itself, or with the first of " (2)", " (3)"… that is free."""
+    label = label or "Account"
+    if label not in taken:
+        return label
+    n = 2
+    while f"{label} ({n})" in taken:
+        n += 1
+    return f"{label} ({n})"
+
+
+def plaid_assign_keys(c: sqlite3.Connection) -> None:
+    """
+    Gives each account that hasn't one its key in the feed, and frees the keys of accounts that
+    are gone. A key once given stays that account's whatever happens around it: the budget
+    sheet's formulas look accounts up by key, so closing or unlinking one of two accounts of the
+    same name must not hand its key to the other, nor a bank renaming an account change its key.
+    A freed key goes to the next new account of that name, which is what makes an institution
+    unlinked and linked again come back under the keys it had. The caller commits.
+    """
+    c.execute("DELETE FROM plaid_feed_keys WHERE account_id NOT IN (SELECT account_id FROM plaid_accounts)")
+    taken = {row[0] for row in c.execute("SELECT key FROM plaid_feed_keys")}
+    new = c.execute(
+        "SELECT a.account_id, i.institution, a.name, a.mask FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id"
+        " WHERE a.account_id NOT IN (SELECT account_id FROM plaid_feed_keys) ORDER BY i.linked_at, i.item_id, a.type, a.name, a.account_id"
+    ).fetchall()
+    for account_id, institution, name, mask in new:
+        key = feed_key(" ".join(part for part in (institution, name, mask) if part), taken)
+        taken.add(key)
+        c.execute("INSERT INTO plaid_feed_keys VALUES (?,?)", (account_id, key))
+
+
+def bank_institutions() -> list[dict[str, Any]]:
+    """Every linked institution with its accounts as last read, the oldest link first. Never a token."""
+    items = with_db(lambda c: c.execute(
+        "SELECT item_id, institution, linked_at, synced_at, error, error_message, consent_expires FROM plaid_items ORDER BY linked_at, item_id"
+    ).fetchall())
+    accounts = with_db(lambda c: c.execute(
+        "SELECT account_id, item_id, name, official_name, mask, type, subtype, current, available, credit_limit, currency, apr, min_payment, due, updated"
+        " FROM plaid_accounts ORDER BY type, name, account_id"
+    ).fetchall())
+    held = dict(with_db(lambda c: c.execute("SELECT account_id, COUNT(*) FROM plaid_holdings GROUP BY account_id").fetchall()))
+    keys = dict(with_db(lambda c: c.execute("SELECT account_id, key FROM plaid_feed_keys").fetchall()))
+    institutions = []
+    for item_id, name, linked_at, synced_at, error, error_message, consent_expires in items:
+        institutions.append({
+            "id": item_id,
+            "name": name or "",
+            "linked_at": linked_at,
+            "synced_at": synced_at,
+            "error": error,
+            "error_message": error_message,
+            "needs_relink": error in PLAID_RELINK,
+            "consent_expires": consent_expires,
+            "accounts": [
+                {"id": a[0], "key": keys.get(a[0]) or a[2], "name": a[2], "official_name": a[3], "mask": a[4], "type": a[5], "subtype": a[6], "balance": a[7],
+                 "available": a[8], "limit": a[9], "currency": a[10], "apr": a[11], "min_payment": a[12], "due": a[13], "updated": a[14],
+                 "holdings": held.get(a[0], 0)}
+                for a in accounts if a[1] == item_id
+            ],
+        })
+    return institutions
+
+
+def feed_tables(institutions: list[dict[str, Any]], holdings: list[tuple], zone: ZoneInfo | None) -> dict[str, list[list[Any]]]:
+    """
+    The two feed tabs' cells, headers first: every account (see FEED_ACCOUNT_COLUMNS) and every
+    holding (`holdings` as (account id, ticker, name, quantity, price, value, cost basis, kind,
+    currency, price as of)). An empty cell is "", which clears it; None would leave what was there.
+    """
+    def cells(row: list[Any]) -> list[Any]:
+        return ["" if v is None else v for v in row]
+
+    accounts = [FEED_ACCOUNT_COLUMNS]
+    keyed: dict[str, tuple[str, str]] = {}
+    for institution in institutions:
+        for a in institution["accounts"]:
+            keyed[a["id"]] = (a["key"], institution["name"])
+            updated = datetime.fromtimestamp(a["updated"], zone or timezone.utc).strftime("%Y-%m-%d %H:%M") if a["updated"] else None
+            accounts.append(cells([a["key"], a["balance"], a["available"], a["limit"], institution["name"], a["name"], a["mask"], a["type"], a["subtype"],
+                                   a["apr"], a["min_payment"], a["due"], a["currency"], updated]))
+    held = [FEED_HOLDING_COLUMNS]
+    for account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of in holdings:
+        if account_id in keyed:
+            key, institution_name = keyed[account_id]
+            held.append(cells([key, ticker, name, quantity, price, value, cost_basis, kind, institution_name, currency, price_as_of]))
+    return {FEED_ACCOUNTS_TAB: accounts, FEED_HOLDINGS_TAB: held}
+
+
+def feed_google() -> Any:
+    """The Sheets session that may write, used for the feed sheet alone; the budget sheet's own (`finance_google`) stays read-only."""
+    if _feed_google["session"] is None:
+        if not os.path.exists(FINANCE_SHEET_KEY):
+            raise HTTPException(503, {"error": "no_key", "message": "The relay has no service-account key to write the feed with"})
+        try:
+            creds = service_account.Credentials.from_service_account_file(FINANCE_SHEET_KEY, scopes=[SHEETS_WRITE_SCOPE])
+        except (ValueError, KeyError) as e:
+            raise HTTPException(503, {"error": "no_key", "message": "The relay's key isn't a service-account key"}) from e
+        _feed_google["account"] = creds.service_account_email
+        _feed_google["session"] = AuthorizedSession(creds)
+    return _feed_google["session"]
+
+
+def feed_write(tables: dict[str, list[list[Any]]]) -> None:
+    """
+    Writes each tab of `tables` from its A1, adding a tab the sheet hasn't got. Nothing is cleared
+    first: rows the last write had and this one doesn't are overwritten blank in the same call, so
+    a formula looking the feed up never finds it empty. Raises HTTPException with the setup
+    problem when Google refuses (see `sheet_problem`; "not_shared" here means not as an Editor).
+    """
+    session = feed_google()
+    account = _feed_google["account"]
+    base = f"{SHEETS_API}/{FINANCE_FEED_SHEET_ID}"
+
+    def answered(response: Any) -> Any:
+        if response.status_code != 200:
+            raise HTTPException(*sheet_problem(response.status_code, _google_json(response), account))
+        return _google_json(response)
+
+    meta = answered(session.get(base, params={"fields": "sheets(properties(title,sheetType))"}, timeout=15))
+    missing = [tab for tab in tables if tab not in grid_titles(meta)]
+    if missing:
+        answered(session.post(f"{base}:batchUpdate", json={"requests": [{"addSheet": {"properties": {"title": tab}}} for tab in missing]}, timeout=15))
+    before = state_get(PLAID_FEED_ROWS_KEY) or {}
+    data = []
+    for tab, rows in tables.items():
+        blanks = [[""] * len(rows[0])] * max(0, int(before.get(tab, 0)) - len(rows))
+        data.append({"range": f"{sheet_range(tab)}!A1", "majorDimension": "ROWS", "values": rows + blanks})
+    # RAW: an account's "0123" stays those four characters rather than becoming the number 123.
+    answered(session.post(f"{base}/values:batchUpdate", json={"valueInputOption": "RAW", "data": data}, timeout=20))
+    state_set(PLAID_FEED_ROWS_KEY, {tab: len(rows) for tab, rows in tables.items()})
+
+
+def write_bank_feed(now: float) -> None:
+    """Writes what relay.db holds to the feed sheet, if there is one, and keeps how that went for the app to show."""
+    if not FINANCE_FEED_SHEET_ID:
+        return
+    holdings = with_db(lambda c: c.execute(
+        "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings ORDER BY account_id, value DESC, security_id"
+    ).fetchall())
+    try:
+        feed_write(feed_tables(bank_institutions(), holdings, household_zone()))
+        state_set(PLAID_FEED_KEY, {"at": now, "error": None, "message": None})
+        # The budget sheet's cells follow the feed: the next read of it shouldn't be a minute-old one.
+        _finance_cache["at"] = 0.0
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {}
+        log.warning("bank: the feed sheet wasn't written: %s", detail.get("error") or e.status_code)
+        state_set(PLAID_FEED_KEY, {
+            "at": now, "error": detail.get("error") or "google_error", "message": detail.get("message"),
+            "activation_url": detail.get("activation_url"), "service_account": detail.get("service_account"),
+        })
+    except Exception as e:
+        log.warning("bank: the feed sheet wasn't written: %s", e)
+        state_set(PLAID_FEED_KEY, {"at": now, "error": "google_error", "message": "Couldn't reach Google"})
+
+
+def plaid_sync_all(now: float | None = None, wait: bool = False) -> bool:
+    """
+    Every linked institution from Plaid, then the feed sheet. One at a time: False when a sync is
+    already under way, unless `wait` says to queue behind it (a link just made must not be missed
+    by a sync that began before it).
+    """
+    if not _bank_lock.acquire(blocking=wait):
+        return False
+    try:
+        now = time.time() if now is None else now
+        items = with_db(lambda c: c.execute("SELECT item_id, access FROM plaid_items ORDER BY linked_at, item_id").fetchall())
+        failed = [item_id for item_id, access in items if plaid_sync_item(item_id, access, now)]
+        state_set(PLAID_SYNCED_KEY, {"at": now, "institutions": len(items), "failed": len(failed)})
+        log.info("bank: synced %d institutions, %d failed", len(items), len(failed))
+        plaid_transactions_sync(now)
+        write_bank_feed(now)
+    finally:
+        _bank_lock.release()
+    budget_check_quietly()
+    return True
+
+
+def bank_sync_in_background() -> None:
+    threading.Thread(target=lambda: plaid_sync_all(wait=True), name="bank-sync-now", daemon=True).start()
+
+
+def bank_sync_slot(now: float, zone: ZoneInfo | None) -> datetime:
+    """The latest BANK_SYNC_HOUR at or before `now`, on the household's clock (UTC when unknown)."""
+    local = datetime.fromtimestamp(now, zone or timezone.utc)
+    slot = local.replace(hour=BANK_SYNC_HOUR, minute=0, second=0, microsecond=0)
+    return slot if slot <= local else slot - timedelta(days=1)
+
+
+def bank_sync_due(now: float, last: float, zone: ZoneInfo | None) -> bool:
+    """Whether the day's sync is still owed: nothing has synced since the latest BANK_SYNC_HOUR."""
+    return last < bank_sync_slot(now, zone).timestamp()
+
+
+def bank_forever() -> None:
+    """
+    Once a day at BANK_SYNC_HOUR, and on a start that slept through it: every institution, then
+    the feed. Every hour in between: what was bought on the cards (see "budget").
+    """
+    while True:
+        time.sleep(BANK_CHECK_SECONDS)
+        try:
+            if not plaid_on():
+                continue
+            last = float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0)
+            linked = with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_items").fetchone()[0])
+            if linked and bank_sync_due(time.time(), last, household_zone()):
+                plaid_sync_all()
+            elif linked and transactions_due(time.time(), float((state_get(PLAID_TXN_SYNCED_KEY) or {}).get("at") or 0)):
+                plaid_transactions_sync_all()
+        except Exception:
+            log.exception("bank sync failed")
+
+
+def bank_status(now: float | None = None) -> dict[str, Any]:
+    """What the app's bank sync page shows: the institutions and their accounts, when they were last read and are next, and how the feed sheet's last write went."""
+    now = time.time() if now is None else now
+    synced = state_get(PLAID_SYNCED_KEY) or {}
+    feed = state_get(PLAID_FEED_KEY) or {}
+    return {
+        "configured": plaid_on(),
+        "environment": PLAID_ENV,
+        "institutions": bank_institutions(),
+        "synced_at": synced.get("at"),
+        "syncing": _bank_lock.locked(),
+        "next_sync_at": (bank_sync_slot(now, household_zone()) + timedelta(days=1)).timestamp(),
+        "feed": {
+            "configured": bool(FINANCE_FEED_SHEET_ID),
+            "url": f"https://docs.google.com/spreadsheets/d/{FINANCE_FEED_SHEET_ID}/edit" if FINANCE_FEED_SHEET_ID else None,
+            "written_at": feed.get("at") if not feed.get("error") else None,
+            "error": feed.get("error"),
+            "message": feed.get("message"),
+            "activation_url": feed.get("activation_url"),
+            "service_account": _feed_google["account"] or feed.get("service_account") or _finance_google["account"],
+        },
+    }
+
+
+def require_bank(request: Request, response: Response) -> str:
+    """A signed-in user who may see the finances, on a relay with Plaid set up; their username."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    if not plaid_on():
+        raise HTTPException(503, {"error": "not_configured", "message": "Plaid isn't set up on the relay"})
+    return user
+
+
+def plaid_problem(e: PlaidError) -> HTTPException:
+    return HTTPException(502, {"error": "plaid_error", "code": e.code, "message": e.message or f"Plaid answered {e.code}"})
+
+
+@app.get("/finance/bank")
+def get_bank(request: Request, response: Response) -> dict[str, Any]:
+    """The linked institutions and how their sync is going (see "bank sync"). Answers without Plaid set up too, to say so."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    return bank_status()
+
+
+@app.post("/finance/bank/link")
+def post_bank_link(body: BankLink, request: Request, response: Response) -> dict[str, Any]:
+    """Starts linking an institution: the page to open, and the token `GET /finance/bank/link/{token}` follows it by."""
+    user = require_bank(request, response)
+    try:
+        return plaid_link_start(user, body.kind, body.institution)
+    except PlaidError as e:
+        log.warning("bank: no link for %s: %s", user, e.code)
+        raise plaid_problem(e) from e
+
+
+@app.get("/finance/bank/link/{token}")
+def get_bank_link(token: str, request: Request, response: Response) -> dict[str, Any]:
+    """How a link is getting on (see `plaid_link_finish`), with the institutions as they stand once it is made."""
+    require_bank(request, response)
+    try:
+        result = plaid_link_finish(token)
+    except PlaidError as e:
+        log.warning("bank: linking failed: %s", e.code)
+        raise plaid_problem(e) from e
+    if result["status"] == "linked":
+        # The sync just started may not hold the lock yet: say it is on its way regardless.
+        result["bank"] = {**bank_status(), "syncing": True}
+    return result
+
+
+@app.post("/finance/bank/sync")
+def post_bank_sync(request: Request, response: Response) -> dict[str, Any]:
+    """Reads every institution now rather than at the next BANK_SYNC_HOUR. Answers at once; `syncing` says it is under way."""
+    require_bank(request, response)
+    with _sync_ask_lock:
+        # The last sync asked for counts as well as the last one done: a second tap lands before
+        # the first one's worker holds the lock, and would otherwise queue a second sync behind it.
+        last = max(float((state_get(PLAID_SYNCED_KEY) or {}).get("at") or 0), _sync_asked["at"])
+        if _bank_lock.locked() or time.time() - last < BANK_MIN_SYNC_SECONDS:
+            return bank_status()
+        _sync_asked["at"] = time.time()
+        bank_sync_in_background()
+    return {**bank_status(), "syncing": True}
+
+
+@app.delete("/finance/bank/institutions/{item_id}")
+def delete_bank_institution(item_id: str, request: Request, response: Response) -> dict[str, Any]:
+    """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go."""
+    user = require_bank(request, response)
+    # Behind any sync under way, and ahead of the next: a sync that read this institution before
+    # it was forgotten would otherwise store its accounts again, and write them back to the feed.
+    if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
+        raise HTTPException(503, {"error": "busy", "message": "The accounts are being read just now. Try again in a minute."})
+    try:
+        row = with_db(lambda c: c.execute("SELECT access, institution FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
+        if not row:
+            raise HTTPException(404, {"error": "not_found", "message": "That institution isn't linked"})
+        try:
+            plaid_post("/item/remove", {"access_token": row[0]})
+        except PlaidError as e:
+            # Plaid already not knowing it is the result wanted; anything else and the token is kept to try again.
+            if e.code not in PLAID_GONE:
+                raise plaid_problem(e) from e
+
+        def forget(c: sqlite3.Connection) -> None:
+            for table in ("plaid_transactions", "plaid_holdings", "plaid_accounts", "plaid_items"):
+                c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
+            plaid_assign_keys(c)
+            c.commit()
+
+        with_db(forget)
+        log.info("bank: %s unlinked %s", user, row[1] or item_id[:8])
+        write_bank_feed(time.time())
+    finally:
+        _bank_lock.release()
+    return bank_status()
+
+
+# ---------------------------------------------------------------- budget
+#
+# The budget sheet says what a month is meant to cost. The credit cards say what it is costing:
+# every hour the relay asks Plaid what has been bought on each linked card (`/transactions/sync`,
+# which hands over only what changed since the last ask) and keeps the purchases in relay.db. The
+# app's Budget page reads the month from here: what has been spent, by whom, against which limit.
+#
+# Each card is given a role, by its key in the feed (which outlives a card being linked again):
+# "split" for a card two people carry, "family" for one whose spending is everyone's, "person:<name>"
+# for one person's own card, "ignore" for one that is no part of the budget. A purchase on a split
+# card belongs to whoever the bank says made it, which it rarely says, or to whoever its merchant
+# was said to always be, or to nobody yet: someone then tags it in the app, and a tag made by
+# hand outranks everything else.
+#
+# The limits, the roles and the two numbers the relay can't work out for itself (the month's
+# take-home and the bills that aren't paid by card, both of which only the app reads out of the
+# budget sheet) are one JSON value in `state`. Past the limits, and past what take-home leaves
+# after those bills, the phones of the people who may see the finances are told (`budget_check`).
+#
+# Only credit cards' transactions are kept, and never in the log: a purchase is nobody's business
+# but the household's.
+
+# How often the cards are asked about. Plaid itself hears from a bank a few times a day, so most
+# asks find nothing new; the page says when something last did.
+TXN_SYNC_SECONDS = 3600
+# ...except a card linked in the last day whose first transactions Plaid is still fetching: its
+# month isn't on the page until they arrive, so it is asked at every check until they have.
+TXN_NEW_SECONDS = 86400
+TXN_PAGE = 500
+# More pages than any real card has in one ask: a cursor that never ends is given up on.
+TXN_MAX_PAGES = 100
+# Plaid starts a paged answer over when the transactions change under it.
+TXN_RESTARTS = 3
+# How long a transaction Plaid took back is remembered, for its tag to pass to what replaced it.
+TXN_TOMBSTONE_SECONDS = 30 * 86400
+TXN_READY = {"INITIAL_UPDATE_COMPLETE", "HISTORICAL_UPDATE_COMPLETE"}
+PLAID_TXN_SYNCED_KEY = "plaid_txn_synced"
+BUDGET_KEY = "budget"
+BUDGET_ALERTS_KEY = "budget_alerts"
+BUDGET_FAMILY = "family"
+BUDGET_PERSON = "person:"
+BUDGET_SPLIT = "split"
+BUDGET_IGNORE = "ignore"
+BUDGET_MAX_PEOPLE = 6
+BUDGET_ALERT_NAMES = ("total", "savings", "buckets")
+# The share of the month's limit at which the phones are first told, and then told it is passed.
+BUDGET_TOTAL_PERCENTS = (80, 100)
+BUDGET_HISTORY_MONTHS = 6
+BUDGET_TOP_MERCHANTS = 8
+
+# "Sync now" on the Budget page, when it was last asked for (see `_sync_asked`).
+_txn_asked = {"at": 0.0}
+_budget_alert_lock = threading.Lock()
+# How a card being paid off reads when its category doesn't say so.
+_PAYMENT_WORDS = re.compile(r"\b(payment|autopay|thank you)\b", re.IGNORECASE)
+_MONTH = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+class BudgetPatch(BaseModel):
+    # Each is left as it stands when absent. Inside `limits` and `roles`, a null takes one away.
+    people: list[str] | None = None
+    limits: dict[str, Any] | None = None
+    roles: dict[str, Any] | None = None
+    card_paid_lines: list[str] | None = None
+    alerts: dict[str, bool] | None = None
+    sheet: dict[str, Any] | None = None
+
+
+class BudgetTag(BaseModel):
+    # "person:<name>", "family", or null to take the tag off.
+    bucket: str | None = None
+    # Whether every purchase from this merchant goes the same way from now on.
+    remember: bool = False
+
+
+def transactions_due(now: float, last: float) -> bool:
+    """Whether the cards are to be asked now: an hour after the last time, or sooner while a new card's first transactions are awaited."""
+    return now - last >= TXN_SYNC_SECONDS or (now - last >= BANK_CHECK_SECONDS and transactions_awaited(now))
+
+
+def transactions_awaited(now: float) -> bool:
+    """Whether an institution linked in the last day for its transactions hasn't had its first ones from Plaid yet."""
+    rows = with_db(lambda c: c.execute("SELECT products, txn_status FROM plaid_items WHERE linked_at > ?", (now - TXN_NEW_SECONDS,)).fetchall())
+    return any("transactions" in (products or "") and status not in TXN_READY for products, status in rows)
+
+
+def merchant_key(merchant: str | None, name: str | None) -> str:
+    """
+    What a merchant is remembered by: the first few words of its name, letters only (any
+    alphabet's), so that "COSTCO WHSE #0123" and "Costco Whse #0456" are the same shop. A name
+    with no letters at all is remembered as it is written.
+    """
+    text = (merchant or name or "").lower().replace("'", "")
+    return " ".join(re.findall(r"[^\W\d_]+", text)[:3]) or text.strip()
+
+
+def txn_kind(amount: float, category: str | None, name: str | None, detail: str | None = None) -> str:
+    """
+    What a card's transaction is: "spend" for a purchase (Plaid's amounts are positive for money
+    going out), "payment" for the card being paid off, which is no part of what was spent, and
+    "refund" for any other money coming back, which is taken off the month it lands in. What
+    Plaid itself calls a credit card payment is one whichever way its amount points.
+    """
+    if detail == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT":
+        return "payment"
+    if amount >= 0:
+        return "spend"
+    if category in ("LOAN_PAYMENTS", "TRANSFER_IN", "TRANSFER_OUT") or _PAYMENT_WORDS.search(name or ""):
+        return "payment"
+    return "refund"
+
+
+def txn_row(txn: dict[str, Any], item_id: str, now: float) -> tuple | None:
+    """One of Plaid's transactions as a `plaid_transactions` row (without its tag), or None for one that says too little to keep."""
+    txn_id, amount = txn.get("transaction_id"), txn.get("amount")
+    # The day the card was used when the bank says, else the day it settled.
+    date = txn.get("authorized_date") or txn.get("date")
+    if not txn_id or not txn.get("account_id") or not date or isinstance(amount, bool) or not isinstance(amount, (int, float)):
+        return None
+    category = txn.get("personal_finance_category") if isinstance(txn.get("personal_finance_category"), dict) else {}
+    name, merchant = txn.get("name") or "", txn.get("merchant_name")
+    return (
+        txn_id, item_id, txn["account_id"], str(date)[:10], txn.get("date"), float(amount), txn.get("iso_currency_code") or txn.get("unofficial_currency_code"),
+        name, merchant, merchant_key(merchant, name), category.get("primary"), category.get("detailed"), int(bool(txn.get("pending"))),
+        txn.get("pending_transaction_id"), txn.get("account_owner"), txn_kind(float(amount), category.get("primary"), name, category.get("detailed")), now,
+    )
+
+
+def plaid_transactions_pull(access: str, cursor: str | None) -> dict[str, Any]:
+    """
+    Everything that changed on an institution's accounts since `cursor` (None: from the start):
+    the transactions `added` and `modified`, the ids `removed`, the `cursor` to ask from next
+    time and Plaid's `status` for how much of the history it has fetched. All of the answer's
+    pages or none: Plaid says to start over when the transactions change between two pages.
+    """
+    for _ in range(TXN_RESTARTS):
+        added: list[dict[str, Any]] = []
+        modified: list[dict[str, Any]] = []
+        removed: list[str] = []
+        at = cursor
+        try:
+            for _page in range(TXN_MAX_PAGES):
+                body: dict[str, Any] = {"access_token": access, "count": TXN_PAGE}
+                if at:
+                    body["cursor"] = at
+                answer = plaid_post("/transactions/sync", body)
+                added += [t for t in answer.get("added") or [] if isinstance(t, dict)]
+                modified += [t for t in answer.get("modified") or [] if isinstance(t, dict)]
+                removed += [t["transaction_id"] for t in answer.get("removed") or [] if isinstance(t, dict) and t.get("transaction_id")]
+                at = answer.get("next_cursor") or at
+                if not answer.get("has_more"):
+                    return {"added": added, "modified": modified, "removed": removed, "cursor": at, "status": answer.get("transactions_update_status")}
+            raise PlaidError("TOO_MANY_PAGES", "Plaid's answer didn't end")
+        except PlaidError as e:
+            if e.code != "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION":
+                raise
+    raise PlaidError("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION", "The transactions kept changing while they were read")
+
+
+def plaid_transactions_store(item_id: str, pulled: dict[str, Any], now: float) -> int:
+    """
+    Puts what `plaid_transactions_pull` read into relay.db and moves the institution's cursor on,
+    as one change: a relay stopped halfway asks for the same again. Only the credit cards'
+    transactions are kept. A tag made by hand stays on a transaction Plaid changed, and passes
+    from a pending purchase to the posted one that replaces it. Answers how many rows changed.
+    """
+    def write(c: sqlite3.Connection) -> int:
+        cards = {row[0] for row in c.execute("SELECT account_id FROM plaid_accounts WHERE item_id=? AND type='credit'", (item_id,))}
+        changed = 0
+        for txn in pulled["added"] + pulled["modified"]:
+            row = txn_row(txn, item_id, now)
+            if row is None or row[2] not in cards:
+                continue
+            c.execute(
+                "INSERT INTO plaid_transactions (txn_id, item_id, account_id, date, posted, amount, currency, name, merchant, merchant_key, category,"
+                " category_detail, pending, pending_id, owner, kind, updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                " ON CONFLICT(txn_id) DO UPDATE SET item_id=excluded.item_id, account_id=excluded.account_id, date=excluded.date, posted=excluded.posted,"
+                " amount=excluded.amount, currency=excluded.currency, name=excluded.name, merchant=excluded.merchant, merchant_key=excluded.merchant_key,"
+                " category=excluded.category, category_detail=excluded.category_detail, pending=excluded.pending, pending_id=excluded.pending_id,"
+                " owner=excluded.owner, kind=excluded.kind, updated=excluded.updated, removed_at=NULL",
+                row,
+            )
+            changed += 1
+            if row[13]:
+                was = c.execute("SELECT tag, tag_by FROM plaid_transactions WHERE txn_id=? AND tag IS NOT NULL", (row[13],)).fetchone()
+                if was:
+                    c.execute("UPDATE plaid_transactions SET tag=?, tag_by=? WHERE txn_id=? AND tag IS NULL", (was[0], was[1], row[0]))
+        for txn_id in pulled["removed"]:
+            changed += c.execute("UPDATE plaid_transactions SET removed_at=? WHERE txn_id=? AND item_id=? AND removed_at IS NULL", (now, txn_id, item_id)).rowcount
+        c.execute("DELETE FROM plaid_transactions WHERE removed_at IS NOT NULL AND removed_at < ?", (now - TXN_TOMBSTONE_SECONDS,))
+        c.execute(
+            "UPDATE plaid_items SET txn_cursor=?, txn_synced_at=?, txn_status=?, txn_changed_at=CASE WHEN ? THEN ? ELSE txn_changed_at END WHERE item_id=?",
+            (pulled["cursor"], now, pulled["status"], int(changed > 0), now, item_id),
+        )
+        c.commit()
+        return changed
+
+    return with_db(write)
+
+
+def plaid_transactions_sync_item(item_id: str, access: str, cursor: str | None, now: float) -> str | None:
+    """
+    One institution's new transactions into relay.db. Answers Plaid's error code when it refused,
+    having kept what was read before. A refusal that needs the person (a sign-in that lapsed) is
+    noted on the institution at once rather than at the next morning's read of the balances.
+    """
+    try:
+        plaid_transactions_store(item_id, plaid_transactions_pull(access, cursor), now)
+        return None
+    except PlaidError as e:
+        log.warning("budget: %s's transactions weren't read: %s", item_id[:8], e.code)
+        if e.code in PLAID_RELINK | PLAID_GONE:
+            with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", (e.code, e.message, item_id)), c.commit()))
+        return e.code
+    except Exception as e:
+        # Plaid unreachable, or an answer in a shape this doesn't know. Not the detail: it may quote the request.
+        log.warning("budget: %s's transactions weren't read: %s", item_id[:8], type(e).__name__)
+        return "UNREACHABLE"
+
+
+def plaid_transactions_sync(now: float) -> None:
+    """
+    The new transactions of every institution that was linked for them. The caller holds
+    `_bank_lock`. An institution linked for something else is never asked: asking would add the
+    product to it. Nor is one whose accounts aren't known yet, since which of them are cards
+    decides what is kept.
+    """
+    items = with_db(lambda c: c.execute(
+        "SELECT item_id, access, txn_cursor, products, (SELECT COUNT(*) FROM plaid_accounts a WHERE a.item_id = plaid_items.item_id)"
+        " FROM plaid_items ORDER BY linked_at, item_id"
+    ).fetchall())
+    read = failed = 0
+    for item_id, access, cursor, products, accounts in items:
+        try:
+            has = "transactions" in json.loads(products or "[]")
+        except ValueError:
+            has = False
+        if not has or not accounts:
+            continue
+        read += 1
+        if plaid_transactions_sync_item(item_id, access, cursor, now):
+            failed += 1
+    state_set(PLAID_TXN_SYNCED_KEY, {"at": now, "institutions": read, "failed": failed})
+    log.info("budget: read %d institutions' transactions, %d failed", read, failed)
+
+
+def plaid_transactions_sync_all(now: float | None = None, wait: bool = False) -> bool:
+    """The hourly read (see `plaid_transactions_sync`), then the alerts. False when a sync is already under way, unless `wait`."""
+    if not _bank_lock.acquire(blocking=wait):
+        return False
+    try:
+        plaid_transactions_sync(time.time() if now is None else now)
+    finally:
+        _bank_lock.release()
+    budget_check_quietly()
+    return True
+
+
+def budget_sync_in_background() -> None:
+    threading.Thread(target=lambda: plaid_transactions_sync_all(wait=True), name="budget-sync-now", daemon=True).start()
+
+
+def budget_config() -> dict[str, Any]:
+    """The budget's settings as kept, every part present: see `BudgetPatch` and `budget_config_save`."""
+    kept = state_get(BUDGET_KEY) or {}
+    people = [p for p in kept.get("people") or [] if isinstance(p, str)]
+    limits = kept.get("limits") or {}
+    sheet = kept.get("sheet") or {}
+    return {
+        "people": people,
+        "limits": {"total": limits.get("total"), "people": {p: (limits.get("people") or {}).get(p) for p in people}, "family": limits.get("family")},
+        "roles": dict(kept.get("roles") or {}),
+        "card_paid_lines": list(kept.get("card_paid_lines") or []),
+        "alerts": {name: bool((kept.get("alerts") or {}).get(name)) for name in BUDGET_ALERT_NAMES},
+        "sheet": {"take_home": sheet.get("take_home"), "bills_off_card": sheet.get("bills_off_card"), "at": sheet.get("at")},
+    }
+
+
+def _budget_refusal(message: str) -> HTTPException:
+    return HTTPException(400, {"error": "bad_budget", "message": message})
+
+
+def _budget_amount(value: Any, what: str) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not 0 <= value <= 1e9:
+        raise _budget_refusal(f"{what} is an amount of money, or nothing")
+    return round(float(value), 2)
+
+
+def budget_buckets(people: list[str]) -> set[str]:
+    """Every bucket a purchase can be put in: each person's, and the family's."""
+    return {BUDGET_FAMILY} | {BUDGET_PERSON + p for p in people}
+
+
+def budget_config_save(patch: dict[str, Any], now: float) -> dict[str, Any]:
+    """
+    Changes the parts of the settings that `patch` names and answers them all. Refuses, changing
+    nothing, anything that isn't what it should be: a limit that isn't an amount, a role for a
+    person the budget doesn't know.
+    """
+    config = budget_config()
+    if patch.get("people") is not None:
+        people = [str(p).strip() for p in patch["people"]]
+        if len(people) > BUDGET_MAX_PEOPLE or any(not p or len(p) > 40 or ":" in p or p.lower() == BUDGET_FAMILY for p in people):
+            raise _budget_refusal(f"people are up to {BUDGET_MAX_PEOPLE} names")
+        if len({p.lower() for p in people}) != len(people):
+            raise _budget_refusal("two people have the same name")
+        config["limits"]["people"] = {p: config["limits"]["people"].get(p) for p in people}
+        config["people"] = people
+    if patch.get("limits") is not None:
+        limits = patch["limits"]
+        for name in ("total", "family"):
+            if name in limits:
+                config["limits"][name] = _budget_amount(limits[name], f"the {name} limit")
+        for person, value in (limits.get("people") or {}).items():
+            if person not in config["people"]:
+                raise _budget_refusal(f"{person} isn't one of the budget's people")
+            config["limits"]["people"][person] = _budget_amount(value, f"{person}'s limit")
+    if patch.get("roles") is not None:
+        for key, role in patch["roles"].items():
+            if role is None:
+                config["roles"].pop(str(key), None)
+            elif role in (BUDGET_SPLIT, BUDGET_FAMILY, BUDGET_IGNORE) or (isinstance(role, str) and role in budget_buckets(config["people"])):
+                config["roles"][str(key)[:200]] = role
+            else:
+                raise _budget_refusal(f"a card is {BUDGET_SPLIT}, {BUDGET_FAMILY}, {BUDGET_IGNORE} or {BUDGET_PERSON}<one of the people>")
+    if patch.get("card_paid_lines") is not None:
+        config["card_paid_lines"] = sorted({str(line)[:200] for line in patch["card_paid_lines"]})
+    if patch.get("alerts") is not None:
+        for name, on in patch["alerts"].items():
+            if name not in BUDGET_ALERT_NAMES:
+                raise _budget_refusal(f"alerts are {', '.join(BUDGET_ALERT_NAMES)}")
+            config["alerts"][name] = bool(on)
+    if patch.get("sheet") is not None:
+        sheet = patch["sheet"]
+        config["sheet"] = {"take_home": _budget_amount(sheet.get("take_home"), "take-home"), "bills_off_card": _budget_amount(sheet.get("bills_off_card"), "the bills"), "at": now}
+    # A role naming someone who has since left the budget goes back to unset.
+    config["roles"] = {key: role for key, role in config["roles"].items() if not role.startswith(BUDGET_PERSON) or role in budget_buckets(config["people"])}
+    state_set(BUDGET_KEY, config)
+    return config
+
+
+def budget_rules() -> dict[str, str]:
+    """Each remembered merchant (by `merchant_key`) and the bucket its purchases go in."""
+    return dict(with_db(lambda c: c.execute("SELECT merchant_key, bucket FROM budget_rules ORDER BY merchant_key").fetchall()))
+
+
+def budget_bucket(tag: str | None, role: str, owner: str | None, key: str | None, people: list[str], rules: dict[str, str]) -> tuple[str | None, str]:
+    """
+    Whose a purchase is, and how that is known: a tag made by hand ("manual"); else the card it
+    was on being one person's own ("account"); else, on a card two people carry, the one person
+    the bank names ("bank"); else what its merchant was said to always be ("rule"); else the
+    family's when the card is the family's ("account"); else nobody's yet (None, "none").
+    """
+    buckets = budget_buckets(people)
+    if tag in buckets:
+        return tag, "manual"
+    if role.startswith(BUDGET_PERSON) and role in buckets:
+        return role, "account"
+    if role == BUDGET_SPLIT and owner:
+        words = set(re.findall(r"[a-z]+", owner.lower()))
+        named = [p for p in people if p.lower() in words]
+        if len(named) == 1:
+            return BUDGET_PERSON + named[0], "bank"
+    if rules.get(key or "") in buckets:
+        return rules[key], "rule"
+    if role == BUDGET_FAMILY:
+        return BUDGET_FAMILY, "account"
+    return None, "none"
+
+
+def month_days(month: str) -> int:
+    return calendar.monthrange(int(month[:4]), int(month[5:]))[1]
+
+
+def month_before(month: str, months: int = 1) -> str:
+    index = int(month[:4]) * 12 + int(month[5:]) - 1 - months
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+def budget_cards(roles: dict[str, str]) -> list[dict[str, Any]]:
+    """Every linked credit card: what it is, its role in the budget if it has one, and whether its purchases can be read."""
+    rows = with_db(lambda c: c.execute(
+        "SELECT k.key, i.item_id, i.institution, a.name, a.mask, a.current, a.credit_limit, i.error, i.products"
+        " FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id"
+        " WHERE a.type = 'credit' ORDER BY i.linked_at, i.item_id, a.name, a.account_id"
+    ).fetchall())
+    return [
+        {"key": key or name, "institution_id": item_id, "institution": institution or "", "name": name, "mask": mask, "role": roles.get(key or name),
+         "balance": current, "limit": limit, "error": error, "needs_relink": error in PLAID_RELINK, "transactions": "transactions" in (products or "")}
+        for key, item_id, institution, name, mask, current, limit, error, products in rows
+    ]
+
+
+def budget_purchases(first: str, last: str, config: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    What counts toward the budget between two days (inclusive), each put in its bucket: every
+    purchase and refund on a card that has a role, pending ones too. A card being paid off
+    doesn't count, nor a transaction Plaid took back, nor a pending one whose posted one is here.
+    """
+    rows = with_db(lambda c: c.execute(
+        "SELECT t.txn_id, t.date, t.amount, t.name, t.merchant, t.merchant_key, t.category, t.pending, t.owner, t.kind, t.tag, k.key"
+        " FROM plaid_transactions t JOIN plaid_feed_keys k ON k.account_id = t.account_id"
+        " WHERE t.removed_at IS NULL AND t.kind != 'payment' AND t.date >= ? AND t.date <= ?"
+        " AND t.txn_id NOT IN (SELECT pending_id FROM plaid_transactions WHERE pending_id IS NOT NULL AND removed_at IS NULL)"
+        " ORDER BY t.date DESC, t.amount DESC, t.txn_id",
+        (first, last),
+    ).fetchall())
+    rules = budget_rules()
+    purchases = []
+    for txn_id, date, amount, name, merchant, key, category, pending, owner, kind, tag, card in rows:
+        role = config["roles"].get(card) or ""
+        if role in ("", BUDGET_IGNORE):
+            continue
+        bucket, source = budget_bucket(tag, role, owner, key, config["people"], rules)
+        purchases.append({
+            "id": txn_id, "date": date, "amount": round(amount, 2), "name": merchant or name or "", "merchant": key or None, "category": category,
+            "pending": bool(pending), "card": card, "bucket": bucket, "source": source, "kind": kind, "remembered": bool(key) and key in rules,
+        })
+    return purchases
+
+
+def budget_month(month: str | None = None, now: float | None = None) -> dict[str, Any]:
+    """
+    What the app's Budget page shows for a month (this one when not said): the cards, the
+    settings, what was spent in each bucket and on each day, on what and where, every purchase,
+    the months before it, and how fresh all of that is. Days are the household's.
+    """
+    now = time.time() if now is None else now
+    today = datetime.fromtimestamp(now, household_zone() or timezone.utc).date()
+    this_month = today.strftime("%Y-%m")
+    month = month or this_month
+    if not _MONTH.match(month):
+        raise HTTPException(400, {"error": "bad_month", "message": "month is YYYY-MM"})
+    days = month_days(month)
+    day = today.day if month == this_month else days if month < this_month else 0
+    config = budget_config()
+    rules = budget_rules()
+    earliest = month_before(month, BUDGET_HISTORY_MONTHS - 1)
+    counted = budget_purchases(f"{earliest}-01", f"{month}-{days:02d}", config)
+    purchases = [p for p in counted if p["date"][:7] == month]
+    spent_by_month: dict[str, float] = {}
+    for p in counted:
+        spent_by_month[p["date"][:7]] = spent_by_month.get(p["date"][:7], 0.0) + p["amount"]
+
+    def bucket(bucket_id: str | None, kind: str, name: str | None, limit: float | None) -> dict[str, Any]:
+        mine = [p for p in purchases if p["bucket"] == bucket_id]
+        return {"id": bucket_id or "unassigned", "kind": kind, "name": name, "spent": round(sum(p["amount"] for p in mine), 2), "limit": limit, "count": len(mine)}
+
+    buckets = [bucket(BUDGET_PERSON + p, "person", p, config["limits"]["people"].get(p)) for p in config["people"]]
+    buckets.append(bucket(BUDGET_FAMILY, "family", None, config["limits"]["family"]))
+    buckets.append(bucket(None, "unassigned", None, None))
+    by_day: dict[str, float] = {}
+    categories: dict[str, list[float]] = {}
+    merchants: dict[str, list[Any]] = {}
+    for p in purchases:
+        # A purchase the bank dates past the household's today (its clock is ahead) is put on
+        # today, so the days still add up to what the month has spent.
+        on = min(p["date"], f"{month}-{day:02d}") if day else p["date"]
+        by_day[on] = by_day.get(on, 0.0) + p["amount"]
+        tally = categories.setdefault(p["category"] or "OTHER", [0.0, 0])
+        tally[0], tally[1] = tally[0] + p["amount"], tally[1] + 1
+        shop = merchants.setdefault(p["merchant"] or p["name"].lower(), [p["name"], 0.0, 0])
+        shop[1], shop[2] = shop[1] + p["amount"], shop[2] + 1
+    synced = state_get(PLAID_TXN_SYNCED_KEY) or {}
+    items = with_db(lambda c: c.execute("SELECT products, txn_status, txn_changed_at FROM plaid_items").fetchall())
+    reading = [(status, changed) for products, status, changed in items if "transactions" in (products or "")]
+    take_home, bills = config["sheet"]["take_home"], config["sheet"]["bills_off_card"]
+    alerts = state_get(BUDGET_ALERTS_KEY) or {}
+    return {
+        "configured": plaid_on(),
+        "environment": PLAID_ENV,
+        "month": month,
+        "today": today.isoformat(),
+        "day": day,
+        "days_in_month": days,
+        "synced_at": synced.get("at"),
+        "changed_at": max((changed for _, changed in reading if changed), default=None),
+        "syncing": _bank_lock.locked(),
+        "next_sync_at": float(synced.get("at") or now) + TXN_SYNC_SECONDS,
+        # False while Plaid is still fetching a card's first transactions: the month isn't all there yet.
+        "ready": all(status in TXN_READY for status, _ in reading),
+        "cards": budget_cards(config["roles"]),
+        "config": {**config, "rules": [{"merchant": key, "bucket": to} for key, to in rules.items()]},
+        "savings_line": round(take_home - bills, 2) if take_home is not None and bills is not None else None,
+        "spent": round(sum(p["amount"] for p in purchases), 2),
+        "pending": round(sum(p["amount"] for p in purchases if p["pending"]), 2),
+        "buckets": buckets,
+        "daily": [{"date": f"{month}-{d:02d}", "spent": round(by_day.get(f"{month}-{d:02d}", 0.0), 2)} for d in range(1, day + 1)],
+        "categories": sorted(({"id": name, "spent": round(total, 2), "count": count} for name, (total, count) in categories.items()), key=lambda c: -c["spent"]),
+        "merchants": sorted(({"name": name, "spent": round(total, 2), "count": count} for name, total, count in merchants.values()), key=lambda m: -m["spent"])[:BUDGET_TOP_MERCHANTS],
+        "transactions": purchases,
+        "history": [{"month": m, "spent": round(spent_by_month.get(m, 0.0), 2), "days": month_days(m)}
+                    for m in (month_before(month, back) for back in range(BUDGET_HISTORY_MONTHS - 1, 0, -1))],
+        "alerts_sent": sorted(alerts.get("sent") or {}) if alerts.get("month") == month else [],
+    }
+
+
+def budget_alerts(budget: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Every line the month has crossed that the settings say to tell the phones about, the mildest
+    of each `scope` first: the share of the month's limit, what take-home leaves after the bills
+    that aren't on a card, and each person's and the family's own limit.
+    """
+    config, spent = budget["config"], budget["spent"]
+    crossed = []
+    total = config["limits"]["total"]
+    if config["alerts"]["total"] and total:
+        crossed += [{"key": f"total_{percent}", "scope": "total", "kind": f"total_{percent}", "spent": spent, "limit": total, "person": None}
+                    for percent in BUDGET_TOTAL_PERCENTS if spent >= total * percent / 100]
+    line = budget["savings_line"]
+    if config["alerts"]["savings"] and line and line > 0 and spent >= line:
+        crossed.append({"key": "savings", "scope": "savings", "kind": "savings", "spent": spent, "limit": line, "person": None})
+    if config["alerts"]["buckets"]:
+        crossed += [{"key": f"{b['id']}_100", "scope": b["id"], "kind": f"{b['kind']}_100", "spent": b["spent"], "limit": b["limit"], "person": b["name"]}
+                    for b in budget["buckets"] if b["limit"] and b["spent"] >= b["limit"]]
+    return crossed
+
+
+def budget_alert_text(alert: dict[str, Any], budget: dict[str, Any]) -> tuple[str, str]:
+    """A push's title and body in English, for a phone whose app doesn't word them itself from the push's data."""
+    spent, limit = f"${alert['spent']:,.0f}", f"${alert['limit']:,.0f}"
+    left = budget["days_in_month"] - budget["day"]
+    days = "the last day of the month" if left <= 0 else "1 day left this month" if left == 1 else f"{left} days left this month"
+    if alert["kind"] == "savings":
+        return "Dipping into savings", f"The cards are at {spent} this month, past the {limit} that take-home leaves after the bills."
+    if alert["kind"] == "person_100":
+        return f"{alert['person']} is over budget", f"{spent} spent of {limit}, with {days}."
+    if alert["kind"] == "family_100":
+        return "The family card is over budget", f"{spent} spent of {limit}, with {days}."
+    if alert["kind"] == "total_100":
+        return "Over budget", f"{spent} spent of this month's {limit}, with {days}."
+    return "Close to the budget", f"{spent} spent of this month's {limit}, with {days}."
+
+
+def budget_recipients(now: float) -> list[tuple[str, str]]:
+    """
+    The phones to tell about the money right now, as (device id, token): those last signed in to
+    by someone who may see the finances, and not in their quiet hours. A phone that wants only
+    Away alerts still gets these: that choice is about the cameras.
+    """
+    rows = with_db(lambda c: c.execute(
+        "SELECT device_id, token, user, role, quiet_start, quiet_end, tz, utc_offset FROM devices WHERE token IS NOT NULL AND user IS NOT NULL"
+    ).fetchall())
+    phones = []
+    for device_id, token, user, role, quiet_start, quiet_end, tz, utc_offset in rows:
+        minute = local_minute(now, tz, utc_offset)
+        if finance_may_read({"username": user, "role": role}) and not (minute is not None and in_quiet_hours(quiet_start, quiet_end, minute)):
+            phones.append((device_id, token))
+    return phones
+
+
+def budget_check(now: float | None = None, push: Callable[[str, str, str, dict[str, str]], str] | None = None) -> list[str]:
+    """
+    Tells each phone once a month about each line the month has crossed (see `budget_alerts`), and
+    answers which were told to anyone just now. Of the lines of one scope only the furthest is
+    sent, and the nearer ones count as told with it: a month already over its limit when the
+    alerts were switched on says so once, not twice. A phone in its quiet hours isn't counted as
+    told, so it hears at the first check after them. `push` stands in for `deliver` in tests.
+    """
+    if not any(budget_config()["alerts"].values()):
+        return []
+    # One check at a time: the hourly one and one after a change to the settings would otherwise
+    # both find a phone untold and both tell it.
+    with _budget_alert_lock:
+        return _budget_check(time.time() if now is None else now, push or deliver)
+
+
+def _budget_check(now: float, push: Callable[[str, str, str, dict[str, str]], str]) -> list[str]:
+    budget = budget_month(None, now)
+    crossed = budget_alerts(budget)
+    if not crossed:
+        return []
+    kept = state_get(BUDGET_ALERTS_KEY) or {}
+    sent: dict[str, list[str]] = kept.get("sent") or {} if kept.get("month") == budget["month"] else {}
+    phones = budget_recipients(now)
+    told = []
+    for scope in dict.fromkeys(alert["scope"] for alert in crossed):
+        steps = [alert for alert in crossed if alert["scope"] == scope]
+        top = steps[-1]
+        title, body = budget_alert_text(top, budget)
+        data = {
+            "budget": "1", "budget_kind": top["kind"], "month": budget["month"], "spent": f"{top['spent']:.2f}", "limit": f"{top['limit']:.2f}",
+            "person": top["person"] or "", "days_left": str(budget["days_in_month"] - budget["day"]), "notif_id": f"budget-{budget['month']}-{top['key']}",
+        }
+        for device_id, token in phones:
+            if device_id in sent.get(top["key"], []):
+                continue
+            if push(token, title, body, data) != "sent":
+                continue
+            for step in steps:
+                if device_id not in sent.setdefault(step["key"], []):
+                    sent[step["key"]].append(device_id)
+            if top["key"] not in told:
+                told.append(top["key"])
+    state_set(BUDGET_ALERTS_KEY, {"month": budget["month"], "sent": sent})
+    if told:
+        log.info("budget: told the phones about %s", ", ".join(told))
+    return told
+
+
+def budget_check_quietly() -> None:
+    try:
+        budget_check()
+    except Exception:
+        log.exception("budget check failed")
+
+
+def budget_check_in_background() -> None:
+    threading.Thread(target=budget_check_quietly, name="budget-check", daemon=True).start()
+
+
+@app.get("/finance/budget")
+def get_budget(request: Request, response: Response, month: str | None = None) -> dict[str, Any]:
+    """The month's spending on the cards against the budget (see `budget_month`). Answers without Plaid set up too, to say so."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    return budget_month(month)
+
+
+@app.put("/finance/budget/config")
+def put_budget_config(body: BudgetPatch, request: Request, response: Response) -> dict[str, Any]:
+    """Changes the budget's settings: the people, the limits, each card's role, the alerts, and what the app read from the sheet."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    patch = {name: getattr(body, name, None) for name in ("people", "limits", "roles", "card_paid_lines", "alerts", "sheet")}
+    budget_config_save(patch, time.time())
+    if any(patch[name] is not None for name in ("people", "limits", "roles", "alerts")):
+        log.info("budget: %s changed the settings", user)
+    # A limit just lowered under what is already spent is a line crossed.
+    budget_check_in_background()
+    return budget_month()
+
+
+@app.put("/finance/budget/transactions/{txn_id}")
+def put_budget_transaction(txn_id: str, body: BudgetTag, request: Request, response: Response) -> dict[str, Any]:
+    """Says whose a purchase is (or, with a null, takes that back), and with `remember` that its merchant's always are."""
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    user = require_finance_user(request)
+    if body.bucket is not None and body.bucket not in budget_buckets(budget_config()["people"]):
+        raise HTTPException(400, {"error": "bad_bucket", "message": "A purchase is a person's or the family's"})
+    now = time.time()
+
+    def tag(c: sqlite3.Connection) -> tuple | None:
+        row = c.execute("SELECT date, merchant_key FROM plaid_transactions WHERE txn_id=? AND removed_at IS NULL", (txn_id,)).fetchone()
+        if row is None:
+            return None
+        c.execute("UPDATE plaid_transactions SET tag=?, tag_by=? WHERE txn_id=?", (body.bucket, user if body.bucket else None, txn_id))
+        if body.remember and row[1]:
+            if body.bucket:
+                c.execute("INSERT OR REPLACE INTO budget_rules VALUES (?,?,?,?)", (row[1], body.bucket, user, now))
+            else:
+                c.execute("DELETE FROM budget_rules WHERE merchant_key=?", (row[1],))
+        c.commit()
+        return row
+
+    row = with_db(tag)
+    if row is None:
+        raise HTTPException(404, {"error": "not_found", "message": "That purchase isn't there any more"})
+    return budget_month(row[0][:7])
+
+
+@app.delete("/finance/budget/rules")
+def delete_budget_rule(merchant: str, request: Request, response: Response) -> dict[str, Any]:
+    """
+    Forgets that a merchant's purchases always go one way. The ones tagged by hand stay as they
+    are. The merchant is named in the query (`?merchant=`), not the path: its key is whatever
+    its name was, and a name can hold a slash.
+    """
+    response.headers["Cache-Control"] = FINANCE_CACHE_CONTROL
+    require_finance_user(request)
+    with_db(lambda c: (c.execute("DELETE FROM budget_rules WHERE merchant_key=?", (merchant,)), c.commit()))
+    return budget_month()
+
+
+@app.post("/finance/budget/sync")
+def post_budget_sync(request: Request, response: Response) -> dict[str, Any]:
+    """Asks the cards what was bought now rather than at the next hour. Answers at once; `syncing` says it is under way."""
+    require_bank(request, response)
+    with _sync_ask_lock:
+        last = max(float((state_get(PLAID_TXN_SYNCED_KEY) or {}).get("at") or 0), _txn_asked["at"])
+        if _bank_lock.locked() or time.time() - last < BANK_MIN_SYNC_SECONDS:
+            return budget_month()
+        _txn_asked["at"] = time.time()
+        budget_sync_in_background()
+    return {**budget_month(), "syncing": True}
 
 
 # ---------------------------------------------------------------- Tesla
