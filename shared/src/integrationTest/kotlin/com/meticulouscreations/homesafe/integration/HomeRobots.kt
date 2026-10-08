@@ -69,6 +69,15 @@ internal class HomeRobot(private val journey: AppJourney) {
         journey.awaitNode(hasTestTag(HOME_STATUS_TEST_TAG) and hasText(text, substring = substring), "the summary saying \"$text\"")
     }
 
+    /**
+     * Waits for the summary to have stopped saying [text]. A line that changes cross-fades, so
+     * what it said before is still in the summary for the length of the fade after the new wording
+     * has turned up: [awaitSummary] returning is not the old wording being gone.
+     */
+    fun awaitSummaryWithout(text: String, substring: Boolean = false) {
+        journey.awaitGone(hasTestTag(HOME_STATUS_TEST_TAG) and hasText(text, substring = substring), "the summary saying \"$text\"")
+    }
+
     fun tapSummary() = journey.tap(hasTestTag(HOME_STATUS_TEST_TAG), "the summary")
 
     private fun card(displayName: String): SemanticsMatcher = hasText(displayName) and hasClickAction()
