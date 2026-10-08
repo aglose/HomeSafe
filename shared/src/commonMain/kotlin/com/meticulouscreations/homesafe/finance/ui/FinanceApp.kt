@@ -101,6 +101,7 @@ import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
+import homesafe.shared.generated.resources.fin_bank_title
 import homesafe.shared.generated.resources.finance_close
 import homesafe.shared.generated.resources.finance_refresh
 import homesafe.shared.generated.resources.finance_refreshing
@@ -139,6 +140,9 @@ internal sealed interface FinanceDetail {
 
     /** How the budget sheet's last sync went, part by part. */
     data object SheetSync : FinanceDetail
+
+    /** The banks and brokerages linked through Plaid, whose balances fill the sheet in. */
+    data object BankSync : FinanceDetail
 
     /** How every chart looks and feels. */
     data object ChartSettings : FinanceDetail
@@ -286,7 +290,9 @@ fun FinanceApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
 
                         FinanceDetail.Glossary -> GlossaryScreen(detailPadding)
 
-                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh)
+                        FinanceDetail.SheetSync -> SheetSyncScreen(state, detailPadding, onSyncNow = viewModel::refresh, onOpenBankSync = { push(FinanceDetail.BankSync) })
+
+                        FinanceDetail.BankSync -> BankSyncRoute(detailPadding)
 
                         FinanceDetail.ChartSettings -> ChartSettingsScreen(chartStyle, detailPadding, onChange = chartStyleViewModel::update)
                     }
@@ -377,6 +383,7 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
     FinanceDetail.Connections -> stringResource(Res.string.finance_title_connections)
     FinanceDetail.Glossary -> stringResource(Res.string.finance_title_glossary)
     FinanceDetail.SheetSync -> stringResource(Res.string.finance_title_sheet_sync)
+    FinanceDetail.BankSync -> stringResource(Res.string.fin_bank_title)
     FinanceDetail.ChartSettings -> stringResource(Res.string.finance_title_chart_settings)
 }
 

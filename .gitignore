@@ -26,6 +26,7 @@ GoogleService-Info.plist*
 relay/google-home.env
 relay/presence.env
 relay/finance.env
+relay/plaid.env
 relay/tesla.env
 .codex/
 

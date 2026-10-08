@@ -32,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -346,6 +347,22 @@ internal fun SheetBadge(modifier: Modifier = Modifier) {
         Spacer(Modifier.width(3.dp))
         Text(stringResource(Res.string.watchlist_in_sheet), style = FinanceTheme.type.micro, color = colors.cool, maxLines = 1)
     }
+}
+
+/** A pill with [color]'s tint, for a card's actions. */
+@Composable
+internal fun PillButton(text: String, color: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = FinanceTheme.type.bodyStrong,
+        color = color,
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clip(RoundedCornerShape(50))
+            .background(color.copy(alpha = 0.12f))
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+    )
 }
 
 /** Small print under a section. */

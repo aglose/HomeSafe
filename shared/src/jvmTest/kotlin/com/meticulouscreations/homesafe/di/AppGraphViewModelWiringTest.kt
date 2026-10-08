@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.finance.BankSyncViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
@@ -46,6 +47,7 @@ class AppGraphViewModelWiringTest {
                 LandedPersonViewModel::class,
                 FinanceViewModel::class,
                 ChartStyleViewModel::class,
+                BankSyncViewModel::class,
                 ServerUptimeViewModel::class,
                 ConnectionNoticeViewModel::class,
             ),

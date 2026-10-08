@@ -125,10 +125,11 @@ internal fun SheetSyncLine(state: FinanceUiState, onOpen: () -> Unit, modifier: 
 /**
  * The sheet's sync, in full: when it was last read and whether that worked, then every part of
  * the sheet the app reads (and what title it looks for), every chart, and anything it had to
- * leave out. The page to open after reorganising the sheet.
+ * leave out. The page to open after reorganising the sheet. Bank sync, which fills the sheet's
+ * balances in from the banks, is opened from here.
  */
 @Composable
-internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValues, onSyncNow: () -> Unit) {
+internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValues, onSyncNow: () -> Unit, onOpenBankSync: () -> Unit) {
     val colors = FinanceTheme.colors
     val uriHandler = LocalUriHandler.current
     val finance = state.finance
@@ -176,6 +177,8 @@ internal fun SheetSyncScreen(state: FinanceUiState, contentPadding: PaddingValue
                 }
             }
         }
+        // Where the balances the sheet holds can come from the banks themselves.
+        item(key = "bank") { BankSyncEntry(onOpenBankSync, Modifier.padding(top = 12.dp)) }
         if (health != null && health.sections.isNotEmpty()) {
             item(key = "sections-h") {
                 SectionHeader(stringResource(Res.string.fin_sheet_sync_sections_title), subtitle = stringResource(Res.string.fin_sheet_sync_sections_subtitle))
@@ -252,19 +255,4 @@ private fun StatusRow(color: Color, title: String, trailing: String?, detail: St
             Text(it, style = FinanceTheme.type.label, color = FinanceTheme.colors.textTertiary, modifier = Modifier.padding(start = 18.dp, top = 2.dp))
         }
     }
-}
-
-@Composable
-private fun PillButton(text: String, color: Color, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    Text(
-        text,
-        style = FinanceTheme.type.bodyStrong,
-        color = color,
-        modifier = modifier
-            .minimumInteractiveComponentSize()
-            .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.12f))
-            .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-    )
 }
