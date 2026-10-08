@@ -84,15 +84,20 @@ fun WeatherSky(
         // An infinite animation's frames: anything that waits for animations to settle (a UI
         // test's idling) knows this one never will.
         var last = withInfiniteAnimationFrameNanos { it }
+        // When the next step is wanted, kept apart from when the last one came. Counted from when
+        // it came, every wait is rounded up to a whole frame of the display's, and one whose frames
+        // don't divide the sky's (90 Hz, 144 Hz) gives 45 or 48 steps a second where 60 were meant.
+        var due = last
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
                 // Not every frame the display offers: cloud drifts and the sun creeps, and at thirty
                 // frames a second they look as they do at a hundred and twenty for a quarter of the
                 // shading. The frames between are the cards' alone (see the layer below).
-                val dt = (now - last) / 1e9f
-                if (dt >= animator.frameSeconds - FRAME_SLACK_SECONDS) {
-                    animator.step(dt.coerceIn(0f, 0.1f))
+                if (now >= due - FRAME_SLACK_NANOS) {
+                    animator.step(((now - last) / 1e9f).coerceIn(0f, 0.1f))
                     last = now
+                    // (From now, if it has fallen behind: a sky back from a pause owes no frames.)
+                    due = maxOf(due + (animator.frameSeconds * 1e9f).toLong(), now)
                 }
             }
         }
@@ -204,7 +209,7 @@ private const val SKY_FRAME_SECONDS = 1f / 30f
 private const val BUSY_SKY_FRAME_SECONDS = 1f / 60f
 
 /** A display's frames don't land on the microsecond: one this much early is still the one wanted. */
-private const val FRAME_SLACK_SECONDS = 0.002f
+private const val FRAME_SLACK_NANOS = 2_000_000L
 
 /** How far from where it is heading a number can be and still count as arrived. */
 private const val SETTLED = 0.004f
