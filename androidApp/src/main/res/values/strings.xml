@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">HomeSafe</string>
+    <!-- The share sheet's name for sending a note to the fitness app -->
+    <string name="share_workout_notes">Import workout notes</string>
 </resources>

@@ -39,3 +39,6 @@ actual fun createMomentsDao(context: PlatformContext): MomentsDao =
 
 actual fun createWeatherDao(context: PlatformContext): WeatherDao =
     appDatabase.weatherDao()
+
+actual fun createFitnessDao(context: PlatformContext): FitnessDao =
+    appDatabase.fitnessDao()

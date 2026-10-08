@@ -5,6 +5,7 @@ import com.meticulouscreations.homesafe.finance.BankSyncViewModel
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
+import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
@@ -54,6 +55,7 @@ class AppGraphViewModelWiringTest {
                 ServerUptimeViewModel::class,
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
+                FitnessViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )

@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
@@ -86,9 +87,16 @@ class MainActivity : FragmentActivity() {
      * `homesafe://moment` URI; a push Android drew by itself (from a relay that still sends a
      * notification block) carries the relay's data as extras on the launch intent instead. A
      * weather notification carries `homesafe://weather`, and opens the weather app the same way.
+     * Text shared from another app is not a notification at all, but arrives by the same door: it
+     * is taken to be workout notes and handed to the fitness app's import page ([FitnessShares]).
      */
     private fun openMomentFrom(intent: Intent?) {
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // Text shared to the app from another one (a note, from a notes app's Share menu): workout notes for the fitness app to read.
+        if (intent.action == Intent.ACTION_SEND && intent.type?.startsWith("text/") == true) {
+            FitnessShares.offer(intent.getStringExtra(Intent.EXTRA_TEXT), intent.getStringExtra(Intent.EXTRA_SUBJECT))
+            return
+        }
         // A weather notification's tap: the weather app, not a camera.
         if (WeatherDeepLink.matches(intent.dataString)) {
             WeatherDeepLinks.open()

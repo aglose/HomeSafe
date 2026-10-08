@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
+import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MomentsDao
 import com.meticulouscreations.homesafe.data.PushedAlertActions
@@ -19,6 +20,7 @@ import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
+import com.meticulouscreations.homesafe.data.createFitnessDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
 import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
@@ -173,6 +175,11 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideWeatherDao(platformContext: PlatformContext): WeatherDao =
         createWeatherDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideFitnessDao(platformContext: PlatformContext): FitnessDao =
+        createFitnessDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

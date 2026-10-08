@@ -87,7 +87,10 @@ import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
+import com.meticulouscreations.homesafe.fitness.FitnessViewModel
+import com.meticulouscreations.homesafe.fitness.ui.FitnessApp
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
+import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
@@ -127,7 +130,7 @@ import org.jetbrains.compose.resources.stringResource
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
 /** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
-internal enum class InnerApp { FINANCE, WEATHER }
+internal enum class InnerApp { FINANCE, WEATHER, FITNESS }
 
 @Stable
 internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
@@ -345,6 +348,19 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     }
 
     /**
+     * Opens the fitness app on notes shared into PercySafe from another app, for as long as the
+     * caller runs, handing the text to [onNotes] (the import page reads it from there). Consumed
+     * only here, once the shell exists, for the reason [openMomentsFromNotifications] does.
+     */
+    suspend fun openFitnessFromShares(onNotes: (String) -> Unit) {
+        FitnessShares.pending.filterNotNull().collect { notes ->
+            onNotes(notes)
+            openApp(InnerApp.FITNESS, Offset.Zero, selectedTab)
+            FitnessShares.consume()
+        }
+    }
+
+    /**
      * Opens the finance app on the tab a notification tap asks for (a budget alert's: Budget),
      * for as long as the caller runs, over whichever tab is up. Consumed only here, once the
      * shell exists, for the reason [openMomentsFromNotifications] does. With no drawer card to
@@ -458,7 +474,7 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 
 /**
  * Everything the shell draws over its tabs and bars: the pinched camera card's layer, the drawer,
- * and the app opened from it (finance, or weather). Their state is only fetched while this
+ * and the app opened from it (finance, weather or fitness). Their state is only fetched while this
  * composition is on screen — under the iOS 26 host each tab has its own, and only the visible
  * one may run it.
  */
@@ -481,17 +497,27 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
     LaunchedEffect(visible, nav.drawerOpen, weatherUp) {
         weather.setActive(visible && (nav.drawerOpen || weatherUp), full = weatherUp)
     }
+    val fitness: FitnessViewModel = metroViewModel()
+    val fitnessState by fitness.uiState.collectAsStateWithLifecycle()
+    val fitnessUp = nav.isOpen(InnerApp.FITNESS)
+    LaunchedEffect(visible, nav.drawerOpen, fitnessUp) {
+        fitness.setActive(visible && (nav.drawerOpen || fitnessUp), full = fitnessUp)
+    }
+    // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
+    if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
     ShellDrawer(
         open = nav.drawerOpen,
         selectedTab = tab,
         finance = financeState,
         weather = weatherState,
+        fitness = fitnessState,
         onSelectTab = { route ->
             nav.drawerOpen = false
             nav.selectTab(route)
         },
         onOpenFinance = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) },
         onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
+        onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
         onClose = { nav.drawerOpen = false },
     )
     if (nav.appHost == tab) {
@@ -509,6 +535,8 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
                 )
 
                 InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen)
+
+                InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
             }
         }
     }
