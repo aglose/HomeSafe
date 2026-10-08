@@ -34,7 +34,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.math.abs
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.seconds
@@ -88,10 +87,11 @@ class WeatherRepositoryImpl(
      */
     private suspend fun fetch(place: Place): Result<WeatherReport> = coroutineScope {
         val forecast = async { openMeteo.forecast(place.latitude, place.longitude, now()) }
-        val air = async { withTimeoutOrNull(SIDE_CALL_TIMEOUT_MS) { openMeteo.airQuality(place.latitude, place.longitude).getOrNull() } }
+        // The limit is the request's own (the HTTP client's clock), not a coroutine timeout round it.
+        val air = async { openMeteo.airQuality(place.latitude, place.longitude, SIDE_CALL_TIMEOUT_MS).getOrNull() }
         val alerts = async {
             if (!NwsApi.covers(place.latitude, place.longitude)) return@async emptyList()
-            withTimeoutOrNull(SIDE_CALL_TIMEOUT_MS) { nws.alerts(place.latitude, place.longitude).getOrNull() }.orEmpty()
+            nws.alerts(place.latitude, place.longitude, SIDE_CALL_TIMEOUT_MS).getOrNull().orEmpty()
         }
         val base = forecast.await()
         if (base.isFailure) {

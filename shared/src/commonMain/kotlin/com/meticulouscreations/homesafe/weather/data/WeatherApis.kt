@@ -31,6 +31,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.plugins.timeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -121,9 +122,10 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
             ?: throw WeatherServiceException(UiText.of(Res.string.weather_error_no_forecast), response.status.value)
     }
 
-    /** The US air quality index now, or null where the model has none. */
-    suspend fun airQuality(latitude: Double, longitude: Double): Result<AirQuality?> = suspendRunCatching {
+    /** The US air quality index now, or null where the model has none. Given up on after [timeoutMillis], when set. */
+    suspend fun airQuality(latitude: Double, longitude: Double, timeoutMillis: Long? = null): Result<AirQuality?> = suspendRunCatching {
         val response = httpClient.get("$AIR_BASE/v1/air-quality") {
+            if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
             parameter("latitude", latitude)
             parameter("longitude", longitude)
             parameter("current", "us_aqi,pm2_5,pm10,ozone,nitrogen_dioxide")
@@ -192,8 +194,10 @@ class OpenMeteoApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
 @Inject
 class NwsApi(@Named(WEATHER_CLIENT) private val httpClient: HttpClient) {
 
-    suspend fun alerts(latitude: Double, longitude: Double): Result<List<WeatherAlert>> = suspendRunCatching {
+    /** The alerts in force at a point. Given up on after [timeoutMillis], when set. */
+    suspend fun alerts(latitude: Double, longitude: Double, timeoutMillis: Long? = null): Result<List<WeatherAlert>> = suspendRunCatching {
         val response = httpClient.get("$BASE/alerts/active") {
+            if (timeoutMillis != null) timeout { requestTimeoutMillis = timeoutMillis }
             parameter("point", point(latitude, longitude))
             parameter("status", "actual")
             parameter("message_type", "alert,update")
