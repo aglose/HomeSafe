@@ -41,9 +41,19 @@ class BudgetAlertTest {
     @Test
     fun aPushThisBuildCannotWordIsStillKnownToBeAboutTheBudget() {
         // A line a newer relay tells of, an amount that isn't one, a person's limit with nobody named, no word of the days left.
-        for (broken in listOf(push + ("budget_kind" to "weekly_100"), push + ("spent" to "lots"), push - "limit", push + ("person" to ""), push - "days_left")) {
-            assertTrue(BudgetAlert.isBudget { broken[it] })
-            assertNull(alert(broken), broken.toString())
+        val unreadable = listOf(
+            push + ("budget_kind" to "weekly_100"),
+            push + ("spent" to "lots"),
+            push - "limit",
+            push + ("person" to ""),
+            push - "days_left",
+            // Numbers to the parser, but no amount of money.
+            push + ("spent" to "NaN"),
+            push + ("limit" to "Infinity"),
+        )
+        for (data in unreadable) {
+            assertTrue(BudgetAlert.isBudget { data[it] })
+            assertNull(alert(data), data.toString())
         }
     }
 

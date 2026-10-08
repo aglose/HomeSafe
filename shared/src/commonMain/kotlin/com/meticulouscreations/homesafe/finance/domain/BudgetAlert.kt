@@ -3,7 +3,8 @@ package com.meticulouscreations.homesafe.finance.domain
 /**
  * A push from the relay saying the month's card spending crossed a line (`budget_check` in
  * `relay/relay.py`), as the push's data spells it out. The relay also sends a title and a body
- * in English; a phone that reads these words its own notification from them instead.
+ * in English. A phone that can read this data doesn't show those: it builds the notification's
+ * words itself, in its own language, from the amounts here.
  */
 data class BudgetAlert(
     /** The notification's identity: a later push about the same line of the same month replaces it. */
@@ -53,14 +54,14 @@ data class BudgetAlert(
         /**
          * From a push's data, or null when it isn't about the budget or doesn't say enough to
          * word: a kind this build doesn't know (a newer relay's), an amount or a count of days
-         * that isn't one, a person's limit with no person. The caller then shows the relay's own
-         * words.
+         * that isn't one (`NaN` and the infinities are not amounts), a person's limit with no
+         * person. The caller then shows the relay's own words.
          */
         fun from(values: (String) -> String?): BudgetAlert? {
             if (!isBudget(values)) return null
             val kind = Kind.entries.firstOrNull { it.wire == values(KEY_KIND) } ?: return null
-            val spent = values(KEY_SPENT)?.toDoubleOrNull() ?: return null
-            val limit = values(KEY_LIMIT)?.toDoubleOrNull() ?: return null
+            val spent = values(KEY_SPENT)?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
+            val limit = values(KEY_LIMIT)?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
             val daysLeft = values(KEY_DAYS_LEFT)?.toIntOrNull() ?: return null
             val person = values(KEY_PERSON)?.takeIf { it.isNotBlank() }
             if (kind == Kind.PERSON_OVER && person == null) return null
