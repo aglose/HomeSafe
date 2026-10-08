@@ -56,7 +56,9 @@ import com.meticulouscreations.homesafe.fitness.ExerciseBoard
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.Phase
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.Strength
@@ -66,6 +68,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_edit_delete
 import homesafe.shared.generated.resources.fitness_edit_delete_confirm
 import homesafe.shared.generated.resources.fitness_edit_load
+import homesafe.shared.generated.resources.fitness_edit_muscle
 import homesafe.shared.generated.resources.fitness_edit_name
 import homesafe.shared.generated.resources.fitness_edit_note
 import homesafe.shared.generated.resources.fitness_edit_note_hint
@@ -354,13 +357,14 @@ internal fun phaseBands(phases: List<Phase>, fromEpochSeconds: Long, toEpochSeco
     }
 }
 
-/** Changing what an exercise is: its name and shelf, how its weight is counted, its rep band, its usual jump, its rest, and a note. */
+/** Changing what an exercise is: its name, its shelf and the muscle it is mainly for, how its weight is counted, its rep band, its usual jump, its rest, and a note. */
 @Composable
 internal fun EditExerciseScreen(exercise: Exercise, padding: PaddingValues, onSave: (Exercise) -> Unit, onDelete: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     var name by rememberSaveable(exercise.id) { mutableStateOf(exercise.name) }
     var part by rememberSaveable(exercise.id) { mutableStateOf(exercise.bodyPart.name) }
+    var muscle by rememberSaveable(exercise.id) { mutableStateOf(exercise.primary.name) }
     var load by rememberSaveable(exercise.id) { mutableStateOf(exercise.loadKind.name) }
     var low by rememberSaveable(exercise.id) { mutableIntStateOf(exercise.repLow) }
     var high by rememberSaveable(exercise.id) { mutableIntStateOf(exercise.repHigh) }
@@ -376,7 +380,14 @@ internal fun EditExerciseScreen(exercise: Exercise, padding: PaddingValues, onSa
             FitnessTextField(name, { name = it }, exercise.name, Modifier.fillMaxWidth().testTag("fitness_edit_name"))
         }
         FitnessCard(title = stringResource(Res.string.fitness_edit_shelf)) {
-            ChipRow(BodyPart.entries.map { it.name to stringResource(it.label) }, part) { part = it }
+            ChipRow(BodyPart.entries.map { it.name to stringResource(it.label) }, part, tag = "fitness_edit_shelf") { chosen ->
+                part = chosen
+                // A new shelf brings its own muscle along, as the name reads there; the row below can still say otherwise.
+                BodyPart.entries.firstOrNull { it.name == chosen }?.let { muscle = ExerciseClassifier.classify(name, it).primary.name }
+            }
+        }
+        FitnessCard(title = stringResource(Res.string.fitness_edit_muscle)) {
+            ChipRow(Muscle.entries.map { it.name to stringResource(it.label) }, muscle, tag = "fitness_edit_muscle") { muscle = it }
         }
         FitnessCard(title = stringResource(Res.string.fitness_edit_load)) {
             ChipRow(LoadKind.entries.map { it.name to stringResource(it.label) }, load) { load = it }
@@ -403,10 +414,17 @@ internal fun EditExerciseScreen(exercise: Exercise, padding: PaddingValues, onSa
         ForgeButton(
             stringResource(Res.string.fitness_edit_save),
             {
+                val newName = name.trim().ifEmpty { exercise.name }
+                val newPart = BodyPart.entries.firstOrNull { it.name == part } ?: exercise.bodyPart
+                val primary = Muscle.entries.firstOrNull { it.name == muscle } ?: exercise.primary
+                // The helpers go with the main muscle: the usual ones when it is what the name suggests, otherwise the ones it had.
+                val guess = ExerciseClassifier.classify(newName, newPart)
                 onSave(
                     exercise.copy(
-                        name = name.trim().ifEmpty { exercise.name },
-                        bodyPart = BodyPart.entries.firstOrNull { it.name == part } ?: exercise.bodyPart,
+                        name = newName,
+                        bodyPart = newPart,
+                        primary = primary,
+                        secondary = if (primary == guess.primary) guess.secondary else exercise.secondary.filter { it != primary },
                         loadKind = LoadKind.entries.firstOrNull { it.name == load } ?: exercise.loadKind,
                         repLow = low,
                         repHigh = high,
@@ -429,9 +447,11 @@ internal fun EditExerciseScreen(exercise: Exercise, padding: PaddingValues, onSa
 }
 
 @Composable
-private fun ChipRow(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+private fun ChipRow(options: List<Pair<String, String>>, selected: String, tag: String = "", onSelect: (String) -> Unit) {
     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.forEach { (key, label) -> ChoiceChip(label, key == selected, { onSelect(key) }) }
+        options.forEach { (key, label) ->
+            ChoiceChip(label, key == selected, { onSelect(key) }, if (tag.isEmpty()) Modifier else Modifier.testTag("${tag}_${key.lowercase()}"))
+        }
     }
 }
 

@@ -37,6 +37,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Insights
@@ -80,6 +81,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_exercise_edit
 import homesafe.shared.generated.resources.fitness_rest_go
 import homesafe.shared.generated.resources.fitness_rest_label
 import homesafe.shared.generated.resources.fitness_rest_minus
@@ -123,6 +125,7 @@ internal fun WorkoutScreen(
     padding: PaddingValues,
     actions: FitnessActions,
     onOpenExercise: (String) -> Unit,
+    onEditExercise: (String) -> Unit,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
     /** The exercise whose logger is open to begin with. */
@@ -134,10 +137,16 @@ internal fun WorkoutScreen(
     val tints = colors.focus(focus)
     var shelves by rememberSaveable(workout.workout.id) { mutableStateOf(focus.parts.map { it.name }) }
     var open by rememberSaveable(workout.workout.id) { mutableStateOf(initiallyOpen) }
-    val listed = remember(state.boards, workout, shelves) {
-        val done = workout.entries.mapNotNull { entry -> state.board(entry.exerciseId) }
-        val doneIds = done.mapTo(HashSet()) { it.exercise.id }
-        done + FitnessBoardBuilder.workoutOrder(state.boards.filter { it.exercise.bodyPart.name in shelves && it.exercise.id !in doneIds })
+    // Shelf by shelf, the workout's own first: within each, what has been done today leads (in the order it was done),
+    // then the rest as the routine has them. A shelf that isn't picked still shows anything logged from it today.
+    val sections = remember(state.boards, workout, shelves) {
+        val doneIds = workout.entries.map { it.exerciseId }
+        val order = (focus.parts + focus.extras + BodyPart.entries).distinct()
+        order.mapNotNull { part ->
+            val (done, rest) = state.boards.filter { it.exercise.bodyPart == part }.partition { it.exercise.id in doneIds }
+            val shown = done.sortedBy { doneIds.indexOf(it.exercise.id) } + if (part.name in shelves) FitnessBoardBuilder.workoutOrder(rest) else emptyList()
+            if (shown.isEmpty()) null else part to shown
+        }
     }
 
     LazyColumn(
@@ -173,23 +182,29 @@ internal fun WorkoutScreen(
                 }
             }
         }
-        if (listed.isEmpty()) {
+        if (sections.isEmpty()) {
             item(key = "empty") {
                 Text(stringResource(Res.string.fitness_workout_empty_shelf), style = type.body, color = colors.textMuted, modifier = Modifier.padding(vertical = 12.dp))
             }
         }
-        items(listed, key = { it.exercise.id }) { board ->
-            WorkoutExercise(
-                board = board,
-                entry = workout.entry(board.exercise.id),
-                state = state,
-                expanded = open == board.exercise.id,
-                tints = tints,
-                actions = actions,
-                onToggle = { open = if (open == board.exercise.id) null else board.exercise.id },
-                onOpenExercise = onOpenExercise,
-                modifier = Modifier.animateItem(),
-            )
+        sections.forEach { (part, boards) ->
+            if (sections.size > 1) {
+                item(key = "shelf_${part.name}") { CardLabel(stringResource(part.label), Modifier.padding(top = 8.dp, start = 4.dp)) }
+            }
+            items(boards, key = { it.exercise.id }) { board ->
+                WorkoutExercise(
+                    board = board,
+                    entry = workout.entry(board.exercise.id),
+                    state = state,
+                    expanded = open == board.exercise.id,
+                    tints = tints,
+                    actions = actions,
+                    onToggle = { open = if (open == board.exercise.id) null else board.exercise.id },
+                    onOpenExercise = onOpenExercise,
+                    onEditExercise = onEditExercise,
+                    modifier = Modifier.animateItem(),
+                )
+            }
         }
         item(key = "add") {
             AddExerciseCard(
@@ -221,6 +236,7 @@ private fun WorkoutExercise(
     actions: FitnessActions,
     onToggle: () -> Unit,
     onOpenExercise: (String) -> Unit,
+    onEditExercise: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = FitnessTheme.colors
@@ -292,6 +308,7 @@ private fun WorkoutExercise(
             }
             val target = board.target
             if (target != null && !expanded) {
+                Spacer(Modifier.width(8.dp))
                 val line = FitnessFormat.set(exercise.loadKind, target.weight, target.reps).resolve()
                 val described = stringResource(Res.string.fitness_workout_target, line)
                 Row(
@@ -330,7 +347,18 @@ private fun WorkoutExercise(
                     onDeleteSet = actions.onDeleteSet,
                 )
                 Spacer(Modifier.height(8.dp))
-                GhostButton(stringResource(Res.string.fitness_workout_history), { onOpenExercise(exercise.id) }, Modifier.fillMaxWidth(), icon = Icons.Filled.Insights, tint = colors.textMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    GhostButton(stringResource(Res.string.fitness_workout_history), { onOpenExercise(exercise.id) }, Modifier.weight(1f), icon = Icons.Filled.Insights, tint = colors.textMuted)
+                    // Its shelf, what it works, its rep range: put right from here when the guess was wrong.
+                    RoundIconButton(
+                        Icons.Filled.Edit,
+                        stringResource(Res.string.fitness_exercise_edit),
+                        { onEditExercise(exercise.id) },
+                        Modifier.testTag("fitness_exercise_edit_${exercise.id}"),
+                        tint = colors.textMuted,
+                        fill = colors.surfaceRaised,
+                    )
+                }
             }
         }
     }

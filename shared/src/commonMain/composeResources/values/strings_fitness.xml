@@ -181,6 +181,7 @@
     <!-- Editing an exercise -->
     <string name="fitness_edit_name">Name</string>
     <string name="fitness_edit_shelf">Shelf</string>
+    <string name="fitness_edit_muscle">Mainly works</string>
     <string name="fitness_edit_load">Weight is counted in</string>
     <string name="fitness_edit_reps">Rep range</string>
     <string name="fitness_edit_reps_band">%1$d to %2$d reps</string>

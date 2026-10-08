@@ -521,4 +521,11 @@ class ProgressionTest {
     fun aMedianExactlyBetweenTwoStepsSnapsToTheSmallerOne() {
         assertEquals(5.0, Progression.inferIncrement(listOf(100.0, 107.5, 115.0), 5.0))
     }
+
+    @Test
+    fun theUsualJumpIsTheCommonestGapAndATieGoesToTheFallback() {
+        assertEquals(20.0, Progression.inferIncrement(listOf(180.0, 200.0, 220.0, 230.0, 250.0, 270.0, 290.0, 320.0), 10.0))
+        assertEquals(10.0, Progression.inferIncrement(listOf(180.0, 190.0, 210.0), 10.0))
+        assertEquals(5.0, Progression.inferIncrement(listOf(44.0, 45.0, 49.5), 5.0))
+    }
 }

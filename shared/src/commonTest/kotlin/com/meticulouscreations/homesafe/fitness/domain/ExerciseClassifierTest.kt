@@ -272,4 +272,29 @@ class ExerciseClassifierTest {
             assertEquals(LoadKind.WEIGHT, ExerciseClassifier.classify(name).loadKind, name)
         }
     }
+
+    // ---- Names with no heading to place them --------------------------------------------------
+
+    @Test
+    fun aMachineIsNotAChinUp() {
+        // "machine" has "chin" in it, which once sent every chest machine to the back shelf.
+        for (name in listOf("Chest press machine", "Incline press machine", "Chest fly machine", "Smith machine incline")) {
+            val guess = ExerciseClassifier.classify(name)
+            assertEquals(BodyPart.CHEST, guess.bodyPart, name)
+            assertEquals(Muscle.CHEST, guess.primary, name)
+        }
+    }
+
+    @Test
+    fun shortWordsAreOnlyMatchedWhole() {
+        assertEquals(BodyPart.CHEST, ExerciseClassifier.classify("Flat bench").bodyPart)
+        assertEquals(BodyPart.CHEST, ExerciseClassifier.classify("Narrow push up").bodyPart)
+        assertEquals(BodyPart.BACK, ExerciseClassifier.classify("Chin ups").bodyPart)
+        assertEquals(BodyPart.BACK, ExerciseClassifier.classify("Mid row machine").bodyPart)
+        assertEquals(BodyPart.BACK, ExerciseClassifier.classify("Lat pulldown").bodyPart)
+        // A strap is not a trap, and a hamstring is not a ring.
+        assertEquals(Muscle.TRICEPS, ExerciseClassifier.classify("Long cable straps", BodyPart.TRICEPS).primary)
+        assertEquals(Equipment.OTHER, ExerciseClassifier.classify("Hamstring curl").equipment)
+        assertEquals(Equipment.BODYWEIGHT, ExerciseClassifier.classify("Ring pull ups").equipment)
+    }
 }

@@ -57,15 +57,29 @@ object ExerciseClassifier {
 
     private fun String.has(vararg words: String) = words.any { contains(it) }
 
-    /** The shelf a name belongs on when no heading said. The order settles the overlaps: a leg curl is not a curl, a rear delt row is not a row. */
+    /**
+     * The shelf a name belongs on when no heading said. The order settles the overlaps: a leg
+     * curl is not a curl, a rear delt row is not a row. Short words are matched whole (the
+     * leading space): "chin" is in every "machine", "lat" in "flat", "row" in "narrow".
+     */
     private fun bodyPart(n: String): BodyPart = when {
         n.has(" ab ", " abs ", "crunch", "plank", "hip flexion") -> BodyPart.CORE
-        n.has("leg ", "squat", "calf", "hamstring", "quad", "glute", "abductor", "adductor", "lunge", "hip ", "deadlift") -> BodyPart.LEGS
-        n.has("delt", "shoulder", "military", "lateral", "rotator", "overhead press") -> BodyPart.SHOULDERS
+
+        n.has(" leg ", " legs ", "squat", "calf", "hamstring", " quad", "glute", "abductor", "adductor", "lunge", " hip ", "deadlift") -> BodyPart.LEGS
+
+        n.has("delt", "shoulder", "military", " lateral", "rotator", "overhead press") -> BodyPart.SHOULDERS
+
         n.has("tricep", "push down", "pushdown", "skull", " dip") -> BodyPart.TRICEPS
+
         n.has("curl", "bicep", "hammer", "forearm") -> BodyPart.BICEPS
-        n.has("lat ", "pulldown", "pull down", "pull up", "pullup", "row", "trap", "shrug", "chin") -> BodyPart.BACK
-        n.has("chest", "bench", "pec", "incline", "push up", "pushup", " fly") -> BodyPart.CHEST
+
+        n.has("chest", " pec ", " pecs ", "pec deck", "bench", "push up", "pushup", " fly") -> BodyPart.CHEST
+
+        n.has(" lat ", " lats ", "pulldown", "pull down", "pull up", "pullup", " row", " trap", "shrug", " chin") -> BodyPart.BACK
+
+        // Said of a press with nothing else to go on, it is a chest press.
+        n.has("incline", "decline") -> BodyPart.CHEST
+
         else -> BodyPart.CORE
     }
 
@@ -82,7 +96,7 @@ object ExerciseClassifier {
 
         n.has("machine", "hack squat", "leg press", "extension", "abductor", "adductor", "pulldown", "pull down", "leg curl", " fly", "high row", " press ") && !n.has("bench") -> Equipment.MACHINE
 
-        n.has("pull up", "pullup", " dip", "pistol", "push up", "pushup", "chin up", "ring ") -> Equipment.BODYWEIGHT
+        n.has("pull up", "pullup", " dip", "pistol", "push up", "pushup", " chin up", " ring ") -> Equipment.BODYWEIGHT
 
         // Named for the lift alone, it is the barbell one.
         n.has("bench", "squat", "deadlift") -> Equipment.BARBELL
@@ -99,9 +113,9 @@ object ExerciseClassifier {
         BodyPart.BACK -> when {
             n.has("rear delt") -> Muscle.REAR_DELTS to listOf(Muscle.TRAPS)
             n.has("shrug") -> Muscle.TRAPS to emptyList()
-            n.has("trap") -> Muscle.TRAPS to listOf(Muscle.BACK, Muscle.REAR_DELTS)
+            n.has(" trap") -> Muscle.TRAPS to listOf(Muscle.BACK, Muscle.REAR_DELTS)
             n.has("straight arm", "pullover") -> Muscle.BACK to emptyList()
-            n.has("row") -> Muscle.BACK to listOf(Muscle.BICEPS, Muscle.REAR_DELTS)
+            n.has(" row") -> Muscle.BACK to listOf(Muscle.BICEPS, Muscle.REAR_DELTS)
             else -> Muscle.BACK to listOf(Muscle.BICEPS)
         }
 
@@ -117,7 +131,7 @@ object ExerciseClassifier {
         }
 
         BodyPart.SHOULDERS -> when {
-            n.has("rear delt") && n.has("row") -> Muscle.REAR_DELTS to listOf(Muscle.BACK)
+            n.has("rear delt") && n.has(" row") -> Muscle.REAR_DELTS to listOf(Muscle.BACK)
 
             n.has("rear delt", "rotator", "face pull") -> Muscle.REAR_DELTS to emptyList()
 

@@ -1754,12 +1754,13 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.CardLabel(title: kotlin
     - color: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.ChipRow(options: kotlin.collections.List<kotlin.Pair<kotlin.String, kotlin.String>>, selected: kotlin.String, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.ChipRow(options: kotlin.collections.List<kotlin.Pair<kotlin.String, kotlin.String>>, selected: kotlin.String, tag: kotlin.String, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
   params:
     - options: RUNTIME (requires runtime check)
     - selected: STABLE (String is immutable)
+    - tag: STABLE (String is immutable)
     - onSelect: STABLE (function type)
 
 @Composable
@@ -2185,7 +2186,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.VolumeRow(volume: com.me
     - volume: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutExercise(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, entry: com.meticulouscreations.homesafe.fitness.WorkoutEntry?, state: com.meticulouscreations.homesafe.fitness.FitnessUiState, expanded: kotlin.Boolean, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onToggle: kotlin.Function0<kotlin.Unit>, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutExercise(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, entry: com.meticulouscreations.homesafe.fitness.WorkoutEntry?, state: com.meticulouscreations.homesafe.fitness.FitnessUiState, expanded: kotlin.Boolean, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onToggle: kotlin.Function0<kotlin.Unit>, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2197,10 +2198,11 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutExercise(board: c
     - actions: STABLE (marked @Stable or @Immutable)
     - onToggle: STABLE (function type)
     - onOpenExercise: STABLE (function type)
+    - onEditExercise: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2209,6 +2211,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: co
     - padding: STABLE (marked @Stable or @Immutable)
     - actions: STABLE (marked @Stable or @Immutable)
     - onOpenExercise: STABLE (function type)
+    - onEditExercise: STABLE (function type)
     - onFinish: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - initiallyOpen: STABLE (class with no mutable properties)

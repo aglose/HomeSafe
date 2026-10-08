@@ -380,4 +380,31 @@ class NotesImportTest {
         val result = NotesImport.plan(parsed, emptyList(), listOf(have), NOW)
         assertEquals(4, result.exercises.single { it.exercise.id == "legs/hack-squat" }.sets.size)
     }
+
+    // ---- An exercise the app already has, under another shelf ---------------------------------
+
+    @Test
+    fun withNoHeadingAnExerciseTheAppHasByThatNameIsTheOneMeantWhereverItIsFiled() {
+        val misfiled = Exercise(id = "back/chest-press-machine", name = "Chest press machine", bodyPart = BodyPart.BACK, primary = Muscle.BACK)
+        val again = NotesImport.plan(NotesParser.parse("Chest press machine\n- 180lbs - 12 reps"), listOf(misfiled), emptyList(), NOW)
+        val item = again.exercises.single()
+        assertFalse(item.isNew)
+        assertEquals(misfiled, item.exercise)
+        assertEquals(listOf("back/chest-press-machine"), item.sets.map { it.exerciseId })
+    }
+
+    @Test
+    fun underAHeadingAnExerciseOfTheSameNameOnAnotherShelfIsADifferentOne() {
+        val tris = Exercise(id = "triceps/single-arm-cable", name = "Single arm cable", bodyPart = BodyPart.TRICEPS, primary = Muscle.TRICEPS)
+        val item = NotesImport.plan(NotesParser.parse("Bis\nSingle arm cable\n- 22lbs - 17 reps"), listOf(tris), emptyList(), NOW).exercises.single()
+        assertTrue(item.isNew)
+        assertEquals("biceps/single-arm-cable", item.exercise.id)
+    }
+
+    @Test
+    fun twoCloseWeightsInADumbbellLadderAreNotAOnePoundJump() {
+        val item = NotesImport.plan(NotesParser.parse("Bis\nStanding dumbbell\n- 44lbs - 15 reps\n- 45lbs - 11 reps\n- 49.5lbs - 13 reps"), emptyList(), emptyList(), NOW).exercises.single()
+        assertEquals(Equipment.DUMBBELL, item.exercise.equipment)
+        assertEquals(5.0, item.exercise.increment)
+    }
 }

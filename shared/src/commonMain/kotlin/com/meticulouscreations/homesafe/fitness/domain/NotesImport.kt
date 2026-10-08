@@ -39,13 +39,17 @@ data class ImportPlan(val exercises: List<ImportedExercise> = emptyList(), val s
 object NotesImport {
     fun plan(parsed: ParsedNotes, exercises: List<Exercise>, sets: List<LoggedSet>, nowEpochSeconds: Long): ImportPlan {
         val existing = exercises.associateBy { it.id }
+        val byName = exercises.groupBy { it.name.lowercase() }
         val have = sets.mapTo(HashSet()) { SetKey(it.exerciseId, it.weight, it.reps, it.epochSeconds) }
         val batch = HashSet<SetKey>()
         // By id: the same exercise can turn up twice in the notes (under its shelf's heading, and again in an old log with none).
         val planned = LinkedHashMap<String, ImportedExercise>()
         for (note in parsed.exercises) {
             val guess = ExerciseClassifier.classify(note.name, note.section)
-            val id = Exercise.idFor(guess.bodyPart, note.name)
+            // With no heading to say where it goes, an exercise the app already has under that name is the one meant,
+            // wherever it was put since: a guess must not make a second copy of something that was moved or renamed back.
+            val named = if (note.section == null) byName[note.name.lowercase()]?.singleOrNull() else null
+            val id = named?.id ?: Exercise.idFor(guess.bodyPart, note.name)
             val known = existing[id]
             val earlier = planned[id]
             val exercise = known ?: earlier?.exercise ?: newExercise(id, note, guess)
@@ -87,20 +91,30 @@ object NotesImport {
             LoadKind.PLATES -> 50.0
             else -> guess.increment
         }
+        // Written as a pair, it is dumbbells unless its name says it is a bar loaded a side.
+        val paired = loadKind == LoadKind.PER_HAND && !note.name.contains("bar", ignoreCase = true) && !note.name.contains("ez", ignoreCase = true)
+        val equipment = if (paired) Equipment.DUMBBELL else guess.equipment
         return Exercise(
             id = id,
             name = note.name,
             bodyPart = guess.bodyPart,
-            // Written as a pair, it is dumbbells unless its name says it is a bar loaded a side.
-            equipment = if (loadKind == LoadKind.PER_HAND && !note.name.contains("bar", ignoreCase = true) && !note.name.contains("ez", ignoreCase = true)) Equipment.DUMBBELL else guess.equipment,
+            equipment = equipment,
             loadKind = loadKind,
             primary = guess.primary,
             secondary = guess.secondary,
             repLow = band.first,
             repHigh = band.last,
-            increment = Progression.inferIncrement(ladder.keys.filter { it > 0.0 } + note.openWeights, fallbackStep),
+            increment = Progression.inferIncrement(ladder.keys.filter { it > 0.0 } + note.openWeights, fallbackStep).coerceAtLeast(smallestStep(equipment, loadKind)),
             restSeconds = guess.restSeconds,
         )
+    }
+
+    /** The smallest jump the equipment allows: two close weights in a ladder (a 44 and a 45, from two gyms' racks) are not a one-pound step. */
+    private fun smallestStep(equipment: Equipment, loadKind: LoadKind): Double = when {
+        loadKind == LoadKind.LEVEL -> 1.0
+        equipment == Equipment.DUMBBELL -> 2.5
+        equipment == Equipment.BARBELL || equipment == Equipment.SMITH || equipment == Equipment.PLATE_LOADED -> 5.0
+        else -> 1.0
     }
 
     private data class SetKey(val exerciseId: String, val weight: Double, val reps: Int, val epochSeconds: Long)

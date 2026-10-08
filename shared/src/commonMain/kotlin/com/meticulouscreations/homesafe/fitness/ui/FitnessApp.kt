@@ -289,6 +289,7 @@ internal fun FitnessAppContent(
                             padding = pagePadding,
                             actions = actions,
                             onOpenExercise = { pages += FitnessPage.Lift(it) },
+                            onEditExercise = { pages += FitnessPage.Edit(it) },
                             onFinish = {
                                 actions.onFinishWorkout()
                                 pages.remove(FitnessPage.Workout)

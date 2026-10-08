@@ -204,16 +204,17 @@ object Progression {
     }
 
     /**
-     * The usual jump between weights on an exercise, read off the gaps in its ladder (their
-     * median, snapped to a size plates and stacks come in). Fewer than two gaps falls back to
-     * [fallback].
+     * The usual jump between weights on an exercise, read off the gaps in its ladder: each gap
+     * snapped to a size plates and stacks come in, and the commonest taken (the one nearest
+     * [fallback] when two are as common). Fewer than two gaps falls back to [fallback].
      */
     fun inferIncrement(weights: List<Double>, fallback: Double): Double {
         val sorted = weights.distinct().sorted()
-        val gaps = sorted.zipWithNext { a, b -> b - a }.filter { it > 0.0 }.sorted()
+        val gaps = sorted.zipWithNext { a, b -> b - a }.filter { it > 0.0 }
         if (gaps.size < 2) return fallback
-        val median = gaps[(gaps.size - 1) / 2]
-        return NICE_STEPS.minBy { abs(it - median) }
+        val counts = gaps.groupingBy { gap -> NICE_STEPS.minBy { abs(it - gap) } }.eachCount()
+        val most = counts.values.max()
+        return counts.filterValues { it == most }.keys.minBy { abs(it - fallback) }
     }
 
     private val NICE_STEPS = listOf(1.0, 2.5, 5.0, 10.0, 20.0, 50.0)

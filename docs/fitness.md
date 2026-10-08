@@ -129,7 +129,12 @@ has been edited in the app is left as it is.
 
 A line it can make nothing of is listed on the page instead of guessed at. `ExerciseClassifier`
 fills in the rest of an exercise from its name (what it is done on, which muscles it works, how
-long to rest).
+long to rest). A note pasted without its title has no heading to say which shelf it is for, so
+each exercise is placed by its own name; the chips under the text box say it outright. Where
+the guess is wrong, the pencil on an exercise (in a workout, or on its page) moves it to another
+shelf and sets the muscle it is mainly for. With no heading, an exercise the app already has
+under that name is taken to be the same one wherever it has been filed since, so importing
+again never makes a second copy of something that was moved.
 
 ## How it's drawn
 

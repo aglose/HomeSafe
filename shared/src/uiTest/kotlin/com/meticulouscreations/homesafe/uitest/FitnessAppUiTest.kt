@@ -20,6 +20,8 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
+import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.FitnessActions
@@ -63,6 +65,7 @@ class FitnessAppUiTest {
         val added = mutableListOf<Pair<String, BodyPart>>()
         val importTexts = mutableListOf<String>()
         val deletedExercises = mutableListOf<String>()
+        val saved = mutableListOf<Exercise>()
 
         fun actions() = FitnessActions(
             onClose = { closed++ },
@@ -72,6 +75,7 @@ class FitnessAppUiTest {
             onSkipRest = { restSkipped++ },
             onDismissFlash = { flashDismissed++ },
             onAddExercise = { name, part -> added += name to part },
+            onSaveExercise = { saved += it },
             onDeleteExercise = { deletedExercises += it },
             onStartPhase = { phases += it },
             onLogBodyweight = { weighed += it },
@@ -255,6 +259,34 @@ class FitnessAppUiTest {
         assertEquals(listOf(hackSquat.id), calls.deletedExercises)
         assertNotShown("fitness_edit")
         assertNotShown("fitness_exercise")
+    }
+
+    @Test
+    fun anExerciseOnTheWrongShelfIsMovedFromTheWorkoutAndItsMuscleFollows() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(working = true), calls, page = FitnessPage.Workout)
+        tap("fitness_exercise_edit_${hackSquat.id}")
+        assertShown("fitness_edit")
+        tap("fitness_edit_shelf_chest")
+        tap("fitness_edit_save")
+        val saved = calls.saved.single()
+        assertEquals(hackSquat.id, saved.id)
+        assertEquals(BodyPart.CHEST, saved.bodyPart)
+        assertEquals(Muscle.CHEST, saved.primary)
+        // Back where the edit was opened from.
+        assertShown("fitness_workout")
+    }
+
+    @Test
+    fun theMuscleAnExerciseIsForCanBeSetOnItsOwn() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(), calls, page = FitnessPage.Edit(hackSquat.id))
+        tap("fitness_edit_muscle_glutes")
+        tap("fitness_edit_save")
+        val saved = calls.saved.single()
+        assertEquals(BodyPart.LEGS, saved.bodyPart)
+        assertEquals(Muscle.GLUTES, saved.primary)
+        assertEquals(emptyList(), saved.secondary)
     }
 
     // ---- Progress -----------------------------------------------------------------------------
