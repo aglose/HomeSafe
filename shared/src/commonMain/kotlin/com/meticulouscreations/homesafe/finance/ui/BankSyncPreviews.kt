@@ -16,6 +16,7 @@ import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_relay_outdated
 import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
+import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_notice_linked_named
 import kotlin.time.Clock
 
@@ -133,4 +134,17 @@ private fun FinanceBankSyncProblemPreview() {
 @Composable
 private fun FinanceBankSyncTailscaleOffPreview() {
     BankSyncPreview(BankSyncUiState(loading = false, problem = BankProblem.TAILSCALE_OFF, problemText = UiText.of(Res.string.fin_bank_error_tailscale_off)))
+}
+
+@Preview(name = "Bank sync · linking, Tailscale off", widthDp = 412, heightDp = 1000)
+@Composable
+private fun FinanceBankSyncLinkingTailscaleOffPreview() {
+    BankSyncPreview(
+        BankSyncUiState(
+            bank = BankSyncFixtures.linked,
+            loading = false,
+            linking = BankLinking("link-1", "https://secure.plaid.com/hl/example", Clock.System.now().epochSeconds + 1_800, opened = true),
+            notice = BankNotice(UiText.of(Res.string.fin_bank_linking_tailscale_off), isError = true),
+        ),
+    )
 }

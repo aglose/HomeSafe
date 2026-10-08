@@ -230,6 +230,8 @@ class BankSyncViewModelTest {
         // Another VPN on to sign in to the bank: Tailscale is off for a good while, then back.
         val off = BankSyncException(BankProblem.TAILSCALE_OFF, UiText.of(Res.string.fin_bank_error_tailscale_off))
         val repo = FakeRepository().apply {
+            // The read the relay starts on the new institution, followed once the link is made.
+            statuses += Result.success(bank("Robinhood"))
             repeat(3 * BankSyncViewModel.LINK_POLL_FAILURES) { progress += Result.failure(off) }
             progress += Result.success(BankLinkProgress(BankLinkStatus.LINKED, listOf("Robinhood"), bank("Robinhood", syncing = true)))
         }
