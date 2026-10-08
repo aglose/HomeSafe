@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's heart rate: the live reading and its zone on a workout, the recovery line in
+  the rest timer, the last workout's time in zone on Today, and the page where a sensor is
+  connected and the zones are set. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_heart_title">Heart rate</string>
+    <string name="fitness_heart_open">Heart rate and zones</string>
+
+    <!-- The five zones, easiest first -->
+    <string name="fitness_heart_zone_1">Very light</string>
+    <string name="fitness_heart_zone_2">Light</string>
+    <string name="fitness_heart_zone_3">Moderate</string>
+    <string name="fitness_heart_zone_4">Hard</string>
+    <string name="fitness_heart_zone_5">Maximum</string>
+    <!-- Under zone 1 -->
+    <string name="fitness_heart_zone_below">Resting</string>
+    <!-- A small capital label over a zone's number -->
+    <string name="fitness_heart_zone_label">Zone</string>
+    <!-- %1$d the zone's number, %2$s its name: "Zone 3 · Moderate" -->
+    <string name="fitness_heart_zone_line">Zone %1$d · %2$s</string>
+    <!-- A zone's beats a minute, lowest to highest -->
+    <string name="fitness_heart_zone_range">%1$d–%2$d bpm</string>
+
+    <!-- The live reading -->
+    <string name="fitness_heart_bpm">bpm</string>
+    <string name="fitness_heart_no_reading">––</string>
+    <string name="fitness_heart_set_max">Set your max heart rate to see zones</string>
+    <!-- For a screen reader: %1$d beats a minute, %2$d the zone's number, %3$s its name -->
+    <string name="fitness_heart_described_zone">Heart rate %1$d beats a minute, zone %2$d, %3$s</string>
+    <string name="fitness_heart_described">Heart rate %1$d beats a minute</string>
+    <!-- For a screen reader, with no reading: %1$s what the sensor is doing -->
+    <string name="fitness_heart_described_status">Heart rate. %1$s</string>
+
+    <!-- What the sensor is doing. %1$s its name -->
+    <string name="fitness_heart_status_off">Not connected</string>
+    <string name="fitness_heart_status_unsupported">Heart rate isn't available on this device.</string>
+    <string name="fitness_heart_status_permission">Bluetooth isn't allowed yet</string>
+    <string name="fitness_heart_status_bluetooth_off">Bluetooth is off</string>
+    <string name="fitness_heart_status_searching">Looking for sensors…</string>
+    <string name="fitness_heart_status_scanning">Looking for %1$s…</string>
+    <string name="fitness_heart_status_connecting">Connecting to %1$s…</string>
+    <string name="fitness_heart_status_lost">Lost %1$s. Trying again…</string>
+    <string name="fitness_heart_status_connected">Connected to %1$s</string>
+    <string name="fitness_heart_status_waiting">Connected. No heart rate yet: is the band on your wrist?</string>
+    <!-- A sensor that gave no name -->
+    <string name="fitness_heart_sensor_unnamed">Heart-rate sensor</string>
+
+    <!-- The zone changed. %1$d the new zone's number, %2$s its name -->
+    <string name="fitness_heart_notice_up">Up to zone %1$d · %2$s</string>
+    <string name="fitness_heart_notice_down">Down to zone %1$d · %2$s</string>
+    <string name="fitness_heart_notice_resting">Down below zone 1</string>
+
+    <!-- In the rest timer: the highest the heart read since the set, and now -->
+    <string name="fitness_heart_recovery">%1$d → %2$d bpm</string>
+    <string name="fitness_heart_recovery_level">%1$d bpm</string>
+    <!-- For a screen reader: %1$d now, %2$d how far it has fallen -->
+    <string name="fitness_heart_recovery_described">Heart rate %1$d, down %2$d since the set</string>
+
+    <!-- Time in a zone -->
+    <string name="fitness_heart_time_minutes">%1$d min</string>
+    <string name="fitness_heart_time_seconds">%1$d s</string>
+    <string name="fitness_heart_time_none">–</string>
+    <!-- For a screen reader: %1$d the zone's number, %2$s its name, %3$s how long -->
+    <string name="fitness_heart_time_described">Zone %1$d, %2$s: %3$s</string>
+
+    <!-- Today: the last workout a sensor was on for -->
+    <string name="fitness_heart_last_title">Last workout's heart</string>
+    <!-- %1$s the workout (Legs), %2$s when (Yesterday) -->
+    <string name="fitness_heart_last_when">%1$s · %2$s</string>
+    <string name="fitness_heart_last_average">Average bpm</string>
+    <string name="fitness_heart_last_peak">Peak bpm</string>
+    <string name="fitness_heart_last_recorded">Recorded</string>
+
+    <!-- The page: the sensor -->
+    <string name="fitness_heart_sensor_title">Sensor</string>
+    <string name="fitness_heart_sensor_instruction">In Google Health, open your band's Connections and set Share heart rate to Always visible. Until that's on, the band can't be found.</string>
+    <string name="fitness_heart_sensor_find">Find my sensor</string>
+    <string name="fitness_heart_sensor_connect">Connect</string>
+    <string name="fitness_heart_sensor_allow">Allow Bluetooth</string>
+    <string name="fitness_heart_sensor_permission">Finding the band needs the Nearby devices permission. If nothing pops up when you tap, allow it for this app in the system's settings.</string>
+    <string name="fitness_heart_sensor_stop">Stop looking</string>
+    <string name="fitness_heart_sensor_forget">Forget this sensor</string>
+    <string name="fitness_heart_sensor_found">Sensors nearby</string>
+    <string name="fitness_heart_sensor_found_none">None yet. Keep the band close, and check sharing is on.</string>
+    <!-- For a screen reader, on a sensor in the list: %1$s its name -->
+    <string name="fitness_heart_sensor_use">Use %1$s</string>
+    <!-- How strong a sensor's signal is, which is how near it is -->
+    <string name="fitness_heart_signal_near">Very close</string>
+    <string name="fitness_heart_signal_mid">Close by</string>
+    <string name="fitness_heart_signal_far">Far away</string>
+
+    <!-- The page: the zones -->
+    <string name="fitness_heart_zones_title">Zones</string>
+    <string name="fitness_heart_zones_mode_max">I know my max</string>
+    <string name="fitness_heart_zones_mode_age">Estimate from age</string>
+    <string name="fitness_heart_zones_max">Max heart rate</string>
+    <string name="fitness_heart_zones_max_less">Lower max</string>
+    <string name="fitness_heart_zones_max_more">Higher max</string>
+    <string name="fitness_heart_zones_age">Age</string>
+    <string name="fitness_heart_zones_age_less">Younger</string>
+    <string name="fitness_heart_zones_age_more">Older</string>
+    <string name="fitness_heart_zones_resting_use">Use resting heart rate</string>
+    <string name="fitness_heart_zones_resting">Resting</string>
+    <string name="fitness_heart_zones_resting_less">Lower resting rate</string>
+    <string name="fitness_heart_zones_resting_more">Higher resting rate</string>
+    <!-- %1$d the estimated maximum -->
+    <string name="fitness_heart_zones_estimated">Estimated max %1$d bpm (208 − 0.7 × age). It can be ten beats out either way; enter your own if you know it.</string>
+    <!-- %1$d the resting heart rate -->
+    <string name="fitness_heart_zones_reserve">Zones are drawn on the reserve between %1$d at rest and your max, which lifts the easy ones.</string>
+    <string name="fitness_heart_zones_save">Save zones</string>
+    <string name="fitness_heart_zones_saved">Saved</string>
+
+    <!-- The page: what to expect -->
+    <string name="fitness_heart_notes_title">Good to know</string>
+    <string name="fitness_heart_notes_accuracy">A wrist sensor can read wrong while you grip a bar. Treat the numbers as a guide, and judge the set by the set.</string>
+    <string name="fitness_heart_notes_screen">Heart rate is followed while this app is on screen. With the phone locked or another app in front it stops, and picks up when you come back.</string>
+</resources>
