@@ -16,6 +16,8 @@ import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials
 
 // FragmentActivity (rather than plain ComponentActivity) is required by androidx.biometric's
@@ -80,10 +82,16 @@ class MainActivity : FragmentActivity() {
      * Hands a tapped notification's detection to the shell, which opens it full screen once it
      * exists (after sign-in, on a cold start). Our own notifications carry it as a
      * `homesafe://moment` URI; a push Android drew by itself (from a relay that still sends a
-     * notification block) carries the relay's data as extras on the launch intent instead.
+     * notification block) carries the relay's data as extras on the launch intent instead. A
+     * weather notification carries `homesafe://weather`, and opens the weather app the same way.
      */
     private fun openMomentFrom(intent: Intent?) {
         if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return
+        // A weather notification's tap: the weather app, not a camera.
+        if (WeatherDeepLink.matches(intent.dataString)) {
+            WeatherDeepLinks.open()
+            return
+        }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)
             ?: MomentDeepLink.from { key -> intent.getStringExtra(key) }
             ?: return

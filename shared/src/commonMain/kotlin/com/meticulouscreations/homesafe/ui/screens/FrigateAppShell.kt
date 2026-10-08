@@ -85,15 +85,19 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
+import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
+import com.meticulouscreations.homesafe.weather.WeatherViewModel
+import com.meticulouscreations.homesafe.weather.ui.WeatherApp
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.shell_app_title
@@ -120,6 +124,9 @@ import org.jetbrains.compose.resources.stringResource
  * under a native tab bar, shares one across all three. [onTabSelected] is how that host hears
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
+/** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
+internal enum class InnerApp { FINANCE, WEATHER }
+
 @Stable
 internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
     val topLevel = TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home)
@@ -135,37 +142,44 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /** Whether the drawer the top bar's menu button opens is out. */
     var drawerOpen by mutableStateOf(false)
 
-    /** Whether the finance app is up over the shell (opened from the drawer). */
-    var financeOpen by mutableStateOf(false)
+    /** Which of the apps inside PercySafe the overlay holds: the one that is up, or the one on its way out. */
+    var app by mutableStateOf(InnerApp.FINANCE)
         private set
 
-    /** Where the drawer's Finance card was, in the shell's coordinates: where the finance app grows from. */
-    var financeOrigin by mutableStateOf(Offset.Zero)
+    /** Whether one of those apps ([app]) is up over the shell (opened from the drawer, or by a notification). */
+    var appOpen by mutableStateOf(false)
         private set
 
-    /** True once the finance app fully covers the shell, which then stops drawing (and streaming) what's under it. */
-    var financeCovering by mutableStateOf(false)
+    /** Where the drawer's card for it was, in the shell's coordinates: where the app grows from. */
+    var appOrigin by mutableStateOf(Offset.Zero)
+        private set
+
+    /** True once the app fully covers the shell, which then stops drawing (and streaming) what's under it. */
+    var appCovering by mutableStateOf(false)
 
     /**
-     * The tab whose composition opened the finance app. Under the iOS 26 host every tab draws the
-     * shell's overlays, and only this one should build the app.
+     * The tab whose composition opened the app. Under the iOS 26 host every tab draws the
+     * shell's overlays, and only this one should build it.
      */
-    var financeHost by mutableStateOf<TopLevelRoute?>(null)
+    var appHost by mutableStateOf<TopLevelRoute?>(null)
         private set
 
-    fun openFinance(origin: Offset, from: TopLevelRoute) {
-        financeOrigin = origin
-        financeHost = from
-        financeOpen = true
+    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute) {
+        app = which
+        appOrigin = origin
+        appHost = from
+        appOpen = true
         drawerOpen = false
     }
 
-    fun closeFinance() {
-        financeOpen = false
+    fun closeApp() {
+        appOpen = false
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
-        financeCovering = false
+        appCovering = false
     }
+
+    fun isOpen(which: InnerApp): Boolean = appOpen && app == which
 
     /** The tab that is up, as far as Compose knows; under a native tab bar the bar itself is the truth. */
     val selectedTab: TopLevelRoute get() = topLevel.topLevelKey
@@ -204,12 +218,12 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
      * Whether the shell's nav (the floating pill, or the rail beside a phone on its side) belongs
      * over [tab]: not over the car-tagging screen, which wants every pixel for the frame, nor the
      * clip editor, which is full screen, nor a camera that has the window to itself
-     * ([showsFullScreenVideo]), nor while the finance app (which has its own) is up, nor under
+     * ([showsFullScreenVideo]), nor while the finance or weather app (which have their own) is up, nor under
      * the drawer — under iOS 26's native bar that would stay on top of the drawer's scrim and
      * switch tabs behind it.
      */
     fun showsBottomNav(tab: TopLevelRoute): Boolean =
-        !financeOpen &&
+        !appOpen &&
             !drawerOpen &&
             !showsFullScreenVideo(tab) &&
             !(tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CarTaggingRoute || it is ClipEditorRoute })
@@ -268,7 +282,7 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     private fun openDetection(cameraName: String, startEpochSeconds: Double, eventId: String, tagCar: Boolean) {
         // A notification tap lands on the camera whatever was over the shell.
         drawerOpen = false
-        closeFinance()
+        closeApp()
         val route = CameraDetailRoute(
             cameraName = cameraName,
             warmStreamUrl = null,
@@ -297,6 +311,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
             MomentDeepLinks.consume(link)
         }
     }
+
+    /**
+     * Opens the weather app whenever a weather notification's tap asks for it, for as long as the
+     * caller runs: over whatever tab is up, with no card to grow from. Consumed here for the same
+     * reason a moment's link is: a tap that cold-starts the app has to wait out the sign-in screen.
+     */
+    suspend fun openWeatherFromNotifications() {
+        WeatherDeepLinks.pending.filter { it }.collect {
+            openApp(InnerApp.WEATHER, Offset.Zero, selectedTab)
+            WeatherDeepLinks.consume()
+        }
+    }
 }
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
@@ -310,6 +336,7 @@ fun FrigateAppShell() {
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
     LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
+    LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     val compactLandscape = isCompactLandscape()
     SideEffect { nav.compactLandscape = compactLandscape }
 
@@ -321,8 +348,8 @@ fun FrigateAppShell() {
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
-        contentCovered = nav.financeCovering,
-        contentObscured = nav.drawerOpen || nav.financeOpen,
+        contentCovered = nav.appCovering,
+        contentObscured = nav.drawerOpen || nav.appOpen,
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -373,8 +400,8 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         selectedTab = tab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, tab) },
-        contentCovered = nav.financeCovering,
-        contentObscured = nav.drawerOpen || nav.financeOpen,
+        contentCovered = nav.appCovering,
+        contentObscured = nav.drawerOpen || nav.appOpen,
     ) {
         TabContent(tab, nav, cardZoom)
     }
@@ -397,8 +424,9 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 
 /**
  * Everything the shell draws over its tabs and bars: the pinched camera card's layer, the drawer,
- * and the finance app. The finance state is only polled while this composition is on screen —
- * under the iOS 26 host each tab has its own, and only the visible one may run it.
+ * and the app opened from it (finance, or weather). Their state is only fetched while this
+ * composition is on screen — under the iOS 26 host each tab has its own, and only the visible
+ * one may run it.
  */
 // Overlays, not a laid-out element: each piece fills the scaffold's layer itself.
 @Suppress("ktlint:compose:modifier-missing-check")
@@ -409,27 +437,40 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
     val financeState by finance.uiState.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
-    LaunchedEffect(visible, nav.drawerOpen, nav.financeOpen) {
-        finance.setActive(visible && (nav.drawerOpen || nav.financeOpen), full = nav.financeOpen)
+    val financeUp = nav.isOpen(InnerApp.FINANCE)
+    LaunchedEffect(visible, nav.drawerOpen, financeUp) {
+        finance.setActive(visible && (nav.drawerOpen || financeUp), full = financeUp)
+    }
+    val weather: WeatherViewModel = metroViewModel()
+    val weatherState by weather.uiState.collectAsStateWithLifecycle()
+    val weatherUp = nav.isOpen(InnerApp.WEATHER)
+    LaunchedEffect(visible, nav.drawerOpen, weatherUp) {
+        weather.setActive(visible && (nav.drawerOpen || weatherUp), full = weatherUp)
     }
     ShellDrawer(
         open = nav.drawerOpen,
         selectedTab = tab,
         finance = financeState,
+        weather = weatherState,
         onSelectTab = { route ->
             nav.drawerOpen = false
             nav.selectTab(route)
         },
-        onOpenFinance = { origin -> nav.openFinance(origin, tab) },
+        onOpenFinance = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) },
+        onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
         onClose = { nav.drawerOpen = false },
     )
-    if (nav.financeHost == tab) {
-        FinanceOverlay(
-            open = nav.financeOpen,
-            origin = nav.financeOrigin,
-            onClose = nav::closeFinance,
-            onCovering = { nav.financeCovering = it },
-        )
+    if (nav.appHost == tab) {
+        InnerAppOverlay(
+            open = nav.appOpen,
+            origin = nav.appOrigin,
+            onCovering = { nav.appCovering = it },
+        ) {
+            when (nav.app) {
+                InnerApp.FINANCE -> FinanceApp(onClose = nav::closeApp, active = nav.appOpen)
+                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen)
+            }
+        }
     }
 }
 
@@ -471,8 +512,8 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * of every page. It comes and goes with [showBottomNav] as the pill does.
  *
  * [overlay] is drawn last, over the bars too: the layer a pinched camera card's video lifts into,
- * the drawer, and the finance app. [contentCovered] says an overlay hides everything beneath it;
- * [contentObscured] that one is over it (the drawer's scrim, or the finance app opening), so it
+ * the drawer, and the app opened from it. [contentCovered] says an overlay hides everything beneath it;
+ * [contentObscured] that one is over it (the drawer's scrim, or that app opening), so it
  * leaves the accessibility tree.
  *
  * [immersive] gives the content the whole window, cutout and all: a camera's video, full screen
@@ -492,7 +533,7 @@ internal fun ShellScaffold(
     immersive: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    // While an overlay covers the whole shell (the finance app) the tab content isn't drawn at
+    // While an overlay covers the whole shell (the finance or weather app) the tab content isn't drawn at
     // all, so its live players stop; its saveable state is kept here and comes back with it.
     val saveableState = rememberSaveableStateHolder()
     val navRail = showsNavRail()
@@ -510,7 +551,7 @@ internal fun ShellScaffold(
             // cutout, and the navigation bar under three-button navigation.
             .then(if (immersive) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))),
     ) {
-        // Under the drawer or the finance app the shell is out of reach for screen readers too,
+        // Under the drawer or an app opened from it the shell is out of reach for screen readers too,
         // so focus can't wander behind the scrim to a camera or the menu button.
         Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {

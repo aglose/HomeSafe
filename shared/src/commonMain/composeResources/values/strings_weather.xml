@@ -1,0 +1,275 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The weather app's screens: Today, Forecast, Radar, Places, Settings, a warning in full, and the
+  drawer's card. What is said about a forecast (the sky's names, units, sentences, notifications)
+  is in strings_weather_data.xml. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- Shell: tabs, top bar, pushed pages -->
+    <string name="weather_tab_today">Today</string>
+    <string name="weather_tab_forecast">Forecast</string>
+    <string name="weather_tab_radar">Radar</string>
+    <string name="weather_title_places">Places</string>
+    <string name="weather_title_settings">Weather settings</string>
+    <string name="weather_title_alert">Weather warning</string>
+    <string name="weather_close">Close weather</string>
+    <string name="weather_open_places">Places</string>
+    <string name="weather_open_settings">Weather settings</string>
+    <!-- The place the phone is at, when nobody could name it -->
+    <string name="weather_place_current">My location</string>
+    <!-- For a screen reader: %1$s the place, then which of how many it is -->
+    <string name="weather_place_position">%1$s, place %2$d of %3$d</string>
+
+    <!-- Drawer -->
+    <string name="weather_drawer_title">Weather</string>
+    <string name="weather_drawer_subtitle">Sky, forecast and radar</string>
+    <string name="weather_drawer_open">Open weather</string>
+    <string name="weather_drawer_empty">Radar, ten days, and rain alerts</string>
+
+    <!-- Nowhere to forecast for yet -->
+    <string name="weather_welcome_title">Weather, wherever you are</string>
+    <string name="weather_welcome_body">Let the app see where you are, or add a city, and the sky here becomes the sky there.</string>
+    <string name="weather_welcome_add">Add a city</string>
+    <string name="weather_loading">Fetching the forecast…</string>
+    <!-- %1$s the time the forecast on screen was fetched -->
+    <string name="weather_stale">Couldn't refresh. Showing %1$s's forecast.</string>
+    <string name="weather_updated">Updated %1$s</string>
+    <string name="weather_attribution">Weather data by Open-Meteo.com. Warnings from the US National Weather Service.</string>
+
+    <!-- Today: the top -->
+    <string name="weather_now">Now</string>
+    <string name="weather_today">Today</string>
+    <!-- %1$s the high, %2$s the low -->
+    <string name="weather_high_low">H %1$s  L %2$s</string>
+    <string name="weather_feels_like">Feels like %1$s</string>
+    <!-- The hour the sky is being shown for while a finger holds the hourly strip: %1$s is "3 PM" -->
+    <string name="weather_scrub_at">The sky at %1$s</string>
+    <string name="weather_tip_umbrella">Take an umbrella</string>
+    <string name="weather_tip_sunscreen">Sunscreen</string>
+    <string name="weather_tip_layers">Wear layers</string>
+    <string name="weather_tip_coat">Warm coat</string>
+    <string name="weather_tip_ice">Watch for ice</string>
+    <string name="weather_tip_wind">Hold on to your hat</string>
+
+    <!-- Today: cards -->
+    <string name="weather_next_hours_title">Next two hours</string>
+    <string name="weather_next_hours_dry">Mostly dry</string>
+    <string name="weather_minutes_short">%1$d min</string>
+    <string name="weather_hourly_title">Hour by hour</string>
+    <string name="weather_hourly_hint">Hold and slide along the hours to see the sky then</string>
+    <!-- For a screen reader, one hour: %1$s the time, %2$s the temperature, %3$s the sky -->
+    <string name="weather_hour_description">%1$s, %2$s, %3$s</string>
+    <string name="weather_outdoor_title">Best time outside</string>
+    <string name="weather_outdoor_none">No good stretch outside today or tomorrow</string>
+    <!-- %1$s a start hour, %2$s an end hour -->
+    <string name="weather_time_range">%1$s – %2$s</string>
+    <string name="weather_outdoor_great">Lovely</string>
+    <string name="weather_outdoor_good">Pleasant</string>
+    <string name="weather_outdoor_fair">Fair</string>
+    <!-- %1$s one of the three words above, %2$s a temperature -->
+    <string name="weather_outdoor_feels">%1$s · feels like %2$s</string>
+    <string name="weather_radar_card_title">Radar</string>
+    <string name="weather_radar_card_open">Open the radar</string>
+
+    <!-- A warning: %1$s a weekday ("Thu"), %2$s a time -->
+    <string name="weather_alert_from">From %1$s %2$s</string>
+    <string name="weather_alert_until">Until %1$s %2$s</string>
+    <string name="weather_alert_issued_by">Issued by %1$s</string>
+    <string name="weather_alert_what_to_do">What to do</string>
+
+    <!-- Detail tiles -->
+    <string name="weather_tile_uv">UV index</string>
+    <string name="weather_tile_uv_low">Low</string>
+    <string name="weather_tile_uv_moderate">Moderate</string>
+    <string name="weather_tile_uv_high">High</string>
+    <string name="weather_tile_uv_very_high">Very high</string>
+    <string name="weather_tile_uv_extreme">Extreme</string>
+    <!-- %1$d the day's highest UV index, %2$s the hour it comes -->
+    <string name="weather_tile_uv_peak">Peaks at %1$d around %2$s</string>
+    <string name="weather_tile_wind">Wind</string>
+    <string name="weather_tile_wind_calm">Calm</string>
+    <string name="weather_tile_wind_light">Light breeze</string>
+    <string name="weather_tile_wind_breezy">Breezy</string>
+    <string name="weather_tile_wind_windy">Windy</string>
+    <string name="weather_tile_wind_gale">Gale</string>
+    <!-- %1$s a speed with its unit, %2$s a compass point -->
+    <string name="weather_tile_gusts_from">Gusts %1$s, from the %2$s</string>
+    <string name="weather_tile_humidity">Humidity</string>
+    <!-- %1$s the dew point, %2$s how the air feels, one of the five below -->
+    <string name="weather_tile_dew_point">Dew point %1$s · %2$s</string>
+    <string name="weather_tile_humidity_dry">dry air</string>
+    <string name="weather_tile_humidity_pleasant">comfortable</string>
+    <string name="weather_tile_humidity_sticky">a little sticky</string>
+    <string name="weather_tile_humidity_muggy">muggy</string>
+    <string name="weather_tile_humidity_oppressive">oppressive</string>
+    <string name="weather_tile_pressure">Pressure</string>
+    <string name="weather_tile_pressure_rising">Rising: fairer weather on the way</string>
+    <string name="weather_tile_pressure_steady">Steady</string>
+    <string name="weather_tile_pressure_falling">Falling: unsettled weather on the way</string>
+    <string name="weather_tile_visibility">Visibility</string>
+    <string name="weather_tile_visibility_perfect">Perfectly clear</string>
+    <string name="weather_tile_visibility_clear">Clear</string>
+    <string name="weather_tile_visibility_haze">Hazy</string>
+    <string name="weather_tile_visibility_mist">Misty</string>
+    <string name="weather_tile_visibility_fog">Fog</string>
+    <string name="weather_tile_air">Air quality</string>
+    <!-- %1$s a number: micrograms of fine particles per cubic metre -->
+    <string name="weather_tile_air_pm">Fine particles %1$s µg/m³</string>
+    <string name="weather_aqi_good">Good</string>
+    <string name="weather_aqi_moderate">Moderate</string>
+    <string name="weather_aqi_sensitive">Poor for some</string>
+    <string name="weather_aqi_unhealthy">Unhealthy</string>
+    <string name="weather_aqi_very_unhealthy">Very unhealthy</string>
+    <string name="weather_aqi_hazardous">Hazardous</string>
+    <string name="weather_tile_sun">Sun</string>
+    <string name="weather_tile_sunrise">Sunrise</string>
+    <string name="weather_tile_sunset">Sunset</string>
+    <string name="weather_tile_golden_hour">Golden hour</string>
+    <!-- For a screen reader: %1$s sunrise, %2$s sunset -->
+    <string name="weather_tile_sun_description">Sunrise at %1$s, sunset at %2$s</string>
+    <string name="weather_tile_moon">Moon</string>
+    <!-- %1$d a percentage of the moon's face -->
+    <string name="weather_tile_moon_lit">%1$d% lit</string>
+    <!-- %1$s a date ("Oct 25") -->
+    <string name="weather_tile_moon_next_full">Full moon on %1$s</string>
+    <string name="weather_tile_moon_next_new">New moon on %1$s</string>
+    <string name="weather_moon_new">New moon</string>
+    <string name="weather_moon_waxing_crescent">Waxing crescent</string>
+    <string name="weather_moon_first_quarter">First quarter</string>
+    <string name="weather_moon_waxing_gibbous">Waxing gibbous</string>
+    <string name="weather_moon_full">Full moon</string>
+    <string name="weather_moon_waning_gibbous">Waning gibbous</string>
+    <string name="weather_moon_last_quarter">Last quarter</string>
+    <string name="weather_moon_waning_crescent">Waning crescent</string>
+    <string name="weather_tile_precipitation">Precipitation</string>
+    <string name="weather_tile_precipitation_today">today, in all</string>
+    <!-- %1$s an amount with its unit -->
+    <string name="weather_tile_precipitation_tomorrow">%1$s more expected tomorrow</string>
+    <string name="weather_tile_precipitation_none_ahead">A dry day tomorrow</string>
+
+    <!-- Forecast -->
+    <string name="weather_forecast_trend_title">The days ahead</string>
+    <!-- For a screen reader: %1$s the highest high, %2$s the lowest low -->
+    <string name="weather_forecast_trend_description">Highs up to %1$s and lows down to %2$s over the days ahead</string>
+    <plurals name="weather_forecast_days_title">
+        <item quantity="one">%1$d-day forecast</item>
+        <item quantity="other">%1$d-day forecast</item>
+    </plurals>
+    <string name="weather_forecast_less_certain">The fainter days are a week or more off, and less certain.</string>
+    <!-- For a screen reader, one day: %1$s its name, %2$s the sky, %3$s the high, %4$s the low -->
+    <string name="weather_day_description">%1$s: %2$s, high %3$s, low %4$s</string>
+    <string name="weather_day_expanded">Expanded</string>
+    <string name="weather_day_collapsed">Collapsed</string>
+    <!-- %1$s a weekday's full name, %2$s a date -->
+    <string name="weather_day_date">%1$s, %2$s</string>
+    <string name="weather_stat_precipitation">Precipitation</string>
+    <!-- %1$s an amount, %2$s a chance ("80%") -->
+    <string name="weather_stat_amount_chance">%1$s · %2$s</string>
+    <string name="weather_stat_wind">Wind</string>
+    <!-- %1$s a speed, %2$s the gusts' speed -->
+    <string name="weather_stat_wind_gusts">%1$s, gusts %2$s</string>
+    <string name="weather_stat_sunrise">Sunrise</string>
+    <string name="weather_stat_sunset">Sunset</string>
+    <string name="weather_stat_uv">UV index</string>
+    <string name="weather_stat_feels">Feels like</string>
+    <!-- %1$s a high, %2$s a low -->
+    <string name="weather_stat_high_low">%1$s / %2$s</string>
+
+    <!-- Radar -->
+    <string name="weather_radar_play">Play the radar loop</string>
+    <string name="weather_radar_pause">Pause the radar loop</string>
+    <string name="weather_radar_loading">Fetching the radar…</string>
+    <string name="weather_radar_now">Latest</string>
+    <string name="weather_radar_ago">%1$d min ago</string>
+    <string name="weather_radar_ahead">In %1$d min</string>
+    <string name="weather_radar_forecast">Forecast</string>
+    <string name="weather_radar_scrubber">Radar time</string>
+    <string name="weather_radar_recenter">Back to this place</string>
+    <string name="weather_radar_zoom_in">Zoom in</string>
+    <string name="weather_radar_zoom_out">Zoom out</string>
+    <!-- For a screen reader: %1$s the place, %2$s the time of the frame in view -->
+    <string name="weather_radar_map_description">Radar map around %1$s at %2$s</string>
+    <string name="weather_radar_legend_light">Light</string>
+    <string name="weather_radar_legend_moderate">Moderate</string>
+    <string name="weather_radar_legend_heavy">Heavy</string>
+    <string name="weather_radar_legend_extreme">Hail</string>
+    <!-- %1$s is the map's own credit, the line below -->
+    <string name="weather_radar_credit_us">Radar: NOAA MRMS, forecast: NOAA HRRR, via Iowa Environmental Mesonet. %1$s</string>
+    <string name="weather_radar_credit_rainviewer">Radar: RainViewer. %1$s</string>
+    <string name="weather_radar_credit_map">Map © OpenStreetMap contributors.</string>
+
+    <!-- Places -->
+    <string name="weather_places_search_hint">Search for a city</string>
+    <string name="weather_places_clear_search">Clear the search</string>
+    <string name="weather_places_searching">Searching…</string>
+    <string name="weather_places_no_results">Nowhere found called "%1$s"</string>
+    <string name="weather_places_added">Already added</string>
+    <string name="weather_places_add">Add %1$s</string>
+    <string name="weather_places_yours">Your places</string>
+    <string name="weather_places_edit">Edit</string>
+    <string name="weather_places_remove">Remove %1$s</string>
+    <string name="weather_places_move_up">Move %1$s up</string>
+    <string name="weather_places_move_down">Move %1$s down</string>
+    <string name="weather_places_popular">Add a city</string>
+    <string name="weather_places_use_location">Use my location</string>
+    <string name="weather_places_locating">Finding where you are…</string>
+    <string name="weather_places_location_body">With your location, the app opens on the weather where you are, and its rain alerts follow you.</string>
+    <string name="weather_places_location_denied">Location is switched off for this app. Allow it in the system settings, and the app opens on the weather where you are.</string>
+    <string name="weather_city_new_york">New York</string>
+    <string name="weather_city_new_york_region">New York, United States</string>
+    <string name="weather_city_los_angeles">Los Angeles</string>
+    <string name="weather_city_los_angeles_region">California, United States</string>
+    <string name="weather_city_chicago">Chicago</string>
+    <string name="weather_city_chicago_region">Illinois, United States</string>
+    <string name="weather_city_seattle">Seattle</string>
+    <string name="weather_city_seattle_region">Washington, United States</string>
+    <string name="weather_city_san_francisco">San Francisco</string>
+    <string name="weather_city_san_francisco_region">California, United States</string>
+    <string name="weather_city_denver">Denver</string>
+    <string name="weather_city_denver_region">Colorado, United States</string>
+    <string name="weather_city_miami">Miami</string>
+    <string name="weather_city_miami_region">Florida, United States</string>
+    <string name="weather_city_austin">Austin</string>
+    <string name="weather_city_austin_region">Texas, United States</string>
+    <string name="weather_city_boston">Boston</string>
+    <string name="weather_city_boston_region">Massachusetts, United States</string>
+    <string name="weather_city_honolulu">Honolulu</string>
+    <string name="weather_city_honolulu_region">Hawaii, United States</string>
+    <string name="weather_city_london">London</string>
+    <string name="weather_city_london_region">England, United Kingdom</string>
+    <string name="weather_city_paris">Paris</string>
+    <string name="weather_city_paris_region">Île-de-France, France</string>
+    <string name="weather_city_tokyo">Tokyo</string>
+    <string name="weather_city_tokyo_region">Japan</string>
+    <string name="weather_city_sydney">Sydney</string>
+    <string name="weather_city_sydney_region">New South Wales, Australia</string>
+
+    <!-- Settings -->
+    <string name="weather_settings_units">Units</string>
+    <string name="weather_settings_temperature">Temperature</string>
+    <string name="weather_settings_fahrenheit">°F</string>
+    <string name="weather_settings_celsius">°C</string>
+    <string name="weather_settings_measures">Wind, rain and distance</string>
+    <string name="weather_settings_imperial">mph, in</string>
+    <string name="weather_settings_metric">km/h, mm</string>
+    <string name="weather_settings_notices_group">Notifications</string>
+    <string name="weather_settings_notices">Weather notifications</string>
+    <string name="weather_settings_notices_body">The few that change what you do with your day, each said once</string>
+    <string name="weather_settings_notices_unsupported">This device has no notifications for the app to send.</string>
+    <string name="weather_settings_notices_blocked">Notifications are switched off for this app, so none of these can reach you.</string>
+    <string name="weather_settings_notices_turn_on">Allow notifications</string>
+    <string name="weather_settings_notices_soon">Rain and snow on the way</string>
+    <string name="weather_settings_notices_soon_body">When it's about to start where you are, within the hour or so</string>
+    <string name="weather_settings_notices_outlook">Today and tomorrow</string>
+    <string name="weather_settings_notices_outlook_body">A look ahead in the morning and the evening, only when there is rain, snow or a storm in it</string>
+    <string name="weather_settings_notices_severe">Severe weather warnings</string>
+    <string name="weather_settings_notices_severe_body">Government warnings for where you are, whatever the hour</string>
+    <string name="weather_settings_notices_extremes">Wind, heat, cold, sun and air</string>
+    <string name="weather_settings_notices_extremes_body">Added to the look ahead: strong gusts, a first freeze, a big swing in temperature, a very high UV index, unhealthy air</string>
+    <string name="weather_settings_notices_place">These are for where your phone is; when it can't tell, for where it last was. Nothing but warnings is sent between 10 PM and 6 AM.</string>
+    <string name="weather_settings_sky">The sky</string>
+    <string name="weather_settings_still_sky">Hold the sky still</string>
+    <string name="weather_settings_still_sky_body">One picture of the weather in place of moving cloud, rain and snow</string>
+    <string name="weather_settings_about">Where this comes from</string>
+    <string name="weather_settings_about_body">Forecasts, air quality and city search: Open-Meteo.com (CC BY 4.0), from national weather services' models and GeoNames. Warnings and place names in the US: the National Weather Service. Radar over the US: NOAA's MRMS and HRRR, served by the Iowa Environmental Mesonet; elsewhere, RainViewer. Map: © OpenStreetMap contributors. The sun, the moon and the sky itself are worked out on this device.</string>
+</resources>

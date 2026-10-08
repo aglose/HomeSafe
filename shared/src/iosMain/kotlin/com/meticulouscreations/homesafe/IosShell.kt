@@ -71,6 +71,7 @@ class IosShell {
         // What FrigateAppShell's LaunchedEffect does under the Compose nav: this host outlives
         // its tabs' compositions, so it drains notification taps itself, for its whole life.
         MainScope().launch { nav.openMomentsFromNotifications() }
+        MainScope().launch { nav.openWeatherFromNotifications() }
         MainScope().launch {
             snapshotFlow { nav.showsBottomNav(TopLevelRoute.Home) }
                 .distinctUntilChanged()

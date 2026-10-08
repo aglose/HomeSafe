@@ -50,6 +50,16 @@
 
                 <data android:scheme="homesafe" android:host="moment" />
             </intent-filter>
+            <!-- homesafe://weather: the weather app, which is where a weather notification's tap
+                 lands (WeatherDeepLink.kt). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data android:scheme="homesafe" android:host="weather" />
+            </intent-filter>
         </activity>
 
         <!-- Receives pushes from the HomeSafe relay (see androidApp/.../push/) and fresh FCM tokens. -->

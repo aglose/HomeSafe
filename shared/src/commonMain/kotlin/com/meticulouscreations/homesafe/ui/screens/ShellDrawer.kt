@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.filled.WbSunny
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -77,12 +78,18 @@ import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
-import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinancePalette
 import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.weather.WeatherUiState
+import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
+import com.meticulouscreations.homesafe.weather.domain.WeatherKind
+import com.meticulouscreations.homesafe.weather.domain.WeatherStory
+import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
+import com.meticulouscreations.homesafe.weather.ui.sky.SkyScene
+import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_drawer_cameras
@@ -96,6 +103,11 @@ import homesafe.shared.generated.resources.shell_drawer_open_finance
 import homesafe.shared.generated.resources.shell_drawer_section_apps
 import homesafe.shared.generated.resources.shell_drawer_section_home_security
 import homesafe.shared.generated.resources.shell_menu
+import homesafe.shared.generated.resources.weather_drawer_empty
+import homesafe.shared.generated.resources.weather_drawer_open
+import homesafe.shared.generated.resources.weather_drawer_subtitle
+import homesafe.shared.generated.resources.weather_drawer_title
+import homesafe.shared.generated.resources.weather_place_current
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 
@@ -103,9 +115,9 @@ private val DrawerWidth = 304.dp
 
 /**
  * The app drawer the top bar's menu button opens: the camera app's own tabs, and below them the
- * apps that live inside PercySafe — today, Finance, whose card carries a live S&P 500 line so the
- * drawer is worth a glance on its own. Slides in over a scrim; a tap on the scrim, Back, or a
- * swipe to the left closes it.
+ * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside, and
+ * Finance, whose card carries a live S&P 500 line — so the drawer is worth a glance on its own.
+ * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -113,8 +125,10 @@ internal fun ShellDrawer(
     open: Boolean,
     selectedTab: TopLevelRoute,
     finance: FinanceUiState,
+    weather: WeatherUiState,
     onSelectTab: (TopLevelRoute) -> Unit,
     onOpenFinance: (Offset) -> Unit,
+    onOpenWeather: (Offset) -> Unit,
     onClose: () -> Unit,
 ) {
     val progress by animateFloatAsState(
@@ -177,6 +191,8 @@ internal fun ShellDrawer(
                 DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
                 Spacer(Modifier.height(24.dp))
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
+                WeatherDrawerCard(weather, animated = open, onOpen = onOpenWeather)
+                Spacer(Modifier.height(12.dp))
                 FinanceDrawerCard(finance, onOpenFinance)
             }
             Text(
@@ -267,13 +283,84 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
 }
 
 /**
- * The finance app over the whole shell, opening as a circle that grows from [origin] (the drawer
- * card that was tapped) to cover the screen, and draining back toward the menu button when it
- * closes. [onCovering] reports when it fully covers the screen, so the shell can stop drawing
- * — and stop streaming — the cameras underneath.
+ * The weather app's door: the sky over the place it's showing, moving while the drawer is open,
+ * with the temperature, what it's doing there, and the day's one sentence written on it.
  */
 @Composable
-internal fun FinanceOverlay(open: Boolean, origin: Offset, onClose: () -> Unit, onCovering: (Boolean) -> Unit, modifier: Modifier = Modifier) {
+private fun WeatherDrawerCard(weather: WeatherUiState, animated: Boolean, onOpen: (Offset) -> Unit) {
+    var center by remember { mutableStateOf(Offset.Zero) }
+    val shape = RoundedCornerShape(22.dp)
+    val entry = weather.selected
+    val report = entry?.report
+    val scene = remember(entry?.place, report?.current, weather.nowEpochSeconds / 300) {
+        val latitude = entry?.place?.latitude ?: 40.0
+        val longitude = entry?.place?.longitude ?: -100.0
+        report?.let { SkyScene.of(it.current, latitude, longitude, weather.nowEpochSeconds) }
+            ?: SkyScene.of(WeatherKind.MOSTLY_CLEAR, null, 8.0, 270, null, latitude, longitude, weather.nowEpochSeconds)
+    }
+    val secondary = Color(0xD1FFFFFF)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { center = it.boundsInRoot().center }
+            .clip(shape)
+            .border(1.dp, Color(0x33FFFFFF), shape)
+            .clickable(onClickLabel = stringResource(Res.string.weather_drawer_open)) { onOpen(center) }
+            .testTag("drawer_weather"),
+    ) {
+        // Small enough to draw live: the drawer's one moving thing, and stopped when it's shut.
+        WeatherSky(scene, Modifier.matchParentSize(), glass = false, running = animated, freeze = if (weather.preferences.stillSky) SkyFreeze() else null)
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x80000000)))))
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.WbSunny, contentDescription = null, tint = Color(0xFF1F6BD6), modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.weather_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(
+                        entry?.place?.name?.ifBlank { stringResource(Res.string.weather_place_current) } ?: stringResource(Res.string.weather_drawer_subtitle),
+                        maxLines = 1,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = secondary,
+                    )
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
+            }
+            Spacer(Modifier.height(14.dp))
+            if (report != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(WeatherFormat.degrees(report.current.temperatureC, weather.units), style = MaterialTheme.typography.headlineMedium, color = Color.White)
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(report.current.kind.label(report.current.isDay)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                        Text(
+                            remember(report, weather.units, weather.nowEpochSeconds) { WeatherStory.headline(report, weather.units, weather.nowEpochSeconds) }.resolve(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = secondary,
+                            maxLines = 2,
+                        )
+                    }
+                }
+            } else {
+                Text(
+                    entry?.error?.resolve() ?: stringResource(Res.string.weather_drawer_empty),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = secondary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * An app opened from the drawer ([content]: finance, weather), over the whole shell, opening as
+ * a circle that grows from [origin] (the drawer card that was tapped) to cover the screen, and
+ * draining back toward the menu button when it closes. [onCovering] reports when it fully covers
+ * the screen, so the shell can stop drawing — and stop streaming — the cameras underneath.
+ */
+@Composable
+internal fun InnerAppOverlay(open: Boolean, origin: Offset, onCovering: (Boolean) -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val reveal = remember { Animatable(0f) }
     val reportCovering by rememberUpdatedState(onCovering)
     var shown by remember { mutableStateOf(open) }
@@ -311,7 +398,7 @@ internal fun FinanceOverlay(open: Boolean, origin: Offset, onClose: () -> Unit, 
                 alpha = (reveal.value * 2.5f).coerceAtMost(1f)
             },
     ) {
-        FinanceApp(onClose = onClose, active = open)
+        content()
     }
 }
 

@@ -71,3 +71,10 @@ To compare, on the box:
 ```sql
 SELECT route, COUNT(*) FROM notify_log WHERE at > strftime('%s','now','-1 day') GROUP BY route;
 ```
+
+## Weather
+
+The weather app's notifications (rain on the way, the day ahead, government warnings) are a
+separate thing from everything above: they don't come from the cameras or the relay. The phone
+checks the forecast itself and posts them on channels of their own, **Weather** and **Severe
+weather**. See [weather.md](weather.md#notifications).

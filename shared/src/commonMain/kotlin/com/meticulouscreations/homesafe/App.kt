@@ -104,6 +104,9 @@ internal fun startAppServices(appGraph: AppGraph) {
     appGraph.presenceAutomation.start()
     // Home's players, started as soon as a sign-in knows where it is going (see LiveStreamPrefetcher).
     appGraph.liveStreamPrefetcher.start()
+    // The weather app's background look at the forecast, for its notifications; scheduled to
+    // match its switch (on unless turned off there). Idempotent.
+    appGraph.weatherAlertCheck.start()
     // libwebrtc's one-off native start-up, done now behind the sign-in screen rather than
     // inside the first camera's join.
     warmUpLivePlayback(appGraph.platformContext)
