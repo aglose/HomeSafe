@@ -126,6 +126,7 @@ internal fun rememberPredictiveBack(enabled: Boolean = true, onBack: (releasedAt
  * is scrubbed by the finger, as Navigation 3 scrubs a screen's pop. Let go past the commit point,
  * the caller's back handler drops the page — [previous] becomes [target] — and the pop carries on
  * from where the finger left it; let go short of it, the scrub runs back to the page it started on.
+ * A second swipe made while it runs back takes the scrub over from wherever it has got to.
  * Any other change of [target] animates as `AnimatedContent` would on its own.
  *
  * [previous] is null when this stack has nothing to go back to (Back is someone else's then).
@@ -145,13 +146,17 @@ internal fun <S : Any> rememberPredictiveBackTransition(target: S, previous: S?,
             val from = seekable.fraction
             val durationNanos = from * transition.totalDurationNanos
             val start = withFrameNanos { it }
+            // A new swipe made on the way back takes the scrub over from wherever it has got to,
+            // toward the same page, so its seek below keeps the target. Settling first would change
+            // the target twice before the composition saw either, and drop the page being left.
+            val swipedAgain = { previous != null && back.gestureProgress != null }
             var fraction = from
-            while (fraction > 0f) {
+            while (fraction > 0f && !swipedAgain()) {
                 val elapsed = withFrameNanos { it } - start
                 fraction = if (durationNanos > 0f) (from * (1f - elapsed / durationNanos)).coerceAtLeast(0f) else 0f
                 if (fraction > 0f) seekable.seekTo(fraction)
             }
-            seekable.snapTo(target)
+            if (!swipedAgain()) seekable.snapTo(target)
         }
         if (previous == null) return@LaunchedEffect
         snapshotFlow { back.gestureProgress }.collect { progress ->
