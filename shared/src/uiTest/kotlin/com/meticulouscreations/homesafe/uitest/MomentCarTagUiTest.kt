@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.uitest
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertCountEquals
@@ -16,8 +17,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentPresentation
@@ -195,7 +197,10 @@ class MomentCarTagUiTest {
         dialog(MomentCarTagUiState(target = target, knownCars = emptyList()), onNewCarDraftChange = { typed += it }) {
             onNodeWithText("The classifier doesn't know any cars yet. Name this one below.").assertIsDisplayed()
             onNodeWithText("Add").assertIsNotEnabled()
-            onNode(hasSetTextAction()).performTextInput("Grandma's Van")
+            // Set straight through the field's text action, not typed: typing focuses the field and
+            // opens an input session, and its keyboard hide when the session ends can land off the
+            // main thread on an emulator. What's checked is that the text reaches the app, not the IME.
+            onNode(hasSetTextAction()).performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("Grandma's Van")) }
         }
         assertEquals(listOf("Grandma's Van"), typed)
         dialog(MomentCarTagUiState(target = target, newCarDraft = "Grandma's Van"), onTagAsNewCar = { added++ }) {
