@@ -484,7 +484,7 @@ private fun ProblemCard(problem: BankProblem?, text: UiText?, onRetry: () -> Uni
 
         BankProblem.NOT_CONFIGURED -> BudgetMessageCard(stringResource(Res.string.fin_budget_setup_title), stringResource(Res.string.fin_budget_setup_body), again, onRetry)
 
-        BankProblem.PLAID, BankProblem.OTHER, null -> BudgetMessageCard(stringResource(Res.string.fin_budget_problem_other_title), body, again, onRetry)
+        BankProblem.PLAID, BankProblem.TAILSCALE_OFF, BankProblem.UNREACHABLE, BankProblem.OTHER, null -> BudgetMessageCard(stringResource(Res.string.fin_budget_problem_other_title), body, again, onRetry)
     }
 }
 

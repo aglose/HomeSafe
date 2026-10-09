@@ -14,6 +14,9 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_generic
+import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
+import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
+import homesafe.shared.generated.resources.fin_bank_linking_unreachable
 import homesafe.shared.generated.resources.fin_bank_notice_exited
 import homesafe.shared.generated.resources.fin_bank_notice_expired
 import homesafe.shared.generated.resources.fin_bank_notice_linked_named
@@ -217,6 +220,43 @@ class BankSyncViewModelTest {
         val vm = viewModel(repo)
         vm.link(BankLinkKind.BANK)
         advanceTimeBy(BankSyncViewModel.LINK_POLL_FAILURES * BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNotNull(vm.uiState.value.linking)
+        assertNull(vm.uiState.value.notice)
+        vm.cancelLink()
+    }
+
+    @Test
+    fun aLinkWaitsOutTailscaleBeingOffAndCollectsTheSignInAfter() = runTest(dispatcher) {
+        // Another VPN on to sign in to the bank: Tailscale is off for a good while, then back.
+        val off = BankSyncException(BankProblem.TAILSCALE_OFF, UiText.of(Res.string.fin_bank_error_tailscale_off))
+        val repo = FakeRepository().apply {
+            // The read the relay starts on the new institution, followed once the link is made.
+            statuses += Result.success(bank("Robinhood"))
+            repeat(3 * BankSyncViewModel.LINK_POLL_FAILURES) { progress += Result.failure(off) }
+            progress += Result.success(BankLinkProgress(BankLinkStatus.LINKED, listOf("Robinhood"), bank("Robinhood", syncing = true)))
+        }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.INVESTMENTS)
+        advanceTimeBy(3 * BankSyncViewModel.LINK_POLL_FAILURES * BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNotNull(vm.uiState.value.linking, "still waiting")
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_linking_tailscale_off), isError = true), vm.uiState.value.notice)
+
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Robinhood".asUiText())), vm.uiState.value.notice)
+    }
+
+    @Test
+    fun theWordsAboutAnUnansweredServerGoOnceItAnswers() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            progress += Result.failure(BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_bank_error_generic)))
+            progress += Result.success(BankLinkProgress(BankLinkStatus.PENDING))
+        }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS + 1)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_linking_unreachable), isError = true), vm.uiState.value.notice)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS)
         assertNotNull(vm.uiState.value.linking)
         assertNull(vm.uiState.value.notice)
         vm.cancelLink()
