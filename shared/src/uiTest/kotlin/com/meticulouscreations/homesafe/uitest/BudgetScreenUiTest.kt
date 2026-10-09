@@ -46,6 +46,7 @@ class BudgetScreenUiTest {
     private class Calls {
         val tagged = mutableListOf<Triple<String, BucketId, Boolean>>()
         val roles = mutableListOf<Pair<String, CardRole>>()
+        val holders = mutableListOf<Triple<String, String, String?>>()
         var linkedAccounts = 0
     }
 
@@ -65,6 +66,7 @@ class BudgetScreenUiTest {
                                 contentPadding = PaddingValues(),
                                 onTag = { id, bucket, remember -> calls.tagged += Triple(id, bucket, remember) },
                                 onSetRole = { card, role -> calls.roles += card to role },
+                                onSetHolder = { card, mark, person -> calls.holders += Triple(card, mark, person) },
                                 onShowMonth = {},
                                 onSyncNow = {},
                                 onRetry = {},
@@ -151,6 +153,18 @@ class BudgetScreenUiTest {
             onNodeWithTag("finance_budget_alert_savings").assertIsOff().performSemanticsAction(SemanticsActions.OnClick)
         }
         assertEquals(listOf(BudgetConfigPatch(alerts = BudgetAlertSwitches(total = true, savings = true))), saved)
+    }
+
+    @Test
+    fun aCardNumberTheBankMarksPurchasesWithIsSaidToBeSomeonesInOneTap() = onBudget(BudgetFixtures.state(BudgetFixtures.holdersUnsaid)) { calls ->
+        onNodeWithText("Card ending 7726").assertExists()
+        onNodeWithTag("finance_budget_holder_7726_Sam").performSemanticsAction(SemanticsActions.OnClick)
+        assertEquals(listOf(Triple(BudgetFixtures.TRAVEL, "7726", "Sam" as String?)), calls.holders)
+    }
+
+    @Test
+    fun onceEveryCardIsSaidThePageStopsAsking() = onBudget(BudgetFixtures.state(BudgetFixtures.onPace)) {
+        onNodeWithTag("finance_budget_holders").assertDoesNotExist()
     }
 
     @Test

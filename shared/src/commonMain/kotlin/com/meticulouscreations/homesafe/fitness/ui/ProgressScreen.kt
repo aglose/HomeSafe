@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -63,6 +64,7 @@ import com.meticulouscreations.homesafe.fitness.domain.VolumeStatus
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_heart_open
 import homesafe.shared.generated.resources.fitness_lifts_of_best
 import homesafe.shared.generated.resources.fitness_progress_board
 import homesafe.shared.generated.resources.fitness_progress_board_empty
@@ -102,7 +104,15 @@ import kotlin.math.roundToInt
  * each lift against its best.
  */
 @Composable
-internal fun ProgressScreen(state: FitnessUiState, padding: PaddingValues, actions: FitnessActions, onOpenExercise: (String) -> Unit, modifier: Modifier = Modifier) {
+internal fun ProgressScreen(
+    state: FitnessUiState,
+    padding: PaddingValues,
+    actions: FitnessActions,
+    onOpenExercise: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    /** Opens the heart-rate page; null where there is no sensor to be had. */
+    onOpenHeart: (() -> Unit)? = null,
+) {
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = FitnessGutter).testTag("fitness_progress"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -112,6 +122,9 @@ internal fun ProgressScreen(state: FitnessUiState, padding: PaddingValues, actio
         MusclesCard(state.week.muscles)
         CalendarCard(state)
         StandingBoard(state, onOpenExercise)
+        if (onOpenHeart != null) {
+            GhostButton(stringResource(Res.string.fitness_heart_open), onOpenHeart, Modifier.fillMaxWidth().testTag("fitness_progress_heart"), icon = Icons.Filled.MonitorHeart, tint = FitnessTheme.colors.textMuted)
+        }
     }
 }
 

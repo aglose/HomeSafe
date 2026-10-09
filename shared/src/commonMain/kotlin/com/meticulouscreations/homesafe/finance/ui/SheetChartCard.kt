@@ -64,6 +64,7 @@ import kotlin.math.abs
 @Composable
 internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
     val colors = FinanceTheme.colors
+    val dates = rememberFinanceDates()
     val uriHandler = LocalUriHandler.current
     var selected by remember(chart) { mutableStateOf<Int?>(null) }
     val title = chart.title.resolve()
@@ -107,7 +108,7 @@ internal fun SheetChartCard(chart: SheetChart, modifier: Modifier = Modifier) {
             chart.kind.isBars && chart.series.all { it.kind.isBars } && !chart.isDualAxis -> {
                 Headline(chart, selected)
                 GroupedBarChart(
-                    labels = pointLabels(chart, short = true),
+                    labels = pointLabels(chart, short = true, dates),
                     // One series reads as up and down, in the app's green and red; several take the categorical colours.
                     series = if (chart.series.size == 1) {
                         listOf(BarSeries(chart.series.single().values, colors.gain, colors.loss))
@@ -152,6 +153,7 @@ private fun LineBody(chart: SheetChart, selected: Int?, onSelect: (Int?) -> Unit
 @Composable
 private fun LinePanel(chart: SheetChart, rightAxis: Boolean?, onSelect: (Int?) -> Unit, modifier: Modifier = Modifier) {
     val palette = FinanceTheme.colors.categorical
+    val dates = rememberFinanceDates()
     val plot = remember(chart, rightAxis) { linePlot(chart, chart.series.indices.filter { rightAxis == null || chart.series[it].rightAxis == rightAxis }) }
     val format = chart.series[plot.order.min()].format
     LineChart(
@@ -167,7 +169,7 @@ private fun LinePanel(chart: SheetChart, rightAxis: Boolean?, onSelect: (Int?) -
         timeAxis = plot.timeAxis,
         axis = ChartAxis(
             formatValue = { v -> if (chart.stacking == ChartStacking.PERCENT) FinanceFormat.percent(v, 0) else formatValue(v, format, compact = true) },
-            formatTime = { t -> if (plot.timeAxis) shortMonthYear(t) else pointLabel(chart, t.toInt(), short = true) },
+            formatTime = { t -> if (plot.timeAxis) dates.monthShortYear(t) else pointLabel(chart, t.toInt(), short = true, dates) },
         ),
         contentDescription = chart.title.resolve(),
         onScrub = { i -> onSelect(i?.let { plot.points.getOrNull(it) }) },
@@ -215,6 +217,7 @@ private fun linePlot(chart: SheetChart, members: List<Int>): LinePlot {
 @Composable
 private fun Headline(chart: SheetChart, selected: Int?) {
     val colors = FinanceTheme.colors
+    val dates = rememberFinanceDates()
     val format = chart.series.first().format
     val stackTotal = chart.stacking != ChartStacking.NONE && chart.series.size > 1
     fun valueAt(i: Int): Double? = if (stackTotal) {
@@ -229,12 +232,12 @@ private fun Headline(chart: SheetChart, selected: Int?) {
     val change = if (point != first) valueAt(first)?.let { value - it } else null
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         RollingNumber(formatValue(value, format, compact = false), FinanceTheme.type.title, colors.textPrimary)
-        val pointText = pointLabel(chart, point, short = false)
+        val pointText = pointLabel(chart, point, short = false, dates)
         val caption = when {
             chart.kind == SheetChartKind.SCORECARD -> chart.series.first().label.takeIf { it != chart.title }?.resolve().orEmpty()
             change == null -> pointText
             selected != null -> stringResource(Res.string.fin_sheet_chart_change_at, formatChange(change, format), pointText)
-            else -> stringResource(Res.string.fin_sheet_chart_change_since, formatChange(change, format), pointLabel(chart, first, short = false))
+            else -> stringResource(Res.string.fin_sheet_chart_change_since, formatChange(change, format), pointLabel(chart, first, short = false, dates))
         }
         if (caption.isNotEmpty()) {
             Text(
@@ -323,16 +326,13 @@ private fun PieBody(chart: SheetChart, selected: Int?, onSelect: (Int) -> Unit) 
     }
 }
 
-private fun pointLabels(chart: SheetChart, short: Boolean): List<String> = (0 until chart.domain.size).map { pointLabel(chart, it, short) }
+private fun pointLabels(chart: SheetChart, short: Boolean, dates: FinanceDates): List<String> = (0 until chart.domain.size).map { pointLabel(chart, it, short, dates) }
 
 /** The x of point [i]: its date ("Nov 2019", or "Nov '19" when [short]) or the sheet's label. */
-internal fun pointLabel(chart: SheetChart, i: Int, short: Boolean): String = when (val d = chart.domain) {
-    is ChartDomain.Dates -> d.epochSeconds.getOrNull(i)?.let { if (short) shortMonthYear(it) else FinanceFormat.monthYear(it) }.orEmpty()
+internal fun pointLabel(chart: SheetChart, i: Int, short: Boolean, dates: FinanceDates): String = when (val d = chart.domain) {
+    is ChartDomain.Dates -> d.epochSeconds.getOrNull(i)?.let { if (short) dates.monthShortYear(it) else dates.monthYear(it) }.orEmpty()
     is ChartDomain.Categories -> d.labels.getOrNull(i).orEmpty()
 }
-
-/** "Nov '19". */
-private fun shortMonthYear(epochSeconds: Long): String = FinanceFormat.monthYear(epochSeconds).substringBefore(' ') + " " + FinanceFormat.shortYear(epochSeconds)
 
 /** A value the way its cells are formatted: money, a percentage (a fraction in the sheet), or a plain number. */
 internal fun formatValue(value: Double, format: ChartValueFormat, compact: Boolean): String = when (format) {

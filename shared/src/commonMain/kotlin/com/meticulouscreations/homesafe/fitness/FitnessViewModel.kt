@@ -9,6 +9,15 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartRateMonitor
+import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
+import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
+import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
+import com.meticulouscreations.homesafe.fitness.domain.HeartZone
+import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.ImportPlan
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
@@ -20,7 +29,10 @@ import com.meticulouscreations.homesafe.fitness.domain.Record
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.Strength
+import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
+import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
+import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -56,6 +68,44 @@ data class ImportState(
     val importedSets: Int = 0,
 )
 
+/** The heart settling into another zone, to be noticed once. [token] tells one notice from the next; a zone is null under zone 1. */
+@Immutable
+data class ZoneNotice(val token: Int, val from: HeartZone?, val to: HeartZone?) {
+    val rising: Boolean get() = (to?.number ?: 0) > (from?.number ?: 0)
+}
+
+/** A finished workout and what its heart added up to. */
+@Immutable
+data class WorkoutHeart(val workout: Workout, val summary: HeartSummary)
+
+/**
+ * The heart rate, live: what the sensor's link is doing, the reading and the zone it has settled
+ * in, and for the workout that is open the time in each zone so far ([summary]) and, during a
+ * rest, how far the heart has come back down ([recovery]). [last] is the most recent finished
+ * workout a sensor was on for.
+ *
+ * Apart from [FitnessUiState] because it changes every second: only what shows the heart rate
+ * need be redrawn for it.
+ */
+@Immutable
+data class HeartUiState(
+    val sensor: HeartSensorState = HeartSensorState.Unsupported,
+    val settings: HeartSettings = HeartSettings(),
+    /** The zones, once a maximum heart rate or an age has been given. */
+    val bounds: ZoneBounds? = null,
+    val bpm: Int? = null,
+    val zone: HeartZone? = null,
+    val notice: ZoneNotice? = null,
+    val recovery: HeartRecovery? = null,
+    val summary: HeartSummary? = null,
+    val last: WorkoutHeart? = null,
+) {
+    val supported: Boolean get() = sensor != HeartSensorState.Unsupported
+
+    /** A sensor has been chosen, or one is being looked for: the heart rate has a place on the workout's page. */
+    val wanted: Boolean get() = supported && (settings.sensor != null || sensor != HeartSensorState.Off)
+}
+
 @Immutable
 data class FitnessUiState(
     /** The log has been read: empty lists now mean there is nothing, not that it is still coming. */
@@ -83,24 +133,32 @@ data class FitnessUiState(
 
 /**
  * The fitness app's state: the training log read from the device and everything the screens
- * work out from it (see [FitnessBoardBuilder]), the workout in progress, the rest timer, and the
- * notes import.
+ * work out from it (see [FitnessBoardBuilder]), the workout in progress, the rest timer, the
+ * notes import, and the heart rate ([heart]).
  *
  * Scoped to the activity, as the other drawer apps' are, so the drawer's card and the full app
  * share one. Nothing is read until [setActive] says the drawer or the app is on screen; from
  * then the log is followed, and while it is on screen the clock is moved on each minute so "3
  * days ago" and a break's ease-in stay true.
+ *
+ * The heart-rate sensor is listened to only while the app itself is on screen: there is no
+ * service behind it, so with the phone locked or another app in front the link is let go, and
+ * found again on coming back. What the heart did in between isn't known and isn't counted.
  */
 @Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class)
 class FitnessViewModel(
     private val repository: FitnessRepository,
+    private val monitor: HeartRateMonitor,
     private val clock: Clock,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FitnessUiState(nowEpochSeconds = now()))
     val uiState: StateFlow<FitnessUiState> = _uiState.asStateFlow()
+
+    private val _heart = MutableStateFlow(HeartUiState(sensor = monitor.state.value))
+    val heart: StateFlow<HeartUiState> = _heart.asStateFlow()
 
     private var log = FitnessLog()
     private var follow: Job? = null
@@ -109,12 +167,36 @@ class FitnessViewModel(
     private var importing: Job? = null
     private var flashes = 0
 
+    private var heartSettings = HeartSettings()
+    private var heartSummaries: Map<Long, HeartSummary>? = null
+
+    /** The app itself is on screen, which is when the sensor is listened to. */
+    private var watching = false
+
+    /** Sensors are being looked for, to choose one. */
+    private var searching = false
+
+    /** The sensor the monitor was last told to hold a link to. */
+    private var following: HeartSensor? = null
+    private var tally: HeartTally? = null
+    private var zones = ZoneTracker()
+    private var notices = 0
+
+    /** The highest reading since the rest that is counting began. */
+    private var restPeak: Int? = null
+
+    /** A workout being closed: readings that arrive before the log says so are not added to it. */
+    private var closing: Long? = null
+
     /** The drawer ([full] false) or the app itself came on screen; [active] false when both are gone. */
     fun setActive(active: Boolean, full: Boolean = true) {
         tick?.cancel()
         tick = null
+        watching = active && full
+        syncHeartLink()
         if (!active) return
         if (follow == null) {
+            followHeart()
             follow = viewModelScope.launch {
                 combine(repository.exercises, repository.sets, repository.workouts, repository.phases, repository.bodyweights, ::FitnessLog).collect { latest ->
                     log = latest
@@ -142,8 +224,18 @@ class FitnessViewModel(
     fun finishWorkout() {
         val workout = _uiState.value.workout ?: return
         _uiState.update { it.copy(rest = null) }
+        val id = workout.workout.id
+        val heart = tally?.takeIf { it.workoutId == id }?.summary
+        closing = id
+        tally = null
+        restPeak = null
+        _heart.update { it.copy(summary = null, recovery = null) }
         // Whether it has anything in it is the repository's to say, at the moment it closes it: a set still on its way in counts.
-        viewModelScope.launch { repository.finishWorkout(workout.workout.id, now()) }
+        viewModelScope.launch {
+            // Its heart first, so that a workout closed as empty takes that with it.
+            if (heart != null && !heart.isEmpty) repository.saveHeartSummary(id, heart)
+            repository.finishWorkout(id, now())
+        }
     }
 
     /**
@@ -163,6 +255,8 @@ class FitnessViewModel(
             val before = log.sets.filter { it.exerciseId == exerciseId && it.id != saved.id }
             val phaseStart = log.phases.lastOrNull { it.startedAtEpochSeconds <= at }?.startedAtEpochSeconds ?: 0L
             val record = Strength.record(exercise, saved, before, phaseStart, state.bodyweight.latest?.trend)
+            // The rest starts from where the heart is now; it usually climbs a few beats more before it turns.
+            restPeak = _heart.value.bpm
             _uiState.update { current ->
                 current.copy(
                     rest = RestTimer(clock.now().toEpochMilliseconds() + exercise.restSeconds * 1000L, exercise.restSeconds, exerciseId),
@@ -178,7 +272,11 @@ class FitnessViewModel(
 
     fun dismissFlash() = _uiState.update { it.copy(flash = null) }
 
-    fun skipRest() = _uiState.update { it.copy(rest = null) }
+    fun skipRest() {
+        restPeak = null
+        _heart.update { it.copy(recovery = null) }
+        _uiState.update { it.copy(rest = null) }
+    }
 
     /** Lengthens (or with a negative [seconds], shortens) the rest that is counting. */
     fun adjustRest(seconds: Int) = _uiState.update { state ->
@@ -258,6 +356,168 @@ class FitnessViewModel(
 
     fun clearImport() = _uiState.update { it.copy(import = ImportState()) }
 
+    /**
+     * The Connect button: looks for sensors to choose from, or with one already chosen goes
+     * after it again. Either way this is the moment the user is asked for Bluetooth.
+     */
+    fun connectHeart() {
+        val sensor = heartSettings.sensor
+        searching = sensor == null
+        following = sensor
+        if (sensor == null) monitor.search() else monitor.follow(sensor, ask = true)
+    }
+
+    /** One of the sensors found is the one: it is remembered, and listened to from now on. */
+    fun chooseHeartSensor(sensor: HeartSensor) {
+        searching = false
+        following = sensor
+        heartSettings = heartSettings.copy(sensor = sensor)
+        monitor.follow(sensor, ask = true)
+        viewModelScope.launch { repository.saveHeartSensor(sensor) }
+    }
+
+    fun forgetHeartSensor() {
+        searching = false
+        following = null
+        heartSettings = heartSettings.copy(sensor = null)
+        monitor.stop()
+        viewModelScope.launch { repository.saveHeartSensor(null) }
+    }
+
+    /** The page with the list of sensors was left without one being chosen. */
+    fun stopHeartSearch() {
+        if (!searching) return
+        searching = false
+        monitor.stop()
+    }
+
+    fun saveHeartProfile(profile: HeartProfile) {
+        viewModelScope.launch { repository.saveHeartProfile(profile) }
+    }
+
+    fun dismissZoneNotice() = _heart.update { it.copy(notice = null) }
+
+    private fun followHeart() {
+        viewModelScope.launch {
+            repository.heartSettings.collect { settings ->
+                heartSettings = settings
+                _heart.update { it.copy(settings = settings, bounds = HeartZones.bounds(settings.profile)) }
+                syncHeartLink()
+            }
+        }
+        viewModelScope.launch {
+            repository.heartSummaries.collect { summaries ->
+                heartSummaries = summaries
+                _heart.update { it.copy(last = lastHeart()) }
+            }
+        }
+        viewModelScope.launch { monitor.state.collect(::onSensor) }
+    }
+
+    /** Has the monitor hold a link to the chosen sensor while the app is on screen, and let it go when it isn't. */
+    private fun syncHeartLink() {
+        if (monitor.state.value == HeartSensorState.Unsupported) return
+        val sensor = heartSettings.sensor
+        when {
+            !watching -> {
+                if (following != null || searching) monitor.stop()
+                following = null
+                searching = false
+                saveTally()
+            }
+
+            // The user is choosing; what was chosen before, if anything, waits.
+            searching -> Unit
+
+            sensor == null -> {
+                if (following != null) monitor.stop()
+                following = null
+            }
+
+            sensor != following -> {
+                following = sensor
+                monitor.follow(sensor)
+            }
+        }
+    }
+
+    private fun onSensor(sensor: HeartSensorState) {
+        val connected = sensor as? HeartSensorState.Connected
+        val chosen = heartSettings.sensor
+        if (connected != null && chosen != null && connected.sensor != chosen) {
+            // It turned up at another address under its own name (see HeartRateMonitorImpl.find): that is where to look first next time.
+            following = connected.sensor
+            heartSettings = heartSettings.copy(sensor = connected.sensor)
+            viewModelScope.launch { repository.saveHeartSensor(connected.sensor) }
+        }
+        val bpm = connected?.bpm
+        val bounds = _heart.value.bounds
+        val workout = _uiState.value.workout?.workout?.takeIf { it.id != closing }
+        var notice = _heart.value.notice
+        if (connected == null) zones = ZoneTracker()
+        if (bpm == null || bounds == null) {
+            // Nothing to add up: the next reading starts afresh instead of standing for the gap.
+            tally = tally?.copy(lastAtMillis = null)
+        } else {
+            val zone = bounds.zoneOf(bpm)
+            if (workout != null) add(workout.id, bpm, zone, connected.atEpochMillis)
+            val before = zones
+            zones = zones.next(zone, connected.atEpochMillis)
+            if (workout != null && before.settled && zones.zone != before.zone) notice = ZoneNotice(++notices, before.zone, zones.zone)
+        }
+        val resting = _uiState.value.rest != null
+        restPeak = when {
+            !resting -> null
+            bpm != null -> maxOf(restPeak ?: bpm, bpm)
+            else -> restPeak
+        }
+        val peak = restPeak
+        _heart.update {
+            it.copy(
+                sensor = sensor,
+                settings = heartSettings,
+                bpm = bpm,
+                zone = if (bpm != null && bounds != null) zones.zone else null,
+                notice = notice,
+                recovery = if (bpm != null && peak != null) HeartRecovery(peak, bpm) else null,
+                summary = workout?.let { open -> tally?.takeIf { held -> held.workoutId == open.id }?.summary },
+            )
+        }
+    }
+
+    /** Adds a reading to the open workout's heart, carrying on from what was saved of it if the app was away meanwhile. */
+    private fun add(workoutId: Long, bpm: Int, zone: HeartZone?, atMillis: Long) {
+        // Until what was saved has been read there is nothing to carry on from, and starting from nothing would write over it.
+        val saved = heartSummaries ?: return
+        val held = tally?.takeIf { it.workoutId == workoutId } ?: run {
+            saveTally()
+            (saved[workoutId] ?: HeartSummary()).let { HeartTally(workoutId, it, savedMillis = it.totalMillis) }
+        }
+        val summary = held.summary.plus(bpm, zone, held.lastAtMillis?.let { atMillis - it } ?: 0L)
+        tally = held.copy(summary = summary, lastAtMillis = atMillis)
+        if (summary.totalMillis - held.savedMillis >= HEART_SAVE_MILLIS) saveTally()
+    }
+
+    /** Writes the open workout's heart down if it has moved on since it last was. */
+    private fun saveTally() {
+        val held = tally ?: return
+        if (held.summary.totalMillis == held.savedMillis) return
+        tally = held.copy(savedMillis = held.summary.totalMillis)
+        viewModelScope.launch { repository.saveHeartSummary(held.workoutId, held.summary) }
+    }
+
+    /** The most recent finished workout that a sensor was on for. */
+    private fun lastHeart(): WorkoutHeart? {
+        val summaries = heartSummaries ?: return null
+        return log.workouts.filter { it.finishedAtEpochSeconds != null }
+            .sortedByDescending { it.startedAtEpochSeconds }
+            .firstNotNullOfOrNull { workout -> summaries[workout.id]?.takeIf { !it.isEmpty }?.let { WorkoutHeart(workout, it) } }
+    }
+
+    override fun onCleared() {
+        monitor.stop()
+    }
+
     private fun planFor(text: String, part: BodyPart?): ImportPlan? {
         if (text.isBlank()) return null
         return NotesImport.plan(NotesParser.parse(text, part), log.exercises, log.sets, now())
@@ -303,6 +563,8 @@ class FitnessViewModel(
                 import = if (state.import.text.isBlank()) state.import else state.import.copy(plan = planFor(state.import.text, state.import.part)),
             )
         }
+        if (boards.workout?.workout?.id != closing) closing = null
+        _heart.update { it.copy(last = lastHeart(), summary = it.summary.takeIf { boards.workout != null }) }
     }
 
     private fun now(): Long = clock.now().epochSeconds
@@ -312,5 +574,11 @@ class FitnessViewModel(
 
         /** How long a finished rest stays on screen, saying it is over, before it is cleared. */
         const val REST_LINGER_MS = 5 * 60_000L
+
+        /** How much of a workout's heart may be added up before it is written down, so a killed app loses little of it. */
+        const val HEART_SAVE_MILLIS = 30_000L
     }
 }
+
+/** The open workout's heart as it is added up: when the last reading came, and how much of it has been saved. */
+private data class HeartTally(val workoutId: Long, val summary: HeartSummary, val lastAtMillis: Long? = null, val savedMillis: Long = 0)

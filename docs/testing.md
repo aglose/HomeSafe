@@ -172,3 +172,13 @@ step with a message saying the secret is missing.
 
 To regenerate by hand instead, run `./gradlew :androidApp:generateBaselineProfile` with a device connected, and with
 `local.credentials.properties` pointing at a Frigate server the device can reach, such as the fake one above.
+
+The journey also opens the weather app and scrolls both of its tabs, so the device needs the internet too: a fresh
+install has nowhere to forecast for, and the journey searches Open-Meteo for a place and waits for its forecast.
+
+On a phone that has the real app installed, add `-PbenchmarkAppIdSuffix=.benchmark` to this and to the Macrobenchmark
+runs (`:baselineprofile:connectedBenchmarkReleaseAndroidTest`). The benchmark builds are signed with the debug key and
+can't replace an app from Play; with the suffix they install beside it as `com.meticulouscreations.homesafe.benchmark`.
+`WeatherScrollBenchmarks` takes `-Pandroid.testInstrumentationRunnerArguments.weatherPlace=<city>`: what the sky draws
+is that place's weather at that minute, and a wet or a night sky costs more than a clear one, so numbers are only
+comparable for the same place within the hour. See `docs/perf-audit-2026-10-08-weather.md`.

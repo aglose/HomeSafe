@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.BudgetPastMonth
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.BudgetSlice
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.Purchase
@@ -133,6 +134,9 @@ internal fun BudgetConfigPatch.toJson(): JsonObject = buildJsonObject {
         )
     }
     roles?.let { roles -> put("roles", buildJsonObject { roles.forEach { (card, role) -> put(card, role.wire) } }) }
+    holders?.let { holders ->
+        put("holders", buildJsonObject { holders.forEach { (card, marks) -> put(card, buildJsonObject { marks.forEach { (mark, person) -> put(mark, person) } }) } })
+    }
     cardPaidLines?.let { lines -> put("card_paid_lines", JsonArray(lines.map(::JsonPrimitive))) }
     alerts?.let { alerts ->
         put(
@@ -203,6 +207,7 @@ internal data class RelayBudget(
                 balance = card.balance,
                 needsRelink = card.needsRelink,
                 readsPurchases = card.transactions,
+                holders = card.holders.map { CardHolder(it.mark, it.count, it.person?.takeIf { person -> person.isNotBlank() }) },
             )
         },
         config = BudgetConfig(
@@ -256,7 +261,11 @@ internal data class RelayBudgetCard(
     val balance: Double? = null,
     @SerialName("needs_relink") val needsRelink: Boolean = false,
     val transactions: Boolean = true,
+    val holders: List<RelayCardHolder> = emptyList(),
 )
+
+@Serializable
+internal data class RelayCardHolder(val mark: String = "", val count: Int = 0, val person: String? = null)
 
 @Serializable
 internal data class RelayBudgetConfig(

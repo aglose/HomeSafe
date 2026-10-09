@@ -37,6 +37,8 @@ import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
+import com.meticulouscreations.homesafe.fitness.data.createHeartRateLink
+import com.meticulouscreations.homesafe.fitness.domain.HeartRateLink
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import com.meticulouscreations.homesafe.network.LocalNetworkAccess
@@ -234,6 +236,11 @@ interface AppGraph : ViewModelGraph {
     @SingleIn(AppScope::class)
     @Provides
     fun provideWeatherCheckScheduler(platformContext: PlatformContext): WeatherCheckScheduler = createWeatherCheckScheduler(platformContext)
+
+    /** The radio under the fitness app's heart rate; `HeartRateMonitorImpl` is what uses it. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideHeartRateLink(platformContext: PlatformContext): HeartRateLink = createHeartRateLink(platformContext)
 
     /** How often the finance app's nudges have been shown on this install. */
     @SingleIn(AppScope::class)

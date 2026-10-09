@@ -81,6 +81,14 @@ sealed interface CardRole {
     }
 }
 
+/**
+ * A mark the bank puts on a card's purchases for who made them, as it writes it: a cardholder's
+ * name ("SAM RIVERA 1006"), or only the last four digits of the card that was used ("1203").
+ * [count] purchases carry it; [person] is whose it was said to be, once someone has said.
+ */
+@Immutable
+data class CardHolder(val mark: String, val count: Int, val person: String?)
+
 /** A linked credit card. [key] is its name in the feed sheet, which is also what its [role] is kept by. */
 @Immutable
 data class BudgetCard(
@@ -96,7 +104,12 @@ data class BudgetCard(
     val needsRelink: Boolean,
     /** False for a card linked as a loan: Plaid was never asked for its purchases. */
     val readsPurchases: Boolean,
-)
+    /** The bank's marks for who made each purchase, the commonest first; empty when it makes none. */
+    val holders: List<CardHolder> = emptyList(),
+) {
+    /** The marks nobody has put a person to yet, on a card whose purchases are put to people. */
+    val unsaidHolders: List<CardHolder> get() = if (role == CardRole.Split) holders.filter { it.person == null } else emptyList()
+}
 
 /** What one bucket has spent this month, against its limit if it has one. */
 @Immutable
@@ -168,12 +181,16 @@ data class BudgetConfig(
     val sheet: BudgetSheetFigures = BudgetSheetFigures(null, null),
 )
 
-/** A change to the settings: each part is left as it stands when null. [roles] is by card key. */
+/**
+ * A change to the settings: each part is left as it stands when null. [roles] is by card key;
+ * [holders] by card key and then by the bank's mark ([CardHolder.mark]), a null person taking the say-so back.
+ */
 @Immutable
 data class BudgetConfigPatch(
     val people: List<String>? = null,
     val limits: BudgetLimits? = null,
     val roles: Map<String, CardRole>? = null,
+    val holders: Map<String, Map<String, String?>>? = null,
     val cardPaidLines: List<String>? = null,
     val alerts: BudgetAlertSwitches? = null,
     val sheet: BudgetSheetFigures? = null,

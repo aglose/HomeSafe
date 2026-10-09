@@ -81,9 +81,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
+import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RecordFlash
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -97,6 +100,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.fitness_close
+import homesafe.shared.generated.resources.fitness_heart_title
 import homesafe.shared.generated.resources.fitness_tab_lifts
 import homesafe.shared.generated.resources.fitness_tab_progress
 import homesafe.shared.generated.resources.fitness_tab_today
@@ -127,6 +131,9 @@ internal sealed interface FitnessPage {
     data class Edit(val exerciseId: String) : FitnessPage
 
     data object Import : FitnessPage
+
+    /** The heart rate: its sensor and its zones. */
+    data object Heart : FitnessPage
 }
 
 /** Everything the fitness screens can ask for, as one thing to hand down: the view model's side of the app. */
@@ -149,6 +156,12 @@ internal class FitnessActions(
     val onImportPart: (BodyPart?) -> Unit = {},
     val onConfirmImport: () -> Unit = {},
     val onClearImport: () -> Unit = {},
+    val onConnectHeart: () -> Unit = {},
+    val onChooseHeartSensor: (HeartSensor) -> Unit = {},
+    val onForgetHeartSensor: () -> Unit = {},
+    val onStopHeartSearch: () -> Unit = {},
+    val onSaveHeartProfile: (HeartProfile) -> Unit = {},
+    val onDismissZoneNotice: () -> Unit = {},
 )
 
 /**
@@ -164,6 +177,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     // The activity's instance, the one the drawer's card shares.
     val viewModel: FitnessViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val heart by viewModel.heart.collectAsStateWithLifecycle()
     val close by rememberUpdatedState(onClose)
     val actions = remember(viewModel) {
         FitnessActions(
@@ -184,12 +198,22 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onImportPart = viewModel::setImportPart,
             onConfirmImport = viewModel::confirmImport,
             onClearImport = viewModel::clearImport,
+            onConnectHeart = viewModel::connectHeart,
+            onChooseHeartSensor = viewModel::chooseHeartSensor,
+            onForgetHeartSensor = viewModel::forgetHeartSensor,
+            onStopHeartSearch = viewModel::stopHeartSearch,
+            onSaveHeartProfile = viewModel::saveHeartProfile,
+            onDismissZoneNotice = viewModel::dismissZoneNotice,
         )
     }
-    FitnessAppContent(state, actions, modifier, active)
+    FitnessAppContent(state, actions, modifier, active, heart = heart)
 }
 
-/** [FitnessApp] without its view model: everything on screen from one [state], for previews and tests as much as for the app. */
+/**
+ * [FitnessApp] without its view model: everything on screen from one [state], for previews and
+ * tests as much as for the app. The [heart] rate is beside it, since it alone changes every
+ * second; left out, the app is as it is where there is no sensor to be had.
+ */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun FitnessAppContent(
@@ -199,6 +223,7 @@ internal fun FitnessAppContent(
     active: Boolean = true,
     initialTab: FitnessTab = FitnessTab.TODAY,
     initialPage: FitnessPage? = null,
+    heart: HeartUiState = HeartUiState(),
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
@@ -277,6 +302,7 @@ internal fun FitnessAppContent(
                         onOpenProgress = { tab = FitnessTab.PROGRESS },
                         onOpenExercise = { pages += FitnessPage.Lift(it) },
                         animated = active,
+                        lastHeart = heart.last,
                     )
 
                     FitnessTab.LIFTS -> LiftsScreen(
@@ -287,7 +313,14 @@ internal fun FitnessAppContent(
                         onAddExercise = actions.onAddExercise,
                     )
 
-                    FitnessTab.PROGRESS -> ProgressScreen(state, tabPadding, actions, onOpenExercise = { pages += FitnessPage.Lift(it) })
+                    FitnessTab.PROGRESS -> ProgressScreen(
+                        state,
+                        tabPadding,
+                        actions,
+                        onOpenExercise = { pages += FitnessPage.Lift(it) },
+                        // Only where there is a sensor to be had.
+                        onOpenHeart = if (heart.supported) ({ pages += FitnessPage.Heart }) else null,
+                    )
 
                     FitnessPage.Workout -> if (workout != null) {
                         WorkoutScreen(
@@ -303,6 +336,8 @@ internal fun FitnessAppContent(
                             },
                             // Coming back mid-rest, the exercise being rested from is the one to carry on with.
                             initiallyOpen = state.rest?.exerciseId,
+                            heart = heart,
+                            onOpenHeart = { pages += FitnessPage.Heart },
                         )
                     } else {
                         // Just started and not yet read back, or just finished: the page under this one shows through.
@@ -338,6 +373,8 @@ internal fun FitnessAppContent(
                         }
                     }
 
+                    FitnessPage.Heart -> HeartScreen(heart, pagePadding, actions)
+
                     FitnessPage.Import -> ImportScreen(
                         import = state.import,
                         padding = pagePadding,
@@ -359,6 +396,7 @@ internal fun FitnessAppContent(
                     is FitnessPage.Lift -> stringResource(Res.string.fitness_title_exercise)
                     is FitnessPage.Edit -> stringResource(Res.string.fitness_title_edit)
                     FitnessPage.Import -> stringResource(Res.string.fitness_title_import)
+                    FitnessPage.Heart -> stringResource(Res.string.fitness_heart_title)
                 },
                 paged = page != null,
                 onBack = ::pop,

@@ -3761,6 +3761,45 @@ class BankSyncTest(_ScratchDb):
         self.assertEqual(1, plaid.paths().count("/item/public_token/exchange"))
         self.assertEqual([True], self.background)
 
+    def test_a_link_finished_with_nobody_asking_is_collected_by_the_relay_itself(self):
+        # The app was restarted while the person was at their bank: it never asks about link-1 again.
+        self.start()
+        plaid = self.plaid(
+            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
+                {"public_token": "public-1", "institution": {"institution_id": "ins_128026", "name": "Capital One"}}]}}]},
+            item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"},
+        )
+        self.assertEqual(["Capital One"], relay.plaid_collect_links(now=self.T + 120))
+        self.assertEqual([("item1", "Capital One", "alex")], relay.with_db(lambda c: c.execute("SELECT item_id, institution, linked_by FROM plaid_items").fetchall()))
+        self.assertEqual([True], self.background)
+        # Collected once: the next look asks Plaid nothing, and the app asking late is told it is linked.
+        asked = len(plaid.calls)
+        self.assertEqual([], relay.plaid_collect_links(now=self.T + 420))
+        self.assertEqual(asked, len(plaid.calls))
+        self.assertEqual({"status": "linked", "institutions": ["Capital One"]}, relay.plaid_link_finish("link-1", now=self.T + 430))
+
+    def test_a_link_still_open_or_refused_is_left_as_it_was_and_looked_at_again(self):
+        self.start()
+        self.plaid(link_token_get={"link_sessions": []})
+        self.assertEqual([], relay.plaid_collect_links(now=self.T + 60))
+        self.plaid(link_token_get=relay.PlaidError("INVALID_LINK_TOKEN"))
+        self.assertEqual([], relay.plaid_collect_links(now=self.T + 360))
+        self.assertIsNone(relay.state_get(relay.PLAID_LINKS_KEY)["link-1"].get("done"))
+        self.assertEqual([], self.background)
+        # Finished just before Plaid's token for it lapses, and found a check later: still collected.
+        self.plaid(
+            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:29:00Z", "results": {"item_add_results": [
+                {"public_token": "public-1", "institution": {"name": "Chase"}}]}}]},
+            item_public_token_exchange={"access_token": "access-item1", "item_id": "item1"},
+        )
+        self.assertEqual(["Chase"], relay.plaid_collect_links(now=self.T + relay.PLAID_LINK_SECONDS + 240))
+
+    def test_a_link_long_dead_is_not_asked_about_for_ever(self):
+        self.start()
+        plaid = self.plaid(link_token_get={"link_sessions": []})
+        self.assertEqual([], relay.plaid_collect_links(now=self.T + 2 * relay.PLAID_LINK_SECONDS + 1))
+        self.assertEqual([], plaid.calls)
+
     def test_signing_in_again_clears_the_error_and_keeps_the_token(self):
         self.link()
         relay.with_db(lambda c: (c.execute("UPDATE plaid_items SET error='ITEM_LOGIN_REQUIRED'"), c.commit()))
@@ -4018,6 +4057,23 @@ class BankRoutesTest(_ScratchDb):
         with self.assertRaises(relay.HTTPException) as off:
             relay.post_bank_sync(object(), self.response)
         self.assertEqual((503, "not_configured"), (off.exception.status_code, off.exception.detail["error"]))
+
+    def test_opening_the_page_collects_a_link_the_app_lost_track_of(self):
+        relay.plaid_post = _FakePlaid(
+            link_token_create={"link_token": "link-9", "hosted_link_url": "https://secure.plaid.com/hl/abc"},
+            link_token_get={"link_sessions": [{"finished_at": "2026-10-05T12:00:00Z", "results": {"item_add_results": [
+                {"public_token": "public-9", "institution": {"name": "American Express"}}]}}]},
+            item_public_token_exchange={"access_token": "access-item9", "item_id": "item9"},
+        )
+        relay.post_bank_link(types.SimpleNamespace(kind="bank", institution=None), object(), self.response)
+        body = relay.get_bank(object(), self.response)
+        self.assertEqual(["Chase", "American Express"], [i["name"] for i in body["institutions"]])
+        self.assertTrue(body["syncing"])
+        self.assertEqual([True], self.background)
+        # Nothing waiting: the page is answered without a word to Plaid.
+        asked = len(relay.plaid_post.calls)
+        self.assertFalse(relay.get_bank(object(), self.response)["syncing"])
+        self.assertEqual(asked, len(relay.plaid_post.calls))
 
     def test_someone_who_may_not_see_the_finances_gets_nowhere(self):
         def refuse(request):
@@ -4334,6 +4390,35 @@ class BudgetMonthTest(_Budget):
                           "family": ("family", "account"), "his": ("person:Andrew", "rule")}, found)
         self.assertEqual((70.0, 20.0, 100.0, 12.5), tuple(self.bucket(b)["spent"] for b in ("person:Andrew", "person:Sarah", "family", "unassigned")))
         self.assertEqual(202.5, self.month()["spent"])
+
+    def test_a_card_s_last_four_is_whose_it_was_said_to_be(self):
+        # Capital One marks each purchase with the card that made it, not with a name.
+        self.store(_txn("mine", 20.0, account_owner="0035"), _txn("hers", 30.0, account_owner="1203"), _txn("hers2", 5.0, account_owner="1203"),
+                   _txn("paid", -900.0, account_owner="0035", name="AUTOPAY PAYMENT", merchant=None, category="LOAN_PAYMENTS"), _txn("blank", 7.0))
+        venture = next(card for card in self.month()["cards"] if card["key"] == self.VENTURE)
+        self.assertEqual([{"mark": "1203", "count": 2, "person": None}, {"mark": "0035", "count": 1, "person": None}], venture["holders"])
+        self.assertEqual({"unassigned": 62.0}, {b["id"]: b["spent"] for b in self.month()["buckets"] if b["spent"]})
+
+        relay.budget_config_save({"holders": {self.VENTURE: {"0035": "Andrew", "1203": "Sarah"}}}, self.NOW)
+        month = self.month()
+        self.assertEqual({"mine": ("person:Andrew", "bank"), "hers": ("person:Sarah", "bank"), "hers2": ("person:Sarah", "bank"), "blank": (None, "none")},
+                         {t["id"]: (t["bucket"], t["source"]) for t in month["transactions"]})
+        self.assertEqual(["Sarah", "Andrew"], [h["person"] for h in next(card for card in month["cards"] if card["key"] == self.VENTURE)["holders"]])
+        # A tag by hand still outranks the card, and taking the say-so back unsorts them again.
+        relay.put_budget_transaction("hers2", types.SimpleNamespace(bucket="family", remember=False), object(), self.response)
+        self.assertEqual("family", next(t["bucket"] for t in self.month()["transactions"] if t["id"] == "hers2"))
+        relay.budget_config_save({"holders": {self.VENTURE: {"1203": None}}}, self.NOW)
+        self.assertEqual({self.VENTURE: {"0035": "Andrew"}}, relay.budget_config()["holders"])
+        self.assertIsNone(next(t["bucket"] for t in self.month()["transactions"] if t["id"] == "hers"))
+
+    def test_a_cardholder_s_mark_means_nothing_on_the_family_s_card_and_goes_with_the_person(self):
+        self.store(_txn("f", 100.0, account="platinum", account_owner="SARAH GLOSE 1006"), item="amex")
+        relay.budget_config_save({"holders": {self.PLATINUM: {"SARAH GLOSE 1006": "Sarah"}, self.VENTURE: {"1203": "Sarah"}}}, self.NOW)
+        self.assertEqual(("family", "account"), next((t["bucket"], t["source"]) for t in self.month()["transactions"]))
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.budget_config_save({"holders": {self.VENTURE: {"0035": "Nobody"}}}, self.NOW)
+        self.assertEqual("bad_budget", refused.exception.detail["error"])
+        self.assertEqual({}, relay.budget_config_save({"people": ["Andrew"]}, self.NOW)["holders"])
 
     def test_a_card_of_one_person_s_own_is_theirs_and_a_tag_by_hand_outranks_it(self):
         relay.budget_config_save({"roles": {self.VENTURE: "person:Sarah"}}, self.NOW)

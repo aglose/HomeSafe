@@ -234,8 +234,14 @@ androidComponents {
         // to get past the sign-in screen unattended, so this variant alone also gets the local
         // test credentials (same gitignored file as debug). Release keeps them empty.
         // nonMinifiedRelease is what the Baseline Profile *generator* drives, so it needs them too.
+        // -PbenchmarkAppIdSuffix=.benchmark gives both their own package, so a benchmark can be run on
+        // a phone that has the real app installed (a different signature can't replace it, and
+        // uninstalling it would take its sign-in and places with it). The :baselineprofile journeys
+        // read the same property. Firebase has no client for that package, so push is off in it.
+        val benchmarkAppIdSuffix = providers.gradleProperty("benchmarkAppIdSuffix").orNull
         listOf("benchmarkRelease", "nonMinifiedRelease").forEach { name ->
             extension.buildTypes.getByName(name) {
+                if (benchmarkAppIdSuffix != null) applicationIdSuffix = benchmarkAppIdSuffix
                 buildConfigField("String", "TEST_SERVER_URL", "\"${localCredentials.getProperty("test.serverUrl", "")}\"")
                 buildConfigField("String", "TEST_USERNAME", "\"${localCredentials.getProperty("test.username", "")}\"")
                 buildConfigField("String", "TEST_PASSWORD", "\"${localCredentials.getProperty("test.password", "")}\"")

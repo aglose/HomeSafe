@@ -30,6 +30,8 @@ import com.meticulouscreations.homesafe.weather.ui.shader.CELESTIAL_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.CLOUD_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.GLASS_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.PRECIP_SHADER
+import com.meticulouscreations.homesafe.weather.ui.shader.WeatherShader
+import com.meticulouscreations.homesafe.weather.ui.shader.layersKeepTheirPixels
 import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull
 import kotlin.math.exp
 import kotlin.random.Random
@@ -84,8 +86,14 @@ fun WeatherSky(
         var last = withInfiniteAnimationFrameNanos { it }
         while (true) {
             withInfiniteAnimationFrameNanos { now ->
-                animator.step(((now - last) / 1e9f).coerceIn(0f, 0.1f))
-                last = now
+                // Not every frame the display offers: cloud drifts and the sun creeps, and at thirty
+                // frames a second they look as they do at a hundred and twenty for a quarter of the
+                // shading. The frames between are the cards' alone (see the layer below).
+                val dt = (now - last) / 1e9f
+                if (dt >= animator.frameSeconds - FRAME_SLACK_SECONDS) {
+                    animator.step(dt.coerceIn(0f, 0.1f))
+                    last = now
+                }
             }
         }
     }
@@ -94,82 +102,112 @@ fun WeatherSky(
     Box(
         modifier
             .clipToBounds()
-            .graphicsLayer {
-                // Read first, whatever follows: it is the only thing here that says "look again",
-                // and the glass has to notice the rain starting as well as the rain going on.
-                animator.frame.intValue
-                val wet = animator.value(GLASS)
-                if (drops != null && wet > 0.01f && size.minDimension > 0f) {
-                    drops.setUniform("size", size.width, size.height)
-                    drops.setUniform("time", animator.time)
-                    drops.setUniform("unit", unit)
-                    drops.setUniform("amount", wet)
-                    renderEffect = drops.renderEffect()
+            // A sky that is a lot to shade (rain, snow, a night's stars) has its pixels kept from one
+            // of its frames to its next, where the platform keeps a layer's: a frame in which only
+            // what lies over the sky has moved (a scroll, at the display's full rate) then costs it
+            // one copy, not its shaders run again. A plain day's sky is cheaper drawn straight than
+            // through a layer's extra pass, and is.
+            .then(
+                if (layersKeepTheirPixels) {
+                    Modifier.graphicsLayer {
+                        animator.frame.intValue
+                        compositingStrategy = if (animator.costly) CompositingStrategy.Offscreen else CompositingStrategy.Auto
+                    }
                 } else {
-                    renderEffect = null
-                }
-            }
-            .drawBehind {
-                animator.frame.intValue
-                if (celestial == null) {
-                    drawRect(Brush.verticalGradient(listOf(animator.color(ZENITH), animator.color(HORIZON))))
-                    return@drawBehind
-                }
-                celestial.setUniform("size", size.width, size.height)
-                celestial.setUniform("time", animator.time)
-                celestial.setUniform("unit", unit)
-                celestial.setUniform("zenith", animator.color(ZENITH))
-                celestial.setUniform("horizon", animator.color(HORIZON))
-                celestial.setUniform("glow", animator.color(GLOW))
-                celestial.setUniform("sunColor", animator.color(SUN_COLOR))
-                celestial.setUniform("sun", animator.value(SUN_X), animator.value(SUN_Y), animator.value(SUN_DISC))
-                celestial.setUniform("moon", animator.value(MOON_X), animator.value(MOON_Y), animator.value(MOON))
-                celestial.setUniform("moonCycle", animator.value(MOON_CYCLE))
-                celestial.setUniform("stars", animator.value(STARS))
-                drawRect(celestial.brush())
-            },
+                    Modifier
+                },
+            ),
     ) {
-        if (clouds != null) {
-            // Half the pixels each way: cloud and fog have no edges to lose, and they are most of the work.
-            Canvas(Modifier.matchParentSize().downscaled(CLOUD_DOWNSCALE)) {
-                animator.frame.intValue
-                if (animator.value(COVER) < 0.01f && animator.value(FOG) < 0.01f && animator.boltPower <= 0f) return@Canvas
-                clouds.setUniform("size", size.width, size.height)
-                clouds.setUniform("time", animator.time)
-                clouds.setUniform("unit", unit / CLOUD_DOWNSCALE)
-                clouds.setUniform("horizon", animator.color(HORIZON))
-                clouds.setUniform("sunColor", animator.color(SUN_COLOR))
-                clouds.setUniform("sun", animator.value(SUN_X), animator.value(SUN_Y), animator.value(SUN_DISC))
-                clouds.setUniform("cloudLit", animator.color(CLOUD_LIT))
-                clouds.setUniform("cloudShade", animator.color(CLOUD_SHADE))
-                clouds.setUniform("cover", animator.value(COVER))
-                clouds.setUniform("storm", animator.value(STORM))
-                clouds.setUniform("drift", animator.driftX, animator.driftY)
-                clouds.setUniform("fog", animator.value(FOG))
-                clouds.setUniform("bolt", animator.boltX, animator.boltSeed, animator.boltAge, animator.boltPower)
-                drawRect(clouds.brush())
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer {
+                    // Read first, whatever follows: it is the only thing here that says "look again",
+                    // and the glass has to notice the rain starting as well as the rain going on.
+                    animator.frame.intValue
+                    val wet = animator.value(GLASS)
+                    if (drops != null && wet > 0.01f && size.minDimension > 0f) {
+                        drops.setUniform("size", size.width, size.height)
+                        drops.setUniform("time", animator.time)
+                        drops.setUniform("unit", unit)
+                        drops.setUniform("amount", wet)
+                        renderEffect = drops.renderEffect()
+                    } else {
+                        renderEffect = null
+                    }
+                }
+                .drawBehind {
+                    animator.frame.intValue
+                    if (celestial == null) {
+                        drawRect(Brush.verticalGradient(listOf(animator.color(ZENITH), animator.color(HORIZON))))
+                        return@drawBehind
+                    }
+                    celestial.setUniform("size", size.width, size.height)
+                    celestial.setUniform("time", animator.time)
+                    celestial.setUniform("unit", unit)
+                    celestial.setUniform("zenith", animator.color(ZENITH))
+                    celestial.setUniform("horizon", animator.color(HORIZON))
+                    celestial.setUniform("glow", animator.color(GLOW))
+                    celestial.setUniform("sunColor", animator.color(SUN_COLOR))
+                    celestial.setUniform("sun", animator.value(SUN_X), animator.value(SUN_Y), animator.value(SUN_DISC))
+                    celestial.setUniform("moon", animator.value(MOON_X), animator.value(MOON_Y), animator.value(MOON))
+                    celestial.setUniform("moonCycle", animator.value(MOON_CYCLE))
+                    celestial.setUniform("stars", animator.value(STARS))
+                    drawRect(celestial.brush())
+                },
+        ) {
+            if (clouds != null) {
+                // Half the pixels each way: cloud and fog have no edges to lose, and they are most of the work.
+                Canvas(Modifier.matchParentSize().downscaled(CLOUD_DOWNSCALE)) {
+                    animator.frame.intValue
+                    if (animator.value(COVER) < 0.01f && animator.value(FOG) < 0.01f && animator.boltPower <= 0f) return@Canvas
+                    clouds.setUniform("size", size.width, size.height)
+                    clouds.setUniform("time", animator.time)
+                    clouds.setUniform("unit", unit / CLOUD_DOWNSCALE)
+                    clouds.setUniform("horizon", animator.color(HORIZON))
+                    clouds.setUniform("sunColor", animator.color(SUN_COLOR))
+                    clouds.setUniform("sun", animator.value(SUN_X), animator.value(SUN_Y), animator.value(SUN_DISC))
+                    clouds.setUniform("cloudLit", animator.color(CLOUD_LIT))
+                    clouds.setUniform("cloudShade", animator.color(CLOUD_SHADE))
+                    clouds.setUniform("cover", animator.value(COVER))
+                    clouds.setUniform("storm", animator.value(STORM))
+                    clouds.setUniform("drift", animator.driftX, animator.driftY)
+                    clouds.setUniform("fog", animator.value(FOG))
+                    clouds.setUniform("bolt", animator.boltX, animator.boltSeed, animator.boltAge, animator.boltPower)
+                    drawRect(clouds.brush())
+                }
             }
-        }
-        if (precip != null) {
-            Canvas(Modifier.matchParentSize()) {
-                animator.frame.intValue
-                val bolt = animator.boltPower > 0f && animator.boltAge in 0f..0.45f
-                if (animator.value(RAIN) < 0.01f && animator.value(SNOW) < 0.01f && !bolt) return@Canvas
-                precip.setUniform("size", size.width, size.height)
-                precip.setUniform("time", animator.time)
-                precip.setUniform("unit", unit)
-                precip.setUniform("rain", animator.value(RAIN))
-                precip.setUniform("snow", animator.value(SNOW))
-                precip.setUniform("wind", animator.value(WIND))
-                precip.setUniform("light", animator.color(PRECIP_LIGHT))
-                precip.setUniform("bolt", animator.boltX, animator.boltSeed, animator.boltAge, animator.boltPower)
-                drawRect(precip.brush())
+            if (precip != null) {
+                Canvas(Modifier.matchParentSize()) {
+                    animator.frame.intValue
+                    val bolt = animator.boltPower > 0f && animator.boltAge in 0f..0.45f
+                    if (animator.value(RAIN) < 0.01f && animator.value(SNOW) < 0.01f && !bolt) return@Canvas
+                    precip.setUniform("size", size.width, size.height)
+                    precip.setUniform("time", animator.time)
+                    precip.setUniform("unit", unit)
+                    precip.setUniform("rain", animator.value(RAIN))
+                    precip.setUniform("snow", animator.value(SNOW))
+                    precip.setUniform("wind", animator.value(WIND))
+                    precip.setUniform("light", animator.color(PRECIP_LIGHT))
+                    precip.setUniform("bolt", animator.boltX, animator.boltSeed, animator.boltAge, animator.boltPower)
+                    drawRect(precip.brush())
+                }
             }
         }
     }
 }
 
 private const val CLOUD_DOWNSCALE = 2
+
+/** How often the sky is drawn afresh: a dry one, and one with rain or snow falling or on its way to a new scene. */
+private const val SKY_FRAME_SECONDS = 1f / 30f
+private const val BUSY_SKY_FRAME_SECONDS = 1f / 60f
+
+/** A display's frames don't land on the microsecond: one this much early is still the one wanted. */
+private const val FRAME_SLACK_SECONDS = 0.002f
+
+/** How far from where it is heading a number can be and still count as arrived. */
+private const val SETTLED = 0.004f
 
 /** Ten minutes: the shaders' clock starts over, which shows as nothing more than the rain re-dealing itself. */
 private const val CLOCK_WRAP_SECONDS = 600f
@@ -255,8 +293,21 @@ internal class SkyAnimator(private val random: Random = Random.Default) {
     private var boltAt = -100f
     private var nextBoltAt = 0f
     private var heldBoltAge: Float? = null
+    private var settling = true
+
+    /**
+     * How long this sky wants between its frames. Rain, snow and lightning move fast enough to
+     * want sixty a second, and so does a sky on its way to another (a finger scrubbing through
+     * the day slides the sun across it); anything else is cloud and light, and thirty is plenty.
+     */
+    val frameSeconds: Float
+        get() = if (settling || current[RAIN] > 0.01f || current[SNOW] > 0.01f || boltPower > 0f) BUSY_SKY_FRAME_SECONDS else SKY_FRAME_SECONDS
 
     val boltAge: Float get() = heldBoltAge ?: (time - boltAt)
+
+    /** Whether this sky runs the shaders that cost the most: what falls (and the lightning with it), or the stars. */
+    val costly: Boolean
+        get() = current[RAIN] > 0.01f || current[SNOW] > 0.01f || current[STARS] > 0.004f || boltPower > 0f
 
     fun value(slot: Int): Float = current[slot]
 
@@ -304,6 +355,7 @@ internal class SkyAnimator(private val random: Random = Random.Default) {
             heldBoltAge = null
         }
         aimed = true
+        settling = true
     }
 
     /** Has the draws run again if [aim] changed anything since they last did. */
@@ -329,10 +381,13 @@ internal class SkyAnimator(private val random: Random = Random.Default) {
         // day moves them a long way.
         val ease = 1f - exp(-dt * 1.6f)
         val glide = 1f - exp(-dt * 4.5f)
+        var apart = 0f
         for (i in 0 until SLOTS) {
             val k = if (i in SUN_X..MOON_Y && i != SUN_DISC) glide else ease
             current[i] += (target[i] - current[i]) * k
+            apart = maxOf(apart, kotlin.math.abs(target[i] - current[i]))
         }
+        settling = apart > SETTLED
         // The moon's phase isn't a thing to animate between places: it would spin.
         current[MOON_CYCLE] = target[MOON_CYCLE]
         val wind = current[WIND]

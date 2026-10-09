@@ -170,8 +170,10 @@ internal fun ShellDrawer(
         drag = (drag - releasedAt * widthPx * DRAWER_BACK_PEEK).coerceIn(-widthPx, 0f)
         onClose()
     }
+
     // How far the drawer stands off its open place: a drag on it, or a back swipe.
     fun offset() = (drag - back.progress * widthPx * DRAWER_BACK_PEEK).coerceIn(-widthPx, 0f)
+
     // Reset as it opens, not as it closes: a swipe that closed it would snap back first.
     LaunchedEffect(open) { if (open) drag = 0f }
     val dragState = rememberDraggableState { delta -> drag = (drag + delta).coerceIn(-widthPx, 0f) }
@@ -480,8 +482,10 @@ internal fun InnerAppOverlay(
         heldBack = releasedAt
         onClose()
     }
+
     // The reveal as drawn: drained part of the way by a back swipe.
     fun shownReveal() = reveal.value * (1f - APP_BACK_PEEK * maxOf(back.progress, heldBack))
+
     // A swipe has started the drain (or let go and is settling back, or committed and is closing).
     val peeking by remember(back) { derivedStateOf { back.inProgress || back.progress > 0f || heldBack > 0f } }
     LaunchedEffect(open) {

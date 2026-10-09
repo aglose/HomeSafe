@@ -82,6 +82,9 @@
     <string name="fin_budget_role_person">%1$s's own</string>
     <string name="fin_budget_role_unset">Not said yet</string>
 
+    <string name="fin_budget_holders_title">Whose card is which?</string>
+    <string name="fin_budget_holders_body">The bank marks each purchase on this card with the card that made it. Say whose each one is, once, and those purchases sort themselves.</string>
+    <string name="fin_budget_holder_ending">Card ending %1$s</string>
     <string name="fin_budget_sort_title">Whose are these?</string>
     <string name="fin_budget_sort_subtitle">The bank didn't say who made them. Tap a name, or the purchase itself to remember its shop.</string>
     <plurals name="fin_budget_sort_count">

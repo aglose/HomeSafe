@@ -41,6 +41,7 @@ import com.meticulouscreations.homesafe.finance.domain.Budget
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlertSwitches
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
+import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.ExpenseLine
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
@@ -52,6 +53,7 @@ import homesafe.shared.generated.resources.common_save
 import homesafe.shared.generated.resources.fin_budget_bucket_family
 import homesafe.shared.generated.resources.fin_budget_bucket_unsorted
 import homesafe.shared.generated.resources.fin_budget_error_generic
+import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets
 import homesafe.shared.generated.resources.fin_budget_settings_alert_buckets_note
 import homesafe.shared.generated.resources.fin_budget_settings_alert_savings
@@ -139,6 +141,12 @@ internal fun BudgetSettingsScreen(
                 Text(cardLabel(card), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
                 Spacer(Modifier.height(8.dp))
                 RoleChips(card.role, config.people, enabled = !state.saving, onPick = { onSave(BudgetConfigPatch(roles = mapOf(card.key to it))) })
+                // On a card two people carry, where the bank marks which card (or who) made each purchase.
+                if (card.role == CardRole.Split && card.holders.isNotEmpty() && config.people.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(stringResource(Res.string.fin_budget_holders_title), style = FinanceTheme.type.label, color = colors.textSecondary)
+                    CardHolders(card, config.people, enabled = !state.saving, onSay = { mark, person -> onSave(BudgetConfigPatch(holders = mapOf(card.key to mapOf(mark to person)))) })
+                }
             }
         }
 

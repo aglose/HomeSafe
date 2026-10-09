@@ -15,6 +15,9 @@ import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_date_month_day
 import homesafe.shared.generated.resources.fitness_date_month_day_year
+import homesafe.shared.generated.resources.fitness_heart_time_minutes
+import homesafe.shared.generated.resources.fitness_heart_time_none
+import homesafe.shared.generated.resources.fitness_heart_time_seconds
 import homesafe.shared.generated.resources.fitness_pace_bulk_fast
 import homesafe.shared.generated.resources.fitness_pace_bulk_on
 import homesafe.shared.generated.resources.fitness_pace_bulk_slow
@@ -193,6 +196,13 @@ internal object FitnessFormat {
     fun clock(seconds: Int): String {
         val s = seconds.coerceAtLeast(0)
         return "${s / 60}:${(s % 60).toString().padStart(2, '0')}"
+    }
+
+    /** How long was spent somewhere, as a glance takes it: "12 min", under a minute "40 s", and a dash for none at all. */
+    fun spent(millis: Long): UiText = when {
+        millis < 1_000 -> UiText.of(Res.string.fitness_heart_time_none)
+        millis < 60_000 -> UiText.of(Res.string.fitness_heart_time_seconds, (millis / 1_000).toInt())
+        else -> UiText.of(Res.string.fitness_heart_time_minutes, ((millis + 30_000) / 60_000).toInt())
     }
 
     /** Data that is already words (a name, a note). */
