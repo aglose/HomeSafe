@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.fitness.data
 import com.meticulouscreations.homesafe.data.FitnessBodyweightEntity
 import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.FitnessExerciseEntity
+import com.meticulouscreations.homesafe.data.FitnessHeartSettingsEntity
+import com.meticulouscreations.homesafe.data.FitnessHeartSummaryEntity
 import com.meticulouscreations.homesafe.data.FitnessPhaseEntity
 import com.meticulouscreations.homesafe.data.FitnessSetEntity
 import com.meticulouscreations.homesafe.data.FitnessWorkoutEntity
@@ -11,6 +13,10 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
+import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
+import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
@@ -93,7 +99,12 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun finishWorkout(id: Long, atEpochSeconds: Long) = writes.withLock {
         val row = dao.workout(id) ?: return@withLock
-        if (dao.countSetsOfWorkout(id) == 0) dao.deleteWorkout(id) else dao.upsertWorkout(row.copy(finishedAtEpochSeconds = atEpochSeconds))
+        if (dao.countSetsOfWorkout(id) == 0) {
+            dao.deleteWorkout(id)
+            dao.deleteHeartSummary(id)
+        } else {
+            dao.upsertWorkout(row.copy(finishedAtEpochSeconds = atEpochSeconds))
+        }
     }
 
     override suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long) = writes.withLock {
@@ -103,7 +114,47 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     override suspend fun saveBodyweight(entry: BodyweightEntry) = dao.upsertBodyweight(FitnessBodyweightEntity(entry.epochDay, entry.pounds))
 
     override suspend fun deleteBodyweight(epochDay: Long) = dao.deleteBodyweight(epochDay)
+
+    override val heartSettings: Flow<HeartSettings> = dao.observeHeartSettings().map { row ->
+        if (row == null) HeartSettings() else HeartSettings(HeartProfile(row.maxBpm, row.age, row.restingBpm), row.sensorAddress?.let { HeartSensor(it, row.sensorName.orEmpty()) })
+    }
+
+    override val heartSummaries: Flow<Map<Long, HeartSummary>> = dao.observeHeartSummaries().map { rows -> rows.associate { it.workoutId to it.toDomain() } }
+
+    // The profile and the sensor share a row and are saved apart, so each is written over what the row holds at that moment.
+    override suspend fun saveHeartProfile(profile: HeartProfile) = writes.withLock {
+        val row = dao.heartSettings() ?: EMPTY_HEART_SETTINGS
+        dao.upsertHeartSettings(row.copy(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm))
+    }
+
+    override suspend fun saveHeartSensor(sensor: HeartSensor?) = writes.withLock {
+        val row = dao.heartSettings() ?: EMPTY_HEART_SETTINGS
+        dao.upsertHeartSettings(row.copy(sensorAddress = sensor?.address, sensorName = sensor?.name))
+    }
+
+    override suspend fun saveHeartSummary(workoutId: Long, summary: HeartSummary) = writes.withLock {
+        // A workout cancelled a moment before its heart was saved leaves nothing behind.
+        if (dao.workout(workoutId) == null) return@withLock
+        dao.upsertHeartSummary(
+            FitnessHeartSummaryEntity(
+                workoutId = workoutId,
+                belowMillis = summary.belowMillis,
+                zone1Millis = summary.zoneMillis[0],
+                zone2Millis = summary.zoneMillis[1],
+                zone3Millis = summary.zoneMillis[2],
+                zone4Millis = summary.zoneMillis[3],
+                zone5Millis = summary.zoneMillis[4],
+                bpmMillis = summary.bpmMillis,
+                peakBpm = summary.peakBpm,
+            ),
+        )
+    }
 }
+
+private val EMPTY_HEART_SETTINGS = FitnessHeartSettingsEntity(maxBpm = null, age = null, restingBpm = null, sensorAddress = null, sensorName = null)
+
+private fun FitnessHeartSummaryEntity.toDomain() =
+    HeartSummary(belowMillis, listOf(zone1Millis, zone2Millis, zone3Millis, zone4Millis, zone5Millis), bpmMillis, peakBpm)
 
 private data class SetKey(val exerciseId: String, val weight: Double, val reps: Int, val epochSeconds: Long)
 

@@ -10,6 +10,19 @@
     <!-- Geofences don't survive a reboot; BootReceiver re-arms the home fence. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- The fitness app's live heart rate, from a Bluetooth heart-rate sensor such as a Fitbit Air
+         sharing its heart rate (HeartRateLink.android.kt). Asked for when the user taps Connect.
+         neverForLocation: the scan is only ever for the Heart Rate Service and is never used to
+         work out where the phone is, so no location permission is needed with it. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- The app is for the cameras first: a device without Bluetooth LE still installs it. -->
+    <uses-feature
+        android:name="android.hardware.bluetooth_le"
+        android:required="false" />
+
     <!-- The "Open Tailscale" button on the Home notice (TailscaleApp.android.kt): Android 11+
          hides other apps from this one unless they are named here. -->
     <queries>

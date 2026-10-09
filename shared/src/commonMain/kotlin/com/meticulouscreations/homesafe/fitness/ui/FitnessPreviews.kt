@@ -5,11 +5,22 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.meticulouscreations.homesafe.fitness.FitnessBoardBuilder
 import com.meticulouscreations.homesafe.fitness.FitnessLog
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.ImportState
 import com.meticulouscreations.homesafe.fitness.RecordFlash
 import com.meticulouscreations.homesafe.fitness.RestTimer
+import com.meticulouscreations.homesafe.fitness.WorkoutHeart
+import com.meticulouscreations.homesafe.fitness.ZoneNotice
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
+import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
+import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
+import com.meticulouscreations.homesafe.fitness.domain.HeartZone
+import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.NotesImport
 import com.meticulouscreations.homesafe.fitness.domain.NotesParser
@@ -18,6 +29,7 @@ import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.Record
 import com.meticulouscreations.homesafe.fitness.domain.RecordKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
+import com.meticulouscreations.homesafe.fitness.domain.SensorSighting
 import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
@@ -164,6 +176,51 @@ Hammer curls
 
     fun exercise(name: String): Exercise = log.exercises.first { it.name == name }
 
+    /** A band for the heart-rate screens: the name such a band gives itself, at an address that is nobody's. */
+    val band = HeartSensor("AA:BB:CC:00:00:01", "Fitbit Air")
+
+    /** Someone else's strap across the room, for the list a search turns up. */
+    val strap = HeartSensor("AA:BB:CC:00:00:02", "Chest Strap")
+    val heartProfile = HeartProfile(maxBpm = 190)
+    private val bounds = HeartZones.bounds(heartProfile)
+
+    /** Twenty-three minutes of a workout's heart: mostly easy, with a few minutes worked hard. */
+    val heartSummary = HeartSummary(
+        belowMillis = 3 * 60_000L,
+        zoneMillis = listOf(6 * 60_000L, 9 * 60_000L, 4 * 60_000L, 60_000L, 0L),
+        bpmMillis = 23 * 60_000L * 118,
+        peakBpm = 158,
+    )
+
+    /**
+     * The heart on a workout: the band linked and reading [bpm] (null: linked, or with another
+     * [sensor] state not linked, and nothing to read). With [notice] it has just settled into
+     * the zone it is in; with [resting] it is coming down from a set.
+     */
+    fun heart(bpm: Int? = 142, notice: Boolean = false, resting: Boolean = false, sensor: HeartSensorState? = null): HeartUiState {
+        val zone = bpm?.let { bounds?.zoneOf(it) }
+        return HeartUiState(
+            sensor = sensor ?: HeartSensorState.Connected(band, bpm, NOW * 1000),
+            settings = HeartSettings(heartProfile, band),
+            bounds = bounds,
+            bpm = bpm,
+            zone = zone,
+            notice = if (notice) ZoneNotice(1, HeartZone.LIGHT, zone) else null,
+            recovery = if (resting && bpm != null) HeartRecovery(bpm + 24, bpm) else null,
+            summary = heartSummary,
+        )
+    }
+
+    /** Away from a workout, the band chosen but not being listened to, and the last workout's heart to look back on. */
+    fun heartAtRest(): HeartUiState =
+        HeartUiState(sensor = HeartSensorState.Off, settings = HeartSettings(heartProfile, band), bounds = bounds, last = WorkoutHeart(log.workouts.last(), heartSummary))
+
+    /** Before any band has been chosen: Bluetooth there to be used, and [sensor] what it is doing. */
+    fun heartUnset(sensor: HeartSensorState = HeartSensorState.Off): HeartUiState = HeartUiState(sensor = sensor)
+
+    /** A search that has turned up the band and a stranger's strap. */
+    fun heartSearching(): HeartUiState = heartUnset(HeartSensorState.Searching(listOf(SensorSighting(band, -52), SensorSighting(strap, -84))))
+
     private fun build(working: Boolean): FitnessLog {
         val plan = NotesImport.plan(NotesParser.parse(NOTES), emptyList(), emptyList(), NOW)
         val exercises = plan.exercises.map { it.exercise }
@@ -244,6 +301,53 @@ private fun FitnessTodayWorkingPreview() {
 @Composable
 private fun FitnessWorkoutPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+// The heart rate, where there is a sensor: the workout with it live and a rest counting, the moment a zone changes,
+// the link lost, and the page it is set up on.
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutHeartPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true), FitnessActions(), initialPage = FitnessPage.Workout, heart = FitnessFixtures.heart(resting = true)) }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessWorkoutZoneChangePreview() {
+    FrigateTheme {
+        FitnessAppContent(FitnessFixtures.state(working = true, resting = false), FitnessActions(), initialPage = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 156, notice = true))
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessWorkoutHeartLostPreview() {
+    FrigateTheme {
+        FitnessAppContent(
+            FitnessFixtures.state(working = true, resting = false),
+            FitnessActions(),
+            initialPage = FitnessPage.Workout,
+            heart = FitnessFixtures.heart(bpm = null, sensor = HeartSensorState.Lost(FitnessFixtures.band)),
+        )
+    }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessHeartPagePreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Heart, heart = FitnessFixtures.heart(bpm = 96)) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessHeartSearchPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Heart, heart = FitnessFixtures.heartSearching()) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessTodayHeartPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), heart = FitnessFixtures.heartAtRest()) }
 }
 
 @Preview(widthDp = 412, heightDp = 915)

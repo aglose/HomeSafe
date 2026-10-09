@@ -7,6 +7,17 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.finance_date_month_day
+import homesafe.shared.generated.resources.finance_date_month_day_year
+import homesafe.shared.generated.resources.finance_date_month_year
+import homesafe.shared.generated.resources.finance_date_short_year
+import homesafe.shared.generated.resources.finance_date_time
+import homesafe.shared.generated.resources.finance_month_dec
+import homesafe.shared.generated.resources.finance_month_jan
+import homesafe.shared.generated.resources.finance_month_oct
+import homesafe.shared.generated.resources.finance_month_sep
+import homesafe.shared.generated.resources.finance_time_am
+import homesafe.shared.generated.resources.finance_time_pm
 import homesafe.shared.generated.resources.narrator_format_days_ago
 import homesafe.shared.generated.resources.narrator_format_hours_ago
 import homesafe.shared.generated.resources.narrator_format_in_days
@@ -28,7 +39,9 @@ import kotlin.test.assertEquals
 /**
  * Number and date formatting for the finance screens. Common code has no `String.format`, so
  * [FinanceFormat] does its own grouping, rounding and 12-hour clock math — easy to get subtly
- * wrong at the edges, which is what these tests poke at.
+ * wrong at the edges, which is what these tests poke at. Dates and times are [UiText] built from
+ * the strings file, so they are checked by their parts; what the English reads as is checked
+ * where the strings can be loaded, in the JVM's `FinanceDatesEnglishTest`.
  */
 class FinanceFormatTest {
 
@@ -79,26 +92,58 @@ class FinanceFormatTest {
     @Test
     fun dateMonthYearAndTimeApplyTheOffsetBeforeReadingTheClock() {
         val epoch = 1790800692L // 2026-09-30 20:38:12 UTC
-        assertEquals("Sep 30, 2026", FinanceFormat.date(epoch, offsetSeconds = -14400))
-        assertEquals("Sep 2026", FinanceFormat.monthYear(epoch, offsetSeconds = -14400))
-        assertEquals("4:38 PM", FinanceFormat.time(epoch, offsetSeconds = -14400), "20:38 UTC minus 4 hours is 16:38")
-        assertEquals("Sep 30, 4:38 PM", FinanceFormat.dateTime(epoch, offsetSeconds = -14400))
+        val sep = UiText.of(Res.string.finance_month_sep)
+        val sep30 = UiText.of(Res.string.finance_date_month_day, sep, 30)
+        assertEquals(UiText.of(Res.string.finance_date_month_day_year, sep, 30, 2026), FinanceFormat.date(epoch, offsetSeconds = -14400))
+        assertEquals(UiText.of(Res.string.finance_date_month_year, sep, 2026), FinanceFormat.monthYear(epoch, offsetSeconds = -14400))
+        val afternoon = UiText.of(Res.string.finance_time_pm, "4:38")
+        assertEquals(afternoon, FinanceFormat.time(epoch, offsetSeconds = -14400), "20:38 UTC minus 4 hours is 16:38")
+        assertEquals(UiText.of(Res.string.finance_date_time, sep30, afternoon), FinanceFormat.dateTime(epoch, offsetSeconds = -14400))
 
         // Same instant with no offset: still Sep 30, but the UTC clock reading.
-        assertEquals("8:38 PM", FinanceFormat.time(epoch, offsetSeconds = 0))
-        assertEquals("Sep 30, 8:38 PM", FinanceFormat.dateTime(epoch, offsetSeconds = 0))
+        val evening = UiText.of(Res.string.finance_time_pm, "8:38")
+        assertEquals(evening, FinanceFormat.time(epoch, offsetSeconds = 0))
+        assertEquals(UiText.of(Res.string.finance_date_time, sep30, evening), FinanceFormat.dateTime(epoch, offsetSeconds = 0))
+    }
+
+    @Test
+    fun anOffsetThatCrossesMidnightMovesTheDayTheMonthAndTheYear() {
+        val epoch = 1798763400L // 2027-01-01 00:30:00 UTC
+        assertEquals(UiText.of(Res.string.finance_date_month_day_year, UiText.of(Res.string.finance_month_dec), 31, 2026), FinanceFormat.date(epoch, offsetSeconds = -18000))
+        assertEquals(UiText.of(Res.string.finance_date_month_year, UiText.of(Res.string.finance_month_jan), 2027), FinanceFormat.monthYear(epoch))
+        assertEquals(2026, FinanceFormat.year(epoch, offsetSeconds = -18000))
+        assertEquals(2027, FinanceFormat.year(epoch))
     }
 
     @Test
     fun timeHandlesNoonAndMidnightOnThe12HourClock() {
         val epoch = 1725000000L // 2024-08-30 06:40:00 UTC
-        assertEquals("12:10 PM", FinanceFormat.time(epoch, offsetSeconds = 19800), "local clock lands on noon:10")
-        assertEquals("12:40 AM", FinanceFormat.time(epoch, offsetSeconds = -21600), "local clock lands on midnight:40")
+        assertEquals(UiText.of(Res.string.finance_time_pm, "12:10"), FinanceFormat.time(epoch, offsetSeconds = 19800), "local clock lands on noon:10")
+        assertEquals(UiText.of(Res.string.finance_time_am, "12:40"), FinanceFormat.time(epoch, offsetSeconds = -21600), "local clock lands on midnight:40")
     }
 
     @Test
     fun shortYearIgnoresTheOffsetAndUsesTheLastTwoDigits() {
-        assertEquals("'26", FinanceFormat.shortYear(1790800692L))
+        assertEquals(UiText.of(Res.string.finance_date_short_year, "26"), FinanceFormat.shortYear(1790800692L))
+        assertEquals(UiText.of(Res.string.finance_date_short_year, "05"), FinanceFormat.shortYear(1104580800L), "2005 keeps its zero")
+    }
+
+    @Test
+    fun dayOfMonthReadsAnIsoDayOrAMonthAndADayOfIt() {
+        val oct7 = UiText.of(Res.string.finance_date_month_day, UiText.of(Res.string.finance_month_oct), 7)
+        assertEquals(oct7, FinanceFormat.dayOfMonth("2026-10-07"))
+        assertEquals(oct7, FinanceFormat.dayOfMonth("2026-10", 7))
+        assertEquals("soon".asUiText(), FinanceFormat.dayOfMonth("soon"), "not a day: the text as it came")
+        assertEquals("2026-13-07".asUiText(), FinanceFormat.dayOfMonth("2026-13-07"), "there is no thirteenth month")
+    }
+
+    @Test
+    fun monthNamesAMonthAndItsYearWhenAsked() {
+        val oct = UiText.of(Res.string.finance_month_oct)
+        assertEquals(oct, FinanceFormat.month("2026-10"))
+        assertEquals(oct, FinanceFormat.month("2026-10-07"), "a day in the month names the month")
+        assertEquals(UiText.of(Res.string.finance_date_month_year, oct, 2026), FinanceFormat.month("2026-10", year = true))
+        assertEquals("2026".asUiText(), FinanceFormat.month("2026"), "not a month: the text as it came")
     }
 
     @Test
@@ -152,7 +197,7 @@ class FinanceFormatTest {
         assertEquals(UiText.plural(Res.plurals.narrator_format_hours_ago, 1), FinanceFormat.ago(now, now - 3_600))
         assertEquals(UiText.plural(Res.plurals.narrator_format_hours_ago, 35), FinanceFormat.ago(now, now - (36 * 3_600 - 1)))
         val then = now - 36 * 3_600
-        assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)).asUiText(), FinanceFormat.ago(now, then), "a day and a half on, the date")
+        assertEquals(FinanceFormat.date(then, FinanceFormat.localOffsetSeconds(then)), FinanceFormat.ago(now, then), "a day and a half on, the date")
         assertEquals(justNow, FinanceFormat.ago(now, now + 600), "a clock a little ahead of the relay's isn't the future")
     }
 

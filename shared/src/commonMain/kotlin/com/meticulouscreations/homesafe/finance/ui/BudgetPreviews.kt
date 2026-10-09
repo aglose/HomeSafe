@@ -15,6 +15,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetLimits
 import com.meticulouscreations.homesafe.finance.domain.BudgetPastMonth
 import com.meticulouscreations.homesafe.finance.domain.BudgetSheetFigures
 import com.meticulouscreations.homesafe.finance.domain.BudgetSlice
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.MerchantRule
 import com.meticulouscreations.homesafe.finance.domain.Purchase
@@ -35,7 +36,18 @@ internal object BudgetFixtures {
     val people = listOf("Alex", "Sam")
 
     val cards = listOf(
-        BudgetCard(TRAVEL, "item-1", "Summit Bank", "Voyager", "4410", CardRole.Split, balance = 1_840.0, needsRelink = false, readsPurchases = true),
+        BudgetCard(
+            TRAVEL,
+            "item-1",
+            "Summit Bank",
+            "Voyager",
+            "4410",
+            CardRole.Split,
+            balance = 1_840.0,
+            needsRelink = false,
+            readsPurchases = true,
+            holders = listOf(CardHolder("4410", 61, "Alex"), CardHolder("7726", 38, "Sam")),
+        ),
         BudgetCard(FAMILY, "item-2", "Northwind", "Platinum", "2207", CardRole.Family, balance = 2_410.0, needsRelink = false, readsPurchases = true),
     )
 
@@ -133,6 +145,9 @@ internal object BudgetFixtures {
     /** Two cards just linked and nothing said about either. */
     val unsorted = month(day = 3).let { it.copy(cards = it.cards.map { card -> card.copy(role = CardRole.Unset) }, purchases = emptyList(), spent = 0.0, pending = 0.0, daily = emptyList(), buckets = emptyList(), categories = emptyList(), merchants = emptyList()) }
 
+    /** The shared card's bank says which card made each purchase, and nobody has yet said whose each is. */
+    val holdersUnsaid = month().let { it.copy(cards = it.cards.map { card -> card.copy(holders = card.holders.map { holder -> holder.copy(person = null) }) }) }
+
     val noCards = month(day = 3, cards = emptyList()).copy(purchases = emptyList(), spent = 0.0)
 
     fun state(budget: Budget) = BudgetUiState(budget = budget, loading = false, readAtEpochSeconds = now)
@@ -141,7 +156,7 @@ internal object BudgetFixtures {
 @Composable
 private fun BudgetPreview(state: BudgetUiState) {
     FinanceStage {
-        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onSetRole = { _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
+        BudgetScreen(state, rememberLazyListState(), previewPadding, onTag = { _, _, _ -> }, onSetRole = { _, _ -> }, onSetHolder = { _, _, _ -> }, onShowMonth = {}, onSyncNow = {}, onRetry = {}, onOpenLinkedAccounts = {}, onOpenSettings = {})
     }
 }
 
@@ -167,6 +182,12 @@ private fun FinanceBudgetDippingPreview() {
 @Composable
 private fun FinanceBudgetRolesPreview() {
     BudgetPreview(BudgetFixtures.state(BudgetFixtures.unsorted))
+}
+
+@Preview(name = "Budget · whose card is which", widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceBudgetHoldersPreview() {
+    BudgetPreview(BudgetFixtures.state(BudgetFixtures.holdersUnsaid))
 }
 
 @Preview(name = "Budget · no cards linked", widthDp = 412, heightDp = 420)

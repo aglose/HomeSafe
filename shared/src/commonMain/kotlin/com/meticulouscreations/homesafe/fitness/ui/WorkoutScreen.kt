@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
 import androidx.compose.material.icons.filled.Insights
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -75,6 +76,7 @@ import com.meticulouscreations.homesafe.fitness.ActiveWorkout
 import com.meticulouscreations.homesafe.fitness.ExerciseBoard
 import com.meticulouscreations.homesafe.fitness.FitnessBoardBuilder
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
@@ -82,6 +84,7 @@ import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_exercise_edit
+import homesafe.shared.generated.resources.fitness_heart_open
 import homesafe.shared.generated.resources.fitness_rest_go
 import homesafe.shared.generated.resources.fitness_rest_label
 import homesafe.shared.generated.resources.fitness_rest_minus
@@ -116,7 +119,8 @@ import kotlin.time.Clock
  * shelves with last time's peak set and what to aim for today. A tap opens an exercise into its
  * logger, in place; logging a set starts the rest clock, which rides along the top. Exercises
  * already done today rise to the head of the list, the rest follow in the order they were most
- * recently trained.
+ * recently trained. With a heart-rate sensor chosen, the heart rate and its zone sit over it all
+ * ([HeartPanel]), and the rest clock shows the heart coming back down.
  */
 @Composable
 internal fun WorkoutScreen(
@@ -130,6 +134,8 @@ internal fun WorkoutScreen(
     modifier: Modifier = Modifier,
     /** The exercise whose logger is open to begin with. */
     initiallyOpen: String? = null,
+    heart: HeartUiState = HeartUiState(),
+    onOpenHeart: () -> Unit = {},
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -156,15 +162,30 @@ internal fun WorkoutScreen(
     ) {
         item(key = "header") {
             Column {
-                Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) {
                     val minutes = ((state.nowEpochSeconds - workout.workout.startedAtEpochSeconds) / 60).coerceAtLeast(0).toInt()
                     Stat(minutes.toString(), stringResource(Res.string.fitness_workout_elapsed))
                     Stat(workout.setCount.toString(), pluralStringResource(Res.plurals.fitness_workout_sets, workout.setCount))
                     Stat(workout.recordCount.toString(), pluralStringResource(Res.plurals.fitness_workout_records, workout.recordCount), color = if (workout.recordCount > 0) colors.gold else colors.text)
+                    // With no sensor chosen yet the heart rate is only a way in, kept out of the way.
+                    if (heart.supported && !heart.wanted) {
+                        Spacer(Modifier.weight(1f))
+                        RoundIconButton(
+                            Icons.Filled.MonitorHeart,
+                            stringResource(Res.string.fitness_heart_open),
+                            onOpenHeart,
+                            Modifier.testTag("fitness_heart_open"),
+                            tint = colors.textMuted,
+                            fill = colors.surfaceRaised,
+                        )
+                    }
                 }
+                if (heart.wanted) HeartPanel(heart, onOpenHeart, actions.onDismissZoneNotice, Modifier.padding(top = 14.dp))
                 AnimatedVisibility(state.rest != null, enter = expandVertically() + fadeIn(), exit = shrinkVertically() + fadeOut()) {
                     state.rest?.let { rest ->
-                        RestBar(rest, state.nowEpochSeconds * 1000, tints, actions.onAdjustRest, actions.onSkipRest, Modifier.padding(top = 14.dp))
+                        RestBar(rest, state.nowEpochSeconds * 1000, tints, actions.onAdjustRest, actions.onSkipRest, Modifier.padding(top = 14.dp)) {
+                            heart.recovery?.let { RecoveryLine(it, heart.zone, zoned = heart.bounds != null, Modifier.padding(top = 10.dp)) }
+                        }
                     }
                 }
                 Spacer(Modifier.height(14.dp))
@@ -367,10 +388,19 @@ private fun WorkoutExercise(
 /**
  * The rest between sets: a ring draining as the seconds go, the time left, and a way to add or
  * take fifteen seconds or skip it. When it runs out the ring turns gold and says go, with a tap
- * of the motor for a phone lying face up on the bench.
+ * of the motor for a phone lying face up on the bench. [below] goes under it, inside the same
+ * card: the heart's recovery, when a sensor is on.
  */
 @Composable
-internal fun RestBar(rest: RestTimer, fallbackNowMillis: Long, tints: Pair<Color, Color>, onAdjust: (Int) -> Unit, onSkip: () -> Unit, modifier: Modifier = Modifier) {
+internal fun RestBar(
+    rest: RestTimer,
+    fallbackNowMillis: Long,
+    tints: Pair<Color, Color>,
+    onAdjust: (Int) -> Unit,
+    onSkip: () -> Unit,
+    modifier: Modifier = Modifier,
+    below: @Composable () -> Unit = {},
+) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val remaining = rememberRestSeconds(rest, fallbackNowMillis)
@@ -379,7 +409,7 @@ internal fun RestBar(rest: RestTimer, fallbackNowMillis: Long, tints: Pair<Color
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(over, rest.exerciseId) { if (over) haptics.performHapticFeedback(HapticFeedbackType.LongPress) }
     val spoken = stringResource(Res.string.fitness_rest_remaining, FitnessFormat.clock(seconds))
-    Row(
+    Column(
         modifier
             .fillMaxWidth()
             .clip(FitnessCardShape)
@@ -387,31 +417,33 @@ internal fun RestBar(rest: RestTimer, fallbackNowMillis: Long, tints: Pair<Color
             .border(1.dp, if (over) colors.gold else colors.hairline, FitnessCardShape)
             .padding(horizontal = 12.dp, vertical = 10.dp)
             .testTag("fitness_rest"),
-        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
-            PlasmaRing(
-                level = if (over) 1f else (remaining.floatValue / rest.totalSeconds).coerceIn(0f, 1f),
-                tint = if (over) colors.gold else tints.first,
-                tint2 = if (over) colors.amber else tints.second,
-                track = colors.surfaceRaised,
-                modifier = Modifier.matchParentSize(),
-                thickness = 0.2f,
-                sweepMillis = 0,
-            )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) {
+                PlasmaRing(
+                    level = if (over) 1f else (remaining.floatValue / rest.totalSeconds).coerceIn(0f, 1f),
+                    tint = if (over) colors.gold else tints.first,
+                    tint2 = if (over) colors.amber else tints.second,
+                    track = colors.surfaceRaised,
+                    modifier = Modifier.matchParentSize(),
+                    thickness = 0.2f,
+                    sweepMillis = 0,
+                )
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = spoken }) {
+                Text(stringResource(Res.string.fitness_rest_label).uppercase(), style = type.micro, color = colors.textFaint)
+                Text(if (over) stringResource(Res.string.fitness_rest_go) else FitnessFormat.clock(seconds), style = type.title, color = if (over) colors.gold else colors.text)
+            }
+            if (!over) {
+                RestNudge(stringResource(Res.string.fitness_rest_minus_short), stringResource(Res.string.fitness_rest_minus)) { onAdjust(-15) }
+                Spacer(Modifier.width(6.dp))
+                RestNudge(stringResource(Res.string.fitness_rest_plus_short), stringResource(Res.string.fitness_rest_plus)) { onAdjust(15) }
+                Spacer(Modifier.width(2.dp))
+            }
+            RoundIconButton(Icons.Filled.SkipNext, stringResource(Res.string.fitness_rest_skip), onSkip, Modifier.testTag("fitness_rest_skip"), tint = colors.textMuted)
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f).semantics(mergeDescendants = true) { contentDescription = spoken }) {
-            Text(stringResource(Res.string.fitness_rest_label).uppercase(), style = type.micro, color = colors.textFaint)
-            Text(if (over) stringResource(Res.string.fitness_rest_go) else FitnessFormat.clock(seconds), style = type.title, color = if (over) colors.gold else colors.text)
-        }
-        if (!over) {
-            RestNudge(stringResource(Res.string.fitness_rest_minus_short), stringResource(Res.string.fitness_rest_minus)) { onAdjust(-15) }
-            Spacer(Modifier.width(6.dp))
-            RestNudge(stringResource(Res.string.fitness_rest_plus_short), stringResource(Res.string.fitness_rest_plus)) { onAdjust(15) }
-            Spacer(Modifier.width(2.dp))
-        }
-        RoundIconButton(Icons.Filled.SkipNext, stringResource(Res.string.fitness_rest_skip), onSkip, Modifier.testTag("fitness_rest_skip"), tint = colors.textMuted)
+        below()
     }
 }
 

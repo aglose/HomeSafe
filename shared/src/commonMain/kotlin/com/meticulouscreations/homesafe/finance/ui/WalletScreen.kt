@@ -340,7 +340,7 @@ private fun LazyListScope.walletItems(
                     Text(
                         stringResource(
                             Res.string.finance_wallet_flow_history_selected,
-                            FinanceFormat.monthYear(s.epochSeconds),
+                            FinanceFormat.monthYear(s.epochSeconds).resolve(),
                             FinanceFormat.money(s.monthlyIncome!!, 0),
                             FinanceFormat.money(s.monthlyExpenses!!, 0),
                         ),
@@ -352,7 +352,7 @@ private fun LazyListScope.walletItems(
                     BarChart(
                         bars = flowHistory.map { snap ->
                             Bar(
-                                label = FinanceFormat.shortYear(snap.epochSeconds),
+                                label = FinanceFormat.shortYear(snap.epochSeconds).resolve(),
                                 value = snap.monthlyExpenses!!,
                                 color = colors.loss,
                                 secondary = snap.monthlyIncome,
@@ -434,6 +434,7 @@ private fun LazyListScope.walletItems(
 @Composable
 private fun NetWorthHero(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
+    val dates = rememberFinanceDates()
     var metric by rememberSaveable { mutableStateOf(WalletMetric.ASSETS) }
     var range by rememberSaveable { mutableStateOf(EconRange.MAX) }
     var scrub by remember(metric, range) { mutableStateOf<Int?>(null) }
@@ -462,9 +463,9 @@ private fun NetWorthHero(finance: PersonalFinance) {
         val amount = FinanceFormat.signedMoney(change, 0)
         val withPct = pct?.let { stringResource(Res.string.finance_change_with_percent, amount, FinanceFormat.signedPercent(it)) } ?: amount
         if (i != null) {
-            stringResource(Res.string.finance_change_at, withPct, FinanceFormat.monthYear(series.times[i]))
+            stringResource(Res.string.finance_change_at, withPct, FinanceFormat.monthYear(series.times[i]).resolve())
         } else {
-            stringResource(Res.string.finance_change_since, withPct, series.times.firstOrNull()?.let { FinanceFormat.monthYear(it) } ?: "")
+            stringResource(Res.string.finance_change_since, withPct, series.times.firstOrNull()?.let { FinanceFormat.monthYear(it).resolve() } ?: "")
         }
     }
     Box(Modifier.fillMaxWidth()) {
@@ -490,7 +491,7 @@ private fun NetWorthHero(finance: PersonalFinance) {
                 LineChart(
                     lines = listOf(ChartLine(series, color, fill = true, width = 3f)),
                     timeAxis = true,
-                    axis = ChartAxis({ FinanceFormat.compactMoney(it) }, { FinanceFormat.monthYear(it) }),
+                    axis = ChartAxis({ FinanceFormat.compactMoney(it) }, { dates.monthYear(it) }),
                     contentDescription = stringResource(Res.string.finance_wallet_chart_description, stringResource(metric.label)),
                     onScrub = { scrub = it },
                     modifier = Modifier.fillMaxWidth().height(230.dp),
@@ -744,13 +745,14 @@ private fun CashFlowBlock(finance: PersonalFinance) {
 @Composable
 private fun DebtBlock(finance: PersonalFinance) {
     val colors = FinanceTheme.colors
+    val dates = rememberFinanceDates()
     val debtHistory = Series.of(finance.history.mapNotNull { s -> s.debt?.let { s.epochSeconds to it } })
     Column {
         if (debtHistory.size > 2) {
             LineChart(
                 lines = listOf(ChartLine(debtHistory, colors.loss, fill = true)),
                 timeAxis = true,
-                axis = ChartAxis({ FinanceFormat.compactMoney(it) }, { FinanceFormat.monthYear(it) }),
+                axis = ChartAxis({ FinanceFormat.compactMoney(it) }, { dates.monthYear(it) }),
                 contentDescription = stringResource(Res.string.finance_wallet_debt_history),
                 modifier = Modifier.fillMaxWidth().height(130.dp),
             )

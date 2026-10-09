@@ -5,7 +5,8 @@ import kotlinx.coroutines.flow.Flow
 /**
  * The training log, kept on the device: the exercises, every set, the workouts they were done
  * in, the phases and the weigh-ins. Each is small enough to be handed over whole whenever it
- * changes, which is what the screens are worked out from.
+ * changes, which is what the screens are worked out from. With it, the heart-rate settings and
+ * what each workout's heart added up to.
  */
 interface FitnessRepository {
     val exercises: Flow<List<Exercise>>
@@ -44,4 +45,18 @@ interface FitnessRepository {
     suspend fun saveBodyweight(entry: BodyweightEntry)
 
     suspend fun deleteBodyweight(epochDay: Long)
+
+    val heartSettings: Flow<HeartSettings>
+
+    /** Each workout's heart, by the workout's id; only workouts a sensor was on for have one. */
+    val heartSummaries: Flow<Map<Long, HeartSummary>>
+
+    /** Saves what the zones are worked out from, leaving the chosen sensor as it is. */
+    suspend fun saveHeartProfile(profile: HeartProfile)
+
+    /** Remembers [sensor] as the one to listen to, or with null forgets it, leaving the zones as they are. */
+    suspend fun saveHeartSensor(sensor: HeartSensor?)
+
+    /** Saves a workout's heart as it stands. For a workout that is no longer there, nothing is kept. */
+    suspend fun saveHeartSummary(workoutId: Long, summary: HeartSummary)
 }

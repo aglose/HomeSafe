@@ -34,3 +34,11 @@ internal interface WeatherShader {
 
 /** [source] compiled, or null where it can't be (Android Studio's preview renderer, say): callers draw a plain fallback. */
 internal expect fun weatherShaderOrNull(source: String): WeatherShader?
+
+/**
+ * Whether an offscreen layer here is a picture kept until what is in it changes (Android's are:
+ * a texture, redrawn only when its content is) or only a way of drawing, done over on every frame
+ * (Skia's). Where they are kept, something costly that changes less often than the screen around
+ * it is worth a layer of its own.
+ */
+internal expect val layersKeepTheirPixels: Boolean

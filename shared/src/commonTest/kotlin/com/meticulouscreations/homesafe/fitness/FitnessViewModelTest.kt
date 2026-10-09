@@ -57,7 +57,7 @@ class FitnessViewModelTest {
 
         private val made = mutableListOf<FitnessViewModel>()
 
-        fun viewModel() = FitnessViewModel(repository, clock).also { made += it }
+        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }
