@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.IosShare
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -97,6 +98,7 @@ import homesafe.shared.generated.resources.fitness_lifts_all
 import homesafe.shared.generated.resources.fitness_lifts_empty
 import homesafe.shared.generated.resources.fitness_lifts_import
 import homesafe.shared.generated.resources.fitness_lifts_of_best
+import homesafe.shared.generated.resources.fitness_lifts_send_copy
 import homesafe.shared.generated.resources.fitness_lifts_untrained
 import homesafe.shared.generated.resources.fitness_today_exercises
 import org.jetbrains.compose.resources.pluralStringResource
@@ -105,7 +107,8 @@ import kotlin.math.roundToInt
 
 /**
  * Every exercise in the log, shelf by shelf: its best set, and where it stands against that
- * now. A new one is added at the foot; the notes can be brought in (again) from the head.
+ * now. A new one is added at the foot, where the notes can be brought in (again) and, where
+ * the platform has somewhere to send it ([onSendCopy]), a copy of the whole log sent out.
  */
 @Composable
 internal fun LiftsScreen(
@@ -115,6 +118,7 @@ internal fun LiftsScreen(
     onOpenImport: () -> Unit,
     onAddExercise: (String, BodyPart) -> Unit,
     modifier: Modifier = Modifier,
+    onSendCopy: (() -> Unit)? = null,
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -157,6 +161,11 @@ internal fun LiftsScreen(
         }
         item(key = "import") {
             GhostButton(stringResource(Res.string.fitness_lifts_import), onOpenImport, Modifier.fillMaxWidth().testTag("fitness_lifts_import"), icon = Icons.AutoMirrored.Filled.NoteAdd, tint = colors.textMuted)
+        }
+        if (onSendCopy != null && !state.isEmpty) {
+            item(key = "send_copy") {
+                GhostButton(stringResource(Res.string.fitness_lifts_send_copy), onSendCopy, Modifier.fillMaxWidth().testTag("fitness_lifts_send_copy"), icon = Icons.Filled.IosShare, tint = colors.textMuted)
+            }
         }
     }
 }

@@ -29,8 +29,20 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ImportState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.ImportedExercise
+import com.meticulouscreations.homesafe.fitness.domain.LogMerge
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_cancel
+import homesafe.shared.generated.resources.fitness_copy_body
+import homesafe.shared.generated.resources.fitness_copy_caption
+import homesafe.shared.generated.resources.fitness_copy_changed_exercises
+import homesafe.shared.generated.resources.fitness_copy_new_exercises
+import homesafe.shared.generated.resources.fitness_copy_phases
+import homesafe.shared.generated.resources.fitness_copy_sets
+import homesafe.shared.generated.resources.fitness_copy_title
+import homesafe.shared.generated.resources.fitness_copy_unreadable
+import homesafe.shared.generated.resources.fitness_copy_weigh_ins
+import homesafe.shared.generated.resources.fitness_copy_workouts
 import homesafe.shared.generated.resources.fitness_import_auto
 import homesafe.shared.generated.resources.fitness_import_body
 import homesafe.shared.generated.resources.fitness_import_confirm
@@ -57,6 +69,9 @@ import org.jetbrains.compose.resources.stringResource
  * is typed, what it reads there: each exercise, its shelf and how many sets it found, and any
  * line it could make nothing of. Nothing is saved until Import is pressed, and pressing it twice
  * adds nothing twice.
+ *
+ * A copy of a whole log, sent from another install of the app, comes in by the same door. The
+ * page then shows what the copy would add in place of the box to paste into.
  */
 @Composable
 internal fun ImportScreen(
@@ -93,6 +108,11 @@ internal fun ImportScreen(
                 ForgeButton(stringResource(Res.string.fitness_import_done_button), onDone, Modifier.fillMaxWidth().testTag("fitness_import_done_button"), icon = Icons.Filled.Check)
             }
         }
+        val copy = import.logCopy
+        if (copy != null) {
+            CopyCard(copy.merge, onConfirm, onDone)
+            return@Column
+        }
         Text(stringResource(Res.string.fitness_import_body), style = type.body, color = colors.textMuted)
         FitnessTextField(
             import.text,
@@ -102,6 +122,12 @@ internal fun ImportScreen(
             singleLine = false,
             minLines = 7,
         )
+        if (import.copyUnreadable) {
+            FitnessCard(Modifier.testTag("fitness_import_copy_unreadable")) {
+                Text(stringResource(Res.string.fitness_copy_unreadable), style = type.body, color = colors.amber)
+            }
+            return@Column
+        }
         CardLabel(stringResource(Res.string.fitness_import_shelf))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ChoiceChip(stringResource(Res.string.fitness_import_auto), import.part == null, { onPart(null) })
@@ -146,6 +172,46 @@ internal fun ImportScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * A copy of a log, waiting to be brought in: how much of each thing it holds that the log here
+ * hasn't got, a count to a line. Nothing is saved until Import is pressed; Cancel puts it down.
+ */
+@Composable
+private fun CopyCard(merge: LogMerge, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val colors = FitnessTheme.colors
+    val type = FitnessTheme.type
+    FitnessCard(Modifier.testTag("fitness_import_copy"), title = stringResource(Res.string.fitness_copy_title)) {
+        if (merge.isEmpty) {
+            Text(stringResource(Res.string.fitness_import_nothing_new), style = type.headline, color = colors.text)
+        } else {
+            Text(stringResource(Res.string.fitness_copy_body), style = type.body, color = colors.textMuted)
+            Spacer(Modifier.height(6.dp))
+            CopyRow(stringResource(Res.string.fitness_copy_new_exercises), merge.newExercises)
+            CopyRow(stringResource(Res.string.fitness_copy_changed_exercises), merge.changedExercises)
+            CopyRow(stringResource(Res.string.fitness_copy_sets), merge.sets.size)
+            CopyRow(stringResource(Res.string.fitness_copy_workouts), merge.workouts.size)
+            CopyRow(stringResource(Res.string.fitness_copy_phases), merge.phases.size)
+            CopyRow(stringResource(Res.string.fitness_copy_weigh_ins), merge.bodyweights.size)
+            Spacer(Modifier.height(14.dp))
+            ForgeButton(stringResource(Res.string.fitness_import_confirm), onConfirm, Modifier.fillMaxWidth().testTag("fitness_import_confirm"), icon = Icons.Filled.Check)
+            Text(stringResource(Res.string.fitness_copy_caption), style = type.label, color = colors.textFaint, modifier = Modifier.padding(top = 10.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        GhostButton(stringResource(Res.string.common_cancel), onCancel, Modifier.fillMaxWidth().testTag("fitness_import_copy_cancel"), tint = colors.textMuted)
+    }
+}
+
+/** One line of a copy's card: what, and how many. A thing there is none of has no line. */
+@Composable
+private fun CopyRow(label: String, count: Int) {
+    if (count == 0) return
+    Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(label, style = FitnessTheme.type.bodyStrong, color = FitnessTheme.colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Text(count.toString(), style = FitnessTheme.type.bodyStrong, color = FitnessTheme.colors.good, maxLines = 1)
     }
 }
 

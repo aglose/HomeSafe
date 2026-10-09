@@ -7,10 +7,15 @@ import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.exercise
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
+import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.LogCopy
+import com.meticulouscreations.homesafe.fitness.domain.LogCopyRead
+import com.meticulouscreations.homesafe.fitness.domain.LogCopyText
+import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.NotesParser
 import com.meticulouscreations.homesafe.fitness.domain.Phase
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
@@ -19,6 +24,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RecordKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
+import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
@@ -37,6 +43,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -304,6 +311,145 @@ class FitnessViewModelTest {
         vm.setImportText(NOTES)
         vm.clearImport()
         assertEquals(ImportState(), vm.uiState.value.import)
+    }
+
+    // ---- A copy of a log ----------------------------------------------------------------------
+
+    private val squat = exercise(id = "legs/squat", name = "Squat", bodyPart = BodyPart.LEGS)
+
+    /** A log from another install: two exercises, a benchmark from its notes, a workout with a set in it, a phase and a weigh-in. */
+    private val otherLog = LogCopy(
+        exercises = listOf(exercise(), squat),
+        sets = listOf(LoggedSet(1, benchId, 135.0, 10, 0, imported = true), LoggedSet(2, squat.id, 225.0, 5, NOW - DAY, workoutId = 4)),
+        workouts = listOf(Workout(4, WorkoutFocus.LEGS, NOW - DAY - 600, NOW - DAY + 600)),
+        phases = listOf(Phase(1, PhaseKind.CUT, NOW - 30 * DAY)),
+        bodyweights = listOf(BodyweightEntry(20_000, 180.0)),
+    )
+
+    @Test
+    fun aCopyOfALogHandedOverIsReadAsThatAndNotAsNotes() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText(LogCopyText.encode(otherLog))
+        val state = vm.uiState.value.import
+        assertNull(state.plan)
+        assertFalse(state.copyUnreadable)
+        val merge = assertNotNull(state.logCopy).merge
+        assertEquals(2, merge.newExercises)
+        assertEquals(2, merge.sets.size)
+        assertEquals(1, merge.workouts.size)
+        assertEquals(1, merge.phases.size)
+        assertEquals(1, merge.bodyweights.size)
+        // Nothing is saved until it is confirmed.
+        assertEquals(emptyList(), h.repository.exercises.first())
+    }
+
+    @Test
+    fun confirmingACopyBringsTheWholeLogInAndReportsTheCounts() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText(LogCopyText.encode(otherLog))
+        vm.confirmImport()
+        runCurrent()
+
+        assertEquals(otherLog.exercises.toSet(), h.repository.exercises.first().toSet())
+        val workout = h.repository.workouts.first().single()
+        assertEquals(otherLog.workouts.single().copy(id = workout.id), workout)
+        val sets = h.repository.sets.first()
+        assertEquals(listOf(null, workout.id), sets.map { it.workoutId })
+        assertEquals(otherLog.phases.map { it.kind to it.startedAtEpochSeconds }, h.repository.phases.first().map { it.kind to it.startedAtEpochSeconds })
+        assertEquals(otherLog.bodyweights, h.repository.bodyweights.first())
+        assertEquals(ImportState(importedExercises = 2, importedSets = 2), vm.uiState.value.import)
+        assertEquals(2, vm.uiState.value.boards.size)
+        assertEquals(PhaseKind.CUT, vm.uiState.value.phase.kind)
+    }
+
+    @Test
+    fun theSameCopyHandedOverAgainHasNothingToAddAndConfirmingDoesNothing() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        val text = LogCopyText.encode(otherLog)
+        vm.setImportText(text)
+        vm.confirmImport()
+        runCurrent()
+
+        vm.setImportText(text)
+        assertTrue(assertNotNull(vm.uiState.value.import.logCopy).merge.isEmpty)
+        vm.confirmImport()
+        runCurrent()
+        assertEquals(2, h.repository.sets.first().size)
+        assertNull(vm.uiState.value.import.importedExercises)
+    }
+
+    @Test
+    fun whatACopyWouldAddIsWorkedOutAgainWhenTheLogChanges() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText(LogCopyText.encode(otherLog))
+        assertEquals(2, assertNotNull(vm.uiState.value.import.logCopy).merge.newExercises)
+
+        vm.saveExercise(squat)
+        runCurrent()
+        assertEquals(1, assertNotNull(vm.uiState.value.import.logCopy).merge.newExercises)
+    }
+
+    @Test
+    fun aCopyHandedOverBeforeTheLogHasBeenReadIsMeasuredAgainstItOnceItHas() = runFitnessTest { h ->
+        h.repository.bringIn(otherLog)
+        val vm = h.viewModel()
+        vm.setImportText(LogCopyText.encode(otherLog))
+        assertFalse(assertNotNull(vm.uiState.value.import.logCopy).merge.isEmpty)
+
+        vm.setActive(true)
+        runCurrent()
+        assertTrue(assertNotNull(vm.uiState.value.import.logCopy).merge.isEmpty)
+    }
+
+    @Test
+    fun aCopyCutShortIsSaidToBeUnreadableAndIsNotReadAsNotes() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText(LogCopyText.encode(otherLog).dropLast(20))
+        val state = vm.uiState.value.import
+        assertTrue(state.copyUnreadable)
+        assertNull(state.logCopy)
+        assertNull(state.plan)
+        // Choosing a shelf doesn't turn it into notes either.
+        vm.setImportPart(BodyPart.LEGS)
+        assertNull(vm.uiState.value.import.plan)
+
+        vm.confirmImport()
+        runCurrent()
+        assertEquals(emptyList(), h.repository.exercises.first())
+    }
+
+    @Test
+    fun notesTypedOverACopyAreReadAsNotesAgain() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.setImportText(LogCopyText.encode(otherLog))
+        vm.setImportText("Bench press\n- 135lbs - 10 reps")
+        val state = vm.uiState.value.import
+        assertNull(state.logCopy)
+        assertEquals(1, assertNotNull(state.plan).newExercises)
+    }
+
+    @Test
+    fun theLogAsTextIsACopyOfEverythingInIt() = runFitnessTest { h ->
+        h.repository.bringIn(otherLog)
+        val vm = h.viewModel()
+        val copy = assertIs<LogCopyRead.Copy>(LogCopyText.read(vm.logCopyText())).copy
+        assertEquals(otherLog.exercises.toSet(), copy.exercises.toSet())
+        assertEquals(2, copy.sets.size)
+        assertEquals(1, copy.workouts.size)
+        // Brought into the log it was made from, it adds nothing.
+        assertTrue(h.repository.bringIn(copy).isEmpty)
     }
 
     // ---- Workouts -----------------------------------------------------------------------------

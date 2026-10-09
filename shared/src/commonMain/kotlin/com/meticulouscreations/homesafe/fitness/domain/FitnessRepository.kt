@@ -30,6 +30,15 @@ interface FitnessRepository {
      */
     suspend fun importNotes(exercises: List<Exercise>, drafts: List<SetDraft>): Int
 
+    /** Everything the log holds, read at one moment: what a copy of it to send elsewhere is made from ([LogCopyText]). */
+    suspend fun logCopy(): LogCopy
+
+    /**
+     * Brings a copy of a log in as one step, adding only what this log hasn't got ([LogCopies.merge]),
+     * so that the same copy brought in twice adds nothing twice. Returns what was written.
+     */
+    suspend fun bringIn(copy: LogCopy): LogMerge
+
     suspend fun updateSet(set: LoggedSet)
 
     suspend fun deleteSet(id: Long)

@@ -20,6 +20,11 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.ImportPlan
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.LogCopies
+import com.meticulouscreations.homesafe.fitness.domain.LogCopy
+import com.meticulouscreations.homesafe.fitness.domain.LogCopyRead
+import com.meticulouscreations.homesafe.fitness.domain.LogCopyText
+import com.meticulouscreations.homesafe.fitness.domain.LogMerge
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.NotesImport
 import com.meticulouscreations.homesafe.fitness.domain.NotesParser
@@ -57,12 +62,23 @@ data class RecordFlash(val token: Int, val exerciseName: String, val set: Logged
 @Immutable
 data class RestTimer(val endsAtEpochMillis: Long, val totalSeconds: Int, val exerciseId: String)
 
-/** The notes being brought in: what was pasted, the shelf it was said to be for, and what importing it would do. */
+/** A copy of a whole log handed over where notes usually are: the [log] as it was read, and what bringing it in would add here. */
+@Immutable
+data class CopyImport(val log: LogCopy, val merge: LogMerge)
+
+/**
+ * What is being brought in: what was pasted, the shelf it was said to be for, and what importing
+ * it would do. That is a [plan] for notes; for a copy of a log sent from another install of the
+ * app ([LogCopyText]) it is [logCopy], and there is no plan.
+ */
 @Immutable
 data class ImportState(
     val text: String = "",
     val part: BodyPart? = null,
     val plan: ImportPlan? = null,
+    val logCopy: CopyImport? = null,
+    /** The text says it is a copy of a log, but can't be read as one. */
+    val copyUnreadable: Boolean = false,
     /** How many exercises and sets the last import added, until the page is left. */
     val importedExercises: Int? = null,
     val importedSets: Int = 0,
@@ -334,17 +350,35 @@ class FitnessViewModel(
         viewModelScope.launch { repository.deleteBodyweight(epochDay) }
     }
 
-    /** The notes pasted (or shared) so far, read as they are typed so the page can show what they would bring in. */
+    /**
+     * The notes pasted (or shared) so far, read as they are typed so the page can show what they
+     * would bring in. A copy of a whole log arrives the same way, and is read as that instead.
+     */
     fun setImportText(text: String) = _uiState.update { state ->
-        state.copy(import = state.import.copy(text = text, plan = planFor(text, state.import.part), importedExercises = null))
+        val import = when (val read = LogCopyText.read(text)) {
+            is LogCopyRead.Copy -> state.import.copy(text = text, plan = null, logCopy = CopyImport(read.copy, mergeOf(read.copy)), copyUnreadable = false)
+            LogCopyRead.Unreadable -> state.import.copy(text = text, plan = null, logCopy = null, copyUnreadable = true)
+            LogCopyRead.NotACopy -> state.import.copy(text = text, plan = planFor(text, state.import.part), logCopy = null, copyUnreadable = false)
+        }
+        state.copy(import = import.copy(importedExercises = null))
     }
 
     /** The shelf the pasted notes are for, when they don't say themselves; null to go by each exercise's name. */
     fun setImportPart(part: BodyPart?) = _uiState.update { state ->
-        state.copy(import = state.import.copy(part = part, plan = planFor(state.import.text, part)))
+        val notes = state.import.logCopy == null && !state.import.copyUnreadable
+        state.copy(import = state.import.copy(part = part, plan = if (notes) planFor(state.import.text, part) else null))
     }
 
     fun confirmImport() {
+        val copy = _uiState.value.import.logCopy
+        if (copy != null) {
+            if (copy.merge.isEmpty || importing?.isActive == true) return
+            importing = viewModelScope.launch {
+                val added = repository.bringIn(copy.log)
+                _uiState.update { it.copy(import = ImportState(importedExercises = added.newExercises, importedSets = added.sets.size)) }
+            }
+            return
+        }
         val plan = _uiState.value.import.plan ?: return
         // One import at a time: a second tap while the first is being saved has nothing more to add.
         if (plan.isEmpty || importing?.isActive == true) return
@@ -355,6 +389,9 @@ class FitnessViewModel(
     }
 
     fun clearImport() = _uiState.update { it.copy(import = ImportState()) }
+
+    /** The whole log as text, to send to another install of the app, whose import page reads it ([LogCopyText]). */
+    suspend fun logCopyText(): String = LogCopyText.encode(repository.logCopy())
 
     /**
      * The Connect button: looks for sensors to choose from, or with one already chosen goes
@@ -523,6 +560,17 @@ class FitnessViewModel(
         return NotesImport.plan(NotesParser.parse(text, part), log.exercises, log.sets, now())
     }
 
+    /** What [copy] would add to the log as it is known here. The repository works it out again, against what it holds, when it is brought in. */
+    private fun mergeOf(copy: LogCopy): LogMerge =
+        LogCopies.merge(copy, LogCopy(log.exercises, log.sets, log.workouts, log.phases, log.bodyweights, heartSettings, heartSummaries.orEmpty()))
+
+    /** The import as it stands against the log now: the same notes or the same copy, with what is new in them worked out afresh. */
+    private fun ImportState.refreshed(): ImportState = when {
+        logCopy != null -> copy(logCopy = logCopy.copy(merge = mergeOf(logCopy.log)))
+        copyUnreadable || text.isBlank() -> this
+        else -> copy(plan = planFor(text, part))
+    }
+
     /** What the lifter weighs now, kept with a set where the body is the load, so the set still reads right after the scale has moved. */
     private fun bodyweightFor(exercise: Exercise): Double? =
         if (exercise.loadKind == LoadKind.BODYWEIGHT) _uiState.value.bodyweight.latest?.pounds else null
@@ -560,7 +608,7 @@ class FitnessViewModel(
                 recentRecords = boards.recentRecords,
                 bodyweight = boards.bodyweight,
                 calendar = boards.calendar,
-                import = if (state.import.text.isBlank()) state.import else state.import.copy(plan = planFor(state.import.text, state.import.part)),
+                import = state.import.refreshed(),
             )
         }
         if (boards.workout?.workout?.id != closing) closing = null

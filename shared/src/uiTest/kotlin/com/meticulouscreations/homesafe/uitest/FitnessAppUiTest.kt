@@ -23,11 +23,13 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.HeartUiState
+import com.meticulouscreations.homesafe.fitness.ImportState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
+import com.meticulouscreations.homesafe.fitness.domain.LogMerge
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -63,6 +65,11 @@ class FitnessAppUiTest {
         var closed = 0
         var finished = 0
         var importConfirmed = 0
+        var importCleared = 0
+        var copiesSent = 0
+
+        /** Whether there is a share sheet to send a copy of the log through, as there is on Android. */
+        var canSendCopy = false
         var restSkipped = 0
         var flashDismissed = 0
         var heartConnects = 0
@@ -94,6 +101,8 @@ class FitnessAppUiTest {
             onLogBodyweight = { weighed += it },
             onImportText = { importTexts += it },
             onConfirmImport = { importConfirmed++ },
+            onClearImport = { importCleared++ },
+            onSendCopy = if (canSendCopy) ({ copiesSent++ }) else null,
             onConnectHeart = { heartConnects++ },
             onChooseHeartSensor = { chosenSensors += it },
             onForgetHeartSensor = { heartForgotten++ },
@@ -487,6 +496,67 @@ class FitnessAppUiTest {
         assertEquals(listOf("x"), calls.importTexts)
         tap("fitness_import_confirm")
         assertEquals(1, calls.importConfirmed)
+    }
+
+    @Test
+    fun aCopyOfALogShowsWhatItWouldAddInPlaceOfTheBoxToPasteInto() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.copying(), calls, page = FitnessPage.Import, tall = true)
+        assertShown("fitness_import_copy")
+        assertNotShown("fitness_import_text")
+        assertNotShown("fitness_import_preview")
+        tap("fitness_import_confirm")
+        assertEquals(1, calls.importConfirmed)
+    }
+
+    @Test
+    fun aCopyCanBePutDownWithoutBringingItIn() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.copying(), calls, page = FitnessPage.Import, tall = true)
+        tap("fitness_import_copy_cancel")
+        assertEquals(1, calls.importCleared)
+        assertEquals(0, calls.importConfirmed)
+        assertNotShown("fitness_import")
+    }
+
+    @Test
+    fun aCopyWithNothingNewInItHasNothingToImport() = runComposeUiTest(testTimeout = 5.minutes) {
+        val copying = FitnessFixtures.copying()
+        val nothing = copying.copy(import = copying.import.copy(logCopy = copying.import.logCopy!!.copy(merge = LogMerge())))
+        show(nothing, Calls(), page = FitnessPage.Import, tall = true)
+        assertShown("fitness_import_copy")
+        assertNotShown("fitness_import_confirm")
+        assertShown("fitness_import_copy_cancel")
+    }
+
+    @Test
+    fun aCopyThatCannotBeReadSaysSoAndOffersNothingToImport() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.empty.copy(import = ImportState(text = "{\"percysafeTrainingLog\":1,", copyUnreadable = true)), Calls(), page = FitnessPage.Import, tall = true)
+        assertShown("fitness_import_copy_unreadable")
+        assertNotShown("fitness_import_confirm")
+        assertNotShown("fitness_import_copy")
+    }
+
+    @Test
+    fun liftsOffersToSendACopyOfTheLogOnlyWhereThereIsSomewhereToSendIt() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls().apply { canSendCopy = true }
+        show(FitnessFixtures.state(), calls, tab = FitnessTab.LIFTS, tall = true)
+        tap("fitness_lifts_send_copy")
+        assertEquals(1, calls.copiesSent)
+    }
+
+    @Test
+    fun liftsHasNoCopyToSendWithoutAShareSheet() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), tab = FitnessTab.LIFTS, tall = true)
+        assertShown("fitness_lifts_import")
+        assertNotShown("fitness_lifts_send_copy")
+    }
+
+    @Test
+    fun anEmptyLogHasNoCopyToSend() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.empty, Calls().apply { canSendCopy = true }, tab = FitnessTab.LIFTS, tall = true)
+        assertShown("fitness_lifts_import")
+        assertNotShown("fitness_lifts_send_copy")
     }
 
     @Test

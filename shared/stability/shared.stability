@@ -1806,6 +1806,23 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.ChoiceChip(text: kotlin
     - tint: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.CopyCard(merge: com.meticulouscreations.homesafe.fitness.domain.LogMerge, onConfirm: kotlin.Function0<kotlin.Unit>, onCancel: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - merge: STABLE (marked @Stable or @Immutable)
+    - onConfirm: STABLE (function type)
+    - onCancel: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.CopyRow(label: kotlin.String, count: kotlin.Int): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - count: STABLE (primitive type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.DayDoor(day: com.meticulouscreations.homesafe.fitness.DayCard, state: com.meticulouscreations.homesafe.fitness.FitnessUiState, seed: kotlin.Float, animated: kotlin.Boolean, onStart: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, small: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
@@ -2029,7 +2046,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.LiftRow(board: com.metic
     - onOpen: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.LiftsScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenImport: kotlin.Function0<kotlin.Unit>, onAddExercise: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.LiftsScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenImport: kotlin.Function0<kotlin.Unit>, onAddExercise: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onSendCopy: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2039,6 +2056,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.LiftsScreen(state: com.
     - onOpenImport: STABLE (function type)
     - onAddExercise: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onSendCopy: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.MuscleMap(volumes: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.MuscleVolume>, modifier: androidx.compose.ui.Modifier, contentDescription: kotlin.String): kotlin.Unit
@@ -2698,6 +2716,12 @@ public fun com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
   restartable: false
   params:
     - maxScale: STABLE (primitive type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.components.rememberShareText(): kotlin.Function2<@[ParameterName(name = \
+  skippable: false
+  restartable: false
+  params:
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.isCompactLandscape(): kotlin.Boolean

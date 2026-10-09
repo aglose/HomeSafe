@@ -57,6 +57,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -93,6 +94,7 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
 import com.meticulouscreations.homesafe.fitness.ui.shader.RecordBurst
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.components.rememberShareText
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -100,6 +102,7 @@ import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.fitness_close
+import homesafe.shared.generated.resources.fitness_copy_share_title
 import homesafe.shared.generated.resources.fitness_heart_title
 import homesafe.shared.generated.resources.fitness_tab_lifts
 import homesafe.shared.generated.resources.fitness_tab_progress
@@ -108,8 +111,10 @@ import homesafe.shared.generated.resources.fitness_title
 import homesafe.shared.generated.resources.fitness_title_edit
 import homesafe.shared.generated.resources.fitness_title_exercise
 import homesafe.shared.generated.resources.fitness_title_import
+import homesafe.shared.generated.resources.fitness_title_import_copy
 import homesafe.shared.generated.resources.fitness_workout_title
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
@@ -162,6 +167,8 @@ internal class FitnessActions(
     val onStopHeartSearch: () -> Unit = {},
     val onSaveHeartProfile: (HeartProfile) -> Unit = {},
     val onDismissZoneNotice: () -> Unit = {},
+    /** Sends a copy of the whole log out through the platform's share sheet; null where there is none to send it through. */
+    val onSendCopy: (() -> Unit)? = null,
 )
 
 /**
@@ -179,7 +186,10 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val heart by viewModel.heart.collectAsStateWithLifecycle()
     val close by rememberUpdatedState(onClose)
-    val actions = remember(viewModel) {
+    val share = rememberShareText()
+    val shareTitle by rememberUpdatedState(stringResource(Res.string.fitness_copy_share_title))
+    val scope = rememberCoroutineScope()
+    val actions = remember(viewModel, share) {
         FitnessActions(
             onClose = { close() },
             onStartWorkout = viewModel::startWorkout,
@@ -204,6 +214,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onStopHeartSearch = viewModel::stopHeartSearch,
             onSaveHeartProfile = viewModel::saveHeartProfile,
             onDismissZoneNotice = viewModel::dismissZoneNotice,
+            onSendCopy = share?.let { send -> { scope.launch { send(viewModel.logCopyText(), shareTitle) } } },
         )
     }
     FitnessAppContent(state, actions, modifier, active, heart = heart)
@@ -311,6 +322,7 @@ internal fun FitnessAppContent(
                         onOpenExercise = { pages += FitnessPage.Lift(it) },
                         onOpenImport = { pages += FitnessPage.Import },
                         onAddExercise = actions.onAddExercise,
+                        onSendCopy = actions.onSendCopy,
                     )
 
                     FitnessTab.PROGRESS -> ProgressScreen(
@@ -395,7 +407,7 @@ internal fun FitnessAppContent(
                     FitnessPage.Workout -> workout?.let { stringResource(Res.string.fitness_workout_title, stringResource(it.workout.focus.label)) }.orEmpty()
                     is FitnessPage.Lift -> stringResource(Res.string.fitness_title_exercise)
                     is FitnessPage.Edit -> stringResource(Res.string.fitness_title_edit)
-                    FitnessPage.Import -> stringResource(Res.string.fitness_title_import)
+                    FitnessPage.Import -> stringResource(if (state.import.logCopy != null) Res.string.fitness_title_import_copy else Res.string.fitness_title_import)
                     FitnessPage.Heart -> stringResource(Res.string.fitness_heart_title)
                 },
                 paged = page != null,

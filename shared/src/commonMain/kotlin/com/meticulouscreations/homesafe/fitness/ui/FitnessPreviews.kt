@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.fitness.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
+import com.meticulouscreations.homesafe.fitness.CopyImport
 import com.meticulouscreations.homesafe.fitness.FitnessBoardBuilder
 import com.meticulouscreations.homesafe.fitness.FitnessLog
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
@@ -21,6 +22,9 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.HeartZone
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
+import com.meticulouscreations.homesafe.fitness.domain.LogCopies
+import com.meticulouscreations.homesafe.fitness.domain.LogCopy
+import com.meticulouscreations.homesafe.fitness.domain.LogCopyText
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.NotesImport
 import com.meticulouscreations.homesafe.fitness.domain.NotesParser
@@ -172,6 +176,13 @@ Hammer curls
     fun importing(): FitnessUiState {
         val text = NOTES.substringBefore("Chest").trim() + "\n\nSissy squat\n- 25lbs - 12 reps\n??? what was this"
         return empty.copy(import = ImportState(text = text, plan = NotesImport.plan(NotesParser.parse(text), log.exercises.take(3), log.sets.take(12), NOW)))
+    }
+
+    /** A copy of the whole log, sent from another install, waiting to be brought in to one that has a little of it already. */
+    fun copying(): FitnessUiState {
+        val copy = LogCopy(log.exercises, log.sets, log.workouts, log.phases, log.bodyweights)
+        val here = LogCopy(exercises = log.exercises.take(3).mapIndexed { index, it -> if (index == 0) it.copy(restSeconds = it.restSeconds + 30) else it }, sets = log.sets.take(12))
+        return empty.copy(import = ImportState(text = LogCopyText.encode(copy), logCopy = CopyImport(copy, LogCopies.merge(copy, here))))
     }
 
     fun exercise(name: String): Exercise = log.exercises.first { it.name == name }
@@ -384,4 +395,10 @@ private fun FitnessProgressPreview() {
 @Composable
 private fun FitnessImportPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.importing(), FitnessActions(), initialPage = FitnessPage.Import) }
+}
+
+@Preview(widthDp = 412, heightDp = 900)
+@Composable
+private fun FitnessImportCopyPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.copying(), FitnessActions(), initialPage = FitnessPage.Import) }
 }

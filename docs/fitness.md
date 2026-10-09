@@ -9,7 +9,7 @@ in a notes app, and it reads those notes as its starting point.
 | Tab | What it shows |
 |---|---|
 | **Today** | The phase (bulk, cut, maintain) and how long it has run, which workout has waited longest, the week in three numbers, and the workouts as doors: Chest, Back and Legs, then Shoulders and Arms. The one that is up next says what it opens on. Below, the records lately set |
-| **Lifts** | Every exercise, shelf by shelf, with its best set, its ladder in miniature and where it stands against its best. Add one by name; bring the notes in |
+| **Lifts** | Every exercise, shelf by shelf, with its best set, its ladder in miniature and where it stands against its best. Add one by name; bring the notes in; [send a copy of the log](#moving-the-log) to another install |
 | **Progress** | The phase and how the lifts are holding up in it, bodyweight with the noise taken out, the week's sets drawn on the body, the last twelve weeks as a calendar, and each lift against its best |
 
 A **workout** lists the exercises on its shelves with last time's peak set and today's target. A
@@ -211,6 +211,41 @@ shelf and sets the muscle it is mainly for. With no heading, an exercise the app
 under that name is taken to be the same one wherever it has been filed since, so importing
 again never makes a second copy of something that was moved.
 
+## Moving the log
+
+Everything stays on the device, so a second install of the app starts empty: another phone, or
+the release build beside the debug one (they are two apps to Android, each with its own
+database, and nothing can be copied into a release build's from outside). The log is carried
+across as text.
+
+**Lifts → Send a copy of your log** (Android) opens the share sheet on the whole log. Choosing
+the other install there (its *Import workout notes*) opens its import page, the door notes come
+in by, which sees that this is a copy and not notes and shows what it would add: a count each
+of new exercises, sets, workouts, phases and weigh-ins. Nothing is saved until Import is
+pressed. The same text can be sent anywhere else text goes (a file in Drive, a note) and pasted
+into **Bring in notes** later, on any platform.
+
+What a copy brings (`LogCopies.merge`):
+
+- **Only what isn't there yet.** A set is the same set when its exercise, weight, reps and time
+  are; a workout when its focus and its start are; a phase when its kind and its start are; a
+  weigh-in when it is the same day's. So the same copy brought in twice adds nothing twice, and
+  a copy brought into a log already in use leaves what was there.
+- **Ids are the receiving log's own.** The copy's workouts get new ones, and their sets and
+  heart summaries follow them.
+- **Exercises are set up the way the copy has them** (shelf, rep band, jump, rest, note), since
+  the copy is the log as its owner last arranged it.
+- **Heart-rate settings fill in what is missing** and leave what is there: the zones' numbers,
+  and the sensor that was chosen.
+
+The text (`LogCopyText`) is JSON that opens with `"percysafeTrainingLog": 1`, the format's
+version. A set is written inside its exercise under one-letter names, about thirty characters
+each, because the whole of it has to fit in what one Android app can hand another
+(`FitnessShares.MAX_LENGTH`, 200,000 characters): a log of a few hundred sets comes to about a
+tenth of that. Enums travel by name and fall back as they do from the database. Text
+that says it is a copy but can't be read (cut short, or from a later format) is said to be
+unreadable, and is never read as notes.
+
 ## How it's drawn
 
 Four runtime shaders (`fitness/ui/shader/FitnessShaders.kt`), AGSL on Android and the same source
@@ -232,7 +267,8 @@ muscle by muscle, the numbers in the logger rolling to their new value.
 ## How it's built
 
 - `fitness/domain`: the models, `Strength`, `Progression`, `Volume`, `NotesParser`, `NotesImport`,
-  `ExerciseClassifier`; and for the heart rate `HeartRate.kt` (zones, the measurement's bytes,
+  `ExerciseClassifier`, `LogCopy.kt` (a copy of the log, as text and merged into another); and for
+  the heart rate `HeartRate.kt` (zones, the measurement's bytes,
   settling into a zone, time in zone) and `HeartRateSensor.kt` (the sensor's states and the two
   interfaces below). Pure Kotlin.
 - `fitness/data`: `FitnessRepositoryImpl` over `FitnessDao` (seven tables in the app's Room
@@ -255,7 +291,8 @@ muscle by muscle, the numbers in the logger rolling to their new value.
 ## Tests
 
 - `commonTest/.../fitness/domain`: the parser against notes with every quirk above, the import
-  plan, records, the progression table, volume, the bodyweight trend.
+  plan, records, the progression table, volume, the bodyweight trend, and `LogCopyTest` (a copy
+  as text and back, and what it adds to an empty log, the same log and one in use).
 - `commonTest/.../fitness`: `FitnessBoardBuilderTest`, and `FitnessViewModelTest` over the real
   repository and an in-memory DAO.
 - Heart rate: `HeartRateTest` (zones, the measurement's bytes, settling, time in zone),

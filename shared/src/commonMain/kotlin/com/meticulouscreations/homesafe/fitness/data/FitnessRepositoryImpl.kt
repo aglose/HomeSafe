@@ -18,6 +18,9 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.LogCopies
+import com.meticulouscreations.homesafe.fitness.domain.LogCopy
+import com.meticulouscreations.homesafe.fitness.domain.LogMerge
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.Phase
@@ -30,6 +33,7 @@ import dev.zacsweers.metro.ContributesBinding
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -84,8 +88,29 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
         return rows.map { it.toDomain() }
     }
 
+    override suspend fun logCopy(): LogCopy = writes.withLock { held() }
+
+    override suspend fun bringIn(copy: LogCopy): LogMerge = writes.withLock {
+        val merge = LogCopies.merge(copy, held())
+        if (merge.exercises.isNotEmpty()) dao.upsertExercises(merge.exercises.map { it.toEntity() })
+        // Sets before the workouts they were done in: whoever is following the log never sees one of those workouts empty.
+        if (merge.sets.isNotEmpty()) dao.upsertSets(merge.sets.map { it.toEntity() })
+        merge.workouts.forEach { dao.upsertWorkout(FitnessWorkoutEntity(it.id, it.focus.name, it.startedAtEpochSeconds, it.finishedAtEpochSeconds)) }
+        merge.phases.forEach { dao.upsertPhase(FitnessPhaseEntity(it.id, it.kind.name, it.startedAtEpochSeconds)) }
+        merge.bodyweights.forEach { dao.upsertBodyweight(FitnessBodyweightEntity(it.epochDay, it.pounds)) }
+        merge.heart?.let { heart ->
+            val profile = heart.profile
+            dao.upsertHeartSettings(FitnessHeartSettingsEntity(maxBpm = profile.maxBpm, age = profile.age, restingBpm = profile.restingBpm, sensorAddress = heart.sensor?.address, sensorName = heart.sensor?.name))
+        }
+        merge.heartSummaries.forEach { (workoutId, summary) -> dao.upsertHeartSummary(summary.toEntity(workoutId)) }
+        merge
+    }
+
+    /** Under [writes]: the log as it stands, with nothing half written in it. */
+    private suspend fun held() = LogCopy(exercises.first(), sets.first(), workouts.first(), phases.first(), bodyweights.first(), heartSettings.first(), heartSummaries.first())
+
     override suspend fun updateSet(set: LoggedSet) {
-        dao.upsertSets(listOf(FitnessSetEntity(set.id, set.exerciseId, set.workoutId, set.epochSeconds, set.weight, set.reps, set.bodyweight, set.note, set.imported)))
+        dao.upsertSets(listOf(set.toEntity()))
     }
 
     override suspend fun deleteSet(id: Long) = dao.deleteSet(id)
@@ -135,19 +160,7 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
     override suspend fun saveHeartSummary(workoutId: Long, summary: HeartSummary) = writes.withLock {
         // A workout cancelled a moment before its heart was saved leaves nothing behind.
         if (dao.workout(workoutId) == null) return@withLock
-        dao.upsertHeartSummary(
-            FitnessHeartSummaryEntity(
-                workoutId = workoutId,
-                belowMillis = summary.belowMillis,
-                zone1Millis = summary.zoneMillis[0],
-                zone2Millis = summary.zoneMillis[1],
-                zone3Millis = summary.zoneMillis[2],
-                zone4Millis = summary.zoneMillis[3],
-                zone5Millis = summary.zoneMillis[4],
-                bpmMillis = summary.bpmMillis,
-                peakBpm = summary.peakBpm,
-            ),
-        )
+        dao.upsertHeartSummary(summary.toEntity(workoutId))
     }
 }
 
@@ -155,6 +168,18 @@ private val EMPTY_HEART_SETTINGS = FitnessHeartSettingsEntity(maxBpm = null, age
 
 private fun FitnessHeartSummaryEntity.toDomain() =
     HeartSummary(belowMillis, listOf(zone1Millis, zone2Millis, zone3Millis, zone4Millis, zone5Millis), bpmMillis, peakBpm)
+
+private fun HeartSummary.toEntity(workoutId: Long) = FitnessHeartSummaryEntity(
+    workoutId = workoutId,
+    belowMillis = belowMillis,
+    zone1Millis = zoneMillis[0],
+    zone2Millis = zoneMillis[1],
+    zone3Millis = zoneMillis[2],
+    zone4Millis = zoneMillis[3],
+    zone5Millis = zoneMillis[4],
+    bpmMillis = bpmMillis,
+    peakBpm = peakBpm,
+)
 
 private data class SetKey(val exerciseId: String, val weight: Double, val reps: Int, val epochSeconds: Long)
 
@@ -191,6 +216,8 @@ private fun Exercise.toEntity() = FitnessExerciseEntity(
     note = note,
     archived = archived,
 )
+
+private fun LoggedSet.toEntity() = FitnessSetEntity(id, exerciseId, workoutId, epochSeconds, weight, reps, bodyweight, note, imported)
 
 private fun FitnessSetEntity.toDomain() = LoggedSet(id, exerciseId, weight, reps, epochSeconds, workoutId, bodyweight, note, imported)
 
