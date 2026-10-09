@@ -15,6 +15,8 @@ import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
 import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.LogCopy
+import com.meticulouscreations.homesafe.fitness.domain.LogMerge
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.Phase
@@ -30,6 +32,7 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class FitnessRepositoryImplTest {
 
@@ -392,6 +395,119 @@ class FitnessRepositoryImplTest {
         val later = heart.plus(150, null, 1_000)
         repository.saveHeartSummary(workout.id, later)
         assertEquals(mapOf(workout.id to later), repository.heartSummaries.first())
+    }
+
+    // ---- A copy of the log -------------------------------------------------------------------
+
+    private val squat = exercise(id = "legs/squat", name = "Squat", bodyPart = BodyPart.LEGS)
+
+    /** A log that has been used: notes brought in, a workout done with a sensor on, a phase, a weigh-in, zones set. */
+    private suspend fun usedLog(): LogCopy {
+        repository.saveExercises(listOf(exercise(), squat))
+        repository.importNotes(emptyList(), listOf(draft(epochSeconds = 0).copy(imported = true)))
+        val workout = repository.startWorkout(WorkoutFocus.LEGS, 5_000)
+        repository.addSets(listOf(SetDraft(squat.id, 225.0, 5, 5_100, bodyweight = 180.0, note = "belt", workoutId = workout.id)))
+        repository.saveHeartSummary(workout.id, heart)
+        repository.finishWorkout(workout.id, 6_000)
+        repository.startPhase(PhaseKind.CUT, 4_000)
+        repository.saveBodyweight(BodyweightEntry(19_000, 180.0))
+        repository.saveHeartProfile(HeartProfile(maxBpm = 188))
+        repository.saveHeartSensor(HeartSensor("AA:BB:CC:00:00:01", "Band"))
+        return repository.logCopy()
+    }
+
+    @Test
+    fun aCopyHoldsEverythingTheLogDoes() = runTest {
+        val copy = usedLog()
+        assertEquals(repository.exercises.first(), copy.exercises)
+        assertEquals(repository.sets.first(), copy.sets)
+        assertEquals(repository.workouts.first(), copy.workouts)
+        assertEquals(repository.phases.first(), copy.phases)
+        assertEquals(repository.bodyweights.first(), copy.bodyweights)
+        assertEquals(repository.heartSettings.first(), copy.heart)
+        assertEquals(repository.heartSummaries.first(), copy.heartSummaries)
+        assertEquals(2, copy.sets.size)
+        assertEquals(1, copy.heartSummaries.size)
+    }
+
+    @Test
+    fun aCopyBroughtIntoAnEmptyLogMakesItTheSameLog() = runTest {
+        val copy = usedLog()
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        val merge = other.bringIn(copy)
+        assertEquals(2, merge.newExercises)
+        assertEquals(2, merge.sets.size)
+        assertEquals(copy, other.logCopy())
+    }
+
+    @Test
+    fun bringingTheSameCopyInAgainWritesNothing() = runTest {
+        val copy = usedLog()
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        other.bringIn(copy)
+        assertEquals(LogMerge(), other.bringIn(copy))
+        assertEquals(copy, other.logCopy())
+        // Nor does bringing a log's own copy into itself.
+        assertTrue(repository.bringIn(copy).isEmpty)
+    }
+
+    @Test
+    fun aCopyBroughtIntoALogInUseKeepsWhatWasThereAndGivesItsRowsNewIds() = runTest {
+        val copy = usedLog()
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        other.saveExercises(listOf(exercise()))
+        val mine = other.startWorkout(WorkoutFocus.CHEST, 9_000)
+        other.addSets(listOf(draft(epochSeconds = 9_100, workoutId = mine.id)))
+        other.finishWorkout(mine.id, 9_500)
+        other.startPhase(PhaseKind.BULK, 8_000)
+
+        other.bringIn(copy)
+
+        assertEquals(listOf(WorkoutFocus.LEGS to 2L, WorkoutFocus.CHEST to 1L), other.workouts.first().map { it.focus to it.id })
+        val sets = other.sets.first()
+        assertEquals(3, sets.size)
+        assertEquals(3, sets.map { it.id }.toSet().size)
+        // The copy's workout was number 1 where it came from; its set and its heart went with it to number 2.
+        assertEquals(2L, sets.single { it.exerciseId == squat.id }.workoutId)
+        assertEquals(1L, sets.single { it.epochSeconds == 9_100L }.workoutId)
+        assertEquals(mapOf(2L to heart), other.heartSummaries.first())
+        assertEquals(listOf(PhaseKind.CUT, PhaseKind.BULK), other.phases.first().map { it.kind })
+        // The next set logged carries on after the ones brought in.
+        assertEquals(4L, other.addSets(listOf(draft(epochSeconds = 9_900))).single().id)
+    }
+
+    @Test
+    fun aCopyReadWhileTheLogIsBeingEditedHoldsEachEditWholeOrNotAtAll() = runTest {
+        repository.saveExercises(listOf(exercise(), squat))
+        repository.addSets(List(30) { draft(epochSeconds = 100L + it, exerciseId = squat.id) })
+        val copies = coroutineScope {
+            val edits = async { repeat(20) { repository.addSets(listOf(draft(epochSeconds = 9_000L + it))) } }
+            val gone = async { repository.deleteExercise(squat.id) }
+            val read = (1..20).map { async { repository.logCopy() } }
+            edits.await()
+            gone.await()
+            read.awaitAll()
+        }
+        // An exercise is deleted together with its sets: no copy has the one without the other.
+        for (copy in copies) {
+            val known = copy.exercises.map { it.id }.toSet()
+            assertTrue(copy.sets.all { it.exerciseId in known })
+            assertEquals(squat.id in known, copy.sets.any { it.exerciseId == squat.id })
+        }
+    }
+
+    @Test
+    fun aCopySetsAnExerciseUpItsOwnWayAndFillsInOnlyTheHeartSettingsThatAreMissing() = runTest {
+        val copy = usedLog()
+        val other = FitnessRepositoryImpl(InMemoryFitnessDao())
+        other.saveExercises(listOf(exercise(bodyPart = BodyPart.SHOULDERS, repLow = 4, repHigh = 6)))
+        other.saveHeartProfile(HeartProfile(maxBpm = 195, age = 40))
+
+        val merge = other.bringIn(copy)
+
+        assertEquals(1, merge.changedExercises)
+        assertEquals(exercise(), other.exercises.first().single { it.id == exercise().id })
+        assertEquals(HeartSettings(HeartProfile(maxBpm = 195, age = 40), HeartSensor("AA:BB:CC:00:00:01", "Band")), other.heartSettings.first())
     }
 
     @Test
