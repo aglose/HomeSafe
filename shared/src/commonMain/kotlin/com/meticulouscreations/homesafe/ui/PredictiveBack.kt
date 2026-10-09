@@ -156,7 +156,15 @@ internal fun <S : Any> rememberPredictiveBackTransition(target: S, previous: S?,
                 fraction = if (durationNanos > 0f) (from * (1f - elapsed / durationNanos)).coerceAtLeast(0f) else 0f
                 if (fraction > 0f) seekable.seekTo(fraction)
             }
-            if (!swipedAgain()) seekable.snapTo(target)
+            if (!swipedAgain()) {
+                seekable.snapTo(target)
+                // A swipe can still start before the composition has seen the settle. Its seek
+                // waits for a composition only when its target differs from the one composed last,
+                // which until then is the page the cancelled swipe was heading to: so wait out the
+                // frame that recomposes and the one after, by when the transition has recorded it.
+                withFrameNanos { }
+                withFrameNanos { }
+            }
         }
         if (previous == null) return@LaunchedEffect
         snapshotFlow { back.gestureProgress }.collect { progress ->

@@ -5,12 +5,17 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.navigationevent.DirectNavigationEventInput
@@ -196,21 +201,24 @@ class PredictiveBackUiTest {
         lateinit var back: PredictiveBack
     }
 
+    @Composable
+    private fun PageStack(pages: Pages) {
+        val stack = pages.stack
+        pages.back = rememberPredictiveBack(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
+        rememberPredictiveBackTransition(
+            target = stack.last(),
+            previous = stack.getOrNull(stack.lastIndex - 1),
+            back = pages.back,
+            label = "testPages",
+        ).AnimatedContent { page ->
+            Box(Modifier.fillMaxSize().testTag("page-$page"))
+        }
+    }
+
     private fun ComposeUiTest.setUpPages(host: BackHost, pages: Pages) {
         mainClock.autoAdvance = false
         setContent {
-            ProvideBack(host) {
-                val stack = pages.stack
-                pages.back = rememberPredictiveBack(enabled = stack.size > 1) { stack.removeAt(stack.lastIndex) }
-                rememberPredictiveBackTransition(
-                    target = stack.last(),
-                    previous = stack.getOrNull(stack.lastIndex - 1),
-                    back = pages.back,
-                    label = "testPages",
-                ).AnimatedContent { page ->
-                    Box(Modifier.fillMaxSize().testTag("page-$page"))
-                }
-            }
+            ProvideBack(host) { PageStack(pages) }
         }
         mainClock.advanceTimeByFrame()
     }
@@ -287,6 +295,48 @@ class PredictiveBackUiTest {
         assertShowsOnly("list", other = "detail")
         // One pop for one committed swipe.
         assertEquals(listOf("list"), pages.stack.toList())
+    }
+
+    /** How many of the page called [page] are composed, for a check that names the round it failed in. */
+    private fun ComposeUiTest.composedCount(page: String) = onAllNodesWithTag("page-$page").fetchSemanticsNodes().size
+
+    @Test
+    fun aSecondSwipeStartedOnAnyFrameOfTheScrubBackKeepsBothPagesAndLandsOnThePreviousOne() = runComposeUiTest {
+        // The second swipe starts this many frames after the first is let go of: every frame of
+        // the scrub back (about 15 from 0.8 of the way), the frame it settles in, and the few after,
+        // when the settle may not have reached the composition yet.
+        val rounds = 0..24
+        val hosts = rounds.map { BackHost() }
+        val stacks = rounds.map { Pages("list", "detail") }
+        var round by mutableIntStateOf(rounds.first)
+        mainClock.autoAdvance = false
+        setContent {
+            key(round) {
+                ProvideBack(hosts[round]) { PageStack(stacks[round]) }
+            }
+        }
+        for (frames in rounds) {
+            runOnIdle { round = frames }
+            mainClock.advanceTimeByFrame()
+            val host = hosts[frames]
+
+            swipeStarted(host)
+            swipeProgressed(host, 0.8f)
+            mainClock.advanceTimeBy(100)
+            swipeCancelled(host)
+            repeat(frames) { mainClock.advanceTimeByFrame() }
+
+            swipeStarted(host)
+            swipeProgressed(host, 0.5f)
+            mainClock.advanceTimeBy(500)
+            assertEquals(1, composedCount("detail"), "the page under the finger, second swipe $frames frames after the first")
+            assertEquals(1, composedCount("list"), "the page being uncovered, second swipe $frames frames after the first")
+
+            swipeCompleted(host)
+            settle()
+            assertEquals(0, composedCount("detail"), "the page left, second swipe $frames frames after the first")
+            assertEquals(listOf("list"), stacks[frames].stack.toList(), "one pop, second swipe $frames frames after the first")
+        }
     }
 
     @Test
