@@ -18,8 +18,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.HeartUiState
@@ -479,7 +479,9 @@ class FitnessAppUiTest {
         val calls = Calls()
         show(FitnessFixtures.importing(), calls, page = FitnessPage.Import)
         assertShown("fitness_import_preview")
-        onNodeWithTag("fitness_import_text").performTextInput("x")
+        // Set by the field's SetText action, not typed: typing focuses the field and opens an input
+        // session, and the keyboard hide that follows ran on the test thread and failed there.
+        onNodeWithTag("fitness_import_text").performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("x")) }
         settle()
         assertEquals(1, calls.importTexts.size)
         tap("fitness_import_confirm")
