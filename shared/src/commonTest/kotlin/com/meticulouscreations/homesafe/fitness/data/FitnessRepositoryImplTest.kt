@@ -10,6 +10,10 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Equipment
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
+import com.meticulouscreations.homesafe.fitness.domain.HeartSettings
+import com.meticulouscreations.homesafe.fitness.domain.HeartSummary
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
@@ -348,4 +352,65 @@ class FitnessRepositoryImplTest {
         note = "",
         archived = false,
     )
+
+    // ---- Heart rate ---------------------------------------------------------------------------
+
+    private val band = HeartSensor("AA:BB:CC:00:00:01", "Test Band")
+    private val heart = HeartSummary(belowMillis = 4_000, zoneMillis = listOf(1_000L, 2_000L, 3_000L, 0L, 500L), bpmMillis = 1_260_000, peakBpm = 171)
+
+    @Test
+    fun withNothingSavedTheHeartSettingsAreAllUnset() = runTest {
+        assertEquals(HeartSettings(), repository.heartSettings.first())
+        assertEquals(emptyMap(), repository.heartSummaries.first())
+    }
+
+    @Test
+    fun theZonesAndTheSensorAreSavedApartAndNeitherWipesTheOther() = runTest {
+        repository.saveHeartProfile(HeartProfile(maxBpm = 188, age = 41, restingBpm = 58))
+        repository.saveHeartSensor(band)
+        assertEquals(HeartSettings(HeartProfile(188, 41, 58), band), repository.heartSettings.first())
+
+        repository.saveHeartProfile(HeartProfile(age = 41))
+        assertEquals(HeartSettings(HeartProfile(age = 41), band), repository.heartSettings.first())
+
+        repository.saveHeartSensor(null)
+        assertEquals(HeartSettings(HeartProfile(age = 41), null), repository.heartSettings.first())
+    }
+
+    @Test
+    fun aSensorThatGaveNoNameIsStillRemembered() = runTest {
+        repository.saveHeartSensor(HeartSensor("AA:BB:CC:00:00:02", ""))
+        assertEquals(HeartSensor("AA:BB:CC:00:00:02", ""), repository.heartSettings.first().sensor)
+    }
+
+    @Test
+    fun aWorkoutsHeartIsReadBackAsItWasSavedAndSavedOverByTheNext() = runTest {
+        val workout = repository.startWorkout(WorkoutFocus.LEGS, 1_000)
+        repository.saveHeartSummary(workout.id, heart)
+        assertEquals(mapOf(workout.id to heart), repository.heartSummaries.first())
+
+        val later = heart.plus(150, null, 1_000)
+        repository.saveHeartSummary(workout.id, later)
+        assertEquals(mapOf(workout.id to later), repository.heartSummaries.first())
+    }
+
+    @Test
+    fun aHeartForAWorkoutThatHasGoneIsNotKept() = runTest {
+        repository.saveHeartSummary(99, heart)
+        assertEquals(emptyMap(), repository.heartSummaries.first())
+    }
+
+    @Test
+    fun aWorkoutClosedEmptyTakesItsHeartWithItAndOneWithSetsKeepsIt() = runTest {
+        val empty = repository.startWorkout(WorkoutFocus.LEGS, 1_000)
+        repository.saveHeartSummary(empty.id, heart)
+        repository.finishWorkout(empty.id, 2_000)
+        assertEquals(emptyMap(), repository.heartSummaries.first())
+
+        val real = repository.startWorkout(WorkoutFocus.LEGS, 3_000)
+        repository.addSets(listOf(draft(epochSeconds = 3_100, workoutId = real.id)))
+        repository.saveHeartSummary(real.id, heart)
+        repository.finishWorkout(real.id, 4_000)
+        assertEquals(mapOf(real.id to heart), repository.heartSummaries.first())
+    }
 }

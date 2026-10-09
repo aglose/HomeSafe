@@ -35,3 +35,5 @@ private class SkiaWeatherShader(effect: RuntimeEffect) : WeatherShader {
 
     override fun renderEffect(): RenderEffect = ImageFilter.makeRuntimeShader(builder, "content", null).asComposeRenderEffect()
 }
+
+internal actual val layersKeepTheirPixels: Boolean = false
