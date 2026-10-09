@@ -19,8 +19,8 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
-import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -204,7 +204,10 @@ class WeatherAppUiTest {
         assertShown("weather_places_search")
         assertNotShown("weather_today")
 
-        onNodeWithTag("weather_places_search").performTextInput("Sea")
+        // Set straight through the field's text action, not typed: typing focuses the field and
+        // opens an input session, and its keyboard hide when Back removes the page can land off the
+        // main thread on an emulator. What's checked is that the text reaches the app, not the IME.
+        onNodeWithTag("weather_places_search").performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("Sea")) }
         settle()
         assertEquals(listOf("Sea"), calls.searches)
 
