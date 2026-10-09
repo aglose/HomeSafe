@@ -169,6 +169,7 @@ Hammer curls
             recentRecords = boards.recentRecords,
             bodyweight = boards.bodyweight,
             calendar = boards.calendar,
+            copyable = true,
         )
     }
 

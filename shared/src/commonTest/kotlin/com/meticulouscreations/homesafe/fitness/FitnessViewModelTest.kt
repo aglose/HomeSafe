@@ -11,6 +11,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LogCopy
 import com.meticulouscreations.homesafe.fitness.domain.LogCopyRead
@@ -26,6 +27,7 @@ import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.SetDraft
 import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
+import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import com.meticulouscreations.homesafe.weather.data.MutableClock
 import kotlinx.coroutines.Dispatchers
@@ -441,15 +443,75 @@ class FitnessViewModelTest {
     }
 
     @Test
-    fun theLogAsTextIsACopyOfEverythingInIt() = runFitnessTest { h ->
+    fun theLogSentAsTextIsACopyOfEverythingInIt() = runFitnessTest { h ->
         h.repository.bringIn(otherLog)
         val vm = h.viewModel()
-        val copy = assertIs<LogCopyRead.Copy>(LogCopyText.read(vm.logCopyText())).copy
+        var sent = ""
+        vm.sendLogCopy { text ->
+            sent = text
+            true
+        }
+        assertFalse(vm.uiState.value.copyUnsent)
+        val copy = assertIs<LogCopyRead.Copy>(LogCopyText.read(sent)).copy
         assertEquals(otherLog.exercises.toSet(), copy.exercises.toSet())
         assertEquals(2, copy.sets.size)
         assertEquals(1, copy.workouts.size)
         // Brought into the log it was made from, it adds nothing.
         assertTrue(h.repository.bringIn(copy).isEmpty)
+    }
+
+    @Test
+    fun aLogTooLongToBeSharedInIsNotOfferedAndTheScreenIsToldSo() = runFitnessTest { h ->
+        h.repository.saveExercises(listOf(exercise(note = "x".repeat(FitnessShares.MAX_LENGTH))))
+        val vm = h.viewModel()
+        var offered = 0
+        vm.sendLogCopy {
+            offered++
+            true
+        }
+        assertEquals(0, offered)
+        assertTrue(vm.uiState.value.copyUnsent)
+
+        // Short enough again, it goes, and the screen stops saying it didn't.
+        h.repository.saveExercises(listOf(exercise()))
+        vm.sendLogCopy {
+            offered++
+            true
+        }
+        assertEquals(1, offered)
+        assertFalse(vm.uiState.value.copyUnsent)
+    }
+
+    @Test
+    fun aCopyTheShareSheetWouldNotTakeIsSaidToBeUnsent() = runFitnessTest { h ->
+        h.repository.bringIn(otherLog)
+        val vm = h.viewModel()
+        vm.sendLogCopy { false }
+        assertTrue(vm.uiState.value.copyUnsent)
+    }
+
+    @Test
+    fun aLogIsCopyableOnceItHoldsAnythingACopyWouldCarry() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        assertFalse(vm.uiState.value.copyable)
+
+        // No exercise yet: a weigh-in alone is something to carry.
+        vm.logBodyweight(180.0)
+        runCurrent()
+        assertTrue(vm.uiState.value.copyable)
+        assertTrue(vm.uiState.value.isEmpty)
+    }
+
+    @Test
+    fun heartRateSettingsAloneMakeALogCopyable() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        vm.saveHeartProfile(HeartProfile(age = 40))
+        runCurrent()
+        assertTrue(vm.uiState.value.copyable)
     }
 
     // ---- Workouts -----------------------------------------------------------------------------

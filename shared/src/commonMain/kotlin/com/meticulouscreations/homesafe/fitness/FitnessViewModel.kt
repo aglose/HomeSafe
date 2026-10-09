@@ -38,6 +38,7 @@ import com.meticulouscreations.homesafe.fitness.domain.Workout
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
 import com.meticulouscreations.homesafe.fitness.domain.ZoneTracker
+import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
@@ -140,6 +141,10 @@ data class FitnessUiState(
     val bodyweight: BodyweightTrend = BodyweightTrend(),
     val calendar: List<TrainedDay> = emptyList(),
     val import: ImportState = ImportState(),
+    /** The log holds something a copy of it would carry: an exercise, a set, a phase, a weigh-in, or the heart-rate settings. */
+    val copyable: Boolean = false,
+    /** The last copy of the log asked for couldn't be sent: it is too long to hand to another app, or nothing opened to take it. */
+    val copyUnsent: Boolean = false,
 ) {
     fun board(exerciseId: String): ExerciseBoard? = boards.firstOrNull { it.exercise.id == exerciseId }
 
@@ -390,8 +395,18 @@ class FitnessViewModel(
 
     fun clearImport() = _uiState.update { it.copy(import = ImportState()) }
 
-    /** The whole log as text, to send to another install of the app, whose import page reads it ([LogCopyText]). */
-    suspend fun logCopyText(): String = LogCopyText.encode(repository.logCopy())
+    /**
+     * Hands the whole log as text to [send] (the platform's share sheet), for another install of
+     * the app, whose import page reads it ([LogCopyText]). [send] says whether it took it. Text
+     * longer than that page accepts when it is shared in ([FitnessShares.MAX_LENGTH]) isn't
+     * offered at all: it would look sent and arrive as nothing. Either way of failing is said on
+     * the screen ([FitnessUiState.copyUnsent]).
+     */
+    suspend fun sendLogCopy(send: (String) -> Boolean) {
+        val text = LogCopyText.encode(repository.logCopy())
+        val sent = text.length <= FitnessShares.MAX_LENGTH && send(text)
+        _uiState.update { it.copy(copyUnsent = !sent) }
+    }
 
     /**
      * The Connect button: looks for sensors to choose from, or with one already chosen goes
@@ -439,6 +454,7 @@ class FitnessViewModel(
             repository.heartSettings.collect { settings ->
                 heartSettings = settings
                 _heart.update { it.copy(settings = settings, bounds = HeartZones.bounds(settings.profile)) }
+                _uiState.update { it.copy(copyable = copyable()) }
                 syncHeartLink()
             }
         }
@@ -560,6 +576,10 @@ class FitnessViewModel(
         return NotesImport.plan(NotesParser.parse(text, part), log.exercises, log.sets, now())
     }
 
+    /** Whether a copy of the log would have anything in it. A workout's heart is left out: it is only kept for a workout, which already counts. */
+    private fun copyable(): Boolean =
+        log.exercises.isNotEmpty() || log.sets.isNotEmpty() || log.workouts.isNotEmpty() || log.phases.isNotEmpty() || log.bodyweights.isNotEmpty() || heartSettings != HeartSettings()
+
     /** What [copy] would add to the log as it is known here. The repository works it out again, against what it holds, when it is brought in. */
     private fun mergeOf(copy: LogCopy): LogMerge =
         LogCopies.merge(copy, LogCopy(log.exercises, log.sets, log.workouts, log.phases, log.bodyweights, heartSettings, heartSummaries.orEmpty()))
@@ -609,6 +629,7 @@ class FitnessViewModel(
                 bodyweight = boards.bodyweight,
                 calendar = boards.calendar,
                 import = state.import.refreshed(),
+                copyable = copyable(),
             )
         }
         if (boards.workout?.workout?.id != closing) closing = null

@@ -66,6 +66,7 @@ import com.meticulouscreations.homesafe.fitness.domain.Strength
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_copy_unsent
 import homesafe.shared.generated.resources.fitness_edit_delete
 import homesafe.shared.generated.resources.fitness_edit_delete_confirm
 import homesafe.shared.generated.resources.fitness_edit_load
@@ -162,9 +163,14 @@ internal fun LiftsScreen(
         item(key = "import") {
             GhostButton(stringResource(Res.string.fitness_lifts_import), onOpenImport, Modifier.fillMaxWidth().testTag("fitness_lifts_import"), icon = Icons.AutoMirrored.Filled.NoteAdd, tint = colors.textMuted)
         }
-        if (onSendCopy != null && !state.isEmpty) {
+        if (onSendCopy != null && state.copyable) {
             item(key = "send_copy") {
                 GhostButton(stringResource(Res.string.fitness_lifts_send_copy), onSendCopy, Modifier.fillMaxWidth().testTag("fitness_lifts_send_copy"), icon = Icons.Filled.IosShare, tint = colors.textMuted)
+            }
+            if (state.copyUnsent) {
+                item(key = "send_copy_unsent") {
+                    Text(stringResource(Res.string.fitness_copy_unsent), style = type.label, color = colors.amber, modifier = Modifier.testTag("fitness_lifts_send_copy_unsent"))
+                }
             }
         }
     }

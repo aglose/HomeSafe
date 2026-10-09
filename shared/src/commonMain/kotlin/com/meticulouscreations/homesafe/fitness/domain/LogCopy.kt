@@ -69,16 +69,20 @@ object LogCopies {
         val known = here.keys + copy.exercises.map { it.id }
 
         var nextWorkout = (into.workouts.maxOfOrNull { it.id } ?: 0L) + 1
-        val sameWorkout = into.workouts.associate { WorkoutKey(it.focus, it.startedAtEpochSeconds) to it.id }
+        // By what makes a workout the same one, to its id here: the log's own, and each of the copy's as it is given one,
+        // so that two of the copy's that are the same workout become one.
+        val sameWorkout = into.workouts.associateTo(HashMap()) { WorkoutKey(it.focus, it.startedAtEpochSeconds) to it.id }
         // The copy's id for a workout, to the id it has (or is given) here.
         val workoutIds = HashMap<Long, Long>()
         val workouts = ArrayList<Workout>()
         for (workout in copy.workouts.sortedWith(compareBy({ it.startedAtEpochSeconds }, { it.id }))) {
             if (workout.id in workoutIds) continue
-            val same = sameWorkout[WorkoutKey(workout.focus, workout.startedAtEpochSeconds)]
+            val key = WorkoutKey(workout.focus, workout.startedAtEpochSeconds)
+            val same = sameWorkout[key]
             if (same != null) {
                 workoutIds[workout.id] = same
             } else {
+                sameWorkout[key] = nextWorkout
                 workoutIds[workout.id] = nextWorkout
                 workouts += workout.copy(id = nextWorkout++)
             }

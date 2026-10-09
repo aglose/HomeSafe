@@ -238,11 +238,17 @@ What a copy brings (`LogCopies.merge`):
 - **Heart-rate settings fill in what is missing** and leave what is there: the zones' numbers,
   and the sensor that was chosen.
 
+A copy is written to the database as one transaction (`FitnessDao.writeMerge`), so one cut off
+part-way leaves nothing of itself behind; and every write to the log takes the repository's one
+lock, so the copy that is sent is the log at one moment.
+
 The text (`LogCopyText`) is JSON that opens with `"percysafeTrainingLog": 1`, the format's
 version. A set is written inside its exercise under one-letter names, about thirty characters
 each, because the whole of it has to fit in what one Android app can hand another
 (`FitnessShares.MAX_LENGTH`, 200,000 characters): a log of a few hundred sets comes to about a
-tenth of that. Enums travel by name and fall back as they do from the database. Text
+tenth of that. Enums travel by name and fall back as they do from the database. A log
+too long for that isn't offered to the share sheet at all, and the Lifts tab says it couldn't be
+sent, since it would otherwise look sent and arrive as nothing. Text
 that says it is a copy but can't be read (cut short, or from a later format) is said to be
 unreadable, and is never read as notes.
 

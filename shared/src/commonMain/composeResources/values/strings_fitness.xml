@@ -263,6 +263,8 @@
 
     <!-- A copy of the whole log, sent from one install of the app and read by another's import page -->
     <string name="fitness_lifts_send_copy">Send a copy of your log</string>
+    <!-- Under that button, when the copy couldn't be handed to the share sheet -->
+    <string name="fitness_copy_unsent">This log couldn't be sent. It may be too long to hand to another app in one piece.</string>
     <!-- The share sheet's title for that copy, and its subject where it is sent somewhere that has one -->
     <string name="fitness_copy_share_title">Training log</string>
     <!-- The import page's title while it holds such a copy and not notes -->

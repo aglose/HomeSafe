@@ -188,6 +188,20 @@ class LogCopyTest {
     }
 
     @Test
+    fun twoOfTheCopysWorkoutsThatAreTheSameWorkoutBecomeOne() {
+        val copy = LogCopy(
+            exercises = listOf(bench),
+            sets = listOf(LoggedSet(1, bench.id, 135.0, 10, 5_000, workoutId = 7), LoggedSet(2, bench.id, 140.0, 8, 5_100, workoutId = 8)),
+            workouts = listOf(Workout(7, WorkoutFocus.CHEST, 4_900, 6_000), Workout(8, WorkoutFocus.CHEST, 4_900, 6_000), Workout(9, WorkoutFocus.BACK, 4_900, 6_000)),
+            heartSummaries = mapOf(8L to heart),
+        )
+        val merge = LogCopies.merge(copy, LogCopy())
+        assertEquals(listOf(Workout(1, WorkoutFocus.CHEST, 4_900, 6_000), Workout(2, WorkoutFocus.BACK, 4_900, 6_000)), merge.workouts)
+        assertEquals(listOf(1L, 1L), merge.sets.map { it.workoutId })
+        assertEquals(mapOf(1L to heart), merge.heartSummaries)
+    }
+
+    @Test
     fun anExerciseTheLogHasDifferentlyIsSetUpTheWayTheCopyHasIt() {
         val moved = bench.copy(bodyPart = BodyPart.SHOULDERS, repLow = 4, repHigh = 8)
         val merge = LogCopies.merge(LogCopy(exercises = listOf(bench, squat)), LogCopy(exercises = listOf(moved, squat)))

@@ -214,7 +214,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onStopHeartSearch = viewModel::stopHeartSearch,
             onSaveHeartProfile = viewModel::saveHeartProfile,
             onDismissZoneNotice = viewModel::dismissZoneNotice,
-            onSendCopy = share?.let { send -> { scope.launch { send(viewModel.logCopyText(), shareTitle) } } },
+            onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }
     FitnessAppContent(state, actions, modifier, active, heart = heart)

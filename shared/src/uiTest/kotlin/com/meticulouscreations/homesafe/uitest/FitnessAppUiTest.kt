@@ -553,6 +553,29 @@ class FitnessAppUiTest {
     }
 
     @Test
+    fun aLogWithNoExercisesButSomethingElseToCarryCanStillBeSent() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls().apply { canSendCopy = true }
+        show(FitnessFixtures.empty.copy(copyable = true), calls, tab = FitnessTab.LIFTS, tall = true)
+        tap("fitness_lifts_send_copy")
+        assertEquals(1, calls.copiesSent)
+    }
+
+    @Test
+    fun aCopyThatWasSentSaysNothingUnderTheButton() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls().apply { canSendCopy = true }
+        show(FitnessFixtures.state(), calls, tab = FitnessTab.LIFTS, tall = true)
+        assertNotShown("fitness_lifts_send_copy_unsent")
+    }
+
+    @Test
+    fun aCopyThatCouldNotBeSentSaysSoUnderTheButton() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls().apply { canSendCopy = true }
+        show(FitnessFixtures.state().copy(copyUnsent = true), calls, tab = FitnessTab.LIFTS, tall = true)
+        assertShown("fitness_lifts_send_copy")
+        assertShown("fitness_lifts_send_copy_unsent")
+    }
+
+    @Test
     fun anEmptyLogHasNoCopyToSend() = runComposeUiTest(testTimeout = 5.minutes) {
         show(FitnessFixtures.empty, Calls().apply { canSendCopy = true }, tab = FitnessTab.LIFTS, tall = true)
         assertShown("fitness_lifts_import")

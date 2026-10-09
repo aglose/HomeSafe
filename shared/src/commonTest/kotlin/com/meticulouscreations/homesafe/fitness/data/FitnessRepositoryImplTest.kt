@@ -477,6 +477,26 @@ class FitnessRepositoryImplTest {
     }
 
     @Test
+    fun aCopyReadWhileTheLogIsBeingEditedHoldsEachEditWholeOrNotAtAll() = runTest {
+        repository.saveExercises(listOf(exercise(), squat))
+        repository.addSets(List(30) { draft(epochSeconds = 100L + it, exerciseId = squat.id) })
+        val copies = coroutineScope {
+            val edits = async { repeat(20) { repository.addSets(listOf(draft(epochSeconds = 9_000L + it))) } }
+            val gone = async { repository.deleteExercise(squat.id) }
+            val read = (1..20).map { async { repository.logCopy() } }
+            edits.await()
+            gone.await()
+            read.awaitAll()
+        }
+        // An exercise is deleted together with its sets: no copy has the one without the other.
+        for (copy in copies) {
+            val known = copy.exercises.map { it.id }.toSet()
+            assertTrue(copy.sets.all { it.exerciseId in known })
+            assertEquals(squat.id in known, copy.sets.any { it.exerciseId == squat.id })
+        }
+    }
+
+    @Test
     fun aCopySetsAnExerciseUpItsOwnWayAndFillsInOnlyTheHeartSettingsThatAreMissing() = runTest {
         val copy = usedLog()
         val other = FitnessRepositoryImpl(InMemoryFitnessDao())
