@@ -175,8 +175,11 @@ class BankSyncViewModel(
                 if (e is CancellationException) throw e
                 if (e != null && shutOut(e)) return
                 if (lapsed) return endLink(expired)
-                // A dropped request while the app was behind the browser isn't the link failing.
-                if (++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e?.shown() ?: UiText.of(Res.string.fin_bank_error_generic), isError = true))
+                // Only the relay answering with a problem counts against the link. Not reaching it
+                // at all is what happens while the app sits behind the browser, or behind the
+                // bank's own app for an OAuth sign-in, where Android holds back its network for
+                // as long as that takes: the link is waited on until it lapses.
+                if (e is BankSyncException && ++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e.shown(), isError = true))
                 continue
             }
             failures = 0
@@ -256,8 +259,12 @@ class BankSyncViewModel(
 
     fun dismissNotice() = _uiState.update { it.copy(notice = null) }
 
-    /** The app's own words when the failure is one it understands, the server's as written when it gave some, a plain line otherwise. */
-    private fun Throwable.shown(): UiText = if (this !is LocalizedException && message.isNullOrBlank()) UiText.of(Res.string.fin_bank_error_generic) else userMessage()
+    /**
+     * The app's own words when the failure is one it understands, the relay's as written when it
+     * answered with some, a plain line otherwise: anything else is the network's, whose message
+     * is a URL and a timeout.
+     */
+    private fun Throwable.shown(): UiText = if (this is LocalizedException) userMessage() else UiText.of(Res.string.fin_bank_error_generic)
 
     internal companion object {
         const val LINK_POLL_MS = 3_000L

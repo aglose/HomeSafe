@@ -146,6 +146,16 @@ class BankSyncViewModelTest {
     }
 
     @Test
+    fun theNetworksOwnWordsAreNotShown() = runTest(dispatcher) {
+        val timeout = IllegalStateException("Connect timeout has expired [url=http://192.168.1.2:8787/finance/bank, connect_timeout=unknown ms]")
+        val repo = FakeRepository().apply { statuses += Result.failure(timeout) }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        assertEquals(UiText.of(Res.string.fin_bank_error_generic), vm.uiState.value.problemText)
+    }
+
+    @Test
     fun linkingHandsOverPlaidsPageOnceAndWaitsForItToBeFinished() = runTest(dispatcher) {
         val repo = FakeRepository().apply {
             statuses += Result.success(bank())
@@ -220,6 +230,35 @@ class BankSyncViewModelTest {
         assertNotNull(vm.uiState.value.linking)
         assertNull(vm.uiState.value.notice)
         vm.cancelLink()
+    }
+
+    @Test
+    fun aRelayOutOfReachIsWaitedOnUntilTheLinkLapses() = runTest(dispatcher) {
+        // Android holds back the app's network while it sits behind the bank's own app for an OAuth sign-in.
+        val repo = FakeRepository().apply {
+            repeat(BankSyncViewModel.LINK_POLL_FAILURES * 3) { progress += Result.failure(IllegalStateException("Connect timeout has expired")) }
+            progress += Result.success(BankLinkProgress(BankLinkStatus.LINKED, listOf("Fidelity"), bank("Fidelity", syncing = true)))
+        }
+        repo.statuses += Result.success(bank("Fidelity"))
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.INVESTMENTS)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_FAILURES * 3 * BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNotNull(vm.uiState.value.linking)
+        assertNull(vm.uiState.value.notice)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Fidelity".asUiText())), vm.uiState.value.notice)
+        vm.cancelLink()
+    }
+
+    @Test
+    fun aRelayOutOfReachPastTheLinksDeadlineCallsItExpired() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { progress += Result.failure(IllegalStateException("Connect timeout has expired")) }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(1_800_000L + BankSyncViewModel.LINK_POLL_MS)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true), vm.uiState.value.notice)
     }
 
     @Test
