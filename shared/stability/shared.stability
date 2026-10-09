@@ -2468,6 +2468,14 @@ private fun com.meticulouscreations.homesafe.text.resolveArgs(args: kotlin.colle
     - args: RUNTIME (requires runtime check)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.BackScope(enabled: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - enabled: STABLE (primitive type)
+    - content: STABLE (composable function type)
+
+@Composable
 public fun com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox(isRefreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, bandTop: androidx.compose.ui.unit.Dp, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -2710,6 +2718,24 @@ public fun com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview(c
   restartable: true
   params:
     - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBack(enabled: kotlin.Boolean, onBack: kotlin.Function1<kotlin.Float, kotlin.Unit>): com.meticulouscreations.homesafe.ui.PredictiveBack
+  skippable: false
+  restartable: false
+  params:
+    - enabled: STABLE (primitive type)
+    - onBack: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition(target: S, previous: S?, back: com.meticulouscreations.homesafe.ui.PredictiveBack, label: kotlin.String): androidx.compose.animation.core.Transition<S>
+  skippable: false
+  restartable: false
+  params:
+    - target: RUNTIME (requires runtime check)
+    - previous: RUNTIME (requires runtime check)
+    - back: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.AiFeaturesSection(overview: com.meticulouscreations.homesafe.domain.model.ServerOverview?): kotlin.Unit
@@ -3631,13 +3657,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.InlineClipPlayer(player:
     - onFullScreenClick: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.InnerAppOverlay(open: kotlin.Boolean, origin: androidx.compose.ui.geometry.Offset, onCovering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.InnerAppOverlay(open: kotlin.Boolean, origin: androidx.compose.ui.geometry.Offset, onCovering: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - open: STABLE (primitive type)
     - origin: STABLE (marked @Stable or @Immutable)
     - onCovering: STABLE (function type)
+    - onClose: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 

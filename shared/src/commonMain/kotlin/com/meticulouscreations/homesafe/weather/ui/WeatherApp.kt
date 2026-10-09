@@ -78,7 +78,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
@@ -101,6 +100,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import com.meticulouscreations.homesafe.weather.PlaceWeather
 import com.meticulouscreations.homesafe.weather.RadarLoad
@@ -229,8 +230,10 @@ internal fun WeatherAppContent(
     fun pop() {
         if (pages.isNotEmpty()) pages.removeAt(pages.lastIndex) else actions.onClose()
     }
+    // Back with a page to give back is this stack's, and scrubs that page's pop under the finger;
+    // with none it leaves the app, which the overlay around it drains predictively (InnerAppOverlay).
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
-    BackHandler(enabled = active) { pop() }
+    val back = rememberPredictiveBack(enabled = active && pages.isNotEmpty()) { pop() }
 
     val selected = state.selected
     val report = selected?.report
@@ -282,10 +285,16 @@ internal fun WeatherAppContent(
             Box(Modifier.fillMaxSize().drawBehind { drawRect(Color.Black, alpha = 0.1f + dim.floatValue * 0.5f) })
 
             val target: Any = pages.lastOrNull() ?: tab
-            AnimatedContent(
-                targetState = target,
-                transitionSpec = { weatherTransition(initialState, targetState) },
-                label = "weatherPage",
+            val previous: Any? = if (pages.isEmpty()) null else pages.getOrNull(pages.lastIndex - 1) ?: tab
+            // Which way the stack last moved, so a page given back leaves the way it came; outside the
+            // snapshot system since it only steers an animation.
+            val depth = remember { intArrayOf(pages.size, 1) }
+            if (pages.size != depth[0]) {
+                depth[1] = if (pages.size > depth[0]) 1 else -1
+                depth[0] = pages.size
+            }
+            rememberPredictiveBackTransition(target, previous, back, label = "weatherPage").AnimatedContent(
+                transitionSpec = { weatherTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
                 // Today and Forecast are one pager of places, which stays where it is as they swap inside it.
                 contentKey = { if (it == WeatherTab.TODAY || it == WeatherTab.FORECAST) "places" else it },
             ) { shown ->
@@ -601,16 +610,17 @@ private fun Welcome(state: WeatherUiState, padding: PaddingValues, onUseLocation
 
 /**
  * Pages pushed over the tabs slide in from the right and back out; the tabs fade through one
- * another, since what moves between them is the sky's own business.
+ * another, since what moves between them is the sky's own business. [pop] is a page being given
+ * back (or a back swipe scrubbing that), which leaves the way it came even onto another page.
  */
-private fun weatherTransition(from: Any, to: Any): ContentTransform {
+private fun weatherTransition(from: Any, to: Any, pop: Boolean): ContentTransform {
     val spec = tween<IntOffset>(320, easing = FastOutSlowInEasing)
     return when {
+        from is WeatherPage && (pop || to !is WeatherPage) ->
+            (slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { it } + fadeOut(tween(200)))
+
         to is WeatherPage ->
             (slideInHorizontally(spec) { it } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { -it / 4 } + fadeOut(tween(200)))
-
-        from is WeatherPage ->
-            (slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { it } + fadeOut(tween(200)))
 
         else -> fadeIn(tween(260)) togetherWith fadeOut(tween(200))
     }

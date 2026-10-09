@@ -63,7 +63,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -94,6 +93,8 @@ import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground
 import com.meticulouscreations.homesafe.fitness.ui.shader.RecordBurst
 import com.meticulouscreations.homesafe.text.resolve
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
@@ -231,8 +232,10 @@ internal fun FitnessAppContent(
     fun pop() {
         if (pages.isNotEmpty()) pages.removeAt(pages.lastIndex) else actions.onClose()
     }
+    // Back with a page to give back is this stack's, and scrubs that page's pop under the finger;
+    // with none it leaves the app, which the overlay around it drains predictively (InnerAppOverlay).
     // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
-    BackHandler(enabled = active) { pop() }
+    val back = rememberPredictiveBack(enabled = active && pages.isNotEmpty()) { pop() }
 
     // Notes handed over from outside (shared into the app) open on the page that reads them.
     LaunchedEffect(state.import.text.isNotBlank()) {
@@ -280,7 +283,11 @@ internal fun FitnessAppContent(
                 depth[1] = if (pages.size > depth[0]) 1 else -1
                 depth[0] = pages.size
             }
-            AnimatedContent(targetState = target, transitionSpec = { fitnessTransition(initialState, targetState, forward = depth[1] > 0) }, label = "fitnessPage") { shown ->
+            val previous: Any? = if (pages.isEmpty()) null else pages.getOrNull(pages.lastIndex - 1) ?: tab
+            // A back swipe scrubs the pop it would make, so it slides the way a pop does.
+            rememberPredictiveBackTransition(target, previous, back, label = "fitnessPage").AnimatedContent(
+                transitionSpec = { fitnessTransition(initialState, targetState, forward = depth[1] > 0 && !back.inProgress) },
+            ) { shown ->
                 when (shown) {
                     FitnessTab.TODAY -> TodayScreen(
                         state = state,

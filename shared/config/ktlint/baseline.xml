@@ -38,14 +38,14 @@
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/DetectionZonesScreen.kt">
         <error line="137" column="5" source="compose:modifier-missing-check" />
         <error line="139" column="5" source="compose:lambda-param-in-effect" />
-        <error line="521" column="21" source="compose:vm-forwarding-check" />
+        <error line="523" column="21" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FaceLibraryScreen.kt">
         <error line="96" column="5" source="compose:modifier-missing-check" />
         <error line="143" column="56" source="compose:vm-forwarding-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/FrigateAppShell.kt">
-        <error line="379" column="5" source="compose:modifier-missing-check" />
+        <error line="380" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
         <error line="145" column="5" source="compose:modifier-missing-check" />
