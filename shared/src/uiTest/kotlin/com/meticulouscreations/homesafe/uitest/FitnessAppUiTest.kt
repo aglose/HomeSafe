@@ -479,11 +479,12 @@ class FitnessAppUiTest {
         val calls = Calls()
         show(FitnessFixtures.importing(), calls, page = FitnessPage.Import)
         assertShown("fitness_import_preview")
-        // Set by the field's SetText action, not typed: typing focuses the field and opens an input
-        // session, and the keyboard hide that follows ran on the test thread and failed there.
+        // Set straight through the field's text action, not typed: typing focuses the field and
+        // opens an input session, and its keyboard hide when the page moves on can land off the
+        // main thread on an emulator. What's checked is that the text reaches the app, not the IME.
         onNodeWithTag("fitness_import_text").performSemanticsAction(SemanticsActions.SetText) { it(AnnotatedString("x")) }
         settle()
-        assertEquals(1, calls.importTexts.size)
+        assertEquals(listOf("x"), calls.importTexts)
         tap("fitness_import_confirm")
         assertEquals(1, calls.importConfirmed)
     }
