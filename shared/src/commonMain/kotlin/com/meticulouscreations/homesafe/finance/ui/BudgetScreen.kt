@@ -67,6 +67,7 @@ import com.meticulouscreations.homesafe.finance.domain.BudgetBucket
 import com.meticulouscreations.homesafe.finance.domain.BudgetCard
 import com.meticulouscreations.homesafe.finance.domain.BudgetConfigPatch
 import com.meticulouscreations.homesafe.finance.domain.BudgetPace
+import com.meticulouscreations.homesafe.finance.domain.CardHolder
 import com.meticulouscreations.homesafe.finance.domain.CardRole
 import com.meticulouscreations.homesafe.finance.domain.PaceStatus
 import com.meticulouscreations.homesafe.finance.domain.PersonalFinance
@@ -135,6 +136,9 @@ import homesafe.shared.generated.resources.fin_budget_hero_day
 import homesafe.shared.generated.resources.fin_budget_hero_limit
 import homesafe.shared.generated.resources.fin_budget_hero_month
 import homesafe.shared.generated.resources.fin_budget_hero_no_limit
+import homesafe.shared.generated.resources.fin_budget_holder_ending
+import homesafe.shared.generated.resources.fin_budget_holders_body
+import homesafe.shared.generated.resources.fin_budget_holders_title
 import homesafe.shared.generated.resources.fin_budget_how
 import homesafe.shared.generated.resources.fin_budget_link_body
 import homesafe.shared.generated.resources.fin_budget_link_title
@@ -237,6 +241,7 @@ internal fun BudgetRoute(
         contentPadding = contentPadding,
         onTag = viewModel::tag,
         onSetRole = { card, role -> viewModel.save(BudgetConfigPatch(roles = mapOf(card to role))) },
+        onSetHolder = { card, mark, person -> viewModel.save(BudgetConfigPatch(holders = mapOf(card to mapOf(mark to person)))) },
         onShowMonth = viewModel::showMonth,
         onSyncNow = viewModel::syncNow,
         onRetry = viewModel::refresh,
@@ -257,6 +262,7 @@ internal fun BudgetScreen(
     contentPadding: PaddingValues,
     onTag: (purchaseId: String, bucket: BucketId, remember: Boolean) -> Unit,
     onSetRole: (cardKey: String, role: CardRole) -> Unit,
+    onSetHolder: (cardKey: String, mark: String, person: String?) -> Unit,
     onShowMonth: (String?) -> Unit,
     onSyncNow: () -> Unit,
     onRetry: () -> Unit,
@@ -296,6 +302,22 @@ internal fun BudgetScreen(
                 item(key = "status") { StatusBlock(state, budget, onSyncNow, onOpenSettings, onOpenLinkedAccounts) }
                 if (unset.isNotEmpty()) {
                     item(key = "roles") { RoleSetupCard(unset, saving = state.saving, onSetRole = onSetRole) }
+                }
+                // A shared card whose bank marks each purchase with the card that made it: said once, they sort themselves.
+                val unsaid = budget.cards.filter { it.unsaidHolders.isNotEmpty() }
+                if (unsaid.isNotEmpty() && budget.config.people.isNotEmpty()) {
+                    item(key = "holders") {
+                        FinanceCard(Modifier.padding(top = 16.dp).testTag("finance_budget_holders")) {
+                            Text(stringResource(Res.string.fin_budget_holders_title), style = FinanceTheme.type.section, color = FinanceTheme.colors.textPrimary)
+                            Spacer(Modifier.height(6.dp))
+                            Text(stringResource(Res.string.fin_budget_holders_body), style = FinanceTheme.type.body, color = FinanceTheme.colors.textSecondary)
+                            unsaid.forEach { card ->
+                                Spacer(Modifier.height(14.dp))
+                                Text(cardLabel(card), style = FinanceTheme.type.bodyStrong, color = FinanceTheme.colors.textPrimary)
+                                CardHolders(card, budget.config.people, enabled = !state.saving, onSay = { mark, person -> onSetHolder(card.key, mark, person) })
+                            }
+                        }
+                    }
                 }
                 if (budget.budgetCards.isNotEmpty()) {
                     val toSort = budget.unassigned
@@ -354,7 +376,7 @@ internal fun BudgetScreen(
                     shown.groupBy { it.date }.forEach { (day, purchases) ->
                         item(key = "day-$day") {
                             Text(
-                                FinanceFormat.dayOfMonth(day),
+                                FinanceFormat.dayOfMonth(day).resolve(),
                                 style = FinanceTheme.type.label,
                                 color = FinanceTheme.colors.textTertiary,
                                 modifier = Modifier.padding(horizontal = PageGutter).padding(top = 14.dp, bottom = 2.dp),
@@ -501,7 +523,7 @@ private fun BudgetHero(budget: Budget, pace: BudgetPace, onBackToNow: () -> Unit
         AuroraBackground(tint, Modifier.matchParentSize(), intensity = 0.7f)
         Row(Modifier.fillMaxWidth().padding(horizontal = PageGutter).padding(top = 8.dp, bottom = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                val month = FinanceFormat.month(budget.month, year = true)
+                val month = FinanceFormat.month(budget.month, year = true).resolve()
                 Text(
                     if (budget.isCurrentMonth) stringResource(Res.string.fin_budget_hero_day, month, budget.day, budget.daysInMonth) else stringResource(Res.string.fin_budget_hero_month, month),
                     style = FinanceTheme.type.label,
@@ -666,6 +688,49 @@ internal fun RoleChips(selected: CardRole, people: List<String>, enabled: Boolea
     }
 }
 
+/** How a cardholder's mark reads: a bare card number as "Card ending 1203", anything else (a name) as the bank wrote it. */
+@Composable
+private fun holderLabel(holder: CardHolder): String =
+    if (holder.mark.length in 3..6 && holder.mark.all { it.isDigit() }) stringResource(Res.string.fin_budget_holder_ending, holder.mark) else holder.mark
+
+/**
+ * Whose card is which: each mark the bank puts on [card]'s purchases, with the budget's people
+ * to pick from. Picking the person already picked takes the say-so back.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun CardHolders(card: BudgetCard, people: List<String>, enabled: Boolean, onSay: (mark: String, person: String?) -> Unit, modifier: Modifier = Modifier) {
+    val colors = FinanceTheme.colors
+    Column(modifier.fillMaxWidth()) {
+        card.holders.forEach { holder ->
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(holderLabel(holder), style = FinanceTheme.type.body, color = colors.textPrimary, modifier = Modifier.weight(1f))
+                Text(pluralStringResource(Res.plurals.fin_budget_purchases_count, holder.count, holder.count), style = FinanceTheme.type.label, color = colors.textTertiary)
+            }
+            Spacer(Modifier.height(6.dp))
+            FlowRow(Modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                people.forEach { person ->
+                    val isSelected = holder.person == person
+                    val color = bucketColor(BucketId.Person(person), people)
+                    Text(
+                        person,
+                        style = FinanceTheme.type.label,
+                        color = if (isSelected) color else colors.textSecondary,
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (isSelected) color.copy(alpha = 0.18f) else colors.surfaceRaised)
+                            .border(1.dp, if (isSelected) color.copy(alpha = 0.6f) else Color.Transparent, CircleShape)
+                            .selectable(selected = isSelected, enabled = enabled, role = Role.RadioButton) { onSay(holder.mark, if (isSelected) null else person) }
+                            .testTag("finance_budget_holder_${holder.mark}_$person")
+                            .padding(horizontal = 14.dp, vertical = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** A purchase nobody has been put to, with each bucket one tap away; the row itself opens the sheet, where its merchant can be remembered. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -675,7 +740,7 @@ private fun SortRow(purchase: Purchase, people: List<String>, busy: Boolean, onP
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(purchase.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(12.dp))
-            Text(FinanceFormat.dayOfMonth(purchase.date), style = FinanceTheme.type.label, color = colors.textTertiary)
+            Text(FinanceFormat.dayOfMonth(purchase.date).resolve(), style = FinanceTheme.type.label, color = colors.textTertiary)
             Spacer(Modifier.width(10.dp))
             Text(FinanceFormat.money(purchase.amount), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
         }
@@ -737,7 +802,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
         val scrubbed = scrub?.takeIf { it in 1..budget.daily.size }
         Text(
             if (scrubbed != null) {
-                stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed), FinanceFormat.money(soFar.values[scrubbed], 0))
+                stringResource(Res.string.fin_budget_pace_scrub, FinanceFormat.dayOfMonth(budget.month, scrubbed).resolve(), FinanceFormat.money(soFar.values[scrubbed], 0))
             } else {
                 stringResource(Res.string.fin_budget_pace_caption)
             },
@@ -766,7 +831,7 @@ private fun PaceBlock(budget: Budget, pace: BudgetPace) {
                 if (budget.isCurrentMonth) add(stringResource(Res.string.fin_budget_pace_stat_projected) to FinanceFormat.money(pace.projected, 0))
                 pace.allowancePerDay?.takeIf { budget.isCurrentMonth && pace.daysLeft > 0 }?.let { add(stringResource(Res.string.fin_budget_pace_stat_allowance) to FinanceFormat.money(it, 0)) }
                 if (limit != null) {
-                    val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it) }
+                    val day = pace.limitDay?.let { FinanceFormat.dayOfMonth(budget.month, it).resolve() }
                     add(stringResource(Res.string.fin_budget_pace_stat_limit_day) to (day ?: stringResource(Res.string.fin_budget_pace_stat_not_this_month)))
                 }
             },
@@ -912,7 +977,7 @@ private fun MonthsBlock(budget: Budget, onShowMonth: (String?) -> Unit) {
     val months = budget.history.map { it.month to it.spent } + (budget.month to budget.spent)
     BarChart(
         bars = months.map { (month, spent) ->
-            Bar(FinanceFormat.month(month), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
+            Bar(FinanceFormat.month(month).resolve(), spent, if (limit != null && spent > limit) colors.loss else colors.gain, secondary = limit, secondaryColor = colors.hairline)
         },
         modifier = Modifier.fillMaxWidth().padding(horizontal = PageGutter).height(150.dp),
         selected = months.lastIndex,
@@ -1002,7 +1067,7 @@ private fun TagSheet(purchase: Purchase, card: BudgetCard?, people: List<String>
             Column(Modifier.padding(horizontal = PageGutter)) {
                 Text(purchase.name, style = FinanceTheme.type.section, color = colors.textPrimary)
                 Spacer(Modifier.height(2.dp))
-                val about = listOfNotNull(FinanceFormat.dayOfMonth(purchase.date), FinanceFormat.money(purchase.amount), card?.name)
+                val about = listOfNotNull(FinanceFormat.dayOfMonth(purchase.date).resolve(), FinanceFormat.money(purchase.amount), card?.name)
                 Text(about.joinToString(stringResource(Res.string.common_dot_separator)), style = FinanceTheme.type.label, color = colors.textSecondary)
                 Spacer(Modifier.height(4.dp))
                 Text(stringResource(sourceNote(purchase.source)), style = FinanceTheme.type.label, color = colors.textTertiary)

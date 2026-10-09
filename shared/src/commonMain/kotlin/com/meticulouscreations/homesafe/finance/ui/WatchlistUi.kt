@@ -66,6 +66,8 @@ import com.meticulouscreations.homesafe.finance.domain.LongRunStats
 import com.meticulouscreations.homesafe.finance.domain.Position
 import com.meticulouscreations.homesafe.finance.domain.Quote
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
+import com.meticulouscreations.homesafe.text.UiText
+import com.meticulouscreations.homesafe.text.asUiText
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_cancel
@@ -558,19 +560,19 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
     val stats = remember(history, quote) { history?.let { LongRunStats.of(it, quote, Clock.System.now().epochSeconds) } }
     val gmt = history?.gmtOffsetSeconds ?: 0
     val dash = "—"
-    val since = stats?.let { stringResource(Res.string.longrun_since_year, FinanceFormat.date(it.firstEpochSeconds + 12 * 3600, gmt).takeLast(4)) }
+    val since = stats?.let { stringResource(Res.string.longrun_since_year, FinanceFormat.year(it.firstEpochSeconds + 12 * 3600, gmt)) }
         ?: stringResource(Res.string.longrun_since_start)
     val atRecord = stringResource(Res.string.longrun_at_record)
     val (recordLabel, recordValue) = recordWhen(stats, quote, gmt)
     Column {
         SectionHeader(
             stringResource(Res.string.longrun_title),
-            trailing = stats?.let { stringResource(Res.string.longrun_data_from, FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt)) },
+            trailing = stats?.let { stringResource(Res.string.longrun_data_from, FinanceFormat.monthYear(it.firstEpochSeconds + 12 * 3600, gmt).resolve()) },
         )
         StatGrid(
             listOf(
                 stringResource(Res.string.longrun_all_time_high) to (stats?.let { FinanceFormat.price(it.allTimeHigh, meta.kind, meta.currency) } ?: dash),
-                stringResource(recordLabel) to recordValue,
+                stringResource(recordLabel) to recordValue.resolve(),
                 stringResource(Res.string.longrun_from_high) to (stats?.let { if (it.fromHighPercent > -0.005) atRecord else FinanceFormat.signedPercent(it.fromHighPercent) } ?: dash),
                 stringResource(Res.string.longrun_per_year) to (stats?.perYearPercent?.let { FinanceFormat.signedPercent(it) } ?: dash),
                 pluralStringResource(Res.plurals.longrun_years, 1, 1) to (stats?.oneYearPercent?.let(FinanceFormat::longRunPercent) ?: dash),
@@ -595,8 +597,8 @@ internal fun LongRunSection(symbol: String, state: FinanceUiState, onRequestHist
  * weekly, stamped at the week's start, which is written from midday so no offset slips it back a
  * day); one set today is the quote's own moment, written in the exchange's clock as it is.
  */
-private fun recordWhen(stats: LongRunStats?, quote: Quote?, historyOffset: Int): Pair<StringResource, String> {
-    val at = stats?.allTimeHighEpochSeconds ?: return Res.string.longrun_set_on to "—"
+private fun recordWhen(stats: LongRunStats?, quote: Quote?, historyOffset: Int): Pair<StringResource, UiText> {
+    val at = stats?.allTimeHighEpochSeconds ?: return Res.string.longrun_set_on to "—".asUiText()
     return if (stats.allTimeHighToday) {
         Res.string.longrun_set_on to FinanceFormat.date(at, quote?.gmtOffsetSeconds ?: historyOffset)
     } else {

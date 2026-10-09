@@ -78,3 +78,25 @@ values structurally; Compose UI tests may match the English text.
 
 Before finishing any UI change, grep what you touched for `"` and check every hit against the
 list above.
+
+## Back navigation
+
+Back is predictive: on Android the screen answers the back swipe while the finger is still
+moving, not only once it lets go. Everything goes through the NavigationEvent library's
+dispatcher. The manifest opts in with `android:enableOnBackInvokedCallback="true"`, which
+Android 13-15 need.
+
+- **Screens on a Navigation 3 back stack**: `NavDisplay` handles Back. Give it a
+  `predictivePopTransitionSpec` that uses the swipe edge it is passed (`predictiveSharedAxis(it)`
+  in `NavTransitions.kt`), so the page moves the way the finger pulls.
+- **Anything else that Back closes or pops** (an overlay, a drawer, an `AnimatedContent` page
+  stack): use `rememberPredictiveBack(enabled) { releasedAt -> … }` from `ui/PredictiveBack.kt`,
+  not `BackHandler`. Draw the surface from `back.progress` during the swipe, and start the exit
+  from `releasedAt` so nothing jumps back to rest first. An `AnimatedContent` page stack gets its
+  pop scrubbed by `rememberPredictiveBackTransition(target, previous, back, label).AnimatedContent { … }`.
+- A handler that only asks first (unsaved changes, then a dialog) stays still under the finger:
+  don't draw a peek at a page Back won't reach.
+- Handlers are last-registered-first. A subtree drawn under something that owns Back (the shell
+  under an app from the drawer) sits in a `BackScope(enabled = false)`, so its newer handlers
+  stay quiet. A nested stack enables its handler only while it has something to pop, so Back
+  falls through to the surface around it.

@@ -73,7 +73,7 @@
         <item quantity="other">%1$d holdings</item>
     </plurals>
     <string name="fin_bank_unlink_title">Unlink %1$s?</string>
-    <string name="fin_bank_unlink_body">Plaid is told to forget it, the server deletes its key, and its rows leave the feed, so any cell in your budget sheet that looks them up will show an error until you change it.</string>
+    <string name="fin_bank_unlink_body">Plaid is told to forget it, the server deletes its key, and its rows leave the feed, so any cell in your budget sheet that looks them up will show an error until you change it. On Plaid's free plan every link counts toward its 10 for good, so linking it again later uses up another.</string>
     <string name="fin_bank_unlink_confirm">Unlink</string>
 
     <!-- The feed: the Google Sheet the balances are written to. -->

@@ -97,6 +97,7 @@ import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
+import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
@@ -407,7 +408,8 @@ fun FrigateAppShell() {
             onBack = nav::back,
             transitionSpec = { tabHandOver() },
             popTransitionSpec = { tabHandOver() },
-            predictivePopTransitionSpec = { tabHandOver() },
+            // Back from a tab only ever returns to Home, so a swipe needs only its edge.
+            predictivePopTransitionSpec = { predictiveSharedAxis(it) },
             entryProvider = entryProvider {
                 entry<TopLevelRoute.Home> {
                     // Home stays under the other tabs as the start destination, and Back reveals
@@ -525,6 +527,7 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
             open = nav.appOpen,
             origin = nav.appOrigin,
             onCovering = { nav.appCovering = it },
+            onClose = nav::closeApp,
         ) {
             when (nav.app) {
                 InnerApp.FINANCE -> FinanceApp(
@@ -623,7 +626,8 @@ internal fun ShellScaffold(
         // so focus can't wander behind the scrim to a camera or the menu button.
         Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {
-                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { content() }
+                // Back is the overlay's while one is up, even where the shell shows through it.
+                if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
             }
 
             // Fades over the nested screen's own header, which is the same height in the same
@@ -848,7 +852,7 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
             onBack = { backStack.removeLastOrNull() },
             transitionSpec = { sharedAxis(forward = true) },
             popTransitionSpec = { sharedAxis(forward = false) },
-            predictivePopTransitionSpec = { sharedAxis(forward = false) },
+            predictivePopTransitionSpec = { predictiveSharedAxis(it) },
             entryProvider = entryProvider {
                 entry<CameraListRoute> {
                     HomeTabContent(

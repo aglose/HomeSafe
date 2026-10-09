@@ -20,8 +20,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,7 +33,6 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -53,6 +54,7 @@ import com.meticulouscreations.homesafe.ui.components.liveSurfaceIsExclusive
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.fitVideo
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import homesafe.shared.generated.resources.Res
@@ -67,8 +69,9 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * A quick look at one camera from the Home list: pinch a card and its video lifts out into a
  * full-screen layer, still under the same fingers, where it can be zoomed and panned; let go at
- * 1x, tap the backdrop, or press Back and it settles back into its card. Long-pressing a card
- * opens the same layer zoomed in on the pressed spot.
+ * 1x, tap the backdrop, or press Back and it settles back into its card. A back swipe draws it
+ * part of the way home under the finger first, so letting go finishes a move already begun.
+ * Long-pressing a card opens the same layer zoomed in on the pressed spot.
  *
  * The state is shared between the cards, which start the gesture, and [CameraCardZoomOverlay],
  * which draws it. The pinch that opens the layer keeps its pointer stream on the card it began on
@@ -98,6 +101,16 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** 0 = the video sits exactly over its card, 1 = it has lifted into the overlay's own frame. */
     val lift = Animatable(0f)
+
+    /** The back swipe in progress, 0 to 1, set by the overlay that listens for it. */
+    internal var backProgress: () -> Float = { 0f }
+
+    // Where a committed back swipe left the video, held until [close] takes the lift on from there.
+    private var heldBack by mutableFloatStateOf(0f)
+
+    /** The lift as drawn: [lift], drawn part of the way back toward the card by a back swipe. */
+    internal val shownLift: Float
+        get() = lift.value * (1f - BACK_PEEK * maxOf(backProgress(), heldBack))
 
     // Laid out by the overlay. The sizes are snapshot state because opening by long press waits
     // for them; the origin is only ever read inside gesture and draw code.
@@ -165,12 +178,20 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
     fun close() {
         if (target == null) return
         run {
+            lift.snapTo(shownLift)
+            heldBack = 0f
             coroutineScope {
                 launch { zoom.animateReset() }
                 launch { lift.animateTo(0f, LIFT_SPEC) }
             }
             handBack()
         }
+    }
+
+    /** A back swipe let go past the commit point at [releasedAt]: settle home from where it drew the video. */
+    fun closeFromBack(releasedAt: Float) {
+        heldBack = releasedAt
+        close()
     }
 
     /** Leaves without the settle — the camera's own screen is about to take the video over. */
@@ -184,7 +205,7 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     /** How the overlay's at-rest content is transformed to sit over the card at this point of the lift. */
     internal fun liftFrame(): LiftFrame {
-        val t = lift.value
+        val t = shownLift
         if (contentSize == IntSize.Zero || viewportSize == IntSize.Zero) return LiftFrame(1f, Offset.Zero)
         val restScale = cardBounds.width / contentSize.width
         val cardCenter = cardBounds.center - overlayOriginInRoot - viewportSize.center
@@ -229,6 +250,9 @@ class CameraCardZoomState(private val scope: CoroutineScope) {
 
     private companion object {
         val LIFT_SPEC = tween<Float>(NAV_TRANSITION_MS, easing = NavEnterEasing)
+
+        /** How much of the way home to its card a full back swipe draws the video. */
+        const val BACK_PEEK = 0.5f
     }
 }
 
@@ -261,12 +285,13 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
     val extraColors = LocalFrigateExtraColors.current
     // Remembered: the gesture node is keyed on it, and must not restart under a pinch.
     val onPinchEnded = remember(state) { { state.pinchEnded() } }
-    BackHandler { state.close() }
+    val back = rememberPredictiveBack(onBack = state::closeFromBack)
+    SideEffect { state.backProgress = { back.progress } }
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .drawBehind { drawRect(Color.Black, alpha = SCRIM_ALPHA * state.lift.value) }
+            .drawBehind { drawRect(Color.Black, alpha = SCRIM_ALPHA * state.shownLift) }
             .clickable(interactionSource = null, indication = null, onClick = state::close)
             .onGloballyPositioned { state.overlayOriginInRoot = it.positionInRoot() }
             .onSizeChanged { state.viewportSize = it }
@@ -296,7 +321,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                     // transition's video does. Clipping here, inside the zoom, only ever trims
                     // the video's own edges, which a zoomed-in picture has pushed off screen.
                     .graphicsLayer {
-                        shape = RoundedCornerShape(CAMERA_CARD_CORNER_RADIUS * (1f - state.lift.value))
+                        shape = RoundedCornerShape(CAMERA_CARD_CORNER_RADIUS * (1f - state.shownLift))
                         clip = true
                     }
                     .clickable(interactionSource = null, indication = null) { state.dismiss { onOpenCamera(tile) } },
@@ -327,7 +352,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopStart)
-                .graphicsLayer { alpha = state.lift.value }
+                .graphicsLayer { alpha = state.shownLift }
                 .background(Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.6f), Color.Transparent)))
                 .statusBarsPadding()
                 .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 24.dp),

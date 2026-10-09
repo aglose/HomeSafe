@@ -187,7 +187,12 @@ internal fun Series.within(range: EconRange): Series {
     return since(end - years * Series.YEAR_SECONDS)
 }
 
-private val econAxis = ChartAxis(formatValue = { FinanceFormat.grouped(it, 1) + "%" }, formatTime = { FinanceFormat.monthYear(it) })
+/** The axis of the economy's percentage charts: values to one decimal, times as a month and year. */
+@Composable
+private fun rememberEconAxis(): ChartAxis {
+    val dates = rememberFinanceDates()
+    return remember(dates) { ChartAxis(formatValue = { FinanceFormat.grouped(it, 1) + "%" }, formatTime = { dates.monthYear(it) }) }
+}
 
 @Composable
 internal fun EconomyScreen(
@@ -312,12 +317,12 @@ private fun InflationBlock(state: FinanceUiState) {
     val shown = scrub?.let { i -> cpiSeries?.takeIf { i in 0 until it.size }?.let { it.times[i] to it.values[i] } }
     val value = shown?.second ?: cpi?.latest
     val changeText = when {
-        shown != null -> stringResource(Res.string.finance_econ_cpi_in, FinanceFormat.monthYear(shown.first))
+        shown != null -> stringResource(Res.string.finance_econ_cpi_in, FinanceFormat.monthYear(shown.first).resolve())
 
         cpi?.lastChange != null -> stringResource(
             Res.string.finance_econ_cpi_change,
             FinanceFormat.indicatorChange(cpi.lastChange!!, cpi.indicator.unit).resolve(),
-            cpi.latestEpochSeconds?.let { FinanceFormat.monthYear(it) } ?: "",
+            cpi.latestEpochSeconds?.let { FinanceFormat.monthYear(it).resolve() } ?: "",
         )
 
         else -> " "
@@ -343,7 +348,7 @@ private fun InflationBlock(state: FinanceUiState) {
                     lines = lines,
                     rules = listOf(ChartRule(2.0, colors.accent, stringResource(Res.string.finance_econ_fed_target), always = true)),
                     timeAxis = true,
-                    axis = econAxis,
+                    axis = rememberEconAxis(),
                     periods = recessionBands,
                     contentDescription = stringResource(Res.string.finance_econ_inflation_chart),
                     onScrub = { scrub = it },
@@ -495,7 +500,7 @@ private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, 
             lines = present,
             rules = rules,
             timeAxis = true,
-            axis = econAxis,
+            axis = rememberEconAxis(),
             periods = recessionBands,
             onScrub = { scrub = it },
             modifier = Modifier.fillMaxWidth().height(200.dp),
@@ -504,7 +509,7 @@ private fun OverlayBlock(lines: List<Triple<String, IndicatorReading?, Color>>, 
             present.map { l ->
                 val v = at?.let { l.series.valueAtOrBefore(it) } ?: l.series.lastValue
                 Triple(l.label, v?.let { FinanceFormat.grouped(it, 2) + "%" } ?: "—", l.color)
-            } + listOfNotNull(at?.let { Triple(FinanceFormat.date(it), "", FinanceTheme.colors.textTertiary) }),
+            } + listOfNotNull(at?.let { Triple(FinanceFormat.date(it).resolve(), "", FinanceTheme.colors.textTertiary) }),
         )
         RangeSelector(EconRange.entries, range, { stringResource(it.label) }, FinanceTheme.colors.accent, { range = it }, Modifier.padding(horizontal = PageGutter - 4.dp))
         if (howToRead != null) HowToRead(howToRead)
@@ -695,7 +700,7 @@ private fun RiskCard(indicator: Indicator, reading: IndicatorReading?, failed: B
                         Text(
                             listOfNotNull(
                                 yc?.let { stringResource(Res.string.finance_risk_vs_year_ago, FinanceFormat.indicatorChange(it, indicator.unit).resolve()) },
-                                reading.latestEpochSeconds?.let { FinanceFormat.monthYear(it) },
+                                reading.latestEpochSeconds?.let { FinanceFormat.monthYear(it).resolve() },
                             ).joinToString(stringResource(Res.string.common_dot_separator)),
                             style = FinanceTheme.type.label,
                             color = colors.textSecondary,
@@ -766,6 +771,7 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
     val indicator = IndicatorCatalog.byId(id) ?: return
     val reading = state.readings[id]
     val colors = FinanceTheme.colors
+    val dates = rememberFinanceDates()
     val uriHandler = LocalUriHandler.current
     var range by rememberSaveable(id) { mutableStateOf(EconRange.Y10) }
     var scrub by remember(id, range) { mutableStateOf<Int?>(null) }
@@ -782,12 +788,12 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                         caption = listOf(Narrator.plainTitle(indicator.id).resolve(), stringResource(indicator.title)).joinToString(stringResource(Res.string.common_dot_separator)),
                         value = (shown?.second ?: reading?.latest)?.let { FinanceFormat.indicator(it, indicator.unit) } ?: "—",
                         change = when {
-                            shown != null -> FinanceFormat.date(shown.first)
+                            shown != null -> FinanceFormat.date(shown.first).resolve()
 
                             reading?.yearChange != null -> stringResource(
                                 Res.string.finance_indicator_change,
                                 FinanceFormat.indicatorChange(reading.yearChange!!, indicator.unit).resolve(),
-                                reading.latestEpochSeconds?.let { FinanceFormat.date(it) } ?: "",
+                                reading.latestEpochSeconds?.let { FinanceFormat.date(it).resolve() } ?: "",
                             )
 
                             else -> " "
@@ -805,7 +811,7 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                             zones = zonesFor(indicator, colors),
                             rules = listOfNotNull(indicator.referenceLine?.let { ChartRule(it, colors.textSecondary, indicator.referenceLabel?.let { label -> stringResource(label) }.orEmpty()) }),
                             timeAxis = true,
-                            axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { FinanceFormat.monthYear(it) }),
+                            axis = ChartAxis({ FinanceFormat.indicator(it, indicator.unit) }, { dates.monthYear(it) }),
                             fitZones = true,
                             periods = recessionBands,
                             contentDescription = stringResource(Res.string.finance_indicator_chart_description, stringResource(indicator.title)),
@@ -868,7 +874,7 @@ internal fun IndicatorDetailScreen(id: String, state: FinanceUiState, contentPad
                 StatGrid(
                     listOfNotNull(
                         stringResource(Res.string.finance_indicator_latest) to FinanceFormat.indicator(reading.latest!!, indicator.unit),
-                        stringResource(Res.string.finance_indicator_as_of) to FinanceFormat.date(t),
+                        stringResource(Res.string.finance_indicator_as_of) to FinanceFormat.date(t).resolve(),
                         h.valueAtOrBefore(t - Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_year_ago) to FinanceFormat.indicator(it, indicator.unit) },
                         h.valueAtOrBefore(t - 5 * Series.YEAR_SECONDS)?.let { stringResource(Res.string.finance_indicator_five_years_ago) to FinanceFormat.indicator(it, indicator.unit) },
                         hiIdx?.let { stringResource(Res.string.finance_indicator_range_high, rangeLabel) to FinanceFormat.indicator(inRange.values[it], indicator.unit) },

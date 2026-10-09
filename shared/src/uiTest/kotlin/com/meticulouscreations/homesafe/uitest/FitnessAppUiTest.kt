@@ -9,9 +9,12 @@ import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
@@ -19,8 +22,12 @@ import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
+import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
 import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
@@ -58,6 +65,12 @@ class FitnessAppUiTest {
         var importConfirmed = 0
         var restSkipped = 0
         var flashDismissed = 0
+        var heartConnects = 0
+        var heartForgotten = 0
+        var heartSearchStops = 0
+        var noticesDismissed = 0
+        val chosenSensors = mutableListOf<HeartSensor>()
+        val heartProfiles = mutableListOf<HeartProfile>()
         val started = mutableListOf<WorkoutFocus>()
         val logged = mutableListOf<Triple<String, Double, Int>>()
         val phases = mutableListOf<PhaseKind>()
@@ -81,6 +94,12 @@ class FitnessAppUiTest {
             onLogBodyweight = { weighed += it },
             onImportText = { importTexts += it },
             onConfirmImport = { importConfirmed++ },
+            onConnectHeart = { heartConnects++ },
+            onChooseHeartSensor = { chosenSensors += it },
+            onForgetHeartSensor = { heartForgotten++ },
+            onStopHeartSearch = { heartSearchStops++ },
+            onSaveHeartProfile = { heartProfiles += it },
+            onDismissZoneNotice = { noticesDismissed++ },
         )
     }
 
@@ -95,6 +114,7 @@ class FitnessAppUiTest {
         page: FitnessPage? = null,
         shaders: Boolean = false,
         tall: Boolean = false,
+        heart: HeartUiState = HeartUiState(),
     ) {
         mainClock.autoAdvance = false
         setContent {
@@ -102,7 +122,7 @@ class FitnessAppUiTest {
                 CompositionLocalProvider(LocalFitnessShaders provides shaders) {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.requiredSize(360.dp, if (tall) 2_400.dp else 720.dp)) {
-                            FitnessAppContent(state, calls.actions(), initialTab = tab, initialPage = page)
+                            FitnessAppContent(state, calls.actions(), initialTab = tab, initialPage = page, heart = heart)
                         }
                     }
                 }
@@ -238,6 +258,146 @@ class FitnessAppUiTest {
         assertShown("fitness_record_banner")
         tap("fitness_record_banner")
         assertEquals(1, calls.flashDismissed)
+    }
+
+    // ---- Heart rate ---------------------------------------------------------------------------
+
+    /** Inside something tappable, whose parts a screen reader hears as one: looked for among the parts. */
+    private fun ComposeUiTest.assertShownWithin(tag: String) {
+        onNodeWithTag(tag, useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun whereThereIsNoSensorToBeHadAWorkoutShowsNothingOfTheHeart() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true), Calls(), page = FitnessPage.Workout)
+        assertNotShown("fitness_heart")
+        assertNotShown("fitness_heart_open")
+        assertNotShown("fitness_rest_recovery")
+    }
+
+    @Test
+    fun withNoSensorChosenAWorkoutOffersTheWayToConnectOne() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(working = true), calls, page = FitnessPage.Workout, heart = FitnessFixtures.heartUnset())
+        assertNotShown("fitness_heart")
+        tap("fitness_heart_open")
+        assertShown("fitness_heart_page")
+        tap("fitness_heart_connect")
+        assertEquals(1, calls.heartConnects)
+        assertNotShown("fitness_heart_forget")
+    }
+
+    @Test
+    fun aReadingIsShownWithItsZoneAndTheTimeInEach() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true), Calls(), page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 142))
+        assertNotShown("fitness_heart_open")
+        onNodeWithTag("fitness_heart").assert(hasContentDescription("Heart rate 142 beats a minute, zone 3, Moderate"))
+        assertShownWithin("fitness_heart_strip")
+        onNode(hasContentDescription("Zone 2, Light: 9 min"), useUnmergedTree = true).assertExists()
+    }
+
+    @Test
+    fun theHeartPanelOpensThePageWhereTheSensorCanBeForgotten() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(working = true), calls, page = FitnessPage.Workout, heart = FitnessFixtures.heart())
+        tap("fitness_heart")
+        assertShown("fitness_heart_page")
+        // Linked already: nothing to connect, only to forget.
+        assertNotShown("fitness_heart_connect")
+        tap("fitness_heart_forget")
+        assertEquals(1, calls.heartForgotten)
+    }
+
+    @Test
+    fun aLostLinkSaysSoInPlaceOfTheReading() = runComposeUiTest(testTimeout = 5.minutes) {
+        val lost = FitnessFixtures.heart(bpm = null, sensor = HeartSensorState.Lost(FitnessFixtures.band))
+        show(FitnessFixtures.state(working = true), Calls(), page = FitnessPage.Workout, heart = lost)
+        onNodeWithTag("fitness_heart_status", useUnmergedTree = true).assertTextEquals("Lost Fitbit Air. Trying again…")
+    }
+
+    @Test
+    fun aChangeOfZoneIsWrittenOnThePanelAndTakesItselfAway() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(working = true, resting = false), calls, page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 156, notice = true))
+        onNodeWithTag("fitness_heart_notice", useUnmergedTree = true).assertExists()
+        onNode(hasText("Up to zone 4 · Hard"), useUnmergedTree = true).assertExists()
+        assertEquals(0, calls.noticesDismissed)
+        mainClock.advanceTimeBy(4_000, ignoreFrameDuration = true)
+        assertEquals(1, calls.noticesDismissed)
+    }
+
+    @Test
+    fun aRestShowsTheHeartComingDown() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true), Calls(), page = FitnessPage.Workout, heart = FitnessFixtures.heart(bpm = 131, resting = true))
+        onNodeWithTag("fitness_rest_recovery").assert(hasContentDescription("Heart rate 131, down 24 since the set"))
+    }
+
+    @Test
+    fun aSensorIsChosenFromTheOnesFoundAndLeavingStopsTheLooking() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(), calls, page = FitnessPage.Heart, heart = FitnessFixtures.heartSearching())
+        assertShown("fitness_heart_found_0")
+        tap("fitness_heart_found_1")
+        assertEquals(listOf(FitnessFixtures.strap), calls.chosenSensors)
+        tap("fitness_heart_stop")
+        assertEquals(1, calls.heartSearchStops)
+        tap("fitness_back")
+        assertEquals(2, calls.heartSearchStops)
+    }
+
+    @Test
+    fun theZonesAreShownForTheNumbersOnTheSteppersAndSavedOnlyWhenAsked() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(), calls, page = FitnessPage.Heart, heart = FitnessFixtures.heart(), tall = true)
+        // A maximum of 190 is what is saved: zone 5 is its top tenth.
+        onNodeWithTag("fitness_heart_range_5").assertTextEquals("171–190 bpm")
+        onNode(hasContentDescription("Higher max")).tap()
+        settle()
+        onNodeWithTag("fitness_heart_range_5").assertTextEquals("172–191 bpm")
+        assertEquals(emptyList(), calls.heartProfiles)
+        tap("fitness_heart_save")
+        assertEquals(listOf(HeartProfile(maxBpm = 191)), calls.heartProfiles)
+    }
+
+    @Test
+    fun anAgeEstimatesTheMaximumAndARestingRateMovesTheZonesUp() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(), calls, page = FitnessPage.Heart, heart = FitnessFixtures.heartUnset(), tall = true)
+        // Nothing saved: the age stepper stands at a round 30, which would make the maximum 208 - 21.
+        assertShown("fitness_heart_age")
+        onNodeWithTag("fitness_heart_range_5").assertTextEquals("168–187 bpm")
+        tap("fitness_heart_use_resting")
+        assertShown("fitness_heart_resting")
+        // From a resting 60: 60 + 0.9 x (187 - 60).
+        onNodeWithTag("fitness_heart_range_5").assertTextEquals("174–187 bpm")
+        tap("fitness_heart_save")
+        assertEquals(listOf(HeartProfile(age = 30, restingBpm = 60)), calls.heartProfiles)
+    }
+
+    @Test
+    fun todayLooksBackOnTheLastWorkoutsHeartButNotWhileOneIsOpen() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), heart = FitnessFixtures.heartAtRest(), tall = true)
+        assertShown("fitness_heart_last")
+        onNode(hasContentDescription("Zone 2, Light: 9 min")).assertExists()
+    }
+
+    @Test
+    fun todayKeepsTheLastHeartOutOfTheWayOfAWorkoutInProgress() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true), Calls(), heart = FitnessFixtures.heartAtRest(), tall = true)
+        assertNotShown("fitness_heart_last")
+    }
+
+    @Test
+    fun progressLeadsToTheHeartPageOnlyWhereThereIsASensorToBeHad() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), tab = FitnessTab.PROGRESS, heart = FitnessFixtures.heartUnset(), tall = true)
+        tap("fitness_progress_heart")
+        assertShown("fitness_heart_page")
+    }
+
+    @Test
+    fun progressSaysNothingOfTheHeartWithoutBluetooth() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), tab = FitnessTab.PROGRESS, tall = true)
+        assertNotShown("fitness_progress_heart")
     }
 
     // ---- Lifts --------------------------------------------------------------------------------

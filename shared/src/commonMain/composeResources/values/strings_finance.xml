@@ -31,6 +31,35 @@
     <!-- A change since a start date, e.g. "+$1,240 (+2.31%)  since Mar 2019". -->
     <string name="finance_change_since">%1$s  since %2$s</string>
 
+    <!-- Dates and times, wherever the finance app writes one. The months' short names: -->
+    <string name="finance_month_jan">Jan</string>
+    <string name="finance_month_feb">Feb</string>
+    <string name="finance_month_mar">Mar</string>
+    <string name="finance_month_apr">Apr</string>
+    <string name="finance_month_may">May</string>
+    <string name="finance_month_jun">Jun</string>
+    <string name="finance_month_jul">Jul</string>
+    <string name="finance_month_aug">Aug</string>
+    <string name="finance_month_sep">Sep</string>
+    <string name="finance_month_oct">Oct</string>
+    <string name="finance_month_nov">Nov</string>
+    <string name="finance_month_dec">Dec</string>
+    <!-- A day: %1$s is the month's short name, %2$d the day of the month, e.g. "Oct 7". -->
+    <string name="finance_date_month_day">%1$s %2$d</string>
+    <!-- A day with its year: %1$s the month's short name, %2$d the day, %3$d the year, e.g. "Sep 30, 2026". -->
+    <string name="finance_date_month_day_year">%1$s %2$d, %3$d</string>
+    <!-- A month: %1$s is its short name, %2$d the year, e.g. "Sep 2026". -->
+    <string name="finance_date_month_year">%1$s %2$d</string>
+    <!-- A month where there's little room: %1$s is its short name, %2$s the year's last two digits, e.g. "Nov '19". -->
+    <string name="finance_date_month_short_year">%1$s '%2$s</string>
+    <!-- A year where there's little room: %1$s is its last two digits, e.g. "'26". -->
+    <string name="finance_date_short_year">'%1$s</string>
+    <!-- The clock: %1$s is the hour and minute on a 12-hour clock, e.g. "10:35". -->
+    <string name="finance_time_am">%1$s AM</string>
+    <string name="finance_time_pm">%1$s PM</string>
+    <!-- A day and a time on it: %1$s is the day ("Sep 30"), %2$s the time ("10:35 AM"). -->
+    <string name="finance_date_time">%1$s, %2$s</string>
+
     <!-- Chart ranges -->
     <string name="finance_range_1y">1Y</string>
     <string name="finance_range_3y">3Y</string>

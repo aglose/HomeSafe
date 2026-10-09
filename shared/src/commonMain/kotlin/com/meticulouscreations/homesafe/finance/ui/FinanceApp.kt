@@ -75,7 +75,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.backhandler.BackHandler
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -100,6 +99,8 @@ import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
+import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
@@ -162,7 +163,8 @@ internal sealed interface FinanceDetail {
  * look on true black — Wallet (the household's money, from the budget sheet), Budget (the month's
  * card spending against its limits), Markets (indices and the watchlist, live), Economy (inflation, the Treasury curve, rates) and Risk (the warning
  * lights for a downturn, blended into one gauge) — with quote and indicator pages pushed over
- * the tabs. Back pops a page, then leaves the app ([onClose]). [requestedTab] turns it to a tab
+ * the tabs. Back pops a page, scrubbed under a back swipe; with no page up, Back is the drawer
+ * overlay's around it, which closes the app (InnerAppOverlay). [requestedTab] turns it to a tab
  * from outside (a notification's tap), and [onShowRequestedTab] says it has.
  */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
@@ -217,9 +219,11 @@ fun FinanceApp(
         }
     }
 
-    // Off while the app animates closed ([active] false), so that Back reaches what's beneath.
-    BackHandler(enabled = active) {
-        if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose()
+    // Only while a page is up: with none, Back leaves the app, which the overlay around it drains
+    // predictively (InnerAppOverlay). Off while the app animates closed ([active] false), so that
+    // Back reaches what's beneath.
+    val back = rememberPredictiveBack(enabled = active && details.isNotEmpty()) {
+        if (details.isNotEmpty()) details.removeAt(details.lastIndex)
     }
 
     val palette = remember { FinancePalette() }
@@ -269,10 +273,16 @@ fun FinanceApp(
                 },
             ) {
                 val target: Any = details.lastOrNull() ?: tab
-                AnimatedContent(
-                    targetState = target,
-                    transitionSpec = { financeTransition(initialState, targetState) },
-                    label = "financePage",
+                val previous: Any? = if (details.isEmpty()) null else details.getOrNull(details.lastIndex - 1) ?: tab
+                // Which way the stack last moved, so a page given back leaves the way it came; outside
+                // the snapshot system since it only steers an animation.
+                val depth = remember { intArrayOf(details.size, 1) }
+                if (details.size != depth[0]) {
+                    depth[1] = if (details.size > depth[0]) 1 else -1
+                    depth[0] = details.size
+                }
+                rememberPredictiveBackTransition(target, previous, back, label = "financePage").AnimatedContent(
+                    transitionSpec = { financeTransition(initialState, targetState, pop = back.inProgress || depth[1] < 0) },
                     contentKey = { it },
                 ) { page ->
                     when (page) {
@@ -436,16 +446,18 @@ private fun titleOf(detail: FinanceDetail): String = when (detail) {
 
 /**
  * Pages pushed over the tabs slide in from the right and back out; tabs hand over sideways in
- * the direction of the tab tapped, with a quick fade, the way the camera shell's tabs do.
+ * the direction of the tab tapped, with a quick fade, the way the camera shell's tabs do. [pop]
+ * is a page being given back (or a back swipe scrubbing that), which leaves the way it came even
+ * onto another page.
  */
-private fun financeTransition(from: Any, to: Any): ContentTransform {
+private fun financeTransition(from: Any, to: Any, pop: Boolean): ContentTransform {
     val spec = tween<IntOffset>(320, easing = FastOutSlowInEasing)
     return when {
+        from is FinanceDetail && (pop || to !is FinanceDetail) ->
+            (slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { it } + fadeOut(tween(200)))
+
         to is FinanceDetail ->
             (slideInHorizontally(spec) { it } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { -it / 4 } + fadeOut(tween(200)))
-
-        from is FinanceDetail ->
-            (slideInHorizontally(spec) { -it / 4 } + fadeIn(tween(200))) togetherWith (slideOutHorizontally(spec) { it } + fadeOut(tween(200)))
 
         from is FinanceTab && to is FinanceTab -> {
             val forward = to.ordinal > from.ordinal

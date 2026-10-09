@@ -7,6 +7,25 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.finance_date_month_day
+import homesafe.shared.generated.resources.finance_date_month_day_year
+import homesafe.shared.generated.resources.finance_date_month_year
+import homesafe.shared.generated.resources.finance_date_short_year
+import homesafe.shared.generated.resources.finance_date_time
+import homesafe.shared.generated.resources.finance_month_apr
+import homesafe.shared.generated.resources.finance_month_aug
+import homesafe.shared.generated.resources.finance_month_dec
+import homesafe.shared.generated.resources.finance_month_feb
+import homesafe.shared.generated.resources.finance_month_jan
+import homesafe.shared.generated.resources.finance_month_jul
+import homesafe.shared.generated.resources.finance_month_jun
+import homesafe.shared.generated.resources.finance_month_mar
+import homesafe.shared.generated.resources.finance_month_may
+import homesafe.shared.generated.resources.finance_month_nov
+import homesafe.shared.generated.resources.finance_month_oct
+import homesafe.shared.generated.resources.finance_month_sep
+import homesafe.shared.generated.resources.finance_time_am
+import homesafe.shared.generated.resources.finance_time_pm
 import homesafe.shared.generated.resources.narrator_format_days_ago
 import homesafe.shared.generated.resources.narrator_format_hours_ago
 import homesafe.shared.generated.resources.narrator_format_in_days
@@ -26,6 +45,7 @@ import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.offsetAt
 import kotlinx.datetime.toLocalDateTime
+import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.pow
@@ -34,8 +54,9 @@ import kotlin.time.Instant
 
 /**
  * Number and date formatting for the finance screens; common code has no String.format. Where a
- * result carries words ("unchanged", "in 3 days", "just now") it is a [UiText] from the strings
- * file; the numbers themselves are formatted here, US style.
+ * result carries words ("unchanged", "in 3 days", "just now") or is a date or a time ("Sep 30,
+ * 2026", "10:35 AM"), it is a [UiText] from the strings file, so a translation can rename the
+ * months and reorder the parts; the numbers themselves are formatted here, US style.
  */
 object FinanceFormat {
 
@@ -203,54 +224,81 @@ object FinanceFormat {
         else -> grouped(value, 0)
     }
 
-    private val MONTHS = listOf("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+    /** The months' short names, January first. */
+    internal val MONTHS: List<StringResource> = listOf(
+        Res.string.finance_month_jan,
+        Res.string.finance_month_feb,
+        Res.string.finance_month_mar,
+        Res.string.finance_month_apr,
+        Res.string.finance_month_may,
+        Res.string.finance_month_jun,
+        Res.string.finance_month_jul,
+        Res.string.finance_month_aug,
+        Res.string.finance_month_sep,
+        Res.string.finance_month_oct,
+        Res.string.finance_month_nov,
+        Res.string.finance_month_dec,
+    )
 
-    private fun local(epochSeconds: Long, offsetSeconds: Int): LocalDateTime =
+    internal fun local(epochSeconds: Long, offsetSeconds: Int): LocalDateTime =
         Instant.fromEpochSeconds(epochSeconds + offsetSeconds).toLocalDateTime(TimeZone.UTC)
 
+    private fun monthName(d: LocalDateTime): UiText = UiText.of(MONTHS[d.month.ordinal])
+
+    /** The month number (1–12) in a `YYYY-MM` month or a `YYYY-MM-DD` day; null when it isn't one. */
+    private fun monthOf(iso: String): Int? = iso.substring(5.coerceAtMost(iso.length), 7.coerceAtMost(iso.length)).toIntOrNull()?.takeIf { it in 1..12 }
+
     /** "Sep 30, 2026". */
-    fun date(epochSeconds: Long, offsetSeconds: Int = 0): String {
+    fun date(epochSeconds: Long, offsetSeconds: Int = 0): UiText {
         val d = local(epochSeconds, offsetSeconds)
-        return "${MONTHS[d.month.ordinal]} ${d.day}, ${d.year}"
+        return UiText.of(Res.string.finance_date_month_day_year, monthName(d), d.day, d.year)
     }
 
-    /** "Sep 2026". */
-    fun monthYear(epochSeconds: Long, offsetSeconds: Int = 0): String {
+    /** "Sep 2026". For a date written while a chart draws, see [FinanceDates.monthYear]. */
+    fun monthYear(epochSeconds: Long, offsetSeconds: Int = 0): UiText {
         val d = local(epochSeconds, offsetSeconds)
-        return "${MONTHS[d.month.ordinal]} ${d.year}"
+        return UiText.of(Res.string.finance_date_month_year, monthName(d), d.year)
     }
 
     /** "Oct 7" from a `YYYY-MM-DD` day; the text as it came when it isn't one. */
-    fun dayOfMonth(isoDay: String): String {
-        val month = isoDay.substring(5.coerceAtMost(isoDay.length), 7.coerceAtMost(isoDay.length)).toIntOrNull()
+    fun dayOfMonth(isoDay: String): UiText {
+        val month = monthOf(isoDay)
         val day = isoDay.substringAfterLast('-').toIntOrNull()
-        return if (month == null || day == null || month !in 1..12) isoDay else "${MONTHS[month - 1]} $day"
+        return if (month == null || day == null) isoDay.asUiText() else UiText.of(Res.string.finance_date_month_day, UiText.of(MONTHS[month - 1]), day)
     }
 
     /** "Oct 7" from a `YYYY-MM` month and a day of it. */
-    fun dayOfMonth(yearMonth: String, day: Int): String = dayOfMonth("$yearMonth-${day.toString().padStart(2, '0')}")
+    fun dayOfMonth(yearMonth: String, day: Int): UiText = dayOfMonth("$yearMonth-${day.toString().padStart(2, '0')}")
 
     /** "Oct" from a `YYYY-MM` month (or a day in it), with [year] "Oct 2026"; the text as it came when it isn't one. */
-    fun month(yearMonth: String, year: Boolean = false): String {
-        val month = yearMonth.substring(5.coerceAtMost(yearMonth.length), 7.coerceAtMost(yearMonth.length)).toIntOrNull()
-        if (month == null || month !in 1..12) return yearMonth
-        return if (year) "${MONTHS[month - 1]} ${yearMonth.take(4)}" else MONTHS[month - 1]
+    fun month(yearMonth: String, year: Boolean = false): UiText {
+        val month = monthOf(yearMonth) ?: return yearMonth.asUiText()
+        val name = UiText.of(MONTHS[month - 1])
+        if (!year) return name
+        val number = yearMonth.take(4).toIntOrNull() ?: return yearMonth.asUiText()
+        return UiText.of(Res.string.finance_date_month_year, name, number)
     }
 
+    /** 2026: the year [epochSeconds] falls in. */
+    fun year(epochSeconds: Long, offsetSeconds: Int = 0): Int = local(epochSeconds, offsetSeconds).year
+
+    /** The year's last two digits, "26", for the formats that shorten it. */
+    internal fun twoDigitYear(epochSeconds: Long): String = (year(epochSeconds) % 100).toString().padStart(2, '0')
+
     /** "'26". */
-    fun shortYear(epochSeconds: Long): String = "'" + (local(epochSeconds, 0).year % 100).toString().padStart(2, '0')
+    fun shortYear(epochSeconds: Long): UiText = UiText.of(Res.string.finance_date_short_year, twoDigitYear(epochSeconds))
 
     /** "10:35 AM". */
-    fun time(epochSeconds: Long, offsetSeconds: Int): String {
+    fun time(epochSeconds: Long, offsetSeconds: Int): UiText {
         val d = local(epochSeconds, offsetSeconds)
         val h12 = ((d.hour + 11) % 12) + 1
-        return "$h12:${d.minute.toString().padStart(2, '0')} ${if (d.hour < 12) "AM" else "PM"}"
+        return UiText.of(if (d.hour < 12) Res.string.finance_time_am else Res.string.finance_time_pm, "$h12:${d.minute.toString().padStart(2, '0')}")
     }
 
     /** "Sep 30, 10:35 AM" — a point on an intraday chart. */
-    fun dateTime(epochSeconds: Long, offsetSeconds: Int): String {
+    fun dateTime(epochSeconds: Long, offsetSeconds: Int): UiText {
         val d = local(epochSeconds, offsetSeconds)
-        return "${MONTHS[d.month.ordinal]} ${d.day}, ${time(epochSeconds, offsetSeconds)}"
+        return UiText.of(Res.string.finance_date_time, UiText.of(Res.string.finance_date_month_day, monthName(d), d.day), time(epochSeconds, offsetSeconds))
     }
 
     /** The device's UTC offset at [epochSeconds], for writing a time in the household's own clock. */
@@ -263,7 +311,7 @@ object FinanceFormat {
             s < 60 -> UiText.of(Res.string.narrator_format_just_now)
             s < 3_600 -> UiText.plural(Res.plurals.narrator_format_minutes_ago, (s / 60).toInt())
             s < 36 * 3_600 -> UiText.plural(Res.plurals.narrator_format_hours_ago, (s / 3_600).toInt())
-            else -> date(thenEpochSeconds, localOffsetSeconds(thenEpochSeconds)).asUiText()
+            else -> date(thenEpochSeconds, localOffsetSeconds(thenEpochSeconds))
         }
     }
 
