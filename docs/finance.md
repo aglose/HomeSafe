@@ -163,6 +163,42 @@ A few conventions the parser relies on:
 Each missing step has its own message on the Wallet tab (`SheetSetupCard`): the API is off, the
 sheet isn't shared, no id is configured, or the relay is older than this feature.
 
+## Without the server
+
+Finance opens whether or not the camera server can be reached: from the drawer as usual, and from
+the sign-in screen, which opens the same drawer (see "Before sign-in" in the README).
+
+- **What it shows.** Everything it fetches is kept on the device as it arrives, one row of JSON
+  per thing in `FinanceSavedEntity` (Room, schema 21): the sheet as the relay sent it, each month
+  of the budget, the linked banks, each quote, each chart, each FRED series. With nothing to fetch
+  from, the pages are drawn from those rows. The sheet, the budget and the banks say how old they
+  are in the places they always did, and the top bar says "Offline · saved on this device". A quote
+  or a chart that couldn't be refreshed keeps its error beside the kept copy, so a stale price is
+  never passed off as live. Changes (tagging a purchase, a limit, "Sync now", linking a bank) need
+  the server and fail with "Not connected to the server"; the page stays as it was.
+- **Who may see it.** Online, the server decides: every read of the household's money rides on
+  its session. Offline there is nobody to ask, so the app opens on a lock and asks for a
+  fingerprint or a face (`FinanceAccess`, `IdentityCheck`). That holds even when the saved login
+  was just opened with a fingerprint: Finance asks for another. It locks again when the app is
+  closed, when the phone goes to the background, and when the server comes back (so the next
+  outage asks again). A prompt answered after any of those has happened under it unlocks nothing.
+  A server that dies mid-session is caught by the first request it doesn't answer: that request
+  has the connection look again (`ConnectionRepository.checkServer`), and if the server is gone
+  the lock is on before the kept copy is reached for. From then on it is asked every 15 seconds
+  until it answers, and no request is sent to it meanwhile. While it is locked the repositories refuse the kept figures and the view
+  model drops the sheet, so the drawer's card shows the S&P 500 and "Locked while offline" rather
+  than a net worth. A device with no fingerprint or face enrolled (and the desktop and web builds)
+  can't unlock: there Finance waits for the server.
+- **Whose it is.** The kept sheet, budget and banks belong to the server they came from (its
+  Tailscale address). A session on any other server is shown none of them, and the first answer
+  kept from another server deletes what the last one left. Nobody signed in at all is shown what
+  the last server left. Accounts on the same server are not told apart on the device: the server
+  does that, by refusing the ones it doesn't show the money to, which deletes the kept copy.
+- **What is not protected by it.** The lock is the app declining to read and draw the rows; the
+  rows themselves are plain JSON in the app's private database, like the rest of what the app
+  keeps. If the server refuses the account (signed out, or not an admin), the kept sheet, budget
+  and banks are deleted.
+
 ## How it's built
 
 - `finance/domain`: the models (`Series` is primitive arrays, since daily FRED series run to
@@ -171,7 +207,9 @@ sheet isn't shared, no id is configured, or the relay is older than this feature
 - `finance/data`: `YahooFinanceApi` and `FredApi` share their own `HttpClient`, so Frigate's
   session cookies never reach a third party. Also `FinanceRelayApi`, `SheetGrid` +
   `PersonalFinanceParser`, `SheetChartReader`, and `FinanceRepositoryImpl`, which caches
-  everything in memory and shares in-flight loads between tabs.
+  everything in memory and shares in-flight loads between tabs. `FinanceSaved` keeps the last
+  answer to each call on the device, and `FinanceAccessImpl` says when those may be shown (see
+  "Without the server").
 - `FinanceViewModel` is activity-scoped and shared with the drawer's teaser card. It polls quotes
   only while the drawer or the app is on screen. Under the iOS 26 host, only the visible tab's
   composition counts as on screen.

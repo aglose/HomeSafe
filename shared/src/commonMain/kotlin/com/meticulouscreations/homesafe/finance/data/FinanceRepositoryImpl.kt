@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.finance.data
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.finance.domain.ChartHealth
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
+import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
 import com.meticulouscreations.homesafe.finance.domain.IndicatorReading
@@ -14,6 +15,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetProblem
 import com.meticulouscreations.homesafe.finance.domain.SheetUnavailableException
 import com.meticulouscreations.homesafe.finance.domain.SymbolMatch
 import com.meticulouscreations.homesafe.finance.domain.Transform
+import com.meticulouscreations.homesafe.network.isTransportFailure
 import com.meticulouscreations.homesafe.text.UiText
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -46,14 +48,23 @@ class FinanceRepositoryImpl(
     private val fred: FredApi,
     private val relay: FinanceRelayApi,
     private val connectionRepository: ConnectionRepository,
+    private val saved: FinanceSaved,
+    private val access: FinanceAccess,
 ) : FinanceRepository {
 
     private val quoteCache = TimedCache<String, Quote>()
     private val unknownSymbols = TimedCache<String, Unit>()
+
+    /** The symbols whose quote was written to the device in the last while: they are polled far more often than a kept copy needs to be. */
+    private val quotesKept = TimedCache<String, Unit>()
     private val historyCache = TimedCache<Pair<String, ChartRange>, PriceHistory>()
     private val fredCache = TimedCache<String, Series>()
     private val searchCache = TimedCache<String, List<SymbolMatch>>()
     private var sheet: Pair<TimeSource.Monotonic.ValueTimeMark, PersonalFinance>? = null
+
+    /** The sheet as last parsed from what the device kept, so each look at it without the server doesn't parse it again. */
+    private var keptSheet: PersonalFinance? = null
+    private var keptSheetOwner: String? = null
     private val sheetLock = Mutex()
 
     // FRED serves a page's worth of series at once happily, but not forty; a handful in flight
@@ -67,7 +78,13 @@ class FinanceRepositoryImpl(
         if (pending.isEmpty()) return Result.success(symbols.mapNotNull { quoteCache.get(it, maxAgeMillis) })
         // Only the stale ones go to Yahoo; the rest are answered from the cache.
         return yahoo.quotes(pending).onSuccess { list ->
-            list.forEach { quoteCache.put(it.symbol, it) }
+            list.forEach {
+                quoteCache.put(it.symbol, it)
+                if (quotesKept.get(it.symbol, QUOTE_KEEP_EVERY_MS) == null) {
+                    quotesKept.put(it.symbol, Unit)
+                    saved.write(FinanceSaved.quote(it.symbol), Quote.serializer(), it)
+                }
+            }
             val answered = list.mapTo(HashSet()) { it.symbol }
             pending.filterNot { it in answered }.forEach { unknownSymbols.put(it, Unit) }
         }.map { list ->
@@ -77,11 +94,19 @@ class FinanceRepositoryImpl(
         }
     }
 
+    override suspend fun savedQuotes(symbols: List<String>): List<Quote> =
+        symbols.mapNotNull { saved.read(FinanceSaved.quote(it), Quote.serializer()) }
+
     override suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory> {
         val maxAge = if (range == ChartRange.DAY || range == ChartRange.WEEK) 30_000L else 10 * 60_000L
         historyCache.get(symbol to range, maxAge)?.let { return Result.success(it) }
-        return historyCache.load(symbol to range) { yahoo.history(symbol, range) }
+        return historyCache.load(symbol to range) {
+            yahoo.history(symbol, range).onSuccess { saved.write(FinanceSaved.history(symbol, range), PriceHistory.serializer(), it) }
+        }
     }
+
+    override suspend fun savedHistory(symbol: String, range: ChartRange): PriceHistory? =
+        saved.read(FinanceSaved.history(symbol, range), PriceHistory.serializer())
 
     override suspend fun searchSymbols(query: String): Result<List<SymbolMatch>> {
         val key = query.trim().lowercase()
@@ -93,7 +118,15 @@ class FinanceRepositoryImpl(
     override suspend fun fredSeries(seriesId: String, startDate: String): Result<Series> {
         val key = "$seriesId@$startDate"
         fredCache.get(key, FRED_MAX_AGE_MS)?.let { return Result.success(it) }
-        return fredCache.load(key) { fredPermits.withPermit { fred.series(seriesId, startDate) } }
+        val savedKey = FinanceSaved.fred(seriesId, startDate)
+        val fetched = fredCache.load(key) {
+            fredPermits.withPermit { fred.series(seriesId, startDate) }.onSuccess { saved.write(savedKey, Series.serializer(), it) }
+        }
+        if (fetched.isSuccess) return fetched
+        // These move monthly, and every reading is shown with its date: the series as it was last
+        // fetched says the same thing a fresh one would on most days. Not put in the cache above,
+        // so the next ask goes to FRED again.
+        return saved.read(savedKey, Series.serializer())?.let { Result.success(it) } ?: fetched
     }
 
     override suspend fun indicator(indicator: Indicator): Result<IndicatorReading> = suspendRunCatching {
@@ -108,25 +141,74 @@ class FinanceRepositoryImpl(
     }
 
     override suspend fun personalFinance(refresh: Boolean): Result<PersonalFinance> = sheetLock.withLock {
+        // No server to vouch for whoever is holding the phone, and they haven't shown it's theirs:
+        // not from memory either.
+        if (access.locked.value) return@withLock Result.failure(notConnected())
         val cached = sheet
-        if (!refresh && cached != null && cached.first.elapsedNow().inWholeMilliseconds < SHEET_MAX_AGE_MS) {
+        if (!refresh && cached != null && keptSheetOwner == owner() && cached.first.elapsedNow().inWholeMilliseconds < SHEET_MAX_AGE_MS) {
             return@withLock Result.success(cached.second)
         }
         val serverUrl = connectionRepository.currentServerUrl.value
-            ?: return@withLock Result.failure(SheetUnavailableException(SheetProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
-        val workbook = relay.workbook(serverUrl, refresh).getOrElse { return@withLock Result.failure(it) }
+        // Known to be out of reach: what the device kept, rather than half a minute waiting on a
+        // request nothing will answer.
+        if (serverUrl == null || !access.online.value) kept()?.let { return@withLock Result.success(it) }
+        if (serverUrl == null) return@withLock Result.failure(notConnected())
+        val workbook = relay.workbook(serverUrl, refresh).getOrElse { e ->
+            val problem = (e as? SheetUnavailableException)?.problem
+            when {
+                // The server answered, and it won't show this account the sheet: the device doesn't keep it for it.
+                problem == SheetProblem.SIGNED_OUT || problem == SheetProblem.NOT_ALLOWED -> forget()
+
+                e.isTransportFailure() -> {
+                    // Nothing answered. If the server is gone, that locks the app before the kept sheet is reached for.
+                    access.serverUnanswered()
+                    if (access.locked.value) return@withLock Result.failure(notConnected())
+                    kept()?.let { return@withLock Result.success(it) }
+                }
+            }
+            return@withLock Result.failure(e)
+        }
         // Not mapCatching: it would turn the Finance screen closing mid-parse (a cancellation)
         // into a failed read, which would then show as a sync error.
-        suspendRunCatching {
-            // Dozens of passes over a thousand-row grid: off the main thread.
-            withContext(Dispatchers.Default) {
-                val grids = workbook.grids()
-                val finance = PersonalFinanceParser.parse(workbook.title, workbook.fetchedAt.toLong(), grids, workbook.url)
-                val charts = SheetChartReader.read(workbook.charts, grids, workbook.url)
-                finance.copy(charts = charts, health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }))
-            }
-        }.onSuccess { sheet = TimeSource.Monotonic.markNow() to it }
+        suspendRunCatching { parse(workbook) }.onSuccess {
+            sheet = TimeSource.Monotonic.markNow() to it
+            keptSheet = it
+            keptSheetOwner = owner()
+            owner()?.let { owner -> saved.writePrivate(owner, FinanceSaved.SHEET, RelayWorkbook.serializer(), workbook) }
+        }
     }
+
+    // Dozens of passes over a thousand-row grid: off the main thread.
+    private suspend fun parse(workbook: RelayWorkbook): PersonalFinance = withContext(Dispatchers.Default) {
+        val grids = workbook.grids()
+        val finance = PersonalFinanceParser.parse(workbook.title, workbook.fetchedAt.toLong(), grids, workbook.url)
+        val charts = SheetChartReader.read(workbook.charts, grids, workbook.url)
+        finance.copy(charts = charts, health = finance.health.copy(charts = charts.map { ChartHealth(it.title, it.tab, it.issue) }))
+    }
+
+    /** The sheet as the device kept it, parsed afresh the first time it is wanted. Its own `fetchedAt` says how old it is. */
+    private suspend fun kept(): PersonalFinance? {
+        val owner = owner()
+        // Parsed for one server, it isn't another's: a sign-in elsewhere since starts again from the device.
+        if (owner != keptSheetOwner) keptSheet = null
+        keptSheet?.let { return it }
+        val workbook = saved.readPrivate(owner, FinanceSaved.SHEET, RelayWorkbook.serializer()) ?: return null
+        return suspendRunCatching { parse(workbook) }.getOrNull()?.also {
+            keptSheet = it
+            keptSheetOwner = owner
+        }
+    }
+
+    /** The server signed in to, by the address that names it whichever route is in use; null with none. */
+    private fun owner(): String? = connectionRepository.activeConnection.value?.serverUrl
+
+    private suspend fun forget() {
+        sheet = null
+        keptSheet = null
+        saved.forgetPrivate()
+    }
+
+    private fun notConnected() = SheetUnavailableException(SheetProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected")
 
     private companion object {
         const val FRED_CONCURRENCY = 6
@@ -134,6 +216,7 @@ class FinanceRepositoryImpl(
         const val SHEET_MAX_AGE_MS = 2 * 60_000L
         const val UNKNOWN_SYMBOL_MS = 10 * 60_000L
         const val SEARCH_MAX_AGE_MS = 10 * 60_000L
+        const val QUOTE_KEEP_EVERY_MS = 2 * 60_000L
     }
 }
 

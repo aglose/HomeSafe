@@ -38,6 +38,9 @@ actual fun createWeatherDao(context: PlatformContext): WeatherDao =
 actual fun createFitnessDao(context: PlatformContext): FitnessDao =
     appDatabase.fitnessDao()
 
+actual fun createFinanceSavedDao(context: PlatformContext): FinanceSavedDao =
+    appDatabase.financeSavedDao()
+
 @OptIn(ExperimentalForeignApi::class)
 private fun documentDirectory(): String {
     val documentDirectory = NSFileManager.defaultManager.URLForDirectory(

@@ -84,6 +84,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
@@ -489,18 +490,35 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 }
 
 /**
- * Everything the shell draws over its tabs and bars: the pinched camera card's layer, the drawer,
- * and the app opened from it (finance, weather or fitness). Their state is only fetched while this
- * composition is on screen — under the iOS 26 host each tab has its own, and only the visible
- * one may run it.
+ * Everything the shell draws over its tabs and bars: the pinched camera card's layer, and the
+ * drawer with the app opened from it ([ShellApps]).
  */
 // Overlays, not a laid-out element: each piece fills the scaffold's layer itself.
 @Suppress("ktlint:compose:modifier-missing-check")
 @Composable
 private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
     CardZoomOverlay(nav, cardZoom)
+    ShellApps(nav, tab)
+}
+
+/**
+ * The drawer, and the app opened from it (finance, weather or fitness) over everything else.
+ * Their state is only fetched while this composition is on screen — under the iOS 26 host each
+ * tab has its own, and only the visible one may run it.
+ *
+ * None of the three needs the camera server (weather and the markets are public, fitness is all on
+ * the device, and each opens on what the device kept), so the sign-in screen draws this too, with
+ * a [ShellNavigation] of its own and [signedIn] false: the drawer then lists the apps alone, there
+ * being no cameras to go to yet. That is how they are reached while Tailscale or the server isn't.
+ */
+// Overlays, not a laid-out element: each piece fills its parent's layer itself.
+@Suppress("ktlint:compose:modifier-missing-check")
+@Composable
+internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boolean = true) {
     val finance: FinanceViewModel = metroViewModel()
     val financeState by finance.uiState.collectAsStateWithLifecycle()
+    val financeLock: FinanceLockViewModel = metroViewModel()
+    val financeLockState by financeLock.uiState.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val financeUp = nav.isOpen(InnerApp.FINANCE)
@@ -538,6 +556,8 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
         onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
         onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
         onClose = { nav.drawerOpen = false },
+        showHomeSecurity = signedIn,
+        financeLocked = financeLockState.locked,
     )
     if (nav.appHost == tab) {
         InnerAppOverlay(
@@ -710,12 +730,15 @@ internal fun ShellScaffold(
  * The shell as it will look the moment sign-in succeeds, with the home page's loading skeleton
  * where the cameras will be. The sign-in screen shows this while the server is authenticating,
  * so the cross-fade into the real shell changes only the content, never the chrome.
+ *
+ * [onMenu] is the top bar's menu button, which works already: the apps in the drawer don't need
+ * the server this is waiting on (see [ShellApps]).
  */
 @Composable
-internal fun ShellSkeleton() {
+internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
     ShellScaffold(
         showTopBar = true,
-        topBar = { FrigateTopBar(activeConnection = null, appVersion = "") },
+        topBar = { FrigateTopBar(activeConnection = null, appVersion = "", onMenu = onMenu) },
         selectedTab = TopLevelRoute.Home,
         onSelectTab = {},
     ) {

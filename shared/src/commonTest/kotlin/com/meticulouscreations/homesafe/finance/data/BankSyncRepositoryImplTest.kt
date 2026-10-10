@@ -1,9 +1,11 @@
 package com.meticulouscreations.homesafe.finance.data
 
+import com.meticulouscreations.homesafe.data.InMemoryFinanceSavedDao
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.finance.FakeFinanceAccess
 import com.meticulouscreations.homesafe.finance.domain.BankLinkKind
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
@@ -30,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.fail
+import kotlin.time.Clock
 
 /**
  * What [BankSyncRepositoryImpl] makes of a relay that nothing answers. On 2026-10-08 linking
@@ -58,7 +61,7 @@ class BankSyncRepositoryImplTest {
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
             install(HttpTimeout)
         }
-        return BankSyncRepositoryImpl(BankSyncRelayApi(client), FakeConnection(serverUrl), TailnetProbe { onTailnet })
+        return BankSyncRepositoryImpl(BankSyncRelayApi(client), FakeConnection(serverUrl), TailnetProbe { onTailnet }, FinanceSaved(InMemoryFinanceSavedDao(), Clock.System), FakeFinanceAccess())
     }
 
     private fun Result<*>.problem(): BankSyncException = assertIs<BankSyncException>(exceptionOrNull())

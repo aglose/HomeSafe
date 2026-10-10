@@ -286,10 +286,14 @@ class ConnectionRepositoryImpl(
     }
 
     override suspend fun reconnect() {
-        // One pass rather than [refreshRoute]'s loop: a pull wants an answer, and a revalidation
+        checkServer()
+        _activeConnection.value?.let { refreshCameras(it) }
+    }
+
+    override suspend fun checkServer() {
+        // One pass rather than [refreshRoute]'s loop: the caller wants an answer, and a revalidation
         // already retrying in the background carries on doing so either way.
         checkRoute(verifySession = true)
-        _activeConnection.value?.let { refreshCameras(it) }
     }
 
     /**

@@ -17,6 +17,16 @@
     <string name="finance_close">Close finance</string>
     <string name="finance_refreshing">Refreshing</string>
     <string name="finance_refresh">Refresh</string>
+    <!-- Under the title while the server can't be reached: what is on screen is the copy the device kept. -->
+    <string name="finance_offline_note">Offline · saved on this device</string>
+
+    <!-- The lock shown in place of the app while there is no server connection. %1$s is how the device checks: "fingerprint", "Face ID". -->
+    <string name="finance_lock_title">Finance is locked</string>
+    <string name="finance_lock_body">There's no connection to the server right now. Unlock with %1$s to see what this device saved the last time there was.</string>
+    <string name="finance_lock_body_no_check">There's no connection to the server right now, and this device has no fingerprint or face unlock to confirm it's you. Finance opens again once the server can be reached.</string>
+    <string name="finance_lock_unlock">Unlock with %1$s</string>
+    <string name="finance_lock_checking">Waiting for %1$s…</string>
+    <string name="finance_lock_failed">Couldn't confirm it's you</string>
 
     <!-- Shared pieces -->
     <string name="finance_signal_none">No line</string>
