@@ -98,6 +98,20 @@
     <!-- What a tap on the full-screen video does, for a screen reader or a keyboard: its controls fade away when left alone. -->
     <string name="camera_show_controls">Show controls</string>
     <string name="camera_hide_controls">Hide controls</string>
+    <!-- Over the side of the video after a double tap there: how far that stepped, in all. -->
+    <plurals name="camera_skip_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
+    <!-- The same two steps as actions for a screen reader, which has no double tap to give. -->
+    <plurals name="camera_skip_back">
+        <item quantity="one">Back %1$d second</item>
+        <item quantity="other">Back %1$d seconds</item>
+    </plurals>
+    <plurals name="camera_skip_forward">
+        <item quantity="one">Forward %1$d second</item>
+        <item quantity="other">Forward %1$d seconds</item>
+    </plurals>
     <string name="camera_timeline">Timeline</string>
     <!-- The timeline's span choices: one hour, three hours, twelve hours, a day. -->
     <string name="camera_span_1h">1h</string>

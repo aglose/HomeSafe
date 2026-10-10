@@ -4447,6 +4447,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.Shimmer(modifier: androi
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SkipBadge(skip: com.meticulouscreations.homesafe.ui.screens.SkipFeedback?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - skip: STABLE (class with no mutable properties)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.SpanChip(span: com.meticulouscreations.homesafe.viewmodel.TimelineSpan, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
