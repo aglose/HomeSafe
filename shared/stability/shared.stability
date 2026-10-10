@@ -4385,7 +4385,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title
     - enabled: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4394,6 +4394,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotli
     - finance: STABLE (marked @Stable or @Immutable)
     - weather: STABLE (marked @Stable or @Immutable)
     - fitness: STABLE (marked @Stable or @Immutable)
+    - pull: STABLE (marked @Stable or @Immutable)
     - onSelectTab: STABLE (function type)
     - onOpenFinance: STABLE (function type)
     - onOpenWeather: STABLE (function type)
@@ -4410,7 +4411,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ShellOverlays(nav: com.m
     - tab: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBar: kotlin.Boolean, topBar: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, overlay: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, showBottomNav: kotlin.Boolean, contentCovered: kotlin.Boolean, contentObscured: kotlin.Boolean, immersive: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBar: kotlin.Boolean, topBar: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, overlay: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, showBottomNav: kotlin.Boolean, contentCovered: kotlin.Boolean, contentObscured: kotlin.Boolean, immersive: kotlin.Boolean, drawerPull: com.meticulouscreations.homesafe.ui.screens.DrawerPull?, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4423,6 +4424,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBa
     - contentCovered: STABLE (primitive type)
     - contentObscured: STABLE (primitive type)
     - immersive: STABLE (primitive type)
+    - drawerPull: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable
