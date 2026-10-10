@@ -43,7 +43,11 @@ class BudgetRepositoryImpl(
         if (serverUrl == null) return Result.failure(signedOut())
         val result = relay.budget(serverUrl, month).keeping()
         val e = result.exceptionOrNull() ?: return result
-        return if (e.isTransportFailure()) kept(month)?.let { Result.success(it) } ?: result else result
+        if (!e.isTransportFailure()) return result
+        // Nothing answered. If the server is gone, that locks the app before the kept month is reached for.
+        access.serverUnanswered()
+        if (access.locked.value) return Result.failure(signedOut())
+        return kept(month)?.let { Result.success(it) } ?: result
     }
 
     override suspend fun save(patch: BudgetConfigPatch): Result<Budget> = change { relay.save(it, patch) }
@@ -61,15 +65,21 @@ class BudgetRepositoryImpl(
      */
     private suspend fun change(call: suspend (String) -> Result<Budget>): Result<Budget> {
         val serverUrl = connectionRepository.currentServerUrl.value
-            ?: return Result.failure(LocalizedException(UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
+        // Known to be out of reach counts as none: the request would only sit out its timeout.
+        if (serverUrl == null || !access.online.value) {
+            return Result.failure(LocalizedException(UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
+        }
         return call(serverUrl).keeping()
     }
 
     /** Keeps an answered month for later; drops everything kept when the answer is the server refusing this account. */
     private suspend fun Result<Budget>.keeping(): Result<Budget> {
-        onSuccess { budget ->
-            saved.write(FinanceSaved.budget(budget.month), Budget.serializer(), budget)
-            if (budget.isCurrentMonth) saved.write(FinanceSaved.budget(null), Budget.serializer(), budget)
+        val owner = owner()
+        if (owner != null) {
+            onSuccess { budget ->
+                saved.writePrivate(owner, FinanceSaved.budget(budget.month), Budget.serializer(), budget)
+                if (budget.isCurrentMonth) saved.writePrivate(owner, FinanceSaved.budget(null), Budget.serializer(), budget)
+            }
         }
         val problem = (exceptionOrNull() as? BankSyncException)?.problem
         if (problem == BankProblem.SIGNED_OUT || problem == BankProblem.NOT_ALLOWED) saved.forgetPrivate()
@@ -77,7 +87,10 @@ class BudgetRepositoryImpl(
     }
 
     /** A month as the device kept it. Never as "reading the cards now": that was true when it was kept, and nothing is following it. */
-    private suspend fun kept(month: String?): Budget? = saved.read(FinanceSaved.budget(month), Budget.serializer())?.copy(syncing = false)
+    private suspend fun kept(month: String?): Budget? = saved.readPrivate(owner(), FinanceSaved.budget(month), Budget.serializer())?.copy(syncing = false)
+
+    /** The server signed in to, by the address that names it whichever route is in use; null with none. */
+    private fun owner(): String? = connectionRepository.activeConnection.value?.serverUrl
 
     private fun signedOut() = BankSyncException(BankProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected")
 }

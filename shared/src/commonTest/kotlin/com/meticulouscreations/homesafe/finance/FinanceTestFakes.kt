@@ -45,6 +45,15 @@ internal class FakeFinanceAccess(override val canUnlock: Boolean = true) : Finan
     override fun lock() {
         if (!online.value) locked.value = true
     }
+
+    /** What a second look at the server finds when a request went unanswered: gone for good, or there after all. */
+    var serverGone = false
+    var rechecks = 0
+
+    override suspend fun serverUnanswered() {
+        rechecks++
+        if (serverGone && online.value) goOffline()
+    }
 }
 
 /** A [ConnectionRepository] for code that only asks where the server is and whether it answers. */
@@ -66,6 +75,15 @@ internal class FakeServerConnection(url: String?, unreachable: Boolean = false) 
         currentServerUrl.value = url
         activeConnection.value = ActiveConnection(url, null, ConnectionRoute.TAILSCALE)
     }
+
+    /** What the server does when asked directly: answer, or not. */
+    var answers = true
+    var checks = 0
+
+    override suspend fun checkServer() {
+        checks++
+        serverUnreachable.value = !answers
+    }
 }
 
 /** A fingerprint reader that answers as told. */
@@ -74,8 +92,12 @@ internal class FakeIdentityCheck(override var isAvailable: Boolean = true) : Ide
     var answer: Result<Unit> = Result.success(Unit)
     var prompts = 0
 
+    /** Runs while the prompt is up, before it answers: whatever happens to the app under it. */
+    var whilePrompting: () -> Unit = {}
+
     override suspend fun confirm(): Result<Unit> {
         prompts++
+        whilePrompting()
         return answer
     }
 }

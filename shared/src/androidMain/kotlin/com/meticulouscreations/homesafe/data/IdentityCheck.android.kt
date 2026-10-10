@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import android.content.pm.PackageManager
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
@@ -9,6 +10,7 @@ import com.meticulouscreations.homesafe.domain.platform.IdentityCheck
 import com.meticulouscreations.homesafe.shared.R
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_fingerprint
+import homesafe.shared.generated.resources.biometric_name_generic
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.jetbrains.compose.resources.StringResource
 import kotlin.coroutines.resume
@@ -22,7 +24,14 @@ private class AndroidIdentityCheck(private val activity: FragmentActivity) : Ide
     override val isAvailable: Boolean
         get() = BiometricManager.from(activity).canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) == BiometricManager.BIOMETRIC_SUCCESS
 
-    override val methodName: StringResource = Res.string.biometric_name_fingerprint
+    // A strong biometric can be a face. Only a phone with no face or iris unlock at all is
+    // certain to be asking for a finger; any other is asked for "biometrics".
+    override val methodName: StringResource = activity.packageManager.let { features ->
+        val fingerprintOnly = features.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT) &&
+            !features.hasSystemFeature(PackageManager.FEATURE_FACE) &&
+            !features.hasSystemFeature(PackageManager.FEATURE_IRIS)
+        if (fingerprintOnly) Res.string.biometric_name_fingerprint else Res.string.biometric_name_generic
+    }
 
     override suspend fun confirm(): Result<Unit> = suspendCancellableCoroutine { continuation ->
         val callback = object : BiometricPrompt.AuthenticationCallback() {

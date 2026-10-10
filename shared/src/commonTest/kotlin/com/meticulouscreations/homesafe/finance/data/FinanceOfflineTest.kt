@@ -91,6 +91,12 @@ class FinanceOfflineTest {
         answers[path] = status to body
     }
 
+    /** The server stops answering while the app believes it is still there: the next look at it finds it gone. */
+    private fun serverDies() {
+        down = true
+        access.serverGone = true
+    }
+
     private val budget = Budget(
         configured = true,
         sandbox = false,
@@ -216,17 +222,81 @@ class FinanceOfflineTest {
         val repository = budgetRepository(FakeServerConnection("https://box.ts.net"))
         assertEquals(1234.56, repository.budget().getOrThrow().spent)
 
-        down = true
+        serverDies()
+        val locked = assertIs<BankSyncException>(repository.budget().exceptionOrNull())
+        assertEquals(BankProblem.SIGNED_OUT, locked.problem, "the read that finds the server gone doesn't hand over the kept month: the lock is on first")
+        assertTrue(access.locked.value)
+
+        access.unlock()
+        val before = requests
         val kept = repository.budget().getOrThrow()
         assertEquals(1234.56, kept.spent)
         assertEquals("2026-10", kept.month)
         // Asked for by its month, it is the same one.
         assertEquals(1234.56, repository.budget("2026-10").getOrThrow().spent)
+        assertEquals(before, requests, "and a server known to be gone isn't asked")
+    }
+
+    @Test
+    fun aDroppedRequestToAServerThatIsStillThereShowsTheKeptMonthWithoutALock() = runTest {
+        answer("/finance/budget", budgetJson)
+        val repository = budgetRepository(FakeServerConnection("https://box.ts.net"))
+        repository.budget().getOrThrow()
+
+        // One request lost; the second look finds the server answering.
+        down = true
+        assertEquals(1234.56, repository.budget().getOrThrow().spent)
+        assertEquals(1, access.rechecks)
+        assertFalse(access.locked.value)
+    }
+
+    @Test
+    fun whatOneServerLeftIsNotShownToASessionOnAnother() = runTest {
+        answer("/finance/budget", budgetJson)
+        answer("/finance/bank", """{"configured":true,"institutions":[{"id":"ins_1","name":"Chase"}]}""")
+        answer("/finance/sheet", workbookJson)
+        val first = FakeServerConnection("https://box.ts.net")
+        budgetRepository(first).budget("2026-10").getOrThrow()
+        bankRepository(first).status().getOrThrow()
+        financeRepository(first).personalFinance().getOrThrow()
+
+        // A saved login for a different server, opened while that one can't be reached.
+        down = true
+        access.goOffline()
+        access.unlock()
+        val other = FakeServerConnection("https://elsewhere.ts.net", unreachable = true)
+        assertTrue(budgetRepository(other).budget().isFailure)
+        assertTrue(budgetRepository(other).budget("2026-10").isFailure, "nor an earlier month")
+        assertTrue(bankRepository(other).status().isFailure)
+        assertTrue(financeRepository(other).personalFinance().isFailure)
+
+        // The server they came from still has them, and so does nobody signed in at all.
+        assertEquals(1234.56, budgetRepository(FakeServerConnection("https://box.ts.net", unreachable = true)).budget().getOrThrow().spent)
+        assertEquals(1234.56, budgetRepository(FakeServerConnection(url = null)).budget().getOrThrow().spent)
+    }
+
+    @Test
+    fun theFirstAnswerFromAnotherServerTakesWhatTheLastOneLeft() = runTest {
+        answer("/finance/budget", budgetJson)
+        answer("/finance/sheet", workbookJson)
+        val first = FakeServerConnection("https://box.ts.net")
+        budgetRepository(first).budget("2026-09").getOrThrow()
+        financeRepository(first).personalFinance().getOrThrow()
+
+        answer("/finance/budget", budgetJson.replace("1234.56", "77.0"))
+        budgetRepository(FakeServerConnection("https://elsewhere.ts.net")).budget().getOrThrow()
+
+        down = true
+        access.goOffline()
+        access.unlock()
+        assertEquals(77.0, budgetRepository(FakeServerConnection(url = null)).budget().getOrThrow().spent)
+        assertNull(saved.read(FinanceSaved.SHEET, RelayWorkbook.serializer()), "the first server's sheet went with its budget")
+        assertNull(saved.read(FinanceSaved.budget("2026-09"), Budget.serializer()))
     }
 
     @Test
     fun withTheServerKnownToBeOutOfReachTheKeptMonthIsShownWithoutAsking() = runTest {
-        saved.write(FinanceSaved.budget(null), Budget.serializer(), budget)
+        saved.writePrivate("https://box.ts.net", FinanceSaved.budget(null), Budget.serializer(), budget)
         down = true
         access.goOffline()
         access.unlock()
@@ -261,8 +331,8 @@ class FinanceOfflineTest {
 
     @Test
     fun theServerRefusingThisAccountDropsWhatTheDeviceKept() = runTest {
-        saved.write(FinanceSaved.budget(null), Budget.serializer(), budget)
-        saved.write(FinanceSaved.BANK, BankSync.serializer(), bank)
+        saved.writePrivate("https://box.ts.net", FinanceSaved.budget(null), Budget.serializer(), budget)
+        saved.writePrivate("https://box.ts.net", FinanceSaved.BANK, BankSync.serializer(), bank)
         answer("/finance/budget", """{"detail":{"error":"not_allowed","message":"Admins only"}}""", HttpStatusCode.Forbidden)
         val repository = budgetRepository(FakeServerConnection("https://box.ts.net"))
 
@@ -273,7 +343,7 @@ class FinanceOfflineTest {
 
     @Test
     fun aServerErrorIsReportedRatherThanPaperedOverWithAnOldMonth() = runTest {
-        saved.write(FinanceSaved.budget(null), Budget.serializer(), budget)
+        saved.writePrivate("https://box.ts.net", FinanceSaved.budget(null), Budget.serializer(), budget)
         answer("/finance/budget", """{"detail":{"error":"not_configured","message":"No Plaid keys"}}""", HttpStatusCode.ServiceUnavailable)
         val failure = assertIs<BankSyncException>(budgetRepository(FakeServerConnection("https://box.ts.net")).budget().exceptionOrNull())
         assertEquals(BankProblem.NOT_CONFIGURED, failure.problem)
@@ -298,6 +368,16 @@ class FinanceOfflineTest {
         assertEquals(1300.0, repository.budget().getOrThrow().spent)
     }
 
+    @Test
+    fun aChangeToAServerKnownToBeGoneFailsAtOnceWithoutBeingSent() = runTest {
+        access.goOffline()
+        access.unlock()
+        val failure = budgetRepository(FakeServerConnection("https://box.ts.net", unreachable = true)).tag("p1", BucketId.Family, remember = false).exceptionOrNull()
+        assertIs<LocalizedException>(failure)
+        assertFalse(failure is BankSyncException)
+        assertEquals(0, requests, "no sitting out a timeout on a request nothing will answer")
+    }
+
     // --- The banks ---
 
     private fun bankRepository(connection: FakeServerConnection, onTailnet: Boolean? = true) =
@@ -309,10 +389,23 @@ class FinanceOfflineTest {
         val repository = bankRepository(FakeServerConnection("https://box.tail1234.ts.net"), onTailnet = false)
         assertEquals(listOf("Chase"), repository.status().getOrThrow().institutions.map { it.name })
 
-        down = true
+        serverDies()
+        assertEquals(BankProblem.SIGNED_OUT, assertIs<BankSyncException>(repository.status().exceptionOrNull()).problem, "locked first")
+
+        access.unlock()
         val kept = repository.status().getOrThrow()
         assertEquals(listOf("Chase"), kept.institutions.map { it.name })
         assertFalse(kept.syncing)
+    }
+
+    @Test
+    fun aSyncAskedOfAServerKnownToBeGoneFailsAtOnceAsUnanswered() = runTest {
+        access.goOffline()
+        access.unlock()
+        val repository = bankRepository(FakeServerConnection("https://box.tail1234.ts.net", unreachable = true), onTailnet = false)
+        assertEquals(BankProblem.TAILSCALE_OFF, assertIs<BankSyncException>(repository.syncNow().exceptionOrNull()).problem, "said as nothing answering would be")
+        assertEquals(BankProblem.TAILSCALE_OFF, assertIs<BankSyncException>(repository.linkProgress("token").exceptionOrNull()).problem)
+        assertEquals(0, requests)
     }
 
     @Test
@@ -337,7 +430,7 @@ class FinanceOfflineTest {
 
     @Test
     fun theServerRefusingTheSessionDropsTheKeptBanks() = runTest {
-        saved.write(FinanceSaved.BANK, BankSync.serializer(), bank)
+        saved.writePrivate("https://box.ts.net", FinanceSaved.BANK, BankSync.serializer(), bank)
         answer("/finance/bank", """{"detail":"Frigate rejected the session"}""", HttpStatusCode.Unauthorized)
         val repository = bankRepository(FakeServerConnection("https://box.ts.net"))
         assertEquals(BankProblem.SIGNED_OUT, assertIs<BankSyncException>(repository.status().exceptionOrNull()).problem)
@@ -357,8 +450,12 @@ class FinanceOfflineTest {
         val repository = financeRepository(FakeServerConnection("https://box.ts.net"))
         assertEquals("Household budget", repository.personalFinance().getOrThrow().title)
 
-        down = true
+        serverDies()
         // A pull to refresh goes past the couple of minutes the last read is good for.
+        assertTrue(repository.personalFinance(refresh = true).isFailure, "the read that finds the server gone locks first")
+        assertTrue(access.locked.value)
+
+        access.unlock()
         val kept = repository.personalFinance(refresh = true).getOrThrow()
         assertEquals("Household budget", kept.title)
         assertEquals(1_789_999_000, kept.fetchedAtEpochSeconds, "it says when it was read")

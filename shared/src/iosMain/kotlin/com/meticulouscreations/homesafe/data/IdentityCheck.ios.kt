@@ -51,20 +51,28 @@ private class IosIdentityCheck : IdentityCheck {
 
     override suspend fun confirm(): Result<Unit> {
         val reason = getString(Res.string.biometric_finance_reason)
-        val recognised = suspendCancellableCoroutine { continuation ->
+        return suspendCancellableCoroutine { continuation ->
             LAContext().evaluatePolicy(
                 policy = LAPolicyDeviceOwnerAuthenticationWithBiometrics,
                 localizedReason = reason,
-            ) { success, _ ->
-                if (continuation.isActive) continuation.resume(success)
+            ) { success, error ->
+                if (!continuation.isActive) return@evaluatePolicy
+                // The system's own words when it gave any (locked out after too many tries, Face ID
+                // switched off for the app), already in the reader's language; the app's otherwise.
+                val why = error?.localizedDescription?.takeIf { it.isNotBlank() }
+                continuation.resume(
+                    when {
+                        success -> Result.success(Unit)
+                        why != null -> Result.failure(IdentityCheckException(why))
+                        else -> Result.failure(LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Biometric confirmation was cancelled"))
+                    },
+                )
             }
-        }
-        return if (recognised) {
-            Result.success(Unit)
-        } else {
-            Result.failure(LocalizedException(UiText.of(Res.string.biometric_confirmation_cancelled), technical = "Biometric confirmation was cancelled"))
         }
     }
 }
+
+/** The system refused or gave up; the message is its own, already in the reader's language. */
+private class IdentityCheckException(message: String) : Exception(message)
 
 actual fun createIdentityCheck(context: PlatformContext): IdentityCheck = IosIdentityCheck()

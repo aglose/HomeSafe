@@ -24,13 +24,16 @@ import kotlin.time.Clock
  * The household's own figures (the sheet, the budget, the banks) are kept here beside the public
  * market data. Who may see them without the server is `FinanceAccess`'s to say, and the
  * repositories ask it before reading them back; [forgetPrivate] drops them when the server itself
- * refuses this account.
+ * refuses this account. They belong to the server they came from ([writePrivate], [readPrivate]):
+ * signing in to another one is not a way to what the first one said.
  */
 @Inject
 @SingleIn(AppScope::class)
 class FinanceSaved(private val dao: FinanceSavedDao, private val clock: Clock) {
 
     private var pruned = false
+    private var ownerRead = false
+    private var knownOwner: String? = null
 
     suspend fun <T> read(key: String, serializer: KSerializer<T>): T? {
         val row = suspendRunCatching { dao.saved(key) }.getOrNull() ?: return null
@@ -52,13 +55,48 @@ class FinanceSaved(private val dao: FinanceSavedDao, private val clock: Clock) {
         }
     }
 
+    /**
+     * Keeps one of the household's figures as [owner]'s: the server it came from, by the address
+     * that identifies it whichever route is in use. The first thing kept from another server takes
+     * everything the last one left with it.
+     */
+    suspend fun <T> writePrivate(owner: String, key: String, serializer: KSerializer<T>, value: T) {
+        if (owner() != owner) {
+            forgetPrivate()
+            suspendRunCatching { dao.upsert(FinanceSavedEntity(OWNER, owner, clock.now().epochSeconds)) }
+            knownOwner = owner
+        }
+        write(key, serializer, value)
+    }
+
+    /**
+     * One of the household's figures, if it is [owner]'s. A null [owner] is nobody signed in at
+     * all, who is shown what the last server signed in to left: there is no other to confuse it with.
+     */
+    suspend fun <T> readPrivate(owner: String?, key: String, serializer: KSerializer<T>): T? {
+        if (owner != null && owner() != owner) return null
+        return read(key, serializer)
+    }
+
+    /** Whose the private rows are, or null with none kept. Read once: only this class changes it. */
+    private suspend fun owner(): String? {
+        if (!ownerRead) {
+            knownOwner = suspendRunCatching { dao.saved(OWNER) }.getOrNull()?.json
+            ownerRead = true
+        }
+        return knownOwner
+    }
+
     /** Drops the household's own figures: the server answered and refused this account, so the device doesn't keep them for it. */
     suspend fun forgetPrivate() {
         suspendRunCatching {
             dao.delete(SHEET)
             dao.delete(BANK)
             dao.deleteStartingWith(BUDGET_PREFIX)
+            dao.delete(OWNER)
         }
+        knownOwner = null
+        ownerRead = true
     }
 
     companion object {
@@ -67,6 +105,9 @@ class FinanceSaved(private val dao: FinanceSavedDao, private val clock: Clock) {
 
         /** The linked banks as the relay last reported them. */
         const val BANK = "bank"
+
+        /** The server the private rows came from; its `json` is that server's address as written, not JSON. */
+        private const val OWNER = "owner"
 
         private const val BUDGET_PREFIX = "budget:"
         private const val QUOTE_PREFIX = "quote:"

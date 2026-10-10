@@ -48,7 +48,11 @@ class BankSyncRepositoryImpl(
         if (serverUrl == null) return Result.failure(signedOut())
         val result = onServer { relay.status(it) }.keeping()
         val problem = (result.exceptionOrNull() as? BankSyncException)?.problem ?: return result
-        return if (problem == BankProblem.TAILSCALE_OFF || problem == BankProblem.UNREACHABLE) kept()?.let { Result.success(it) } ?: result else result
+        if (problem != BankProblem.TAILSCALE_OFF && problem != BankProblem.UNREACHABLE) return result
+        // Nothing answered. If the server is gone, that locks the app before the kept balances are reached for.
+        access.serverUnanswered()
+        if (access.locked.value) return Result.failure(signedOut())
+        return kept()?.let { Result.success(it) } ?: result
     }
 
     override suspend fun startLink(kind: BankLinkKind): Result<BankLinkStart> = onServer { relay.startLink(it, kind.wire) }
@@ -57,7 +61,7 @@ class BankSyncRepositoryImpl(
     override suspend fun startRelink(institutionId: String): Result<BankLinkStart> = onServer { relay.startLink(it, BankLinkKind.BANK.wire, institutionId) }
 
     override suspend fun linkProgress(token: String): Result<BankLinkProgress> =
-        onServer { relay.linkProgress(it, token) }.onSuccess { progress -> progress.bank?.let { saved.write(FinanceSaved.BANK, BankSync.serializer(), it) } }
+        onServer { relay.linkProgress(it, token) }.onSuccess { progress -> progress.bank?.let { Result.success(it).keeping() } }
 
     override suspend fun syncNow(): Result<BankSync> = onServer { relay.syncNow(it) }.keeping()
 
@@ -70,22 +74,28 @@ class BankSyncRepositoryImpl(
     private suspend fun <T> onServer(call: suspend (String) -> Result<T>): Result<T> {
         val serverUrl = connectionRepository.currentServerUrl.value
             ?: return Result.failure(BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))
+        // Known to be out of reach: said at once, as nothing answering would be, rather than after a timeout.
+        if (!access.online.value) return Result.failure(unanswered(serverUrl, technical = "Known to be unreachable"))
         val result = call(serverUrl)
         val e = result.exceptionOrNull()
         if (e == null || !e.isTransportFailure()) return result
-        return Result.failure(unanswered(serverUrl, e))
+        return Result.failure(unanswered(serverUrl, e.message))
     }
 
     /** Keeps what the relay reported for later; drops everything kept when the answer is the server refusing this account. */
     private suspend fun Result<BankSync>.keeping(): Result<BankSync> {
-        onSuccess { saved.write(FinanceSaved.BANK, BankSync.serializer(), it) }
+        val owner = owner()
+        if (owner != null) onSuccess { saved.writePrivate(owner, FinanceSaved.BANK, BankSync.serializer(), it) }
         val problem = (exceptionOrNull() as? BankSyncException)?.problem
         if (problem == BankProblem.SIGNED_OUT || problem == BankProblem.NOT_ALLOWED) saved.forgetPrivate()
         return this
     }
 
     /** The banks as the device kept them. Never as "reading them now": that was true when it was kept, and nothing is following it. */
-    private suspend fun kept(): BankSync? = saved.read(FinanceSaved.BANK, BankSync.serializer())?.copy(syncing = false)
+    private suspend fun kept(): BankSync? = saved.readPrivate(owner(), FinanceSaved.BANK, BankSync.serializer())?.copy(syncing = false)
+
+    /** The server signed in to, by the address that names it whichever route is in use; null with none. */
+    private fun owner(): String? = connectionRepository.activeConnection.value?.serverUrl
 
     private fun signedOut() = BankSyncException(BankProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected")
 
@@ -95,10 +105,10 @@ class BankSyncRepositoryImpl(
      * server is a tailnet name and this device is off the tailnet: Tailscale is off, or another VPN
      * took its place while a bank was signed in to.
      */
-    private fun unanswered(serverUrl: String, e: Throwable): BankSyncException =
+    private fun unanswered(serverUrl: String, technical: String?): BankSyncException =
         if (isTailnetUrl(serverUrl) && tailnetProbe.isOnTailnet() == false) {
-            BankSyncException(BankProblem.TAILSCALE_OFF, UiText.of(Res.string.fin_bank_error_tailscale_off), technical = e.message)
+            BankSyncException(BankProblem.TAILSCALE_OFF, UiText.of(Res.string.fin_bank_error_tailscale_off), technical = technical)
         } else {
-            BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_bank_error_generic), technical = e.message)
+            BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_bank_error_generic), technical = technical)
         }
 }

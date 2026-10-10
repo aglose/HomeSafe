@@ -27,6 +27,7 @@ class FinanceAccessImplTest {
     private class Subject(scope: TestScope, url: String?, unreachable: Boolean = false, canCheck: Boolean = true) {
         val connection = FakeServerConnection(url, unreachable)
         val reader = FakeIdentityCheck(canCheck)
+        val testScheduler = scope.testScheduler
 
         // Unconfined: each change has reached `locked` by the time the line after it reads it.
         val appScope = CoroutineScope(UnconfinedTestDispatcher(scope.testScheduler))
@@ -123,5 +124,74 @@ class FinanceAccessImplTest {
     fun aDeviceThatCannotCheckSaysSo() = subject(url = null, canCheck = false) {
         assertFalse(access.canUnlock)
         assertTrue(access.locked.value)
+    }
+
+    @Test
+    fun aFingerprintReadAfterTheAppWasClosedUnderThePromptUnlocksNothing() = subject(url = null) {
+        reader.whilePrompting = { access.lock() }
+        assertTrue(access.unlock().isFailure, "the answer is to a lock that has since been put back on")
+        assertTrue(access.locked.value)
+
+        reader.whilePrompting = {}
+        assertTrue(access.unlock().isSuccess, "asked again, it unlocks as usual")
+        assertFalse(access.locked.value)
+    }
+
+    @Test
+    fun aFingerprintReadAfterTheAppLeftTheScreenUnlocksNothing() = subject(url = null) {
+        reader.whilePrompting = { AppVisibility.update(false) }
+        assertTrue(access.unlock().isFailure)
+        AppVisibility.update(true)
+        assertTrue(access.locked.value, "coming back, it is still locked")
+    }
+
+    @Test
+    fun theServerComingBackUnderThePromptLeavesNoUnlockBehind() = subject("https://box.ts.net", unreachable = true) {
+        reader.whilePrompting = { connection.serverUnreachable.value = false }
+        assertTrue(access.unlock().isSuccess, "there is nothing left to unlock")
+        assertFalse(access.locked.value)
+
+        connection.serverUnreachable.value = true
+        assertTrue(access.locked.value, "and the next outage asks, rather than finding the last answer waiting")
+    }
+
+    @Test
+    fun aRequestNobodyAnsweredHasTheServerAskedAndLocksIfItIsGone() = subject("https://box.ts.net") {
+        connection.answers = false
+        access.serverUnanswered()
+        assertEquals(1, connection.checks)
+        assertFalse(access.online.value)
+        assertTrue(access.locked.value, "by the time it returns: nothing kept is shown on the strength of a dead session")
+    }
+
+    @Test
+    fun aRequestNobodyAnsweredToAServerThatIsThereAfterAllChangesNothing() = subject("https://box.ts.net") {
+        access.serverUnanswered()
+        assertEquals(1, connection.checks)
+        assertTrue(access.online.value)
+        assertFalse(access.locked.value)
+    }
+
+    @Test
+    fun aServerFoundGoneIsAskedAgainUntilItAnswers() = subject("https://box.ts.net") {
+        connection.answers = false
+        access.serverUnanswered()
+        testScheduler.advanceTimeBy(31_000)
+        assertTrue(connection.checks >= 3, "nothing else is certain to look again: ${connection.checks}")
+        assertTrue(access.locked.value)
+
+        connection.answers = true
+        testScheduler.advanceTimeBy(16_000)
+        assertTrue(access.online.value)
+        assertFalse(access.locked.value)
+        val settled = connection.checks
+        testScheduler.advanceTimeBy(60_000)
+        assertEquals(settled, connection.checks, "and once it answers, it is left alone")
+    }
+
+    @Test
+    fun withNoSignInThereIsNoServerToAsk() = subject(url = null) {
+        access.serverUnanswered()
+        assertEquals(0, connection.checks)
     }
 }

@@ -64,6 +64,7 @@ class FinanceRepositoryImpl(
 
     /** The sheet as last parsed from what the device kept, so each look at it without the server doesn't parse it again. */
     private var keptSheet: PersonalFinance? = null
+    private var keptSheetOwner: String? = null
     private val sheetLock = Mutex()
 
     // FRED serves a page's worth of series at once happily, but not forty; a handful in flight
@@ -144,7 +145,7 @@ class FinanceRepositoryImpl(
         // not from memory either.
         if (access.locked.value) return@withLock Result.failure(notConnected())
         val cached = sheet
-        if (!refresh && cached != null && cached.first.elapsedNow().inWholeMilliseconds < SHEET_MAX_AGE_MS) {
+        if (!refresh && cached != null && keptSheetOwner == owner() && cached.first.elapsedNow().inWholeMilliseconds < SHEET_MAX_AGE_MS) {
             return@withLock Result.success(cached.second)
         }
         val serverUrl = connectionRepository.currentServerUrl.value
@@ -158,7 +159,12 @@ class FinanceRepositoryImpl(
                 // The server answered, and it won't show this account the sheet: the device doesn't keep it for it.
                 problem == SheetProblem.SIGNED_OUT || problem == SheetProblem.NOT_ALLOWED -> forget()
 
-                e.isTransportFailure() -> kept()?.let { return@withLock Result.success(it) }
+                e.isTransportFailure() -> {
+                    // Nothing answered. If the server is gone, that locks the app before the kept sheet is reached for.
+                    access.serverUnanswered()
+                    if (access.locked.value) return@withLock Result.failure(notConnected())
+                    kept()?.let { return@withLock Result.success(it) }
+                }
             }
             return@withLock Result.failure(e)
         }
@@ -167,7 +173,8 @@ class FinanceRepositoryImpl(
         suspendRunCatching { parse(workbook) }.onSuccess {
             sheet = TimeSource.Monotonic.markNow() to it
             keptSheet = it
-            saved.write(FinanceSaved.SHEET, RelayWorkbook.serializer(), workbook)
+            keptSheetOwner = owner()
+            owner()?.let { owner -> saved.writePrivate(owner, FinanceSaved.SHEET, RelayWorkbook.serializer(), workbook) }
         }
     }
 
@@ -181,10 +188,19 @@ class FinanceRepositoryImpl(
 
     /** The sheet as the device kept it, parsed afresh the first time it is wanted. Its own `fetchedAt` says how old it is. */
     private suspend fun kept(): PersonalFinance? {
+        val owner = owner()
+        // Parsed for one server, it isn't another's: a sign-in elsewhere since starts again from the device.
+        if (owner != keptSheetOwner) keptSheet = null
         keptSheet?.let { return it }
-        val workbook = saved.read(FinanceSaved.SHEET, RelayWorkbook.serializer()) ?: return null
-        return suspendRunCatching { parse(workbook) }.getOrNull()?.also { keptSheet = it }
+        val workbook = saved.readPrivate(owner, FinanceSaved.SHEET, RelayWorkbook.serializer()) ?: return null
+        return suspendRunCatching { parse(workbook) }.getOrNull()?.also {
+            keptSheet = it
+            keptSheetOwner = owner
+        }
     }
+
+    /** The server signed in to, by the address that names it whichever route is in use; null with none. */
+    private fun owner(): String? = connectionRepository.activeConnection.value?.serverUrl
 
     private suspend fun forget() {
         sheet = null

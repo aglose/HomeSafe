@@ -449,7 +449,10 @@ class FinanceViewModel(
                 if (e is CancellationException) throw e
                 val issue = (e as? SheetUnavailableException)?.let { SheetIssue(it.problem, it.text, it.serviceAccount, it.activationUrl) }
                     ?: SheetIssue(SheetProblem.OTHER, e.shownAs(Res.string.fin_data_error_sheet), null, null)
-                _uiState.update { it.copy(financeLoading = false, sheetIssue = issue) }
+                // The household's money isn't left on screen (or on the drawer's card) for someone
+                // the server no longer shows it to; any other failure leaves the sheet already shown.
+                val shutOut = issue.problem == SheetProblem.SIGNED_OUT || issue.problem == SheetProblem.NOT_ALLOWED
+                _uiState.update { it.copy(finance = if (shutOut) null else it.finance, financeLoading = false, sheetIssue = issue) }
             }
         // The sheet may have named tickers the quotes haven't covered yet.
         if (_uiState.value.watchlist != watchBefore) fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)

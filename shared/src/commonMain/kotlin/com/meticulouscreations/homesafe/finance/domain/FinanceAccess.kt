@@ -11,8 +11,9 @@ import org.jetbrains.compose.resources.StringResource
  * yet, Tailscale down, the box off) the app opens on what the device kept, and there is nobody to
  * ask. So the finance app is [locked] then, until whoever is holding the phone proves they own it
  * ([unlock]: a fingerprint or a face), and it locks again when the app is closed or leaves the
- * screen. The markets, which are public, are never held back by this; the pages they share with
- * the household's own figures are.
+ * screen. A read that finds the server gone says so first ([serverUnanswered]), so the lock is on
+ * before the kept copy is reached for. The markets, which are public, are never held back by
+ * this; the pages they share with the household's own figures are.
  */
 interface FinanceAccess {
     /** True while the server is signed in to and answering, so what the finance app shows is what it just said. */
@@ -32,4 +33,12 @@ interface FinanceAccess {
 
     /** The finance app was closed: the next opening without the server asks again. */
     fun lock()
+
+    /**
+     * A request for the household's figures went unanswered. Has the connection looked again, so
+     * that by the time this returns [online] and [locked] say what is true: a server that died
+     * since it was last heard from locks the app before anything the device kept is shown in its
+     * place. While it stays gone it is asked again now and then, so [online] comes back by itself.
+     */
+    suspend fun serverUnanswered()
 }

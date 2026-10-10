@@ -181,10 +181,19 @@ the sign-in screen, which opens the same drawer (see "Before sign-in" in the REA
   fingerprint or a face (`FinanceAccess`, `IdentityCheck`). That holds even when the saved login
   was just opened with a fingerprint: Finance asks for another. It locks again when the app is
   closed, when the phone goes to the background, and when the server comes back (so the next
-  outage asks again). While it is locked the repositories refuse the kept figures and the view
+  outage asks again). A prompt answered after any of those has happened under it unlocks nothing.
+  A server that dies mid-session is caught by the first request it doesn't answer: that request
+  has the connection look again (`ConnectionRepository.checkServer`), and if the server is gone
+  the lock is on before the kept copy is reached for. From then on it is asked every 15 seconds
+  until it answers, and no request is sent to it meanwhile. While it is locked the repositories refuse the kept figures and the view
   model drops the sheet, so the drawer's card shows the S&P 500 and "Locked while offline" rather
   than a net worth. A device with no fingerprint or face enrolled (and the desktop and web builds)
   can't unlock: there Finance waits for the server.
+- **Whose it is.** The kept sheet, budget and banks belong to the server they came from (its
+  Tailscale address). A session on any other server is shown none of them, and the first answer
+  kept from another server deletes what the last one left. Nobody signed in at all is shown what
+  the last server left. Accounts on the same server are not told apart on the device: the server
+  does that, by refusing the ones it doesn't show the money to, which deletes the kept copy.
 - **What is not protected by it.** The lock is the app declining to read and draw the rows; the
   rows themselves are plain JSON in the app's private database, like the rest of what the app
   keeps. If the server refuses the account (signed out, or not an admin), the kept sheet, budget

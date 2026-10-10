@@ -536,4 +536,35 @@ class FinanceViewModelTest {
         assertEquals(2, repo.sheetCalls, "what was up was what the device kept; the server has newer")
         vm.setActive(false)
     }
+
+    @Test
+    fun theServerRefusingTheAccountTakesTheSheetOffTheScreen() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.setActive(true, full = false)
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols)
+
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.NOT_ALLOWED, "admins only".asUiText())) }
+        vm.retrySheet()
+        runCurrent()
+        assertNull(vm.uiState.value.finance, "not left up (or on the drawer's card) for an account the server no longer shows it to")
+        assertEquals(SheetProblem.NOT_ALLOWED, vm.uiState.value.sheetIssue?.problem)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun anyOtherFailureLeavesTheSheetAlreadyShown() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.setActive(true, full = false)
+        runCurrent()
+
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.API_DISABLED, "switch it on".asUiText())) }
+        vm.retrySheet()
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols)
+        assertEquals(SheetProblem.API_DISABLED, vm.uiState.value.sheetIssue?.problem)
+        vm.setActive(false)
+    }
 }
