@@ -5,6 +5,7 @@ import androidx.room3.Entity
 import androidx.room3.Index
 import androidx.room3.PrimaryKey
 import androidx.room3.Query
+import androidx.room3.Transaction
 import androidx.room3.Upsert
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -195,6 +196,31 @@ interface FitnessDao {
 
     @Query("DELETE FROM FitnessHeartSummaryEntity WHERE workoutId = :workoutId")
     suspend fun deleteHeartSummary(workoutId: Long)
+
+    /**
+     * Writes everything a copy of a log brings, in one transaction: all of it lands or none of it
+     * does, so a set is never left pointing at a workout that didn't make it in. Sets go before
+     * the workouts they were done in, for the one implementation that has no transactions
+     * ([InMemoryFitnessDao]): whoever follows the log there never sees one of those workouts empty.
+     */
+    @Transaction
+    suspend fun writeMerge(
+        exercises: List<FitnessExerciseEntity>,
+        sets: List<FitnessSetEntity>,
+        workouts: List<FitnessWorkoutEntity>,
+        phases: List<FitnessPhaseEntity>,
+        bodyweights: List<FitnessBodyweightEntity>,
+        heartSettings: FitnessHeartSettingsEntity?,
+        heartSummaries: List<FitnessHeartSummaryEntity>,
+    ) {
+        if (exercises.isNotEmpty()) upsertExercises(exercises)
+        if (sets.isNotEmpty()) upsertSets(sets)
+        workouts.forEach { upsertWorkout(it) }
+        phases.forEach { upsertPhase(it) }
+        bodyweights.forEach { upsertBodyweight(it) }
+        if (heartSettings != null) upsertHeartSettings(heartSettings)
+        heartSummaries.forEach { upsertHeartSummary(it) }
+    }
 }
 
 /** [FitnessDao] in memory: for the web target, which has no database, and for tests. */

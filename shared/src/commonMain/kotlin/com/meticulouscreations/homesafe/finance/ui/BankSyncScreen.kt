@@ -94,6 +94,7 @@ import homesafe.shared.generated.resources.fin_bank_problem_other_title
 import homesafe.shared.generated.resources.fin_bank_problem_outdated_title
 import homesafe.shared.generated.resources.fin_bank_problem_signed_out_body
 import homesafe.shared.generated.resources.fin_bank_problem_signed_out_title
+import homesafe.shared.generated.resources.fin_bank_problem_tailscale_off_title
 import homesafe.shared.generated.resources.fin_bank_setup_body
 import homesafe.shared.generated.resources.fin_bank_setup_title
 import homesafe.shared.generated.resources.fin_bank_status_intro
@@ -285,7 +286,9 @@ private fun ProblemCard(problem: BankProblem?, text: UiText?, onRetry: () -> Uni
 
         BankProblem.NOT_CONFIGURED -> MessageCard(stringResource(Res.string.fin_bank_setup_title), stringResource(Res.string.fin_bank_setup_body), onRetry)
 
-        BankProblem.PLAID, BankProblem.OTHER, null -> MessageCard(stringResource(Res.string.fin_bank_problem_other_title), body, onRetry)
+        BankProblem.TAILSCALE_OFF -> MessageCard(stringResource(Res.string.fin_bank_problem_tailscale_off_title), body, onRetry)
+
+        BankProblem.PLAID, BankProblem.UNREACHABLE, BankProblem.OTHER, null -> MessageCard(stringResource(Res.string.fin_bank_problem_other_title), body, onRetry)
     }
 }
 

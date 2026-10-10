@@ -72,4 +72,39 @@ class RecordingHistoryTest {
         assertEquals(base + hour, second.startEpochSeconds)
         assertNull(history.playlistAfter(second))
     }
+
+    @Test
+    fun aSkipInsideContinuousFootageIsThatManySecondsOnTheClock() {
+        assertEquals(base + hour - 15, history.skipFrom(base + hour - 5, -10.0))
+        // Across the hour boundary, which is a playlist's edge but not a gap.
+        assertEquals(base + hour + 5, history.skipFrom(base + hour - 5, 10.0))
+    }
+
+    @Test
+    fun aSkipBackFromJustAfterAGapLandsInTheFootageBeforeIt() {
+        // Three seconds into the clip after the gap: the other seven come off the end of the one before.
+        assertEquals(base + hour + 13, history.skipFrom(base + hour + 603, -10.0))
+    }
+
+    @Test
+    fun aSkipForwardCarriesOverAGap() {
+        assertEquals(base + hour + 606, history.skipFrom(base + hour + 16, 10.0))
+    }
+
+    @Test
+    fun aSkipFromInsideAGapCountsFromTheFootageOnThatSide() {
+        assertEquals(base + hour + 10, history.skipFrom(base + hour + 300, -10.0))
+        assertEquals(base + hour + 605, history.skipFrom(base + hour + 300, 5.0))
+    }
+
+    @Test
+    fun aSkipPastEitherEndStopsThere() {
+        assertEquals(base + hour - 30, history.skipFrom(base + hour - 25, -10.0))
+        assertEquals(base + hour + 610, history.skipFrom(base + hour + 605, 10.0))
+    }
+
+    @Test
+    fun thereIsNowhereToSkipToWithNothingRecorded() {
+        assertNull(RecordingHistory.EMPTY.skipFrom(base, -10.0))
+    }
 }

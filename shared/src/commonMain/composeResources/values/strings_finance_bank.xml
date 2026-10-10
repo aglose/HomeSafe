@@ -96,6 +96,7 @@
     <string name="fin_bank_problem_signed_out_title">Sign in to link accounts</string>
     <string name="fin_bank_problem_signed_out_body">Bank sync runs on your PercySafe server, so it shows once you're connected.</string>
     <string name="fin_bank_problem_other_title">Couldn't load bank sync</string>
+    <string name="fin_bank_problem_tailscale_off_title">Tailscale isn't connected</string>
 
     <string name="fin_bank_how">Plaid reads balances, holdings and loan terms. Nothing here can move money. Your server keeps one read-only key per institution and this phone never holds one. Everything is read again each morning, and Sync now reads it at once.</string>
 
@@ -103,4 +104,7 @@
     <string name="fin_bank_error_relay_outdated">The relay on the server is older than bank sync. Copy relay/ to the server and run docker compose up -d --build there.</string>
     <string name="fin_bank_error_plaid">Plaid said: %1$s</string>
     <string name="fin_bank_error_generic">Couldn't reach the server</string>
+    <string name="fin_bank_error_tailscale_off">Tailscale isn't connected on this device, so the server can't be reached. A phone runs one VPN at a time, so turning on another VPN switches Tailscale off. Connect Tailscale, then try again.</string>
+    <string name="fin_bank_linking_tailscale_off">Tailscale isn't connected on this device, so this page can't see how linking is going. Connect Tailscale again and it catches up by itself, as long as the link hasn't run out.</string>
+    <string name="fin_bank_linking_unreachable">The server isn't answering, so this page can't see how linking is going. It keeps asking, and catches up once the server answers.</string>
 </resources>

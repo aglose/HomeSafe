@@ -260,4 +260,23 @@
     <string name="fitness_import_done">Brought in %1$s and %2$s</string>
     <string name="fitness_import_done_more">Paste another note, or head back and start a workout.</string>
     <string name="fitness_import_done_button">Done</string>
+
+    <!-- A copy of the whole log, sent from one install of the app and read by another's import page -->
+    <string name="fitness_lifts_send_copy">Send a copy of your log</string>
+    <!-- Under that button, when the copy couldn't be handed to the share sheet -->
+    <string name="fitness_copy_unsent">This log couldn't be sent. It may be too long to hand to another app in one piece.</string>
+    <!-- The share sheet's title for that copy, and its subject where it is sent somewhere that has one -->
+    <string name="fitness_copy_share_title">Training log</string>
+    <!-- The import page's title while it holds such a copy and not notes -->
+    <string name="fitness_title_import_copy">Bring in a log</string>
+    <string name="fitness_copy_title">A copy of a training log</string>
+    <string name="fitness_copy_body">Sent from this app on another phone, or from another build of it. What it holds that your log here hasn't got yet:</string>
+    <string name="fitness_copy_new_exercises">New exercises</string>
+    <string name="fitness_copy_changed_exercises">Exercises set up differently</string>
+    <string name="fitness_copy_sets">Sets</string>
+    <string name="fitness_copy_workouts">Workouts</string>
+    <string name="fitness_copy_phases">Phases</string>
+    <string name="fitness_copy_weigh_ins">Weigh-ins</string>
+    <string name="fitness_copy_caption">Only what's missing is added, so bringing the same copy in twice adds nothing twice. An exercise you already have is set up the way the copy has it.</string>
+    <string name="fitness_copy_unreadable">This looks like a copy of a training log, but it can't be read. It may have been cut short on the way, or come from a newer version of the app.</string>
 </resources>

@@ -48,7 +48,9 @@ class HomeJourneyTest {
 
         // The back yard has no zones, so the summary says which camera saw it.
         home.awaitSummary("Cat at Back Yard")
-        assertFalse(exists(hasTestTag(HOME_STATUS_TEST_TAG) and hasText("Person in the porch")), "the older front-door person is no longer the headline")
+        // The older front-door person is no longer the headline. Waited for, not looked for: if the
+        // summary got as far as naming the person before the cat landed, the two cross-fade.
+        home.awaitSummaryWithout("Person in the porch")
     }
 
     @Test

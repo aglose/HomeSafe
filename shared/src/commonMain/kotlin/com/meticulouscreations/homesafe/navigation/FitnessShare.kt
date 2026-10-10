@@ -9,9 +9,12 @@ import kotlinx.coroutines.flow.asStateFlow
  * menu), on their way to the fitness app's import page. A state, as [WeatherDeepLinks] is and
  * for the same reason: a share that cold-starts the app arrives before there is a shell to act
  * on it, and has to wait out the sign-in screen.
+ *
+ * A copy of a whole log sent from another install of the app comes the same way (`LogCopyText`);
+ * the import page tells the two apart.
  */
 object FitnessShares {
-    /** More than any notes app's note; anything longer isn't one. */
+    /** More than any notes app's note, and room for a copy of a log of several thousand sets; anything longer is neither. */
     const val MAX_LENGTH = 200_000
 
     private val _pending = MutableStateFlow<String?>(null)

@@ -20,6 +20,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_generic
+import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
+import homesafe.shared.generated.resources.fin_bank_linking_unreachable
 import homesafe.shared.generated.resources.fin_bank_notice_exited
 import homesafe.shared.generated.resources.fin_bank_notice_expired
 import homesafe.shared.generated.resources.fin_bank_notice_linked
@@ -161,6 +163,8 @@ class BankSyncViewModel(
 
     private suspend fun followLink(link: BankLinkStart) {
         var failures = 0
+        // What was said while nothing answered, so it goes once the relay does.
+        var unansweredNotice: BankNotice? = null
         val expired = BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true)
         while (true) {
             delay(LINK_POLL_MS)
@@ -175,14 +179,30 @@ class BankSyncViewModel(
                 if (e is CancellationException) throw e
                 if (e != null && shutOut(e)) return
                 if (lapsed) return endLink(expired)
-                // Only the relay answering with a problem counts against the link. Not reaching it
-                // at all is what happens while the app sits behind the browser, or behind the
-                // bank's own app for an OAuth sign-in, where Android holds back its network for
-                // as long as that takes: the link is waited on until it lapses.
+                // Nothing answering isn't the link failing: the relay keeps the sign-in until the link
+                // lapses, and asking is how this page hears it's done. Someone who turned on another VPN
+                // to sign in to their bank has Tailscale off until they switch back, so keep asking till then.
+                val unanswered = when ((e as? BankSyncException)?.problem) {
+                    BankProblem.TAILSCALE_OFF -> Res.string.fin_bank_linking_tailscale_off
+                    BankProblem.UNREACHABLE -> Res.string.fin_bank_linking_unreachable
+                    else -> null
+                }
+                if (unanswered != null) {
+                    val notice = BankNotice(UiText.of(unanswered), isError = true)
+                    unansweredNotice = notice
+                    _uiState.update { it.copy(notice = notice) }
+                    continue
+                }
+                // Past that, only the relay answering with a problem counts against the link. Anything
+                // else is the request not getting there, as while the app sits behind the browser or
+                // behind the bank's own app for an OAuth sign-in, where Android holds back its network
+                // for as long as that takes: the link is waited on until it lapses.
                 if (e is BankSyncException && ++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e.shown(), isError = true))
                 continue
             }
             failures = 0
+            unansweredNotice?.let { said -> _uiState.update { s -> if (s.notice == said) s.copy(notice = null) else s } }
+            unansweredNotice = null
             when (progress.status) {
                 BankLinkStatus.PENDING -> if (lapsed) return endLink(expired)
 
