@@ -148,6 +148,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /** Whether the drawer the top bar's menu button opens is out. */
     var drawerOpen by mutableStateOf(false)
 
+    /** The swipe across the shell that draws the drawer out by hand, and opens it when let go far enough. */
+    val drawerPull = DrawerPull(onOpen = { drawerOpen = true })
+
+    /** The drawer is out, or a swipe is drawing it out: what's on it should be up to date. */
+    val drawerShowing: Boolean get() = drawerOpen || drawerPull.active
+
+    /**
+     * The swipe for [tab] to wear, or null while the drawer can't be drawn out there: only where
+     * the menu button is, at the tab's root. A nested screen has sideways gestures of its own.
+     */
+    fun drawerPullOn(tab: TopLevelRoute): DrawerPull? = drawerPull.takeIf { showsTopBar(tab) }
+
     /** Which of the apps inside PercySafe the overlay holds: the one that is up, or the one on its way out. */
     var app by mutableStateOf(InnerApp.FINANCE)
         private set
@@ -401,6 +413,7 @@ fun FrigateAppShell() {
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
         contentCovered = nav.appCovering,
         contentObscured = nav.drawerOpen || nav.appOpen,
+        drawerPull = nav.drawerPullOn(nav.selectedTab),
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -454,6 +467,7 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         overlay = { ShellOverlays(nav, cardZoom, tab) },
         contentCovered = nav.appCovering,
         contentObscured = nav.drawerOpen || nav.appOpen,
+        drawerPull = nav.drawerPullOn(tab),
     ) {
         TabContent(tab, nav, cardZoom)
     }
@@ -490,20 +504,22 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val financeUp = nav.isOpen(InnerApp.FINANCE)
-    LaunchedEffect(visible, nav.drawerOpen, financeUp) {
-        finance.setActive(visible && (nav.drawerOpen || financeUp), full = financeUp)
+    // The cards fetch as a swipe starts to draw the drawer out, not only once it is out.
+    val drawerShowing = nav.drawerShowing
+    LaunchedEffect(visible, drawerShowing, financeUp) {
+        finance.setActive(visible && (drawerShowing || financeUp), full = financeUp)
     }
     val weather: WeatherViewModel = metroViewModel()
     val weatherState by weather.uiState.collectAsStateWithLifecycle()
     val weatherUp = nav.isOpen(InnerApp.WEATHER)
-    LaunchedEffect(visible, nav.drawerOpen, weatherUp) {
-        weather.setActive(visible && (nav.drawerOpen || weatherUp), full = weatherUp)
+    LaunchedEffect(visible, drawerShowing, weatherUp) {
+        weather.setActive(visible && (drawerShowing || weatherUp), full = weatherUp)
     }
     val fitness: FitnessViewModel = metroViewModel()
     val fitnessState by fitness.uiState.collectAsStateWithLifecycle()
     val fitnessUp = nav.isOpen(InnerApp.FITNESS)
-    LaunchedEffect(visible, nav.drawerOpen, fitnessUp) {
-        fitness.setActive(visible && (nav.drawerOpen || fitnessUp), full = fitnessUp)
+    LaunchedEffect(visible, drawerShowing, fitnessUp) {
+        fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
     }
     // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
     if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
@@ -513,6 +529,7 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
         finance = financeState,
         weather = weatherState,
         fitness = fitnessState,
+        pull = nav.drawerPull,
         onSelectTab = { route ->
             nav.drawerOpen = false
             nav.selectTab(route)
@@ -590,6 +607,10 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * [immersive] gives the content the whole window, cutout and all: a camera's video, full screen
  * with the phone on its side, which is black to the glass and places its own controls clear of
  * the edges.
+ *
+ * [drawerPull] is the swipe that draws the drawer out without a reach for the menu button: across
+ * the content or either bar, wherever nothing under the finger wants the swipe itself. Null where
+ * the drawer isn't on offer; and it is never taken under an overlay.
  */
 @Composable
 internal fun ShellScaffold(
@@ -602,6 +623,7 @@ internal fun ShellScaffold(
     contentCovered: Boolean = false,
     contentObscured: Boolean = false,
     immersive: Boolean = false,
+    drawerPull: DrawerPull? = null,
     content: @Composable () -> Unit,
 ) {
     // While an overlay covers the whole shell (the finance or weather app) the tab content isn't drawn at
@@ -624,7 +646,12 @@ internal fun ShellScaffold(
     ) {
         // Under the drawer or an app opened from it the shell is out of reach for screen readers too,
         // so focus can't wander behind the scrim to a camera or the menu button.
-        Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawerPull(drawerPull.takeUnless { contentObscured || contentCovered || immersive })
+                .then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier),
+        ) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {
                 // Back is the overlay's while one is up, even where the shell shows through it.
                 if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
