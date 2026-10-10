@@ -107,4 +107,29 @@ class RecordingHistoryTest {
     fun thereIsNowhereToSkipToWithNothingRecorded() {
         assertNull(RecordingHistory.EMPTY.skipFrom(base, -10.0))
     }
+
+    @Test
+    fun thereIsNowhereBackFromTheFirstFrameOrBeforeIt() {
+        assertNull(history.skipFrom(base + hour - 30, -10.0))
+        assertNull(history.skipFrom(base + hour - 100, -10.0))
+        // Forward from before everything is the first footage there is.
+        assertEquals(base + hour - 20, history.skipFrom(base + hour - 100, 10.0))
+    }
+
+    @Test
+    fun aSkipCountsAClipsOwnDurationAsThePlayerDoes() {
+        // Frigate's duration for the first clip is half a second more than its length on the clock.
+        val segments = listOf(
+            RecordingSegment(startEpochSeconds = 0.0, endEpochSeconds = 10.0, durationSeconds = 10.5),
+            RecordingSegment(startEpochSeconds = 10.0, endEpochSeconds = 20.0),
+        )
+        val skewed = RecordingHistory(segments)
+        val playlist = RecordingPlaylist(segments)
+
+        // The same frame as moving the player ten seconds along the playlist.
+        assertEquals(playlist.epochSecondsAt(playlist.positionSecondsFor(5.0) + 10.0), skewed.skipFrom(5.0, 10.0))
+        assertEquals(14.5, skewed.skipFrom(5.0, 10.0))
+        assertEquals(playlist.epochSecondsAt(playlist.positionSecondsFor(14.5) - 10.0), skewed.skipFrom(14.5, -10.0))
+        assertEquals(5.0, skewed.skipFrom(14.5, -10.0))
+    }
 }

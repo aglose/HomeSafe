@@ -441,7 +441,9 @@ class CameraDetailViewModel(
      * recorded rejoins live.
      *
      * At the live edge there is only back, and the newest frame to step back from is the newest
-     * one Frigate has filed, a little behind live. Returns whether there was anywhere to go.
+     * one Frigate has filed, a little behind live. Returns whether there was anywhere to go:
+     * false at the live edge for a step forward, and at the first recorded frame for a step back,
+     * so the screen doesn't say it stepped when the picture stayed where it was.
      */
     fun skipBy(seconds: Double): Boolean {
         val current = _playback.value

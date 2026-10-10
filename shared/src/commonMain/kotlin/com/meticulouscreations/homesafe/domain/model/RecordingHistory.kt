@@ -2,8 +2,6 @@ package com.meticulouscreations.homesafe.domain.model
 
 import kotlin.math.abs
 import kotlin.math.floor
-import kotlin.math.max
-import kotlin.math.min
 
 /**
  * Everything a camera recorded inside some time window, sorted by time with unplayable clips
@@ -51,8 +49,16 @@ class RecordingHistory(segments: List<RecordingSegment>) {
      * in footage rather than on the clock: a gap in recording takes none of the step, as it takes
      * no time in the player. So ten seconds back from just after a gap is ten seconds from the end
      * of what was recorded before it, where the same step on the clock would land in the gap and
-     * play from the very clip it left. A step past either end stops there: the first recording's
-     * start, or the last one's end. Null when nothing was recorded.
+     * play from the very clip it left.
+     *
+     * A clip's footage is what the player has of it, as [RecordingPlaylist] lays it out:
+     * [RecordingSegment.durationSeconds] from the clip's start, which can be a little off its
+     * length on the clock. Counting in that keeps a step here the same frame as moving the player
+     * by as much.
+     *
+     * A step forward past the last recording stops at its end. A step back stops at the first
+     * recording's start. Null when there is nowhere to go: nothing was recorded, or a step back
+     * has no footage behind it.
      */
     fun skipFrom(epochSeconds: Double, deltaSeconds: Double): Double? {
         if (segments.isEmpty()) return null
@@ -60,21 +66,22 @@ class RecordingHistory(segments: List<RecordingSegment>) {
         if (deltaSeconds >= 0) {
             for (segment in segments) {
                 if (segment.endEpochSeconds <= epochSeconds) continue
-                val from = max(epochSeconds, segment.startEpochSeconds)
-                val ahead = segment.endEpochSeconds - from
-                if (remaining < ahead) return from + remaining
+                val at = (epochSeconds - segment.startEpochSeconds).coerceIn(0.0, segment.durationSeconds)
+                val ahead = segment.durationSeconds - at
+                if (remaining < ahead) return (segment.startEpochSeconds + at + remaining).coerceAtMost(segment.endEpochSeconds)
                 remaining -= ahead
             }
             return latestEndEpochSeconds
         }
+        var stepped = false
         for (segment in segments.asReversed()) {
             if (segment.startEpochSeconds >= epochSeconds) continue
-            val from = min(epochSeconds, segment.endEpochSeconds)
-            val behind = from - segment.startEpochSeconds
-            if (remaining <= behind) return from - remaining
-            remaining -= behind
+            val at = (epochSeconds - segment.startEpochSeconds).coerceAtMost(segment.durationSeconds)
+            if (remaining <= at) return segment.startEpochSeconds + at - remaining
+            remaining -= at
+            stepped = true
         }
-        return segments.first().startEpochSeconds
+        return if (stepped) segments.first().startEpochSeconds else null
     }
 
     companion object {
