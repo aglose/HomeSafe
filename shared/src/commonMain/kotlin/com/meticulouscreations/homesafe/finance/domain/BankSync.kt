@@ -15,6 +15,7 @@ import homesafe.shared.generated.resources.fin_bank_type_credit
 import homesafe.shared.generated.resources.fin_bank_type_investment
 import homesafe.shared.generated.resources.fin_bank_type_loan
 import homesafe.shared.generated.resources.fin_bank_type_other
+import kotlinx.serialization.Serializable
 import org.jetbrains.compose.resources.StringResource
 
 /**
@@ -57,6 +58,7 @@ enum class BankAccountType(val label: StringResource) {
  * for a card or a loan what's owed.
  */
 @Immutable
+@Serializable
 data class BankAccount(
     val id: String,
     val key: String,
@@ -75,6 +77,7 @@ data class BankAccount(
 
 /** A bank, brokerage or lender linked through Plaid. [error] is Plaid's code for why its last read failed. */
 @Immutable
+@Serializable
 data class BankInstitution(
     val id: String,
     val name: String,
@@ -89,6 +92,7 @@ data class BankInstitution(
 
 /** How the relay's last write of the balances to the feed sheet went. */
 @Immutable
+@Serializable
 data class BankFeed(
     /** The relay has a feed sheet to write to. */
     val configured: Boolean,
@@ -104,6 +108,7 @@ data class BankFeed(
 
 /** The bank sync as the relay reports it. */
 @Immutable
+@Serializable
 data class BankSync(
     /** The relay has Plaid keys; without them nothing can be linked. */
     val configured: Boolean,

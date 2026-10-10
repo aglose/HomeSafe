@@ -39,6 +39,7 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.WbSunny
@@ -110,6 +111,7 @@ import homesafe.shared.generated.resources.shell_drawer_cameras
 import homesafe.shared.generated.resources.shell_drawer_change_today
 import homesafe.shared.generated.resources.shell_drawer_close
 import homesafe.shared.generated.resources.shell_drawer_finance
+import homesafe.shared.generated.resources.shell_drawer_finance_locked
 import homesafe.shared.generated.resources.shell_drawer_finance_subtitle
 import homesafe.shared.generated.resources.shell_drawer_market_disclaimer
 import homesafe.shared.generated.resources.shell_drawer_net_worth
@@ -140,6 +142,10 @@ private const val APP_BACK_PEEK = 0.35f
  * Fitness, whose card says which workout is up next, and Finance, whose card carries a live
  * S&P 500 line — so the drawer is worth a glance on its own.
  * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it.
+ *
+ * The sign-in screen opens it too, before there are any cameras to go to: there
+ * [showHomeSecurity] is false and it lists the apps alone. [financeLocked] says the Finance card
+ * opens on its lock (no server to ask who this is), so the card shows no figure of the household's.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -154,6 +160,8 @@ internal fun ShellDrawer(
     onOpenWeather: (Offset) -> Unit,
     onOpenFitness: (Offset) -> Unit,
     onClose: () -> Unit,
+    showHomeSecurity: Boolean = true,
+    financeLocked: Boolean = false,
 ) {
     val progress by animateFloatAsState(
         if (open) 1f else 0f,
@@ -218,17 +226,19 @@ internal fun ShellDrawer(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
                 )
-                DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
-                DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
-                DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
-                DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
-                Spacer(Modifier.height(24.dp))
+                if (showHomeSecurity) {
+                    DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
+                    DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
+                    DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
+                    DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
+                    Spacer(Modifier.height(24.dp))
+                }
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
                 WeatherDrawerCard(weather, animated = open, onOpen = onOpenWeather)
                 Spacer(Modifier.height(12.dp))
                 FitnessDrawerCard(fitness, animated = open, onOpen = onOpenFitness)
                 Spacer(Modifier.height(12.dp))
-                FinanceDrawerCard(finance, onOpenFinance)
+                FinanceDrawerCard(finance, financeLocked, onOpenFinance)
             }
             Text(
                 stringResource(Res.string.shell_drawer_market_disclaimer),
@@ -269,9 +279,13 @@ private fun DrawerRow(icon: ImageVector, label: String, selected: Boolean, onCli
     }
 }
 
-/** The Finance app's door: its name, today's S&P 500 with its sparkline, and net worth once the sheet is in. */
+/**
+ * The Finance app's door: its name, today's S&P 500 with its sparkline, and net worth once the
+ * sheet is in. While the app is [locked] the net worth gives way to a line saying so: the index is
+ * anyone's to see, the household's money isn't.
+ */
 @Composable
-private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit) {
+private fun FinanceDrawerCard(finance: FinanceUiState, locked: Boolean, onOpen: (Offset) -> Unit) {
     val palette = remember { FinancePalette() }
     var center by remember { mutableStateOf(Offset.Zero) }
     val sp = finance.quotes[MarketCatalog.SP500.symbol]
@@ -310,9 +324,17 @@ private fun FinanceDrawerCard(finance: FinanceUiState, onOpen: (Offset) -> Unit)
                 Sparkline(sp.intraday, dir, Modifier.width(96.dp).height(40.dp), baseline = sp.previousClose)
             }
         }
-        finance.finance?.netWorth?.let { nw ->
+        if (locked) {
             Spacer(Modifier.height(10.dp))
-            Text(stringResource(Res.string.shell_drawer_net_worth, FinanceFormat.compactMoney(nw)), style = MaterialTheme.typography.labelMedium, color = palette.accent)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("drawer_finance_locked")) {
+                Icon(Icons.Filled.Lock, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(14.dp))
+                Text(stringResource(Res.string.shell_drawer_finance_locked), style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
+            }
+        } else {
+            finance.finance?.netWorth?.let { nw ->
+                Spacer(Modifier.height(10.dp))
+                Text(stringResource(Res.string.shell_drawer_net_worth, FinanceFormat.compactMoney(nw)), style = MaterialTheme.typography.labelMedium, color = palette.accent)
+            }
         }
     }
 }

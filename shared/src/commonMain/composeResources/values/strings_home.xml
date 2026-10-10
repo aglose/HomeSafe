@@ -148,6 +148,8 @@
     <string name="shell_drawer_change_today">%1$s today</string>
     <!-- %1$s is an amount of money, e.g. "$1.2M". -->
     <string name="shell_drawer_net_worth">Net worth %1$s</string>
+    <!-- On the Finance card in place of the net worth while the server can't be reached: opening it asks for a fingerprint or a face. -->
+    <string name="shell_drawer_finance_locked">Locked while offline</string>
     <string name="shell_drawer_market_disclaimer">Market data is delayed and for information only.</string>
     <!-- Pull-to-refresh, for screen readers: the action, and what is announced while it runs. -->
     <string name="shell_refresh">Refresh</string>

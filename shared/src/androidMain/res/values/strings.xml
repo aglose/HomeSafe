@@ -44,5 +44,7 @@
     <string name="biometric_enable_subtitle">Confirm your fingerprint or face to save this login</string>
     <string name="biometric_sign_in_title">Sign in with biometrics</string>
     <string name="biometric_sign_in_subtitle">Use your fingerprint or face to sign in to HomeSafe</string>
+    <string name="biometric_finance_title">Unlock Finance</string>
+    <string name="biometric_finance_subtitle">The server can\'t be reached. Confirm it\'s you to see what this phone saved.</string>
     <string name="biometric_cancel">Cancel</string>
 </resources>

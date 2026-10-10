@@ -40,6 +40,7 @@ import homesafe.shared.generated.resources.fin_data_symbol_ten_year_short
 import homesafe.shared.generated.resources.fin_data_symbol_vix_about
 import homesafe.shared.generated.resources.fin_data_symbol_vix_name
 import homesafe.shared.generated.resources.fin_data_symbol_vix_short
+import kotlinx.serialization.Serializable
 import org.jetbrains.compose.resources.StringResource
 
 /** What kind of thing a symbol is, which decides how its price is written (points, dollars, a yield). */
@@ -94,6 +95,7 @@ data class MarketSymbol(
  * is what the day's change is measured from and where the 1D chart draws its dotted baseline.
  */
 @Immutable
+@Serializable
 data class Quote(
     val symbol: String,
     val price: Double,
@@ -149,6 +151,7 @@ enum class ChartRange(val label: StringResource, val yahooRange: String, val yah
 
 /** A price history for one [range]: the points, and the close before it began (the baseline a 1D chart draws). */
 @Immutable
+@Serializable
 data class PriceHistory(
     val symbol: String,
     val range: ChartRange,

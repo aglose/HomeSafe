@@ -9,24 +9,32 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Apps
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
@@ -51,9 +59,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
@@ -61,6 +72,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
+import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen
@@ -81,6 +93,8 @@ import homesafe.shared.generated.resources.connection_biometric_update_title
 import homesafe.shared.generated.resources.connection_brand_wordmark
 import homesafe.shared.generated.resources.connection_connect
 import homesafe.shared.generated.resources.connection_forget_saved_login
+import homesafe.shared.generated.resources.connection_open_apps
+import homesafe.shared.generated.resources.connection_open_apps_hint
 import homesafe.shared.generated.resources.connection_password_placeholder
 import homesafe.shared.generated.resources.connection_server_url_hint
 import homesafe.shared.generated.resources.connection_server_url_label
@@ -113,6 +127,17 @@ const val SIGN_IN_USERNAME_TEST_TAG = "sign_in_username"
 const val SIGN_IN_PASSWORD_TEST_TAG = "sign_in_password"
 const val SIGN_IN_CONNECT_TEST_TAG = "sign_in_connect"
 
+/** The button under the form that opens the apps' drawer, which needs no sign-in. */
+const val SIGN_IN_APPS_TEST_TAG = "sign_in_apps"
+
+/**
+ * Sign-in to the camera server, and the way to everything that doesn't need it: Weather, Fitness
+ * and Finance live in the shell's drawer, and the drawer opens from here as well (a button under
+ * the form, and the menu button of the skeleton shown while the server is being asked), so a
+ * server that is slow to answer, or a Tailscale that isn't up yet, keeps nobody from them.
+ * [onConnected] waits for an app opened that way to be closed: the shell doesn't take the screen
+ * out from under it.
+ */
 @Composable
 fun SecureConnectionScreen(
     onConnected: () -> Unit,
@@ -133,6 +158,12 @@ fun SecureConnectionScreen(
     // Busy for the form's purposes (fields locked) covers the biometric prompt too; the
     // skeleton below waits for an actual sign-in — Connect pressed, or the scan passed.
     val isConnecting = uiState is ConnectUiState.Connecting || uiState is ConnectUiState.AwaitingBiometrics
+    // The drawer and the app opened from it, as the shell has them, before there is a shell.
+    val apps = remember { ShellNavigation() }
+    val appsUp = apps.drawerOpen || apps.appOpen
+    // A weather notification's tap opens the weather app here rather than waiting on a sign-in
+    // that may not be possible; taken here first, the shell finds nothing left to open.
+    LaunchedEffect(apps) { apps.openWeatherFromNotifications() }
 
     // If biometric login is set up, prompt for it immediately on launch instead of making the
     // user tap the button first. Keyed on Unit so it only fires once per screen entry — if the
@@ -149,9 +180,11 @@ fun SecureConnectionScreen(
     // the saved one may be stale (the server's password changed), and a biometric-gated store
     // can't be compared against without a prompt, so the offer is the way to keep it current.
     // A biometric login is what's saved by definition, so there is nothing to offer.
-    LaunchedEffect(uiState) {
+    // Neither happens over an app opened from the drawer: it is being used, and closing it is
+    // what lets the sign-in that finished behind it carry on.
+    LaunchedEffect(uiState, appsUp) {
         val state = uiState
-        if (state is ConnectUiState.Success) {
+        if (state is ConnectUiState.Success && !appsUp) {
             if (viewModel.biometricLoginAvailable && !state.viaBiometrics) {
                 biometricSaveOffer = state.credentials
             } else {
@@ -190,228 +223,262 @@ fun SecureConnectionScreen(
     LaunchedEffect(showSkeleton) {
         if (showSkeleton) keyboard?.hide()
     }
-    AnimatedContent(
-        targetState = showSkeleton,
-        transitionSpec = {
-            // A plain dissolve. Mid-beat both sides are half-transparent, which is fine only
-            // because the root paints the app's own background underneath (see App.kt);
-            // over the platform window it flashed white.
-            fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) togetherWith
-                fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing))
-        },
-        label = "sign-in",
-    ) { skeleton ->
-        if (skeleton) {
-            ShellSkeleton()
-            return@AnimatedContent
-        }
+    Box(Modifier.fillMaxSize()) {
+        AnimatedContent(
+            targetState = showSkeleton,
+            // Under the drawer or an app the form is out of reach for screen readers too.
+            modifier = if (appsUp) Modifier.clearAndSetSemantics {} else Modifier,
+            transitionSpec = {
+                // A plain dissolve. Mid-beat both sides are half-transparent, which is fine only
+                // because the root paints the app's own background underneath (see App.kt);
+                // over the platform window it flashed white.
+                fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)) togetherWith
+                    fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing))
+            },
+            label = "sign-in",
+        ) { skeleton ->
+            if (skeleton) {
+                ShellSkeleton(onMenu = { apps.drawerOpen = true })
+                return@AnimatedContent
+            }
 
-        // Background under the system bars; the form itself inside them, lifted above the keyboard
-        // (the Activity is adjustResize, so the IME inset is real), and scrollable for when the
-        // keyboard leaves less room than the form needs.
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-                .safeDrawingPadding()
-                .imePadding()
-                .padding(24.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(
+            // Background under the system bars; the form itself inside them, lifted above the keyboard
+            // (the Activity is adjustResize, so the IME inset is real), and scrollable for when the
+            // keyboard leaves less room than the form needs.
+            Box(
                 modifier = Modifier
-                    .widthIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState()),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(48.dp),
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .safeDrawingPadding()
+                    .imePadding()
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                // Header
                 Column(
+                    modifier = Modifier
+                        .widthIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(48.dp),
                 ) {
-                    Text(
-                        text = stringResource(Res.string.connection_brand_wordmark),
-                        style = MaterialTheme.typography.displayLarge.copy(letterSpacing = 0.025.em),
-                        color = extraColors.textPrimary,
-                        textAlign = TextAlign.Center,
-                    )
-                    Row(
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surface, CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    // Header
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
-                        PulsingDot(color = MaterialTheme.colorScheme.secondary, pulsing = false)
                         Text(
-                            text = stringResource(Res.string.connection_tailscale_active),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.secondary,
+                            text = stringResource(Res.string.connection_brand_wordmark),
+                            style = MaterialTheme.typography.displayLarge.copy(letterSpacing = 0.025.em),
+                            color = extraColors.textPrimary,
+                            textAlign = TextAlign.Center,
                         )
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    // Server URL input
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = stringResource(Res.string.connection_server_url_label),
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 16.dp),
-                        )
-                        ConnectionTextField(
-                            value = serverUrl,
-                            onValueChange = { serverUrl = it },
-                            placeholder = stringResource(Res.string.connection_server_url_placeholder),
-                            leadingIcon = Icons.Filled.Dns,
-                            extraColors = extraColors,
-                            enabled = !isConnecting,
-                            modifier = Modifier.testTag(SIGN_IN_SERVER_URL_TEST_TAG),
-                        )
-                        Text(
-                            text = stringResource(Res.string.connection_server_url_hint),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.tertiaryContainer,
-                            modifier = Modifier.padding(start = 16.dp),
-                        )
-                    }
-
-                    // Username input
-                    ConnectionTextField(
-                        value = username,
-                        onValueChange = { username = it },
-                        placeholder = stringResource(Res.string.connection_username_placeholder),
-                        leadingIcon = Icons.Filled.Person,
-                        extraColors = extraColors,
-                        enabled = !isConnecting,
-                        modifier = Modifier.testTag(SIGN_IN_USERNAME_TEST_TAG),
-                    )
-
-                    // Password input
-                    ConnectionTextField(
-                        value = password,
-                        onValueChange = { password = it },
-                        placeholder = stringResource(Res.string.connection_password_placeholder),
-                        leadingIcon = Icons.Filled.Lock,
-                        extraColors = extraColors,
-                        enabled = !isConnecting,
-                        modifier = Modifier.testTag(SIGN_IN_PASSWORD_TEST_TAG),
-                        visualTransformation = PasswordVisualTransformation(),
-                    )
-
-                    if (uiState is ConnectUiState.Error) {
-                        Text(
-                            text = (uiState as ConnectUiState.Error).message.resolve(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(start = 16.dp),
-                        )
-                    }
-
-                    // Debug-only affordance: fills the form from a gitignored local properties
-                    // file so a developer never has to type or paste real credentials for
-                    // emulator testing. Absent entirely in release builds (see App()'s caller).
-                    if (debugAutofillCredentials != null) {
-                        TextButton(
-                            onClick = {
-                                if (debugAutofillCredentials.serverUrl.isNotBlank()) {
-                                    serverUrl = debugAutofillCredentials.serverUrl
-                                }
-                                username = debugAutofillCredentials.username
-                                password = debugAutofillCredentials.password
-                            },
-                            enabled = !isConnecting,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    Icons.Filled.Science,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                )
-                                Text(
-                                    stringResource(Res.string.connection_autofill_test_credentials),
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    // Connect button
-                    Button(
-                        onClick = { viewModel.connect(serverUrl, username, password) },
-                        enabled = !isConnecting,
-                        modifier = Modifier
-                            .testTag(SIGN_IN_CONNECT_TEST_TAG)
-                            .fillMaxWidth()
-                            .height(56.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                        ),
-                    ) {
                         Row(
+                            modifier = Modifier
+                                .background(MaterialTheme.colorScheme.surface, CircleShape)
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), CircleShape)
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(stringResource(Res.string.connection_connect), style = MaterialTheme.typography.labelLarge)
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                            PulsingDot(color = MaterialTheme.colorScheme.secondary, pulsing = false)
+                            Text(
+                                text = stringResource(Res.string.connection_tailscale_active),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.secondary,
+                            )
                         }
                     }
 
-                    if (viewModel.biometricLoginAvailable && hasSavedBiometricCredentials) {
-                        OutlinedButton(
-                            onClick = { viewModel.signInWithBiometrics() },
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        // Server URL input
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = stringResource(Res.string.connection_server_url_label),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                            ConnectionTextField(
+                                value = serverUrl,
+                                onValueChange = { serverUrl = it },
+                                placeholder = stringResource(Res.string.connection_server_url_placeholder),
+                                leadingIcon = Icons.Filled.Dns,
+                                extraColors = extraColors,
+                                enabled = !isConnecting,
+                                modifier = Modifier.testTag(SIGN_IN_SERVER_URL_TEST_TAG),
+                            )
+                            Text(
+                                text = stringResource(Res.string.connection_server_url_hint),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.tertiaryContainer,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                        }
+
+                        // Username input
+                        ConnectionTextField(
+                            value = username,
+                            onValueChange = { username = it },
+                            placeholder = stringResource(Res.string.connection_username_placeholder),
+                            leadingIcon = Icons.Filled.Person,
+                            extraColors = extraColors,
+                            enabled = !isConnecting,
+                            modifier = Modifier.testTag(SIGN_IN_USERNAME_TEST_TAG),
+                        )
+
+                        // Password input
+                        ConnectionTextField(
+                            value = password,
+                            onValueChange = { password = it },
+                            placeholder = stringResource(Res.string.connection_password_placeholder),
+                            leadingIcon = Icons.Filled.Lock,
+                            extraColors = extraColors,
+                            enabled = !isConnecting,
+                            modifier = Modifier.testTag(SIGN_IN_PASSWORD_TEST_TAG),
+                            visualTransformation = PasswordVisualTransformation(),
+                        )
+
+                        if (uiState is ConnectUiState.Error) {
+                            Text(
+                                text = (uiState as ConnectUiState.Error).message.resolve(),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                        }
+
+                        // Debug-only affordance: fills the form from a gitignored local properties
+                        // file so a developer never has to type or paste real credentials for
+                        // emulator testing. Absent entirely in release builds (see App()'s caller).
+                        if (debugAutofillCredentials != null) {
+                            TextButton(
+                                onClick = {
+                                    if (debugAutofillCredentials.serverUrl.isNotBlank()) {
+                                        serverUrl = debugAutofillCredentials.serverUrl
+                                    }
+                                    username = debugAutofillCredentials.username
+                                    password = debugAutofillCredentials.password
+                                },
+                                enabled = !isConnecting,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Filled.Science,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        stringResource(Res.string.connection_autofill_test_credentials),
+                                        style = MaterialTheme.typography.labelMedium,
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        // Connect button
+                        Button(
+                            onClick = { viewModel.connect(serverUrl, username, password) },
                             enabled = !isConnecting,
                             modifier = Modifier
+                                .testTag(SIGN_IN_CONNECT_TEST_TAG)
                                 .fillMaxWidth()
                                 .height(56.dp),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = extraColors.textPrimary,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
                             ),
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
-                                Icon(Icons.Filled.Fingerprint, contentDescription = null)
+                                Text(stringResource(Res.string.connection_connect), style = MaterialTheme.typography.labelLarge)
+                                Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                            }
+                        }
+
+                        if (viewModel.biometricLoginAvailable && hasSavedBiometricCredentials) {
+                            OutlinedButton(
+                                onClick = { viewModel.signInWithBiometrics() },
+                                enabled = !isConnecting,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(56.dp),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = extraColors.textPrimary,
+                                ),
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    Icon(Icons.Filled.Fingerprint, contentDescription = null)
+                                    Text(
+                                        stringResource(Res.string.connection_sign_in_with_biometrics, stringResource(viewModel.biometricDisplayName)),
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                }
+                            }
+
+                            TextButton(
+                                onClick = { viewModel.forgetBiometricCredentials() },
+                                enabled = !isConnecting,
+                            ) {
                                 Text(
-                                    stringResource(Res.string.connection_sign_in_with_biometrics, stringResource(viewModel.biometricDisplayName)),
-                                    style = MaterialTheme.typography.labelLarge,
+                                    text = stringResource(Res.string.connection_forget_saved_login),
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                             }
                         }
 
-                        TextButton(
-                            onClick = { viewModel.forgetBiometricCredentials() },
-                            enabled = !isConnecting,
-                        ) {
-                            Text(
-                                text = stringResource(Res.string.connection_forget_saved_login),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
+                        OpenAppsButton(onClick = { apps.drawerOpen = true }, extraColors = extraColors)
                     }
                 }
             }
         }
+
+        // Over the form and the skeleton alike, and clear of a cutout at the window's sides as the
+        // shell's own overlays are.
+        Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
+            ShellApps(apps, TopLevelRoute.Home, signedIn = false)
+        }
+    }
+}
+
+/** The way from the sign-in form to the apps that don't need it: opens the drawer they live in. */
+@Composable
+private fun OpenAppsButton(onClick: () -> Unit, extraColors: FrigateExtraColors) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(role = Role.Button, onClick = onClick)
+            .testTag(SIGN_IN_APPS_TEST_TAG)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Icon(Icons.Filled.Apps, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(stringResource(Res.string.connection_open_apps), style = MaterialTheme.typography.labelLarge, color = extraColors.textPrimary)
+            Text(stringResource(Res.string.connection_open_apps_hint), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

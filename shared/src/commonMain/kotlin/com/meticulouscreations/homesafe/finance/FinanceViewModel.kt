@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Holdings
@@ -46,6 +47,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -146,6 +148,10 @@ data class FinanceUiState(
  * been loaded (under the iOS 26 host each tab's view controller has its own, but they share the
  * repository's caches); nothing is polled until [setActive] says the app (or the drawer) is on
  * screen.
+ *
+ * With no connection the markets open on the quotes and charts the device kept, and the sheet on
+ * the one it kept, once [FinanceAccess] lets it be shown; while it doesn't, the sheet is not held
+ * here either, so nothing that draws from this state (the drawer's card) can show it.
  */
 @Inject
 @ViewModelKey
@@ -156,6 +162,7 @@ class FinanceViewModel(
     private val clock: Clock,
     private val tips: FinanceTipLedger,
     private val preferences: FinancePreferencesRepository,
+    private val access: FinanceAccess,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FinanceUiState())
@@ -186,6 +193,24 @@ class FinanceViewModel(
                 // A symbol just added wants its quote now, not at the next poll; in its own job, so
                 // a slow Yahoo never holds up the next change to the list.
                 if (pollJob?.isActive == true && _uiState.value.watchlist.any { it !in before }) launch { fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS) }
+            }
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            // How things stood when this began is what the first read of the sheet finds anyway.
+            var changed = false
+            combine(access.locked, access.online, ::Pair).collect { (locked, _) ->
+                if (locked) {
+                    // The household's figures leave with the lock. The quotes stay: they are anyone's.
+                    _uiState.update { it.copy(finance = null, financeLoading = false, sheetIssue = null) }
+                } else if (changed && sheetPollJob?.isActive == true) {
+                    // Unlocked, or the server is back: the sheet as it can now be had, without
+                    // waiting out the poll.
+                    launch { fetchSheet(refresh = false) }
+                }
+                changed = true
             }
         }
     }
@@ -265,8 +290,11 @@ class FinanceViewModel(
             result
                 .onSuccess { h -> _uiState.update { s -> s.copy(charts = s.charts + (key to ChartLoad(h, loading = false))) } }
                 .onFailure { e ->
+                    // With nothing drawn yet, the chart as the device kept it, under the error that says why it's old.
+                    val kept = if (_uiState.value.charts[key]?.history == null) repository.savedHistory(symbol, range) else null
+                    if (chartTickets[key] != ticket) return@launch
                     _uiState.update { s ->
-                        s.copy(charts = s.charts + (key to ChartLoad(s.charts[key]?.history, loading = false, error = e.shownAs(Res.string.fin_data_error_chart))))
+                        s.copy(charts = s.charts + (key to ChartLoad(s.charts[key]?.history ?: kept, loading = false, error = e.shownAs(Res.string.fin_data_error_chart))))
                     }
                 }
         }
@@ -339,6 +367,9 @@ class FinanceViewModel(
 
     /** Quotes every 15 s while a market is open, a minute when not, while on screen. */
     private suspend fun pollQuotes() {
+        // What the device kept goes up first, so the drawer's card and the Markets tab aren't
+        // blank while Yahoo is asked, or for good when it can't be.
+        showSavedQuotes(quoteSymbols())
         while (currentCoroutineContext().isActive) {
             fetchQuotes(maxAgeMillis = QUOTE_POLL_OPEN_MS)
             val now = clock.now().epochSeconds
@@ -347,15 +378,29 @@ class FinanceViewModel(
         }
     }
 
+    private fun quoteSymbols(): List<String> = ((MarketCatalog.indices + MarketCatalog.macro).map { it.symbol } + _uiState.value.watchlist).distinct()
+
     private suspend fun fetchQuotes(maxAgeMillis: Long) {
-        val symbols = (MarketCatalog.indices + MarketCatalog.macro).map { it.symbol } + _uiState.value.watchlist
-        repository.quotes(symbols.distinct(), maxAgeMillis)
+        val symbols = quoteSymbols()
+        repository.quotes(symbols, maxAgeMillis)
             .onSuccess { list ->
                 _uiState.update { s ->
                     s.copy(quotes = s.quotes + list.associateBy { it.symbol }, quotesError = null, quotesUpdatedEpochSeconds = clock.now().epochSeconds)
                 }
             }
-            .onFailure { e -> _uiState.update { it.copy(quotesError = e.shownAs(Res.string.fin_data_error_markets)) } }
+            .onFailure { e ->
+                // The sheet may have named tickers since the kept quotes went up.
+                showSavedQuotes(symbols)
+                _uiState.update { it.copy(quotesError = e.shownAs(Res.string.fin_data_error_markets)) }
+            }
+    }
+
+    /** Fills in, from what the device kept, whichever of [symbols] have no quote yet. A fetched quote is never replaced by a kept one. */
+    private suspend fun showSavedQuotes(symbols: List<String>) {
+        val missing = symbols.filter { it !in _uiState.value.quotes }
+        if (missing.isEmpty()) return
+        val kept = repository.savedQuotes(missing)
+        if (kept.isNotEmpty()) _uiState.update { s -> s.copy(quotes = kept.associateBy { it.symbol } + s.quotes) }
     }
 
     /** The sheet now and then every couple of minutes, each read finishing before the next wait starts. */
