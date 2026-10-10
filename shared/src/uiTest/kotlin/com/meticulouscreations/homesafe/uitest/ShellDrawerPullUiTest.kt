@@ -19,6 +19,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeDown
 import androidx.compose.ui.test.swipeLeft
@@ -132,14 +133,19 @@ class ShellDrawerPullUiTest {
         }
         val partWayOut = drawerLeft()
         assertTrue(partWayOut < 0.dp, "still part of the way off the screen's edge: $partWayOut")
+        // Under the drawer as it comes, the shell is out of a screen reader's reach already; the
+        // finger is found by the root from here on.
+        onNodeWithText("First row").assertDoesNotExist()
+        onNodeWithTag(bottomNavTestTag(TopLevelRoute.Moments)).assertDoesNotExist()
 
-        onNodeWithTag("content").performTouchInput {
+        onRoot().performTouchInput {
             moveBy(Offset(10.dp.toPx(), 0f), delayMillis = 60)
         }
         waitForIdle()
+        assertTrue(nav.drawerPull.active, "taking the shell's semantics away didn't cut the swipe off")
         assertTrue(drawerLeft() > partWayOut, "moves with the finger")
 
-        onNodeWithTag("content").performTouchInput {
+        onRoot().performTouchInput {
             // Held still before lifting, so the finger leaves with no speed to speak of.
             advanceEventTime(400)
             up()
@@ -149,6 +155,7 @@ class ShellDrawerPullUiTest {
             assertFalse(nav.drawerOpen)
         }
         onNodeWithTag("shell_drawer").assertDoesNotExist()
+        onNodeWithText("First row").assertIsDisplayed()
     }
 
     @Test
@@ -215,6 +222,39 @@ class ShellDrawerPullUiTest {
             assertFalse(nav.drawerOpen)
         }
         onNodeWithTag("shell_drawer").assertDoesNotExist()
+    }
+
+    /**
+     * A swipe always starts the drawer from shut, which is only right because none can start while
+     * it is anywhere else: sliding shut, it and its scrim are still over the shell and take the touch.
+     */
+    @Test
+    fun whileTheDrawerIsStillSlidingShutNoSwipeStartsUnderIt() = runComposeUiTest {
+        val nav = ShellNavigation()
+        setUpShell(nav)
+        runOnIdle { nav.drawerOpen = true }
+        onNodeWithTag("shell_drawer").assertIsDisplayed()
+
+        mainClock.autoAdvance = false
+        runOnUiThread { nav.drawerOpen = false }
+        mainClock.advanceTimeBy(100)
+        onNodeWithTag("shell_drawer").assertExists()
+        val slidingShut = drawerLeft()
+        assertTrue(slidingShut < 16.dp && slidingShut > (16 - 304).dp, "part of the way shut: $slidingShut")
+
+        onRoot().performTouchInput {
+            down(Offset(width * 0.9f, height * 0.7f))
+            moveBy(Offset(viewConfiguration.touchSlop, 0f), delayMillis = 0)
+            moveBy(Offset(10.dp.toPx(), 0f), delayMillis = 0)
+        }
+        runOnUiThread { assertFalse(nav.drawerPull.active) }
+        val after = drawerLeft()
+        assertTrue(after > slidingShut - 1.dp && after < slidingShut + 1.dp, "where it was, not jumped shut: $after from $slidingShut")
+        onRoot().performTouchInput { up() }
+
+        mainClock.autoAdvance = true
+        onNodeWithTag("shell_drawer").assertDoesNotExist()
+        runOnIdle { assertFalse(nav.drawerOpen) }
     }
 
     @Test

@@ -162,6 +162,8 @@ internal class DrawerPull(private val onOpen: () -> Unit) {
     var fraction by mutableFloatStateOf(0f)
         private set
 
+    // From shut, always: while the drawer is anywhere but shut (out, or still sliding shut) it and
+    // its scrim are drawn over the shell and take the touch, so no swipe starts under them.
     internal fun start() {
         fraction = 0f
         active = true

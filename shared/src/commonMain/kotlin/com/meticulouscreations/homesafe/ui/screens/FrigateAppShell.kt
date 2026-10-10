@@ -645,12 +645,15 @@ internal fun ShellScaffold(
             .then(if (immersive) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))),
     ) {
         // Under the drawer or an app opened from it the shell is out of reach for screen readers too,
-        // so focus can't wander behind the scrim to a camera or the menu button.
+        // so focus can't wander behind the scrim to a camera or the menu button. The same from the
+        // moment a swipe starts to draw the drawer out over it — which only takes the shell's
+        // semantics away: the swipe itself stays on, or it would be cut off as it began.
+        val underOverlay = contentObscured || drawerPull?.active == true
         Box(
             Modifier
                 .fillMaxSize()
                 .drawerPull(drawerPull.takeUnless { contentObscured || contentCovered || immersive })
-                .then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier),
+                .then(if (underOverlay) Modifier.clearAndSetSemantics {} else Modifier),
         ) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {
                 // Back is the overlay's while one is up, even where the shell shows through it.
