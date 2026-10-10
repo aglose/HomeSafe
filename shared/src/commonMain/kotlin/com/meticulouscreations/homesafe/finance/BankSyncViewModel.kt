@@ -193,11 +193,8 @@ class BankSyncViewModel(
                     _uiState.update { it.copy(notice = notice) }
                     continue
                 }
-                // Past that, only the relay answering with a problem counts against the link. Anything
-                // else is the request not getting there, as while the app sits behind the browser or
-                // behind the bank's own app for an OAuth sign-in, where Android holds back its network
-                // for as long as that takes: the link is waited on until it lapses.
-                if (e is BankSyncException && ++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e.shown(), isError = true))
+                // A dropped request while the app was behind the browser isn't the link failing.
+                if (++failures >= LINK_POLL_FAILURES) return endLink(BankNotice(e?.shown() ?: UiText.of(Res.string.fin_bank_error_generic), isError = true))
                 continue
             }
             failures = 0
@@ -281,8 +278,8 @@ class BankSyncViewModel(
 
     /**
      * The app's own words when the failure is one it understands, the relay's as written when it
-     * answered with some, a plain line otherwise: anything else is the network's, whose message
-     * is a URL and a timeout.
+     * answered with some, a plain line otherwise: anything else is the network's or a parser's,
+     * whose message is a URL and a timeout or a JSON offset.
      */
     private fun Throwable.shown(): UiText = if (this is LocalizedException) userMessage() else UiText.of(Res.string.fin_bank_error_generic)
 
