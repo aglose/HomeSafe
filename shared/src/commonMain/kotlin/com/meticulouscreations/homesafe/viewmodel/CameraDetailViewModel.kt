@@ -74,6 +74,7 @@ import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.StringResource
 import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.min
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -430,6 +431,26 @@ class CameraDetailViewModel(
 
         val next = history.playlistFor(target)
         if (next == null) goLive() else loadPlaylist(next, target)
+    }
+
+    /**
+     * Step [seconds] through the recording, back for a negative number: the double tap on the
+     * side of the video. Counted in footage ([RecordingHistory.skipFrom]) and from where the
+     * player is headed rather than where it last reported being, so taps in quick succession add
+     * up instead of each starting from the same frame. A step forward off the end of what was
+     * recorded rejoins live.
+     *
+     * At the live edge there is only back, and the newest frame to step back from is the newest
+     * one Frigate has filed, a little behind live. Returns whether there was anywhere to go.
+     */
+    fun skipBy(seconds: Double): Boolean {
+        val current = _playback.value
+        val heading = current.seekPreviewEpochSeconds ?: current.playheadEpochSeconds
+        if (heading == null && seconds >= 0) return false
+        val from = heading ?: min(now() - LIVE_EDGE_SECONDS, history.latestEndEpochSeconds ?: return false)
+        val target = history.skipFrom(from, seconds) ?: return false
+        seekTo(target)
+        return true
     }
 
     fun goLive() {

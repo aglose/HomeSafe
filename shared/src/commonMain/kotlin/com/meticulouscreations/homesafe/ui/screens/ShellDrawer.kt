@@ -3,14 +3,17 @@ package com.meticulouscreations.homesafe.ui.screens
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitHorizontalTouchSlopOrCancellation
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -66,6 +70,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.input.pointer.util.VelocityTracker
+import androidx.compose.ui.input.pointer.util.addPointerInputChange
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
@@ -133,6 +141,94 @@ private val DrawerWidth = 304.dp
 /** How much of its width a full back swipe draws the drawer in by before letting go closes it. */
 private const val DRAWER_BACK_PEEK = 0.25f
 
+/** Let go of slower than the fling below, the drawer goes whichever way it is past this much of its width. */
+private const val DRAWER_SETTLE_FRACTION = 1f / 3f
+
+/** A flick this fast, in pixels a second, sends the drawer the way it was flicked however far it had got. */
+private const val DRAWER_FLING_VELOCITY = 1200f
+
+/**
+ * The drawer drawn out by hand: a swipe across the shell toward the drawer's side, which needs no
+ * reach for the menu button at the top of the screen — a thumb anywhere on the page will do. The
+ * shell's chrome wears the gesture ([drawerPull]); the drawer follows [fraction] while the finger
+ * is on it ([active]) and carries on from there when it is let go: out ([onOpen]) past a third of
+ * its width or on a flick toward it, shut again otherwise.
+ */
+@Stable
+internal class DrawerPull(private val onOpen: () -> Unit) {
+    /** True from the moment a swipe starts to show the drawer until the finger lets go of it. */
+    var active by mutableStateOf(false)
+        private set
+
+    /** How far out the swipe has drawn it, 0 (shut) to 1 (out); where it was let go, between swipes. */
+    var fraction by mutableFloatStateOf(0f)
+        private set
+
+    // From shut, always: while the drawer is anywhere but shut (out, or still sliding shut) it and
+    // its scrim are drawn over the shell and take the touch, so no swipe starts under them.
+    internal fun start() {
+        fraction = 0f
+        active = true
+    }
+
+    internal fun dragBy(fractionDelta: Float) {
+        if (active) fraction = (fraction + fractionDelta).coerceIn(0f, 1f)
+    }
+
+    /** The finger left at [velocity] pixels a second; null when the swipe was taken away from it instead. */
+    internal fun letGo(velocity: Float?) {
+        if (!active) return
+        active = false
+        val open = when {
+            velocity == null -> false
+            velocity > DRAWER_FLING_VELOCITY -> true
+            velocity < -DRAWER_FLING_VELOCITY -> false
+            else -> fraction > DRAWER_SETTLE_FRACTION
+        }
+        if (open) onOpen()
+    }
+}
+
+/**
+ * The swipe that draws the drawer out, for the part of the shell it can start on; null [pull]
+ * where it can't (a nested screen, or under something already over the shell).
+ *
+ * Whatever is under the finger has first refusal — a row that scrolls sideways keeps its swipe, a
+ * list still scrolls — and only a swipe toward the drawer's side is taken, with one finger: a
+ * pinch on a camera card is the card's. It starts clear of the screen's edge on Android, where a
+ * swipe in from the edge is the system's Back.
+ */
+internal fun Modifier.drawerPull(pull: DrawerPull?): Modifier = if (pull == null) {
+    this
+} else {
+    pointerInput(pull) {
+        val width = DrawerWidth.toPx()
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val start = awaitHorizontalTouchSlopOrCancellation(down.id) { change, overSlop ->
+                if (overSlop > 0f && currentEvent.changes.count { it.pressed } == 1) {
+                    change.consume()
+                    pull.start()
+                    pull.dragBy(overSlop / width)
+                }
+            } ?: return@awaitEachGesture
+            val velocity = VelocityTracker()
+            velocity.addPointerInputChange(start)
+            var lifted = false
+            try {
+                lifted = horizontalDrag(start.id) { change ->
+                    velocity.addPointerInputChange(change)
+                    pull.dragBy(change.positionChange().x / width)
+                    change.consume()
+                }
+            } finally {
+                // Also when the gesture is cut short (the shell went under something): never left half out.
+                pull.letGo(if (lifted) velocity.calculateVelocity().x else null)
+            }
+        }
+    }
+}
+
 /** How much of an app opened from the drawer a full back swipe drains before letting go closes it. */
 private const val APP_BACK_PEEK = 0.35f
 
@@ -141,7 +237,8 @@ private const val APP_BACK_PEEK = 0.35f
  * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside,
  * Fitness, whose card says which workout is up next, and Finance, whose card carries a live
  * S&P 500 line — so the drawer is worth a glance on its own.
- * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it.
+ * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it. A swipe
+ * the other way across the shell draws it out too ([pull]), under the finger as it goes.
  *
  * The sign-in screen opens it too, before there are any cameras to go to: there
  * [showHomeSecurity] is false and it lists the apps alone. [financeLocked] says the Finance card
@@ -155,6 +252,7 @@ internal fun ShellDrawer(
     finance: FinanceUiState,
     weather: WeatherUiState,
     fitness: FitnessUiState,
+    pull: DrawerPull,
     onSelectTab: (TopLevelRoute) -> Unit,
     onOpenFinance: (Offset) -> Unit,
     onOpenWeather: (Offset) -> Unit,
@@ -163,12 +261,19 @@ internal fun ShellDrawer(
     showHomeSecurity: Boolean = true,
     financeLocked: Boolean = false,
 ) {
-    val progress by animateFloatAsState(
-        if (open) 1f else 0f,
-        if (open) spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow) else tween(220, easing = FastOutSlowInEasing),
-        label = "drawer",
-    )
-    if (!open && progress == 0f) return
+    val reveal = remember { Animatable(if (open) 1f else 0f) }
+    val pulling = pull.active
+    LaunchedEffect(open, pulling) {
+        if (pulling) {
+            // By hand: wherever the finger has drawn it to.
+            snapshotFlow { pull.fraction }.collect { reveal.snapTo(it) }
+        } else {
+            // On from wherever it is: shut, out, or where a swipe let go of it.
+            reveal.animateTo(if (open) 1f else 0f, if (open) spring(dampingRatio = 0.86f, stiffness = Spring.StiffnessMediumLow) else tween(220, easing = FastOutSlowInEasing))
+        }
+    }
+    val shut by remember { derivedStateOf { reveal.value == 0f } }
+    if (!open && !pulling && shut) return
     val density = LocalDensity.current
     val widthPx = with(density) { DrawerWidth.toPx() }
     var drag by remember { mutableFloatStateOf(0f) }
@@ -192,7 +297,7 @@ internal fun ShellDrawer(
         Box(
             Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = progress * (1f + offset() / widthPx) }
+                .graphicsLayer { alpha = reveal.value * (1f + offset() / widthPx) }
                 .background(Color.Black.copy(alpha = 0.6f))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClickLabel = stringResource(Res.string.shell_drawer_close), onClick = onClose),
         )
@@ -200,7 +305,7 @@ internal fun ShellDrawer(
             Modifier
                 .fillMaxHeight()
                 .width(DrawerWidth)
-                .graphicsLayer { translationX = -(1f - progress) * widthPx + offset() }
+                .graphicsLayer { translationX = -(1f - reveal.value) * widthPx + offset() }
                 .draggable(
                     dragState,
                     Orientation.Horizontal,
@@ -234,9 +339,9 @@ internal fun ShellDrawer(
                     Spacer(Modifier.height(24.dp))
                 }
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
-                WeatherDrawerCard(weather, animated = open, onOpen = onOpenWeather)
+                WeatherDrawerCard(weather, animated = open || pulling, onOpen = onOpenWeather)
                 Spacer(Modifier.height(12.dp))
-                FitnessDrawerCard(fitness, animated = open, onOpen = onOpenFitness)
+                FitnessDrawerCard(fitness, animated = open || pulling, onOpen = onOpenFitness)
                 Spacer(Modifier.height(12.dp))
                 FinanceDrawerCard(finance, financeLocked, onOpenFinance)
             }
