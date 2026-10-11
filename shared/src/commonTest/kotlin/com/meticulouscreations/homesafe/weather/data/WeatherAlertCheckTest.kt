@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.data.DeviceIdentityStore
 import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.InMemoryWeatherDao
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.KeyedTextLoader
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.weather.WeatherData
@@ -11,11 +12,16 @@ import com.meticulouscreations.homesafe.weather.WeatherData.at
 import com.meticulouscreations.homesafe.weather.domain.AlertSeverity
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
-import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeChart
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeIcon
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.weather_minutes_short
 import homesafe.shared.generated.resources.weather_notice_soon_body_lasting
 import homesafe.shared.generated.resources.weather_notice_soon_here_lasting
+import homesafe.shared.generated.resources.weather_now
 import homesafe.shared.generated.resources.weather_story_rain_starting
 import homesafe.shared.generated.resources.weather_time_pm
 import kotlinx.coroutines.CoroutineScope
@@ -28,6 +34,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class WeatherAlertCheckTest {
@@ -82,18 +89,82 @@ class WeatherAlertCheckTest {
     fun theWarningAndTheComingRainAreBothPosted() = runTest {
         val h = harness()
         assertEquals(2, h.check.run())
-        assertEquals(
-            listOf(
-                WeatherNotification("alert:urn:tornado", "Tornado Warning", "Tornado warning until 5 PM", urgent = true),
-                WeatherNotification(
-                    "soon:${at(0, 15, 30) / 3_600}",
-                    keyed(UiText.of(Res.string.weather_story_rain_starting, 30)),
-                    keyed(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Portland", 30)),
-                    urgent = false,
-                ),
-            ),
-            h.notifier.posted,
-        )
+        val (warning, rain) = h.notifier.posted
+        assertEquals(listOf("alert:urn:tornado", "Tornado Warning", "Tornado warning until 5 PM"), listOf(warning.id, warning.title, warning.body))
+        assertTrue(warning.urgent)
+        assertEquals("soon:${at(0, 15, 30) / 3_600}", rain.id)
+        assertEquals(keyed(UiText.of(Res.string.weather_story_rain_starting, 30)), rain.title)
+        assertEquals(keyed(UiText.of(Res.string.weather_notice_soon_body_lasting, pm("3:30"), "Portland", 30)), rain.body)
+        assertFalse(rain.urgent)
+    }
+
+    @Test
+    fun aNotificationCarriesItsPictureInTheReadersWords() = runTest {
+        val h = harness()
+        h.check.run()
+        val (warning, rain) = h.notifier.posted
+        assertEquals(WeatherNoticeArt(icon = WeatherNoticeIcon.TORNADO), warning.art)
+        assertEquals(WeatherNoticeIcon.RAIN, rain.art.icon)
+        assertEquals(keyed(pm("3:30")), rain.art.headline)
+        assertEquals(listOf(WeatherNoticeArt.Fact(WeatherNoticeIcon.RAIN, keyed(UiText.of(Res.string.weather_minutes_short, 30)))), rain.art.facts)
+        // Now, then each half hour of the two the chart covers.
+        assertEquals(listOf(keyed(UiText.of(Res.string.weather_now)), keyed(pm("3:30")), keyed(pm("4")), keyed(pm("4:30")), keyed(pm("5"))), rain.art.ticks)
+        assertEquals(at(0, 15, 30), (rain.art.chart as WeatherNoticeChart.Soon).startEpochSeconds)
+    }
+
+    @Test
+    fun aNotificationSaysWhereItIsForWhenItHappensAndWhenItIsOver() = runTest {
+        val h = harness()
+        h.check.run()
+        val (warning, rain) = h.notifier.posted
+        assertEquals("Portland", rain.place)
+        assertEquals(at(0, 15, 30), rain.eventEpochSeconds)
+        assertEquals(at(0, 16), rain.expiresEpochSeconds, "down once the shower has passed")
+        assertEquals(null, warning.expiresEpochSeconds, "a warning with no end stays until it is dismissed")
+    }
+
+    @Test
+    fun aTapLandsOnWhatTheNotificationWasAbout() = runTest {
+        val h = harness()
+        h.check.run()
+        val (warning, rain) = h.notifier.posted
+        assertEquals(WeatherDeepLink(WeatherDeepLink.View.TODAY, placeId = Place.CURRENT_ID, alertKey = "urn:tornado"), warning.link)
+        assertEquals(WeatherDeepLink(WeatherDeepLink.View.TODAY, placeId = Place.CURRENT_ID), rain.link)
+    }
+
+    @Test
+    fun whatIsOverIsSweptBeforeAnythingNewIsPosted() = runTest {
+        val h = harness()
+        h.check.run()
+        assertEquals(listOf(now), h.notifier.swept)
+    }
+
+    // ---- sample --------------------------------------------------------------------------------
+
+    @Test
+    fun aSampleIsPostedWhateverTheSwitchesSayAndTheLedgerNeverHearsOfIt() = runTest {
+        val h = harness(WeatherData.report(now))
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = false)) }
+        assertTrue(h.check.sample())
+        val sample = h.notifier.posted.single()
+        assertEquals(WeatherNoticePlanner.SAMPLE_KEY, sample.id)
+        assertEquals("Portland", sample.place)
+        assertEquals(WeatherDeepLink(WeatherDeepLink.View.TODAY, placeId = Place.CURRENT_ID), sample.link)
+        assertTrue(sample.art.chart is WeatherNoticeChart.Day)
+        assertTrue(h.ledger.sent(now).isEmpty())
+    }
+
+    @Test
+    fun noSampleGoesOutWhereTheOsWouldNotShowIt() = runTest {
+        val h = harness(WeatherData.report(now)).apply { notifier.allowed = false }
+        assertFalse(h.check.sample())
+        assertTrue(h.notifier.posted.isEmpty())
+    }
+
+    @Test
+    fun aSampleThatCannotGetAForecastSaysSoRatherThanThrowing() = runTest {
+        val h = harness(report = null).apply { repository.onReport = { Result.failure(IllegalStateException("offline")) } }
+        assertFalse(h.check.sample())
     }
 
     @Test

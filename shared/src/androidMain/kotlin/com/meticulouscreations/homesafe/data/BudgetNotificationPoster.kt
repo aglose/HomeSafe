@@ -15,6 +15,8 @@ import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.ui.notification.NotificationGlyph
+import com.meticulouscreations.homesafe.ui.notification.drawableRes
 
 /**
  * Posts the relay's budget alerts: the month's card spending near or past a limit, or into the
@@ -30,6 +32,9 @@ object BudgetNotificationPoster {
 
     /** Its own id beside the detections' (`AlertNotificationPoster`), so a tag can never collide with one of theirs. */
     private const val NOTIFICATION_ID = 2
+
+    private const val CLOSE_COLOR = 0xFFE39A1E.toInt()
+    private const val OVER_COLOR = 0xFFE5484D.toInt()
 
     fun ensureChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
@@ -57,11 +62,19 @@ object BudgetNotificationPoster {
         }
     }
 
-    fun show(context: Context, id: String, title: String, body: String) {
+    /**
+     * Posts it under [id]. [kind] is which line was crossed, where this build could read that: it
+     * picks the colour (amber for close to a limit, red for past one), and nothing else.
+     */
+    fun show(context: Context, id: String, title: String, body: String, kind: BudgetAlert.Kind? = null) {
         if (!canPost(context)) return
         ensureChannel(context)
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_detection)
+            .setSmallIcon(NotificationGlyph.BUDGET.drawableRes)
+            .setColor(if (kind == null || kind == BudgetAlert.Kind.CLOSE) CLOSE_COLOR else OVER_COLOR)
+            .setTicker(title)
+            // A group of their own, so Android never bundles the month's spending in with the cameras' alerts.
+            .setGroup(CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

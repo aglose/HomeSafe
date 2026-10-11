@@ -97,6 +97,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
@@ -174,6 +175,7 @@ internal class WeatherActions(
     val onNoticesChange: (WeatherNoticeSettings) -> Unit = {},
     val onStillSkyChange: (Boolean) -> Unit = {},
     val onAllowNotifications: () -> Unit = {},
+    val onSendSample: () -> Unit = {},
     val onRadarVisible: (Boolean) -> Unit = {},
 )
 
@@ -184,7 +186,13 @@ internal class WeatherActions(
  * and Places and Settings pushed over the top. Back pops a page, then leaves the app ([onClose]).
  */
 @Composable
-fun WeatherApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true) {
+fun WeatherApp(
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+    link: WeatherDeepLink? = null,
+    onShowLink: () -> Unit = {},
+) {
     // The activity's instance, the one the drawer's card shares.
     val viewModel: WeatherViewModel = metroViewModel()
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -203,10 +211,11 @@ fun WeatherApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onNoticesChange = viewModel::setNotices,
             onStillSkyChange = viewModel::setStillSky,
             onAllowNotifications = viewModel::requestNotificationPermission,
+            onSendSample = viewModel::sendSampleNotification,
             onRadarVisible = viewModel::setRadarVisible,
         )
     }
-    WeatherAppContent(state, viewModel.tiles, actions, modifier, active)
+    WeatherAppContent(state, viewModel.tiles, actions, modifier, active, link = link, onShowLink = onShowLink)
 }
 
 /** [WeatherApp] without its view model: everything on screen from one [state], for previews and tests as much as for the app. */
@@ -220,9 +229,49 @@ internal fun WeatherAppContent(
     active: Boolean = true,
     initialTab: WeatherTab = WeatherTab.TODAY,
     initialPage: WeatherPage? = null,
+    link: WeatherDeepLink? = null,
+    onShowLink: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<WeatherPage>().apply { initialPage?.let(::add) } }
+
+    // What a notification's tap asked for ([link]). The tab is turned to at once; its place and
+    // its warning wait in [wanted] for the forecast that holds them, which on a cold start is
+    // still on its way.
+    var wanted by remember { mutableStateOf<WeatherDeepLink?>(null) }
+    val shown by rememberUpdatedState(onShowLink)
+    LaunchedEffect(link) {
+        val asked = link ?: return@LaunchedEffect
+        pages.clear()
+        tab = when (asked.view) {
+            WeatherDeepLink.View.TODAY -> WeatherTab.TODAY
+            WeatherDeepLink.View.FORECAST -> WeatherTab.FORECAST
+            WeatherDeepLink.View.RADAR -> WeatherTab.RADAR
+        }
+        wanted = asked
+        shown()
+    }
+    // Read here, not inside the effect: a launch acts on the link it was launched for, once.
+    val waiting = wanted
+    LaunchedEffect(waiting, state.places, state.selectedId, state.settled) {
+        val asked = waiting ?: return@LaunchedEffect
+        val entry = state.places.firstOrNull { it.place.id == asked.placeId }
+        // Its place isn't here yet: wait for it, unless the places are all in and it isn't among them.
+        if (entry == null && asked.placeId != null && !state.settled) return@LaunchedEffect
+        if (entry != null && state.selected?.place?.id != entry.place.id) {
+            actions.onSelect(entry.place.id)
+            return@LaunchedEffect
+        }
+        val alertKey = asked.alertKey
+        if (alertKey != null) {
+            val report = state.selected?.report ?: return@LaunchedEffect
+            // Not there any more means it has lapsed: Today is the right place to have landed.
+            report.alerts.firstOrNull { it.key == alertKey }?.let { alert ->
+                if (pages.none { it is WeatherPage.Alert && it.id == alert.id }) pages += WeatherPage.Alert(alert.id)
+            }
+        }
+        wanted = null
+    }
     // The hour a finger is holding on the hourly strip: the whole sky turns to it.
     var scrub by remember { mutableStateOf<Long?>(null) }
     val dim = remember { mutableFloatStateOf(0f) }
@@ -356,6 +405,7 @@ internal fun WeatherAppContent(
                         onNoticesChange = actions.onNoticesChange,
                         onStillSkyChange = actions.onStillSkyChange,
                         onAllowNotifications = actions.onAllowNotifications,
+                        onSendSample = actions.onSendSample,
                     )
 
                     is WeatherPage.Alert -> {

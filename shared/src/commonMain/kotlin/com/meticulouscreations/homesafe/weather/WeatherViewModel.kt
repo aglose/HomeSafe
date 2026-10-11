@@ -421,6 +421,11 @@ class WeatherViewModel(
         }
     }
 
+    /** Posts a sample weather notification, for someone in Settings who wants to see what one looks like. */
+    fun sendSampleNotification() {
+        viewModelScope.launch { alertCheck.sample() }
+    }
+
     private fun sameSpot(a: Place, b: Place) = abs(a.latitude - b.latitude) <= SAME_SPOT_DEGREES && abs(a.longitude - b.longitude) <= SAME_SPOT_DEGREES
 
     private companion object {

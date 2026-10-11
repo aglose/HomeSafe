@@ -1,8 +1,12 @@
 package com.meticulouscreations.homesafe.weather.data
 
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
+import com.meticulouscreations.homesafe.weather.domain.WeatherNotice
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeKind
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeLedger
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
@@ -62,6 +66,22 @@ class WeatherAlertCheck(
         runCatching { check() }.getOrDefault(0)
     }
 
+    /**
+     * Posts a sample notification (see [WeatherNoticePlanner.sample]) for where the phone is, and
+     * says whether the OS took it. Asked for from Settings, so it goes out whatever the hour and
+     * whatever the switches say, and the ledger never hears of it.
+     */
+    suspend fun sample(): Boolean = running.withLock {
+        runCatching {
+            if (!notifier.isSupported || !notifier.isAllowed()) return@runCatching false
+            val place = place() ?: return@runCatching false
+            val report = repository.report(place, maxAgeSeconds = SAMPLE_MAX_AGE_SECONDS).getOrNull() ?: return@runCatching false
+            val units = preferences.observe().first().units
+            val notice = WeatherNoticePlanner.sample(report, place.name.takeIf { it.isNotBlank() }, units, clock.now().epochSeconds) ?: return@runCatching false
+            notifier.notify(notice.toNotification(place))
+        }.getOrDefault(false)
+    }
+
     private suspend fun check(): Int {
         if (!notifier.isSupported) return 0
         val prefs = preferences.observe().first()
@@ -72,14 +92,42 @@ class WeatherAlertCheck(
         val place = place() ?: return 0
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
         val now = clock.now().epochSeconds
+        // Before anything new goes up: what was said earlier and is over comes down.
+        runCatching { notifier.sweep(now) }
         val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
         // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
         return notices.count { notice ->
-            val posted = notifier.notify(WeatherNotification(notice.key, textLoader.load(notice.title), textLoader.load(notice.body), notice.urgent))
+            val posted = notifier.notify(notice.toNotification(place))
             if (posted) ledger.record(notice.key, now)
             posted
         }
     }
+
+    /** [this] in the reader's language, with where its tap lands: the part of the weather app it is about, on [place]. */
+    private suspend fun WeatherNotice.toNotification(place: Place) = WeatherNotification(
+        id = key,
+        title = textLoader.load(title),
+        body = textLoader.load(body),
+        art = WeatherNoticeArt(
+            icon = icon,
+            isDay = isDay,
+            caption = caption?.let { textLoader.load(it) },
+            headline = headline?.let { textLoader.load(it) },
+            facts = facts.map { WeatherNoticeArt.Fact(it.icon, textLoader.load(it.text)) },
+            chart = chart,
+            ticks = chart?.ticks.orEmpty().map { textLoader.load(it) },
+        ),
+        urgent = urgent,
+        place = this.place,
+        detail = detail?.let { textLoader.load(it) },
+        eventEpochSeconds = eventEpochSeconds,
+        expiresEpochSeconds = expiresEpochSeconds,
+        link = WeatherDeepLink(
+            view = if (kind == WeatherNoticeKind.TOMORROW) WeatherDeepLink.View.FORECAST else WeatherDeepLink.View.TODAY,
+            placeId = place.id,
+            alertKey = alertKey,
+        ),
+    )
 
     private suspend fun place(): Place? =
         runCatching { locator.locate() }.getOrNull()
@@ -89,5 +137,8 @@ class WeatherAlertCheck(
     private companion object {
         /** The forecast's own quarter-hour step: a check never reasons from anything older. */
         const val MAX_AGE_SECONDS = 300L
+
+        /** A sample is of how a notification looks, not of the last quarter hour: the forecast on screen will do. */
+        const val SAMPLE_MAX_AGE_SECONDS = 1_800L
     }
 }
