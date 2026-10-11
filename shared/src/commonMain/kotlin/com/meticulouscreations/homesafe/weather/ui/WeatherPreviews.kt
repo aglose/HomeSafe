@@ -1,8 +1,17 @@
 package com.meticulouscreations.homesafe.weather.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.weather.PlaceWeather
@@ -18,9 +27,12 @@ import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.PrecipSlice
 import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.weather_forecast_trend_title
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.PI
 import kotlin.math.cos
 
@@ -244,6 +256,18 @@ private fun WeatherTodayRainPreview() {
 @Composable
 private fun WeatherForecastPreview() {
     WeatherAppContent(WeatherFixtures.state(), NoTiles, WeatherActions(), initialTab = WeatherTab.FORECAST)
+}
+
+// The strip alone, with Sunday picked: the jelly at rest on it.
+@Preview(widthDp = 412)
+@Composable
+private fun WeatherDayTimelinePreview() {
+    val report = WeatherFixtures.report
+    Box(Modifier.background(Brush.verticalGradient(listOf(Color(0xFF4A6A8C), Color(0xFF1B2638)))).padding(vertical = 14.dp)) {
+        WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.AutoMirrored.Filled.ShowChart, padding = 0.dp) {
+            DayTimeline(report, WeatherFixtures.NOW, selected = 3, onSelect = {})
+        }
+    }
 }
 
 @Preview

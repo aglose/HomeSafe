@@ -8,7 +8,7 @@ that tell you rain is coming.
 | Tab | What it shows |
 |---|---|
 | **Today** | The temperature and what the day is doing, written straight on the sky. Then cards: any government warning in force, the next two hours by the quarter hour (only when rain is near), the next day hour by hour, the best time to be outside, a still of the radar, and the details: UV, wind, sun, moon, humidity, pressure, precipitation, air quality, visibility |
-| **Forecast** | The ten days as one picture (highs and lows as two lines, rain as bars), then the list: each day's sky, chance of rain and range against the week's. A day opens in place into its own sky, its hours and its numbers |
+| **Forecast** | The ten days as a strip to scroll along, a column a day: its date and sky, its high and low as figures on the week's two curves, what falls and how hard it blows. Then the list: each day's sky, chance of rain and range against the week's. A day opens in place into its own sky, its hours and its numbers; tapping one in the strip opens it in the list and sets it in a blob of clear jelly that slides, stretches and wobbles from day to day |
 | **Radar** | A map the height of the screen with the radar loop on it: the past two hours, and over the US the next two as a model's forecast. Play, scrub, pinch, double-tap |
 
 Swipe sideways on Today or Forecast to move between places. The top bar's name opens **Places**
