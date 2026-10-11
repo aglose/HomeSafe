@@ -69,6 +69,13 @@ data class BankSyncUiState(
     val notice: BankNotice? = null,
 ) {
     val syncing: Boolean get() = syncRequested || bank?.syncing == true
+
+    /**
+     * Something that changes what the relay keeps or writes has been asked for and not answered: a
+     * sync, an unlinking, an undo, a line paused or resumed. One at a time, so nothing else of the
+     * kind can be started meanwhile.
+     */
+    val acting: Boolean get() = syncRequested || unlinking != null || undoing != null || changingLine != null
 }
 
 /**
@@ -279,9 +286,6 @@ class BankSyncViewModel(
                 }
         }
     }
-
-    /** One thing at a time changes what the relay keeps or writes: a sync asked for, an unlinking, an undo, a line paused or resumed. */
-    private val BankSyncUiState.acting: Boolean get() = syncRequested || unlinking != null || undoing != null || changingLine != null
 
     /** Puts back what one write to the budget sheet changed. The relay pauses those lines, so the next sync doesn't write them again. */
     fun undoWrite(writeId: Long) {

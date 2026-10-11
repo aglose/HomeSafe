@@ -460,21 +460,23 @@ private fun com.meticulouscreations.homesafe.finance.ui.FeedCard(feed: com.metic
     - now: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.FillLineRow(line: com.meticulouscreations.homesafe.finance.domain.SheetFillLine, busy: kotlin.Boolean, onPause: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.FillLineRow(line: com.meticulouscreations.homesafe.finance.domain.SheetFillLine, busy: kotlin.Boolean, enabled: kotlin.Boolean, onPause: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - line: STABLE (marked @Stable or @Immutable)
     - busy: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
     - onPause: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.FillLinesCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill, changing: kotlin.String?, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.FillLinesCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill, changing: kotlin.String?, enabled: kotlin.Boolean, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - fill: STABLE (marked @Stable or @Immutable)
     - changing: STABLE (class with no mutable properties)
+    - enabled: STABLE (primitive type)
     - onPauseLine: STABLE (function type)
 
 @Composable
@@ -1527,13 +1529,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.WhatIfCard(whatIf: com.m
     - kind: STABLE (class with no mutable properties)
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.WriteCard(write: com.meticulouscreations.homesafe.finance.domain.SheetWrite, now: kotlin.Long, undoing: kotlin.Boolean, onUndo: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.WriteCard(write: com.meticulouscreations.homesafe.finance.domain.SheetWrite, now: kotlin.Long, undoing: kotlin.Boolean, enabled: kotlin.Boolean, onUndo: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - write: STABLE (marked @Stable or @Immutable)
     - now: STABLE (primitive type)
     - undoing: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
     - onUndo: STABLE (function type)
 
 @Composable

@@ -105,6 +105,7 @@ internal object BankSyncFixtures {
                 line("Credit cards", listOf("Chase Sapphire Preferred 9911"), SheetFillStatus.PAUSED, "F39", null),
                 line("Old 401(k)", listOf("Vanguard Acme 401(k) 3301"), SheetFillStatus.NO_ACCOUNT, null, null, missing = listOf("Vanguard Acme 401(k) 3301")),
                 line("Total", listOf("Fidelity Individual 2040"), SheetFillStatus.NOT_A_NUMBER, "K17", 58_117.03),
+                line("Brokerage", listOf("Fidelity Individual 2040"), SheetFillStatus.SAME_CELL, "K11", 58_117.03),
             ),
             writes = listOf(
                 SheetWrite(

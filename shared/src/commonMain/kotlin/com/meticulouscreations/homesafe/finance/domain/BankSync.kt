@@ -134,6 +134,9 @@ enum class SheetFillStatus(val wire: String) {
 
     /** The cell holds a formula or words, which are never written over. */
     NOT_A_NUMBER("not_a_number"),
+
+    /** Another line comes to the same cell, so neither is written. */
+    SAME_CELL("same_cell"),
     ;
 
     /** The line was left alone for a reason only a person can clear. */
@@ -193,6 +196,11 @@ data class SheetFill(
     val checkedAtEpochSeconds: Long? = null,
     /** The relay's code for why the last fill failed: `bad_file`, `not_shared`, `api_disabled`, `not_found`, `no_key`, `google_error`. */
     val error: String? = null,
+    /** With `bad_file`, what is wrong with the list of cells: `unreadable`, `no_lines`, `bad_line`, `same_line`. */
+    val errorReason: String? = null,
+    /** The line of the list [errorReason] is about, counted from 1. */
+    val errorLine: Int? = null,
+    /** The relay's or Google's own words for [error]: detail, in English. */
     val message: String? = null,
     /** The Google account the budget sheet must be shared with as an editor. */
     val serviceAccount: String? = null,

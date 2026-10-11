@@ -115,6 +115,7 @@ What keeps a write off the wrong cell:
 - **A line is written whole or not at all.** If one of its accounts is unlinked or has no balance,
   the sum of the rest is not written.
 - **A cell that already holds the number isn't touched**, so a day with no movement writes nothing.
+- **Two lines that come to the same cell are both left alone**, since which was meant can't be told.
 
 A line that was left alone says why on the Bank sync page, under **Filled in your sheet**.
 
@@ -124,9 +125,10 @@ Every write is kept on the relay with what each cell held before and after. The 
 lists them, newest first, under **What was changed**: the label, the old number, the new one and
 the difference.
 
-**Undo** on a write puts each of its cells back to the number it held before. A cell that no
-longer holds what was written (someone has typed in it since) is left as it is, and the page says
-so. The lines of an undone write are then **paused**, because the next morning's sync would
+**Undo** on a write puts each of its cells back to the number it held before. The cell is found by
+its label again, never by where it was, so a cell whose label has since been renamed or removed is
+left as it is, and so is one that no longer holds what was written (someone has typed in it since).
+The page says which. The lines of an undone write are then **paused**, because the next morning's sync would
 otherwise write the same numbers again. **Resume** on a line writes it at once and from then on;
 **Pause** stops one line without undoing anything.
 
@@ -192,7 +194,8 @@ The relay keeps the last 200 writes and shows the newest 20.
 - **"The server's list of cells can't be used."** `sheet-fill.json` isn't valid JSON, or one of its
   lines is missing something; the page says which. Nothing is written until the whole file reads.
 - **A line says "Not written".** The reason follows it: an account that isn't linked, a label that
-  moved or is there twice, or a cell that now holds a formula. Fix the sheet or the file and sync.
+  was renamed or removed or is in the tab twice, a cell that now holds a formula, or two lines that
+  come to the same cell. Fix the sheet or the file and sync.
 - **"Plaid said: …"** when linking. Plaid's own explanation is shown as written. `INVALID_API_KEYS`
   means the secret doesn't match `PLAID_ENV`.
 - **The Trial plan's 10 institutions are used up.** Plaid refuses the next link and says so. Its

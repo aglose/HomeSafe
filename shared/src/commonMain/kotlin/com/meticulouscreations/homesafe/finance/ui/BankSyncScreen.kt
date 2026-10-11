@@ -84,6 +84,10 @@ import homesafe.shared.generated.resources.fin_bank_feed_subtitle
 import homesafe.shared.generated.resources.fin_bank_feed_title
 import homesafe.shared.generated.resources.fin_bank_feed_written
 import homesafe.shared.generated.resources.fin_bank_fill_bad_file
+import homesafe.shared.generated.resources.fin_bank_fill_bad_file_bad_line
+import homesafe.shared.generated.resources.fin_bank_fill_bad_file_no_lines
+import homesafe.shared.generated.resources.fin_bank_fill_bad_file_same_line
+import homesafe.shared.generated.resources.fin_bank_fill_bad_file_unreadable
 import homesafe.shared.generated.resources.fin_bank_fill_change
 import homesafe.shared.generated.resources.fin_bank_fill_change_from_empty
 import homesafe.shared.generated.resources.fin_bank_fill_change_left
@@ -99,6 +103,7 @@ import homesafe.shared.generated.resources.fin_bank_fill_line_no_label
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_tab
 import homesafe.shared.generated.resources.fin_bank_fill_line_not_a_number
 import homesafe.shared.generated.resources.fin_bank_fill_line_paused
+import homesafe.shared.generated.resources.fin_bank_fill_line_same_cell
 import homesafe.shared.generated.resources.fin_bank_fill_line_waiting
 import homesafe.shared.generated.resources.fin_bank_fill_not_shared
 import homesafe.shared.generated.resources.fin_bank_fill_pause
@@ -293,14 +298,15 @@ internal fun BankSyncScreen(
                     }
                     if (fill.error != null) item(key = "fill-problem") { FillProblemCard(fill) }
                     if (fill.lines.isNotEmpty()) {
-                        item(key = "fill-lines") { FillLinesCard(fill, changing = state.changingLine, onPauseLine = onPauseLine) }
+                        item(key = "fill-lines") { FillLinesCard(fill, changing = state.changingLine, enabled = !state.acting, onPauseLine = onPauseLine) }
                     }
                     item(key = "fill-writes-h") {
                         SectionHeader(stringResource(Res.string.fin_bank_fill_writes_title), subtitle = stringResource(Res.string.fin_bank_fill_writes_subtitle))
                     }
                     if (fill.writes.isEmpty()) item(key = "fill-writes-none") { FinePrint(stringResource(Res.string.fin_bank_fill_writes_none)) }
                     items(fill.writes, key = { "w-${it.id}" }) { write ->
-                        WriteCard(write, now, undoing = state.undoing == write.id, onUndo = { confirmingUndo = write.id })
+                        // While anything else is being changed an undo would be dropped, so it isn't offered.
+                        WriteCard(write, now, undoing = state.undoing == write.id, enabled = !state.acting, onUndo = { confirmingUndo = write.id })
                     }
                     item(key = "fill-how") { FinePrint(stringResource(Res.string.fin_bank_fill_how)) }
                 }
@@ -607,9 +613,21 @@ private fun FillProblemCard(fill: SheetFill) {
                 fill.serviceAccount?.let { ServiceAccount(it) }
             }
 
-            // The relay's own words for what is wrong with its list (English), shown as written.
-            "bad_file" -> Text(stringResource(Res.string.fin_bank_fill_bad_file, fill.message.orEmpty()), style = FinanceTheme.type.body, color = colors.watch)
+            "bad_file" -> {
+                val line = fill.errorLine
+                val reason = fill.errorReason
+                // A reason from a newer relay falls to the last: that the list is refused is still true.
+                val wrong = when {
+                    reason == "unreadable" -> UiText.of(Res.string.fin_bank_fill_bad_file_unreadable)
+                    reason == "no_lines" -> UiText.of(Res.string.fin_bank_fill_bad_file_no_lines)
+                    reason == "bad_line" && line != null -> UiText.of(Res.string.fin_bank_fill_bad_file_bad_line, line)
+                    reason == "same_line" && line != null -> UiText.of(Res.string.fin_bank_fill_bad_file_same_line, line)
+                    else -> UiText.of(Res.string.fin_bank_fill_bad_file)
+                }
+                Text(wrong.resolve(), style = FinanceTheme.type.body, color = colors.watch)
+            }
 
+            // Google's own words for why it refused, as the feed's card shows them: detail after the app's sentence.
             else -> Text(
                 fill.message?.let { stringResource(Res.string.fin_bank_fill_failed, it) } ?: stringResource(Res.string.fin_bank_fill_failed_plain),
                 style = FinanceTheme.type.body,
@@ -621,17 +639,17 @@ private fun FillProblemCard(fill: SheetFill) {
 
 /** Every cell the relay keeps filled in: what it adds up, what it came to, and whether it is paused. */
 @Composable
-private fun FillLinesCard(fill: SheetFill, changing: String?, onPauseLine: (String, Boolean) -> Unit) {
+private fun FillLinesCard(fill: SheetFill, changing: String?, enabled: Boolean, onPauseLine: (String, Boolean) -> Unit) {
     FinanceCard(padding = 0.dp) {
         fill.lines.forEachIndexed { index, line ->
             if (index > 0) Hairline(Modifier.padding(horizontal = 16.dp))
-            FillLineRow(line, busy = changing == line.id, onPause = { onPauseLine(line.id, it) })
+            FillLineRow(line, busy = changing == line.id, enabled = enabled, onPause = { onPauseLine(line.id, it) })
         }
     }
 }
 
 @Composable
-private fun FillLineRow(line: SheetFillLine, busy: Boolean, onPause: (Boolean) -> Unit) {
+private fun FillLineRow(line: SheetFillLine, busy: Boolean, enabled: Boolean, onPause: (Boolean) -> Unit) {
     val colors = FinanceTheme.colors
     Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp).testTag("finance_bank_fill_line")) {
         Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -656,6 +674,7 @@ private fun FillLineRow(line: SheetFillLine, busy: Boolean, onPause: (Boolean) -
                 SheetFillStatus.NO_LABEL -> UiText.of(Res.string.fin_bank_fill_line_no_label, line.label, line.tab)
                 SheetFillStatus.AMBIGUOUS -> UiText.of(Res.string.fin_bank_fill_line_ambiguous, line.label, line.tab)
                 SheetFillStatus.NOT_A_NUMBER -> UiText.of(Res.string.fin_bank_fill_line_not_a_number, line.cell.orEmpty())
+                SheetFillStatus.SAME_CELL -> UiText.of(Res.string.fin_bank_fill_line_same_cell, line.cell.orEmpty())
             }
             Text(
                 said.resolve(),
@@ -675,11 +694,11 @@ private fun FillLineRow(line: SheetFillLine, busy: Boolean, onPause: (Boolean) -
                     },
                 ),
                 style = FinanceTheme.type.label,
-                color = if (busy) colors.textTertiary else colors.accent,
+                color = if (enabled) colors.accent else colors.textTertiary,
                 modifier = Modifier
                     .minimumInteractiveComponentSize()
                     .clip(RoundedCornerShape(50))
-                    .clickable(enabled = !busy, role = Role.Button) { onPause(!line.paused) }
+                    .clickable(enabled = enabled, role = Role.Button) { onPause(!line.paused) }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
             )
         }
@@ -688,7 +707,7 @@ private fun FillLineRow(line: SheetFillLine, busy: Boolean, onPause: (Boolean) -
 
 /** One write to the budget sheet: when, each cell's number before and after, and a way to undo it. */
 @Composable
-private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, onUndo: () -> Unit) {
+private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, enabled: Boolean, onUndo: () -> Unit) {
     val colors = FinanceTheme.colors
     FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_bank_fill_write")) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -706,7 +725,19 @@ private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, onUndo: ()
                 }
             }
             if (!write.undone) {
-                PillButton(stringResource(if (undoing) Res.string.fin_bank_fill_undoing else Res.string.common_undo), colors.textSecondary, onClick = { if (!undoing) onUndo() })
+                // A pill like PillButton, which can't be switched off.
+                val tint = if (enabled) colors.textSecondary else colors.textTertiary
+                Text(
+                    stringResource(if (undoing) Res.string.fin_bank_fill_undoing else Res.string.common_undo),
+                    style = FinanceTheme.type.bodyStrong,
+                    color = tint,
+                    modifier = Modifier
+                        .minimumInteractiveComponentSize()
+                        .clip(RoundedCornerShape(50))
+                        .background(tint.copy(alpha = 0.12f))
+                        .clickable(enabled = enabled, role = Role.Button, onClick = onUndo)
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                )
             }
         }
         write.changes.forEach { change ->

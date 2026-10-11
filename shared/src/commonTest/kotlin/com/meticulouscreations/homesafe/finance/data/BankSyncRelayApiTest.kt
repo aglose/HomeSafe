@@ -192,6 +192,7 @@ class BankSyncRelayApiTest {
                 {"id":"Home|roth ira|2","tab":"Home","label":"Roth IRA","accounts":["Chase Roth IRA"],"paused":false,"status":"written","cell":"K10","value":51000.0,"missing":[]},
                 {"id":"Home|old 401k|1","tab":"Home","label":"Old 401k","accounts":["Acme 401k"],"paused":false,"status":"no_account","cell":null,"value":null,"missing":["Acme 401k"]},
                 {"id":"Home|cards|1","tab":"Home","label":"Cards","accounts":["Chase Sapphire 9911"],"paused":true,"status":"paused","cell":null,"value":null,"missing":[]},
+                {"id":"Home|twice|1","tab":"Home","label":"Twice","accounts":["x"],"status":"same_cell","cell":"C6"},
                 {"id":"Home|later|1","tab":"Home","label":"Later","accounts":["x"],"status":"a word from a newer relay"}],
               "writes":[
                 {"id":12,"at":1790800000.0,"undone_at":null,"undone_by":null,
@@ -206,7 +207,7 @@ class BankSyncRelayApiTest {
         assertTrue(read.configured)
         assertEquals(1_790_800_000L, read.checkedAtEpochSeconds)
         assertEquals(
-            listOf(SheetFillStatus.WRITTEN, SheetFillStatus.NO_ACCOUNT, SheetFillStatus.PAUSED, SheetFillStatus.WAITING),
+            listOf(SheetFillStatus.WRITTEN, SheetFillStatus.NO_ACCOUNT, SheetFillStatus.PAUSED, SheetFillStatus.SAME_CELL, SheetFillStatus.WAITING),
             read.lines.map { it.status },
         )
         val (roth, old, cards) = read.lines
@@ -221,6 +222,16 @@ class BankSyncRelayApiTest {
         assertEquals(listOf(50000.0 to 51000.0, null to 812.4), latest.changes.map { it.before to it.after })
         assertNull(latest.changes.first().restored)
         assertEquals(Triple(1_790_700_060L, "alex", false), Triple(earlier.undoneAtEpochSeconds, earlier.undoneBy, earlier.changes.single().restored))
+    }
+
+    @Test
+    fun whatIsWrongWithTheListOfCellsComesAsAReasonAndALine() = runTest {
+        val refused = """{"configured":true,"fill":{"configured":true,"error":"bad_file","reason":"bad_line","line":3,"message":"Line 3 needs a label"}}"""
+        val engine = MockEngine { respond(refused, HttpStatusCode.OK, jsonHeaders) }
+        val fill = api(engine).status("http://frigate.local").getOrThrow().fill
+        // The app says it in its own words from these; the relay's sentence is only detail.
+        assertEquals(Triple("bad_file", "bad_line", 3), Triple(fill.error, fill.errorReason, fill.errorLine))
+        assertEquals("Line 3 needs a label", fill.message)
     }
 
     @Test

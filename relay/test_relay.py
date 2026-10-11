@@ -4322,15 +4322,36 @@ class SheetFillTest(_ScratchDb):
         self.assertEqual(50000.0, self.sheet.cell("D2"))
         self.assertEqual([True, False, True], [c["restored"] for c in self.writes()[0]["changes"]])
 
-    def test_an_undo_follows_a_cell_whose_row_moved_and_finds_one_whose_label_changed(self):
+    def test_an_undo_follows_a_cell_whose_row_moved(self):
         relay.fill_sheet(self.T)
         self.sheet.tabs["Home"].insert(1, ["Brokerage", "", 1, 2])
-        self.sheet.tabs["Home"][7][0] = "Cards"
         relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
-        self.assertEqual((50000.0, 4000.25), (self.sheet.cell("D3"), self.sheet.cell("C4")))
-        # Renamed and moved: neither its label nor where it was finds it, so it is left as written.
-        self.assertEqual(-812.4, self.sheet.cell("B8"))
-        self.assertEqual([True, True, False], [c["restored"] for c in self.writes()[0]["changes"]])
+        self.assertEqual((50000.0, 4000.25, -100.0), (self.sheet.cell("D3"), self.sheet.cell("C4"), self.sheet.cell("B8")))
+        self.assertEqual([True, True, True], [c["restored"] for c in self.writes()[0]["changes"]])
+
+    def test_an_undo_never_goes_by_where_a_cell_was(self):
+        relay.fill_sheet(self.T)
+        # The label is renamed, and a row put in above it leaves another cell at the old address
+        # (C3), one that happens to hold the very number that was written.
+        rows = self.sheet.tabs["Home"]
+        rows[2][0] = "Everyday account"
+        rows.insert(2, ["Brokerage", "", 4200.5, 7])
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        self.assertEqual(4200.5, self.sheet.cell("C3"), "the stranger at the old address is untouched")
+        self.assertEqual(4200.5, self.sheet.cell("C4"), "its label is gone, so it stays as written")
+        self.assertEqual((50000.0, -100.0), (self.sheet.cell("D2"), self.sheet.cell("B8")))
+        self.assertEqual([True, False, True], [c["restored"] for c in self.writes()[0]["changes"]])
+
+    def test_two_lines_that_come_to_the_same_cell_are_both_left_alone(self):
+        # "Debt" and "Owed" sit side by side: two columns right of one is one right of the other.
+        self.sheet.tabs["Home"][5] = ["Debt", "Owed", 5, "Sam"]
+        self.lines([{"label": "Debt", "right": 2, "accounts": ["Chase Total Checking 0123"]},
+                    {"label": "Owed", "right": 1, "accounts": ["Chase Roth IRA 7788"]},
+                    {"label": "Roth IRA", "right": 3, "accounts": ["Chase Roth IRA 7788"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual(5, self.sheet.cell("C6"))
+        self.assertEqual({"Debt": "same_cell", "Owed": "same_cell", "Roth IRA": "written"}, self.statuses())
+        self.assertEqual(["Roth IRA"], [c["label"] for c in self.writes()[0]["changes"]])
 
     def test_a_resumed_line_is_written_at_once_and_a_paused_one_is_not(self):
         relay.fill_sheet(self.T)
@@ -4370,14 +4391,20 @@ class SheetFillTest(_ScratchDb):
             relay.fill_sheet(self.T)
             fill = relay.fill_status()
             self.assertEqual(("bad_file", [], []), (fill["error"], fill["lines"], self.sheet.posts), bad)
+            # What is wrong goes to the app as a reason and a line number, for it to say in its own words.
+            self.assertEqual(("bad_line", 2), (fill["reason"], fill["line"]))
             self.assertIn("Line 2", fill["message"])
         self.lines([self.LINES[1], {**self.LINES[1], "label": " CHECKING "}])
-        self.assertIn("same cell", relay.fill_lines()[1])
+        self.assertEqual(("same_line", 2), (relay.fill_lines()[1]["reason"], relay.fill_lines()[1]["line"]))
         self.lines([{"label": "Checking", "accounts": ["a"]}], tab=None)
-        self.assertIn("Line 1", relay.fill_lines()[1])
+        self.assertEqual(("bad_line", 1), (relay.fill_lines()[1]["reason"], relay.fill_lines()[1]["line"]))
+        with open(relay.FINANCE_FILL_FILE, "w") as f:
+            json.dump({"cells": []}, f)
+        self.assertEqual("no_lines", relay.fill_lines()[1]["reason"])
         with open(relay.FINANCE_FILL_FILE, "w") as f:
             f.write("{not json")
-        self.assertEqual("bad_file", relay.fill_status()["error"])
+        fill = relay.fill_status()
+        self.assertEqual(("bad_file", "unreadable", None), (fill["error"], fill["reason"], fill["line"]))
 
     def test_without_the_file_there_is_no_fill(self):
         os.remove(relay.FINANCE_FILL_FILE)

@@ -112,6 +112,7 @@
     <string name="fin_bank_fill_line_ambiguous">Not written, because “%1$s” is in the “%2$s” tab more than once.</string>
     <!-- %1$s is the cell's address, like K10. -->
     <string name="fin_bank_fill_line_not_a_number">Not written, because cell %1$s holds a formula or words. Only a typed number is ever replaced.</string>
+    <string name="fin_bank_fill_line_same_cell">Not written, because another line comes to the same cell, %1$s. Check both in sheet-fill.json on the server.</string>
     <string name="fin_bank_fill_pause">Pause</string>
     <string name="fin_bank_fill_resume">Resume</string>
     <string name="fin_bank_fill_working">Working…</string>
@@ -133,8 +134,12 @@
     <!-- %1$d of the %2$d cells of the write. -->
     <string name="fin_bank_fill_notice_undone_partly">%1$d of %2$d cells were put back. The rest had been changed since, so they were left. Those lines are paused.</string>
     <string name="fin_bank_fill_not_shared">The server can't write to your budget sheet. Open the sheet, tap Share, and add this address as an Editor:</string>
-    <!-- %1$s is the server's own explanation, in English. -->
-    <string name="fin_bank_fill_bad_file">The server's list of cells can't be used, so nothing is written: %1$s</string>
+    <!-- What is wrong with sheet-fill.json, the file on the server that lists the cells. %1$d is which of its lines, counted from 1. -->
+    <string name="fin_bank_fill_bad_file">The server's list of cells can't be used, so nothing is written. Check sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_bad_file_unreadable">The server's list of cells can't be read, so nothing is written. Check that sheet-fill.json on the server is valid JSON.</string>
+    <string name="fin_bank_fill_bad_file_no_lines">The server's list of cells has no "lines" list, so nothing is written. Check sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_bad_file_bad_line">Line %1$d of the server's list of cells is missing something, so nothing is written. Each line needs a label, a tab, the accounts it adds up, and "right" as a number of columns.</string>
+    <string name="fin_bank_fill_bad_file_same_line">Line %1$d of the server's list of cells is there twice, so nothing is written. Take one of them out of sheet-fill.json on the server.</string>
     <string name="fin_bank_fill_failed">The last write to your budget sheet didn't work: %1$s</string>
     <string name="fin_bank_fill_failed_plain">The last write to your budget sheet didn't work.</string>
     <string name="fin_bank_fill_how">A cell is found by the label beside it every time, so adding rows doesn't move a write onto the wrong cell, and only a typed number or an empty cell is ever replaced. The list of cells is sheet-fill.json on the server (docs/bank-sync.md).</string>

@@ -557,6 +557,7 @@ class BankSyncViewModelTest {
         runCurrent()
         vm.undoWrite(7)
         assertEquals(7L, vm.uiState.value.undoing)
+        assertTrue(vm.uiState.value.acting)
         runCurrent()
         val state = vm.uiState.value
         assertNull(state.undoing)
@@ -602,8 +603,11 @@ class BankSyncViewModelTest {
         val vm = viewModel(repo)
         vm.load()
         runCurrent()
+        assertFalse(vm.uiState.value.acting)
         vm.setLinePaused("Home|roth ira|2", paused = true)
         assertEquals("Home|roth ira|2", vm.uiState.value.changingLine)
+        // What the page goes by to switch its other buttons off meanwhile.
+        assertTrue(vm.uiState.value.acting)
         // Nothing else that changes what the relay keeps starts while it is asked.
         vm.setLinePaused("Home|checking|2", paused = true)
         vm.undoWrite(7)
@@ -611,6 +615,7 @@ class BankSyncViewModelTest {
         vm.unlink("chase")
         runCurrent()
         assertNull(vm.uiState.value.changingLine)
+        assertFalse(vm.uiState.value.acting)
         assertEquals(listOf("Home|roth ira|2" to true), repo.lineChanges)
         assertTrue(repo.undoneWrites.isEmpty())
         assertFalse(vm.uiState.value.syncRequested)

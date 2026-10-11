@@ -6349,7 +6349,8 @@ def write_bank_feed(now: float) -> None:
 #
 # What keeps a write from landing somewhere it shouldn't:
 # - A cell is found by its label every time, never by a remembered address, so rows inserted above
-#   it don't move the write onto its neighbour. A label that is gone, or there twice, isn't guessed.
+#   it don't move the write onto its neighbour. A label that is gone, or there twice, isn't guessed,
+#   and two lines that come to the same cell are both left alone.
 # - Only a number or an empty cell is written over. A formula or words there mean the sheet was
 #   changed by hand, and the line is left alone.
 # - A line is written whole or not at all: with one of its accounts unlinked or unread, the sum of
@@ -6383,21 +6384,28 @@ def fill_text(value: Any) -> str:
     return " ".join(str(value).split()).casefold()
 
 
-def fill_lines() -> tuple[list[dict[str, Any]], str | None]:
+def fill_lines() -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     """
     The lines FINANCE_FILL_FILE lists, and what is wrong with the file when something is. A file
     with one line that can't be understood is refused whole: half a file's writes are not what
     whoever wrote it meant. No file is no lines and nothing wrong.
+
+    What is wrong is a `reason` the app has its own words for ("unreadable", "no_lines",
+    "bad_line", "same_line"), the `line` it is about (counted from 1) where there is one, and a
+    `message` for the log.
     """
+    def wrong(reason: str, message: str, line: int | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return [], {"reason": reason, "line": line, "message": message}
+
     try:
         with open(FINANCE_FILL_FILE, encoding="utf-8") as f:
             kept = json.load(f)
     except FileNotFoundError:
         return [], None
     except (OSError, ValueError) as e:
-        return [], f"{os.path.basename(FINANCE_FILL_FILE)} can't be read: {e}"
+        return wrong("unreadable", f"{os.path.basename(FINANCE_FILL_FILE)} can't be read: {e}")
     if not isinstance(kept, dict) or not isinstance(kept.get("lines"), list):
-        return [], f"{os.path.basename(FINANCE_FILL_FILE)} needs a \"lines\" list"
+        return wrong("no_lines", f"{os.path.basename(FINANCE_FILL_FILE)} needs a \"lines\" list")
     lines, seen = [], set()
     for n, entry in enumerate(kept["lines"], 1):
         entry = entry if isinstance(entry, dict) else {}
@@ -6408,10 +6416,10 @@ def fill_lines() -> tuple[list[dict[str, Any]], str | None]:
             and isinstance(accounts, list) and accounts and all(isinstance(a, str) and a.strip() for a in accounts)
         )
         if not well_formed:
-            return [], f"Line {n} needs a label, a tab, the accounts it adds up, and \"right\" as a number of columns"
+            return wrong("bad_line", f"Line {n} needs a label, a tab, the accounts it adds up, and \"right\" as a number of columns", n)
         line_id = f"{tab.strip()}|{fill_text(label)}|{right}"
         if line_id in seen:
-            return [], f"Line {n} writes the same cell as an earlier line"
+            return wrong("same_line", f"Line {n} writes the same cell as an earlier line", n)
         seen.add(line_id)
         lines.append({"id": line_id, "tab": tab.strip(), "label": " ".join(label.split()), "right": right,
                       "accounts": [a.strip() for a in accounts], "negative": entry.get("negative") is True})
@@ -6450,8 +6458,11 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
     What a fill would do with each line, as its `status`: "change" (with the `cell`, what it holds
     as `before` and the `value` to write), "same", or why it is left alone: "paused",
     "no_account" (one it adds up isn't linked: `missing`), "no_balance", "no_tab", "no_label",
-    "ambiguous", "not_a_number". `balances` is every linked account's by feed key, `grids` each
-    tab's cells with formulas as written (None for a tab the sheet hasn't got).
+    "ambiguous", "not_a_number", "same_cell" (another line comes to the same cell, which the file
+    can't show: two labels side by side, each counting right to the cell between or beyond them;
+    neither is written, since which was meant can't be told). `balances` is every linked
+    account's by feed key, `grids` each tab's cells with formulas as written (None for a tab the
+    sheet hasn't got).
     """
     plan = []
     for line in lines:
@@ -6487,6 +6498,14 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
             continue
         entry["before"] = before
         entry["status"] = "same" if fill_same(before, entry["value"]) else "change"
+    aimed: dict[tuple[str, int, int], list[dict[str, Any]]] = {}
+    for entry in plan:
+        if entry["row"] is not None:
+            aimed.setdefault((entry["tab"], entry["row"], entry["column"]), []).append(entry)
+    for entries in aimed.values():
+        if len(entries) > 1:
+            for entry in entries:
+                entry["status"], entry["before"] = "same_cell", None
     return plan
 
 
@@ -6534,15 +6553,14 @@ def fill_sheet(now: float) -> None:
     lines, problem = fill_lines()
     if problem or not lines or not FINANCE_SHEET_ID:
         if problem:
-            log.warning("bank: the budget sheet wasn't filled: %s", problem)
-        state_set(FILL_KEY, {"at": now, "error": "bad_file" if problem else None, "message": problem, "lines": []})
+            log.warning("bank: the budget sheet wasn't filled: %s", problem["message"])
+        state_set(FILL_KEY, {"at": now, "error": "bad_file" if problem else None, "message": problem["message"] if problem else None, "lines": []})
         return
     try:
         session = feed_google()
         plan = fill_plan(lines, fill_balances(), fill_read(session, unique([line["tab"] for line in lines])), fill_paused())
         changes = [
-            {"line": p["id"], "tab": p["tab"], "label": p["label"], "right": p["right"], "cell": p["cell"], "row": p["row"], "column": p["column"],
-             "before": p["before"], "after": p["value"]}
+            {"line": p["id"], "tab": p["tab"], "label": p["label"], "right": p["right"], "cell": p["cell"], "before": p["before"], "after": p["value"]}
             for p in plan if p["status"] == "change"
         ]
         if changes:
@@ -6574,9 +6592,10 @@ def fill_sheet(now: float) -> None:
 def fill_undo(write_id: int, user: str, now: float) -> None:
     """
     Puts back what one write changed, and pauses its lines. A cell is found by its label again
-    (rows may have been inserted since), or failing that where it was; either way it is put back
-    only if it still holds what was written, and each change says whether it was (`restored`).
-    The caller holds `_bank_lock`. Raises HTTPException when there is no such write, it was undone
+    (rows may have been inserted since), never where it was: with the label gone or there twice,
+    the old address may be some other cell by now, and one that happened to hold the same number
+    would be overwritten. A cell found is put back only if it still holds what was written, and
+    each change says whether it was (`restored`). The caller holds `_bank_lock`. Raises HTTPException when there is no such write, it was undone
     already, or Google refuses.
     """
     row = with_db(lambda c: c.execute("SELECT changes, undone_at FROM sheet_writes WHERE id=?", (write_id,)).fetchone())
@@ -6591,15 +6610,14 @@ def fill_undo(write_id: int, user: str, now: float) -> None:
     for change in changes:
         rows = grids.get(change["tab"]) or []
         found = fill_find(rows, change["label"])
-        cells = [] if isinstance(found, str) else [(found[0], found[1] + change["right"])]
-        cells.append((change["row"], change["column"]))
         change["restored"] = False
-        for r, c in cells:
-            writable, holds = fill_amount(rows, r, c)
-            if writable and fill_same(holds, change["after"]):
-                back.append((change["tab"], f"{column_letters(c)}{r + 1}", change["before"]))
-                change["restored"] = True
-                break
+        if isinstance(found, str):
+            continue
+        row, column = found[0], found[1] + change["right"]
+        writable, holds = fill_amount(rows, row, column)
+        if writable and fill_same(holds, change["after"]):
+            back.append((change["tab"], f"{column_letters(column)}{row + 1}", change["before"]))
+            change["restored"] = True
     if back:
         fill_put(session, back)
         _finance_cache["at"] = 0.0
@@ -6619,7 +6637,10 @@ def fill_status() -> dict[str, Any]:
         "configured": bool(lines) or bool(problem),
         "checked_at": kept.get("at"),
         "error": "bad_file" if problem else kept.get("error"),
-        "message": problem or kept.get("message"),
+        # What is wrong with the file, for the app to say in its own words; `message` is the relay's.
+        "reason": problem["reason"] if problem else None,
+        "line": problem["line"] if problem else None,
+        "message": problem["message"] if problem else kept.get("message"),
         "service_account": _feed_google["account"] or _finance_google["account"],
         "lines": [
             {
