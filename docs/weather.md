@@ -109,7 +109,38 @@ permission prompts on iOS say so.
 
 On by default; each kind has its own switch in Weather's Settings, and they arrive on channels of
 their own (**Weather**, **Severe weather**) so Android can silence them apart from the cameras'.
-A tap opens the weather app.
+
+### What one looks like
+
+A notification is more than its two lines. Each carries what it is about as a picture, the place
+it is for, when what it tells of happens and when it stops being news, and the forecast behind
+it; each platform shows as much of that as it has a place for.
+
+| | Android | iOS |
+|---|---|---|
+| **Which kind, at a glance** | Its own icon in the status bar and its own accent colour: a cloud with rain in blue, with a bolt in violet, a thermometer in orange, a funnel in red. The same glyph on a coloured tile is the large icon | The tile is the banner's thumbnail |
+| **The place** | Beside the app's name | The subtitle |
+| **Opened out** | A card: the tile, the one thing to read large (when the rain starts, the day's high and low), the numbers as small marks (how much rain, the gusts, the UV index), and a chart: the next two hours of rain by the quarter hour, or the day by the hour with the present marked. A government warning opens into the agency's words instead, what to do first: an excerpt of up to 700 characters, cut at a word and marked "…" where the agency ran longer | The same card on a long press; the same excerpt of a warning's words as the body |
+| **Its time** | When it happens: a shower reads "in 25 min" and counts down by itself | When it was posted |
+| **Taken down** | By itself, when the shower has passed, the day is over, the warning has lapsed. A warning goes the moment it lapses; the others stay at least ten minutes from when they went up, so one posted late can still be read | At the next check after that (iOS can't give a notification an end). Every check sweeps, whatever the switches say; a sample is also swept ten minutes on while the app is running |
+| **A tap** | Opens the weather app on what it was about: Today for rain on the way and today's outlook, the Forecast for tomorrow's, the warning in full for a warning still in force (Today if it has lapsed); on the place it was for | The same |
+| **A button** | **Radar** | **Radar** (long press) |
+| **Stacking** | In a group of their own, never bundled with the cameras' | In a thread of their own |
+| **A warning** | Heads-up, on the Severe weather channel | Time-sensitive (breaks through a Focus once the app has that entitlement) |
+
+There is one drawing of each icon. `NotificationGlyph` (`ui/notification/NotificationGlyphs.kt`)
+holds them as paths on a 24-unit grid; Android's status-bar drawables are written from it (see
+[notifications.md](notifications.md#icons)) and the tiles and the marks on the card are drawn from
+it too, so the small icon and the large one are plainly the same thing. `WeatherNoticeLook` gives
+each kind its colours. The card is painted by `WeatherNoticePainter`, in shared code and with no
+composition (the check runs in a background job with no screen): Android takes the bitmap,
+iOS a PNG of it. `:shared:renderPreviews -Ppreview=WeatherNoticePreviews` draws every icon, every
+tile and a card of each sort.
+
+Which picture a government warning wears is read from its VTEC phenomenon where it has one (`TO`
+is a tornado whatever the message is titled), and otherwise from the agency's name for the event.
+
+### When one is sent
 
 `WeatherNoticePlanner` decides, from the forecast and the clock alone. The aim is the handful that
 change what you do with your day, each said once:
@@ -141,7 +172,11 @@ check runs:
 ## Tests
 
 - `weather/domain`: the astronomy against known sunrises and lunations, the forecast's sentences,
-  every notification rule, the map's projection and tiling.
+  every notification rule and what each notification's picture is given to show, the map's
+  projection and tiling.
+- `WeatherNoticePainterTest` (JVM) paints every kind's badge and card straight to a bitmap, as the
+  background job does; `WeatherNotificationBuildTest` (Android device) builds the notification on
+  a real Android and reads its icon, picture, time and button back.
 - `weather/data`: the services' real answer shapes through a mock engine, the radar loop's frames
   and fallbacks, the tile decoder against the published tables, caching.
 - `WeatherShadersCompileTest` (JVM) compiles every shader with Skia; `WeatherShadersTest` (Android

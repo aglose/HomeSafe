@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Written from NotificationGlyph.FREEZE (ui/notification/NotificationGlyphs.kt) by NotificationGlyphsTest: change the glyph there, not this file. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M12,3v18M4.2,7.5l15.6,9M4.2,16.5l15.6,-9" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M9.5,5l2.5,2.5l2.5,-2.5M14.5,19l-2.5,-2.5l-2.5,2.5M16.81,6.34l-0.91,3.41l3.41,0.92M19.31,13.34l-3.41,0.91l0.91,3.42M7.19,6.34l0.91,3.41l-3.41,0.92M4.69,13.34l3.41,0.91l-0.91,3.42" />
+</vector>

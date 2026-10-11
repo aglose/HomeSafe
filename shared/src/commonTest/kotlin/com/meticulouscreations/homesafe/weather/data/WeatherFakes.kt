@@ -98,6 +98,13 @@ internal class FakeWeatherNotifier(override var isSupported: Boolean = true) : W
         if (accepts) posted += notification
         return accepts
     }
+
+    /** Each time it was asked to take down what was over, and the clock it was given. */
+    val swept = mutableListOf<Long>()
+
+    override suspend fun sweep(nowEpochSeconds: Long) {
+        swept += nowEpochSeconds
+    }
 }
 
 internal class FakeWeatherCheckScheduler : WeatherCheckScheduler {

@@ -29,6 +29,7 @@
     </plurals>
     <string name="notif_budget_body_spent_last_day">%1$s spent of %2$s, on the last day of the month.</string>
     <string name="notif_budget_savings_body">The cards are at %1$s this month, past the %2$s that take-home leaves after the bills.</string>
+    <string name="notif_action_weather_radar">Radar</string>
     <string name="notif_action_tag_car">Tag car</string>
     <string name="notif_action_not_a_person">Not a person</string>
     <string name="notif_action_undo">Undo</string>
