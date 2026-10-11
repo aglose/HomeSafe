@@ -18,11 +18,13 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * One look at the forecast for notifications: fetch it for where the phone is, ask
@@ -78,12 +80,31 @@ class WeatherAlertCheck(
             val report = repository.report(place, maxAgeSeconds = SAMPLE_MAX_AGE_SECONDS).getOrNull() ?: return@runCatching false
             val units = preferences.observe().first().units
             val notice = WeatherNoticePlanner.sample(report, place.name.takeIf { it.isNotBlank() }, units, clock.now().epochSeconds) ?: return@runCatching false
-            notifier.notify(notice.toNotification(place))
+            val posted = notifier.notify(notice.toNotification(place))
+            if (posted) notice.expiresEpochSeconds?.let(::sweepAt)
+            posted
         }.getOrDefault(false)
+    }
+
+    /**
+     * Takes down what is over at [epochSeconds], from here rather than from the next check. A
+     * sample can go out with the notifications switched off, when no check is scheduled to come,
+     * and where the platform can't give a notification an end (iOS) nothing else would take it
+     * down. Good for as long as the app is running; every later check sweeps too, switch or no.
+     */
+    private fun sweepAt(epochSeconds: Long) {
+        appScope.launch {
+            delay((epochSeconds - clock.now().epochSeconds).coerceAtLeast(0).seconds)
+            runCatching { notifier.sweep(clock.now().epochSeconds) }
+        }
     }
 
     private suspend fun check(): Int {
         if (!notifier.isSupported) return 0
+        val now = clock.now().epochSeconds
+        // First, and whatever the switches say: what was said earlier and is over comes down. A
+        // sample, or a notice posted before the switch went off, is still there to be taken down.
+        runCatching { notifier.sweep(now) }
         val prefs = preferences.observe().first()
         if (!prefs.notices.enabled) return 0
         // Not allowed to notify: nothing is fetched, and nothing is marked as said, so the morning's
@@ -91,9 +112,6 @@ class WeatherAlertCheck(
         if (!notifier.isAllowed()) return 0
         val place = place() ?: return 0
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
-        val now = clock.now().epochSeconds
-        // Before anything new goes up: what was said earlier and is over comes down.
-        runCatching { notifier.sweep(now) }
         val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
         // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
         return notices.count { notice ->

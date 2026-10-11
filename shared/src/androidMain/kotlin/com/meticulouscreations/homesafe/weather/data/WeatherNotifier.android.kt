@@ -56,8 +56,14 @@ internal const val MAX_CARD_WIDTH_PX = 1080
 /** Android's large icon, in dp. */
 private const val BADGE_DP = 48
 
-/** However late it is posted, a notification stays up at least this long: long enough to be read. */
+/**
+ * However late it is posted, a notification about the forecast stays up at least this long: long
+ * enough to be read. Not a government warning, which must not outlast the warning itself.
+ */
 private const val MIN_SHOWN_MS = 10 * 60_000L
+
+/** The shortest time Android can be asked to keep one: a timeout has to be more than nothing. */
+private const val MIN_TIMEOUT_MS = 1_000L
 
 /**
  * Posts weather notifications on their own two channels. Each is tagged with its
@@ -67,9 +73,10 @@ private const val MIN_SHOWN_MS = 10 * 60_000L
  * blue, a bolt in violet, a funnel in red: see `WeatherNoticeLook`), the same glyph on its
  * coloured tile is the large icon, the place is the line beside the app's name, and opened out
  * it shows the forecast behind it as a picture (the next two hours of rain, the day by the hour)
- * or, for a government warning, the agency's words in full. Its time is when what it tells of
+ * or, for a government warning, the agency's words (an excerpt where it ran long). Its time is when what it tells of
  * happens, so a shower reads "in 25 min" and counts down by itself, and it takes itself down
- * once that is over. A tap opens the weather app on what it was about; "Radar" opens the radar.
+ * once that is over (a warning at the moment it lapses; the rest no sooner than ten minutes after
+ * they went up). A tap opens the weather app on what it was about; "Radar" opens the radar.
  */
 private class AndroidWeatherNotifier(private val context: Context) : WeatherNotifier {
     private val manager = context.getSystemService(NotificationManager::class.java)
@@ -143,7 +150,8 @@ internal fun buildWeatherNotification(context: Context, notification: WeatherNot
         .setOnlyAlertOnce(true)
         .setContentIntent(openIntent(context, notification.link))
         .addAction(look.glyph.drawableRes, context.getString(R.string.notif_action_weather_radar), openIntent(context, notification.link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null)))
-        .apply { notification.expiresEpochSeconds?.let { setTimeoutAfter((it * 1000 - nowMillis).coerceAtLeast(MIN_SHOWN_MS)) } }
+        // A warning is over when the agency says it is, to the second; the rest stay long enough to be read.
+        .apply { notification.expiresEpochSeconds?.let { setTimeoutAfter((it * 1000 - nowMillis).coerceAtLeast(if (notification.urgent) MIN_TIMEOUT_MS else MIN_SHOWN_MS)) } }
         .build()
 }
 

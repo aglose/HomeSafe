@@ -265,8 +265,10 @@ internal fun WeatherAppContent(
         val alertKey = asked.alertKey
         if (alertKey != null) {
             val report = state.selected?.report ?: return@LaunchedEffect
-            // Not there any more means it has lapsed: Today is the right place to have landed.
-            report.alerts.firstOrNull { it.key == alertKey }?.let { alert ->
+            // Not there any more, or there in an old forecast with its end already past (a launch with
+            // no network opens on what the phone had), means it has lapsed: Today is the right place to have landed.
+            val inForce = report.alerts.firstOrNull { it.key == alertKey && (it.endsEpochSeconds == null || it.endsEpochSeconds > state.nowEpochSeconds) }
+            inForce?.let { alert ->
                 if (pages.none { it is WeatherPage.Alert && it.id == alert.id }) pages += WeatherPage.Alert(alert.id)
             }
         }

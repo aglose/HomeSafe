@@ -297,14 +297,22 @@ object WeatherNoticePlanner {
             key = "alert:${alert.key}",
             kind = WeatherNoticeKind.SEVERE_ALERT,
             title = alert.event.asUiText(),
-            body = (said.firstOrNull() ?: alert.event).take(ALERT_BODY_CHARS).asUiText(),
+            body = excerpt(said.firstOrNull() ?: alert.event, ALERT_BODY_CHARS).asUiText(),
             icon = WeatherNoticeIcon.of(alert),
-            detail = said.takeIf { it.size > 1 }?.joinToString("\n\n")?.take(ALERT_DETAIL_CHARS)?.asUiText(),
+            // An excerpt where the agency ran long: what to do comes before the description, and a tap opens the rest.
+            detail = said.takeIf { it.size > 1 }?.joinToString("\n\n")?.let { excerpt(it, ALERT_DETAIL_CHARS) }?.asUiText(),
             expiresEpochSeconds = alert.endsEpochSeconds,
             caption = alert.sender.takeIf { it.isNotBlank() }?.asUiText(),
             headline = until,
             alertKey = alert.key,
         )
+    }
+
+    /** [text] whole if it fits in [max] characters; otherwise cut back to the last whole word that does, and marked as cut. */
+    private fun excerpt(text: String, max: Int): String {
+        if (text.length <= max) return text
+        val cut = text.take(max - 1)
+        return cut.substring(0, cut.indexOfLast(Char::isWhitespace).takeIf { it > max / 2 } ?: cut.length).trimEnd() + ELLIPSIS
     }
 
     /** [text] with the line breaks inside its paragraphs taken out, and the blank lines between them kept. */
@@ -564,7 +572,10 @@ object WeatherNoticePlanner {
 
     private const val ALERT_BODY_CHARS = 240
 
-    /** What an opened-out notification has room for; the warning's own page has the rest. */
+    /** Marks agency text that was cut to fit. Punctuation, the same in any language. */
+    private const val ELLIPSIS = "…"
+
+    /** What an opened-out notification has room for; the warning's own page, a tap away, has the rest. */
     private const val ALERT_DETAIL_CHARS = 700
 
     /** Less than this over a spell is a sprinkle. */

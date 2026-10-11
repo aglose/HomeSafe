@@ -63,7 +63,7 @@ private const val CARD_HEIGHT_DP = 240
  * What one looks like: the place is its subtitle; its picture (the tile, and the forecast behind
  * the notification as a chart) is attached, so the banner wears the tile as its thumbnail and a
  * long press opens the whole card; a government warning is time-sensitive (it breaks through a
- * Focus where the app has that entitlement) and carries the agency's words in full; the weather's
+ * Focus where the app has that entitlement) and carries the agency's words (an excerpt where it ran long; a tap opens the rest); the weather's
  * notifications stack together, apart from the cameras'; and one whose news is over is taken
  * down at the next check ([sweep]), since iOS has no way to give a notification an end.
  */
@@ -88,7 +88,7 @@ private class IosWeatherNotifier : WeatherNotifier {
         val content = UNMutableNotificationContent().apply {
             setTitle(notification.title)
             notification.place?.let { setSubtitle(it) }
-            // iOS shows as much of the body as fits and the rest on a long press: a warning says all it has to.
+            // iOS shows as much of the body as fits and the rest on a long press: a warning gets its excerpt, not just its headline.
             setBody(notification.detail ?: notification.body)
             setSound(UNNotificationSound.defaultSound)
             setThreadIdentifier(THREAD)

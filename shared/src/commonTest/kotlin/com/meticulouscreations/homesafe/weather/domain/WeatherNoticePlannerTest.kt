@@ -142,7 +142,7 @@ class WeatherNoticePlannerTest {
         val now = at(0, 15)
         val long = "x".repeat(400)
         val notice = plan(now, report(now, alerts = listOf(alert(headline = "", description = long)))).single()
-        assertEquals("x".repeat(240).asUiText(), notice.body)
+        assertEquals(("x".repeat(239) + "…").asUiText(), notice.body, "cut to fit, and marked as cut")
     }
 
     @Test

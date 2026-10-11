@@ -123,6 +123,26 @@ class WeatherNoticePictureTest {
     }
 
     @Test
+    fun aLongWarningOpensOutIntoAnExcerptCutAtAWordAndMarkedAsCut() {
+        val now = at(0, 15)
+        val description = List(200) { "word$it" }.joinToString(" ")
+        val alert = warning("Flood Warning").copy(headline = "Flooding is occurring", instruction = "Turn around, don't drown.", description = description)
+        val detail = (plan(now, report(now, alerts = listOf(alert))).single().detail as UiText.Verbatim).value
+        assertTrue(detail.length <= 700, "${detail.length} characters")
+        assertTrue(detail.startsWith("Flooding is occurring\n\nTurn around, don't drown.\n\nword0 word1"), "what to do comes before the description, so it is what survives")
+        assertTrue(detail.endsWith("…"))
+        // The last word before the mark is a whole one.
+        assertTrue(detail.removeSuffix("…").substringAfterLast(' ') in description.split(' '))
+    }
+
+    @Test
+    fun aWarningThatFitsIsNotMarkedAsCut() {
+        val now = at(0, 15)
+        val alert = warning("Flood Warning").copy(headline = "Flooding is occurring", instruction = "Turn around, don't drown.")
+        assertEquals("Flooding is occurring\n\nTurn around, don't drown.".asUiText(), plan(now, report(now, alerts = listOf(alert))).single().detail)
+    }
+
+    @Test
     fun aWarningThatSaysOneThingHasNothingMoreToOpenOutInto() {
         val now = at(0, 15)
         val notice = plan(now, report(now, alerts = listOf(warning("Tornado Warning").copy(headline = "Take cover")))).single()

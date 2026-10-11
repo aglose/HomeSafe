@@ -256,6 +256,22 @@ class WeatherAppUiTest {
     }
 
     @Test
+    fun aTapOnAWarningWhoseEndHasPassedInAnOldForecastLandsOnTodayToo() = runComposeUiTest(testTimeout = 5.minutes) {
+        // Opened with no network: the forecast on screen is the one the phone had, warning and all.
+        val stale = WeatherFixtures.state(alerts = listOf(tornado.copy(endsEpochSeconds = WeatherFixtures.NOW - 60))).copy(preferences = stillSky)
+        show(stale, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertNotShown("weather_alert_detail")
+        assertShown("weather_today")
+    }
+
+    @Test
+    fun aTapOnAWarningStillInForceOpensItWhateverItsEnd() = runComposeUiTest(testTimeout = 5.minutes) {
+        val warned = WeatherFixtures.state(alerts = listOf(tornado.copy(endsEpochSeconds = WeatherFixtures.NOW + 60))).copy(preferences = stillSky)
+        show(warned, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertShown("weather_alert_detail")
+    }
+
+    @Test
     fun aNotificationForAPlaceNotInViewTurnsTheAppToIt() = runComposeUiTest(testTimeout = 5.minutes) {
         val calls = Calls()
         show(state.copy(selectedId = WeatherFixtures.seattle.id), calls, link = WeatherDeepLink(placeId = WeatherFixtures.portland.id))

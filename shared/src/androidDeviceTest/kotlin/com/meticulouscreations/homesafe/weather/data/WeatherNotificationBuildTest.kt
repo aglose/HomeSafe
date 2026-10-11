@@ -96,6 +96,9 @@ class WeatherNotificationBuildTest {
         // Posted late, with the shower all but over: still up long enough to be read.
         assertEquals(600_000L, build(rain.copy(expiresEpochSeconds = nowSeconds + 5)).timeoutAfter)
         assertEquals(0L, build(tornado).timeoutAfter, "a warning with no end is the reader's to dismiss")
+        // A warning is the exception to "long enough to be read": it must not outlast the warning.
+        assertEquals(5_000L, build(tornado.copy(expiresEpochSeconds = nowSeconds + 5)).timeoutAfter)
+        assertEquals(1_800_000L, build(tornado.copy(expiresEpochSeconds = nowSeconds + 1_800)).timeoutAfter)
         assertEquals(now, build(tornado).`when`)
     }
 

@@ -35,7 +35,9 @@ import kotlinx.coroutines.yield
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 class WeatherAlertCheckTest {
 
@@ -152,6 +154,28 @@ class WeatherAlertCheckTest {
         assertEquals(WeatherDeepLink(WeatherDeepLink.View.TODAY, placeId = Place.CURRENT_ID), sample.link)
         assertTrue(sample.art.chart is WeatherNoticeChart.Day)
         assertTrue(h.ledger.sent(now).isEmpty())
+    }
+
+    @Test
+    fun aSampleIsTakenDownWhenItIsOverEvenWithNoCheckScheduledToCome() = runTest {
+        val h = harness(WeatherData.report(now))
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = false)) }
+        assertTrue(h.check.sample())
+        val over = assertNotNull(h.notifier.posted.single().expiresEpochSeconds)
+        assertTrue(h.notifier.swept.isEmpty(), "not before it is over")
+        h.clock.seconds = over
+        testScheduler.advanceTimeBy((over - now + 1).seconds)
+        settle()
+        assertEquals(listOf(over), h.notifier.swept)
+    }
+
+    @Test
+    fun aCheckSweepsWhatIsOverEvenWhileNoticesAreSwitchedOff() = runTest {
+        val h = harness()
+        h.preferences.update { it.copy(notices = it.notices.copy(enabled = false)) }
+        assertEquals(0, h.check.run())
+        assertEquals(listOf(now), h.notifier.swept, "a sample, or a notice from before the switch went off, still comes down")
+        assertTrue(h.repository.reportRequests.isEmpty(), "and still nothing is fetched")
     }
 
     @Test
