@@ -1380,6 +1380,13 @@ private fun com.meticulouscreations.homesafe.finance.ui.StatusRow(color: android
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.StockPlanCard(plan: com.meticulouscreations.homesafe.finance.domain.StockPlan): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - plan: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.StressScale(stress: com.meticulouscreations.homesafe.finance.domain.StressScore?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true

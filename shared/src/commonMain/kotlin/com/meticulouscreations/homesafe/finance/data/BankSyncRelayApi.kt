@@ -15,6 +15,8 @@ import com.meticulouscreations.homesafe.finance.domain.SheetFill
 import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
 import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
 import com.meticulouscreations.homesafe.finance.domain.SheetWrite
+import com.meticulouscreations.homesafe.finance.domain.StockPlan
+import com.meticulouscreations.homesafe.finance.domain.StockVest
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
@@ -175,6 +177,7 @@ internal data class RelayBank(
     val feed: RelayBankFeed = RelayBankFeed(),
     // Absent from a relay older than the sheet fill, which reads as a fill that isn't set up.
     val fill: RelayFill = RelayFill(),
+    @SerialName("stock_plans") val stockPlans: List<RelayStockPlan> = emptyList(),
 ) {
     fun toDomain() = BankSync(
         configured = configured,
@@ -193,6 +196,7 @@ internal data class RelayBank(
             activationUrl = feed.activationUrl,
         ),
         fill = fill.toDomain(),
+        stockPlans = stockPlans.map { it.toDomain() },
     )
 }
 
@@ -329,3 +333,33 @@ internal data class RelayFillChange(
     val after: Double? = null,
     val restored: Boolean? = null,
 )
+
+@Serializable
+internal data class RelayStockPlan(
+    val account: String = "",
+    val name: String = "",
+    val institution: String = "",
+    val ticker: String = "",
+    val price: Double? = null,
+    val unvested: Double = 0.0,
+    @SerialName("every_months") val everyMonths: Int? = null,
+    @SerialName("per_vest") val perVest: Double = 0.0,
+    val vests: List<RelayStockVest> = emptyList(),
+    val upcoming: List<RelayStockVest> = emptyList(),
+) {
+    fun toDomain() = StockPlan(
+        account = account,
+        name = name,
+        institution = institution,
+        ticker = ticker,
+        price = price,
+        unvested = unvested,
+        everyMonths = everyMonths,
+        perVest = perVest,
+        vests = vests.map { StockVest(it.date, it.shares, it.value) },
+        upcoming = upcoming.map { StockVest(it.date, it.shares, it.value) },
+    )
+}
+
+@Serializable
+internal data class RelayStockVest(val date: String = "", val shares: Double = 0.0, val value: Double? = null)

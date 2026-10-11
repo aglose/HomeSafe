@@ -137,10 +137,19 @@ enum class SheetFillStatus(val wire: String) {
 
     /** Another line comes to the same cell, so neither is written. */
     SAME_CELL("same_cell"),
+
+    /** A vest's line whose vest has happened: the cell keeps its last estimate. */
+    VESTED("vested"),
+
+    /** A vest's line with no vest expected near its day. */
+    NO_VEST("no_vest"),
+
+    /** A vest's line that wants what the shares are worth, when the plan gave no price for the share. */
+    NO_PRICE("no_price"),
     ;
 
     /** The line was left alone for a reason only a person can clear. */
-    val needsALook: Boolean get() = this != WRITTEN && this != SAME && this != WAITING && this != PAUSED
+    val needsALook: Boolean get() = this != WRITTEN && this != SAME && this != WAITING && this != PAUSED && this != VESTED
 
     companion object {
         /** A word this build doesn't know (a newer relay's) reads as not tried yet rather than as a fault. */
@@ -209,6 +218,34 @@ data class SheetFill(
     val writes: List<SheetWrite> = emptyList(),
 )
 
+/** Shares vesting on a day (`YYYY-MM-DD`): one that was read from the plan's activity, or one worked out from those. [value] is at today's price. */
+@Immutable
+@Serializable
+data class StockVest(val date: String, val shares: Double, val value: Double? = null)
+
+/**
+ * An employer's stock plan and what its past vests say about the ones to come (`stock_plan_outlook`
+ * in `relay/relay.py`): one every [everyMonths], each of [perVest] shares, until the [unvested]
+ * shares run out. An estimate, since the plan itself reports no dates.
+ */
+@Immutable
+@Serializable
+data class StockPlan(
+    /** The account's key in the feed. */
+    val account: String,
+    val name: String,
+    val institution: String,
+    val ticker: String,
+    val price: Double?,
+    val unvested: Double,
+    /** Null until two vests have been read: the pace isn't known from one. */
+    val everyMonths: Int?,
+    val perVest: Double,
+    /** The vests read, oldest first. */
+    val vests: List<StockVest>,
+    val upcoming: List<StockVest>,
+)
+
 /** The bank sync as the relay reports it. */
 @Immutable
 @Serializable
@@ -223,6 +260,7 @@ data class BankSync(
     val nextSyncAtEpochSeconds: Long?,
     val feed: BankFeed,
     val fill: SheetFill = SheetFill(),
+    val stockPlans: List<StockPlan> = emptyList(),
 )
 
 /** A link under way: Plaid's page to open, and the token its progress is asked by. */
