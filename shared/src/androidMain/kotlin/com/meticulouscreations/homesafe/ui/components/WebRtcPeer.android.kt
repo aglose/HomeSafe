@@ -195,6 +195,17 @@ internal class AndroidWebRtcPeer(factory: PeerConnectionFactory, audio: Boolean)
         audioTrack?.setVolume(if (muted) 0.0 else 1.0)
     }
 
+    /** Resumed from libwebrtc's signaling thread. A peer closed while a report is on its way never answers, so callers bound the wait. */
+    override suspend fun receiverStats(): WebRtcReceiverStats? {
+        if (closed) return null
+        return suspendCancellableCoroutine { continuation ->
+            connection.getStats { report ->
+                val stats = report.statsMap.values.map { RtcStat(it.id, it.type, it.members) }
+                continuation.resume(webRtcReceiverStats(stats, report.timestampUs / 1_000))
+            }
+        }
+    }
+
     override fun close() {
         if (closed) return
         closed = true

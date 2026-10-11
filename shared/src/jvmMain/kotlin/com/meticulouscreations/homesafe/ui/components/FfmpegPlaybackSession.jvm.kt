@@ -114,6 +114,9 @@ internal class FfmpegPlaybackSession(
         /** Whether this source turned out to carry an audio track this machine can play. */
         fun onAudioAvailability(hasAudio: Boolean)
 
+        /** The video as the source publishes it, before any scaling here, known once its first frame is decoded. */
+        fun onVideoFormat(width: Int, height: Int, codec: String?)
+
         /** Playing, but nothing has arrived to show for [STALL_AFTER_MS]. */
         fun onStalled(stalled: Boolean)
 
@@ -301,7 +304,11 @@ internal class FfmpegPlaybackSession(
                         if (!sizeCapped) {
                             sizeCapped = true
                             startTimeUs = grabber.sourceStartTimeUs()
-                            capDecodedSize(grabber, frame.imageWidth, frame.imageHeight)
+                            val width = frame.imageWidth
+                            val height = frame.imageHeight
+                            val codec = grabber.videoCodecName
+                            report { listener.onVideoFormat(width, height, codec) }
+                            capDecodedSize(grabber, width, height)
                         }
                         val positionMs = (frame.timestamp - startTimeUs) / 1_000
                         val target = awaitingSeekTo
