@@ -4,6 +4,7 @@ import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BudgetNotificationPoster
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
@@ -47,6 +48,13 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             offerNotAPerson = message.data["person_unnamed"] == "1",
             // The relay's periodic summary of what was seen while someone was home: quiet, all text, no media.
             summary = message.data["summary"] == "1",
+            // What the push lets on about its subject: the two offers above, and a household car's own
+            // notification (`notif_id=car-<name>`, see `tell_car` in relay.py). Anything else wears the camera.
+            subject = when {
+                message.data["car_unnamed"] == "1" || message.data["notif_id"]?.startsWith("car-") == true -> MomentCategory.VEHICLES
+                message.data["person_unnamed"] == "1" -> MomentCategory.PEOPLE
+                else -> MomentCategory.ALL
+            },
         )
         AlertNotificationPoster.ensureChannels(this)
         // Already off the main thread: Firebase calls this on its own worker.
@@ -67,6 +75,6 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
         val alert = BudgetAlert.from { message.data[it] }
         val (title, body) = alert?.let { BudgetNotificationPoster.text(this, it) }
             ?: ((message.data["title"] ?: return) to message.data["body"].orEmpty())
-        BudgetNotificationPoster.show(applicationContext, alert?.id ?: message.data[BudgetAlert.KEY_ID] ?: message.messageId ?: title, title, body)
+        BudgetNotificationPoster.show(applicationContext, alert?.id ?: message.data[BudgetAlert.KEY_ID] ?: message.messageId ?: title, title, body, alert?.kind)
     }
 }

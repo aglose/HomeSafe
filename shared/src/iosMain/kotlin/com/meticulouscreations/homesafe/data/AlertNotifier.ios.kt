@@ -8,9 +8,12 @@ import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
+import com.meticulouscreations.homesafe.weather.data.IosWeatherActions
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
+import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
@@ -26,6 +29,7 @@ import platform.UserNotifications.UNAuthorizationStatusProvisional
 import platform.UserNotifications.UNMutableNotificationContent
 import platform.UserNotifications.UNNotification
 import platform.UserNotifications.UNNotificationAttachment
+import platform.UserNotifications.UNNotificationInterruptionLevel
 import platform.UserNotifications.UNNotificationPresentationOptionBanner
 import platform.UserNotifications.UNNotificationPresentationOptionList
 import platform.UserNotifications.UNNotificationPresentationOptionSound
@@ -43,6 +47,9 @@ import kotlin.coroutines.resume
 
 /** `userInfo` key marking a post as an update to one already shown (its picture or clip arriving). */
 private const val KEY_UPDATE = "homesafe_update"
+
+/** The thread the summaries stack in, apart from any camera's. */
+private const val THREAD_SUMMARY = "summary"
 
 /**
  * The notification center's delegate: how iOS tells the app a notification is about to show
@@ -62,9 +69,16 @@ internal object IosNotificationTaps {
     // center's `delegate` is weak.
     private val delegate = NotificationCenterDelegate()
 
+    private var categoriesSet = false
+
     fun install() {
         val center = UNUserNotificationCenter.currentNotificationCenter()
         if (center.delegate !== delegate) center.delegate = delegate
+        // The buttons notifications may carry, declared once: their words are resources, which load off this call.
+        if (!categoriesSet) {
+            categoriesSet = true
+            MainScope().launch { runCatching { center.setNotificationCategories(setOf(IosWeatherActions.category())) } }
+        }
     }
 }
 
@@ -93,7 +107,9 @@ private class NotificationCenterDelegate :
     ) {
         val info = didReceiveNotificationResponse.notification.request.content.userInfo
         if (info[WeatherDeepLink.KEY] != null) {
-            WeatherDeepLinks.open()
+            // A tap opens what the notification was about; its "Radar" button, the radar over the same place.
+            val link = WeatherDeepLink.from { key -> info[key] as? String }
+            WeatherDeepLinks.open(if (didReceiveNotificationResponse.actionIdentifier == IosWeatherActions.RADAR) link.copy(view = WeatherDeepLink.View.RADAR, alertKey = null) else link)
         } else {
             MomentDeepLink.from { key -> info[key] as? String }?.let(MomentDeepLinks::open)
         }
@@ -144,7 +160,25 @@ private class IosAlertNotifier : AlertNotifier {
             setTitle(notification.title)
             setBody(notification.body)
             // Only the first post sounds; a picture or clip arriving is an update, not a second alert.
-            if (!isUpdate) setSound(UNNotificationSound.defaultSound)
+            if (!isUpdate && !notification.silent && !notification.summary) setSound(UNNotificationSound.defaultSound)
+            // Each camera's alerts stack together in Notification Centre, as the relay's pushes do (`thread-id`).
+            setThreadIdentifier(notification.target?.cameraName ?: if (notification.summary) THREAD_SUMMARY else "")
+            // Someone seen while nobody is home breaks through a Focus (where the app has that
+            // entitlement); more of a visit already announced, and a summary, arrive without lighting the screen.
+            setInterruptionLevel(
+                when {
+                    notification.urgent -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelTimeSensitive
+                    notification.silent || notification.summary -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelPassive
+                    else -> UNNotificationInterruptionLevel.UNNotificationInterruptionLevelActive
+                },
+            )
+            setRelevanceScore(
+                when {
+                    notification.urgent -> 1.0
+                    notification.summary -> 0.2
+                    else -> 0.6
+                },
+            )
             setUserInfo(notification.target?.toMap().orEmpty() + if (isUpdate) mapOf(KEY_UPDATE to "1") else emptyMap())
         }
         // The clip if there is one, else the picture. Attachments must be files; the center moves
@@ -152,7 +186,7 @@ private class IosAlertNotifier : AlertNotifier {
         val (bytes, extension) = notification.animation?.let { it to "gif" } ?: notification.thumbnail?.let { it to "jpg" } ?: (null to "")
         if (bytes != null) {
             val path = NSTemporaryDirectory() + "homesafe_alert_${notification.id.filter { it.isLetterOrDigit() }}.$extension"
-            if (writeToFile(path, bytes)) {
+            if (writeFile(path, bytes)) {
                 UNNotificationAttachment.attachmentWithIdentifier("preview", NSURL.fileURLWithPath(path), null, null)
                     ?.let { content.setAttachments(listOf(it)) }
             }
@@ -160,19 +194,20 @@ private class IosAlertNotifier : AlertNotifier {
         val request = UNNotificationRequest.requestWithIdentifier(notification.id, content, trigger = null)
         center.addNotificationRequest(request, withCompletionHandler = null)
     }
+}
 
-    /** Plain POSIX file I/O rather than NSData, for the same reason as the clip downloader. */
-    private fun writeToFile(path: String, bytes: ByteArray): Boolean {
-        val file = fopen(path, "wb") ?: return false
-        try {
-            bytes.usePinned { pinned ->
-                if (bytes.isNotEmpty()) fwrite(pinned.addressOf(0), 1uL, bytes.size.toULong(), file)
-            }
-        } finally {
-            fclose(file)
+/** Writes [bytes] to [path]. Plain POSIX file I/O rather than NSData, for the same reason as the clip downloader. */
+@OptIn(ExperimentalForeignApi::class)
+internal fun writeFile(path: String, bytes: ByteArray): Boolean {
+    val file = fopen(path, "wb") ?: return false
+    try {
+        bytes.usePinned { pinned ->
+            if (bytes.isNotEmpty()) fwrite(pinned.addressOf(0), 1uL, bytes.size.toULong(), file)
         }
-        return true
+    } finally {
+        fclose(file)
     }
+    return true
 }
 
 actual fun createAlertNotifier(platformContext: PlatformContext): AlertNotifier = IosAlertNotifier()

@@ -62,6 +62,8 @@ import homesafe.shared.generated.resources.weather_settings_notices_group
 import homesafe.shared.generated.resources.weather_settings_notices_outlook
 import homesafe.shared.generated.resources.weather_settings_notices_outlook_body
 import homesafe.shared.generated.resources.weather_settings_notices_place
+import homesafe.shared.generated.resources.weather_settings_notices_sample
+import homesafe.shared.generated.resources.weather_settings_notices_sample_body
 import homesafe.shared.generated.resources.weather_settings_notices_severe
 import homesafe.shared.generated.resources.weather_settings_notices_severe_body
 import homesafe.shared.generated.resources.weather_settings_notices_soon
@@ -88,6 +90,7 @@ internal fun WeatherSettingsScreen(
     onNoticesChange: (WeatherNoticeSettings) -> Unit,
     onStillSkyChange: (Boolean) -> Unit,
     onAllowNotifications: () -> Unit,
+    onSendSample: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val colors = WeatherTheme.colors
@@ -148,6 +151,13 @@ internal fun WeatherSettingsScreen(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(stringResource(Res.string.weather_settings_notices_place), style = type.label, color = colors.onSkyFaint)
+                    }
+                    // Only where one could arrive: the OS lets them through.
+                    if (state.notificationPermission == NotificationPermission.GRANTED) {
+                        Spacer(Modifier.height(14.dp))
+                        Text(stringResource(Res.string.weather_settings_notices_sample_body), style = type.label, color = colors.onSkyMuted)
+                        Spacer(Modifier.height(8.dp))
+                        PillButton(stringResource(Res.string.weather_settings_notices_sample), onSendSample, Modifier.testTag("weather_notices_sample"), filled = false)
                     }
                 }
             }

@@ -86,7 +86,8 @@ class MainActivity : FragmentActivity() {
      * exists (after sign-in, on a cold start). Our own notifications carry it as a
      * `homesafe://moment` URI; a push Android drew by itself (from a relay that still sends a
      * notification block) carries the relay's data as extras on the launch intent instead. A
-     * weather notification carries `homesafe://weather`, and opens the weather app the same way.
+     * weather notification carries `homesafe://weather?…`, and opens the weather app the same way,
+     * on the part of it the notification was about.
      * Text shared from another app is not a notification at all, but arrives by the same door: it
      * is taken to be workout notes and handed to the fitness app's import page ([FitnessShares]).
      */
@@ -101,10 +102,7 @@ class MainActivity : FragmentActivity() {
             return
         }
         // A weather notification's tap: the weather app, not a camera.
-        if (WeatherDeepLink.matches(intent.dataString)) {
-            WeatherDeepLinks.open()
-            return
-        }
+        WeatherDeepLink.fromUri(intent.dataString)?.let { return WeatherDeepLinks.open(it) }
         // A budget notification's tap asks for the finance app instead (`homesafe://finance`).
         intent.dataString?.let(FinanceDeepLink::fromUri)?.let { return FinanceDeepLinks.open(it) }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)

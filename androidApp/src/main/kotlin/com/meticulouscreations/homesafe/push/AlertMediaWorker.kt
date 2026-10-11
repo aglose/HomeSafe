@@ -14,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.meticulouscreations.homesafe.data.AlertNotificationPoster
 import com.meticulouscreations.homesafe.data.BackgroundGraph
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 
@@ -39,6 +40,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
             silent = input.getBoolean(KEY_SILENT, false),
             offerCarTag = input.getBoolean(KEY_OFFER_CAR_TAG, false),
             offerNotAPerson = input.getBoolean(KEY_OFFER_NOT_A_PERSON, false),
+            subject = MomentCategory.entries.firstOrNull { it.name == input.getString(KEY_SUBJECT) } ?: MomentCategory.ALL,
         )
         BackgroundGraph.get(applicationContext).pushedAlertMedia.addTo(text, eventId, start) { stage ->
             AlertNotificationPoster.show(applicationContext, stage)
@@ -59,6 +61,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
         private const val KEY_SILENT = "silent"
         private const val KEY_OFFER_CAR_TAG = "offer_car_tag"
         private const val KEY_OFFER_NOT_A_PERSON = "offer_not_a_person"
+        private const val KEY_SUBJECT = "subject"
 
         /** Where a tap opens: the visit's start, which may be well before this alert's own ([KEY_START]). */
         private const val KEY_TARGET_START = "target_start"
@@ -75,6 +78,7 @@ class AlertMediaWorker(context: Context, params: WorkerParameters) : CoroutineWo
                 KEY_SILENT to text.silent,
                 KEY_OFFER_CAR_TAG to text.offerCarTag,
                 KEY_OFFER_NOT_A_PERSON to text.offerNotAPerson,
+                KEY_SUBJECT to text.subject.name,
                 KEY_TARGET_START to (text.target?.startEpochSeconds ?: startEpochSeconds),
             )
             val request = OneTimeWorkRequestBuilder<AlertMediaWorker>()

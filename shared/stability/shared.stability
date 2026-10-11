@@ -5055,6 +5055,21 @@ internal fun com.meticulouscreations.homesafe.weather.ui.ComfortStrip(report: co
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.weather.ui.DayColumn(day: com.meticulouscreations.homesafe.weather.domain.DayForecast, index: kotlin.Int, utcOffsetSeconds: kotlin.Int, highAt: androidx.compose.ui.unit.Dp, lowAt: androidx.compose.ui.unit.Dp, selected: kotlin.Boolean, jiggle: kotlin.Function0<kotlin.Float>, onSelect: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - day: STABLE (marked @Stable or @Immutable)
+    - index: STABLE (primitive type)
+    - utcOffsetSeconds: STABLE (primitive type)
+    - highAt: STABLE (marked @Stable or @Immutable)
+    - lowAt: STABLE (marked @Stable or @Immutable)
+    - selected: STABLE (primitive type)
+    - jiggle: STABLE (function type)
+    - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.DayDetail(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, place: com.meticulouscreations.homesafe.weather.domain.Place, day: com.meticulouscreations.homesafe.weather.domain.DayForecast, index: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -5088,6 +5103,17 @@ private fun com.meticulouscreations.homesafe.weather.ui.DayRow(report: com.metic
     - currentC: STABLE (class with no mutable properties)
     - expanded: STABLE (primitive type)
     - onToggle: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.weather.ui.DayTimeline(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, nowEpochSeconds: kotlin.Long, selected: kotlin.Int, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - report: STABLE (marked @Stable or @Immutable)
+    - nowEpochSeconds: STABLE (primitive type)
+    - selected: STABLE (primitive type)
+    - onSelect: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -5458,16 +5484,18 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WaitingForForecast(entr
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.weather.ui.WeatherApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+public fun com.meticulouscreations.homesafe.weather.ui.WeatherApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, link: com.meticulouscreations.homesafe.navigation.WeatherDeepLink?, onShowLink: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onClose: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - active: STABLE (primitive type)
+    - link: STABLE (class with no mutable properties)
+    - onShowLink: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, initialPage: com.meticulouscreations.homesafe.weather.ui.WeatherPage?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, initialPage: com.meticulouscreations.homesafe.weather.ui.WeatherPage?, link: com.meticulouscreations.homesafe.navigation.WeatherDeepLink?, onShowLink: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -5478,6 +5506,8 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state
     - active: STABLE (primitive type)
     - initialTab: STABLE (class with no mutable properties)
     - initialPage: STABLE (marked @Stable or @Immutable)
+    - link: STABLE (class with no mutable properties)
+    - onShowLink: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ui.WeatherCard(modifier: androidx.compose.ui.Modifier, title: kotlin.String?, icon: androidx.compose.ui.graphics.vector.ImageVector?, padding: androidx.compose.ui.unit.Dp, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -5509,7 +5539,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherNav(selected: com
     - vertical: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, onSendSample: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -5519,6 +5549,7 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(s
     - onNoticesChange: STABLE (function type)
     - onStillSkyChange: STABLE (function type)
     - onAllowNotifications: STABLE (function type)
+    - onSendSample: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -5552,15 +5583,6 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherTopBar(state: com
     - onOpenSettings: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.WeekTrendChart(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, nowEpochSeconds: kotlin.Long, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - report: STABLE (marked @Stable or @Immutable)
-    - nowEpochSeconds: STABLE (primitive type)
-    - modifier: STABLE (marked @Stable or @Immutable)
-
-@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.Welcome(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUseLocation: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -5578,6 +5600,14 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WindTile(report: com.me
   params:
     - report: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.weather.ui.notice.NoticeCard(art: com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt, heightDp: kotlin.Int): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - art: STABLE (marked @Stable or @Immutable)
+    - heightDp: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.radar.MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit

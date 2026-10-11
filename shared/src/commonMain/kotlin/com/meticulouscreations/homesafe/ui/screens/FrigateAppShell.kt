@@ -97,6 +97,7 @@ import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -190,11 +191,20 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     var financeTab by mutableStateOf<FinanceTab?>(null)
         private set
 
-    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null) {
+    /**
+     * What a notification asked the weather app to show (see [openWeatherFromNotifications]): one
+     * of its tabs, a place, a warning. Held until the app has turned to it; null when it opens
+     * wherever it was left.
+     */
+    var weatherLink by mutableStateOf<WeatherDeepLink?>(null)
+        private set
+
+    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null) {
         app = which
         appOrigin = origin
         appHost = from
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
+        this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
         appOpen = true
         drawerOpen = false
     }
@@ -204,9 +214,15 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         financeTab = null
     }
 
+    /** The weather app has turned to what it was asked for. */
+    fun onWeatherLinkShown() {
+        weatherLink = null
+    }
+
     fun closeApp() {
         appOpen = false
         financeTab = null
+        weatherLink = null
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
         appCovering = false
@@ -347,17 +363,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
 
     /**
      * Opens the weather app whenever a weather notification's tap asks for it, for as long as the
-     * caller runs: over whatever tab is up, with no card to grow from. Consumed here for the same
-     * reason a moment's link is: a tap that cold-starts the app has to wait out the sign-in screen.
+     * caller runs: over whatever tab is up, with no card to grow from, on the part of it the
+     * notification was about ([weatherLink]). Consumed here for the same reason a moment's link
+     * is: a tap that cold-starts the app has to wait out the sign-in screen.
      */
     suspend fun openWeatherFromNotifications() {
-        WeatherDeepLinks.pending.filter { it }.collect {
+        WeatherDeepLinks.pending.filterNotNull().collect { link ->
             val host = selectedTab
-            openApp(InnerApp.WEATHER, Offset.Zero, host)
+            openApp(InnerApp.WEATHER, Offset.Zero, host, weatherLink = link)
             // Under a native tab bar the tab Compose last asked for may not be the one on screen;
             // asking for it again puts the tab that holds the app in front.
             onTabSelected(host)
-            WeatherDeepLinks.consume()
+            WeatherDeepLinks.consume(link)
         }
     }
 
@@ -574,7 +591,7 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
                     onShowRequestedTab = nav::onFinanceTabShown,
                 )
 
-                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen)
+                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
 
                 InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
             }

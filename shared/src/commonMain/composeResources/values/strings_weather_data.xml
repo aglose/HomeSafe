@@ -167,6 +167,16 @@
     <string name="weather_notice_warmer_tomorrow">High of %1$s, %2$s above today</string>
     <string name="weather_notice_high_tomorrow">High of %1$s</string>
 
+    <!-- Notifications: the picture. Short marks beside a small icon, and the day's range in large figures. -->
+    <!-- %1$s the high, %2$s the low ("68° / 52°") -->
+    <string name="weather_notice_art_range">%1$s / %2$s</string>
+    <!-- %1$d the UV index, beside a sun -->
+    <string name="weather_notice_fact_uv">UV %1$d</string>
+    <!-- %1$d the air quality index, beside a haze -->
+    <string name="weather_notice_fact_aqi">AQI %1$d</string>
+    <!-- The body of the sample notification sent from Settings; its title is today's forecast in a sentence -->
+    <string name="weather_notice_sample_body">A sample: this is how a weather notification looks</string>
+
     <!-- Failures -->
     <string name="weather_error_forecast_unavailable">The weather service isn't answering properly just now. Try again in a little while.</string>
     <string name="weather_error_no_forecast">The weather service had no forecast for this place</string>

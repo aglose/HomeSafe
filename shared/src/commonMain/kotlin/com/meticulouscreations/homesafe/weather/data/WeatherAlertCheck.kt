@@ -1,8 +1,12 @@
 package com.meticulouscreations.homesafe.weather.data
 
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.text.TextLoader
 import com.meticulouscreations.homesafe.weather.domain.Place
 import com.meticulouscreations.homesafe.weather.domain.WeatherCheckScheduler
+import com.meticulouscreations.homesafe.weather.domain.WeatherNotice
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt
+import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeKind
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeLedger
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticePlanner
 import com.meticulouscreations.homesafe.weather.domain.WeatherNotification
@@ -14,11 +18,13 @@ import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metro.SingleIn
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Clock
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * One look at the forecast for notifications: fetch it for where the phone is, ask
@@ -62,8 +68,43 @@ class WeatherAlertCheck(
         runCatching { check() }.getOrDefault(0)
     }
 
+    /**
+     * Posts a sample notification (see [WeatherNoticePlanner.sample]) for where the phone is, and
+     * says whether the OS took it. Asked for from Settings, so it goes out whatever the hour and
+     * whatever the switches say, and the ledger never hears of it.
+     */
+    suspend fun sample(): Boolean = running.withLock {
+        runCatching {
+            if (!notifier.isSupported || !notifier.isAllowed()) return@runCatching false
+            val place = place() ?: return@runCatching false
+            val report = repository.report(place, maxAgeSeconds = SAMPLE_MAX_AGE_SECONDS).getOrNull() ?: return@runCatching false
+            val units = preferences.observe().first().units
+            val notice = WeatherNoticePlanner.sample(report, place.name.takeIf { it.isNotBlank() }, units, clock.now().epochSeconds) ?: return@runCatching false
+            val posted = notifier.notify(notice.toNotification(place))
+            if (posted) notice.expiresEpochSeconds?.let(::sweepAt)
+            posted
+        }.getOrDefault(false)
+    }
+
+    /**
+     * Takes down what is over at [epochSeconds], from here rather than from the next check. A
+     * sample can go out with the notifications switched off, when no check is scheduled to come,
+     * and where the platform can't give a notification an end (iOS) nothing else would take it
+     * down. Good for as long as the app is running; every later check sweeps too, switch or no.
+     */
+    private fun sweepAt(epochSeconds: Long) {
+        appScope.launch {
+            delay((epochSeconds - clock.now().epochSeconds).coerceAtLeast(0).seconds)
+            runCatching { notifier.sweep(clock.now().epochSeconds) }
+        }
+    }
+
     private suspend fun check(): Int {
         if (!notifier.isSupported) return 0
+        val now = clock.now().epochSeconds
+        // First, and whatever the switches say: what was said earlier and is over comes down. A
+        // sample, or a notice posted before the switch went off, is still there to be taken down.
+        runCatching { notifier.sweep(now) }
         val prefs = preferences.observe().first()
         if (!prefs.notices.enabled) return 0
         // Not allowed to notify: nothing is fetched, and nothing is marked as said, so the morning's
@@ -71,15 +112,40 @@ class WeatherAlertCheck(
         if (!notifier.isAllowed()) return 0
         val place = place() ?: return 0
         val report = repository.report(place, maxAgeSeconds = MAX_AGE_SECONDS).getOrNull() ?: return 0
-        val now = clock.now().epochSeconds
         val notices = WeatherNoticePlanner.plan(report, place.name.takeIf { it.isNotBlank() }, prefs.notices, prefs.units, now, ledger.sent(now))
         // Marked as said only once it has been: one the OS wouldn't take is tried again next time.
         return notices.count { notice ->
-            val posted = notifier.notify(WeatherNotification(notice.key, textLoader.load(notice.title), textLoader.load(notice.body), notice.urgent))
+            val posted = notifier.notify(notice.toNotification(place))
             if (posted) ledger.record(notice.key, now)
             posted
         }
     }
+
+    /** [this] in the reader's language, with where its tap lands: the part of the weather app it is about, on [place]. */
+    private suspend fun WeatherNotice.toNotification(place: Place) = WeatherNotification(
+        id = key,
+        title = textLoader.load(title),
+        body = textLoader.load(body),
+        art = WeatherNoticeArt(
+            icon = icon,
+            isDay = isDay,
+            caption = caption?.let { textLoader.load(it) },
+            headline = headline?.let { textLoader.load(it) },
+            facts = facts.map { WeatherNoticeArt.Fact(it.icon, textLoader.load(it.text)) },
+            chart = chart,
+            ticks = chart?.ticks.orEmpty().map { textLoader.load(it) },
+        ),
+        urgent = urgent,
+        place = this.place,
+        detail = detail?.let { textLoader.load(it) },
+        eventEpochSeconds = eventEpochSeconds,
+        expiresEpochSeconds = expiresEpochSeconds,
+        link = WeatherDeepLink(
+            view = if (kind == WeatherNoticeKind.TOMORROW) WeatherDeepLink.View.FORECAST else WeatherDeepLink.View.TODAY,
+            placeId = place.id,
+            alertKey = alertKey,
+        ),
+    )
 
     private suspend fun place(): Place? =
         runCatching { locator.locate() }.getOrNull()
@@ -89,5 +155,8 @@ class WeatherAlertCheck(
     private companion object {
         /** The forecast's own quarter-hour step: a check never reasons from anything older. */
         const val MAX_AGE_SECONDS = 300L
+
+        /** A sample is of how a notification looks, not of the last quarter hour: the forecast on screen will do. */
+        const val SAMPLE_MAX_AGE_SECONDS = 1_800L
     }
 }
