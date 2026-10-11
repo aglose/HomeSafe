@@ -90,6 +90,17 @@ class LiveStreamStatsTest {
     }
 
     @Test
+    fun aPeerThatIsNotBundledIsTimedOnTheVideosOwnTransport() {
+        // Audio first, on a path of its own with a round trip nothing like the video's.
+        val unbundled = listOf(
+            RtcStat("CP-audio", "candidate-pair", mapOf("nominated" to true, "state" to "succeeded", "currentRoundTripTime" to 0.250)),
+            RtcStat("T-audio", "transport", mapOf("selectedCandidatePairId" to "CP-audio")),
+        ) + second.map { stat -> if (stat.id == "IT01V1") RtcStat(stat.id, stat.type, stat.members + ("transportId" to "T01")) else stat }
+
+        assertEquals(4.0, webRtcReceiverStats(unbundled, timestampMs = 0.0)!!.roundTripTimeMs)
+    }
+
+    @Test
     fun flagsThatArriveAsNumbersStillCount() {
         // iOS hands every value over as an NSNumber, booleans included.
         val asNumbers = second.filterNot { it.type == "transport" }.map { stat ->
@@ -245,6 +256,10 @@ class LiveStreamStatsTest {
         // A new session counts from zero again: no rate until its second reading.
         assertNull(meter.perSecond(100, atMs = 3_000))
         assertEquals(400.0, meter.perSecond(500, atMs = 4_000))
+        // Left unread for a while and reset: the next reading is a first one, not an average over the gap.
+        meter.reset()
+        assertNull(meter.perSecond(900, atMs = 60_000))
+        assertEquals(100.0, meter.perSecond(1_000, atMs = 61_000))
         assertEquals(500, 62_500.0.bytesPerSecondAsKbps())
     }
 

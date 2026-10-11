@@ -327,6 +327,14 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
             }
             if (now - reportedAtMs >= LIVE_STATS_INTERVAL_MS) {
                 reportedAtMs = now
+                // Each meter compares a reading with the one before it, so one that sat out a
+                // spell on the other transport (or a recording) starts over: the same peer can
+                // come back from standby, and its totals since it left are not the last second's.
+                if (!live || transport != LiveTransport.WEBRTC) {
+                    webRtcMeter.reset()
+                    metered = null
+                }
+                if (!live || transport != LiveTransport.HLS) bytes.reset()
                 val stats = when {
                     !live -> null
 

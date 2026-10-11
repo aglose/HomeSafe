@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -102,21 +103,22 @@ internal fun streamStatsRows(stats: LiveStreamStats): List<StreamStatsRow> = bui
 internal fun durationText(milliseconds: Int): UiText = if (milliseconds < MS_PER_SECOND) {
     UiText.of(Res.string.camera_stats_milliseconds, milliseconds)
 } else {
-    UiText.of(Res.string.camera_stats_seconds, oneDecimal(milliseconds))
+    tenths(milliseconds).let { UiText.of(Res.string.camera_stats_seconds, it / 10, it % 10) }
 }
 
 /** "640 kbps" up to a megabit, "2.1 Mbps" from there. */
 internal fun bitrateText(kbps: Int): UiText = if (kbps < KBPS_PER_MBPS) {
     UiText.of(Res.string.camera_stats_kbps, kbps)
 } else {
-    UiText.of(Res.string.camera_stats_mbps, oneDecimal(kbps))
+    tenths(kbps).let { UiText.of(Res.string.camera_stats_mbps, it / 10, it % 10) }
 }
 
-/** A count of thousandths as units with one decimal place, rounded: 1449 is "1.4", 1450 "1.5". */
-private fun oneDecimal(thousandths: Int): String {
-    val tenths = (thousandths + 50) / 100
-    return "${tenths / 10}.${tenths % 10}"
-}
+/**
+ * A count of thousandths as tenths of a unit, rounded: 1449 is 14 (1.4), 1450 is 15 (1.5). The
+ * whole part and the tenth go into the string as two numbers, so the decimal separator between
+ * them is the translation's to write.
+ */
+private fun tenths(thousandths: Int): Int = (thousandths + 50) / 100
 
 private fun List<UiText>.joined(): UiText = UiText.Joined(this, separator = UiText.of(Res.string.common_dot_separator))
 
@@ -147,43 +149,46 @@ internal fun PlayerStreamStats(cameraName: String, modifier: Modifier = Modifier
 @Composable
 internal fun StreamStatsPanel(stats: LiveStreamStats?, isLive: Boolean, onClose: () -> Unit, modifier: Modifier = Modifier) {
     val shape = RoundedCornerShape(12.dp)
-    Column(
+    Box(
         modifier = modifier
             .widthIn(max = STATS_PANEL_MAX_WIDTH)
             .clip(shape)
             .background(LocalFrigateExtraColors.current.glassFill)
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f), shape)
-            .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 8.dp)
             .testTag(STREAM_STATS_TEST_TAG),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 text = stringResource(Res.string.camera_stats_title),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f),
+                // Kept clear of the cross, and as wide as the panel may go so every panel is one width.
+                modifier = Modifier.fillMaxWidth().padding(end = CLOSE_TARGET, bottom = 6.dp),
             )
-            // A small glyph in a full-size target: the panel is over the video, and must not be bigger than it has to.
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(CircleShape)
-                    .clickable(role = Role.Button, onClick = onClose),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Close,
-                    contentDescription = stringResource(Res.string.camera_stats_close),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(16.dp),
-                )
+            when {
+                !isLive -> StatsNote(Res.string.camera_stats_recording)
+                stats == null -> StatsNote(Res.string.camera_stats_measuring)
+                else -> streamStatsRows(stats).forEach { row -> StatsLine(row) }
             }
         }
-        when {
-            !isLive -> StatsNote(Res.string.camera_stats_recording)
-            stats == null -> StatsNote(Res.string.camera_stats_measuring)
-            else -> streamStatsRows(stats).forEach { row -> StatsLine(row) }
+        // A small glyph in a full-size touch target. The target lies over the panel's corner
+        // rather than in its layout: the panel is over the video, and a title row as tall as
+        // a finger needs would cover more of it for nothing.
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .size(CLOSE_TARGET)
+                .clip(CircleShape)
+                .clickable(role = Role.Button, onClick = onClose)
+                .padding(top = 10.dp, end = 12.dp),
+            contentAlignment = Alignment.TopEnd,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Close,
+                contentDescription = stringResource(Res.string.camera_stats_close),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(16.dp),
+            )
         }
     }
 }
@@ -194,13 +199,12 @@ private fun StatsNote(text: StringResource) {
         text = stringResource(text),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(end = 6.dp),
     )
 }
 
 @Composable
 private fun StatsLine(row: StreamStatsRow) {
-    Row(modifier = Modifier.padding(end = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             text = stringResource(row.label),
             style = MaterialTheme.typography.labelSmall,
@@ -220,6 +224,9 @@ internal const val STREAM_STATS_TEST_TAG = "stream-stats"
 
 private val STATS_PANEL_MAX_WIDTH = 288.dp
 private val STATS_LABEL_WIDTH = 88.dp
+
+/** The cross's touch target: Material's minimum, whatever the size of the glyph in it. */
+private val CLOSE_TARGET = 48.dp
 private const val TABULAR_FIGURES = "tnum"
 
 /** The panel as each kind of connection fills it, and the two things it says when it has no figures. */

@@ -1,11 +1,15 @@
 package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.assertHeightIsEqualTo
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertWidthIsEqualTo
+import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStats
 import com.meticulouscreations.homesafe.ui.components.LiveTransport
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
@@ -67,10 +71,12 @@ class StreamStatsPanelUiTest {
     }
 
     @Test
-    fun theCrossClosesIt() = runComposeUiTest {
+    fun theCrossClosesItAndIsBigEnoughToHit() = runComposeUiTest {
         var closed = 0
         setContent { FrigatePreview { StreamStatsPanel(stats = null, isLive = true, onClose = { closed++ }) } }
 
+        // The glyph is small; what takes the tap is Material's 48 dp, inside the panel so none of it is clipped away.
+        onNode(hasClickAction()).assertWidthIsEqualTo(48.dp).assertHeightIsEqualTo(48.dp)
         onNodeWithContentDescription("Close stats for nerds").performClick()
 
         assertEquals(1, closed)

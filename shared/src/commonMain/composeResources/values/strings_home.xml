@@ -148,9 +148,10 @@
     <string name="camera_stats_network">Network</string>
     <string name="camera_stats_buffer">Buffer</string>
     <string name="camera_stats_decode">Decode</string>
-    <!-- Lengths of time: %1$d is whole milliseconds; %1$s is seconds with one decimal, such as "1.4". -->
+    <!-- A length of time in whole milliseconds. -->
     <string name="camera_stats_milliseconds">%1$d ms</string>
-    <string name="camera_stats_seconds">%1$s s</string>
+    <!-- A length of time in seconds to one decimal place: %1$d is the whole seconds and %2$d the tenths ("1.4 s"). The mark between them is the language's decimal separator. -->
+    <string name="camera_stats_seconds">%1$d.%2$d s</string>
     <!-- How the video is reaching this device. -->
     <string name="camera_stats_connection">Connection</string>
     <string name="camera_stats_connection_webrtc">WebRTC</string>
@@ -161,9 +162,10 @@
     <!-- %1$d is frames a second. -->
     <string name="camera_stats_frame_rate">%1$d fps</string>
     <string name="camera_stats_bitrate">Bitrate</string>
-    <!-- %1$d is kilobits a second; %1$s is megabits a second with one decimal, such as "2.1". -->
+    <!-- %1$d is kilobits a second. -->
     <string name="camera_stats_kbps">%1$d kbps</string>
-    <string name="camera_stats_mbps">%1$s Mbps</string>
+    <!-- Megabits a second to one decimal place: %1$d is the whole megabits and %2$d the tenths ("2.1 Mbps"). The mark between them is the language's decimal separator. -->
+    <string name="camera_stats_mbps">%1$d.%2$d Mbps</string>
     <!-- Beside what never made it to the screen: frames the player had to skip, then packets the network lost ("0 frames · 3 packets"). -->
     <string name="camera_stats_dropped">Dropped</string>
     <plurals name="camera_stats_dropped_frames">

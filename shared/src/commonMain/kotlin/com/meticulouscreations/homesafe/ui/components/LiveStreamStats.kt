@@ -94,8 +94,9 @@ data class WebRtcReceiverStats(
 fun webRtcReceiverStats(stats: Collection<RtcStat>, timestampMs: Double): WebRtcReceiverStats? {
     val video = stats.firstOrNull { it.type == "inbound-rtp" && (it.text("kind") ?: it.text("mediaType")) == "video" } ?: return null
     val byId = stats.associateBy { it.id }
-    val selectedPairId = stats.firstOrNull { it.type == "transport" }?.text("selectedCandidatePairId")
-    val pair = selectedPairId?.let { byId[it] }
+    // The video's own transport: a peer that isn't bundled has one for audio as well, on a path of its own.
+    val transport = video.text("transportId")?.let { byId[it] } ?: stats.firstOrNull { it.type == "transport" }
+    val pair = transport?.text("selectedCandidatePairId")?.let { byId[it] }
         ?: stats.firstOrNull { it.type == "candidate-pair" && it.flag("nominated") && it.text("state") == "succeeded" }
     return WebRtcReceiverStats(
         timestampMs = timestampMs,
@@ -248,6 +249,11 @@ class LiveEdgeTracker(private val windowMs: Long = 10_000L, private val restartD
 class RateMeter {
     private var lastValue: Long? = null
     private var lastAtMs = 0L
+
+    /** Forget the last reading, so the next one starts a fresh stretch instead of averaging over the gap. */
+    fun reset() {
+        lastValue = null
+    }
 
     /** Null for the first reading, and whenever the total went backwards (a new session's count). */
     fun perSecond(value: Long?, atMs: Long): Double? {

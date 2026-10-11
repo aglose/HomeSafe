@@ -64,7 +64,7 @@ class StreamStatsRowsTest {
                         dot,
                     ),
                 ),
-                StreamStatsRow(Res.string.camera_stats_bitrate, UiText.of(Res.string.camera_stats_mbps, "4.2")),
+                StreamStatsRow(Res.string.camera_stats_bitrate, UiText.of(Res.string.camera_stats_mbps, 4, 2)),
                 StreamStatsRow(
                     Res.string.camera_stats_dropped,
                     UiText.Joined(
@@ -83,8 +83,8 @@ class StreamStatsRowsTest {
 
         assertEquals(
             listOf(
-                StreamStatsRow(Res.string.camera_stats_delay, UiText.of(Res.string.camera_stats_seconds, "2.3")),
-                StreamStatsRow(Res.string.camera_stats_buffer, UiText.of(Res.string.camera_stats_seconds, "1.1")),
+                StreamStatsRow(Res.string.camera_stats_delay, UiText.of(Res.string.camera_stats_seconds, 2, 3)),
+                StreamStatsRow(Res.string.camera_stats_buffer, UiText.of(Res.string.camera_stats_seconds, 1, 1)),
                 StreamStatsRow(Res.string.camera_stats_connection, UiText.of(Res.string.camera_stats_connection_hls)),
                 StreamStatsRow(Res.string.camera_stats_bitrate, UiText.of(Res.string.camera_stats_kbps, 512)),
                 StreamStatsRow(Res.string.camera_stats_dropped, UiText.Joined(listOf(UiText.plural(Res.plurals.camera_stats_dropped_frames, 1)), dot)),
@@ -108,17 +108,18 @@ class StreamStatsRowsTest {
 
     @Test
     fun aSecondOrMoreIsWrittenInSecondsToOneDecimal() {
+        // Whole seconds and tenths apart, so the separator between them is the translation's.
         assertEquals(UiText.of(Res.string.camera_stats_milliseconds, 0), durationText(0))
         assertEquals(UiText.of(Res.string.camera_stats_milliseconds, 999), durationText(999))
-        assertEquals(UiText.of(Res.string.camera_stats_seconds, "1.0"), durationText(1_000))
-        assertEquals(UiText.of(Res.string.camera_stats_seconds, "1.4"), durationText(1_449))
-        assertEquals(UiText.of(Res.string.camera_stats_seconds, "1.5"), durationText(1_450))
-        assertEquals(UiText.of(Res.string.camera_stats_seconds, "12.0"), durationText(11_960))
+        assertEquals(UiText.of(Res.string.camera_stats_seconds, 1, 0), durationText(1_000))
+        assertEquals(UiText.of(Res.string.camera_stats_seconds, 1, 4), durationText(1_449))
+        assertEquals(UiText.of(Res.string.camera_stats_seconds, 1, 5), durationText(1_450))
+        assertEquals(UiText.of(Res.string.camera_stats_seconds, 12, 0), durationText(11_960))
     }
 
     @Test
     fun aMegabitOrMoreIsWrittenInMegabits() {
         assertEquals(UiText.of(Res.string.camera_stats_kbps, 640), bitrateText(640))
-        assertEquals(UiText.of(Res.string.camera_stats_mbps, "2.1"), bitrateText(2_050))
+        assertEquals(UiText.of(Res.string.camera_stats_mbps, 2, 1), bitrateText(2_050))
     }
 }

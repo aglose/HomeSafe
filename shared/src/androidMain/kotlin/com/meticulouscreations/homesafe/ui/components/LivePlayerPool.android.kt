@@ -429,8 +429,20 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         val hlsBytes = RateMeter()
         val hlsFrames = RateMeter()
         while (true) {
+            val live = source is VideoSource.Live
+            // Each meter compares a reading with the one before it, so one that sat out a spell
+            // on the other transport (or a recording) starts over: the same peer can come back
+            // from standby, and its totals since it left are not the last second's.
+            if (!live || transport != LiveTransport.WEBRTC) {
+                webRtcMeter.reset()
+                metered = null
+            }
+            if (!live || transport != LiveTransport.HLS) {
+                hlsBytes.reset()
+                hlsFrames.reset()
+            }
             val stats = when {
-                source !is VideoSource.Live -> null
+                !live -> null
 
                 transport == LiveTransport.WEBRTC -> {
                     val current = peer
