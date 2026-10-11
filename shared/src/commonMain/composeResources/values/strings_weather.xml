@@ -149,8 +149,6 @@
 
     <!-- Forecast -->
     <string name="weather_forecast_trend_title">The days ahead</string>
-    <!-- For a screen reader: %1$s the highest high, %2$s the lowest low -->
-    <string name="weather_forecast_trend_description">Highs up to %1$s and lows down to %2$s over the days ahead</string>
     <plurals name="weather_forecast_days_title">
         <item quantity="one">%1$d-day forecast</item>
         <item quantity="other">%1$d-day forecast</item>
