@@ -6222,9 +6222,12 @@ STOCK_PLAN_SUBTYPE = "stock plan"
 # How far back the activity is asked for: as far as Plaid keeps it.
 STOCK_EVENTS_DAYS = 730
 STOCK_EVENTS_PAGE = 500
-# How many vests ahead are worked out, and how many past ones the app is shown.
+# How many vests ahead and how many past ones the app is shown. Every vest is worked out, to the
+# last unvested share, and a sheet line may name any of them; VESTS_MOST only stops a plan with
+# an absurd pace (a share a month of a million) from being worked out for ever.
 VESTS_AHEAD = 12
 VESTS_SHOWN = 8
+VESTS_MOST = 600
 # A last vest smaller than this share of the usual one is not a vest of its own: the grants don't
 # end on a round number, and what is left over comes with the vest before.
 VEST_LEFTOVER = 0.1
@@ -6277,7 +6280,8 @@ def stock_plan_outlook(events: list[tuple[str, str | None, str | None, float | N
     (`vests`, oldest first, each a `date` and `shares`), and those to come (`upcoming`, each with
     its `value` at today's price too): one every `every_months` on the day of the month vests
     usually fall, each of `per_vest` shares (the last vest's), until the unvested shares are used
-    up. With a single vest read the pace isn't known, and nothing is `upcoming`.
+    up, however many vests that takes. With a single vest read the pace isn't known, and nothing
+    is `upcoming`.
     """
     vested: dict[str, dict[str, float]] = {}
     for day, kind, ticker, shares in events:
@@ -6303,7 +6307,7 @@ def stock_plan_outlook(events: list[tuple[str, str | None, str | None, float | N
     usual = max(sorted({d.day for d in days}), key=[d.day for d in days].count)
     outlook["every_months"] = every
     per_vest, left, at = vests[-1][1], unvested, days[-1].year * 12 + days[-1].month - 1
-    while left > 0 and len(outlook["upcoming"]) < VESTS_AHEAD:
+    while left > 0 and len(outlook["upcoming"]) < VESTS_MOST:
         at += every
         year, month = divmod(at, 12)
         shares = min(per_vest, left)
@@ -6315,8 +6319,12 @@ def stock_plan_outlook(events: list[tuple[str, str | None, str | None, float | N
     return outlook
 
 
-def stock_plans() -> list[dict[str, Any]]:
-    """Every linked stock plan account with its outlook (see `stock_plan_outlook`), by the account's feed key. One no share has vested in yet isn't listed."""
+def stock_plans(shown: bool = False) -> list[dict[str, Any]]:
+    """
+    Every linked stock plan account with its outlook (see `stock_plan_outlook`), by the account's
+    feed key. One no share has vested in yet isn't listed. Whole, for the sheet fill to find any
+    vest in; `shown` cuts it to what the app's page has room for (the nearest vests either way).
+    """
     accounts = with_db(lambda c: c.execute(
         "SELECT a.account_id, k.key, a.name, i.institution FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id"
         " LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id WHERE a.subtype=? ORDER BY i.linked_at, a.account_id", (STOCK_PLAN_SUBTYPE,)
@@ -6326,8 +6334,10 @@ def stock_plans() -> list[dict[str, Any]]:
         events = with_db(lambda c: c.execute("SELECT date, kind, ticker, quantity FROM plaid_stock_events WHERE account_id=?", (account_id,)).fetchall())
         holdings = with_db(lambda c: c.execute("SELECT ticker, quantity, vested, price FROM plaid_holdings WHERE account_id=?", (account_id,)).fetchall())
         outlook = stock_plan_outlook(events, holdings)
+        if outlook and shown:
+            outlook = {**outlook, "vests": outlook["vests"][-VESTS_SHOWN:], "upcoming": outlook["upcoming"][:VESTS_AHEAD]}
         if outlook:
-            plans.append({"account": key or name, "name": name, "institution": institution or "", **outlook, "vests": outlook["vests"][-VESTS_SHOWN:]})
+            plans.append({"account": key or name, "name": name, "institution": institution or "", **outlook})
     return plans
 
 
@@ -6605,21 +6615,26 @@ def fill_vest_named(named: Any) -> dict[str, str] | None:
 
 def fill_vest(outlook: dict[str, Any] | None, on: str) -> tuple[str, dict[str, Any] | None]:
     """
-    The vest of a stock plan's `outlook` that a line means by the day it names: ("upcoming", the
-    vest) for one still to come that falls within VEST_MATCH_DAYS of it, ("vested", None) when a
-    vest that near has been read already, ("no_vest", None) when the outlook has neither (or
-    there is no outlook: no vest read yet, or too few to tell the pace).
+    The vest of a stock plan's `outlook` that a line means by the day it names: the one nearest
+    that day, read or still to come, if it falls within VEST_MATCH_DAYS of it. (A plan that vests
+    every month has two within reach of most days, and the nearer is the one meant.) Answers
+    ("upcoming", the vest) for one still to come, ("vested", None) for one read already, and
+    ("no_vest", None) when none is that near, or there is no outlook (no vest read yet, or too
+    few to tell the pace).
     """
     wanted = datetime.strptime(on, "%Y-%m-%d").date()
 
-    def near(vest: dict[str, Any]) -> bool:
-        return abs((datetime.strptime(vest["date"], "%Y-%m-%d").date() - wanted).days) <= VEST_MATCH_DAYS
+    def away(vest: dict[str, Any]) -> int:
+        return abs((datetime.strptime(vest["date"], "%Y-%m-%d").date() - wanted).days)
 
     outlook = outlook or {}
-    coming = next((vest for vest in outlook.get("upcoming") or [] if near(vest)), None)
-    if coming:
-        return "upcoming", coming
-    return ("vested" if any(near(vest) for vest in outlook.get("vests") or []) else "no_vest"), None
+    # Equally near, the one still to come: a line is written for a vest that is expected.
+    within = [(away(vest), order, vest) for order, vests in enumerate((outlook.get("upcoming") or [], outlook.get("vests") or [])) for vest in vests]
+    within = [found for found in within if found[0] <= VEST_MATCH_DAYS]
+    if not within:
+        return "no_vest", None
+    _, read, vest = min(within, key=lambda found: found[:2])
+    return ("vested", None) if read else ("upcoming", vest)
 
 
 def fill_find(rows: list[list[Any]], label: str) -> tuple[int, int] | str:
@@ -6664,7 +6679,8 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
     A line that names a vest (see "stock plan") is worth that vest's shares at today's price, or
     the number of shares when the line says so, by the stock plan's outlook in `plans` (by feed
     key). It is left alone as "vested" once that vest has been read, since what the cell then
-    holds is its last estimate, and as "no_vest" when the outlook has no vest near that day.
+    holds is its last estimate, as "no_vest" when the outlook has no vest near that day, and as
+    "no_price" when its worth is wanted and Plaid gave no price for the share.
     """
     plan = []
     for line in lines:
@@ -6684,7 +6700,8 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
                 continue
             total = vest["shares"] if line["shares"] else vest["value"]
             if total is None:
-                entry["status"] = "no_balance"
+                # What the shares are worth can't be said without the share's price. How many they are can.
+                entry["status"] = "no_price"
                 continue
             total = round(total, 2)
         else:
@@ -6962,7 +6979,7 @@ def bank_status(now: float | None = None) -> dict[str, Any]:
             "service_account": _feed_google["account"] or feed.get("service_account") or _finance_google["account"],
         },
         "fill": fill_status(),
-        "stock_plans": stock_plans(),
+        "stock_plans": stock_plans(shown=True),
     }
 
 

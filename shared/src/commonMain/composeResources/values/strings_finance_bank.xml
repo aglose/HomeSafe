@@ -134,6 +134,7 @@
     <!-- A line that is a vest of a stock plan (see fin_bank_plan_*) rather than an account's balance. -->
     <string name="fin_bank_fill_line_vested">This vest has happened. The cell keeps its last estimate.</string>
     <string name="fin_bank_fill_line_no_vest">Not written, because no vest is expected around that day.</string>
+    <string name="fin_bank_fill_line_no_price">Not written, because the plan gave no price for the share, so what the vest is worth can't be worked out.</string>
     <string name="fin_bank_fill_pause">Pause</string>
     <string name="fin_bank_fill_resume">Resume</string>
     <string name="fin_bank_fill_working">Working…</string>

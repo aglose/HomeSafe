@@ -143,6 +143,9 @@ enum class SheetFillStatus(val wire: String) {
 
     /** A vest's line with no vest expected near its day. */
     NO_VEST("no_vest"),
+
+    /** A vest's line that wants what the shares are worth, when the plan gave no price for the share. */
+    NO_PRICE("no_price"),
     ;
 
     /** The line was left alone for a reason only a person can clear. */

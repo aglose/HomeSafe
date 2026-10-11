@@ -101,6 +101,7 @@ import homesafe.shared.generated.resources.fin_bank_fill_line_from
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_account
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_balance
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_label
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_price
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_tab
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_vest
 import homesafe.shared.generated.resources.fin_bank_fill_line_not_a_number
@@ -746,6 +747,7 @@ private fun FillLineRow(line: SheetFillLine, busy: Boolean, enabled: Boolean, on
                 SheetFillStatus.SAME_CELL -> UiText.of(Res.string.fin_bank_fill_line_same_cell, line.cell.orEmpty())
                 SheetFillStatus.VESTED -> UiText.of(Res.string.fin_bank_fill_line_vested)
                 SheetFillStatus.NO_VEST -> UiText.of(Res.string.fin_bank_fill_line_no_vest)
+                SheetFillStatus.NO_PRICE -> UiText.of(Res.string.fin_bank_fill_line_no_price)
             }
             Text(
                 said.resolve(),

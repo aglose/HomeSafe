@@ -4576,6 +4576,39 @@ class StockPlanTest(_ScratchDb):
         monthly = relay.stock_plan_outlook([("2026-12-31", "transfer", "ACME", 100.0), ("2027-01-31", "transfer", "ACME", 100.0)], [("ACME", 200.0, 0.0, None)])
         self.assertEqual([("2027-02-28", None), ("2027-03-31", None)], [(v["date"], v["value"]) for v in monthly["upcoming"]])
 
+    def test_every_vest_is_worked_out_and_only_the_page_is_cut_short(self):
+        # Four years of a new grant, a quarter at a time: sixteen vests, more than the page shows.
+        self.read(investments_holdings_get={**self.HOLDINGS, "holdings": [{**self.HOLDINGS["holdings"][2], "quantity": 4800}]})
+        whole, = relay.stock_plans()
+        self.assertEqual((16, "2030-08-15", 4), (len(whole["upcoming"]), whole["upcoming"][-1]["date"], len(whole["vests"])))
+        page, = relay.bank_status(self.T)["stock_plans"]
+        self.assertEqual(relay.VESTS_AHEAD, len(page["upcoming"]))
+        # A line for the last of them is still that vest, not one the plan hasn't got.
+        sheet, lines = self.fill([{"label": "Last", "right": 1, "vest": {"account": self.KEY, "on": "2030-08-15"}}], [["Last", 1]])
+        self.assertEqual(("written", 3000.0), (lines["Last"]["status"], sheet.cell("B1")))
+
+    def test_a_line_means_the_vest_nearest_its_day(self):
+        monthly = {"vests": [{"date": "2026-11-30", "shares": 100.0}, {"date": "2026-12-31", "shares": 100.0}],
+                   "upcoming": [{"date": "2027-01-31", "shares": 100.0, "value": 1000.0}, {"date": "2027-02-28", "shares": 120.0, "value": 1200.0}]}
+        # Both of a monthly plan's next vests are within reach of the middle of February; the nearer is meant.
+        self.assertEqual(("upcoming", "2027-02-28"), (lambda found: (found[0], found[1]["date"]))(relay.fill_vest(monthly, "2027-02-15")))
+        self.assertEqual(("upcoming", "2027-01-31"), (lambda found: (found[0], found[1]["date"]))(relay.fill_vest(monthly, "2027-02-10")))
+        # A vest already read is the one meant when it is the nearer, though one to come is in reach too.
+        self.assertEqual(("vested", None), relay.fill_vest(monthly, "2027-01-10"))
+        self.assertEqual("upcoming", relay.fill_vest(monthly, "2027-01-20")[0])
+        self.assertEqual(("no_vest", None), relay.fill_vest(monthly, "2027-06-15"))
+        self.assertEqual(("no_vest", None), relay.fill_vest(None, "2027-02-15"))
+
+    def test_a_vest_s_worth_needs_the_share_s_price_and_its_share_count_does_not(self):
+        priceless = [{**h, "institution_price": None} for h in self.HOLDINGS["holdings"]]
+        self.read(investments_holdings_get={**self.HOLDINGS, "holdings": priceless})
+        sheet, lines = self.fill(
+            [{"label": "Worth", "right": 1, "vest": {"account": self.KEY, "on": "2026-11-15"}},
+             {"label": "Shares", "right": 1, "vest": {"account": self.KEY, "on": "2026-11-15"}, "as": "shares"}],
+            [["Worth", 1], ["Shares", 1]])
+        self.assertEqual({"Worth": "no_price", "Shares": "written"}, {label: line["status"] for label, line in lines.items()})
+        self.assertEqual((1, 300.0), (sheet.cell("B1"), sheet.cell("B2")))
+
     def fill(self, lines, home):
         with open(relay.FINANCE_FILL_FILE, "w") as f:
             json.dump({"tab": "Home", "lines": lines}, f)

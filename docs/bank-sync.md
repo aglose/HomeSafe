@@ -142,8 +142,14 @@ A line of `sheet-fill.json` can be one of those vests instead of an account's ba
 | `as` | `"shares"` to write the number of shares; left out, what they are worth at the last closing price. |
 
 Like every line, it replaces only a typed number or an empty cell, so a cell that works the amount
-out with a formula has to be emptied first. Once the vest has happened the line says so and
-leaves the cell with its last estimate; a line whose day has no vest near it says that instead.
+out with a formula has to be emptied first. To keep a live price in the sheet, have the line write
+the share count into a cell of its own and let the formula multiply it. Once the vest has happened
+the line says so and leaves the cell with its last estimate; a line whose day has no vest near it
+says that instead, and so does one that wants a vest's worth when the plan gave no price.
+
+Every vest is worked out, to the last unvested share; the page shows the next twelve. Where two
+vests are within reach of a line's day (a plan that vests every month), the nearer is the one
+meant.
 
 Each grant is a row of its own in the **Holdings feed** tab, so one share held several times over
 adds up there with `SUMIF`.
