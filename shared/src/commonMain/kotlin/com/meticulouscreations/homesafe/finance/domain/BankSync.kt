@@ -15,6 +15,7 @@ import homesafe.shared.generated.resources.fin_bank_type_credit
 import homesafe.shared.generated.resources.fin_bank_type_investment
 import homesafe.shared.generated.resources.fin_bank_type_loan
 import homesafe.shared.generated.resources.fin_bank_type_other
+import kotlinx.serialization.Serializable
 import org.jetbrains.compose.resources.StringResource
 
 /**
@@ -57,6 +58,7 @@ enum class BankAccountType(val label: StringResource) {
  * for a card or a loan what's owed.
  */
 @Immutable
+@Serializable
 data class BankAccount(
     val id: String,
     val key: String,
@@ -75,6 +77,7 @@ data class BankAccount(
 
 /** A bank, brokerage or lender linked through Plaid. [error] is Plaid's code for why its last read failed. */
 @Immutable
+@Serializable
 data class BankInstitution(
     val id: String,
     val name: String,
@@ -89,6 +92,7 @@ data class BankInstitution(
 
 /** How the relay's last write of the balances to the feed sheet went. */
 @Immutable
+@Serializable
 data class BankFeed(
     /** The relay has a feed sheet to write to. */
     val configured: Boolean,
@@ -147,6 +151,7 @@ enum class SheetFillStatus(val wire: String) {
  * and what it came to at the last sync.
  */
 @Immutable
+@Serializable
 data class SheetFillLine(
     val id: String,
     val tab: String,
@@ -163,10 +168,12 @@ data class SheetFillLine(
 
 /** What one write did to one cell. [before] is null for a cell that was empty. [restored] once the write was undone: whether this cell was put back. */
 @Immutable
+@Serializable
 data class SheetChange(val label: String, val tab: String, val cell: String?, val before: Double?, val after: Double?, val restored: Boolean?)
 
 /** One time the relay wrote balances into the budget sheet's cells, and everything it changed. */
 @Immutable
+@Serializable
 data class SheetWrite(
     val id: Long,
     val atEpochSeconds: Long,
@@ -179,6 +186,7 @@ data class SheetWrite(
 
 /** The sheet fill: the budget sheet's cells the relay writes the balances into, and what it wrote lately. */
 @Immutable
+@Serializable
 data class SheetFill(
     /** The relay has a list of cells to fill. */
     val configured: Boolean = false,
@@ -195,6 +203,7 @@ data class SheetFill(
 
 /** The bank sync as the relay reports it. */
 @Immutable
+@Serializable
 data class BankSync(
     /** The relay has Plaid keys; without them nothing can be linked. */
     val configured: Boolean,

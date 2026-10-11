@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
+import com.meticulouscreations.homesafe.data.FinanceSavedDao
 import com.meticulouscreations.homesafe.data.FitnessDao
 import com.meticulouscreations.homesafe.data.LiveStreamPrefetcher
 import com.meticulouscreations.homesafe.data.MomentsDao
@@ -20,8 +21,10 @@ import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
+import com.meticulouscreations.homesafe.data.createFinanceSavedDao
 import com.meticulouscreations.homesafe.data.createFitnessDao
 import com.meticulouscreations.homesafe.data.createGeofenceMonitor
+import com.meticulouscreations.homesafe.data.createIdentityCheck
 import com.meticulouscreations.homesafe.data.createMomentsDao
 import com.meticulouscreations.homesafe.data.createPushTokenProvider
 import com.meticulouscreations.homesafe.data.createSettingsDao
@@ -30,6 +33,7 @@ import com.meticulouscreations.homesafe.domain.platform.AlertNotifier
 import com.meticulouscreations.homesafe.domain.platform.ClipDownloader
 import com.meticulouscreations.homesafe.domain.platform.DeviceInfo
 import com.meticulouscreations.homesafe.domain.platform.GeofenceMonitor
+import com.meticulouscreations.homesafe.domain.platform.IdentityCheck
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceAutomation
@@ -183,10 +187,21 @@ interface AppGraph : ViewModelGraph {
     fun provideFitnessDao(platformContext: PlatformContext): FitnessDao =
         createFitnessDao(platformContext)
 
+    /** What the finance app last fetched, for opening on without a connection. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideFinanceSavedDao(platformContext: PlatformContext): FinanceSavedDao =
+        createFinanceSavedDao(platformContext)
+
     @SingleIn(AppScope::class)
     @Provides
     fun provideBiometricCredentialStore(platformContext: PlatformContext): BiometricCredentialStore =
         createBiometricCredentialStore(platformContext)
+
+    /** The fingerprint or face check the finance app asks for while there is no server to vouch for whoever is holding the phone. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideIdentityCheck(platformContext: PlatformContext): IdentityCheck = createIdentityCheck(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

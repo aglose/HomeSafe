@@ -1,12 +1,20 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 
 /**
  * Whose a purchase is: one person's, the whole family's, or nobody's yet. [wire] is the relay's
  * name for it (`budget_buckets` in `relay/relay.py`); a purchase nobody has been given has none.
  */
 @Immutable
+@Serializable(with = BucketIdSerializer::class)
 sealed interface BucketId {
     val wire: String?
 
@@ -42,6 +50,7 @@ sealed interface BucketId {
  * ([Ignore]), or not said yet ([Unset]), in which case none of its purchases count.
  */
 @Immutable
+@Serializable(with = CardRoleSerializer::class)
 sealed interface CardRole {
     val wire: String?
 
@@ -82,15 +91,37 @@ sealed interface CardRole {
 }
 
 /**
+ * A [BucketId] or a [CardRole] kept on the device is its [BucketId.wire] name, the one the relay
+ * uses; the one with none (nobody's yet, not said yet) is kept as an empty string.
+ */
+internal object BucketIdSerializer : KSerializer<BucketId> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("BucketId", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: BucketId) = encoder.encodeString(value.wire.orEmpty())
+
+    override fun deserialize(decoder: Decoder): BucketId = BucketId.ofWire(decoder.decodeString().ifEmpty { null })
+}
+
+internal object CardRoleSerializer : KSerializer<CardRole> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("CardRole", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: CardRole) = encoder.encodeString(value.wire.orEmpty())
+
+    override fun deserialize(decoder: Decoder): CardRole = CardRole.ofWire(decoder.decodeString().ifEmpty { null })
+}
+
+/**
  * A mark the bank puts on a card's purchases for who made them, as it writes it: a cardholder's
  * name ("SAM RIVERA 1006"), or only the last four digits of the card that was used ("1203").
  * [count] purchases carry it; [person] is whose it was said to be, once someone has said.
  */
 @Immutable
+@Serializable
 data class CardHolder(val mark: String, val count: Int, val person: String?)
 
 /** A linked credit card. [key] is its name in the feed sheet, which is also what its [role] is kept by. */
 @Immutable
+@Serializable
 data class BudgetCard(
     val key: String,
     /** The institution it was linked through, for signing in to it again. */
@@ -113,6 +144,7 @@ data class BudgetCard(
 
 /** What one bucket has spent this month, against its limit if it has one. */
 @Immutable
+@Serializable
 data class BudgetBucket(val id: BucketId, val spent: Double, val limit: Double?, val count: Int)
 
 /** How a purchase came to be in its bucket. */
@@ -120,6 +152,7 @@ enum class BucketSource { MANUAL, ACCOUNT, BANK, RULE, NONE }
 
 /** One purchase (or, with a negative [amount], a refund) on a card that is part of the budget. */
 @Immutable
+@Serializable
 data class Purchase(
     val id: String,
     /** The day it was bought, `YYYY-MM-DD`. */
@@ -142,14 +175,17 @@ data class Purchase(
 
 /** The month's limits. A person with no entry, or a null, has none. */
 @Immutable
+@Serializable
 data class BudgetLimits(val total: Double? = null, val people: Map<String, Double?> = emptyMap(), val family: Double? = null)
 
 /** Which lines being crossed the phones are told about. */
 @Immutable
+@Serializable
 data class BudgetAlertSwitches(val total: Boolean = false, val savings: Boolean = false, val buckets: Boolean = false)
 
 /** A merchant whose purchases always go to one bucket; [merchantKey] is the relay's name for the merchant. */
 @Immutable
+@Serializable
 data class MerchantRule(val merchantKey: String, val bucket: BucketId)
 
 /**
@@ -157,6 +193,7 @@ data class MerchantRule(val merchantKey: String, val bucket: BucketId)
  * month's take-home, and the bills that are paid from the bank rather than on a card.
  */
 @Immutable
+@Serializable
 data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?) {
     companion object {
         /**
@@ -171,6 +208,7 @@ data class BudgetSheetFigures(val takeHome: Double?, val billsOffCard: Double?) 
 }
 
 @Immutable
+@Serializable
 data class BudgetConfig(
     val people: List<String> = emptyList(),
     val limits: BudgetLimits = BudgetLimits(),
@@ -198,10 +236,12 @@ data class BudgetConfigPatch(
 
 /** A share of the month's spending: one of Plaid's categories, or one merchant. */
 @Immutable
+@Serializable
 data class BudgetSlice(val name: String, val spent: Double, val count: Int)
 
 /** What an earlier month came to. */
 @Immutable
+@Serializable
 data class BudgetPastMonth(val month: String, val spent: Double, val days: Int)
 
 /**
@@ -210,6 +250,7 @@ data class BudgetPastMonth(val month: String, val spent: Double, val days: Int)
  * under way, the month's last for one that is over.
  */
 @Immutable
+@Serializable
 data class Budget(
     /** The relay has Plaid keys; without them no card can be linked. */
     val configured: Boolean,

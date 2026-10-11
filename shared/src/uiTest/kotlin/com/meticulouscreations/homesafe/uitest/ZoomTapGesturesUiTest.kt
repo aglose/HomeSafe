@@ -26,6 +26,7 @@ import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.TapEdge
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
@@ -42,6 +43,10 @@ import kotlin.test.assertEquals
  * put; a hold on a picture already zoomed in only drags it. None of which takes anything from
  * what was there before — a tap is a tap, a double tap zooms in and out, a swipe scrolls the
  * page, and two fingers resting on the picture are a pinch, not a hold.
+ *
+ * And the sides: a double tap in the left or right third is offered to whoever asked for the
+ * edges (the player steps back or forward there) before it zooms anything, and so is each single
+ * tap, which is how tapping on after a double tap keeps stepping.
  */
 @OptIn(ExperimentalTestApi::class)
 class ZoomTapGesturesUiTest {
@@ -50,15 +55,25 @@ class ZoomTapGesturesUiTest {
     private val scroll = ScrollState(initial = 0)
     private var taps = 0
     private var holdZooms = 0
+    private val edgeTaps = mutableListOf<Pair<TapEdge, Int>>()
 
-    private fun ComposeUiTest.setUpPlayer() {
+    /** [takeEdgeTap] is the player's answer to a tap on a side: null for a player that never asked for them. */
+    private fun ComposeUiTest.setUpPlayer(takeEdgeTap: ((edge: TapEdge, taps: Int) -> Boolean)? = null) {
         setContent {
             val onTap: () -> Unit = remember { { taps++ } }
             val onHoldZoom: () -> Unit = remember { { holdZooms++ } }
+            val onEdgeTap = remember {
+                takeEdgeTap?.let { take ->
+                    { edge: TapEdge, taps: Int ->
+                        edgeTaps += edge to taps
+                        take(edge, taps)
+                    }
+                }
+            }
             Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
                 Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).clipToBounds().pinchZoomGestures(zoom)) {
                     Box(Modifier.fillMaxSize().pinchZoomContent(zoom))
-                    Box(Modifier.fillMaxSize().testTag(PLAYER_TAG).zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom))
+                    Box(Modifier.fillMaxSize().testTag(PLAYER_TAG).zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom, onEdgeTap = onEdgeTap))
                 }
                 // The rest of the page: more than a window of it, so there is something to scroll.
                 Spacer(Modifier.height(2_000.dp))
@@ -185,6 +200,69 @@ class ZoomTapGesturesUiTest {
 
         assertEquals(1f, zoom.scale)
         assertEquals(0, holdZooms)
+    }
+
+    @Test
+    fun aDoubleTapOnASideIsTheEdgesAndZoomsNothing() = runComposeUiTest {
+        setUpPlayer(takeEdgeTap = { _, taps -> taps == 2 })
+
+        onNodeWithTag(PLAYER_TAG).performTouchInput { doubleClick(Offset(width * 0.15f, centerY)) }
+        onNodeWithTag(PLAYER_TAG).performTouchInput { doubleClick(Offset(width * 0.85f, centerY)) }
+        mainClock.advanceTimeBy(SETTLE_MS)
+
+        assertEquals(listOf(TapEdge.Left to 2, TapEdge.Right to 2), edgeTaps)
+        assertEquals(1f, zoom.scale)
+        assertEquals(0, taps, "a double tap is not two taps")
+    }
+
+    @Test
+    fun theMiddleOfThePictureStillZoomsWhenTheEdgesAreTaken() = runComposeUiTest {
+        setUpPlayer(takeEdgeTap = { _, _ -> true })
+
+        onNodeWithTag(PLAYER_TAG).performTouchInput { doubleClick(center) }
+        waitForIdle()
+
+        assertEquals(PinchZoomState.DOUBLE_TAP_SCALE, zoom.scale, 0.01f)
+        assertEquals(emptyList(), edgeTaps)
+    }
+
+    @Test
+    fun aSingleTapOnASideIsOfferedToTheEdgeAndIsATapWhenLeft() = runComposeUiTest {
+        var takeSingles = false
+        setUpPlayer(takeEdgeTap = { _, taps -> taps == 2 || takeSingles })
+
+        onNodeWithTag(PLAYER_TAG).performTouchInput { click(Offset(width * 0.85f, centerY)) }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals(listOf(TapEdge.Right to 1), edgeTaps)
+        assertEquals(1, taps, "left by the edge, it is the tap it always was")
+
+        // As while the player's badge is up: the tap after a double tap is one more step.
+        takeSingles = true
+        onNodeWithTag(PLAYER_TAG).performTouchInput { click(Offset(width * 0.85f, centerY)) }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals(listOf(TapEdge.Right to 1, TapEdge.Right to 1), edgeTaps)
+        assertEquals(1, taps, "taken by the edge, it is not a tap as well")
+    }
+
+    @Test
+    fun aDoubleTapOnASideTheEdgeLeavesZoomsAsBefore() = runComposeUiTest {
+        setUpPlayer(takeEdgeTap = { _, _ -> false })
+
+        onNodeWithTag(PLAYER_TAG).performTouchInput { doubleClick(Offset(width * 0.15f, centerY)) }
+        waitForIdle()
+
+        assertEquals(PinchZoomState.DOUBLE_TAP_SCALE, zoom.scale, 0.01f)
+    }
+
+    @Test
+    fun aHoldOnASideStillZooms() = runComposeUiTest {
+        setUpPlayer(takeEdgeTap = { _, _ -> true })
+
+        onNodeWithTag(PLAYER_TAG).performTouchInput { longClick(Offset(width * 0.85f, centerY)) }
+        waitForIdle()
+
+        assertEquals(PinchZoomState.DOUBLE_TAP_SCALE, zoom.scale, 0.01f)
+        assertEquals(emptyList(), edgeTaps)
     }
 
     private companion object {

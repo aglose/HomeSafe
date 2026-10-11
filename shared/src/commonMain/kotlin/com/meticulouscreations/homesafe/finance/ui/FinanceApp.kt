@@ -62,6 +62,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -92,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
+import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.domain.IndicatorCatalog
@@ -108,6 +110,7 @@ import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.fin_bank_title
 import homesafe.shared.generated.resources.fin_budget_settings_title
 import homesafe.shared.generated.resources.finance_close
+import homesafe.shared.generated.resources.finance_offline_note
 import homesafe.shared.generated.resources.finance_refresh
 import homesafe.shared.generated.resources.finance_refreshing
 import homesafe.shared.generated.resources.finance_tab_budget
@@ -166,8 +169,11 @@ internal sealed interface FinanceDetail {
  * the tabs. Back pops a page, scrubbed under a back swipe; with no page up, Back is the drawer
  * overlay's around it, which closes the app (InnerAppOverlay). [requestedTab] turns it to a tab
  * from outside (a notification's tap), and [onShowRequestedTab] says it has.
+ *
+ * With no connection to the server it opens on what the device kept, behind a lock: the
+ * fingerprint or face prompt comes up with it, and none of the app is composed until that is
+ * passed (see `FinanceAccess`). Closing the app locks it again.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun FinanceApp(
     onClose: () -> Unit,
@@ -175,6 +181,36 @@ fun FinanceApp(
     active: Boolean = true,
     requestedTab: FinanceTab? = null,
     onShowRequestedTab: () -> Unit = {},
+) {
+    val lockViewModel: FinanceLockViewModel = metroViewModel()
+    val lock by lockViewModel.uiState.collectAsStateWithLifecycle()
+    // Once the app has gone from the screen, not as it starts to close: the lock must not flash up
+    // through the overlay as it drains away.
+    DisposableEffect(lockViewModel) { onDispose { lockViewModel.lock() } }
+    if (lock.locked) {
+        val fontFamily = albertSansFontFamily()
+        val palette = remember { FinancePalette() }
+        val type = remember(fontFamily) { FinanceTypography(fontFamily) }
+        // The prompt comes up with the lock rather than waiting for a tap; put away, the button asks again.
+        LaunchedEffect(lockViewModel) { lockViewModel.unlock() }
+        CompositionLocalProvider(LocalFinancePalette provides palette, LocalFinanceTypography provides type) {
+            FinanceLockScreen(lock, onUnlock = lockViewModel::unlock, onClose = onClose, modifier = modifier)
+        }
+    } else {
+        FinanceAppContent(onClose, active, requestedTab, onShowRequestedTab, offline = lock.offline, modifier = modifier)
+    }
+}
+
+/** The app itself, once it may be shown. [offline] says so under the title: what is up is what the device kept. */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalComposeUiApi::class)
+@Composable
+private fun FinanceAppContent(
+    onClose: () -> Unit,
+    active: Boolean,
+    requestedTab: FinanceTab?,
+    onShowRequestedTab: () -> Unit,
+    offline: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     // The activity's instance, the one the drawer's teaser shares.
     val viewModel: FinanceViewModel = metroViewModel()
@@ -359,6 +395,7 @@ fun FinanceApp(
                 title = details.lastOrNull()?.let { titleOf(it) } ?: stringResource(tab.label),
                 isDetail = details.isNotEmpty(),
                 refreshing = state.refreshing,
+                offline = offline,
                 onBack = { if (details.isNotEmpty()) details.removeAt(details.lastIndex) else onClose() },
                 onRefresh = viewModel::refresh,
                 onGlossary = { push(FinanceDetail.Glossary) },
@@ -474,6 +511,7 @@ private fun FinanceTopBar(
     title: String,
     isDetail: Boolean,
     refreshing: Boolean,
+    offline: Boolean,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
     onGlossary: () -> Unit,
@@ -497,8 +535,12 @@ private fun FinanceTopBar(
                 )
             }
         }
-        AnimatedContent(title, modifier = Modifier.align(Alignment.Center), transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "title") { t ->
-            Text(t, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+        Column(Modifier.align(Alignment.Center), horizontalAlignment = Alignment.CenterHorizontally) {
+            AnimatedContent(title, transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) }, label = "title") { t ->
+                Text(t, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary)
+            }
+            // Short enough to sit between the buttons at either end, and within their height.
+            if (offline) Text(stringResource(Res.string.finance_offline_note), style = FinanceTheme.type.micro, color = colors.watch, maxLines = 1, modifier = Modifier.testTag("finance_offline"))
         }
         // On the tabs only: their titles are short enough to leave room for a third button.
         if (!isDetail) {

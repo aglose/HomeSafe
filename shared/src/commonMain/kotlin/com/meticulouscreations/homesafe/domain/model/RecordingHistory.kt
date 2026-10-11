@@ -1,6 +1,9 @@
 package com.meticulouscreations.homesafe.domain.model
 
+import kotlin.math.abs
 import kotlin.math.floor
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Everything a camera recorded inside some time window, sorted by time with unplayable clips
@@ -42,6 +45,37 @@ class RecordingHistory(segments: List<RecordingSegment>) {
     fun playlistAfter(playlist: RecordingPlaylist, bucketSeconds: Double = DEFAULT_BUCKET_SECONDS): RecordingPlaylist? =
         firstSegmentStartingAtOrAfter(playlist.endEpochSeconds)
             ?.let { playlistFor(it.startEpochSeconds, bucketSeconds) }
+
+    /**
+     * Where a step of [deltaSeconds] from [epochSeconds] lands, back for a negative one, counted
+     * in footage rather than on the clock: a gap in recording takes none of the step, as it takes
+     * no time in the player. So ten seconds back from just after a gap is ten seconds from the end
+     * of what was recorded before it, where the same step on the clock would land in the gap and
+     * play from the very clip it left. A step past either end stops there: the first recording's
+     * start, or the last one's end. Null when nothing was recorded.
+     */
+    fun skipFrom(epochSeconds: Double, deltaSeconds: Double): Double? {
+        if (segments.isEmpty()) return null
+        var remaining = abs(deltaSeconds)
+        if (deltaSeconds >= 0) {
+            for (segment in segments) {
+                if (segment.endEpochSeconds <= epochSeconds) continue
+                val from = max(epochSeconds, segment.startEpochSeconds)
+                val ahead = segment.endEpochSeconds - from
+                if (remaining < ahead) return from + remaining
+                remaining -= ahead
+            }
+            return latestEndEpochSeconds
+        }
+        for (segment in segments.asReversed()) {
+            if (segment.startEpochSeconds >= epochSeconds) continue
+            val from = min(epochSeconds, segment.endEpochSeconds)
+            val behind = from - segment.startEpochSeconds
+            if (remaining <= behind) return from - remaining
+            remaining -= behind
+        }
+        return segments.first().startEpochSeconds
+    }
 
     companion object {
         const val DEFAULT_BUCKET_SECONDS = 3600.0

@@ -325,8 +325,12 @@ class BankSyncViewModel(
 
     fun dismissNotice() = _uiState.update { it.copy(notice = null) }
 
-    /** The app's own words when the failure is one it understands, the server's as written when it gave some, a plain line otherwise. */
-    private fun Throwable.shown(): UiText = if (this !is LocalizedException && message.isNullOrBlank()) UiText.of(Res.string.fin_bank_error_generic) else userMessage()
+    /**
+     * The app's own words when the failure is one it understands, the relay's as written when it
+     * answered with some, a plain line otherwise: anything else is the network's or a parser's,
+     * whose message is a URL and a timeout or a JSON offset.
+     */
+    private fun Throwable.shown(): UiText = if (this is LocalizedException) userMessage() else UiText.of(Res.string.fin_bank_error_generic)
 
     internal companion object {
         const val LINK_POLL_MS = 3_000L

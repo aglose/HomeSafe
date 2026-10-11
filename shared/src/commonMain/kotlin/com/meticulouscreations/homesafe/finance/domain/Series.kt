@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.finance.domain
 
 import androidx.compose.runtime.Immutable
+import kotlinx.serialization.Serializable
 
 /**
  * A time series: [times] in epoch seconds, ascending, and the [values] at them. Parallel primitive
@@ -10,6 +11,7 @@ import androidx.compose.runtime.Immutable
  * Never mutated after construction (hence [Immutable], which the arrays alone wouldn't earn).
  */
 @Immutable
+@Serializable
 class Series(val times: LongArray, val values: DoubleArray) {
     init {
         require(times.size == values.size) { "times and values differ in length" }
