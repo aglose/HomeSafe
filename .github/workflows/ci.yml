@@ -35,7 +35,9 @@ jobs:
             # tests (src/uiTest) and the whole-app integration journeys (src/integrationTest)
             # on the desktop runtime; :fake-frigate:test checks the fake server those journeys
             # sign in to, so a broken fake fails on its own rather than as fifty journeys.
-            tasks: :fake-frigate:test :shared:jvmTest :shared:testAndroidHostTest --continue
+            # -PjvmTestForks=2: jvmTest's classes run in two JVMs side by side (shared/build.gradle.kts);
+            # run one after another they were eleven of this job's sixteen minutes.
+            tasks: :fake-frigate:test :shared:jvmTest :shared:testAndroidHostTest --continue -PjvmTestForks=2
             artifact: unit-test-reports
             reports: |
               shared/build/reports/tests/**
@@ -49,8 +51,9 @@ jobs:
               androidApp/build/reports/**
               shared/build/reports/**
           - name: Kotlin style
-            # ktlint + compose-rules. Needs no compilation, so it is the cheapest leg here and
-            # the one that fails fastest on a PR that skipped `./gradlew :shared:ktlintFormat`.
+            # ktlint + compose-rules. Needs no compilation (its tasks are handed only the
+            # hand-written sources; see shared/build.gradle.kts), so it is the cheapest leg here
+            # and the one that fails fastest on a PR that skipped `./gradlew :shared:ktlintFormat`.
             tasks: :shared:ktlintCheck
             artifact: ktlint-reports
             reports: shared/build/reports/ktlint/**
@@ -97,11 +100,27 @@ jobs:
           retention-days: 7
 
   android-ui:
-    name: Android UI tests (emulator)
+    name: Android UI tests (emulator, ${{ matrix.name }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # Two emulators, because one ran the suites for twelve minutes after five of setup. The
+    # whole-app journeys (src/integrationTest) are three quarters of :shared's time on a device,
+    # so they get one to themselves; everything else in :shared and the end-to-end tests share
+    # the other. The split is by test package, so a new test lands on a side without being
+    # listed anywhere: in the journeys' package on the first, anywhere else on the second.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: journeys
+            tasks: :shared:connectedAndroidDeviceTest
+            filter: package
+          - name: everything else
+            tasks: :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest
+            filter: notPackage
     env:
       API_LEVEL: 34
+      JOURNEYS_PACKAGE: com.meticulouscreations.homesafe.integration
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -143,12 +162,14 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
-      # Two suites on one booted emulator:
+      # Two suites, over the two emulators of the matrix above:
       # - :shared:connectedAndroidDeviceTest — the whole commonTest suite on-device, plus
       #   src/uiTest (Compose UI tests, also run on the iOS simulator and the JVM) and
       #   src/integrationTest (whole-app journeys against the fake Frigate, also run on the JVM).
       # - :androidApp:connectedDebugAndroidTest — end-to-end tests on the real MainActivity
       #   (intents, system back, relaunch), one orchestrated instrumentation per test.
+      # The package filter is AndroidJUnitRunner's own argument; AGP passes it to every connected
+      # task, and the end-to-end tests are in a package of their own, so `notPackage` keeps them.
       # --continue so a failure in the first still reports the second.
       # The script stops Gradle after 45 minutes and, if it had to, dumps the stuck processes'
       # threads, so a hang shows up in this log rather than as a silent job timeout.
@@ -161,7 +182,7 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           disable-animations: true
-          script: scripts/run-instrumented-tests.sh 45 -- :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest --continue --stacktrace
+          script: scripts/run-instrumented-tests.sh 45 -- ${{ matrix.tasks }} -Pandroid.testInstrumentationRunnerArguments.${{ matrix.filter }}=${{ env.JOURNEYS_PACKAGE }} --continue --stacktrace
 
       # Connected test tasks print only a count; put each failure (message and stack) in the log.
       - name: Print instrumented test failures
@@ -171,7 +192,7 @@ jobs:
       - uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: android-ui-reports
+          name: android-ui-reports-${{ matrix.filter == 'package' && 'journeys' || 'rest' }}
           path: |
             shared/build/reports/**
             shared/build/outputs/androidTest-results/**
@@ -245,6 +266,27 @@ jobs:
           disable-animations: false
           script: echo "Generated AVD snapshot for caching."
 
+      # ffmpeg draws the test patterns. It is a hundred packages (20 to 70 seconds), so it
+      # installs beside the builds below instead of after them; "Start the fake Frigate" waits
+      # for it, and installs it itself if this didn't work.
+      - name: Install ffmpeg in the background
+        if: steps.base.outputs.present == 'true'
+        run: |
+          nohup sh -c "sudo apt-get update && sudo apt-get install -y ffmpeg; echo \$? > '$RUNNER_TEMP/ffmpeg-install.status'" \
+            > "$RUNNER_TEMP/ffmpeg-install.log" 2>&1 &
+
+      # The base's APK is the same whichever run builds it, and the base of most runs is a commit
+      # that main's own run has already built as its head ("Keep this commit's benchmark APK"
+      # below). The key takes this file's hash because the recipe for the APK is in it (the test
+      # login): a pull request that changes this file builds its base itself, as does any run
+      # whose base main never finished building.
+      - name: The base's benchmark APK, if main's run kept it
+        if: steps.base.outputs.present == 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: build/startup-perf/kept
+          key: benchmark-apk-${{ env.BASE_SHA }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
       # What the benchmarkRelease variant's Autofill button fills in (androidApp/build.gradle.kts):
       # the fake Frigate's admin login, at the address the emulator reaches the runner by.
       - name: Point the test login at the fake Frigate
@@ -261,15 +303,43 @@ jobs:
       - name: Build the base branch
         if: steps.base.outputs.present == 'true'
         run: |
+          if [ -f build/startup-perf/kept/benchmark.apk ]; then
+            echo "Using the APK main's run built from $BASE_SHA."
+            mv build/startup-perf/kept/benchmark.apk build/startup-perf/base.apk
+            exit 0
+          fi
           git worktree add "$RUNNER_TEMP/base" "$BASE_SHA"
           cp local.credentials.properties "$RUNNER_TEMP/base/"
           (cd "$RUNNER_TEMP/base" && ./gradlew :androidApp:assembleBenchmarkRelease --stacktrace)
           cp "$RUNNER_TEMP/base/androidApp/build/outputs/apk/benchmarkRelease/androidApp-benchmarkRelease.apk" build/startup-perf/base.apk
 
+      # Saved here rather than when the job ends, so that a run cancelled by the next merge has
+      # still left its APK behind. Only main's: no other branch's head becomes a base.
+      - name: Keep this commit's benchmark APK
+        if: steps.base.outputs.present == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p build/startup-perf/kept
+          cp build/startup-perf/head.apk build/startup-perf/kept/benchmark.apk
+      - name: Save it for the runs this commit is the base of
+        if: steps.base.outputs.present == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/cache/save@v6
+        with:
+          path: build/startup-perf/kept
+          key: benchmark-apk-${{ github.sha }}-${{ hashFiles('.github/workflows/ci.yml') }}
+
       - name: Start the fake Frigate and go2rtc test patterns
         if: steps.base.outputs.present == 'true'
         run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
+          # "Install ffmpeg in the background" has normally finished long before the builds have.
+          for _ in $(seq 1 180); do
+            [ -f "$RUNNER_TEMP/ffmpeg-install.status" ] && break
+            sleep 1
+          done
+          if ! command -v ffmpeg > /dev/null; then
+            echo "::warning::The background ffmpeg install didn't finish; installing it now."
+            cat "$RUNNER_TEMP/ffmpeg-install.log" || true
+            sudo apt-get -o DPkg::Lock::Timeout=300 update && sudo apt-get -o DPkg::Lock::Timeout=300 install -y ffmpeg
+          fi
           nohup fake-frigate/build/install/fake-frigate/bin/fake-frigate --port 8971 --host 0.0.0.0 --advertise 10.0.2.2 \
             > build/startup-perf/fake-frigate.log 2>&1 &
           for i in $(seq 1 30); do
