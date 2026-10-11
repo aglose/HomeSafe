@@ -337,9 +337,14 @@ def main():
                 adb(args.serial, "shell", "am", "force-stop", args.package)
                 if args.go2rtc_reset:
                     # A new go2rtc has nobody joined and no producer running, which is what the
-                    # wait below is for; after this it only confirms it. The command's own
-                    # chatter is dropped, its errors are not.
-                    subprocess.run(args.go2rtc_reset, shell=True, check=True, stdout=subprocess.DEVNULL)
+                    # wait below is for; after this it only confirms it. What the command prints
+                    # is kept quiet while it works and shown when it doesn't: that is where it
+                    # says why (and go2rtc-testsrc.sh puts go2rtc's log there). On stderr, since
+                    # CI reads this script's stdout through a filter for the runs' own lines.
+                    reset = subprocess.run(args.go2rtc_reset, shell=True, stdout=subprocess.PIPE, text=True)
+                    if reset.returncode != 0:
+                        sys.stderr.write(reset.stdout)
+                        sys.exit(f"--go2rtc-reset failed (exit {reset.returncode}): {args.go2rtc_reset}")
                 waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent, args.go2rtc_count_local)
                 if waited > 0.5:
                     print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
