@@ -119,15 +119,16 @@ internal fun ForecastScreen(
     val weekHigh = remember(days) { days.maxOf { it.highC } }
     val scope = rememberCoroutineScope()
     val places = remember { DayPlaces() }
-    // Opens the day at [index], or shuts it if it is the one open, and sees that what opened can be read.
-    val toggle: (Int) -> Unit = { index ->
+    // Opens the day at [index], or shuts it if it is the one open. A tap on the day's own row also sees
+    // that what opened can be read; a tap in the strip leaves the list where it is, the strip under the finger.
+    val toggle: (Int, Boolean) -> Unit = { index, follow ->
         val day = days[index].epochSeconds
         places.following?.cancel()
         if (opened == day) {
             opened = -1L
         } else {
             opened = day
-            places.following = scope.launch { listState.follow(places, index) }
+            if (follow) places.following = scope.launch { listState.follow(places, index) }
         }
     }
     LazyColumn(
@@ -139,7 +140,7 @@ internal fun ForecastScreen(
     ) {
         item(key = "trend", contentType = "card") {
             WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.AutoMirrored.Filled.ShowChart, padding = 0.dp) {
-                DayTimeline(report, nowEpochSeconds, selected = days.indexOfFirst { it.epochSeconds == opened }, onSelect = toggle)
+                DayTimeline(report, nowEpochSeconds, selected = days.indexOfFirst { it.epochSeconds == opened }, onSelect = { toggle(it, false) })
             }
         }
         item(key = DAYS_KEY, contentType = "card") {
@@ -160,7 +161,7 @@ internal fun ForecastScreen(
                         weekHighC = weekHigh,
                         currentC = if (i == 0) report.current.temperatureC else null,
                         expanded = opened == day.epochSeconds,
-                        onToggle = { toggle(i) },
+                        onToggle = { toggle(i, true) },
                         modifier = Modifier.onPlaced { places.rows[i] = it },
                     )
                 }
