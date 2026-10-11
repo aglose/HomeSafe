@@ -25,8 +25,8 @@ import homesafe.shared.generated.resources.fin_data_error_not_connected
 /**
  * The bank sync through the relay, with the institutions and balances it last reported kept on the
  * device ([FinanceSaved]): the page is read back from there when the server can't be asked, if
- * [FinanceAccess] allows the household's balances to be shown without it. Linking, syncing and
- * unlinking always need the server.
+ * [FinanceAccess] allows the household's balances to be shown without it. Linking, syncing,
+ * unlinking and changing what is written to the sheet always need the server.
  */
 @Inject
 @SingleIn(AppScope::class)
@@ -66,6 +66,10 @@ class BankSyncRepositoryImpl(
     override suspend fun syncNow(): Result<BankSync> = onServer { relay.syncNow(it) }.keeping()
 
     override suspend fun unlink(institutionId: String): Result<BankSync> = onServer { relay.unlink(it, institutionId) }.keeping()
+
+    override suspend fun undoWrite(writeId: Long): Result<BankSync> = onServer { relay.undoWrite(it, writeId) }.keeping()
+
+    override suspend fun setLinePaused(lineId: String, paused: Boolean): Result<BankSync> = onServer { relay.setLinePaused(it, lineId, paused) }.keeping()
 
     /**
      * With no server signed in to, a request that never left: not a refusal, which would take the

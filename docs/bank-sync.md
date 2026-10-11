@@ -2,7 +2,8 @@
 
 The budget sheet's balances used to be typed in by hand. With bank sync, each bank, brokerage and
 lender is linked once through [Plaid](https://plaid.com), and from then on the relay reads every
-account's balance each morning and writes it to Google Sheets, where the budget sheet looks it up.
+account's balance each morning and writes it to Google Sheets, where the budget sheet looks it up
+or has it typed in for it (see "Filling the budget sheet's own cells").
 The app keeps reading the budget sheet exactly as before (see [finance.md](finance.md)).
 
 In the app: **Finance → Wallet → the sync line → Linked accounts**.
@@ -73,6 +74,66 @@ shows `#N/A` until it is changed.
 When Plaid can't read an institution, its rows keep their last balances and the **Updated** column
 shows how old they are.
 
+## Filling the budget sheet's own cells
+
+The feed leaves the numbers typed into the budget sheet alone: a cell follows it only once its
+number has been swapped for a lookup. The **sheet fill** does the typing instead. You list the
+cells once, and after every sync the relay writes each one's balance into it.
+
+The list is `sheet-fill.json`, beside `relay.db` on the Frigate box (`~/surveillance/relay/data/`).
+It names accounts, so it is never committed. Each line is one cell:
+
+```json
+{
+  "tab": "Home",
+  "lines": [
+    {"label": "Roth IRA", "right": 2, "accounts": ["Chase Roth IRA 7788"]},
+    {"label": "Checking and savings", "right": 1, "accounts": ["Chase Total Checking 0123", "Chase Premier Savings 4410"]},
+    {"label": "Credit Cards", "right": 1, "accounts": ["Chase Sapphire 9911"], "negative": true}
+  ]
+}
+```
+
+| Field | |
+|---|---|
+| `label` | The words in the row's label cell, as the sheet has them. Capitals and extra spaces don't matter. |
+| `right` | How many columns to the right of the label the number sits (1 if left out). |
+| `accounts` | The feed keys the cell adds up: column A of the **Bank feed** tab. |
+| `negative` | `true` for a sheet that keeps what's owed below zero. A card's or a loan's balance is positive in the feed. |
+| `tab` | The tab the label is in, for a line that isn't in the file's own `tab`. |
+
+The file is read at every sync, so a change to it needs no restart: save it and tap **Sync now**.
+The budget sheet has to be shared with the service account as an **Editor** (it already is when the
+feed's tabs live in the budget sheet).
+
+What keeps a write off the wrong cell:
+
+- **The cell is found by its label every time**, never by a remembered address. Rows added above
+  it move the write with it. A label that is gone, or in the tab twice, is not guessed at.
+- **Only a typed number or an empty cell is replaced.** A formula or words in the cell mean the
+  sheet was changed, and the line is left alone.
+- **A line is written whole or not at all.** If one of its accounts is unlinked or has no balance,
+  the sum of the rest is not written.
+- **A cell that already holds the number isn't touched**, so a day with no movement writes nothing.
+- **Two lines that come to the same cell are both left alone**, since which was meant can't be told.
+
+A line that was left alone says why on the Bank sync page, under **Filled in your sheet**.
+
+### What was changed, and undoing it
+
+Every write is kept on the relay with what each cell held before and after. The Bank sync page
+lists them, newest first, under **What was changed**: the label, the old number, the new one and
+the difference.
+
+**Undo** on a write puts each of its cells back to the number it held before. The cell is found by
+its label again, never by where it was, so a cell whose label has since been renamed or removed is
+left as it is, and so is one that no longer holds what was written (someone has typed in it since).
+The page says which. The lines of an undone write are then **paused**, because the next morning's sync would
+otherwise write the same numbers again. **Resume** on a line writes it at once and from then on;
+**Pause** stops one line without undoing anything.
+
+The relay keeps the last 200 writes and shows the newest 20.
+
 ## Setup (once)
 
 1. **Plaid account.** Sign up at <https://dashboard.plaid.com/signup> and choose **Personal use**.
@@ -113,6 +174,7 @@ shows how old they are.
 | `PLAID_CLIENT_ID`, `PLAID_SECRET` | none | Bank sync is off without both |
 | `PLAID_ENV` | `production` | `sandbox` for Plaid's practice institutions |
 | `FINANCE_FEED_SHEET_ID` | none | Without it balances show in the app but aren't written |
+| `FINANCE_FILL_FILE` | `/data/sheet-fill.json` | The cells of the budget sheet to fill in; nothing is filled without the file |
 | `BANK_SYNC_HOUR` | `6` | Hour of the daily read, on the household's clock |
 | `PLAID_COUNTRIES` | `US` | Comma-separated country codes Link lists institutions from |
 | `PLAID_REDIRECT_URI` | none | Only for a bank whose sign-in hands over to its own phone app; must be registered in Plaid's dashboard |
@@ -127,6 +189,13 @@ shows how old they are.
   ones most often missing; those balances stay typed.
 - **"The server can't write to the feed sheet."** Share the feed sheet with the address shown, as
   an Editor.
+- **"The server can't write to your budget sheet."** The same, for the budget sheet: the sheet fill
+  writes there.
+- **"The server's list of cells can't be used."** `sheet-fill.json` isn't valid JSON, or one of its
+  lines is missing something; the page says which. Nothing is written until the whole file reads.
+- **A line says "Not written".** The reason follows it: an account that isn't linked, a label that
+  was renamed or removed or is in the tab twice, a cell that now holds a formula, or two lines that
+  come to the same cell. Fix the sheet or the file and sync.
 - **"Plaid said: …"** when linking. Plaid's own explanation is shown as written. `INVALID_API_KEYS`
   means the secret doesn't match `PLAID_ENV`.
 - **The Trial plan's 10 institutions are used up.** Plaid refuses the next link and says so. Its
@@ -138,7 +207,8 @@ shows how old they are.
 ## What stays manual
 
 Home value, the RSU and ESPP vesting schedule, and the income and expense lines are not things a
-bank reports, so they stay as typed. The sheet's history table is still filled in by hand.
+bank reports, so they stay as typed, as does any balance at an institution that isn't linked. The
+sheet's history table is still filled in by hand.
 
 ## How it's built
 
@@ -146,6 +216,9 @@ bank reports, so they stay as typed. The sheet's history table is still filled i
   `plaid_sync_item` (one institution into `plaid_items`, `plaid_accounts`, `plaid_holdings`),
   `feed_tables` / `feed_write` (the two tabs), `bank_forever` (the daily read), and the
   `/finance/bank…` routes. Tests: `BankSyncTest` and `BankRoutesTest` in `relay/test_relay.py`.
+- `relay/relay.py`, "sheet fill": `fill_lines` (the file), `fill_plan` (what each line would do),
+  `fill_sheet` (the write, kept in `sheet_writes`), `fill_undo`, and the `/finance/bank/fill/…`
+  routes. Tests: `SheetFillTest`.
 - App: `BankSyncRelayApi` → `BankSyncRepository` → `BankSyncViewModel` → `BankSyncScreen`
   (`finance/`), with previews in `BankSyncPreviews.kt`
   (`./gradlew :shared:renderPreviews -Ppreview=BankSync`).

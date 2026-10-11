@@ -295,6 +295,10 @@ def db() -> sqlite3.Connection:
     # The name each account's row goes by in the feed sheet, given once and kept while the account
     # is there: the budget sheet's formulas look accounts up by it.
     conn.execute("CREATE TABLE IF NOT EXISTS plaid_feed_keys (account_id TEXT PRIMARY KEY, key TEXT)")
+    # Every time the relay wrote balances into the budget sheet's own cells (see "sheet fill"):
+    # `changes` is a JSON list of what each cell held before and after, which is what the app
+    # shows and what an undo puts back. `undone_at` and `undone_by` once someone undid it.
+    conn.execute("CREATE TABLE IF NOT EXISTS sheet_writes (id INTEGER PRIMARY KEY AUTOINCREMENT, at REAL NOT NULL, changes TEXT NOT NULL, undone_at REAL, undone_by TEXT)")
     # What was bought on the credit cards (see "budget"): one row per transaction as Plaid last
     # told it. `date` is the day it was spent (`posted` the day it settled), `amount` positive for
     # a purchase, `kind` "spend", "refund" or "payment" (paying the card off, which is not
@@ -6330,9 +6334,338 @@ def write_bank_feed(now: float) -> None:
         state_set(PLAID_FEED_KEY, {"at": now, "error": "google_error", "message": "Couldn't reach Google"})
 
 
+# ---------------------------------------------------------------- sheet fill
+#
+# The feed leaves the budget sheet's own numbers alone: a balance there changes only once someone
+# swaps the typed number for a lookup. The sheet fill does the typing instead. FINANCE_FILL_FILE, a
+# JSON file kept only on the box (it names the household's accounts; the repo is public), lists the
+# cells: each line is a row of the budget sheet by its label ("Roth IRA"), how many columns to the
+# right of the label the number sits, and the accounts (by feed key) it adds up. After every sync
+# each line's sum is written into its cell, where it differs from what the cell holds.
+#
+#     {"tab": "Home", "lines": [
+#       {"label": "Roth IRA", "right": 2, "accounts": ["Chase Roth IRA 7788"]},
+#       {"label": "Credit Cards", "right": 1, "accounts": ["Chase Sapphire 9911"], "negative": true}]}
+#
+# What keeps a write from landing somewhere it shouldn't:
+# - A cell is found by its label every time, never by a remembered address, so rows inserted above
+#   it don't move the write onto its neighbour. A label that is gone, or there twice, isn't guessed,
+#   and two lines that come to the same cell are both left alone.
+# - Only a number or an empty cell is written over. A formula or words there mean the sheet was
+#   changed by hand, and the line is left alone.
+# - A line is written whole or not at all: with one of its accounts unlinked or unread, the sum of
+#   the rest would be a wrong number that looks right.
+# - Every write is kept (`sheet_writes`): what each cell held before and after. The app shows
+#   them, and any one can be undone. An undo puts a number back only where the cell still holds
+#   what was written (someone may have typed since), and pauses those lines so the next morning's
+#   sync doesn't write them straight back. A paused line starts again when it is resumed.
+#
+# The file is read at every sync, so changing it needs no restart. Off without the file. The
+# budget sheet must be shared with the service account as an Editor (docs/bank-sync.md).
+
+FINANCE_FILL_FILE = os.environ.get("FINANCE_FILL_FILE", "/data/sheet-fill.json")
+FILL_KEY = "sheet_fill"
+FILL_PAUSED_KEY = "sheet_fill_paused"
+# How many writes are kept, and how many of the newest the app is shown.
+FILL_WRITES_KEPT = 200
+FILL_WRITES_SHOWN = 20
+# Two amounts closer than this are the same number of cents.
+FILL_CENT = 0.005
+
+
+class FillLine(BaseModel):
+    # A line's `id`, as `bank_status` gives it.
+    line: str
+    paused: bool
+
+
+def fill_text(value: Any) -> str:
+    """A cell's or a label's words as they are compared: case and the spacing around and between them don't count."""
+    return " ".join(str(value).split()).casefold()
+
+
+def fill_lines() -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    """
+    The lines FINANCE_FILL_FILE lists, and what is wrong with the file when something is. A file
+    with one line that can't be understood is refused whole: half a file's writes are not what
+    whoever wrote it meant. No file is no lines and nothing wrong.
+
+    What is wrong is a `reason` the app has its own words for ("unreadable", "no_lines",
+    "bad_line", "same_line"), the `line` it is about (counted from 1) where there is one, and a
+    `message` for the log.
+    """
+    def wrong(reason: str, message: str, line: int | None = None) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        return [], {"reason": reason, "line": line, "message": message}
+
+    try:
+        with open(FINANCE_FILL_FILE, encoding="utf-8") as f:
+            kept = json.load(f)
+    except FileNotFoundError:
+        return [], None
+    except (OSError, ValueError) as e:
+        return wrong("unreadable", f"{os.path.basename(FINANCE_FILL_FILE)} can't be read: {e}")
+    if not isinstance(kept, dict) or not isinstance(kept.get("lines"), list):
+        return wrong("no_lines", f"{os.path.basename(FINANCE_FILL_FILE)} needs a \"lines\" list")
+    lines, seen = [], set()
+    for n, entry in enumerate(kept["lines"], 1):
+        entry = entry if isinstance(entry, dict) else {}
+        tab, label, right, accounts = entry.get("tab", kept.get("tab")), entry.get("label"), entry.get("right", 1), entry.get("accounts")
+        well_formed = (
+            isinstance(tab, str) and tab.strip() and isinstance(label, str) and fill_text(label)
+            and isinstance(right, int) and not isinstance(right, bool) and right >= 1
+            and isinstance(accounts, list) and accounts and all(isinstance(a, str) and a.strip() for a in accounts)
+        )
+        if not well_formed:
+            return wrong("bad_line", f"Line {n} needs a label, a tab, the accounts it adds up, and \"right\" as a number of columns", n)
+        line_id = f"{tab.strip()}|{fill_text(label)}|{right}"
+        if line_id in seen:
+            return wrong("same_line", f"Line {n} writes the same cell as an earlier line", n)
+        seen.add(line_id)
+        lines.append({"id": line_id, "tab": tab.strip(), "label": " ".join(label.split()), "right": right,
+                      "accounts": [a.strip() for a in accounts], "negative": entry.get("negative") is True})
+    return lines, None
+
+
+def fill_find(rows: list[list[Any]], label: str) -> tuple[int, int] | str:
+    """Where `label` is in a tab's cells, as (row, column): "no_label" when it isn't there, "ambiguous" when it is there more than once."""
+    wanted = fill_text(label)
+    found = [(r, c) for r, row in enumerate(rows) for c, value in enumerate(row) if isinstance(value, str) and fill_text(value) == wanted]
+    if len(found) == 1:
+        return found[0]
+    return "ambiguous" if found else "no_label"
+
+
+def fill_amount(rows: list[list[Any]], row: int, column: int) -> tuple[bool, float | None]:
+    """
+    A cell as something that may be written over: (True, its number), or (True, None) when it is
+    empty. (False, None) for a formula, words, or a tick box. `rows` holds formulas as written
+    ("=SUM(…)"), so one is told from the number it comes to.
+    """
+    value = rows[row][column] if row < len(rows) and column < len(rows[row]) else ""
+    if value is None or value == "":
+        return True, None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return True, float(value)
+    return False, None
+
+
+def fill_same(a: float | None, b: float | None) -> bool:
+    return (a is None and b is None) or (a is not None and b is not None and abs(a - b) < FILL_CENT)
+
+
+def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], grids: dict[str, list[list[Any]] | None], paused: set[str]) -> list[dict[str, Any]]:
+    """
+    What a fill would do with each line, as its `status`: "change" (with the `cell`, what it holds
+    as `before` and the `value` to write), "same", or why it is left alone: "paused",
+    "no_account" (one it adds up isn't linked: `missing`), "no_balance", "no_tab", "no_label",
+    "ambiguous", "not_a_number", "same_cell" (another line comes to the same cell, which the file
+    can't show: two labels side by side, each counting right to the cell between or beyond them;
+    neither is written, since which was meant can't be told). `balances` is every linked
+    account's by feed key, `grids` each tab's cells with formulas as written (None for a tab the
+    sheet hasn't got).
+    """
+    plan = []
+    for line in lines:
+        entry: dict[str, Any] = {**line, "cell": None, "row": None, "column": None, "before": None, "value": None, "missing": []}
+        plan.append(entry)
+        if line["id"] in paused:
+            entry["status"] = "paused"
+            continue
+        entry["missing"] = [key for key in line["accounts"] if key not in balances]
+        if entry["missing"]:
+            entry["status"] = "no_account"
+            continue
+        amounts = [balances[key] for key in line["accounts"]]
+        if any(a is None for a in amounts):
+            entry["status"] = "no_balance"
+            continue
+        total = round(sum(amounts), 2)
+        # A balance owed is a positive number in the feed; `negative` is for a sheet that keeps debts below zero.
+        entry["value"] = -total if line["negative"] and total else total
+        rows = grids.get(line["tab"])
+        if rows is None:
+            entry["status"] = "no_tab"
+            continue
+        found = fill_find(rows, line["label"])
+        if isinstance(found, str):
+            entry["status"] = found
+            continue
+        row, column = found[0], found[1] + line["right"]
+        entry["cell"], entry["row"], entry["column"] = f"{column_letters(column)}{row + 1}", row, column
+        writable, before = fill_amount(rows, row, column)
+        if not writable:
+            entry["status"] = "not_a_number"
+            continue
+        entry["before"] = before
+        entry["status"] = "same" if fill_same(before, entry["value"]) else "change"
+    aimed: dict[tuple[str, int, int], list[dict[str, Any]]] = {}
+    for entry in plan:
+        if entry["row"] is not None:
+            aimed.setdefault((entry["tab"], entry["row"], entry["column"]), []).append(entry)
+    for entries in aimed.values():
+        if len(entries) > 1:
+            for entry in entries:
+                entry["status"], entry["before"] = "same_cell", None
+    return plan
+
+
+def fill_answered(response: Any) -> Any:
+    if response.status_code != 200:
+        raise HTTPException(*sheet_problem(response.status_code, _google_json(response), _feed_google["account"]))
+    return _google_json(response)
+
+
+def fill_read(session: Any, tabs: list[str]) -> dict[str, list[list[Any]] | None]:
+    """The budget sheet's cells for each of `tabs`, formulas as written and numbers as numbers; None for a tab it hasn't got."""
+    base = f"{SHEETS_API}/{FINANCE_SHEET_ID}"
+    there = grid_titles(fill_answered(session.get(base, params={"fields": "sheets(properties(title,sheetType))"}, timeout=15)))
+    grids: dict[str, list[list[Any]] | None] = {tab: None for tab in tabs}
+    asked = [tab for tab in tabs if tab in there]
+    if asked:
+        params = [("ranges", sheet_range(tab)) for tab in asked]
+        params += [("valueRenderOption", "FORMULA"), ("dateTimeRenderOption", "SERIAL_NUMBER"), ("majorDimension", "ROWS")]
+        ranges = fill_answered(session.get(f"{base}/values:batchGet", params=params, timeout=20)).get("valueRanges", [])
+        for tab, answer in zip(asked, ranges):
+            grids[tab] = answer.get("values", [])
+    return grids
+
+
+def fill_put(session: Any, cells: list[tuple[str, str, float | None]]) -> None:
+    """Writes each (tab, cell, number) into the budget sheet; None empties the cell. RAW, so a number stays a number and the cell keeps its own format."""
+    data = [{"range": f"{sheet_range(tab)}!{cell}", "values": [["" if value is None else value]]} for tab, cell, value in cells]
+    fill_answered(session.post(f"{SHEETS_API}/{FINANCE_SHEET_ID}/values:batchUpdate", json={"valueInputOption": "RAW", "data": data}, timeout=20))
+
+
+def fill_balances() -> dict[str, float | None]:
+    """Every linked account's balance as last read, by its feed key."""
+    return {a["key"]: a["balance"] for institution in bank_institutions() for a in institution["accounts"]}
+
+
+def fill_paused() -> set[str]:
+    return {line for line in state_get(FILL_PAUSED_KEY) or [] if isinstance(line, str)}
+
+
+def fill_sheet(now: float) -> None:
+    """
+    Writes the balances relay.db holds into the budget sheet's cells (see "sheet fill") and keeps
+    what it changed. The caller holds `_bank_lock`. Never raises: how it went is kept for the app.
+    """
+    lines, problem = fill_lines()
+    if problem or not lines or not FINANCE_SHEET_ID:
+        if problem:
+            log.warning("bank: the budget sheet wasn't filled: %s", problem["message"])
+        state_set(FILL_KEY, {"at": now, "error": "bad_file" if problem else None, "message": problem["message"] if problem else None, "lines": []})
+        return
+    try:
+        session = feed_google()
+        plan = fill_plan(lines, fill_balances(), fill_read(session, unique([line["tab"] for line in lines])), fill_paused())
+        changes = [
+            {"line": p["id"], "tab": p["tab"], "label": p["label"], "right": p["right"], "cell": p["cell"], "before": p["before"], "after": p["value"]}
+            for p in plan if p["status"] == "change"
+        ]
+        if changes:
+            fill_put(session, [(c["tab"], c["cell"], c["after"]) for c in changes])
+
+            def keep(c: sqlite3.Connection) -> None:
+                c.execute("INSERT INTO sheet_writes (at, changes) VALUES (?,?)", (now, json.dumps(changes)))
+                c.execute("DELETE FROM sheet_writes WHERE id NOT IN (SELECT id FROM sheet_writes ORDER BY id DESC LIMIT ?)", (FILL_WRITES_KEPT,))
+                c.commit()
+
+            with_db(keep)
+            # The app's next read of the budget sheet should have the new numbers, not a minute-old copy.
+            _finance_cache["at"] = 0.0
+            # How many, never which or how much: the log isn't where the household's balances are kept.
+            log.info("bank: wrote %d of the budget sheet's cells", len(changes))
+        for p in plan:
+            if p["status"] == "change":
+                p["status"], p["before"] = "written", p["value"]
+        state_set(FILL_KEY, {"at": now, "error": None, "message": None, "lines": plan})
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {}
+        log.warning("bank: the budget sheet wasn't filled: %s", detail.get("error") or e.status_code)
+        state_set(FILL_KEY, {"at": now, "error": detail.get("error") or "google_error", "message": detail.get("message"), "lines": []})
+    except Exception as e:
+        log.warning("bank: the budget sheet wasn't filled: %s", type(e).__name__)
+        state_set(FILL_KEY, {"at": now, "error": "google_error", "message": "Couldn't reach Google", "lines": []})
+
+
+def fill_undo(write_id: int, user: str, now: float) -> None:
+    """
+    Puts back what one write changed, and pauses its lines. A cell is found by its label again
+    (rows may have been inserted since), never where it was: with the label gone or there twice,
+    the old address may be some other cell by now, and one that happened to hold the same number
+    would be overwritten. A cell found is put back only if it still holds what was written, and
+    each change says whether it was (`restored`). The caller holds `_bank_lock`. Raises HTTPException when there is no such write, it was undone
+    already, or Google refuses.
+    """
+    row = with_db(lambda c: c.execute("SELECT changes, undone_at FROM sheet_writes WHERE id=?", (write_id,)).fetchone())
+    if not row:
+        raise HTTPException(404, {"error": "not_found", "message": "That write isn't kept any more"})
+    if row[1]:
+        raise HTTPException(409, {"error": "already_undone", "message": "That write was undone already"})
+    changes = json.loads(row[0])
+    session = feed_google()
+    grids = fill_read(session, unique([c["tab"] for c in changes]))
+    back = []
+    for change in changes:
+        rows = grids.get(change["tab"]) or []
+        found = fill_find(rows, change["label"])
+        change["restored"] = False
+        if isinstance(found, str):
+            continue
+        row, column = found[0], found[1] + change["right"]
+        writable, holds = fill_amount(rows, row, column)
+        if writable and fill_same(holds, change["after"]):
+            back.append((change["tab"], f"{column_letters(column)}{row + 1}", change["before"]))
+            change["restored"] = True
+    if back:
+        fill_put(session, back)
+        _finance_cache["at"] = 0.0
+    with_db(lambda c: (c.execute("UPDATE sheet_writes SET undone_at=?, undone_by=?, changes=? WHERE id=?", (now, user, json.dumps(changes), write_id)), c.commit()))
+    state_set(FILL_PAUSED_KEY, sorted(fill_paused() | {c["line"] for c in changes}))
+    log.info("bank: %s undid a write to the budget sheet (%d of %d cells put back)", user, len(back), len(changes))
+
+
+def fill_status() -> dict[str, Any]:
+    """The sheet fill as the app shows it: each line and how the last fill left it, and the newest writes with what each changed."""
+    kept = state_get(FILL_KEY) or {}
+    lines, problem = fill_lines()
+    paused = fill_paused()
+    last = {line.get("id"): line for line in kept.get("lines") or [] if isinstance(line, dict)}
+    writes = with_db(lambda c: c.execute("SELECT id, at, changes, undone_at, undone_by FROM sheet_writes ORDER BY id DESC LIMIT ?", (FILL_WRITES_SHOWN,)).fetchall())
+    return {
+        "configured": bool(lines) or bool(problem),
+        "checked_at": kept.get("at"),
+        "error": "bad_file" if problem else kept.get("error"),
+        # What is wrong with the file, for the app to say in its own words; `message` is the relay's.
+        "reason": problem["reason"] if problem else None,
+        "line": problem["line"] if problem else None,
+        "message": problem["message"] if problem else kept.get("message"),
+        "service_account": _feed_google["account"] or _finance_google["account"],
+        "lines": [
+            {
+                "id": line["id"], "tab": line["tab"], "label": line["label"], "accounts": line["accounts"],
+                "paused": line["id"] in paused,
+                # A line added to the file since the last fill hasn't been tried yet.
+                "status": "paused" if line["id"] in paused else (last.get(line["id"]) or {}).get("status") or "waiting",
+                "cell": (last.get(line["id"]) or {}).get("cell"),
+                "value": (last.get(line["id"]) or {}).get("value"),
+                "missing": (last.get(line["id"]) or {}).get("missing") or [],
+            }
+            for line in lines
+        ],
+        "writes": [
+            {"id": write_id, "at": at, "undone_at": undone_at, "undone_by": undone_by,
+             "changes": [{"label": c.get("label"), "tab": c.get("tab"), "cell": c.get("cell"), "before": c.get("before"), "after": c.get("after"),
+                          "restored": c.get("restored")} for c in json.loads(changes)]}
+            for write_id, at, changes, undone_at, undone_by in writes
+        ],
+    }
+
+
 def plaid_sync_all(now: float | None = None, wait: bool = False) -> bool:
     """
-    Every linked institution from Plaid, then the feed sheet. One at a time: False when a sync is
+    Every linked institution from Plaid, then the feed sheet and the budget sheet's own cells. One at a time: False when a sync is
     already under way, unless `wait` says to queue behind it (a link just made must not be missed
     by a sync that began before it).
     """
@@ -6346,6 +6679,7 @@ def plaid_sync_all(now: float | None = None, wait: bool = False) -> bool:
         log.info("bank: synced %d institutions, %d failed", len(items), len(failed))
         plaid_transactions_sync(now)
         write_bank_feed(now)
+        fill_sheet(now)
     finally:
         _bank_lock.release()
     budget_check_quietly()
@@ -6391,7 +6725,7 @@ def bank_forever() -> None:
 
 
 def bank_status(now: float | None = None) -> dict[str, Any]:
-    """What the app's bank sync page shows: the institutions and their accounts, when they were last read and are next, and how the feed sheet's last write went."""
+    """What the app's bank sync page shows: the institutions and their accounts, when they were last read and are next, how the feed sheet's last write went, and what was written into the budget sheet (see "sheet fill")."""
     now = time.time() if now is None else now
     synced = state_get(PLAID_SYNCED_KEY) or {}
     feed = state_get(PLAID_FEED_KEY) or {}
@@ -6411,6 +6745,7 @@ def bank_status(now: float | None = None) -> dict[str, Any]:
             "activation_url": feed.get("activation_url"),
             "service_account": _feed_google["account"] or feed.get("service_account") or _finance_google["account"],
         },
+        "fill": fill_status(),
     }
 
 
@@ -6480,6 +6815,10 @@ def post_bank_sync(request: Request, response: Response) -> dict[str, Any]:
     return {**bank_status(), "syncing": True}
 
 
+def bank_busy() -> HTTPException:
+    return HTTPException(503, {"error": "busy", "message": "The accounts are being read just now. Try again in a minute."})
+
+
 @app.delete("/finance/bank/institutions/{item_id}")
 def delete_bank_institution(item_id: str, request: Request, response: Response) -> dict[str, Any]:
     """Unlinks an institution: Plaid is told to forget it, and its token, accounts and feed rows go."""
@@ -6487,7 +6826,7 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
     # Behind any sync under way, and ahead of the next: a sync that read this institution before
     # it was forgotten would otherwise store its accounts again, and write them back to the feed.
     if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
-        raise HTTPException(503, {"error": "busy", "message": "The accounts are being read just now. Try again in a minute."})
+        raise bank_busy()
     try:
         row = with_db(lambda c: c.execute("SELECT access, institution FROM plaid_items WHERE item_id=?", (item_id,)).fetchone())
         if not row:
@@ -6508,6 +6847,43 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
         with_db(forget)
         log.info("bank: %s unlinked %s", user, row[1] or item_id[:8])
         write_bank_feed(time.time())
+    finally:
+        _bank_lock.release()
+    return bank_status()
+
+
+@app.post("/finance/bank/fill/writes/{write_id}/undo")
+def post_bank_fill_undo(write_id: int, request: Request, response: Response) -> dict[str, Any]:
+    """Undoes one write to the budget sheet's cells and pauses its lines (see `fill_undo`)."""
+    user = require_bank(request, response)
+    if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
+        raise bank_busy()
+    try:
+        fill_undo(write_id, user, time.time())
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("bank: a write to the budget sheet wasn't undone: %s", type(e).__name__)
+        raise HTTPException(502, {"error": "google_error", "message": "Couldn't reach Google"}) from e
+    finally:
+        _bank_lock.release()
+    return bank_status()
+
+
+@app.post("/finance/bank/fill/lines")
+def post_bank_fill_line(body: FillLine, request: Request, response: Response) -> dict[str, Any]:
+    """Pauses a line of the sheet fill, or resumes it. A line resumed is written at once, from the balances already read."""
+    user = require_bank(request, response)
+    if body.line not in {line["id"] for line in fill_lines()[0]}:
+        raise HTTPException(404, {"error": "not_found", "message": "The sheet fill has no such line"})
+    if not _bank_lock.acquire(timeout=BANK_UNLINK_WAIT_SECONDS):
+        raise bank_busy()
+    try:
+        paused = fill_paused()
+        state_set(FILL_PAUSED_KEY, sorted(paused | {body.line} if body.paused else paused - {body.line}))
+        log.info("bank: %s %s a line of the sheet fill", user, "paused" if body.paused else "resumed")
+        if not body.paused:
+            fill_sheet(time.time())
     finally:
         _bank_lock.release()
     return bank_status()

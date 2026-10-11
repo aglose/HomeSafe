@@ -114,7 +114,8 @@ sheet.
 
 The balances in the sheet don't have to be typed. **Linked accounts**, at the top of Sheet sync,
 links each bank, brokerage and lender through Plaid; the relay then reads every account each
-morning and writes it to a feed the sheet's cells look up. See [bank-sync.md](bank-sync.md).
+morning and writes it to a feed the sheet's cells look up, or types it into the cells you list. Each
+write to a cell is shown there with what it changed, and can be undone. See [bank-sync.md](bank-sync.md).
 
 Only the server's **Frigate admin** accounts can read it. A viewer account, say a sitter's, gets
 "Not for this account". To let a household member whose Frigate login is a viewer in too, add

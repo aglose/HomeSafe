@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.finance.domain.BankAccountType
 import com.meticulouscreations.homesafe.finance.domain.BankLinkStatus
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
+import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -181,6 +182,89 @@ class BankSyncRelayApiTest {
         assertTrue(api.syncNow("http://frigate.local").getOrThrow().syncing)
         api.unlink("http://frigate.local", "item1").getOrThrow()
         assertEquals(listOf(HttpMethod.Post to "/finance/bank/sync", HttpMethod.Delete to "/finance/bank/institutions/item1"), seen)
+    }
+
+    @Test
+    fun theSheetFillIsReadWithItsLinesAndWhatEachWriteChanged() = runTest {
+        val fill = """
+            {"configured":true,"fill":{"configured":true,"checked_at":1790800000.0,"error":null,"message":null,"service_account":"relay@example.iam.gserviceaccount.com",
+              "lines":[
+                {"id":"Home|roth ira|2","tab":"Home","label":"Roth IRA","accounts":["Chase Roth IRA"],"paused":false,"status":"written","cell":"K10","value":51000.0,"missing":[]},
+                {"id":"Home|old 401k|1","tab":"Home","label":"Old 401k","accounts":["Acme 401k"],"paused":false,"status":"no_account","cell":null,"value":null,"missing":["Acme 401k"]},
+                {"id":"Home|cards|1","tab":"Home","label":"Cards","accounts":["Chase Sapphire 9911"],"paused":true,"status":"paused","cell":null,"value":null,"missing":[]},
+                {"id":"Home|twice|1","tab":"Home","label":"Twice","accounts":["x"],"status":"same_cell","cell":"C6"},
+                {"id":"Home|later|1","tab":"Home","label":"Later","accounts":["x"],"status":"a word from a newer relay"}],
+              "writes":[
+                {"id":12,"at":1790800000.0,"undone_at":null,"undone_by":null,
+                 "changes":[{"label":"Roth IRA","tab":"Home","cell":"K10","before":50000.0,"after":51000.0,"restored":null},
+                            {"label":"Brokerage","tab":"Home","cell":"K11","before":null,"after":812.4,"restored":null}]},
+                {"id":11,"at":1790700000.0,"undone_at":1790700060.0,"undone_by":"alex",
+                 "changes":[{"label":"Cards","tab":"Home","cell":"F39","before":0,"after":-812.4,"restored":false}]}]}}
+        """.trimIndent()
+        val engine = MockEngine { respond(fill, HttpStatusCode.OK, jsonHeaders) }
+        val read = api(engine).status("http://frigate.local").getOrThrow().fill
+
+        assertTrue(read.configured)
+        assertEquals(1_790_800_000L, read.checkedAtEpochSeconds)
+        assertEquals(
+            listOf(SheetFillStatus.WRITTEN, SheetFillStatus.NO_ACCOUNT, SheetFillStatus.PAUSED, SheetFillStatus.SAME_CELL, SheetFillStatus.WAITING),
+            read.lines.map { it.status },
+        )
+        val (roth, old, cards) = read.lines
+        assertEquals(Triple("K10", 51000.0, listOf("Chase Roth IRA")), Triple(roth.cell, roth.value, roth.accounts))
+        assertEquals(listOf("Acme 401k"), old.missing)
+        assertTrue(old.status.needsALook)
+        assertTrue(cards.paused)
+        assertFalse(cards.status.needsALook)
+
+        val (latest, earlier) = read.writes
+        assertEquals(12L to false, latest.id to latest.undone)
+        assertEquals(listOf(50000.0 to 51000.0, null to 812.4), latest.changes.map { it.before to it.after })
+        assertNull(latest.changes.first().restored)
+        assertEquals(Triple(1_790_700_060L, "alex", false), Triple(earlier.undoneAtEpochSeconds, earlier.undoneBy, earlier.changes.single().restored))
+    }
+
+    @Test
+    fun whatIsWrongWithTheListOfCellsComesAsAReasonAndALine() = runTest {
+        val refused = """{"configured":true,"fill":{"configured":true,"error":"bad_file","reason":"bad_line","line":3,"message":"Line 3 needs a label"}}"""
+        val engine = MockEngine { respond(refused, HttpStatusCode.OK, jsonHeaders) }
+        val fill = api(engine).status("http://frigate.local").getOrThrow().fill
+        // The app says it in its own words from these; the relay's sentence is only detail.
+        assertEquals(Triple("bad_file", "bad_line", 3), Triple(fill.error, fill.errorReason, fill.errorLine))
+        assertEquals("Line 3 needs a label", fill.message)
+    }
+
+    @Test
+    fun aRelayFromBeforeTheSheetFillReadsAsOneThatIsNotSetUp() = runTest {
+        val engine = MockEngine { respond(status, HttpStatusCode.OK, jsonHeaders) }
+        val fill = api(engine).status("http://frigate.local").getOrThrow().fill
+        assertFalse(fill.configured)
+        assertTrue(fill.lines.isEmpty() && fill.writes.isEmpty())
+    }
+
+    @Test
+    fun undoingAWriteAndPausingALineUseTheirOwnRoutes() = runTest {
+        val seen = mutableListOf<Pair<HttpMethod, String>>()
+        var sent = ""
+        val engine = MockEngine { request ->
+            seen += request.method to request.url.encodedPath
+            sent = request.body.toByteArray().decodeToString()
+            respond("""{"configured":true}""", HttpStatusCode.OK, jsonHeaders)
+        }
+        val api = api(engine)
+        api.undoWrite("http://frigate.local", 12).getOrThrow()
+        api.setLinePaused("http://frigate.local", "Home|roth ira|2", paused = true).getOrThrow()
+        assertEquals(listOf(HttpMethod.Post to "/finance/bank/fill/writes/12/undo", HttpMethod.Post to "/finance/bank/fill/lines"), seen)
+        val body = Json.parseToJsonElement(sent).jsonObject
+        // The line's id has spaces and bars in it, so it travels in the body, never the address.
+        assertEquals("Home|roth ira|2" to "true", body["line"]?.jsonPrimitive?.content to body["paused"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun aWriteUndoneAlreadySaysSoInTheRelaysWords() {
+        val problem = BankSyncRelayApi.problemFrom(HttpStatusCode.Conflict, """{"detail":{"error":"already_undone","message":"That write was undone already"}}""")
+        assertEquals(BankProblem.OTHER, problem.problem)
+        assertEquals("That write was undone already".asUiText(), problem.text)
     }
 
     // ---- problemFrom -------------------------------------------------------------------------

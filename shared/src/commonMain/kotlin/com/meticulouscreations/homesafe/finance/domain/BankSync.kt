@@ -106,6 +106,109 @@ data class BankFeed(
     val activationUrl: String?,
 )
 
+/**
+ * How a line of the sheet fill came out of the last sync: the relay's word for it (`fill_plan` in
+ * `relay/relay.py`).
+ */
+enum class SheetFillStatus(val wire: String) {
+    /** The cell was changed. */
+    WRITTEN("written"),
+
+    /** The cell already held the number. */
+    SAME("same"),
+
+    /** Added since the last sync, so not tried yet. */
+    WAITING("waiting"),
+    PAUSED("paused"),
+
+    /** One of the accounts it adds up isn't linked. */
+    NO_ACCOUNT("no_account"),
+
+    /** One of its accounts has no balance yet. */
+    NO_BALANCE("no_balance"),
+    NO_TAB("no_tab"),
+    NO_LABEL("no_label"),
+
+    /** The label is in the tab more than once. */
+    AMBIGUOUS("ambiguous"),
+
+    /** The cell holds a formula or words, which are never written over. */
+    NOT_A_NUMBER("not_a_number"),
+
+    /** Another line comes to the same cell, so neither is written. */
+    SAME_CELL("same_cell"),
+    ;
+
+    /** The line was left alone for a reason only a person can clear. */
+    val needsALook: Boolean get() = this != WRITTEN && this != SAME && this != WAITING && this != PAUSED
+
+    companion object {
+        /** A word this build doesn't know (a newer relay's) reads as not tried yet rather than as a fault. */
+        fun ofWire(wire: String?): SheetFillStatus = entries.firstOrNull { it.wire == wire } ?: WAITING
+    }
+}
+
+/**
+ * One cell of the budget sheet the relay keeps filled in: the row is found by [label] in [tab],
+ * and the number is the sum of [accounts] (feed keys). [cell] and [value] are where it was found
+ * and what it came to at the last sync.
+ */
+@Immutable
+@Serializable
+data class SheetFillLine(
+    val id: String,
+    val tab: String,
+    val label: String,
+    val accounts: List<String>,
+    val status: SheetFillStatus,
+    val cell: String?,
+    val value: Double?,
+    /** The accounts of [accounts] that aren't linked, when that is why it was left alone. */
+    val missing: List<String>,
+) {
+    val paused: Boolean get() = status == SheetFillStatus.PAUSED
+}
+
+/** What one write did to one cell. [before] is null for a cell that was empty. [restored] once the write was undone: whether this cell was put back. */
+@Immutable
+@Serializable
+data class SheetChange(val label: String, val tab: String, val cell: String?, val before: Double?, val after: Double?, val restored: Boolean?)
+
+/** One time the relay wrote balances into the budget sheet's cells, and everything it changed. */
+@Immutable
+@Serializable
+data class SheetWrite(
+    val id: Long,
+    val atEpochSeconds: Long,
+    val undoneAtEpochSeconds: Long?,
+    val undoneBy: String?,
+    val changes: List<SheetChange>,
+) {
+    val undone: Boolean get() = undoneAtEpochSeconds != null
+}
+
+/** The sheet fill: the budget sheet's cells the relay writes the balances into, and what it wrote lately. */
+@Immutable
+@Serializable
+data class SheetFill(
+    /** The relay has a list of cells to fill. */
+    val configured: Boolean = false,
+    val checkedAtEpochSeconds: Long? = null,
+    /** The relay's code for why the last fill failed: `bad_file`, `not_shared`, `api_disabled`, `not_found`, `no_key`, `google_error`. */
+    val error: String? = null,
+    /** With `bad_file`, what is wrong with the list of cells: `unreadable`, `no_lines`, `bad_line`, `same_line`. */
+    val errorReason: String? = null,
+    /** The line of the list [errorReason] is about, counted from 1. */
+    val errorLine: Int? = null,
+    /** The relay's or Google's own words for [error]: detail, in English. */
+    val message: String? = null,
+    /** The Google account the budget sheet must be shared with as an editor. */
+    val serviceAccount: String? = null,
+    val lines: List<SheetFillLine> = emptyList(),
+    /** The newest first. */
+    val writes: List<SheetWrite> = emptyList(),
+)
+
 /** The bank sync as the relay reports it. */
 @Immutable
 @Serializable
@@ -119,6 +222,7 @@ data class BankSync(
     val syncing: Boolean,
     val nextSyncAtEpochSeconds: Long?,
     val feed: BankFeed,
+    val fill: SheetFill = SheetFill(),
 )
 
 /** A link under way: Plaid's page to open, and the token its progress is asked by. */
@@ -182,4 +286,10 @@ interface BankSyncRepository {
     suspend fun syncNow(): Result<BankSync>
 
     suspend fun unlink(institutionId: String): Result<BankSync>
+
+    /** Puts back what one write to the budget sheet changed; the relay pauses its lines. */
+    suspend fun undoWrite(writeId: Long): Result<BankSync>
+
+    /** Pauses a line of the sheet fill, or resumes it (the relay writes a resumed line at once). */
+    suspend fun setLinePaused(lineId: String, paused: Boolean): Result<BankSync>
 }

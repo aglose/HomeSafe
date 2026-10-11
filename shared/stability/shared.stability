@@ -114,7 +114,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncRoute(contentPa
     - contentPadding: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onUndoWrite: kotlin.Function1<kotlin.Long, kotlin.Unit>, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -125,6 +125,8 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: c
     - onCancelLink: STABLE (function type)
     - onSyncNow: STABLE (function type)
     - onUnlink: STABLE (function type)
+    - onUndoWrite: STABLE (function type)
+    - onPauseLine: STABLE (function type)
     - onRetry: STABLE (function type)
 
 @Composable
@@ -456,6 +458,33 @@ private fun com.meticulouscreations.homesafe.finance.ui.FeedCard(feed: com.metic
   params:
     - feed: STABLE (marked @Stable or @Immutable)
     - now: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillLineRow(line: com.meticulouscreations.homesafe.finance.domain.SheetFillLine, busy: kotlin.Boolean, enabled: kotlin.Boolean, onPause: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - line: STABLE (marked @Stable or @Immutable)
+    - busy: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - onPause: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillLinesCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill, changing: kotlin.String?, enabled: kotlin.Boolean, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fill: STABLE (marked @Stable or @Immutable)
+    - changing: STABLE (class with no mutable properties)
+    - enabled: STABLE (primitive type)
+    - onPauseLine: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillProblemCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fill: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FilterChips(budget: com.meticulouscreations.homesafe.finance.domain.Budget, selected: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
@@ -1419,6 +1448,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.TourCaption(link: com.me
     - step: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.UndoDialog(onConfirm: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onConfirm: STABLE (function type)
+    - onDismiss: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.UnlinkDialog(name: kotlin.String, onConfirm: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -1490,6 +1527,17 @@ private fun com.meticulouscreations.homesafe.finance.ui.WhatIfCard(whatIf: com.m
   params:
     - whatIf: STABLE (marked @Stable or @Immutable)
     - kind: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.WriteCard(write: com.meticulouscreations.homesafe.finance.domain.SheetWrite, now: kotlin.Long, undoing: kotlin.Boolean, enabled: kotlin.Boolean, onUndo: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - write: STABLE (marked @Stable or @Immutable)
+    - now: STABLE (primitive type)
+    - undoing: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - onUndo: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.YieldCurveBlock(state: com.meticulouscreations.homesafe.finance.FinanceUiState): kotlin.Unit

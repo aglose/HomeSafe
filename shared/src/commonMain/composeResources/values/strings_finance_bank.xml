@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   Finance: the bank sync page, where banks, brokerages and lenders are linked through Plaid and
-  their balances are written to the budget sheet's feed. fin_bank_* throughout.
+  their balances are written to the budget sheet's feed and into its cells. fin_bank_* throughout.
   Plaid is a company's name and stays as it is. Text in “curly quotes” is the name of a tab the
   server makes in the feed sheet, and VLOOKUP / IMPORTRANGE are Google Sheets functions: keep all
   of those as written.
@@ -88,6 +88,61 @@
     <string name="fin_bank_feed_failed_plain">The last write to the feed sheet didn't work.</string>
     <string name="fin_bank_feed_open">Open the feed sheet</string>
     <string name="fin_bank_feed_how">Each account has a key in the feed's first column and its balance in the second. In your budget sheet, replace a typed balance with a lookup of its key: =VLOOKUP("key", IMPORTRANGE("feed sheet address", "Bank feed!A:B"), 2, FALSE)</string>
+
+    <!--
+      The sheet fill: the server types the balances into the budget sheet's own cells after each
+      sync. A "line" is one of those cells, named by the label beside it in the sheet. A "write"
+      is one time the server changed some of them.
+    -->
+    <string name="fin_bank_fill_title">Filled in your sheet</string>
+    <string name="fin_bank_fill_subtitle">The balances the server types into your budget sheet's own cells</string>
+    <!-- %1$s is how long ago ("3 h ago"). -->
+    <string name="fin_bank_fill_checked">Checked %1$s</string>
+    <!-- %1$s is one account's name, or several separated by commas. -->
+    <string name="fin_bank_fill_line_from">From %1$s</string>
+    <string name="fin_bank_fill_line_waiting">Not written yet. It's written at the next sync.</string>
+    <string name="fin_bank_fill_line_paused">Paused. Nothing is written here until you resume it.</string>
+    <!-- %1$s is the account's name, or several separated by commas. -->
+    <string name="fin_bank_fill_line_no_account">Not written, because an account it adds up isn't linked: %1$s</string>
+    <string name="fin_bank_fill_line_no_balance">Not written, because one of its accounts has no balance yet.</string>
+    <!-- %1$s is the tab's name in the sheet. -->
+    <string name="fin_bank_fill_line_no_tab">Not written, because the sheet has no tab called “%1$s”.</string>
+    <!-- %1$s is the label looked for, %2$s the tab's name. -->
+    <string name="fin_bank_fill_line_no_label">Not written, because “%1$s” isn't in the “%2$s” tab any more.</string>
+    <string name="fin_bank_fill_line_ambiguous">Not written, because “%1$s” is in the “%2$s” tab more than once.</string>
+    <!-- %1$s is the cell's address, like K10. -->
+    <string name="fin_bank_fill_line_not_a_number">Not written, because cell %1$s holds a formula or words. Only a typed number is ever replaced.</string>
+    <string name="fin_bank_fill_line_same_cell">Not written, because another line comes to the same cell, %1$s. Check both in sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_pause">Pause</string>
+    <string name="fin_bank_fill_resume">Resume</string>
+    <string name="fin_bank_fill_working">Working…</string>
+    <string name="fin_bank_fill_writes_title">What was changed</string>
+    <string name="fin_bank_fill_writes_subtitle">Every write to your sheet, newest first</string>
+    <string name="fin_bank_fill_writes_none">Nothing has been written yet.</string>
+    <!-- What a cell held before and after: %1$s and %2$s are amounts of money. -->
+    <string name="fin_bank_fill_change">%1$s → %2$s</string>
+    <!-- The cell was empty before; %1$s is the amount written. -->
+    <string name="fin_bank_fill_change_from_empty">Empty → %1$s</string>
+    <string name="fin_bank_fill_change_left">Left as it is: the cell had been changed since.</string>
+    <string name="fin_bank_fill_undoing">Undoing…</string>
+    <!-- %1$s is how long ago ("3 min ago"); %2$s is the username of who undid it. -->
+    <string name="fin_bank_fill_undone">Undone %1$s</string>
+    <string name="fin_bank_fill_undone_by">Undone %1$s by %2$s</string>
+    <string name="fin_bank_fill_undo_title">Undo this write?</string>
+    <string name="fin_bank_fill_undo_body">Each cell goes back to the number it held before, unless it has been changed since. Those lines are then paused, so the next sync doesn't write them again. Resume a line when you're ready.</string>
+    <string name="fin_bank_fill_notice_undone">Put back. Those lines are paused until you resume them.</string>
+    <!-- %1$d of the %2$d cells of the write. -->
+    <string name="fin_bank_fill_notice_undone_partly">%1$d of %2$d cells were put back. The rest had been changed since, so they were left. Those lines are paused.</string>
+    <string name="fin_bank_fill_not_shared">The server can't write to your budget sheet. Open the sheet, tap Share, and add this address as an Editor:</string>
+    <!-- What is wrong with sheet-fill.json, the file on the server that lists the cells. %1$d is which of its lines, counted from 1. -->
+    <string name="fin_bank_fill_bad_file">The server's list of cells can't be used, so nothing is written. Check sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_bad_file_unreadable">The server's list of cells can't be read, so nothing is written. Check that sheet-fill.json on the server is valid JSON.</string>
+    <string name="fin_bank_fill_bad_file_no_lines">The server's list of cells has no "lines" list, so nothing is written. Check sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_bad_file_bad_line">Line %1$d of the server's list of cells is missing something, so nothing is written. Each line needs a label, a tab, the accounts it adds up, and "right" as a number of columns.</string>
+    <string name="fin_bank_fill_bad_file_same_line">Line %1$d of the server's list of cells is there twice, so nothing is written. Take one of them out of sheet-fill.json on the server.</string>
+    <string name="fin_bank_fill_failed">The last write to your budget sheet didn't work: %1$s</string>
+    <string name="fin_bank_fill_failed_plain">The last write to your budget sheet didn't work.</string>
+    <string name="fin_bank_fill_how">A cell is found by the label beside it every time, so adding rows doesn't move a write onto the wrong cell, and only a typed number or an empty cell is ever replaced. The list of cells is sheet-fill.json on the server (docs/bank-sync.md).</string>
 
     <!-- The page can't be shown. -->
     <string name="fin_bank_setup_title">Bank sync isn't set up yet</string>
