@@ -30,6 +30,7 @@ import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferences
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
+import com.meticulouscreations.homesafe.ui.components.LiveStreamStats
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.SeekCommand
@@ -334,6 +335,20 @@ class CameraDetailViewModel(
 
     /** What the player last reported for the live source; gates the quality upgrade ([awaitQualityUpgrade]). */
     private val streamStatus = MutableStateFlow(LiveStreamStatus.Connecting)
+
+    private val _statsShown = MutableStateFlow(false)
+
+    /** Whether the "stats for nerds" panel is up. For this visit to the camera only: it is a look under the bonnet, not a setting. */
+    val statsShown: StateFlow<Boolean> = _statsShown.asStateFlow()
+
+    private val _streamStats = MutableStateFlow<LiveStreamStats?>(null)
+
+    /**
+     * What the player last measured of the live stream, once a second while [statsShown]; null
+     * before its first reading, and while a recording plays. Its own flow rather than part of
+     * [playback], so a reading recomposes the panel and nothing else.
+     */
+    val streamStats: StateFlow<LiveStreamStats?> = _streamStats.asStateFlow()
     private var momentJob: Job? = null
 
     init {
@@ -619,6 +634,17 @@ class CameraDetailViewModel(
 
     fun onStreamStatusChanged(status: LiveStreamStatus) {
         streamStatus.value = status
+    }
+
+    fun toggleStats() {
+        val shown = !_statsShown.value
+        _statsShown.value = shown
+        // The player stops measuring when the panel goes; don't greet its return with an old reading.
+        if (!shown) _streamStats.value = null
+    }
+
+    fun onStreamStats(stats: LiveStreamStats?) {
+        if (_statsShown.value) _streamStats.value = stats
     }
 
     /**

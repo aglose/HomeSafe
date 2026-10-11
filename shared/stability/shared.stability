@@ -2603,7 +2603,7 @@ public fun com.meticulouscreations.homesafe.ui.components.BufferingDots(color: a
     - dotSize: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStats: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2616,6 +2616,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(req
     - onPlaybackEnded: STABLE (function type)
     - onPlaybackError: STABLE (function type)
     - onAudioAvailabilityChanged: STABLE (function type)
+    - onStreamStats: STABLE (function type)
     - reconnectRequests: STABLE (primitive type)
 
 @Composable
@@ -3068,12 +3069,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras
     - onSelect: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, statsShown: kotlin.Boolean, onToggleStats: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onEditDetectionZones: STABLE (function type)
     - onTagCars: STABLE (function type)
+    - statsShown: STABLE (primitive type)
+    - onToggleStats: STABLE (function type)
     - tint: STABLE (marked @Stable or @Immutable)
     - onOpenChange: STABLE (function type)
 
@@ -4061,6 +4064,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.PlayPauseButton(isPlayin
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.PlayerStreamStats(cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - cameraName: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PlayerSurface(cameraAvailable: kotlin.Boolean, cameraName: kotlin.String, playerKey: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, viewportHeight: androidx.compose.runtime.IntState, bottomInsetPx: kotlin.Int, takeover: androidx.compose.animation.core.Animatable<kotlin.Float, *>, onZoomStarted: kotlin.Function0<kotlin.Unit>, fullScreen: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: false
   restartable: true
@@ -4568,6 +4579,20 @@ internal fun com.meticulouscreations.homesafe.ui.screens.StageAndControls(sideBy
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.StatsLine(row: com.meticulouscreations.homesafe.ui.screens.StreamStatsRow): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - row: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.StatsNote(text: org.jetbrains.compose.resources.StringResource): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.StatusBadge(enabled: kotlin.Boolean, status: com.meticulouscreations.homesafe.ui.components.LiveStreamStatus, textColor: androidx.compose.ui.graphics.Color, pillColor: androidx.compose.ui.graphics.Color): kotlin.Unit
   skippable: true
   restartable: true
@@ -4608,6 +4633,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.StorageUsageBar(label: k
     - usedFraction: STABLE (primitive type)
     - usedText: STABLE (String is immutable)
     - totalText: STABLE (String is immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.StreamStatsPanel(stats: com.meticulouscreations.homesafe.ui.components.LiveStreamStats?, isLive: kotlin.Boolean, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - stats: STABLE (marked @Stable or @Immutable)
+    - isLive: STABLE (primitive type)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState): kotlin.Unit

@@ -95,6 +95,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    onStreamStats: ((stats: LiveStreamStats?) -> Unit)?,
     reconnectRequests: Int,
 ) {
     val context = LocalContext.current
@@ -291,6 +292,12 @@ actual fun CameraStreamPlayer(
     LaunchedEffect(holder, request.seek) {
         val seek = request.seek ?: return@LaunchedEffect
         if (currentSource is VideoSource.Recording) player.seekTo(seek.positionMs)
+    }
+
+    // Measured only while somebody is reading: a peer's statistics are not free to collect.
+    val currentOnStreamStats by rememberUpdatedState(onStreamStats)
+    if (onStreamStats != null) {
+        LaunchedEffect(holder) { holder.reportStats { currentOnStreamStats?.invoke(it) } }
     }
 
     LaunchedEffect(holder) {

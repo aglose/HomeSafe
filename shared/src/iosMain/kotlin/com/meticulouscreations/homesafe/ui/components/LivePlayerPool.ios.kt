@@ -10,6 +10,7 @@ import io.ktor.client.engine.darwin.Darwin
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -19,26 +20,37 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import platform.AVFoundation.AVMediaTypeVideo
 import platform.AVFoundation.AVPlayer
 import platform.AVFoundation.AVPlayerItem
+import platform.AVFoundation.AVPlayerItemAccessLogEvent
 import platform.AVFoundation.AVPlayerItemDidPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemFailedToPlayToEndTimeNotification
 import platform.AVFoundation.AVPlayerItemPlaybackStalledNotification
 import platform.AVFoundation.AVPlayerItemStatusFailed
 import platform.AVFoundation.AVPlayerItemStatusReadyToPlay
+import platform.AVFoundation.AVPlayerItemTrack
 import platform.AVFoundation.AVURLAsset
+import platform.AVFoundation.CMTimeRangeValue
+import platform.AVFoundation.accessLog
 import platform.AVFoundation.automaticallyWaitsToMinimizeStalling
 import platform.AVFoundation.currentItem
 import platform.AVFoundation.currentTime
 import platform.AVFoundation.error
+import platform.AVFoundation.loadedTimeRanges
+import platform.AVFoundation.mediaType
 import platform.AVFoundation.muted
 import platform.AVFoundation.pause
 import platform.AVFoundation.play
 import platform.AVFoundation.preferredForwardBufferDuration
+import platform.AVFoundation.presentationSize
 import platform.AVFoundation.replaceCurrentItemWithPlayerItem
 import platform.AVFoundation.seekToTime
+import platform.AVFoundation.tracks
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
+import platform.CoreMedia.CMTimeRangeGetEnd
 import platform.CoreMedia.kCMTimePositiveInfinity
 import platform.CoreMedia.kCMTimeZero
 import platform.Foundation.NSDate
@@ -46,11 +58,19 @@ import platform.Foundation.NSLog
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
+import platform.Foundation.NSValue
 import platform.Foundation.timeIntervalSince1970
 import platform.UIKit.UIView
+import kotlin.math.roundToInt
 import kotlin.time.TimeSource
 
 private const val HOLDER_POLL_INTERVAL_MS = 250L
+
+/** How often the HLS buffer is looked at for newly arrived video while statistics are being reported; see [LiveEdgeTracker]. */
+private const val HLS_ARRIVAL_POLL_MS = 100L
+
+/** How long a peer gets to answer a statistics request; one closed in the meantime never does. */
+private const val WEBRTC_STATS_TIMEOUT_MS = 1_000L
 private const val PREFERRED_FORWARD_BUFFER_SECONDS = 3.0
 internal const val PREFERRED_TIMESCALE = 600
 
@@ -268,6 +288,96 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         clearObservers()
         player.pause()
         player.replaceCurrentItemWithPlayerItem(null)
+    }
+
+    /**
+     * Measures the live source for as long as the caller keeps collecting, handing [onStats] a
+     * reading every [LIVE_STATS_INTERVAL_MS]: null while there is nothing to go on yet (a peer's
+     * first report, which has no earlier one to be compared with) and while a recording plays.
+     *
+     * AVFoundation says nothing as video arrives, so on HLS the item's loaded range is watched
+     * between reports instead: each time it grows, that much video has just come in.
+     */
+    suspend fun reportStats(onStats: (LiveStreamStats?) -> Unit): Nothing {
+        val webRtcMeter = WebRtcStatsMeter()
+        var metered: IosWebRtcPeerAdapter? = null
+        val edge = LiveEdgeTracker()
+        var edgeItem: AVPlayerItem? = null
+        // The furthest the item has ever been loaded to. A jump to the live edge empties the
+        // buffer and loads some of the same video again, which is not an arrival.
+        var loadedToMs = Long.MIN_VALUE
+        val bytes = RateMeter()
+        val clock = TimeSource.Monotonic.markNow()
+        var reportedAtMs = Long.MIN_VALUE
+        while (true) {
+            val now = clock.elapsedNow().inWholeMilliseconds
+            val live = source is VideoSource.Live
+            val item = player.currentItem.takeIf { live && transport == LiveTransport.HLS }
+            if (item != null) {
+                if (item !== edgeItem) {
+                    edge.reset()
+                    edgeItem = item
+                    loadedToMs = Long.MIN_VALUE
+                }
+                val loadedEnd = item.loadedEndMs()
+                if (loadedEnd != null && loadedEnd > loadedToMs) {
+                    loadedToMs = loadedEnd
+                    edge.observe(loadedEnd, now)
+                }
+            }
+            if (now - reportedAtMs >= LIVE_STATS_INTERVAL_MS) {
+                reportedAtMs = now
+                val stats = when {
+                    !live -> null
+
+                    transport == LiveTransport.WEBRTC -> {
+                        val current = peer
+                        if (current !== metered) {
+                            webRtcMeter.reset()
+                            metered = current
+                        }
+                        current?.let { withTimeoutOrNull(WEBRTC_STATS_TIMEOUT_MS) { it.receiverStats() } }?.let(webRtcMeter::update)
+                    }
+
+                    else -> hlsStats(item, edge, bytes, now)
+                }
+                onStats(stats)
+            }
+            delay(HLS_ARRIVAL_POLL_MS)
+        }
+    }
+
+    /**
+     * The HLS session as AVFoundation has it: how far the playhead is behind [edge], how much of
+     * that is already here, and what is playing. Null until some video has arrived to place the
+     * live edge by.
+     */
+    private fun hlsStats(item: AVPlayerItem?, edge: LiveEdgeTracker, bytes: RateMeter, now: Long): LiveStreamStats? {
+        val log = item?.accessLog()?.events?.lastOrNull() as? AVPlayerItemAccessLogEvent
+        // Read every time, wanted or not: a rate is the change since the reading before.
+        val bytesPerSecond = bytes.perSecond(log?.numberOfBytesTransferred, now)
+        if (item == null) return null
+        val position = CMTimeGetSeconds(player.currentTime()).takeIf { !it.isNaN() }?.let { (it * 1000).toLong() } ?: return null
+        val behind = edge.behindMs(position, now) ?: return null
+        val size = item.presentationSize.useContents { width.toInt() to height.toInt() }
+        val video = item.tracks.firstNotNullOfOrNull { track -> (track as? AVPlayerItemTrack)?.takeIf { it.assetTrack?.mediaType == AVMediaTypeVideo } }
+        return LiveStreamStats(
+            transport = LiveTransport.HLS,
+            delayMs = behind.toInt(),
+            bufferMs = edge.bufferedMs(position)?.toInt(),
+            width = size.first.takeIf { it > 0 },
+            height = size.second.takeIf { it > 0 },
+            framesPerSecond = video?.currentVideoFrameRate?.roundToInt()?.takeIf { it > 0 },
+            bitrateKbps = bytesPerSecond?.bytesPerSecondAsKbps(),
+            droppedFrames = log?.numberOfDroppedVideoFrames?.takeIf { it >= 0 },
+        )
+    }
+
+    /** Where the video this item has downloaded ends, in its own time; null before it has any. */
+    private fun AVPlayerItem.loadedEndMs(): Long? {
+        val range = loadedTimeRanges.lastOrNull() as? NSValue ?: return null
+        val seconds = CMTimeGetSeconds(CMTimeRangeGetEnd(range.CMTimeRangeValue))
+        return if (seconds.isNaN()) null else (seconds * 1000).toLong()
     }
 
     private fun resume() {

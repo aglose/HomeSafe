@@ -3,12 +3,14 @@ package com.meticulouscreations.homesafe.integration
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performTouchInput
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.RecordedRequest
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.screens.PLAYER_TAPS_TEST_TAG
+import com.meticulouscreations.homesafe.ui.screens.STREAM_STATS_TEST_TAG
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -192,6 +194,29 @@ class CameraDetailJourneyTest {
     }
 
     @Test
+    fun theMenuPutsStatsForNerdsOverTheVideoAndItsCrossTakesThemAway() = runAppJourney {
+        val home = HomeRobot(this)
+        signIn.signInAs()
+        home.openCamera("front_door", "Front Door")
+
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        tapText(STATS_FOR_NERDS)
+
+        // With no stream to measure (the fake serves none) the panel is up and still waiting.
+        awaitNode(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel")
+        awaitText("Measuring…")
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        awaitText("Hide stats for nerds")
+        tapText("Hide stats for nerds")
+        awaitGone(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel, hidden from the menu")
+
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        tapText(STATS_FOR_NERDS)
+        tap(hasContentDescription("Close stats for nerds"), "the panel's cross")
+        awaitGone(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel, closed by its cross")
+    }
+
+    @Test
     fun theScissorsOpenTheClipEditorAndCloseBackToTheCamera() = runAppJourney {
         val home = HomeRobot(this)
         val camera = CameraRobot(this)
@@ -226,6 +251,8 @@ class CameraDetailJourneyTest {
     private companion object {
         const val LIVE = "LIVE"
         const val CLOSE_EDITOR = "Close clip editor"
+        const val MORE_OPTIONS = "More options"
+        const val STATS_FOR_NERDS = "Stats for nerds"
 
         /** The editor opened at live reads ~16 minutes back (its 15-minute reach plus a minute's padding). */
         const val CLIP_REACH_UPPER_BOUND = 3_000.0
