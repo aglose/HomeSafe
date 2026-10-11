@@ -225,6 +225,40 @@ class BankSyncRelayApiTest {
     }
 
     @Test
+    fun aStockPlanIsReadWithTheVestsToCome() = runTest {
+        val plans = """
+            {"configured":true,
+             "fill":{"configured":true,"lines":[
+               {"id":"Home|nov 15th|2","tab":"Home","label":"Nov 15th","accounts":["Acme Plans Acme Corp 0042"],"vest_on":"2026-11-15","status":"vested"},
+               {"id":"Home|aug 2029|2","tab":"Home","label":"Aug 2029","accounts":["Acme Plans Acme Corp 0042"],"vest_on":"2029-08-15","status":"no_vest"}]},
+             "stock_plans":[{"account":"Acme Plans Acme Corp 0042","name":"Acme Corp","institution":"Acme Plans","ticker":"ACME","price":10.0,"unvested":900.0,
+               "every_months":3,"per_vest":300.0,
+               "vests":[{"date":"2026-05-15","shares":300.0},{"date":"2026-08-15","shares":300.0}],
+               "upcoming":[{"date":"2026-11-15","shares":300.0,"value":3000.0},{"date":"2027-02-15","shares":300.0,"value":null}]}]}
+        """.trimIndent()
+        val engine = MockEngine { respond(plans, HttpStatusCode.OK, jsonHeaders) }
+        val bank = api(engine).status("http://frigate.local").getOrThrow()
+
+        val plan = bank.stockPlans.single()
+        assertEquals(Triple("ACME", 900.0, 3), Triple(plan.ticker, plan.unvested, plan.everyMonths))
+        assertEquals(listOf("2026-05-15", "2026-08-15"), plan.vests.map { it.date })
+        assertEquals(listOf(3000.0, null), plan.upcoming.map { it.value })
+        assertEquals(300.0, plan.upcoming.first().shares)
+
+        val (happened, none) = bank.fill.lines
+        assertEquals(SheetFillStatus.VESTED to SheetFillStatus.NO_VEST, happened.status to none.status)
+        // A vest that has happened is as it should be; one that can't be found wants a look.
+        assertFalse(happened.status.needsALook)
+        assertTrue(none.status.needsALook)
+    }
+
+    @Test
+    fun aRelayFromBeforeStockPlansHasNone() = runTest {
+        val engine = MockEngine { respond(status, HttpStatusCode.OK, jsonHeaders) }
+        assertTrue(api(engine).status("http://frigate.local").getOrThrow().stockPlans.isEmpty())
+    }
+
+    @Test
     fun whatIsWrongWithTheListOfCellsComesAsAReasonAndALine() = runTest {
         val refused = """{"configured":true,"fill":{"configured":true,"error":"bad_file","reason":"bad_line","line":3,"message":"Line 3 needs a label"}}"""
         val engine = MockEngine { respond(refused, HttpStatusCode.OK, jsonHeaders) }

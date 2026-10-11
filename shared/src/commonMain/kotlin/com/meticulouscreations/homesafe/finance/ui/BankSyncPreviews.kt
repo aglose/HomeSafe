@@ -16,6 +16,8 @@ import com.meticulouscreations.homesafe.finance.domain.SheetFill
 import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
 import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
 import com.meticulouscreations.homesafe.finance.domain.SheetWrite
+import com.meticulouscreations.homesafe.finance.domain.StockPlan
+import com.meticulouscreations.homesafe.finance.domain.StockVest
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -132,6 +134,30 @@ internal object BankSyncFixtures {
         ),
     )
 
+    /** A stock plan five vests from its end, as its last four vests say. */
+    val vesting = filled.copy(
+        stockPlans = listOf(
+            StockPlan(
+                account = "Morgan Stanley Acme Corp 0042",
+                name = "Acme Corp",
+                institution = "Morgan Stanley",
+                ticker = "ACME",
+                price = 24.10,
+                unvested = 4_150.0,
+                everyMonths = 3,
+                perVest = 820.0,
+                vests = listOf(StockVest("2026-05-15", 820.0), StockVest("2026-08-15", 820.0)),
+                upcoming = listOf(
+                    StockVest("2026-11-15", 820.0, 19_762.0),
+                    StockVest("2027-02-15", 820.0, 19_762.0),
+                    StockVest("2027-05-15", 820.0, 19_762.0),
+                    StockVest("2027-08-15", 820.0, 19_762.0),
+                    StockVest("2027-11-15", 870.0, 20_967.0),
+                ),
+            ),
+        ),
+    )
+
     val unshared = linked.copy(institutions = linked.institutions.take(1), feed = feed.copy(writtenAtEpochSeconds = null, error = "not_shared"))
 }
 
@@ -150,6 +176,12 @@ private fun FinanceBankSyncPreview() {
 @Composable
 private fun FinanceBankSyncFillPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.filled, loading = false))
+}
+
+@Preview(name = "Bank sync · stock plan", widthDp = 412, heightDp = 3200)
+@Composable
+private fun FinanceBankSyncStockPlanPreview() {
+    BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.vesting, loading = false))
 }
 
 @Preview(name = "Bank sync · sheet fill can't write", widthDp = 412, heightDp = 1100)
