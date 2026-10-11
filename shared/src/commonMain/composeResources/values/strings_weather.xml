@@ -149,6 +149,15 @@
 
     <!-- Forecast -->
     <string name="weather_forecast_trend_title">The days ahead</string>
+    <!--
+      For a screen reader, one day of the strip. %1$s its name ("Fri"), %2$s its date ("Oct 10"), %3$s the sky,
+      %4$s the high, %5$s the low. Then, where the strip shows them, the chance of rain or snow ("85%") and
+      how much ("0.31 in"), and last the wind ("13 mph").
+    -->
+    <string name="weather_timeline_day_dry">%1$s, %2$s: %3$s, high %4$s, low %5$s, wind %6$s</string>
+    <string name="weather_timeline_day_chance">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s chance of precipitation, wind %7$s</string>
+    <string name="weather_timeline_day_amount">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s of precipitation, wind %7$s</string>
+    <string name="weather_timeline_day_chance_amount">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s chance of %7$s of precipitation, wind %8$s</string>
     <plurals name="weather_forecast_days_title">
         <item quantity="one">%1$d-day forecast</item>
         <item quantity="other">%1$d-day forecast</item>

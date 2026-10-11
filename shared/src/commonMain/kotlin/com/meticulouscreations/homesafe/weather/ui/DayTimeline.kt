@@ -58,7 +58,10 @@ import com.meticulouscreations.homesafe.weather.domain.DayForecast
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherReport
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.weather_day_description
+import homesafe.shared.generated.resources.weather_timeline_day_amount
+import homesafe.shared.generated.resources.weather_timeline_day_chance
+import homesafe.shared.generated.resources.weather_timeline_day_chance_amount
+import homesafe.shared.generated.resources.weather_timeline_day_dry
 import homesafe.shared.generated.resources.weather_today
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
@@ -164,9 +167,9 @@ internal fun DayTimeline(report: WeatherReport, nowEpochSeconds: Long, selected:
                         )
                         val amount = max(day.precipitationMm, day.snowfallCm)
                         if (amount >= WET_DAY_AMOUNT) {
-                            // Taller for more, fainter for less likely.
+                            // Taller for more, fainter for less likely, and fainter again a week off.
                             val h = (sqrt(amount / wettest).toFloat() * (DayBars.toPx() - 4.dp.toPx())).coerceAtLeast(3.dp.toPx())
-                            val alpha = 0.4f + 0.6f * ((day.precipitationProbability ?: 70) / 100f)
+                            val alpha = (0.4f + 0.6f * ((day.precipitationProbability ?: 70) / 100f)) * certainty(i)
                             drawRoundRect((if (day.isSnowy) colors.snow else colors.rain).copy(alpha = alpha), Offset(i * column + column * 0.3f, barsFoot - h), Size(column * 0.4f, h), CornerRadius(3.dp.toPx()))
                         }
                     }
@@ -174,7 +177,7 @@ internal fun DayTimeline(report: WeatherReport, nowEpochSeconds: Long, selected:
                     drawPath(lowLine, lowBrush, style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round), alpha = 0.85f)
                     highs.forEachIndexed { i, p ->
                         drawCircle(Color.White, 4.4.dp.toPx(), p, alpha = certainty(i))
-                        drawCircle(colors.temperature(days[i].highC), 2.8.dp.toPx(), p)
+                        drawCircle(colors.temperature(days[i].highC), 2.8.dp.toPx(), p, alpha = certainty(i))
                     }
                     lows.forEachIndexed { i, p -> drawCircle(colors.temperature(days[i].lowC), 3.dp.toPx(), p, alpha = certainty(i)) }
                 }
@@ -276,7 +279,18 @@ private fun DayColumn(
         day.isSnowy -> WeatherFormat.snow(day.snowfallCm, units)
         else -> WeatherFormat.precipitation(day.precipitationMm, units)
     }
-    val description = stringResource(Res.string.weather_day_description, name, stringResource(day.kind.label()), high, low)
+    val date = WeatherFormat.date(midday, utcOffsetSeconds).resolve()
+    val wind = WeatherFormat.speed(day.windMaxKmh, units).resolve()
+    val sky = stringResource(day.kind.label())
+    val percent = chance?.let { WeatherFormat.percent(it) }
+    val amount = fall?.resolve()
+    // Everything the column shows, the date first among it: a weekday's name comes round twice in ten days.
+    val description = when {
+        percent != null && amount != null -> stringResource(Res.string.weather_timeline_day_chance_amount, name, date, sky, high, low, percent, amount, wind)
+        percent != null -> stringResource(Res.string.weather_timeline_day_chance, name, date, sky, high, low, percent, wind)
+        amount != null -> stringResource(Res.string.weather_timeline_day_amount, name, date, sky, high, low, amount, wind)
+        else -> stringResource(Res.string.weather_timeline_day_dry, name, date, sky, high, low, wind)
+    }
     val press = remember { MutableInteractionSource() }
     val pressed by press.collectIsPressedAsState()
     // Gives under the finger, and springs back past where it was.
@@ -317,10 +331,10 @@ private fun DayColumn(
                 },
                 maxLines = 1,
             )
-            Text(WeatherFormat.date(midday, utcOffsetSeconds).resolve(), style = small, color = colors.onSkyFaint, maxLines = 1, softWrap = false)
+            Text(date, style = small, color = colors.onSkyFaint, maxLines = 1, softWrap = false)
             Spacer(Modifier.height(8.dp))
             WeatherGlyph(day.kind, isDay = true, Modifier.size(26.dp))
-            Text(chance?.let { WeatherFormat.percent(it) } ?: "", style = small, color = colors.rain, maxLines = 1)
+            Text(percent ?: "", style = small, color = colors.rain, maxLines = 1)
         }
         Box(Modifier.height(DayCurve).fillMaxWidth()) {
             // Each sits clear of its point on its curve: the high above, the low below.
@@ -328,11 +342,11 @@ private fun DayColumn(
             Text(low, style = type.bodyStrong, color = colors.onSkyMuted, maxLines = 1, modifier = Modifier.align(Alignment.TopCenter).offset(y = lowAt + 6.dp))
         }
         Spacer(Modifier.height(DayBars + 4.dp))
-        Text(fall?.resolve() ?: "", style = small, color = if (day.isSnowy) colors.snow else colors.rain, maxLines = 1, softWrap = false, modifier = Modifier.height(15.dp))
+        Text(amount ?: "", style = small, color = if (day.isSnowy) colors.snow else colors.rain, maxLines = 1, softWrap = false, modifier = Modifier.height(15.dp))
         Spacer(Modifier.height(5.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             // A wind worth noticing is written brighter.
-            val wind = if (day.windMaxKmh >= WINDY_KMH) colors.onSky else colors.onSkyFaint
+            val windColor = if (day.windMaxKmh >= WINDY_KMH) colors.onSky else colors.onSkyFaint
             Canvas(Modifier.size(9.dp)) {
                 // The arrow points where the wind is going: the far side from where it comes.
                 rotate(day.windDirectionDeg + 180f) {
@@ -343,11 +357,11 @@ private fun DayColumn(
                         lineTo(size.width * 0.08f, size.height)
                         close()
                     }
-                    drawPath(head, wind)
+                    drawPath(head, windColor)
                 }
             }
             Spacer(Modifier.width(3.dp))
-            Text(WeatherFormat.speed(day.windMaxKmh, units).resolve(), style = small, color = wind, maxLines = 1, softWrap = false)
+            Text(wind, style = small, color = windColor, maxLines = 1, softWrap = false)
         }
     }
 }

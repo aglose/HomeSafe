@@ -194,6 +194,19 @@ class WeatherAppUiTest {
     }
 
     @Test
+    fun theTimelineTellsAScreenReaderWhichOfTwoFridaysADayIs() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls())
+        tap("weather_tab_forecast")
+        fun said(day: Int) = onNodeWithTag("weather_timeline_day_$day").fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().joinToString()
+        // Tomorrow and a week from tomorrow have the same name, and different dates.
+        assertTrue("Oct 10" in said(1), said(1))
+        assertTrue("Oct 17" in said(8), said(8))
+        assertNotEquals(said(1), said(8))
+        // What the column shows is said: tomorrow's shower with its odds and amount, and the wind.
+        assertTrue("85%" in said(1) && "mph" in said(1), said(1))
+    }
+
+    @Test
     fun aDayPickedInTheTimelineIsScrolledToInTheList() = runComposeUiTest(testTimeout = 5.minutes) {
         show(state, Calls())
         tap("weather_tab_forecast")
