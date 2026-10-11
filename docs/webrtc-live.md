@@ -158,8 +158,11 @@ The `startup-perf` job in ci.yml (part of `ci-green`) builds the base branch's b
 app and this branch's, signed in to the fake Frigate (`http://10.0.2.2:8971`, `admin`) with go2rtc
 serving ffmpeg test patterns under the fake's stream names (`scripts/ci/go2rtc-testsrc.sh`), and
 times both on one API 34 emulator in ABBA blocks, each block starting with a discarded run and
-every run waiting for go2rtc to have no consumers left, so each join is a cold one
-(`scripts/ci/startup-perf.sh`). It gates two medians:
+every run starting from a go2rtc with no consumers, so each join is a cold one
+(`scripts/ci/startup-perf.sh`). The job restarts its go2rtc before each run (`--go2rtc-reset`)
+rather than wait for it to drop the last run's consumers: a force-stopped app's linger for half a
+minute there, which over twenty runs was most of the job. That is for a go2rtc the test owns;
+against the real server, keep the wait. It gates two medians:
 
 - **cold launch (TTID)** — `am start -W` TotalTime: process start to the first frame;
 - **sign-in → first live pixel** — the milestones above, sign-in submit to the first video frame
@@ -170,7 +173,9 @@ than a floor (40 ms for TTID, 150 ms for the pixel): hosted emulators are noisy 
 percent of a small number means nothing, while a real regression — a blocking call on the main
 thread at launch, a join that waits for something new — shows up well past both. A result over
 the limit is measured again with twice the samples before the job fails. On a push to main the
-base is the commit main was at before. A base from before the milestones existed can only have
+base is the commit main was at before. The base's APK is not rebuilt when main's own run already
+built that commit: each run on main keeps its APK in the Actions cache under the commit's hash.
+A base from before the milestones existed can only have
 its cold launch compared, and the job says so. The medians land in the job summary; the raw runs
 are in the `startup-perf` artifact.
 

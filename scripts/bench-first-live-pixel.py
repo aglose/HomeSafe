@@ -307,6 +307,7 @@ def main():
     p.add_argument("--go2rtc", help="e.g. http://192.168.68.65:1984: before each run, wait until it has no consumers (cold streams)")
     p.add_argument("--go2rtc-count-local", action="store_true", help="for --go2rtc: consumers from 127.0.0.1 count too (go2rtc on the emulator's host, as in CI)")
     p.add_argument("--go2rtc-ignore-agent", help="consumers whose user agent contains this don't count (e.g. curl holding streams warm on purpose)")
+    p.add_argument("--go2rtc-reset", metavar="COMMAND", help="for --go2rtc: a shell command that restarts that go2rtc, run before each run instead of waiting out the last run's consumers (a go2rtc this machine runs for the test, as in CI; never the real server)")
     p.add_argument("--idle-extra", type=float, default=3, help="seconds to wait after go2rtc went idle, for it to close the camera sessions")
     p.add_argument("--label", default="run")
     p.add_argument("--compare", nargs=2, metavar=("A", "B"))
@@ -334,6 +335,11 @@ def main():
         while True:
             if args.go2rtc:
                 adb(args.serial, "shell", "am", "force-stop", args.package)
+                if args.go2rtc_reset:
+                    # A new go2rtc has nobody joined and no producer running, which is what the
+                    # wait below is for; after this it only confirms it. The command's own
+                    # chatter is dropped, its errors are not.
+                    subprocess.run(args.go2rtc_reset, shell=True, check=True, stdout=subprocess.DEVNULL)
                 waited = wait_for_idle_go2rtc(args.go2rtc, args.go2rtc_ignore_agent, args.go2rtc_count_local)
                 if waited > 0.5:
                     print(f"  (waited {waited:.0f}s for go2rtc to drop the last run's consumers)", flush=True)
