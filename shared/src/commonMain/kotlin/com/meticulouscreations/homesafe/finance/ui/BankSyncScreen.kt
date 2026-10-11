@@ -49,6 +49,10 @@ import com.meticulouscreations.homesafe.finance.domain.BankInstitution
 import com.meticulouscreations.homesafe.finance.domain.BankLinkKind
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSync
+import com.meticulouscreations.homesafe.finance.domain.SheetFill
+import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
+import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetWrite
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
@@ -58,6 +62,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.common_cancel
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_try_again
+import homesafe.shared.generated.resources.common_undo
 import homesafe.shared.generated.resources.fin_bank_account_apr
 import homesafe.shared.generated.resources.fin_bank_account_holdings
 import homesafe.shared.generated.resources.fin_bank_account_masked
@@ -78,6 +83,37 @@ import homesafe.shared.generated.resources.fin_bank_feed_open
 import homesafe.shared.generated.resources.fin_bank_feed_subtitle
 import homesafe.shared.generated.resources.fin_bank_feed_title
 import homesafe.shared.generated.resources.fin_bank_feed_written
+import homesafe.shared.generated.resources.fin_bank_fill_bad_file
+import homesafe.shared.generated.resources.fin_bank_fill_change
+import homesafe.shared.generated.resources.fin_bank_fill_change_from_empty
+import homesafe.shared.generated.resources.fin_bank_fill_change_left
+import homesafe.shared.generated.resources.fin_bank_fill_checked
+import homesafe.shared.generated.resources.fin_bank_fill_failed
+import homesafe.shared.generated.resources.fin_bank_fill_failed_plain
+import homesafe.shared.generated.resources.fin_bank_fill_how
+import homesafe.shared.generated.resources.fin_bank_fill_line_ambiguous
+import homesafe.shared.generated.resources.fin_bank_fill_line_from
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_account
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_balance
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_label
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_tab
+import homesafe.shared.generated.resources.fin_bank_fill_line_not_a_number
+import homesafe.shared.generated.resources.fin_bank_fill_line_paused
+import homesafe.shared.generated.resources.fin_bank_fill_line_waiting
+import homesafe.shared.generated.resources.fin_bank_fill_not_shared
+import homesafe.shared.generated.resources.fin_bank_fill_pause
+import homesafe.shared.generated.resources.fin_bank_fill_resume
+import homesafe.shared.generated.resources.fin_bank_fill_subtitle
+import homesafe.shared.generated.resources.fin_bank_fill_title
+import homesafe.shared.generated.resources.fin_bank_fill_undo_body
+import homesafe.shared.generated.resources.fin_bank_fill_undo_title
+import homesafe.shared.generated.resources.fin_bank_fill_undoing
+import homesafe.shared.generated.resources.fin_bank_fill_undone
+import homesafe.shared.generated.resources.fin_bank_fill_undone_by
+import homesafe.shared.generated.resources.fin_bank_fill_working
+import homesafe.shared.generated.resources.fin_bank_fill_writes_none
+import homesafe.shared.generated.resources.fin_bank_fill_writes_subtitle
+import homesafe.shared.generated.resources.fin_bank_fill_writes_title
 import homesafe.shared.generated.resources.fin_bank_how
 import homesafe.shared.generated.resources.fin_bank_institution_failed
 import homesafe.shared.generated.resources.fin_bank_institution_no_accounts
@@ -161,13 +197,16 @@ internal fun BankSyncRoute(contentPadding: PaddingValues) {
         onCancelLink = viewModel::cancelLink,
         onSyncNow = viewModel::syncNow,
         onUnlink = viewModel::unlink,
+        onUndoWrite = viewModel::undoWrite,
+        onPauseLine = viewModel::setLinePaused,
         onRetry = viewModel::load,
     )
 }
 
 /**
  * Bank sync: the institutions linked through Plaid with each account's latest balance, linking
- * another, and how the write to the budget sheet's feed went.
+ * another, what was written into the budget sheet's own cells (with a way to undo it), and how the
+ * write to the sheet's feed went.
  */
 @Composable
 internal fun BankSyncScreen(
@@ -178,12 +217,15 @@ internal fun BankSyncScreen(
     onCancelLink: () -> Unit,
     onSyncNow: () -> Unit,
     onUnlink: (String) -> Unit,
+    onUndoWrite: (Long) -> Unit,
+    onPauseLine: (String, Boolean) -> Unit,
     onRetry: () -> Unit,
 ) {
     val bank = state.bank
-    // Picking what to link, and the institution whose unlinking is being confirmed (by id).
+    // Picking what to link, and the institution whose unlinking and the write whose undoing is being confirmed (by id).
     var choosing by rememberSaveable { mutableStateOf(false) }
     var confirmingUnlink by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmingUndo by rememberSaveable { mutableStateOf<Long?>(null) }
     val now = Clock.System.now().epochSeconds
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.testTag("finance_bank_sync")) {
         when {
@@ -239,6 +281,29 @@ internal fun BankSyncScreen(
                         )
                     }
                 }
+                val fill = bank.fill
+                // A relay with no list of cells has nothing to show here, unless it wrote some before the list went.
+                if (fill.configured || fill.writes.isNotEmpty()) {
+                    item(key = "fill-h") {
+                        SectionHeader(
+                            stringResource(Res.string.fin_bank_fill_title),
+                            trailing = fill.checkedAtEpochSeconds?.let { UiText.of(Res.string.fin_bank_fill_checked, FinanceFormat.ago(now, it)).resolve() },
+                            subtitle = stringResource(Res.string.fin_bank_fill_subtitle),
+                        )
+                    }
+                    if (fill.error != null) item(key = "fill-problem") { FillProblemCard(fill) }
+                    if (fill.lines.isNotEmpty()) {
+                        item(key = "fill-lines") { FillLinesCard(fill, changing = state.changingLine, onPauseLine = onPauseLine) }
+                    }
+                    item(key = "fill-writes-h") {
+                        SectionHeader(stringResource(Res.string.fin_bank_fill_writes_title), subtitle = stringResource(Res.string.fin_bank_fill_writes_subtitle))
+                    }
+                    if (fill.writes.isEmpty()) item(key = "fill-writes-none") { FinePrint(stringResource(Res.string.fin_bank_fill_writes_none)) }
+                    items(fill.writes, key = { "w-${it.id}" }) { write ->
+                        WriteCard(write, now, undoing = state.undoing == write.id, onUndo = { confirmingUndo = write.id })
+                    }
+                    item(key = "fill-how") { FinePrint(stringResource(Res.string.fin_bank_fill_how)) }
+                }
                 item(key = "feed-h") {
                     SectionHeader(stringResource(Res.string.fin_bank_feed_title), subtitle = stringResource(Res.string.fin_bank_feed_subtitle))
                 }
@@ -257,6 +322,15 @@ internal fun BankSyncScreen(
                 onUnlink(unlinking.id)
             },
             onDismiss = { confirmingUnlink = null },
+        )
+    }
+    confirmingUndo?.let { writeId ->
+        UndoDialog(
+            onConfirm = {
+                confirmingUndo = null
+                onUndoWrite(writeId)
+            },
+            onDismiss = { confirmingUndo = null },
         )
     }
 }
@@ -522,6 +596,145 @@ private fun FeedCard(feed: BankFeed, now: Long) {
     }
 }
 
+/** Why the last fill of the budget sheet's cells wrote nothing, and what to do about it. */
+@Composable
+private fun FillProblemCard(fill: SheetFill) {
+    val colors = FinanceTheme.colors
+    FinanceCard(Modifier.padding(bottom = 10.dp)) {
+        when (fill.error) {
+            "not_shared" -> {
+                Text(stringResource(Res.string.fin_bank_fill_not_shared), style = FinanceTheme.type.body, color = colors.watch)
+                fill.serviceAccount?.let { ServiceAccount(it) }
+            }
+
+            // The relay's own words for what is wrong with its list (English), shown as written.
+            "bad_file" -> Text(stringResource(Res.string.fin_bank_fill_bad_file, fill.message.orEmpty()), style = FinanceTheme.type.body, color = colors.watch)
+
+            else -> Text(
+                fill.message?.let { stringResource(Res.string.fin_bank_fill_failed, it) } ?: stringResource(Res.string.fin_bank_fill_failed_plain),
+                style = FinanceTheme.type.body,
+                color = colors.watch,
+            )
+        }
+    }
+}
+
+/** Every cell the relay keeps filled in: what it adds up, what it came to, and whether it is paused. */
+@Composable
+private fun FillLinesCard(fill: SheetFill, changing: String?, onPauseLine: (String, Boolean) -> Unit) {
+    FinanceCard(padding = 0.dp) {
+        fill.lines.forEachIndexed { index, line ->
+            if (index > 0) Hairline(Modifier.padding(horizontal = 16.dp))
+            FillLineRow(line, busy = changing == line.id, onPause = { onPauseLine(line.id, it) })
+        }
+    }
+}
+
+@Composable
+private fun FillLineRow(line: SheetFillLine, busy: Boolean, onPause: (Boolean) -> Unit) {
+    val colors = FinanceTheme.colors
+    Column(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp).testTag("finance_bank_fill_line")) {
+        Row(Modifier.padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(line.label, style = FinanceTheme.type.body, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            // What the cell was last given. A line left alone has a sum too, but it isn't what the cell holds.
+            if (line.status == SheetFillStatus.WRITTEN || line.status == SheetFillStatus.SAME) {
+                line.value?.let {
+                    Spacer(Modifier.width(12.dp))
+                    Text(FinanceFormat.money(it), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // Account names are data, and so is the comma between them.
+            val said = when (line.status) {
+                SheetFillStatus.WRITTEN, SheetFillStatus.SAME -> UiText.of(Res.string.fin_bank_fill_line_from, line.accounts.joinToString(", "))
+                SheetFillStatus.WAITING -> UiText.of(Res.string.fin_bank_fill_line_waiting)
+                SheetFillStatus.PAUSED -> UiText.of(Res.string.fin_bank_fill_line_paused)
+                SheetFillStatus.NO_ACCOUNT -> UiText.of(Res.string.fin_bank_fill_line_no_account, line.missing.joinToString(", "))
+                SheetFillStatus.NO_BALANCE -> UiText.of(Res.string.fin_bank_fill_line_no_balance)
+                SheetFillStatus.NO_TAB -> UiText.of(Res.string.fin_bank_fill_line_no_tab, line.tab)
+                SheetFillStatus.NO_LABEL -> UiText.of(Res.string.fin_bank_fill_line_no_label, line.label, line.tab)
+                SheetFillStatus.AMBIGUOUS -> UiText.of(Res.string.fin_bank_fill_line_ambiguous, line.label, line.tab)
+                SheetFillStatus.NOT_A_NUMBER -> UiText.of(Res.string.fin_bank_fill_line_not_a_number, line.cell.orEmpty())
+            }
+            Text(
+                said.resolve(),
+                style = FinanceTheme.type.label,
+                color = if (line.status.needsALook) colors.watch else colors.textSecondary,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Spacer(Modifier.width(12.dp))
+            Text(
+                stringResource(
+                    when {
+                        busy -> Res.string.fin_bank_fill_working
+                        line.paused -> Res.string.fin_bank_fill_resume
+                        else -> Res.string.fin_bank_fill_pause
+                    },
+                ),
+                style = FinanceTheme.type.label,
+                color = if (busy) colors.textTertiary else colors.accent,
+                modifier = Modifier
+                    .minimumInteractiveComponentSize()
+                    .clip(RoundedCornerShape(50))
+                    .clickable(enabled = !busy, role = Role.Button) { onPause(!line.paused) }
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+            )
+        }
+    }
+}
+
+/** One write to the budget sheet: when, each cell's number before and after, and a way to undo it. */
+@Composable
+private fun WriteCard(write: SheetWrite, now: Long, undoing: Boolean, onUndo: () -> Unit) {
+    val colors = FinanceTheme.colors
+    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_bank_fill_write")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    FinanceFormat.dateTime(write.atEpochSeconds, FinanceFormat.localOffsetSeconds(write.atEpochSeconds)).resolve(),
+                    style = FinanceTheme.type.bodyStrong,
+                    color = colors.textPrimary,
+                )
+                write.undoneAtEpochSeconds?.let { at ->
+                    val ago = FinanceFormat.ago(now, at)
+                    // The username is data.
+                    val undone = write.undoneBy?.let { UiText.of(Res.string.fin_bank_fill_undone_by, ago, it) } ?: UiText.of(Res.string.fin_bank_fill_undone, ago)
+                    Text(undone.resolve(), style = FinanceTheme.type.label, color = colors.textSecondary)
+                }
+            }
+            if (!write.undone) {
+                PillButton(stringResource(if (undoing) Res.string.fin_bank_fill_undoing else Res.string.common_undo), colors.textSecondary, onClick = { if (!undoing) onUndo() })
+            }
+        }
+        write.changes.forEach { change ->
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(change.label, style = FinanceTheme.type.body, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    val after = change.after?.let { FinanceFormat.money(it) }.orEmpty()
+                    Text(
+                        change.before?.let { stringResource(Res.string.fin_bank_fill_change, FinanceFormat.money(it), after) }
+                            ?: stringResource(Res.string.fin_bank_fill_change_from_empty, after),
+                        style = FinanceTheme.type.label,
+                        color = colors.textSecondary,
+                    )
+                    if (change.restored == false) {
+                        Text(stringResource(Res.string.fin_bank_fill_change_left), style = FinanceTheme.type.micro, color = colors.watch)
+                    }
+                }
+                // By how much the number moved. Not coloured: more is good in a savings line and bad in a debt.
+                if (change.before != null && change.after != null) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(FinanceFormat.signedMoney(change.after - change.before), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+                }
+            }
+        }
+    }
+}
+
 /** The Google account to share the feed sheet with, selectable so it can be pasted into the sheet's Share box. */
 @Composable
 private fun ServiceAccount(email: String) {
@@ -548,6 +761,22 @@ private fun UnlinkDialog(name: String, onConfirm: () -> Unit, onDismiss: () -> U
         text = { Text(stringResource(Res.string.fin_bank_unlink_body), style = type.body, color = colors.textSecondary) },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text(stringResource(Res.string.fin_bank_unlink_confirm), style = type.bodyStrong, color = colors.loss) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel), style = type.bodyStrong, color = colors.textSecondary) } },
+    )
+}
+
+@Composable
+private fun UndoDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
+    val colors = FinanceTheme.colors
+    val type = FinanceTheme.type
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = colors.surfaceRaised,
+        title = { Text(stringResource(Res.string.fin_bank_fill_undo_title), style = type.title, color = colors.textPrimary) },
+        text = { Text(stringResource(Res.string.fin_bank_fill_undo_body), style = type.body, color = colors.textSecondary) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) { Text(stringResource(Res.string.common_undo), style = type.bodyStrong, color = colors.accent) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(Res.string.common_cancel), style = type.bodyStrong, color = colors.textSecondary) } },
     )

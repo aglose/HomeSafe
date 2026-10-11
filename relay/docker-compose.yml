@@ -69,6 +69,8 @@ services:
         required: false
       # PLAID_CLIENT_ID, PLAID_SECRET and FINANCE_FEED_SHEET_ID (relay.py, "bank sync";
       # docs/bank-sync.md), only on the box. Without the first two the bank sync is off.
+      # Which of the budget sheet's cells the balances are typed into is data/sheet-fill.json
+      # (relay.py, "sheet fill"), only on the box as well.
       - path: plaid.env
         required: false
       # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
@@ -76,7 +78,8 @@ services:
         required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
-      # relay.db, and the vehicle memory's picture of each household car (data/vehicles/).
+      # relay.db, the vehicle memory's picture of each household car (data/vehicles/), and
+      # sheet-fill.json.
       - ./data:/data
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.

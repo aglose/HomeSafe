@@ -43,6 +43,10 @@ class BankSyncRepositoryImpl(
 
     override suspend fun unlink(institutionId: String): Result<BankSync> = onServer { relay.unlink(it, institutionId) }
 
+    override suspend fun undoWrite(writeId: Long): Result<BankSync> = onServer { relay.undoWrite(it, writeId) }
+
+    override suspend fun setLinePaused(lineId: String, paused: Boolean): Result<BankSync> = onServer { relay.setLinePaused(it, lineId, paused) }
+
     private suspend fun <T> onServer(call: suspend (String) -> Result<T>): Result<T> {
         val serverUrl = connectionRepository.currentServerUrl.value
             ?: return Result.failure(BankSyncException(BankProblem.SIGNED_OUT, UiText.of(Res.string.fin_data_error_not_connected), technical = "Not connected"))

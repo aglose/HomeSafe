@@ -10,6 +10,11 @@ import com.meticulouscreations.homesafe.finance.domain.BankLinkStatus
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSync
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
+import com.meticulouscreations.homesafe.finance.domain.SheetChange
+import com.meticulouscreations.homesafe.finance.domain.SheetFill
+import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
+import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetWrite
 import com.meticulouscreations.homesafe.network.PushRelayApi
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
@@ -91,6 +96,23 @@ class BankSyncRelayApi(private val httpClient: HttpClient) {
         response.answer<RelayBank>().toDomain()
     }
 
+    suspend fun undoWrite(serverUrl: String, writeId: Long): Result<BankSync> = suspendRunCatching {
+        val response = httpClient.post(PushRelayApi.relayUrl(serverUrl, "/finance/bank/fill/writes/$writeId/undo")) {
+            // The relay waits for a sync under way, then reads the sheet and writes to it before answering.
+            timeout { requestTimeoutMillis = 60_000 }
+        }
+        response.answer<RelayBank>().toDomain()
+    }
+
+    suspend fun setLinePaused(serverUrl: String, lineId: String, paused: Boolean): Result<BankSync> = suspendRunCatching {
+        val response = httpClient.post(PushRelayApi.relayUrl(serverUrl, "/finance/bank/fill/lines")) {
+            contentType(ContentType.Application.Json)
+            setBody(RelayFillLineRequest(line = lineId, paused = paused))
+            timeout { requestTimeoutMillis = 60_000 }
+        }
+        response.answer<RelayBank>().toDomain()
+    }
+
     private suspend inline fun <reified T> HttpResponse.answer(): T = if (status.isSuccess()) body<T>() else throw problemFrom(status, bodyAsText())
 
     internal companion object {
@@ -134,6 +156,9 @@ class BankSyncRelayApi(private val httpClient: HttpClient) {
 internal data class RelayBankLinkRequest(val kind: String, val institution: String? = null)
 
 @Serializable
+internal data class RelayFillLineRequest(val line: String, val paused: Boolean)
+
+@Serializable
 internal data class RelayBankLink(val token: String, val url: String, @SerialName("expires_at") val expiresAt: Double = 0.0)
 
 @Serializable
@@ -148,6 +173,8 @@ internal data class RelayBank(
     val syncing: Boolean = false,
     @SerialName("next_sync_at") val nextSyncAt: Double? = null,
     val feed: RelayBankFeed = RelayBankFeed(),
+    // Absent from a relay older than the sheet fill, which reads as a fill that isn't set up.
+    val fill: RelayFill = RelayFill(),
 ) {
     fun toDomain() = BankSync(
         configured = configured,
@@ -165,6 +192,7 @@ internal data class RelayBank(
             serviceAccount = feed.serviceAccount,
             activationUrl = feed.activationUrl,
         ),
+        fill = fill.toDomain(),
     )
 }
 
@@ -225,4 +253,75 @@ internal data class RelayBankFeed(
     val message: String? = null,
     @SerialName("service_account") val serviceAccount: String? = null,
     @SerialName("activation_url") val activationUrl: String? = null,
+)
+
+@Serializable
+internal data class RelayFill(
+    val configured: Boolean = false,
+    @SerialName("checked_at") val checkedAt: Double? = null,
+    val error: String? = null,
+    val message: String? = null,
+    @SerialName("service_account") val serviceAccount: String? = null,
+    val lines: List<RelayFillLine> = emptyList(),
+    val writes: List<RelayFillWrite> = emptyList(),
+) {
+    fun toDomain() = SheetFill(
+        configured = configured,
+        checkedAtEpochSeconds = checkedAt?.toLong(),
+        error = error,
+        message = message?.takeIf { it.isNotBlank() },
+        serviceAccount = serviceAccount,
+        lines = lines.map { it.toDomain() },
+        writes = writes.map { it.toDomain() },
+    )
+}
+
+@Serializable
+internal data class RelayFillLine(
+    val id: String,
+    val tab: String = "",
+    val label: String = "",
+    val accounts: List<String> = emptyList(),
+    val status: String? = null,
+    val cell: String? = null,
+    val value: Double? = null,
+    val missing: List<String> = emptyList(),
+) {
+    fun toDomain() = SheetFillLine(
+        id = id,
+        tab = tab,
+        label = label,
+        accounts = accounts,
+        status = SheetFillStatus.ofWire(status),
+        cell = cell,
+        value = value,
+        missing = missing,
+    )
+}
+
+@Serializable
+internal data class RelayFillWrite(
+    val id: Long,
+    val at: Double = 0.0,
+    @SerialName("undone_at") val undoneAt: Double? = null,
+    @SerialName("undone_by") val undoneBy: String? = null,
+    val changes: List<RelayFillChange> = emptyList(),
+) {
+    fun toDomain() = SheetWrite(
+        id = id,
+        atEpochSeconds = at.toLong(),
+        undoneAtEpochSeconds = undoneAt?.toLong(),
+        undoneBy = undoneBy?.takeIf { it.isNotBlank() },
+        changes = changes.map { SheetChange(label = it.label, tab = it.tab, cell = it.cell, before = it.before, after = it.after, restored = it.restored) },
+    )
+}
+
+@Serializable
+internal data class RelayFillChange(
+    val label: String = "",
+    val tab: String = "",
+    val cell: String? = null,
+    val before: Double? = null,
+    val after: Double? = null,
+    val restored: Boolean? = null,
 )
