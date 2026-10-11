@@ -288,9 +288,30 @@ def db() -> sqlite3.Connection:
         "CREATE TABLE IF NOT EXISTS plaid_accounts (account_id TEXT PRIMARY KEY, item_id TEXT, name TEXT, official_name TEXT, mask TEXT,"
         " type TEXT, subtype TEXT, current REAL, available REAL, credit_limit REAL, currency TEXT, apr REAL, min_payment REAL, due TEXT, updated REAL)"
     )
+    # An account can hold one security several times over: a stock plan reports each grant of the
+    # same share as a holding of its own. `lot` tells them apart (their order as Plaid lists them),
+    # and `vested` is how much of the holding is the person's already. Before there were lots only
+    # the last of several was kept; holdings are rewritten whole at every sync, so the rows of a
+    # table from then simply move over as lot 0.
+    holdings_table = (
+        "CREATE TABLE IF NOT EXISTS plaid_holdings (account_id TEXT, security_id TEXT, lot INTEGER NOT NULL DEFAULT 0, item_id TEXT, ticker TEXT,"
+        " name TEXT, kind TEXT, quantity REAL, vested REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT,"
+        " PRIMARY KEY (account_id, security_id, lot))"
+    )
+    before_lots = {row[1] for row in conn.execute("PRAGMA table_info(plaid_holdings)")}
+    if before_lots and "lot" not in before_lots:
+        conn.execute("ALTER TABLE plaid_holdings RENAME TO plaid_holdings_before_lots")
+    conn.execute(holdings_table)
+    if before_lots and "lot" not in before_lots:
+        kept = "account_id, security_id, item_id, ticker, name, kind, quantity, price, price_as_of, value, cost_basis, currency"
+        conn.execute(f"INSERT INTO plaid_holdings ({kept}) SELECT {kept} FROM plaid_holdings_before_lots")
+        conn.execute("DROP TABLE plaid_holdings_before_lots")
+    # What happened in a stock plan account, as Plaid tells it (see "stock plan"): the shares that
+    # vested ("transfer", a positive `quantity`) and those sold. Only the date and the number of
+    # shares are kept: Plaid prices past activity at today's price, so its amounts say nothing.
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS plaid_holdings (account_id TEXT, security_id TEXT, item_id TEXT, ticker TEXT, name TEXT, kind TEXT,"
-        " quantity REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, PRIMARY KEY (account_id, security_id))"
+        "CREATE TABLE IF NOT EXISTS plaid_stock_events (txn_id TEXT PRIMARY KEY, item_id TEXT NOT NULL, account_id TEXT NOT NULL, date TEXT NOT NULL,"
+        " kind TEXT, ticker TEXT, quantity REAL, name TEXT)"
     )
     # The name each account's row goes by in the feed sheet, given once and kept while the account
     # is there: the budget sheet's formulas look accounts up by it.
@@ -6113,13 +6134,17 @@ def plaid_store(item_id: str, accounts: list[dict[str, Any]], terms: dict[str, d
             c.execute("DELETE FROM plaid_holdings WHERE item_id=? AND account_id NOT IN (SELECT account_id FROM plaid_accounts WHERE item_id=?)", (item_id, item_id))
         else:
             c.execute("DELETE FROM plaid_holdings WHERE item_id=?", (item_id,))
+            lots: dict[tuple[Any, Any], int] = {}
             for h in holdings:
                 security = securities.get(h.get("security_id"), {})
+                held = (h.get("account_id"), h.get("security_id"))
+                lots[held] = lots.get(held, -1) + 1
                 c.execute(
-                    "INSERT OR REPLACE INTO plaid_holdings VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (h.get("account_id"), h.get("security_id"), item_id, security.get("ticker_symbol"), security.get("name") or "", security.get("type"),
-                     h.get("quantity"), h.get("institution_price"), h.get("institution_price_as_of"), h.get("institution_value"), h.get("cost_basis"),
-                     h.get("iso_currency_code") or h.get("unofficial_currency_code")),
+                    "INSERT OR REPLACE INTO plaid_holdings (account_id, security_id, lot, item_id, ticker, name, kind, quantity, vested, price, price_as_of,"
+                    " value, cost_basis, currency) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (*held, lots[held], item_id, security.get("ticker_symbol"), security.get("name") or "", security.get("type"),
+                     h.get("quantity"), h.get("vested_quantity"), h.get("institution_price"), h.get("institution_price_as_of"), h.get("institution_value"),
+                     h.get("cost_basis"), h.get("iso_currency_code") or h.get("unofficial_currency_code")),
                 )
         plaid_assign_keys(c)
         c.commit()
@@ -6159,6 +6184,9 @@ def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
                 elif e.code not in PLAID_NOTHING_THERE:
                     raise
         plaid_store(item_id, accounts, terms, holdings, securities, now)
+        plans = [a.get("account_id") for a in accounts if a.get("subtype") == STOCK_PLAN_SUBTYPE and a.get("account_id")]
+        if plans and "investments" in products:
+            stock_events_sync(item_id, access, plans, now)
         # The link itself can be on its way out while the data still comes (a consent about to lapse).
         warning = item.get("error") if isinstance(item.get("error"), dict) else {}
         with_db(lambda c: (c.execute(
@@ -6175,6 +6203,132 @@ def plaid_sync_item(item_id: str, access: str, now: float) -> str | None:
         log.warning("bank: %s didn't sync: %s", item_id[:8], type(e).__name__)
         with_db(lambda c: (c.execute("UPDATE plaid_items SET error=?, error_message=? WHERE item_id=?", ("UNREACHABLE", "Couldn't reach Plaid", item_id)), c.commit()))
         return "UNREACHABLE"
+
+
+# ---------------------------------------------------------------- stock plan
+#
+# An employer's stock plan (RSUs) is linked like any brokerage, and Plaid reports two things about
+# it: the grants not yet vested, each as a holding of the share, and the account's activity, in
+# which every vest is a transfer in of shares. Neither says when the next vest is or how many
+# shares it brings. But vests come at a steady pace (every three months, around the same day), so
+# the past ones say it: the next vest is one step on from the last, of as many shares as the last,
+# and so on until the unvested shares run out. That is an estimate, and is called one: a grant
+# ending or a new one starting changes the number, and the next vest that is read corrects it.
+#
+# The sheet fill can put a vest in a cell (a line with "vest" in place of "accounts"; see "sheet
+# fill"), and the app shows the whole outlook.
+
+STOCK_PLAN_SUBTYPE = "stock plan"
+# How far back the activity is asked for: as far as Plaid keeps it.
+STOCK_EVENTS_DAYS = 730
+STOCK_EVENTS_PAGE = 500
+# How many vests ahead are worked out, and how many past ones the app is shown.
+VESTS_AHEAD = 12
+VESTS_SHOWN = 8
+# A last vest smaller than this share of the usual one is not a vest of its own: the grants don't
+# end on a round number, and what is left over comes with the vest before.
+VEST_LEFTOVER = 0.1
+# How far from the day a sheet line names a vest may fall and still be that line's vest: vests
+# slip a few days around weekends, and a person types the date from memory.
+VEST_MATCH_DAYS = 20
+
+
+def stock_events_sync(item_id: str, access: str, account_ids: list[str], now: float) -> None:
+    """
+    The activity of an institution's stock plan accounts into relay.db, replacing what was kept.
+    A failure keeps what was read before and is only logged: the balances were read all the same.
+    """
+    try:
+        today = datetime.fromtimestamp(now, household_zone() or timezone.utc).date()
+        asked = {"access_token": access, "start_date": str(today - timedelta(days=STOCK_EVENTS_DAYS)), "end_date": str(today)}
+        events: list[dict[str, Any]] = []
+        tickers: dict[str, str | None] = {}
+        for _ in range(10):
+            answer = plaid_post("/investments/transactions/get", {**asked, "options": {"account_ids": account_ids, "count": STOCK_EVENTS_PAGE, "offset": len(events)}})
+            page = [t for t in answer.get("investment_transactions") or [] if isinstance(t, dict)]
+            tickers.update({s.get("security_id"): s.get("ticker_symbol") for s in answer.get("securities") or [] if isinstance(s, dict)})
+            events += page
+            if not page or len(events) >= int(answer.get("total_investment_transactions") or 0):
+                break
+
+        def write(c: sqlite3.Connection) -> None:
+            c.execute("DELETE FROM plaid_stock_events WHERE item_id=?", (item_id,))
+            for t in events:
+                if t.get("investment_transaction_id") and t.get("account_id") in account_ids and t.get("date"):
+                    c.execute("INSERT OR REPLACE INTO plaid_stock_events VALUES (?,?,?,?,?,?,?,?)",
+                              (t["investment_transaction_id"], item_id, t["account_id"], str(t["date"]), t.get("type"), tickers.get(t.get("security_id")),
+                               t.get("quantity"), t.get("name")))
+            c.commit()
+
+        with_db(write)
+    except PlaidError as e:
+        log.warning("bank: %s's stock plan activity wasn't read: %s", item_id[:8], e.code)
+    except Exception as e:
+        log.warning("bank: %s's stock plan activity wasn't read: %s", item_id[:8], type(e).__name__)
+
+
+def stock_plan_outlook(events: list[tuple[str, str | None, str | None, float | None]], holdings: list[tuple[str | None, float | None, float | None, float | None]]) -> dict[str, Any] | None:
+    """
+    What a stock plan account's past says about its future (see "stock plan"). `events` are its
+    activity as (date, kind, ticker, shares), `holdings` what it holds as (ticker, shares, of
+    which vested, price). None when no share has ever vested in it.
+
+    Answers the share's `ticker` and `price`, the shares still `unvested`, the vests read
+    (`vests`, oldest first, each a `date` and `shares`), and those to come (`upcoming`, each with
+    its `value` at today's price too): one every `every_months` on the day of the month vests
+    usually fall, each of `per_vest` shares (the last vest's), until the unvested shares are used
+    up. With a single vest read the pace isn't known, and nothing is `upcoming`.
+    """
+    vested: dict[str, dict[str, float]] = {}
+    for day, kind, ticker, shares in events:
+        if kind == "transfer" and ticker and shares and shares > 0:
+            vested.setdefault(ticker, {})[day] = vested.get(ticker, {}).get(day, 0.0) + shares
+    if not vested:
+        return None
+    ticker = max(vested, key=lambda t: len(vested[t]))
+    vests = sorted(vested[ticker].items())
+    mine = [h for h in holdings if h[0] == ticker]
+    unvested = sum(max(0.0, (shares or 0.0) - (already or 0.0)) for _, shares, already, _ in mine)
+    price = next((p for _, _, _, p in mine if p), None)
+    outlook: dict[str, Any] = {
+        "ticker": ticker, "price": price, "unvested": unvested, "every_months": None, "per_vest": vests[-1][1],
+        "vests": [{"date": day, "shares": shares} for day, shares in vests], "upcoming": [],
+    }
+    if len(vests) < 2:
+        return outlook
+    days = [datetime.strptime(day, "%Y-%m-%d").date() for day, _ in vests]
+    gaps = sorted((b.year - a.year) * 12 + b.month - a.month for a, b in zip(days, days[1:]))
+    every = max(1, gaps[len(gaps) // 2])
+    # The day of the month vests fall on is the commonest one; a weekend moves a vest a day or two off it.
+    usual = max(sorted({d.day for d in days}), key=[d.day for d in days].count)
+    outlook["every_months"] = every
+    per_vest, left, at = vests[-1][1], unvested, days[-1].year * 12 + days[-1].month - 1
+    while left > 0 and len(outlook["upcoming"]) < VESTS_AHEAD:
+        at += every
+        year, month = divmod(at, 12)
+        shares = min(per_vest, left)
+        left -= shares
+        if 0 < left < per_vest * VEST_LEFTOVER:
+            shares, left = shares + left, 0
+        day = datetime(year, month + 1, min(usual, calendar.monthrange(year, month + 1)[1])).date()
+        outlook["upcoming"].append({"date": str(day), "shares": shares, "value": round(shares * price, 2) if price else None})
+    return outlook
+
+
+def stock_plans() -> list[dict[str, Any]]:
+    """Every linked stock plan account with its outlook (see `stock_plan_outlook`), by the account's feed key. One no share has vested in yet isn't listed."""
+    accounts = with_db(lambda c: c.execute(
+        "SELECT a.account_id, k.key, a.name, i.institution FROM plaid_accounts a JOIN plaid_items i ON i.item_id = a.item_id"
+        " LEFT JOIN plaid_feed_keys k ON k.account_id = a.account_id WHERE a.subtype=? ORDER BY i.linked_at, a.account_id", (STOCK_PLAN_SUBTYPE,)
+    ).fetchall())
+    plans = []
+    for account_id, key, name, institution in accounts:
+        events = with_db(lambda c: c.execute("SELECT date, kind, ticker, quantity FROM plaid_stock_events WHERE account_id=?", (account_id,)).fetchall())
+        holdings = with_db(lambda c: c.execute("SELECT ticker, quantity, vested, price FROM plaid_holdings WHERE account_id=?", (account_id,)).fetchall())
+        outlook = stock_plan_outlook(events, holdings)
+        if outlook:
+            plans.append({"account": key or name, "name": name, "institution": institution or "", **outlook, "vests": outlook["vests"][-VESTS_SHOWN:]})
+    return plans
 
 
 def feed_key(label: str, taken: set[str]) -> str:
@@ -6315,7 +6469,8 @@ def write_bank_feed(now: float) -> None:
     if not FINANCE_FEED_SHEET_ID:
         return
     holdings = with_db(lambda c: c.execute(
-        "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings ORDER BY account_id, value DESC, security_id"
+        "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings"
+        " ORDER BY account_id, value DESC, security_id, lot"
     ).fetchall())
     try:
         feed_write(feed_tables(bank_institutions(), holdings, household_zone()))
@@ -6345,7 +6500,11 @@ def write_bank_feed(now: float) -> None:
 #
 #     {"tab": "Home", "lines": [
 #       {"label": "Roth IRA", "right": 2, "accounts": ["Chase Roth IRA 7788"]},
-#       {"label": "Credit Cards", "right": 1, "accounts": ["Chase Sapphire 9911"], "negative": true}]}
+#       {"label": "Credit Cards", "right": 1, "accounts": ["Chase Sapphire 9911"], "negative": true},
+#       {"label": "Nov 15th", "right": 2, "vest": {"account": "Acme Stock Plan 0042", "on": "2026-11-15"}}]}
+#
+# The last is a vest rather than a balance (see "stock plan"): what the shares due around that day
+# are worth at today's price, or with "as": "shares" how many they are.
 #
 # What keeps a write from landing somewhere it shouldn't:
 # - A cell is found by its label every time, never by a remembered address, so rows inserted above
@@ -6410,20 +6569,57 @@ def fill_lines() -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     for n, entry in enumerate(kept["lines"], 1):
         entry = entry if isinstance(entry, dict) else {}
         tab, label, right, accounts = entry.get("tab", kept.get("tab")), entry.get("label"), entry.get("right", 1), entry.get("accounts")
+        vest = fill_vest_named(entry.get("vest"))
+        if vest and accounts is None:
+            # A vest's line is from one account, the stock plan's.
+            accounts = [vest["account"]]
         well_formed = (
             isinstance(tab, str) and tab.strip() and isinstance(label, str) and fill_text(label)
             and isinstance(right, int) and not isinstance(right, bool) and right >= 1
             and isinstance(accounts, list) and accounts and all(isinstance(a, str) and a.strip() for a in accounts)
+            and ("vest" not in entry or (vest is not None and accounts == [vest["account"]]))
+            and (entry.get("as") is None or (vest is not None and entry["as"] in ("value", "shares")))
         )
         if not well_formed:
-            return wrong("bad_line", f"Line {n} needs a label, a tab, the accounts it adds up, and \"right\" as a number of columns", n)
+            return wrong("bad_line", f"Line {n} needs a label, a tab, the accounts it adds up (or the vest it is), and \"right\" as a number of columns", n)
         line_id = f"{tab.strip()}|{fill_text(label)}|{right}"
         if line_id in seen:
             return wrong("same_line", f"Line {n} writes the same cell as an earlier line", n)
         seen.add(line_id)
         lines.append({"id": line_id, "tab": tab.strip(), "label": " ".join(label.split()), "right": right,
-                      "accounts": [a.strip() for a in accounts], "negative": entry.get("negative") is True})
+                      "accounts": [a.strip() for a in accounts], "negative": entry.get("negative") is True,
+                      "vest": vest, "shares": entry.get("as") == "shares"})
     return lines, None
+
+
+def fill_vest_named(named: Any) -> dict[str, str] | None:
+    """A line's "vest" as it must be: the stock plan `account` (its feed key) and the day the vest falls `on` (YYYY-MM-DD). None for anything else."""
+    if not isinstance(named, dict) or not isinstance(named.get("account"), str) or not named["account"].strip() or not isinstance(named.get("on"), str):
+        return None
+    try:
+        on = datetime.strptime(named["on"].strip(), "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return {"account": named["account"].strip(), "on": str(on)}
+
+
+def fill_vest(outlook: dict[str, Any] | None, on: str) -> tuple[str, dict[str, Any] | None]:
+    """
+    The vest of a stock plan's `outlook` that a line means by the day it names: ("upcoming", the
+    vest) for one still to come that falls within VEST_MATCH_DAYS of it, ("vested", None) when a
+    vest that near has been read already, ("no_vest", None) when the outlook has neither (or
+    there is no outlook: no vest read yet, or too few to tell the pace).
+    """
+    wanted = datetime.strptime(on, "%Y-%m-%d").date()
+
+    def near(vest: dict[str, Any]) -> bool:
+        return abs((datetime.strptime(vest["date"], "%Y-%m-%d").date() - wanted).days) <= VEST_MATCH_DAYS
+
+    outlook = outlook or {}
+    coming = next((vest for vest in outlook.get("upcoming") or [] if near(vest)), None)
+    if coming:
+        return "upcoming", coming
+    return ("vested" if any(near(vest) for vest in outlook.get("vests") or []) else "no_vest"), None
 
 
 def fill_find(rows: list[list[Any]], label: str) -> tuple[int, int] | str:
@@ -6453,7 +6649,8 @@ def fill_same(a: float | None, b: float | None) -> bool:
     return (a is None and b is None) or (a is not None and b is not None and abs(a - b) < FILL_CENT)
 
 
-def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], grids: dict[str, list[list[Any]] | None], paused: set[str]) -> list[dict[str, Any]]:
+def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], grids: dict[str, list[list[Any]] | None], paused: set[str],
+              plans: dict[str, dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """
     What a fill would do with each line, as its `status`: "change" (with the `cell`, what it holds
     as `before` and the `value` to write), "same", or why it is left alone: "paused",
@@ -6463,6 +6660,11 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
     neither is written, since which was meant can't be told). `balances` is every linked
     account's by feed key, `grids` each tab's cells with formulas as written (None for a tab the
     sheet hasn't got).
+
+    A line that names a vest (see "stock plan") is worth that vest's shares at today's price, or
+    the number of shares when the line says so, by the stock plan's outlook in `plans` (by feed
+    key). It is left alone as "vested" once that vest has been read, since what the cell then
+    holds is its last estimate, and as "no_vest" when the outlook has no vest near that day.
     """
     plan = []
     for line in lines:
@@ -6475,11 +6677,22 @@ def fill_plan(lines: list[dict[str, Any]], balances: dict[str, float | None], gr
         if entry["missing"]:
             entry["status"] = "no_account"
             continue
-        amounts = [balances[key] for key in line["accounts"]]
-        if any(a is None for a in amounts):
-            entry["status"] = "no_balance"
-            continue
-        total = round(sum(amounts), 2)
+        if line.get("vest"):
+            found, vest = fill_vest((plans or {}).get(line["vest"]["account"]), line["vest"]["on"])
+            if vest is None:
+                entry["status"] = found
+                continue
+            total = vest["shares"] if line["shares"] else vest["value"]
+            if total is None:
+                entry["status"] = "no_balance"
+                continue
+            total = round(total, 2)
+        else:
+            amounts = [balances[key] for key in line["accounts"]]
+            if any(a is None for a in amounts):
+                entry["status"] = "no_balance"
+                continue
+            total = round(sum(amounts), 2)
         # A balance owed is a positive number in the feed; `negative` is for a sheet that keeps debts below zero.
         entry["value"] = -total if line["negative"] and total else total
         rows = grids.get(line["tab"])
@@ -6558,7 +6771,8 @@ def fill_sheet(now: float) -> None:
         return
     try:
         session = feed_google()
-        plan = fill_plan(lines, fill_balances(), fill_read(session, unique([line["tab"] for line in lines])), fill_paused())
+        plans = {outlook["account"]: outlook for outlook in stock_plans()}
+        plan = fill_plan(lines, fill_balances(), fill_read(session, unique([line["tab"] for line in lines])), fill_paused(), plans)
         changes = [
             {"line": p["id"], "tab": p["tab"], "label": p["label"], "right": p["right"], "cell": p["cell"], "before": p["before"], "after": p["value"]}
             for p in plan if p["status"] == "change"
@@ -6645,6 +6859,8 @@ def fill_status() -> dict[str, Any]:
         "lines": [
             {
                 "id": line["id"], "tab": line["tab"], "label": line["label"], "accounts": line["accounts"],
+                # The day of the vest a line is, for one that is a vest rather than a balance.
+                "vest_on": (line.get("vest") or {}).get("on"),
                 "paused": line["id"] in paused,
                 # A line added to the file since the last fill hasn't been tried yet.
                 "status": "paused" if line["id"] in paused else (last.get(line["id"]) or {}).get("status") or "waiting",
@@ -6746,6 +6962,7 @@ def bank_status(now: float | None = None) -> dict[str, Any]:
             "service_account": _feed_google["account"] or feed.get("service_account") or _finance_google["account"],
         },
         "fill": fill_status(),
+        "stock_plans": stock_plans(),
     }
 
 
@@ -6839,7 +7056,7 @@ def delete_bank_institution(item_id: str, request: Request, response: Response) 
                 raise plaid_problem(e) from e
 
         def forget(c: sqlite3.Connection) -> None:
-            for table in ("plaid_transactions", "plaid_holdings", "plaid_accounts", "plaid_items"):
+            for table in ("plaid_transactions", "plaid_stock_events", "plaid_holdings", "plaid_accounts", "plaid_items"):
                 c.execute(f"DELETE FROM {table} WHERE item_id=?", (item_id,))
             plaid_assign_keys(c)
             c.commit()

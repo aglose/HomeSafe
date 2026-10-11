@@ -90,6 +90,24 @@
     <string name="fin_bank_feed_how">Each account has a key in the feed's first column and its balance in the second. In your budget sheet, replace a typed balance with a lookup of its key: =VLOOKUP("key", IMPORTRANGE("feed sheet address", "Bank feed!A:B"), 2, FALSE)</string>
 
     <!--
+      A stock plan: shares an employer has granted that become the person's a part at a time
+      ("vest"). The plan reports no dates, so the vests to come are worked out from the last ones.
+    -->
+    <string name="fin_bank_plan_title">Stock plan</string>
+    <string name="fin_bank_plan_subtitle">The shares still to vest, and when your last vests say they will</string>
+    <!-- %1$s is a number of shares ("16,438"), %2$s the share's ticker ("ACME"). -->
+    <string name="fin_bank_plan_unvested">%1$s %2$s shares still to vest</string>
+    <!-- %1$s is a number of shares ("3,253"); the count is the months between vests. -->
+    <plurals name="fin_bank_plan_pace">
+        <item quantity="one">About %1$s shares every month, going by your last vests</item>
+        <item quantity="other">About %1$s shares every %2$d months, going by your last vests</item>
+    </plurals>
+    <string name="fin_bank_plan_pace_unknown">Only one vest has been read so far, so the pace of the next ones isn't known yet.</string>
+    <!-- Under a vest's date; %1$s is a number of shares. -->
+    <string name="fin_bank_plan_vest_shares">About %1$s shares</string>
+    <string name="fin_bank_plan_how">The plan reports no vesting dates, so these are estimates: each vest is taken to be as large as the last one and to come as long after it. A grant ending or a new one starting changes them, and they are corrected once the next vest is read. Values are at the last closing price, before tax.</string>
+
+    <!--
       The sheet fill: the server types the balances into the budget sheet's own cells after each
       sync. A "line" is one of those cells, named by the label beside it in the sheet. A "write"
       is one time the server changed some of them.
@@ -113,6 +131,9 @@
     <!-- %1$s is the cell's address, like K10. -->
     <string name="fin_bank_fill_line_not_a_number">Not written, because cell %1$s holds a formula or words. Only a typed number is ever replaced.</string>
     <string name="fin_bank_fill_line_same_cell">Not written, because another line comes to the same cell, %1$s. Check both in sheet-fill.json on the server.</string>
+    <!-- A line that is a vest of a stock plan (see fin_bank_plan_*) rather than an account's balance. -->
+    <string name="fin_bank_fill_line_vested">This vest has happened. The cell keeps its last estimate.</string>
+    <string name="fin_bank_fill_line_no_vest">Not written, because no vest is expected around that day.</string>
     <string name="fin_bank_fill_pause">Pause</string>
     <string name="fin_bank_fill_resume">Resume</string>
     <string name="fin_bank_fill_working">Working…</string>

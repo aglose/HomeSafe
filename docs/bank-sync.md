@@ -119,6 +119,35 @@ What keeps a write off the wrong cell:
 
 A line that was left alone says why on the Bank sync page, under **Filled in your sheet**.
 
+### A stock plan's vests
+
+An employer's stock plan (RSUs) links like any brokerage: **Link an institution → Investments or
+retirement**. Plaid reports the grants not yet vested and the account's past activity, but no
+vesting dates. Vests come at a steady pace, though, so the past ones give the ones to come: the
+next vest is one step on from the last (three months, around the same day of the month) and of as
+many shares, and so on until the unvested shares run out. The Bank sync page shows this under
+**Stock plan**. It is an estimate: a grant ending or a new one starting changes the number, and
+the next vest that is read corrects it. Values are at the last closing price, before tax.
+
+A line of `sheet-fill.json` can be one of those vests instead of an account's balance:
+
+```json
+{"label": "Nov 15th", "right": 2, "vest": {"account": "Acme Stock Plan 0042", "on": "2026-11-15"}}
+```
+
+| Field | |
+|---|---|
+| `vest.account` | The stock plan account's feed key. |
+| `vest.on` | The day the vest falls, `YYYY-MM-DD`. A vest within 20 days of it is the one meant, since vests move around weekends. |
+| `as` | `"shares"` to write the number of shares; left out, what they are worth at the last closing price. |
+
+Like every line, it replaces only a typed number or an empty cell, so a cell that works the amount
+out with a formula has to be emptied first. Once the vest has happened the line says so and
+leaves the cell with its last estimate; a line whose day has no vest near it says that instead.
+
+Each grant is a row of its own in the **Holdings feed** tab, so one share held several times over
+adds up there with `SUMIF`.
+
 ### What was changed, and undoing it
 
 Every write is kept on the relay with what each cell held before and after. The Bank sync page
@@ -194,8 +223,9 @@ The relay keeps the last 200 writes and shows the newest 20.
 - **"The server's list of cells can't be used."** `sheet-fill.json` isn't valid JSON, or one of its
   lines is missing something; the page says which. Nothing is written until the whole file reads.
 - **A line says "Not written".** The reason follows it: an account that isn't linked, a label that
-  was renamed or removed or is in the tab twice, a cell that now holds a formula, or two lines that
-  come to the same cell. Fix the sheet or the file and sync.
+  was renamed or removed or is in the tab twice, a cell that now holds a formula, two lines that
+  come to the same cell, or a vest's line with no vest expected near its day. Fix the sheet or the
+  file and sync.
 - **"Plaid said: …"** when linking. Plaid's own explanation is shown as written. `INVALID_API_KEYS`
   means the secret doesn't match `PLAID_ENV`.
 - **The Trial plan's 10 institutions are used up.** Plaid refuses the next link and says so. Its
@@ -219,6 +249,9 @@ sheet's history table is still filled in by hand.
 - `relay/relay.py`, "sheet fill": `fill_lines` (the file), `fill_plan` (what each line would do),
   `fill_sheet` (the write, kept in `sheet_writes`), `fill_undo`, and the `/finance/bank/fill/…`
   routes. Tests: `SheetFillTest`.
+- `relay/relay.py`, "stock plan": `stock_events_sync` (the plan's activity, kept in
+  `plaid_stock_events`), `stock_plan_outlook` (the vests to come from those read) and `fill_vest`
+  (the vest a line means). Tests: `StockPlanTest`.
 - App: `BankSyncRelayApi` → `BankSyncRepository` → `BankSyncViewModel` → `BankSyncScreen`
   (`finance/`), with previews in `BankSyncPreviews.kt`
   (`./gradlew :shared:renderPreviews -Ppreview=BankSync`).

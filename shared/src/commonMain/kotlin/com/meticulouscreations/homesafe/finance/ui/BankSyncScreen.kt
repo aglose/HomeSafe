@@ -53,6 +53,7 @@ import com.meticulouscreations.homesafe.finance.domain.SheetFill
 import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
 import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
 import com.meticulouscreations.homesafe.finance.domain.SheetWrite
+import com.meticulouscreations.homesafe.finance.domain.StockPlan
 import com.meticulouscreations.homesafe.finance.ui.components.Shimmer
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
@@ -101,9 +102,11 @@ import homesafe.shared.generated.resources.fin_bank_fill_line_no_account
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_balance
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_label
 import homesafe.shared.generated.resources.fin_bank_fill_line_no_tab
+import homesafe.shared.generated.resources.fin_bank_fill_line_no_vest
 import homesafe.shared.generated.resources.fin_bank_fill_line_not_a_number
 import homesafe.shared.generated.resources.fin_bank_fill_line_paused
 import homesafe.shared.generated.resources.fin_bank_fill_line_same_cell
+import homesafe.shared.generated.resources.fin_bank_fill_line_vested
 import homesafe.shared.generated.resources.fin_bank_fill_line_waiting
 import homesafe.shared.generated.resources.fin_bank_fill_not_shared
 import homesafe.shared.generated.resources.fin_bank_fill_pause
@@ -131,6 +134,13 @@ import homesafe.shared.generated.resources.fin_bank_kind_title
 import homesafe.shared.generated.resources.fin_bank_linking_body
 import homesafe.shared.generated.resources.fin_bank_linking_reopen
 import homesafe.shared.generated.resources.fin_bank_linking_title
+import homesafe.shared.generated.resources.fin_bank_plan_how
+import homesafe.shared.generated.resources.fin_bank_plan_pace
+import homesafe.shared.generated.resources.fin_bank_plan_pace_unknown
+import homesafe.shared.generated.resources.fin_bank_plan_subtitle
+import homesafe.shared.generated.resources.fin_bank_plan_title
+import homesafe.shared.generated.resources.fin_bank_plan_unvested
+import homesafe.shared.generated.resources.fin_bank_plan_vest_shares
 import homesafe.shared.generated.resources.fin_bank_problem_other_title
 import homesafe.shared.generated.resources.fin_bank_problem_outdated_title
 import homesafe.shared.generated.resources.fin_bank_problem_signed_out_body
@@ -153,6 +163,7 @@ import homesafe.shared.generated.resources.fin_sheet_setup_api_disabled_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_body
 import homesafe.shared.generated.resources.fin_sheet_setup_not_allowed_title
 import homesafe.shared.generated.resources.fin_sheet_setup_open_cloud
+import homesafe.shared.generated.resources.finance_date_month_day_year
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.time.Clock
@@ -210,8 +221,8 @@ internal fun BankSyncRoute(contentPadding: PaddingValues) {
 
 /**
  * Bank sync: the institutions linked through Plaid with each account's latest balance, linking
- * another, what was written into the budget sheet's own cells (with a way to undo it), and how the
- * write to the sheet's feed went.
+ * another, a stock plan's vests to come, what was written into the budget sheet's own cells (with a
+ * way to undo it), and how the write to the sheet's feed went.
  */
 @Composable
 internal fun BankSyncScreen(
@@ -285,6 +296,13 @@ internal fun BankSyncScreen(
                                 .padding(horizontal = 8.dp, vertical = 6.dp),
                         )
                     }
+                }
+                if (bank.stockPlans.isNotEmpty()) {
+                    item(key = "plans-h") {
+                        SectionHeader(stringResource(Res.string.fin_bank_plan_title), subtitle = stringResource(Res.string.fin_bank_plan_subtitle))
+                    }
+                    items(bank.stockPlans, key = { "p-${it.account}" }) { StockPlanCard(it) }
+                    item(key = "plans-how") { FinePrint(stringResource(Res.string.fin_bank_plan_how)) }
                 }
                 val fill = bank.fill
                 // A relay with no list of cells has nothing to show here, unless it wrote some before the list went.
@@ -602,6 +620,57 @@ private fun FeedCard(feed: BankFeed, now: Long) {
     }
 }
 
+/** "Nov 15, 2026" from a `YYYY-MM-DD` day; the text as it came when it isn't one. */
+private fun vestDay(isoDay: String): UiText {
+    val year = isoDay.take(4).toIntOrNull()
+    val day = isoDay.substringAfterLast('-').toIntOrNull()
+    return if (year == null || day == null) isoDay.asUiText() else UiText.of(Res.string.finance_date_month_day_year, FinanceFormat.month(isoDay), day, year)
+}
+
+/** A stock plan: the shares still to vest, the pace the last vests set, and the vests that pace says are coming. */
+@Composable
+private fun StockPlanCard(plan: StockPlan) {
+    val colors = FinanceTheme.colors
+    FinanceCard(Modifier.padding(bottom = 10.dp).testTag("finance_bank_stock_plan")) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                // The employer's name as the plan gives it, and the share's ticker: data.
+                Text(plan.name, style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    stringResource(Res.string.fin_bank_plan_unvested, FinanceFormat.shares(plan.unvested), plan.ticker),
+                    style = FinanceTheme.type.label,
+                    color = colors.textSecondary,
+                )
+            }
+            plan.price?.let {
+                Spacer(Modifier.width(12.dp))
+                Text(FinanceFormat.money(plan.unvested * it), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1)
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        val pace = plan.everyMonths
+        Text(
+            if (pace == null) {
+                stringResource(Res.string.fin_bank_plan_pace_unknown)
+            } else {
+                pluralStringResource(Res.plurals.fin_bank_plan_pace, pace, FinanceFormat.shares(plan.perVest), pace)
+            },
+            style = FinanceTheme.type.label,
+            color = colors.textSecondary,
+        )
+        plan.upcoming.forEach { vest ->
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(vestDay(vest.date).resolve(), style = FinanceTheme.type.body, color = colors.textPrimary)
+                    Text(stringResource(Res.string.fin_bank_plan_vest_shares, FinanceFormat.shares(vest.shares)), style = FinanceTheme.type.label, color = colors.textSecondary)
+                }
+                vest.value?.let { Text(FinanceFormat.money(it), style = FinanceTheme.type.bodyStrong, color = colors.textPrimary, maxLines = 1) }
+            }
+        }
+    }
+}
+
 /** Why the last fill of the budget sheet's cells wrote nothing, and what to do about it. */
 @Composable
 private fun FillProblemCard(fill: SheetFill) {
@@ -675,6 +744,8 @@ private fun FillLineRow(line: SheetFillLine, busy: Boolean, enabled: Boolean, on
                 SheetFillStatus.AMBIGUOUS -> UiText.of(Res.string.fin_bank_fill_line_ambiguous, line.label, line.tab)
                 SheetFillStatus.NOT_A_NUMBER -> UiText.of(Res.string.fin_bank_fill_line_not_a_number, line.cell.orEmpty())
                 SheetFillStatus.SAME_CELL -> UiText.of(Res.string.fin_bank_fill_line_same_cell, line.cell.orEmpty())
+                SheetFillStatus.VESTED -> UiText.of(Res.string.fin_bank_fill_line_vested)
+                SheetFillStatus.NO_VEST -> UiText.of(Res.string.fin_bank_fill_line_no_vest)
             }
             Text(
                 said.resolve(),
