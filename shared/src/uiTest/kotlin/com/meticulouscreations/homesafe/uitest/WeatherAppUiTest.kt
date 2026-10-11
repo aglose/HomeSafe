@@ -218,18 +218,21 @@ class WeatherAppUiTest {
     }
 
     @Test
-    fun aDayPickedInTheTimelineIsScrolledToInTheList() = runComposeUiTest(testTimeout = 5.minutes) {
+    fun aDayPickedInTheTimelineLeavesTheListWhereItIs() = runComposeUiTest(testTimeout = 5.minutes) {
         show(state, Calls())
         tap("weather_tab_forecast")
         fun list() = onNodeWithTag("weather_forecast").fetchSemanticsNode().boundsInRoot
+        fun stripTop() = onNodeWithTag("weather_timeline").fetchSemanticsNode().positionInRoot.y
 
         // Where the row is, in the window or out of it: its bounds would be cut to what shows.
         fun rowTop() = onNodeWithTag("weather_day_8").fetchSemanticsNode().positionInRoot.y
+        val stripAt = stripTop()
         assertTrue(rowTop() >= list().bottom, "the ninth day starts out below the window: ${rowTop()} in ${list()}")
 
         tap("weather_timeline_day_8")
         settle()
-        assertTrue(rowTop() >= list().top && rowTop() < list().bottom - 100f, "and is brought up into it when picked: ${rowTop()} in ${list()}")
+        assertEquals(stripAt, stripTop(), "the strip stays under the finger that picked the day")
+        assertTrue(rowTop() >= list().bottom, "and the day it opened is still below, to be scrolled to: ${rowTop()} in ${list()}")
     }
 
     // ---- Radar --------------------------------------------------------------------------------
