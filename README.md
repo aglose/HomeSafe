@@ -241,6 +241,13 @@ To see a UI change rather than test it, `./gradlew :shared:renderPreviews` draws
 to PNGs on the JVM, and every branch's pull request gets a before/after gallery of the previews it
 changed; see [docs/ui-previews.md](docs/ui-previews.md).
 
+### Dependency updates
+
+Dependabot proposes new versions of the app's, the workflows' and the relay's dependencies every
+Monday. The ones that are only version numbers and pass CI are merged without anyone doing it; one
+that needs code changed waits for a person. See
+[docs/dependency-updates.md](docs/dependency-updates.md).
+
 ### Releasing
 
 Every push to `main` with a green CI publishes a signed bundle to Play internal testing. The

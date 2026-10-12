@@ -1,0 +1,82 @@
+# The weekly dependency updates. Dependabot opens the pull requests early on Monday; the
+# "Dependency updates" workflow (.github/workflows/dependency-updates.yml) merges each one once
+# CI is green, as long as it changes nothing but version numbers. See docs/dependency-updates.md.
+#
+# Minor and patch updates of an ecosystem come as one pull request, so a week is one CI run and one
+# build to Play internal testing rather than one per library. A major version comes by itself: it
+# is the kind most likely to need code changed, and alone it can't hold the rest up.
+#
+# cooldown: a version has to have been out for a week before it is proposed. A release that turns
+# out to be broken, or worse, is usually pulled or replaced within days.
+#
+# Not covered, because Dependabot has no way to read them: the go2rtc build that CI downloads
+# (scripts/ci/go2rtc-testsrc.sh, pinned with a checksum), the iOS app's WebRTC Swift package (it
+# lives in the Xcode project, with no Package.swift), and the things installed at "latest".
+
+version: 2
+
+updates:
+  # The app: gradle/libs.versions.toml, the settings plugin and the Gradle wrapper.
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: Dependencies
+    groups:
+      app-and-build:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The actions the workflows use. They are pinned to a major tag, so every update is a major one
+  # and they all go together.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: Dependencies
+    groups:
+      ci-actions:
+        patterns: ["*"]
+
+  # The relay's Python packages. Merging one changes nothing on the box until the relay is next
+  # deployed (docker compose up --build).
+  - package-ecosystem: pip
+    directory: /relay
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: Dependencies
+    groups:
+      relay:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The relay's base image.
+  - package-ecosystem: docker
+    directory: /relay
+    schedule:
+      interval: weekly
+      day: monday
+      time: "03:00"
+      timezone: America/Los_Angeles
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: Dependencies

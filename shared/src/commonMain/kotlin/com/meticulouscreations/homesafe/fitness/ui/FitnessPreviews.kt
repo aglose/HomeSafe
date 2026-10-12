@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.fitness.WorkoutHeart
 import com.meticulouscreations.homesafe.fitness.ZoneNotice
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
@@ -188,6 +189,10 @@ Hammer curls
 
     fun exercise(name: String): Exercise = log.exercises.first { it.name == name }
 
+    /** [state] with the exercise called [name] going by [as] instead: a name the app knows no movement for, say. */
+    fun renamed(state: FitnessUiState, name: String, `as`: String): FitnessUiState =
+        state.copy(boards = state.boards.map { if (it.exercise.name == name) it.copy(exercise = it.exercise.copy(name = `as`)) else it })
+
     /** A band for the heart-rate screens: the name such a band gives itself, at an address that is nobody's. */
     val band = HeartSensor("AA:BB:CC:00:00:01", "Fitbit Air")
 
@@ -315,6 +320,26 @@ private fun FitnessWorkoutPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true), FitnessActions(), initialPage = FitnessPage.Workout) }
 }
 
+// The figure that performs each exercise, each of the three ways it can be drawn: a still on every row, and on the open
+// card the movement itself with its muscles named.
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureTrue3dPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.TRUE_3D), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureStonePreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.STONE), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureForgedPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.FORGED), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
 // The heart rate, where there is a sensor: the workout with it live and a rest counting, the moment a zone changes,
 // the link lost, and the page it is set up on.
 @Preview(widthDp = 412, heightDp = 1500)
@@ -372,6 +397,19 @@ private fun FitnessRecordPreview() {
 @Composable
 private fun FitnessLiftsPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialTab = FitnessTab.LIFTS) }
+}
+
+/** An exercise whose name says no movement: its figure is the nearest for its shelf, and is marked so. */
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FitnessExerciseNearestFigurePreview() {
+    FrigateTheme {
+        FitnessAppContent(
+            FitnessFixtures.renamed(FitnessFixtures.state(), "Hack squat", "Sled push"),
+            FitnessActions(),
+            initialPage = FitnessPage.Lift(FitnessFixtures.exercise("Hack squat").id),
+        )
+    }
 }
 
 @Preview(widthDp = 412, heightDp = 1900)

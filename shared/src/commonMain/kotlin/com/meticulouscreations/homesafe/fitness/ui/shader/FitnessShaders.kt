@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.fitness.ui.shader
 
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 
 /**
  * A compiled runtime shader whose uniforms can be set and drawn as a brush: an AGSL
@@ -16,6 +17,12 @@ internal interface FitnessShader {
     /** A colour as a `float3`, not premultiplied. */
     fun setUniform(name: String, color: Color)
 
+    /** An array of floats or vectors, flattened: `float4 bones[18]` takes 72. */
+    fun setUniform(name: String, values: FloatArray)
+
+    /** A picture for a `uniform shader` to read, in the picture's own pixels, smoothed between them. */
+    fun setImage(name: String, image: ImageBitmap)
+
     /** The shader as its uniforms stand now, to draw with. */
     fun brush(): Brush
 }
@@ -26,7 +33,7 @@ internal expect fun fitnessShaderOrNull(source: String): FitnessShader?
 // The sources below follow the conventions the other apps' shaders do: `half4 main(float2)` in
 // pixel coordinates with y down, premultiplied colour out, loops with constant bounds.
 
-private const val NOISE = """
+internal const val NOISE = """
 float hash(float2 p) {
     return fract(sin(dot(p, float2(127.1, 311.7))) * 43758.5453);
 }

@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.fitness
 
 import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
+import com.meticulouscreations.homesafe.fitness.data.FitnessPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
@@ -48,10 +49,11 @@ class FitnessHeartViewModelTest {
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
     private class Harness(supported: Boolean = true) {
-        val repository = FitnessRepositoryImpl(InMemoryFitnessDao())
+        private val dao = InMemoryFitnessDao()
+        val repository = FitnessRepositoryImpl(dao)
         val monitor = FakeHeartRateMonitor(supported)
         val clock = MutableClock(NOW)
-        val vm = FitnessViewModel(repository, monitor, clock)
+        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao))
 
         /** The time of the last reading, moved on by each one. */
         var at = NOW * 1000

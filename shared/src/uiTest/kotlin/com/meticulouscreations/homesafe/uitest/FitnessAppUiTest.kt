@@ -10,6 +10,8 @@ import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsNotSelected
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasContentDescription
@@ -26,6 +28,7 @@ import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.ImportState
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensorState
@@ -86,6 +89,7 @@ class FitnessAppUiTest {
         val importTexts = mutableListOf<String>()
         val deletedExercises = mutableListOf<String>()
         val saved = mutableListOf<Exercise>()
+        val figureStyles = mutableListOf<FigureStyle>()
 
         fun actions() = FitnessActions(
             onClose = { closed++ },
@@ -109,6 +113,7 @@ class FitnessAppUiTest {
             onStopHeartSearch = { heartSearchStops++ },
             onSaveHeartProfile = { heartProfiles += it },
             onDismissZoneNotice = { noticesDismissed++ },
+            onFigureStyle = { figureStyles += it },
         )
     }
 
@@ -407,6 +412,55 @@ class FitnessAppUiTest {
     fun progressSaysNothingOfTheHeartWithoutBluetooth() = runComposeUiTest(testTimeout = 5.minutes) {
         show(FitnessFixtures.state(), Calls(), tab = FitnessTab.PROGRESS, tall = true)
         assertNotShown("fitness_progress_heart")
+    }
+
+    // ---- The figure that performs an exercise -------------------------------------------------
+
+    @Test
+    fun theOpenExerciseHasItsFigureAndShutItHasOnlyTheStillOnItsRow() = runComposeUiTest(testTimeout = 5.minutes) {
+        // The rendered lifter, as the app has it until another is chosen: its frames are read from the app's resources.
+        show(FitnessFixtures.state(working = true), Calls(), page = FitnessPage.Workout)
+        assertShown("fitness_figure")
+        tap("fitness_exercise_row_${hackSquat.id}")
+        assertNotShown("fitness_figure")
+        // Another exercise opened has its own movement's figure in turn.
+        tap("fitness_exercise_row_${FitnessFixtures.exercise("Calf machine").id}")
+        assertShown("fitness_figure")
+        assertShown("fitness_logger")
+    }
+
+    @Test
+    fun theFigureDrawnLiveFromTheRigOpensWithItsExerciseToo() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.FORGED), Calls(), page = FitnessPage.Workout)
+        assertShown("fitness_figure")
+        assertShown("fitness_logger")
+    }
+
+    @Test
+    fun anExercisesPageShowsItsFigureAndChoosesWhichOneDrawsIt() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state().copy(figureStyle = FigureStyle.STONE), calls, page = FitnessPage.Lift(hackSquat.id))
+        assertShown("fitness_figure")
+        onNodeWithTag("fitness_figure_style_stone").assertIsSelected()
+        onNodeWithTag("fitness_figure_style_true_3d").assertIsNotSelected()
+        tap("fitness_figure_style_forged")
+        assertEquals(listOf(FigureStyle.FORGED), calls.figureStyles)
+    }
+
+    @Test
+    fun aFigureIsMarkedAsTheNearestOnlyWhereTheExercisesNameSaysNoMovement() = runComposeUiTest(testTimeout = 5.minutes) {
+        // A hack squat is a squat by its name: the figure is its own, and nothing is said under it.
+        show(FitnessFixtures.state(), Calls(), page = FitnessPage.Lift(hackSquat.id))
+        assertShown("fitness_figure")
+        assertNotShown("fitness_figure_nearest")
+    }
+
+    @Test
+    fun anExerciseTheAppKnowsNoMovementForSaysItsFigureIsTheNearest() = runComposeUiTest(testTimeout = 5.minutes) {
+        // The same exercise under a name that says nothing: on the legs shelf, the nearest figure is the squat.
+        show(FitnessFixtures.renamed(FitnessFixtures.state(), "Hack squat", "Sled push"), Calls(), page = FitnessPage.Lift(hackSquat.id))
+        assertShown("fitness_figure")
+        onNodeWithTag("fitness_figure_nearest").assertTextEquals("Nearest figure: Squat")
     }
 
     // ---- Lifts --------------------------------------------------------------------------------

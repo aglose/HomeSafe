@@ -5,12 +5,14 @@ import com.meticulouscreations.homesafe.fitness.FitnessTestData.DAY
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOTES
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.exercise
+import com.meticulouscreations.homesafe.fitness.data.FitnessPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LogCopy
@@ -61,12 +63,14 @@ class FitnessViewModelTest {
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
     private class Harness {
-        val repository = FitnessRepositoryImpl(InMemoryFitnessDao())
+        private val dao = InMemoryFitnessDao()
+        val repository = FitnessRepositoryImpl(dao)
+        val preferences = FitnessPreferencesRepositoryImpl(dao)
         val clock = MutableClock(NOW)
 
         private val made = mutableListOf<FitnessViewModel>()
 
-        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock).also { made += it }
+        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }
@@ -1087,6 +1091,39 @@ class FitnessViewModelTest {
         runCurrent()
 
         assertNull(vm.uiState.value.workout)
+    }
+
+    // ---- Which figure performs the exercises ---------------------------------------------------
+
+    @Test
+    fun theFigureIsTheRenderedOneUntilAnotherIsChosenAndTheChoiceIsKept() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        assertEquals(FigureStyle.TRUE_3D, vm.uiState.value.figureStyle)
+
+        vm.setFigureStyle(FigureStyle.STONE)
+        assertEquals(FigureStyle.STONE, vm.uiState.value.figureStyle, "the screen has it at once")
+        runCurrent()
+        assertEquals(FigureStyle.STONE, h.preferences.observeFigureStyle().first(), "the choice is saved")
+
+        // The app opened again: another view model over the same database.
+        val again = h.viewModel()
+        again.setActive(true)
+        runCurrent()
+        assertEquals(FigureStyle.STONE, again.uiState.value.figureStyle)
+    }
+
+    @Test
+    fun aFigureChosenOnTheSettingsTabReachesTheOpenApp() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+
+        h.preferences.setFigureStyle(FigureStyle.FORGED)
+        runCurrent()
+
+        assertEquals(FigureStyle.FORGED, vm.uiState.value.figureStyle)
     }
 
     // ---- Two taps, and things asked for at once ------------------------------------------------

@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The figure that performs each exercise in the fitness app: the three ways it can be drawn
+  (FigureStyle.kt), as the Settings row (FigureStyleOptions.kt) and the chips on an exercise's
+  page show them, and the names of the muscle heads it calls out (HeadLabels.kt).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The three figures -->
+    <string name="fitness_figure_true_3d_label">True 3D</string>
+    <string name="fitness_figure_true_3d_blurb">A modelled lifter, rendered ahead of time and played back, the working muscles glowing through the skin.</string>
+    <string name="fitness_figure_stone_label">Stone</string>
+    <string name="fitness_figure_stone_blurb">A figure of pale stone, drawn as you watch, the working muscles lit from inside.</string>
+    <string name="fitness_figure_forged_label">Forged study</string>
+    <string name="fitness_figure_forged_blurb">An anatomy study in dark iron, drawn as you watch, with every working muscle traced and gauged.</string>
+
+    <!-- What a screen reader says of the large figure, whose labels are painted and not text: the names of the muscles it calls out, head to toe, with commas between -->
+    <string name="fitness_figure_working_muscles">Working muscles: %1$s</string>
+
+    <!--
+      Under a figure that may not be doing this exercise: its name wasn't one the app knows a movement for, so the
+      figure is the likeliest for its shelf. %1$s is that movement's name, from the list below.
+    -->
+    <string name="fitness_figure_nearest">Nearest figure: %1$s</string>
+
+    <!-- The movements a figure can perform, as nouns -->
+    <string name="fitness_movement_squat">Squat</string>
+    <string name="fitness_movement_leg_press">Leg press</string>
+    <string name="fitness_movement_leg_extension">Leg extension</string>
+    <string name="fitness_movement_leg_curl">Leg curl</string>
+    <string name="fitness_movement_calf_raise">Calf raise</string>
+    <string name="fitness_movement_hip_hinge">Hip hinge</string>
+    <string name="fitness_movement_hip_abduction">Hip abduction</string>
+    <string name="fitness_movement_hip_adduction">Hip adduction</string>
+    <string name="fitness_movement_bench_press">Bench press</string>
+    <string name="fitness_movement_incline_press">Incline press</string>
+    <string name="fitness_movement_chest_fly">Chest fly</string>
+    <string name="fitness_movement_dip">Dip</string>
+    <string name="fitness_movement_overhead_press">Overhead press</string>
+    <string name="fitness_movement_lateral_raise">Lateral raise</string>
+    <string name="fitness_movement_front_raise">Front raise</string>
+    <string name="fitness_movement_rear_delt_fly">Rear delt fly</string>
+    <string name="fitness_movement_shrug">Shrug</string>
+    <string name="fitness_movement_lat_pulldown">Lat pulldown</string>
+    <string name="fitness_movement_pull_up">Pull-up</string>
+    <string name="fitness_movement_seated_row">Seated row</string>
+    <string name="fitness_movement_biceps_curl">Biceps curl</string>
+    <string name="fitness_movement_triceps_pushdown">Triceps pushdown</string>
+    <string name="fitness_movement_crunch">Crunch</string>
+
+    <!-- The Settings row, and the caption over its choices once it's opened out -->
+    <string name="fitness_figure_settings_title">Exercise figures</string>
+    <string name="fitness_figure_settings_caption">How Fitness draws the movement on each exercise. The lift and the muscles it works are the same in all three.</string>
+    <!-- The small capital label over the same choice on an exercise's own page -->
+    <string name="fitness_figure_style_label">Figure</string>
+
+    <!--
+      The muscle heads a figure names, as an anatomy text gives them. Where there are two lines,
+      the first is the muscle and the second which part of it; the line break is kept.
+    -->
+    <string name="fitness_head_sternocleidomastoid">Sternocleidomastoid</string>
+    <string name="fitness_head_trapezius_upper">Trapezius\nupper fibres</string>
+    <string name="fitness_head_trapezius_middle">Trapezius\nmiddle fibres</string>
+    <string name="fitness_head_trapezius_lower">Trapezius\nlower fibres</string>
+    <string name="fitness_head_deltoid_anterior">Deltoid\nanterior head</string>
+    <string name="fitness_head_deltoid_lateral">Deltoid\nlateral head</string>
+    <string name="fitness_head_deltoid_posterior">Deltoid\nposterior head</string>
+    <string name="fitness_head_pectoralis_clavicular">Pectoralis major\nclavicular head</string>
+    <string name="fitness_head_pectoralis_sternal">Pectoralis major\nsternocostal head</string>
+    <string name="fitness_head_serratus_anterior">Serratus anterior</string>
+    <string name="fitness_head_rectus_abdominis">Rectus abdominis</string>
+    <string name="fitness_head_external_oblique">External oblique</string>
+    <string name="fitness_head_latissimus_dorsi">Latissimus dorsi</string>
+    <string name="fitness_head_teres_major">Teres major</string>
+    <string name="fitness_head_teres_minor">Teres minor</string>
+    <string name="fitness_head_infraspinatus">Infraspinatus</string>
+    <string name="fitness_head_erector_spinae">Erector spinae</string>
+    <string name="fitness_head_biceps_long">Biceps brachii\nlong head</string>
+    <string name="fitness_head_biceps_short">Biceps brachii\nshort head</string>
+    <string name="fitness_head_brachialis">Brachialis</string>
+    <string name="fitness_head_triceps_long">Triceps brachii\nlong head</string>
+    <string name="fitness_head_triceps_lateral">Triceps brachii\nlateral head</string>
+    <string name="fitness_head_triceps_medial">Triceps brachii\nmedial head</string>
+    <string name="fitness_head_brachioradialis">Brachioradialis</string>
+    <string name="fitness_head_wrist_flexors">Flexor carpi radialis</string>
+    <string name="fitness_head_flexor_carpi_ulnaris">Flexor carpi ulnaris</string>
+    <string name="fitness_head_extensor_carpi_radialis">Extensor carpi radialis</string>
+    <string name="fitness_head_extensor_digitorum">Extensor digitorum</string>
+    <string name="fitness_head_extensor_carpi_ulnaris">Extensor carpi ulnaris</string>
+    <string name="fitness_head_gluteus_medius">Gluteus medius</string>
+    <string name="fitness_head_gluteus_maximus">Gluteus maximus</string>
+    <string name="fitness_head_tensor_fasciae_latae">Tensor fasciae latae</string>
+    <string name="fitness_head_sartorius">Sartorius</string>
+    <string name="fitness_head_rectus_femoris">Quadriceps\nrectus femoris</string>
+    <string name="fitness_head_vastus_lateralis">Quadriceps\nvastus lateralis</string>
+    <string name="fitness_head_vastus_medialis">Quadriceps\nvastus medialis</string>
+    <string name="fitness_head_adductor_longus">Adductor longus</string>
+    <string name="fitness_head_adductor_magnus">Adductor magnus</string>
+    <string name="fitness_head_gracilis">Gracilis</string>
+    <string name="fitness_head_biceps_femoris_long">Biceps femoris\nlong head</string>
+    <string name="fitness_head_biceps_femoris_short">Biceps femoris\nshort head</string>
+    <string name="fitness_head_semitendinosus">Semitendinosus</string>
+    <string name="fitness_head_semimembranosus">Semimembranosus</string>
+    <string name="fitness_head_tibialis_anterior">Tibialis anterior</string>
+    <string name="fitness_head_extensor_digitorum_longus">Extensor digitorum longus</string>
+    <string name="fitness_head_peroneus_longus">Fibularis longus</string>
+    <string name="fitness_head_gastrocnemius_lateral">Gastrocnemius\nlateral head</string>
+    <string name="fitness_head_gastrocnemius_medial">Gastrocnemius\nmedial head</string>
+    <string name="fitness_head_soleus">Soleus</string>
+</resources>
