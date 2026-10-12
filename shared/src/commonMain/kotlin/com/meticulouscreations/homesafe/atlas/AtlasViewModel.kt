@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -91,8 +90,8 @@ class AtlasViewModel(
     }
 
     /**
-     * [active] while the drawer's card or the app is on screen; [full] once the app itself is up,
-     * which is when the relay is asked for anything new and the paths are read.
+     * [active] while the drawer's card or the app is on screen, which is when the relay is asked
+     * for anything new; [full] once the app itself is up, which is when the paths are read.
      */
     fun setActive(active: Boolean, full: Boolean = true) {
         if (!active) return
@@ -101,7 +100,13 @@ class AtlasViewModel(
             follow = viewModelScope.launch {
                 launch { repository.sync.collect { sync -> _uiState.update { it.copy(sync = sync) } } }
                 launch { repository.load() }
-                repository.history.filterNotNull().collectLatest { history ->
+                repository.history.collectLatest { history ->
+                    if (history == null) {
+                        // Not read yet, or not this sign-in's to see until the relay says it is.
+                        pathsOf = null
+                        _uiState.update { it.copy(loaded = false, history = AtlasHistory.Empty, analysis = AtlasAnalysis.Empty, analyzing = false, paths = null) }
+                        return@collectLatest
+                    }
                     _uiState.update { it.copy(loaded = true, history = history, analyzing = !history.isEmpty, paths = it.paths.takeIf { pathsOf === history }) }
                     val analysis = withContext(Dispatchers.Default) { AtlasAnalyzer.analyze(history) }
                     _uiState.update { it.copy(analysis = analysis, analyzing = false) }
@@ -109,8 +114,10 @@ class AtlasViewModel(
                 }
             }
         }
-        if (!full) return
+        // From the drawer's card too: one small question when nothing has changed, and what says
+        // the copy on the device is this sign-in's to show.
         if (clock.now().epochSeconds - refreshedAt > REFRESH_AFTER_SECONDS) refresh()
+        if (!full) return
         wantPaths = true
         if (_uiState.value.loaded) loadPaths(_uiState.value.history)
     }

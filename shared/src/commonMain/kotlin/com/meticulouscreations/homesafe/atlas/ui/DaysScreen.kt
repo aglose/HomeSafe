@@ -39,9 +39,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,17 +56,22 @@ import com.meticulouscreations.homesafe.atlas.domain.CivilDate
 import com.meticulouscreations.homesafe.atlas.domain.DayStats
 import com.meticulouscreations.homesafe.atlas.domain.weekdayOf
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.atlas_day_nothing
+import homesafe.shared.generated.resources.atlas_day_summary
+import homesafe.shared.generated.resources.atlas_days_day_state
 import homesafe.shared.generated.resources.atlas_days_legend_less
 import homesafe.shared.generated.resources.atlas_days_legend_more
 import homesafe.shared.generated.resources.atlas_days_measure_distance
 import homesafe.shared.generated.resources.atlas_days_measure_far
 import homesafe.shared.generated.resources.atlas_days_measure_places
 import homesafe.shared.generated.resources.atlas_days_on_this_day
+import homesafe.shared.generated.resources.atlas_days_open_day
 import homesafe.shared.generated.resources.atlas_days_year_grid
 import homesafe.shared.generated.resources.atlas_days_years_ago
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** What the calendar's squares are coloured by. */
@@ -194,6 +204,25 @@ private fun YearGrid(year: Int, days: DayStats, measure: DayMeasure, full: Float
     val weeks = (lead + (last - first) + 7) / 7
     val open by rememberUpdatedState(onOpenDay)
     val description = stringResource(Res.string.atlas_days_year_grid, year)
+    // A screen reader can't point at a square, so the grid is also something to step along: one
+    // day is the chosen one (the latest on record to begin with), swiping moves it, and the
+    // grid's own click opens it.
+    val lastOpenable = minOf(last, today)
+    var chosen by remember(year, days) {
+        mutableStateOf((lastOpenable downTo first).firstOrNull { day -> days.index(day)?.let { days.trackedSeconds[it] > 0 } == true } ?: first)
+    }
+    var stepped by remember(year) { mutableStateOf(false) }
+    val chosenIndex = days.index(chosen)?.takeIf { days.trackedSeconds[it] > 0 }
+    val chosenSays = stringResource(
+        Res.string.atlas_days_day_state,
+        dateText(chosen, weekday = true),
+        if (chosenIndex == null) {
+            stringResource(Res.string.atlas_day_nothing)
+        } else {
+            pluralStringResource(Res.plurals.atlas_day_summary, days.places[chosenIndex], distanceText((days.groundMeters[chosenIndex] + days.airMeters[chosenIndex]).toDouble()), days.places[chosenIndex])
+        },
+    )
+    val openLabel = stringResource(Res.string.atlas_days_open_day)
     val monthStyle = AtlasTheme.type.micro.copy(color = colors.textFaint)
     val measurer = rememberTextMeasurer(cacheSize = 12)
     val initials = (1..12).map { stringResource(AtlasFormat.month(it)).take(1) }
@@ -201,7 +230,22 @@ private fun YearGrid(year: Int, days: DayStats, measure: DayMeasure, full: Float
         Modifier
             .fillMaxWidth()
             .aspectRatio(weeks / 8.3f)
-            .semantics { contentDescription = description }
+            .semantics {
+                contentDescription = description
+                if (lastOpenable >= first) {
+                    stateDescription = chosenSays
+                    progressBarRangeInfo = ProgressBarRangeInfo((chosen - first).toFloat(), 0f..(lastOpenable - first).toFloat(), (lastOpenable - first - 1).coerceAtLeast(0))
+                    setProgress { to ->
+                        chosen = first + to.roundToInt().coerceIn(0, lastOpenable - first)
+                        stepped = true
+                        true
+                    }
+                    onClick(openLabel) {
+                        open(chosen)
+                        true
+                    }
+                }
+            }
             .testTag("atlas_year_$year")
             .pointerInput(year, weeks) {
                 detectTapGestures { at ->
@@ -232,6 +276,8 @@ private fun YearGrid(year: Int, days: DayStats, measure: DayMeasure, full: Float
                 else -> drawRoundRect(colors.heat(sqrt(measure.of(days, index) / full).coerceIn(0f, 1f)), topLeft, size, corner)
             }
             if (day == today) drawRoundRect(colors.text, topLeft, size, corner, style = Stroke(cell * 0.1f))
+            // Once it has been stepped to, the chosen day is shown as well as said.
+            if (stepped && day == chosen) drawRoundRect(colors.place, topLeft, size, corner, style = Stroke(cell * 0.16f))
         }
     }
 }

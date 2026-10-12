@@ -75,14 +75,35 @@ import kotlin.math.roundToInt
 internal const val ATLAS_MIN_ZOOM = 2.5
 internal const val ATLAS_MAX_ZOOM = 17.0
 
-/** A box on the Earth, for telling a map what to show. */
+/**
+ * A box on the Earth, for telling a map what to show: from [west] eastward to [east]. An [east]
+ * less than [west] is a box that runs over the date line (from 170 to -170 is twenty degrees
+ * wide, not three hundred and forty).
+ */
 @Immutable
 data class MapBounds(val south: Double, val west: Double, val north: Double, val east: Double) {
     companion object {
-        /** The box round some places, or null for none. [points] is latitude then longitude. */
+        /**
+         * The smallest box round some places, or null for none. [points] is latitude then
+         * longitude. Round the globe the smallest box is the one that leaves out the widest
+         * stretch of longitude with nothing in it, which for Fiji and Samoa is not the one
+         * through Greenwich.
+         */
         fun of(points: List<Pair<Double, Double>>): MapBounds? {
             if (points.isEmpty()) return null
-            return MapBounds(points.minOf { it.first }, points.minOf { it.second }, points.maxOf { it.first }, points.maxOf { it.second })
+            val longitudes = points.map { it.second }.sorted()
+            var west = longitudes.first()
+            var east = longitudes.last()
+            var widestGap = 360.0 - (east - west)
+            for (i in 1 until longitudes.size) {
+                val gap = longitudes[i] - longitudes[i - 1]
+                if (gap > widestGap) {
+                    widestGap = gap
+                    west = longitudes[i]
+                    east = longitudes[i - 1]
+                }
+            }
+            return MapBounds(points.minOf { it.first }, west, points.maxOf { it.first }, east)
         }
     }
 }
@@ -119,11 +140,12 @@ internal fun cameraFor(bounds: MapBounds, width: Float, height: Float, tilePx: F
     val x1 = WebMercator.x(bounds.east)
     val y0 = WebMercator.y(bounds.north)
     val y1 = WebMercator.y(bounds.south)
-    val spanX = max(x1 - x0, 1e-7)
+    // Eastward from the west edge, the short way or over the date line.
+    val spanX = max((x1 - x0).mod(1.0), 1e-7)
     val spanY = max(y1 - y0, 1e-7)
     // A world of 1 is tilePx * 2^zoom pixels: the zoom at which the box fills 70% of the view.
     val zoom = min(ln(width * 0.7 / (spanX * tilePx)) / ln(2.0), ln(height * 0.7 / (spanY * tilePx)) / ln(2.0))
-    return MapCamera((x0 + x1) / 2, (y0 + y1) / 2, zoom.coerceIn(ATLAS_MIN_ZOOM, maxZoom))
+    return MapCamera((x0 + spanX / 2).mod(1.0), (y0 + y1) / 2, zoom.coerceIn(ATLAS_MIN_ZOOM, maxZoom))
 }
 
 // Points to draw, grown as needed and reused from one frame to the next.

@@ -5499,6 +5499,34 @@ class TimelineExports(_TimelineDb):
         self.assertEqual((3, 2, 1), (summary["visits"], summary["moves"], summary["paths"]))
         self.assertEqual("takeout.zip", relay.timeline_meta(self.conn, "file")["name"])
 
+    def _fixes(self):
+        def fix(seconds, at):
+            return {"latitudeE7": round(at[0] * 1e7), "longitudeE7": round(at[1] * 1e7), "accuracy": 10, "timestamp": _iso(DAY1 + seconds).replace("+00:00", "Z")}
+
+        return {"locations": [fix(i * 120, HOME) for i in range(10)] + [fix(1800 + i * 120, WORK) for i in range(10)]}
+
+    def test_a_takeout_zip_with_the_days_twice_over_counts_them_once(self):
+        import zipfile
+
+        # The same day as Google's own visits and trips, and again as the raw fixes they were made from.
+        path = os.path.join(self._dir.name, "takeout.zip")
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Takeout/Location History/Records.json", json.dumps(self._fixes()))
+            archive.writestr("Takeout/Location History/Semantic Location History/2023/2023_NOVEMBER.json", json.dumps(android_export()))
+        summary = relay.timeline_import(path)
+        self.assertEqual((3, 2, 1), (summary["visits"], summary["moves"], summary["paths"]))
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM visits WHERE place IS NULL")[0][0])
+
+    def test_a_takeout_zip_of_raw_fixes_alone_is_cut_into_stays(self):
+        import zipfile
+
+        path = os.path.join(self._dir.name, "takeout.zip")
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Takeout/Location History/Records.json", json.dumps(self._fixes()))
+            archive.writestr("Takeout/Location History/Settings.json", json.dumps({"createdTime": "2014"}))
+        summary = relay.timeline_import(path)
+        self.assertEqual((2, 1), (summary["visits"], summary["moves"]))
+
 
 class TimelineHistory(_TimelineDb):
     def test_a_newer_export_rewrites_the_days_it_mentions_and_leaves_the_rest(self):
@@ -5589,6 +5617,10 @@ class TimelineRoutes(_TimelineDb):
         with self.assertRaises(relay.HTTPException) as missing:
             relay.get_timeline_year(1999, _Asker())
         self.assertEqual(404, missing.exception.status_code)
+
+    def test_the_manifest_says_who_asked(self):
+        self.assertEqual("alex", relay.get_timeline(_Asker(), self.response)["user"])
+        self.assertEqual("alex", relay.post_timeline_sync(_Asker(), self.response)["user"])
 
     def test_the_manifest_and_places_are_not_to_be_cached(self):
         self.assertEqual(1, len(relay.get_timeline(_Asker(), self.response)["years"]))
@@ -5783,6 +5815,23 @@ class TimelinePull(_TimelineDb):
         relay.TIMELINE_DRIVE_FOLDER = ""
         self.assertIsNone(relay.timeline_pull(now=4000.0))
         self.assertEqual(0, self.drive.downloads)
+
+    def test_a_check_is_the_pull_and_the_naming_by_one_caller_at_a_time(self):
+        relay.TIMELINE_PLACES_KEY = "key"
+        asked = []
+        relay.timeline_place_lookup = lambda place: asked.append(place) or (200, {"displayName": {"text": "Somewhere"}})
+        # Someone else's check is under way: this one does nothing at all, the naming included.
+        self.assertTrue(relay._timeline_check_lock.acquire(blocking=False))
+        try:
+            self.assertIsNone(relay.timeline_check())
+            self.assertTrue(relay.timeline_manifest(self.conn)["syncing"])
+        finally:
+            relay._timeline_check_lock.release()
+        self.assertEqual(([], 0), (asked, self.drive.downloads))
+        done = relay.timeline_check()
+        self.assertEqual((3, 3), (done["read"]["visits"], done["named"]))
+        self.assertEqual(3, len(asked))
+        self.assertFalse(relay.timeline_manifest(self.conn)["syncing"])
 
 
 if __name__ == "__main__":

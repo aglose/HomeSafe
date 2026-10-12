@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,8 +49,12 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -72,6 +77,7 @@ import homesafe.shared.generated.resources.atlas_day_pause
 import homesafe.shared.generated.resources.atlas_day_play
 import homesafe.shared.generated.resources.atlas_day_previous
 import homesafe.shared.generated.resources.atlas_day_ribbon
+import homesafe.shared.generated.resources.atlas_day_ribbon_whole
 import homesafe.shared.generated.resources.atlas_day_span
 import homesafe.shared.generated.resources.atlas_day_summary
 import homesafe.shared.generated.resources.atlas_day_visit_detail
@@ -182,7 +188,7 @@ internal fun DayScreen(
                     )
                 }
             }
-            AtlasRoundButton(Icons.Filled.ChevronRight, stringResource(Res.string.atlas_day_next), { onDay(day + 1) }, Modifier.testTag("atlas_day_next"), tint = if (day < state.today) colors.text else colors.textFaint)
+            AtlasRoundButton(Icons.Filled.ChevronRight, stringResource(Res.string.atlas_day_next), { onDay(day + 1) }, Modifier.testTag("atlas_day_next"), enabled = day < state.today)
         }
         Spacer(Modifier.height(10.dp))
 
@@ -292,6 +298,10 @@ internal fun DayRibbon(plan: DayPlan, head: () -> Float, onScrub: (Float) -> Uni
     val description = stringResource(Res.string.atlas_day_ribbon)
     val hours = listOf(0, 6, 12, 18).map { hourText(it) }
     val span = (plan.end - plan.start).coerceAtLeast(1)
+    // Where the playhead is, to the five minutes: said to a screen reader, and changing no more
+    // often than that while the day plays.
+    val headMinute by remember(plan) { derivedStateOf { if (head() >= 1f) -1 else localMinute(plan.start + (span * head()).toLong(), plan.offsetMinutes) / 5 * 5 } }
+    val position = if (headMinute < 0) stringResource(Res.string.atlas_day_ribbon_whole) else clockText(headMinute)
 
     fun share(x: Float, width: Float): Float {
         val at = plan.dayStart + (x / width).coerceIn(0f, 1f) * SECONDS_PER_DAY
@@ -301,7 +311,15 @@ internal fun DayRibbon(plan: DayPlan, head: () -> Float, onScrub: (Float) -> Uni
         modifier
             .fillMaxWidth()
             .height(64.dp)
-            .semantics { contentDescription = description }
+            .semantics {
+                contentDescription = description
+                stateDescription = position
+                progressBarRangeInfo = ProgressBarRangeInfo(head().coerceIn(0f, 1f), 0f..1f)
+                setProgress { to ->
+                    onScrub(to.coerceIn(0f, 1f))
+                    true
+                }
+            }
             .testTag("atlas_day_ribbon")
             .pointerInput(plan) { detectTapGestures { onScrub(share(it.x, size.width.toFloat())) } }
             .pointerInput(plan) { detectDragGestures { change, _ -> onScrub(share(change.position.x, size.width.toFloat())) } },

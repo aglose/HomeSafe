@@ -211,6 +211,26 @@ class AtlasAnalysisTest {
     }
 
     @Test
+    fun timeIsCountedInTheYearItFellIn() {
+        // Ten at night on New Year's Eve to eight the next morning, six hours behind UTC.
+        val start = CivilDate.dayOf(2023, 12, 31) * SECONDS_PER_DAY + 22 * 3600 + 6 * 3600
+        assertEquals(listOf(2023 to 2 * 3600L, 2024 to 8 * 3600L), AtlasAnalyzer.secondsByYear(start, start + 10 * 3600, -360))
+        assertEquals(listOf(2023 to 3600L), AtlasAnalyzer.secondsByYear(start, start + 3600, -360))
+        assertEquals(emptyList(), AtlasAnalyzer.secondsByYear(start, start, -360))
+
+        // A night at home over the turn of the year, then a morning out: the new year's home hours are the new year's.
+        val home = Visit(start, start + 10 * 3600, -360, 40.0, -89.0, "home", PlaceKind.HOME)
+        val out = Visit(start + 10 * 3600, start + 12 * 3600, -360, 40.3, -89.0, "out", PlaceKind.OTHER)
+        val years = AtlasAnalyzer.analyze(AtlasHistory(listOf(home, out), emptyList())).years
+        assertEquals(listOf(2023, 2024), years.map { it.year })
+        assertEquals(1f, years[0].homeShare)
+        assertEquals(0.8f, years[1].homeShare, 0.001f)
+        assertEquals(0.2f, years[1].otherShare, 0.001f)
+        // The stay itself, and the place, belong to the year they began in.
+        assertEquals(listOf(1, 1), years.map { it.places })
+    }
+
+    @Test
     fun whereItAllWas() {
         assertEquals(listOf("US"), analysis.countries.map { it.code })
         assertEquals(listOf("US-IL", "US-WI", "US-NV"), analysis.regions.map { it.code })

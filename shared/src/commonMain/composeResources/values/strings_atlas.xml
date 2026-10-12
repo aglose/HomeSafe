@@ -104,7 +104,10 @@
     <string name="atlas_days_legend_less">Less</string>
     <string name="atlas_days_legend_more">More</string>
     <!-- Read out for the grid of a year's days; %1$d is the year. -->
-    <string name="atlas_days_year_grid">%1$d, a square for each day. Tap one to open that day.</string>
+    <string name="atlas_days_year_grid">%1$d, a square for each day</string>
+    <!-- Read out for the day a screen reader has stepped to: its date, then what it held, e.g. "Mon, Mar 4, 2019: 23.4 mi · 4 places". -->
+    <string name="atlas_days_day_state">%1$s: %2$s</string>
+    <string name="atlas_days_open_day">Open this day</string>
 
     <!-- One day. -->
     <string name="atlas_day_previous">Previous day</string>
@@ -113,6 +116,8 @@
     <string name="atlas_day_pause">Pause</string>
     <string name="atlas_day_nothing">Nothing on record for this day</string>
     <string name="atlas_day_ribbon">The day from midnight to midnight: where it was spent and how it was travelled. Drag to move through it.</string>
+    <!-- Read out for the ribbon when nothing is being replayed. -->
+    <string name="atlas_day_ribbon_whole">The whole day</string>
     <!-- %1$s is a distance, %2$d a number of places, e.g. "23.4 mi · 4 places". -->
     <plurals name="atlas_day_summary">
         <item quantity="one">%1$s · %2$d place</item>
@@ -302,6 +307,7 @@
     <string name="atlas_sync_drive_empty">The Drive folder has no Timeline export in it yet.</string>
     <string name="atlas_sync_drive_no_key">The server has no Google service-account key to read Drive with.</string>
     <string name="atlas_sync_drive_failed">The server couldn't read the export.</string>
+    <string name="atlas_sync_drive_refused">Google refused the server when it looked in the Drive folder.</string>
     <string name="atlas_sync_share_with">Share the folder with</string>
     <!-- %1$s is a file's name, %2$s how long ago it was read. -->
     <string name="atlas_sync_file">Last export read: %1$s, %2$s</string>
@@ -311,6 +317,7 @@
     <string name="atlas_sync_names_month">%1$s of %2$s lookups used this month</string>
     <string name="atlas_sync_names_not_configured">The server has no Places API key, so places go by their town. Put one in timeline.env as TIMELINE_PLACES_KEY.</string>
     <string name="atlas_sync_names_api_disabled">Places API (New) is switched off for the key's Google Cloud project.</string>
+    <string name="atlas_sync_names_refused">Google is refusing the server's place lookups.</string>
     <string name="atlas_sync_howto_title">Bringing your history up to date</string>
     <string name="atlas_sync_howto_body">Google keeps Timeline on your phone. To bring it here, open the phone's Settings, then Location, Location services, Timeline, and tap Export Timeline data. Save the file into the Drive folder the server watches. It is read within the hour, and this app fetches what changed the next time it opens.</string>
 

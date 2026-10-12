@@ -88,13 +88,16 @@ data class AtlasYearEntity(
 )
 
 /**
- * A singleton row (always [id] = 0): whose history this is ([owner], the server it came from), how
- * far the place names had got ([placesVersion]) and when the relay was last heard from.
+ * A singleton row (always [id] = 0): whose history this is ([owner], the server it came from, by
+ * the address it is signed in to rather than the route in use; and [user], the account the relay
+ * answered, empty for a relay too old to say), how far the place names had got ([placesVersion])
+ * and when the relay was last heard from.
  */
 @Entity
 data class AtlasStateEntity(
     @PrimaryKey val id: Int = 0,
     val owner: String,
+    val user: String = "",
     val placesVersion: Int,
     val checkedAtEpochSeconds: Long,
 )

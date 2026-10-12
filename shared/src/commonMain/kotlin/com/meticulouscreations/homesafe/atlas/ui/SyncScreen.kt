@@ -60,6 +60,7 @@ import homesafe.shared.generated.resources.atlas_sync_drive_not_configured
 import homesafe.shared.generated.resources.atlas_sync_drive_not_shared
 import homesafe.shared.generated.resources.atlas_sync_drive_ok
 import homesafe.shared.generated.resources.atlas_sync_drive_reading
+import homesafe.shared.generated.resources.atlas_sync_drive_refused
 import homesafe.shared.generated.resources.atlas_sync_drive_title
 import homesafe.shared.generated.resources.atlas_sync_fetching
 import homesafe.shared.generated.resources.atlas_sync_fetching_years
@@ -70,6 +71,7 @@ import homesafe.shared.generated.resources.atlas_sync_names_api_disabled
 import homesafe.shared.generated.resources.atlas_sync_names_month
 import homesafe.shared.generated.resources.atlas_sync_names_not_configured
 import homesafe.shared.generated.resources.atlas_sync_names_progress
+import homesafe.shared.generated.resources.atlas_sync_names_refused
 import homesafe.shared.generated.resources.atlas_sync_names_title
 import homesafe.shared.generated.resources.atlas_sync_never
 import homesafe.shared.generated.resources.atlas_sync_share_with
@@ -151,22 +153,17 @@ internal fun SyncScreen(state: AtlasUiState, padding: PaddingValues, onCheckNow:
                 val problem = server.driveProblem
                 when {
                     !server.driveConfigured -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_not_configured))
-
                     server.reading -> StatusLine(true, stringResource(Res.string.atlas_sync_drive_reading))
-
                     problem == null -> StatusLine(true, stringResource(Res.string.atlas_sync_drive_ok))
-
                     problem == AtlasSetupProblem.NOT_SHARED -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_not_shared))
-
                     problem == AtlasSetupProblem.API_DISABLED -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_api_disabled))
-
                     problem == AtlasSetupProblem.EMPTY -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_empty))
-
                     problem == AtlasSetupProblem.NO_KEY -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_no_key))
-
-                    // The relay's own words say more than "something went wrong" would.
-                    else -> StatusLine(false, server.driveMessage ?: stringResource(Res.string.atlas_sync_drive_failed))
+                    problem == AtlasSetupProblem.FAILED -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_failed))
+                    else -> StatusLine(false, stringResource(Res.string.atlas_sync_drive_refused))
                 }
+                // What the server itself said, as it said it: for whoever looks after the box.
+                if (server.driveConfigured && (problem == AtlasSetupProblem.FAILED || problem == AtlasSetupProblem.OTHER)) Technical(server.driveMessage)
                 if (server.serviceAccount != null && (problem == AtlasSetupProblem.NOT_SHARED || problem == AtlasSetupProblem.EMPTY || !server.driveConfigured)) {
                     Spacer(Modifier.height(10.dp))
                     Text(stringResource(Res.string.atlas_sync_share_with), style = AtlasTheme.type.label, color = colors.textFaint)
@@ -185,11 +182,12 @@ internal fun SyncScreen(state: AtlasUiState, padding: PaddingValues, onCheckNow:
                 when {
                     !server.namingConfigured -> StatusLine(false, stringResource(Res.string.atlas_sync_names_not_configured))
                     server.namingProblem == AtlasSetupProblem.API_DISABLED -> StatusLine(false, stringResource(Res.string.atlas_sync_names_api_disabled))
-                    server.namingProblem != null -> StatusLine(false, server.namingMessage ?: stringResource(Res.string.atlas_sync_drive_failed))
+                    server.namingProblem != null -> StatusLine(false, stringResource(Res.string.atlas_sync_names_refused))
                     else -> StatusLine(true, stringResource(Res.string.atlas_sync_names_progress, AtlasFormat.grouped(server.placesNamed.toLong()), AtlasFormat.grouped(server.placesTotal.toLong())))
                 }
                 if (server.namingConfigured) {
                     if (server.namingProblem != null) {
+                        if (server.namingProblem != AtlasSetupProblem.API_DISABLED) Technical(server.namingMessage)
                         Spacer(Modifier.height(8.dp))
                         Text(stringResource(Res.string.atlas_sync_names_progress, AtlasFormat.grouped(server.placesNamed.toLong()), AtlasFormat.grouped(server.placesTotal.toLong())), style = AtlasTheme.type.label, color = colors.textMuted)
                     }
@@ -213,6 +211,14 @@ private fun StatusLine(ok: Boolean, text: String) {
         Spacer(Modifier.width(10.dp))
         Text(text, style = AtlasTheme.type.body, color = colors.text)
     }
+}
+
+/** A line of the server's own words under a message: small, faint, and there to be copied, not read as the message. */
+@Composable
+private fun Technical(text: String?) {
+    if (text.isNullOrBlank()) return
+    Spacer(Modifier.height(6.dp))
+    SelectionContainer { Text(text, style = AtlasTheme.type.label, color = AtlasTheme.colors.textFaint, modifier = Modifier.padding(start = 28.dp)) }
 }
 
 /** Nothing on this device yet: what the app is for, and the way to the page that says how to fill it. */

@@ -466,13 +466,21 @@ object AtlasAnalyzer {
         history.visits.forEach { visit -> firstSeen.getOrPut(visit.placeKey) { CivilDate.of(visit.startDay).year } }
         val visitsByYear = history.visits.indices.groupBy { CivilDate.of(history.visits[it].startDay).year }
         val movesByYear = history.moves.groupBy { CivilDate.of(it.startDay).year }
-        return (visitsByYear.keys + movesByYear.keys).sorted().map { year ->
+        // Time is counted in the year it fell in: the night of New Year's Eve is part of both.
+        // A place, a visit and a trip's distance belong to the year they began in.
+        val time = HashMap<Int, LongArray>()
+        history.visits.forEachIndexed { i, visit ->
+            secondsByYear(visit.start, visit.end, visit.offsetMinutes).forEach { (year, seconds) -> time.getOrPut(year) { LongArray(4) }[roles[i].ordinal] += seconds }
+        }
+        history.moves.forEach { move ->
+            secondsByYear(move.start, move.end, move.offsetMinutes).forEach { (year, seconds) -> time.getOrPut(year) { LongArray(4) }[MOVING] += seconds }
+        }
+        return (visitsByYear.keys + movesByYear.keys + time.keys).sorted().map { year ->
             val indexes = visitsByYear[year].orEmpty()
             val moves = movesByYear[year].orEmpty()
-            val seconds = LongArray(3)
-            indexes.forEach { seconds[roles[it].ordinal] += history.visits[it].seconds }
-            val moving = moves.sumOf { it.seconds }
-            val total = (seconds.sum() + moving).coerceAtLeast(1).toFloat()
+            val seconds = time[year] ?: LongArray(4)
+            val moving = seconds[MOVING]
+            val total = seconds.sum().coerceAtLeast(1).toFloat()
             val stays = indexes.map { history.visits[it] }
             val keys = stays.mapTo(HashSet()) { it.placeKey }
             val localities = keys.mapNotNull { history.locality(history.place(it)) }
@@ -493,6 +501,24 @@ object AtlasAnalyzer {
                 countries = localities.mapNotNullTo(HashSet()) { it.country }.size,
             )
         }
+    }
+
+    private const val MOVING = 3
+
+    /**
+     * A span's seconds, local year by local year: one entry unless it runs over the turn of a
+     * year, where the clock was [offsetMinutes] ahead of UTC.
+     */
+    internal fun secondsByYear(start: Long, end: Long, offsetMinutes: Int): List<Pair<Int, Long>> {
+        val out = ArrayList<Pair<Int, Long>>(1)
+        var at = start
+        while (at < end) {
+            val year = CivilDate.of(localDay(at, offsetMinutes)).year
+            val next = minOf(end, CivilDate.dayOf(year + 1, 1, 1) * SECONDS_PER_DAY - offsetMinutes * 60L)
+            out += year to next - at
+            at = next
+        }
+        return out
     }
 
     /**

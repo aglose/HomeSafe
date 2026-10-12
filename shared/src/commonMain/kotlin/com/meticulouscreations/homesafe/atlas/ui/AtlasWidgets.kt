@@ -75,14 +75,23 @@ internal fun AtlasBackdrop(tint: Color, tint2: Color, modifier: Modifier = Modif
     )
 }
 
-/** A small round button with an icon, named for a screen reader by [label]. */
+/** A small round button with an icon, named for a screen reader by [label]. Not [enabled], it is drawn faint and says it is off. */
 @Composable
-internal fun AtlasRoundButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, tint: Color = AtlasTheme.colors.text, fill: Color = Color.Transparent) {
+internal fun AtlasRoundButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 44.dp,
+    tint: Color = AtlasTheme.colors.text,
+    fill: Color = Color.Transparent,
+    enabled: Boolean = true,
+) {
     Box(
-        modifier.size(size).clip(CircleShape).background(fill).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(size * 0.5f))
+        Icon(icon, contentDescription = label, tint = if (enabled) tint else AtlasTheme.colors.textFaint.copy(alpha = 0.35f), modifier = Modifier.size(size * 0.5f))
     }
 }
 

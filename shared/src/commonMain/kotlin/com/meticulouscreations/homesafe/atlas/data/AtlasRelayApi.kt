@@ -71,6 +71,8 @@ class AtlasRelayApi(private val httpClient: HttpClient) {
 
 @Serializable
 data class RelayTimeline(
+    /** The account the relay answered. Null from a relay that doesn't say. */
+    val user: String? = null,
     val years: List<RelayYearSummary> = emptyList(),
     val first: Long? = null,
     val last: Long? = null,

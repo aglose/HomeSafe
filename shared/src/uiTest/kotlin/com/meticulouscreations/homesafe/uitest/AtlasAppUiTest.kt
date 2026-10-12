@@ -6,9 +6,14 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -166,9 +171,35 @@ class AtlasAppUiTest {
     @Test
     fun theLastDayOnTheClockHasNoTomorrow() = runComposeUiTest {
         show(AtlasFixtures.state, Calls(), page = AtlasPage.Day(AtlasFixtures.state.today))
-        tap("atlas_day_next")
         onNode(hasText("Sat, Jun 28, 2025")).assertExists()
         onNode(hasText("Nothing on record for this day")).assertExists()
+        // Off, and said to be: not a button that takes a tap and does nothing.
+        onNodeWithTag("atlas_day_next").assertIsNotEnabled()
+        onNodeWithTag("atlas_day_previous").assertIsEnabled()
+    }
+
+    @Test
+    fun aYearsGridCanBeSteppedAlongAndOpenedWithoutPointingAtASquare() = runComposeUiTest {
+        show(AtlasFixtures.state, Calls(), tab = AtlasTab.DAYS)
+        // It begins on the latest day on record, and says what that day held.
+        onNodeWithTag("atlas_year_2025").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Fri, Jun 27, 2025: 7.4 mi · 2 places"))
+        onNodeWithTag("atlas_year_2025").performSemanticsAction(SemanticsActions.SetProgress) { it(36f) }
+        settle()
+        // The thirty-seventh day of the year, the day of the flight to the desert.
+        onNodeWithTag("atlas_year_2025").assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.StateDescription))
+        tap("atlas_year_2025")
+        assertShown("atlas_day")
+        onNode(hasText("Thu, Feb 6, 2025")).assertExists()
+    }
+
+    @Test
+    fun theDaysRibbonSaysWhereItsPlayheadIsAndCanBeMoved() = runComposeUiTest {
+        show(AtlasFixtures.state, Calls(), page = AtlasPage.Day(CivilDate.dayOf(2025, 5, 13)))
+        onNodeWithTag("atlas_day_ribbon").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "The whole day"))
+        // Halfway through a day that runs midnight to midnight.
+        onNodeWithTag("atlas_day_ribbon").performSemanticsAction(SemanticsActions.SetProgress) { it(0.5f) }
+        settle()
+        onNodeWithTag("atlas_day_ribbon").assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "12:00 PM"))
     }
 
     @Test

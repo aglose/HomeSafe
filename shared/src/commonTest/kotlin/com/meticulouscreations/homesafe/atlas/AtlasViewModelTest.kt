@@ -74,7 +74,7 @@ class AtlasViewModelTest {
     }
 
     @Test
-    fun theDrawersCardReadsTheDeviceAndAsksNothingOfTheServer() = runTest(dispatcher) {
+    fun theDrawersCardReadsTheDeviceAndAsksTheServerOnceButLeavesThePaths() = runTest(dispatcher) {
         val repository = FakeRepository(AtlasFixtures.history)
         val viewModel = viewModel(repository)
         assertFalse(viewModel.uiState.value.loaded)
@@ -85,8 +85,26 @@ class AtlasViewModelTest {
         assertEquals(AtlasFixtures.history.visits.size, state.history.visits.size)
         assertEquals(2, state.analysis.eras.size)
         assertNull(state.paths)
-        assertTrue(repository.refreshes.isEmpty())
+        // One small question: it is also what says the copy is this sign-in's to show.
+        assertEquals(listOf(false), repository.refreshes)
         assertEquals(0, repository.trackReads)
+    }
+
+    @Test
+    fun aHistoryTakenBackIsGoneFromTheScreen() = runTest(dispatcher) {
+        val repository = FakeRepository(AtlasFixtures.history)
+        val viewModel = viewModel(repository)
+        viewModel.setActive(active = true, full = true)
+        until { viewModel.uiState.value.paths != null }
+
+        // Someone else signed in: the repository holds the copy back until the relay answers for them.
+        repository.history.value = null
+        until { !viewModel.uiState.value.loaded }
+        val state = viewModel.uiState.value
+        assertTrue(state.history.isEmpty)
+        assertTrue(state.analysis.places.isEmpty())
+        assertNull(state.paths)
+        assertFalse(state.empty)
     }
 
     @Test

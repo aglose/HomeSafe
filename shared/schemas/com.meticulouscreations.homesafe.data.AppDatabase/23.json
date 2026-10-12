@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 23,
-    "identityHash": "31bdd20d03fc316caa8c4714af094652",
+    "identityHash": "eb254476e7635031518d7c9e4dc6de62",
     "entities": [
       {
         "tableName": "ConnectionHistoryEntity",
@@ -1528,7 +1528,7 @@
       },
       {
         "tableName": "AtlasStateEntity",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `owner` TEXT NOT NULL, `placesVersion` INTEGER NOT NULL, `checkedAtEpochSeconds` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `owner` TEXT NOT NULL, `user` TEXT NOT NULL, `placesVersion` INTEGER NOT NULL, `checkedAtEpochSeconds` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -1539,6 +1539,12 @@
           {
             "fieldPath": "owner",
             "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "user",
+            "columnName": "user",
             "affinity": "TEXT",
             "notNull": true
           },
@@ -1565,7 +1571,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '31bdd20d03fc316caa8c4714af094652')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'eb254476e7635031518d7c9e4dc6de62')"
     ]
   }
 }

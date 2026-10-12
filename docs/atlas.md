@@ -47,7 +47,8 @@ after it is automatic.
 Three shapes of file, loose or inside a Takeout zip: the phone's export (Android's
 `semanticSegments`, the iPhone's bare array) and the two older Takeout ones (the monthly
 `timelineObjects` files, and the raw `Records.json`, from which stays are found by where the fixes
-stop moving). Whatever the shape, it becomes visits, moves and paths.
+stop moving). Whatever the shape, it becomes visits, moves and paths. A Takeout zip holds the same
+years twice over, worked out and raw; the raw fixes are only gone to when it has nothing else.
 
 - A file is read a piece at a time (`json_items`), so a 250 MB export costs under 200 MB of
   memory and about twenty seconds.
@@ -71,8 +72,14 @@ one ("Near Fairview").
 ### Who may see it
 
 It is one person's whereabouts, so it is narrower than a Frigate sign-in: a Frigate **admin**, or,
-once `TIMELINE_USERS` lists usernames, **only those**. The app's copy belongs to the server it
-came from: signing in to another server, or as an account the relay refuses, clears it.
+once `TIMELINE_USERS` lists usernames, **only those**.
+
+The app's copy belongs to the server it came from (by the address signed in to, whichever route
+is in use) and the account the relay answered. Another server's, another account's, or one the
+relay refuses is cleared before any of it is shown. And while signed in to a server that
+answers, nothing the device holds is shown until the relay has answered *this* sign-in: the
+phone's last user's whereabouts are not for whoever signs in after them. So the drawer's card
+asks the relay one small question when it comes on screen.
 
 With the server out of reach the app opens on its copy **behind a fingerprint**, exactly as
 Finance does and by the same lock (`FinanceAccess`): there is no server to ask who this is.
@@ -118,6 +125,8 @@ second for a decade:
   it two trips and neither is the commute.
 - **The usual week** is where each hour of the week was spent over the last 26 weeks, and its
   *regularity* is how much of that time was spent at the hour's usual place.
+- **A year's time** is counted in the year it fell in: the night of New Year's Eve is part of
+  both. A visit, a place and a trip's distance belong to the year they began in.
 - **Range** is the radius of gyration: how far, on average, time was spent from the centre of
   where it was all spent. Whether life "turns round two places" is how much of the spread of the
   last year's local visits the two most visited account for.

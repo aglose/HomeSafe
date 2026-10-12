@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
+import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition
 import com.meticulouscreations.homesafe.ui.theme.albertSansFontFamily
@@ -220,8 +221,9 @@ internal fun AtlasAppContent(
             }
 
             when {
+                // Still being read, or held back until the server says whose it is: and if the server can't be asked, that.
                 !state.loaded -> Text(
-                    stringResource(Res.string.atlas_loading),
+                    state.sync.message?.resolve() ?: stringResource(Res.string.atlas_loading),
                     style = AtlasTheme.type.body,
                     color = palette.textMuted,
                     textAlign = TextAlign.Center,

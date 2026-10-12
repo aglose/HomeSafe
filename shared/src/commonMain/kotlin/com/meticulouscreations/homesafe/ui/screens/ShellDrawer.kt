@@ -644,6 +644,9 @@ private fun AtlasDrawerCard(atlas: AtlasUiState, locked: Boolean, animated: Bool
                     Text(stringResource(Res.string.atlas_drawer_locked), style = MaterialTheme.typography.labelMedium, color = secondary)
                 }
 
+                // Not read yet, or not yet known to be this sign-in's: nothing of it is said.
+                !atlas.loaded -> Unit
+
                 history.isEmpty -> Text(stringResource(Res.string.atlas_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
 
                 else -> {

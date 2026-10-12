@@ -8189,6 +8189,8 @@ TIMELINE_MODES = {
 }
 
 _timeline_sync_lock = threading.Lock()
+# One look in Drive and one round of naming at a time, whoever asked for it (see `timeline_check`).
+_timeline_check_lock = threading.Lock()
 _timeline_google: dict[str, Any] = {"session": None, "account": None}
 _TIMELINE_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
 
@@ -8572,18 +8574,25 @@ class TimelineFixes:
         self.trail = []
 
 
-def timeline_read(stream: Any, stage: TimelineStage) -> None:
-    """Reads one export of any of the three shapes into [stage]. A file that is none of them adds nothing."""
+def timeline_read(stream: Any, stage: TimelineStage, worked_out: bool = True, raw: bool = True) -> None:
+    """
+    Reads one export of any of the three shapes into [stage]. A file that is none of them adds
+    nothing. [worked_out] is the visits and trips Google had already made of the fixes (the phone's
+    export, Takeout's monthly files); [raw] is the fixes themselves (Records.json), cut into stays here.
+    """
     fixes = TimelineFixes(stage)
     for key, item in json_items(stream):
         if not isinstance(item, dict):
             continue
-        if key is None or key == "semanticSegments":
+        if key == "locations":
+            if raw:
+                fixes.add(item)
+        elif not worked_out:
+            continue
+        elif key is None or key == "semanticSegments":
             timeline_phone_segment(item, stage)
         elif key == "timelineObjects":
             timeline_takeout_object(item, stage)
-        elif key == "locations":
-            fixes.add(item)
         elif key == "userLocationProfile":
             for place in item.get("frequentPlaces") or []:
                 if isinstance(place, dict) and place.get("placeId") and timeline_kind(place.get("label")) != "other":
@@ -8592,13 +8601,24 @@ def timeline_read(stream: Any, stage: TimelineStage) -> None:
 
 
 def timeline_read_file(path: str, stage: TimelineStage) -> None:
-    """An export, or a Takeout zip of them: every JSON file inside is read, and those that aren't Timeline add nothing."""
+    """
+    An export, or a Takeout zip of them: every JSON file inside is read, and those that aren't
+    Timeline add nothing. A Takeout zip holds the same years twice over, as the monthly files of
+    visits and trips and as Records.json's raw fixes; read both and every mile would count double.
+    So the fixes are only gone to when the zip has nothing already worked out.
+    """
     if zipfile.is_zipfile(path):
         with zipfile.ZipFile(path) as archive:
-            for name in sorted(archive.namelist()):
-                if name.lower().endswith(".json"):
-                    with archive.open(name) as raw:
-                        timeline_read(io.TextIOWrapper(raw, encoding="utf-8-sig"), stage)
+            names = [name for name in sorted(archive.namelist()) if name.lower().endswith(".json")]
+
+            def read(worked_out: bool) -> None:
+                for name in names:
+                    with archive.open(name) as member:
+                        timeline_read(io.TextIOWrapper(member, encoding="utf-8-sig"), stage, worked_out=worked_out, raw=not worked_out)
+
+            read(worked_out=True)
+            if not (stage.counts["visits"] or stage.counts["moves"]):
+                read(worked_out=False)
     else:
         with open(path, encoding="utf-8-sig") as f:
             timeline_read(f, stage)
@@ -8904,20 +8924,38 @@ def timeline_name_places(now: float | None = None, limit: int = TIMELINE_PLACES_
         conn.close()
 
 
+def timeline_check() -> dict[str, Any] | None:
+    """
+    A look in the Drive folder, then some more places named, by one caller at a time: the hourly
+    check and a phone's "look now" (or two phones') must not both be naming places, or each asks
+    Google about the same ones and the month's allowance is spent twice. None when one is already
+    under way.
+    """
+    if not _timeline_check_lock.acquire(blocking=False):
+        return None
+    try:
+        return {"read": timeline_pull(), "named": timeline_name_places()}
+    finally:
+        _timeline_check_lock.release()
+
+
 def timeline_forever() -> None:
     """Every TIMELINE_CHECK_SECONDS: a look in the Drive folder, then some more places named."""
     time.sleep(30)
     while True:
         try:
-            timeline_pull()
-            timeline_name_places()
+            timeline_check()
         except Exception:
             log.exception("timeline: check failed")
         time.sleep(TIMELINE_CHECK_SECONDS)
 
 
-def timeline_manifest(conn: sqlite3.Connection, now: float | None = None) -> dict[str, Any]:
-    """What the app asks first: which years there are and each one's `etag`, how far the names have got, and how the last look in Drive went."""
+def timeline_manifest(conn: sqlite3.Connection, now: float | None = None, user: str | None = None) -> dict[str, Any]:
+    """
+    What the app asks first: which years there are and each one's `etag`, how far the names have
+    got, and how the last look in Drive went. [user] is who asked, said back so the app knows whose
+    copy the one it keeps is.
+    """
     now = time.time() if now is None else now
     years = [
         {"year": year, "etag": etag, "visits": visits, "moves": moves, "points": points, "bytes": size}
@@ -8930,6 +8968,7 @@ def timeline_manifest(conn: sqlite3.Connection, now: float | None = None) -> dic
     drive = timeline_meta(conn, "drive") or {}
     source = timeline_meta(conn, "file") or {}
     return {
+        "user": user,
         "years": years,
         "first": first,
         "last": last,
@@ -8944,7 +8983,7 @@ def timeline_manifest(conn: sqlite3.Connection, now: float | None = None) -> dic
             "configured": bool(TIMELINE_PLACES_KEY), "error": naming.get("error"), "message": naming.get("message"),
             "asked_this_month": int(asked.get("count") or 0) if asked.get("month") == timeline_month(now) else 0, "monthly_cap": TIMELINE_PLACES_MONTHLY,
         },
-        "syncing": _timeline_sync_lock.locked(),
+        "syncing": _timeline_sync_lock.locked() or _timeline_check_lock.locked(),
     }
 
 
@@ -8969,10 +9008,10 @@ def require_timeline_user(request: Request) -> str:
 def get_timeline(request: Request, response: Response) -> dict[str, Any]:
     """The timeline's years and how its upkeep is going (see "timeline"). A Frigate admin, or a user in TIMELINE_USERS."""
     response.headers["Cache-Control"] = TIMELINE_CACHE_CONTROL
-    require_timeline_user(request)
+    user = require_timeline_user(request)
     conn = timeline_db()
     try:
-        return timeline_manifest(conn)
+        return timeline_manifest(conn, user=user)
     finally:
         conn.close()
 
@@ -9013,21 +9052,17 @@ def get_timeline_places(request: Request, response: Response) -> dict[str, Any]:
         conn.close()
 
 
-def timeline_check_now() -> None:
-    timeline_pull()
-    timeline_name_places()
-
-
 @app.post("/timeline/sync")
 def post_timeline_sync(request: Request, response: Response) -> dict[str, Any]:
-    """Looks in the Drive folder now rather than at the next check. Answers at once with the manifest; `syncing` says a read is under way."""
+    """Looks in the Drive folder now rather than at the next check. Answers at once with the manifest; `syncing` says a check is under way."""
     response.headers["Cache-Control"] = TIMELINE_CACHE_CONTROL
-    require_timeline_user(request)
-    if TIMELINE_DRIVE_FOLDER and not _timeline_sync_lock.locked():
-        threading.Thread(target=timeline_check_now, name="timeline-sync-now", daemon=True).start()
+    user = require_timeline_user(request)
+    # Started whether or not one is running: `timeline_check` itself lets only one through.
+    if TIMELINE_DRIVE_FOLDER or TIMELINE_PLACES_KEY:
+        threading.Thread(target=timeline_check, name="timeline-sync-now", daemon=True).start()
     conn = timeline_db()
     try:
-        return timeline_manifest(conn)
+        return timeline_manifest(conn, user=user)
     finally:
         conn.close()
 
@@ -9044,7 +9079,7 @@ if __name__ == "__main__":
         print(json.dumps(timeline_import(sys.argv[2], zone=household_zone()), indent=2))
         sys.exit(0)
     if command == "timeline-pull":
-        print(json.dumps({"read": timeline_pull(), "named": timeline_name_places()}, indent=2))
+        print(json.dumps(timeline_check(), indent=2))
         sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")

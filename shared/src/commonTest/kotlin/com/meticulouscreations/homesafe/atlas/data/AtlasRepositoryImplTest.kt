@@ -18,6 +18,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlin.test.Test
@@ -34,6 +36,7 @@ class AtlasRepositoryImplTest {
     private inner class Relay {
         val years = LinkedHashMap<Int, Pair<String, String>>()
         var placesVersion = 1
+        var user = "alex"
         var places = """[{"id":"ChIJhome","lat":40.0,"lon":-89.0,"kind":"home","name":"7 Mill Road","city":"Fairview","region":"IL","country":"US"}]"""
         var manifestStatus = HttpStatusCode.OK
         var failYear: Int? = null
@@ -56,7 +59,7 @@ class AtlasRepositoryImplTest {
                 val json = headersOf(HttpHeaders.ContentType, "application/json")
                 when {
                     path == "/timeline" || path == "/timeline/sync" -> respond(
-                        """{"years":[${years.entries.joinToString(",") { """{"year":${it.key},"etag":"${it.value.first}","visits":2,"moves":1,"points":2,"bytes":300}""" }}],
+                        """{"user":"$user","years":[${years.entries.joinToString(",") { """{"year":${it.key},"etag":"${it.value.first}","visits":2,"moves":1,"points":2,"bytes":300}""" }}],
                             "places":{"version":$placesVersion,"total":2,"named":1,"gone":0},"file":{"name":"Timeline.json","ingested_at":1700000100.0},
                             "drive":$drive,"naming":{"configured":true,"error":null,"asked_this_month":2,"monthly_cap":4000},"syncing":false}""",
                         manifestStatus,
@@ -83,7 +86,12 @@ class AtlasRepositoryImplTest {
     private val dao = InMemoryAtlasDao()
     private val connection = FakeServerConnection("https://box.example:8971")
     private val clock = MutableClock(1_760_000_000)
-    private val repository = AtlasRepositoryImpl(AtlasRelayApi(relay.client), dao, connection, clock)
+
+    /** A repository over the same device and server: the app started again. Told at once of a change to the connection, as the app's own scope would tell it a moment later. */
+    private fun started(connection: FakeServerConnection = this.connection) =
+        AtlasRepositoryImpl(AtlasRelayApi(relay.client), dao, connection, clock, CoroutineScope(Dispatchers.Unconfined))
+
+    private val repository = started()
 
     @Test
     fun aFirstRefreshFetchesEveryYearAndThePlaces() = runTest {
@@ -184,7 +192,7 @@ class AtlasRepositoryImplTest {
         repository.refresh()
         relay.asked.clear()
 
-        val later = AtlasRepositoryImpl(AtlasRelayApi(relay.client), dao, FakeServerConnection(null), clock)
+        val later = started(FakeServerConnection(null))
         later.refresh()
         assertEquals(2, later.history.value?.visits?.size)
         assertEquals(AtlasProblem.SIGNED_OUT, later.sync.value.problem)
@@ -222,7 +230,86 @@ class AtlasRepositoryImplTest {
         relay.manifestStatus = HttpStatusCode.NotFound
         repository.refresh()
         assertEquals(AtlasProblem.RELAY_OUTDATED, repository.sync.value.problem)
-        assertEquals(true, repository.history.value?.isEmpty)
+        assertNull(repository.history.value)
+    }
+
+    @Test
+    fun whatTheDeviceKeptIsHeldBackUntilTheRelayAnswersThisSignIn() = runTest {
+        relay.year(2023, "a")
+        repository.refresh()
+
+        // The app started again, signed in, the server answering: nobody has yet said whose this is.
+        val later = started()
+        later.load()
+        assertNull(later.history.value)
+        later.refresh()
+        assertEquals(2, later.history.value?.visits?.size)
+    }
+
+    @Test
+    fun anotherAccountOnTheSameServerNeverSeesTheLastOnes() = runTest {
+        relay.year(2023, "a")
+        repository.refresh()
+        assertEquals("alex", dao.state()?.user)
+
+        relay.user = "sam"
+        relay.asked.clear()
+        val later = started()
+        later.load()
+        assertNull(later.history.value)
+        later.refresh()
+        // Cleared, and what the relay gives this account fetched as its own.
+        assertEquals(listOf("GET /timeline", "GET /timeline/year/2023", "GET /timeline/places"), relay.asked)
+        assertEquals("sam", dao.state()?.user)
+        assertEquals(2, later.history.value?.visits?.size)
+    }
+
+    @Test
+    fun theSameServerByAnotherRouteKeepsItsCopy() = runTest {
+        relay.year(2023, "a")
+        repository.refresh()
+        relay.asked.clear()
+
+        // Home on the Wi-Fi: the requests go to the LAN address, and it is the same server.
+        connection.currentServerUrl.value = "http://192.168.1.20:8971"
+        repository.refresh()
+        assertEquals(listOf("GET /timeline"), relay.asked)
+        assertEquals("https://box.example:8971", dao.state()?.owner)
+        assertEquals(2, repository.history.value?.visits?.size)
+    }
+
+    @Test
+    fun withTheRelayDownNothingIsShownUnvouchedForUntilTheServerIsFoundGone() = runTest {
+        relay.year(2023, "a")
+        repository.refresh()
+
+        val later = started()
+        relay.manifestStatus = HttpStatusCode.BadGateway
+        later.refresh()
+        // The camera server still answers, so there is no lock in front of the copy: it stays put away.
+        assertNull(later.history.value)
+        assertEquals(1, connection.checks)
+        assertEquals(AtlasProblem.OTHER, later.sync.value.problem)
+
+        // The whole box gone: the app's lock takes over, and behind it the copy is there.
+        connection.answers = false
+        later.refresh()
+        assertEquals(2, later.history.value?.visits?.size)
+    }
+
+    @Test
+    fun signingOutPutsTheCopyBehindTheLockAndTheNextSignInIsAskedAfresh() = runTest {
+        relay.year(2023, "a")
+        repository.refresh()
+        connection.activeConnection.value = null
+        connection.currentServerUrl.value = null
+        // Signed out there is no server to ask: the lock is what stands in front of it.
+        assertEquals(2, repository.history.value?.visits?.size)
+
+        connection.signIn("https://box.example:8971")
+        assertNull(repository.history.value)
+        repository.refresh()
+        assertEquals(2, repository.history.value?.visits?.size)
     }
 
     @Test
