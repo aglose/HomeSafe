@@ -26,24 +26,24 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
- * Schema 21 to 22, on a real SQLite file: the atlas app's tables arrive, and what was already on
+ * Schema 22 to 23, on a real SQLite file: the atlas app's tables arrive, and what was already on
  * the device (the training log, the saved finance figures) is still there. The app's own builders
  * fall back to wiping the database when a migration is missing, which would take all of that with
  * it; this one doesn't, so a missing or wrong migration fails here.
  */
 class AtlasMigrationTest {
 
-    /** The database as version 21 created it, read from the schema Room exported then. */
-    private fun createVersion21(connection: SQLiteConnection) {
+    /** The database as version 22 created it, read from the schema Room exported then. */
+    private fun createVersion22(connection: SQLiteConnection) {
         // Gradle runs the JVM tests from the module's directory, where the exported schemas are.
-        val schema = Json.parseToJsonElement(File("schemas/com.meticulouscreations.homesafe.data.AppDatabase/21.json").readText()).jsonObject.getValue("database").jsonObject
+        val schema = Json.parseToJsonElement(File("schemas/com.meticulouscreations.homesafe.data.AppDatabase/22.json").readText()).jsonObject.getValue("database").jsonObject
         for (entity in schema.getValue("entities").jsonArray.map { it.jsonObject }) {
             val table = entity.getValue("tableName").jsonPrimitive.content
             connection.execSQL(entity.sql("createSql", table))
             for (index in (entity["indices"] as? JsonArray).orEmpty()) connection.execSQL(index.jsonObject.sql("createSql", table))
         }
         for (query in schema.getValue("setupQueries").jsonArray) connection.execSQL(query.jsonPrimitive.content)
-        connection.execSQL("PRAGMA user_version = 21")
+        connection.execSQL("PRAGMA user_version = 22")
     }
 
     private fun JsonObject.sql(key: String, table: String) = getValue(key).jsonPrimitive.content.replace("\${TABLE_NAME}", table)
@@ -51,12 +51,12 @@ class AtlasMigrationTest {
     private fun visit(year: Int, start: Long) = AtlasVisitEntity(year = year, startEpochSeconds = start, endEpochSeconds = start + 3600, offsetMinutes = -360, latitude = 40.0, longitude = -89.0, placeId = "ChIJhome", kind = "home")
 
     @Test
-    fun whatWasKeptUnderSchema21IsAllThereUnder22WithTheAtlasTablesBesideIt() = runBlocking {
-        val file = File.createTempFile("homesafe-21-to-22", ".db").apply { delete() }
+    fun whatWasKeptUnderSchema22IsAllThereUnder23WithTheAtlasTablesBesideIt() = runBlocking {
+        val file = File.createTempFile("homesafe-22-to-23", ".db").apply { delete() }
         val driver = BundledSQLiteDriver()
         try {
             val old = driver.open(file.absolutePath)
-            createVersion21(old)
+            createVersion22(old)
             old.execSQL("INSERT INTO FitnessWorkoutEntity VALUES (7, 'LEGS', 1000, 4000)")
             old.execSQL("INSERT INTO FinanceSavedEntity VALUES ('sheet', '{}', 100)")
             old.close()

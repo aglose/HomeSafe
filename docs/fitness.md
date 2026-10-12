@@ -12,8 +12,9 @@ in a notes app, and it reads those notes as its starting point.
 | **Lifts** | Every exercise, shelf by shelf, with its best set, its ladder in miniature and where it stands against its best. Add one by name; bring the notes in; [send a copy of the log](#moving-the-log) to another install |
 | **Progress** | The phase and how the lifts are holding up in it, bodyweight with the noise taken out, the week's sets drawn on the body, the last twelve weeks as a calendar, and each lift against its best |
 
-A **workout** lists the exercises on its shelves with last time's peak set and today's target. A
-tap opens one into its logger, in place. An **exercise** has a page of its own: the target and
+A **workout** lists the exercises on its shelves with last time's peak set and today's target,
+each with a still of [the movement](#the-figure-on-an-exercise) at the start of its row. A
+tap opens one into its logger, in place, with the figure performing it above. An **exercise** has a page of its own: the target and
 why, the ladder, the logger, strength over time, and an editor behind the pencil. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
 
@@ -270,6 +271,76 @@ Where a shader can't compile, each has a plain gradient that says the same. The 
 the ladder's bars rising in turn with the target rung outlined and breathing, the body lighting up
 muscle by muscle, the numbers in the logger rolling to their new value.
 
+## The figure on an exercise
+
+Every exercise is one of twenty-three movements (`MovementKind`; `MovementClassifier` reads which
+from its name, shelf and muscle, so a hack squat, a goblet squat and a lunge are all a squat to
+look at). A figure performs it: a still of the hard end of the rep on the exercise's row in a
+workout, with today's set count on its corner, and the rep itself, over and over, on the open
+card and at the top of the exercise's own page, with the muscles that do the lift and the ones
+that help it named.
+
+There are three figures to choose between, under **Settings → Exercise figures** or with the
+chips under the figure on an exercise's page (the same choice, kept in the same place):
+
+| Figure | What it is |
+|---|---|
+| **True 3D** (the default) | A modelled lifter rendered ahead of time (`tools/movement-render`): a rep as twenty-five frames, each faded into the next as the rep moves so that it runs smoothly, with the working muscles laid over it in their roles' colours, brighter as the rep nears its hard end |
+| **Stone** | The jointed rig (`ui/movement/MovementRig.kt`) drawn live as a figure of pale stone |
+| **Forged study** | The same rig as an anatomy study in dark iron, each working head gauged |
+
+The rendered frames are packed per movement under `composeResources/files/movement/<kind>/`:
+`body.webp` and `muscle.webp` (five-by-five sheets of the rep, the second holding prime movers,
+synergists and stabilizers in its red, green and blue), `badge.webp` (the still) and
+`anchors.json` (where each working head is, frame by frame, for the names). A badge is small
+and all of them are kept once read; the two sheets are some twenty megabytes decoded, so only a
+figure drawn large holds them, one movement's at a time, and lets them go when it leaves the
+screen (`MovementPictures`).
+
+The lifter in those frames is Blender Studio's realistic male, a sculpted body from its Human
+Base Meshes bundle (CC0, so the renders carry no licence of their own). The model's file is too
+large for the repository: `tools/movement-render/sculpted.py` says where to get it, gives it a
+skeleton and skins it, and without the file the renderer falls back to a MakeHuman body. The
+forty-nine muscle heads are laid on its skin by the body's own landmarks
+(`tools/movement-render/muscles.py`), so the same map follows either body.
+
+**Every exercise has a figure.** All twenty-three movements have their frames packed
+(`MovementPicturesTest` holds the folder to that); one whose frames can't be read all the same
+is drawn as the forged study instead. The rig performs a kind with its movement of the
+same name (`Movement`); a kind it has none for is performed by the nearest it has
+(`MovementCatalog.standIn`, a figure doing the wrong lift, there only so that a kind added
+before the rig has learnt it is never left without a figure).
+
+### A new exercise, and a new movement
+
+An exercise added in the app (by name, or from notes) needs nothing done for it: `MovementClassifier`
+reads its movement from its name, and a name that says no more than its shelf gets that shelf's
+plainest movement (anything filed under legs that isn't recognised is a squat). So it always has
+a figure, though for an exercise unlike any of the twenty-three it is the nearest one, doing
+something else. Where that is so the screens say it: when nothing in the name says which movement
+it is (`MovementMatch.named` is false, the movement having come from the shelf or the muscle
+alone), a line under the large figure reads "Nearest figure: Squat" (`NearestFigureNote`). That
+line is the list of exercises still wanting a movement of their own, or a clearer name.
+
+A movement of its own is four things, and the tests name whichever is still missing:
+
+1. **The kind.** An entry in `MovementKind` with its name (`fitness_movement_…` in
+   `strings_fitness_movement.xml`), and the words that mean it in `MovementClassifier`
+   (`MovementClassifierTest`).
+2. **The rig**, for the stone figure and the forged study: an entry of the same name in
+   `Movement` (`MovementRig.kt`: the pose at each end of the rep, and what it is done on) and
+   which heads work in it (`MovementAnatomy.kt`). `MovementCatalogTest` fails until it is there.
+3. **The frames**, for True 3D, which are rendered on a Mac with Blender and the model:
+   - in `tools/movement-render/lifts.py`, how the body is held through the rep, written with what
+     the others use (`stand`, `sit`, `hold_bar`, `hang`, `rest_hands`; `until_clear` keeps what is
+     held out of the body), and its line in `LIFTS` with its equipment and camera;
+   - in `muscles.py`, which heads work in it (`WORK`); and its name in `all.sh`;
+   - `clip.py -- <lift>` to see that nothing is sunk into the body, `frames.sh` to look at a few
+     frames, then `all.sh <directory>` to render and `pack.py` to bring the frames into
+     `composeResources/files/movement/<kind>/`. `MovementPicturesTest` fails until they are there.
+4. Nothing to write for the names: the heads are already named, unless the movement works one
+   that none before it did.
+
 ## How it's built
 
 - `fitness/domain`: the models, `Strength`, `Progression`, `Volume`, `NotesParser`, `NotesImport`,
@@ -277,9 +348,11 @@ muscle by muscle, the numbers in the logger rolling to their new value.
   the heart rate `HeartRate.kt` (zones, the measurement's bytes,
   settling into a zone, time in zone) and `HeartRateSensor.kt` (the sensor's states and the two
   interfaces below). Pure Kotlin.
-- `fitness/data`: `FitnessRepositoryImpl` over `FitnessDao` (seven tables in the app's Room
+- `fitness/data`: `FitnessRepositoryImpl` over `FitnessDao` (eight tables in the app's Room
   database: five from schema 19, the heart-rate settings and each workout's time in zone from
-  schema 20; `data/FitnessEntities.kt`). Everything stays on the device.
+  schema 20, and the app's preferences from schema 22; `data/FitnessEntities.kt`). Everything
+  stays on the device. The preferences (`FitnessPreferencesRepository`: which figure is drawn)
+  are this install's own, and no part of the log or of a copy of it.
 - The heart-rate sensor is in two halves. `HeartRateLink` is the platform's radio and carries
   only bytes (`createHeartRateLink`; Android scans for the Heart Rate Service and holds a GATT
   link, the others are stubs). `HeartRateMonitorImpl` is everything else, in common code: which
@@ -293,6 +366,10 @@ muscle by muscle, the numbers in the logger rolling to their new value.
   the first (`heart`), since it alone changes every second.
 - `fitness/ui`: the screens. `FitnessAppContent` is the whole app from one state, for previews
   (`./gradlew :shared:renderPreviews -Ppreview=Fitness`) and UI tests.
+- `fitness/ui/movement`: the figures. `ExerciseFigure` is the one the screens use, a
+  `MovementKind` drawn in a `FigureStyle` as a badge or large; behind it, the rendered frames
+  (`MovementSheets.kt`), the rig and its two looks, the map from one to the other
+  (`MovementCatalog`), and the heads' names (`HeadLabels.kt`).
 
 ## Tests
 
@@ -306,6 +383,11 @@ muscle by muscle, the numbers in the logger rolling to their new value.
   `FitnessHeartViewModelTest`, and `jvmTest/.../FitnessHeartMigrationTest`, which takes a real
   SQLite file from schema 19 to 20 and checks the training log is still in it. The Android radio
   itself (`HeartRateLink.android.kt`) has no test: it needs a band.
+- The figures: `MovementClassifierTest` (every exercise is a movement), `MovementCatalogTest`
+  (every movement has a rig figure; the anchors' reader), `FitnessPreferencesRepositoryImplTest`,
+  `jvmTest/.../FitnessFigureMigrationTest` (schema 21 to 22 on a real SQLite file), and
+  `jvmTest/.../MovementPicturesTest`, which reads every packed movement's files the way the app
+  does, so that the renderer and the app can't drift apart unnoticed.
 - `uiTest/.../FitnessAppUiTest`: the screens through their test tags.
 - `jvmTest/.../FitnessShadersCompileTest` and `androidDeviceTest/.../FitnessShadersTest`: every
   shader compiles, on Skia and on a device's AGSL compiler.

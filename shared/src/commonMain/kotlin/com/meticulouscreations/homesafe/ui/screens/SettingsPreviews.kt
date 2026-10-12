@@ -98,6 +98,7 @@ private fun SettingsHomePreviewContent(state: SettingsUiState, initialFold: Sett
             onMotion = { _, _ -> },
             onDismissCameraError = {},
             onTone = {},
+            onFigureStyle = {},
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING, vertical = 24.dp),
             initialFold = initialFold,
         )
@@ -127,6 +128,12 @@ private fun SettingsHomeCamerasPreview() {
 @Composable
 private fun SettingsHomeEconomyPreview() {
     SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.ECONOMY)
+}
+
+@Preview(name = "Settings, exercise figures open", widthDp = 412, heightDp = 915)
+@Composable
+private fun SettingsHomeFiguresPreview() {
+    SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.FIGURES)
 }
 
 @Preview(name = "Settings · Alerts page", widthDp = 412, heightDp = 915)

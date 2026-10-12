@@ -8,6 +8,8 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
+import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateMonitor
@@ -145,6 +147,8 @@ data class FitnessUiState(
     val copyable: Boolean = false,
     /** The last copy of the log asked for couldn't be sent: it is too long to hand to another app, or nothing opened to take it. */
     val copyUnsent: Boolean = false,
+    /** How the figure that performs each exercise is drawn. */
+    val figureStyle: FigureStyle = FigureStyle.DEFAULT,
 ) {
     fun board(exerciseId: String): ExerciseBoard? = boards.firstOrNull { it.exercise.id == exerciseId }
 
@@ -173,6 +177,7 @@ class FitnessViewModel(
     private val repository: FitnessRepository,
     private val monitor: HeartRateMonitor,
     private val clock: Clock,
+    private val preferences: FitnessPreferencesRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FitnessUiState(nowEpochSeconds = now()))
@@ -218,6 +223,7 @@ class FitnessViewModel(
         if (!active) return
         if (follow == null) {
             followHeart()
+            viewModelScope.launch { preferences.observeFigureStyle().collect { style -> _uiState.update { it.copy(figureStyle = style) } } }
             follow = viewModelScope.launch {
                 combine(repository.exercises, repository.sets, repository.workouts, repository.phases, repository.bodyweights, ::FitnessLog).collect { latest ->
                     log = latest
@@ -448,6 +454,12 @@ class FitnessViewModel(
     }
 
     fun dismissZoneNotice() = _heart.update { it.copy(notice = null) }
+
+    /** Which figure performs the exercises from now on. The Settings tab has the same choice, and either follows the other. */
+    fun setFigureStyle(style: FigureStyle) {
+        _uiState.update { it.copy(figureStyle = style) }
+        viewModelScope.launch { preferences.setFigureStyle(style) }
+    }
 
     private fun followHeart() {
         viewModelScope.launch {

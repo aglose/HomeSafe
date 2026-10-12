@@ -65,6 +65,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         FitnessHeartSettingsEntity::class,
         FitnessHeartSummaryEntity::class,
         FinanceSavedEntity::class,
+        FitnessPreferencesEntity::class,
         AtlasVisitEntity::class,
         AtlasMoveEntity::class,
         AtlasTrackEntity::class,
@@ -72,7 +73,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 22,
+    version = 23,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -119,10 +120,13 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 20 -> 21: what the finance app last fetched, kept to open on without a connection
         // ([FinanceSavedEntity], a new table). Nothing already there is touched.
         AutoMigration(from = 20, to = 21),
-        // 21 -> 22: the atlas app's copy of the location history the relay keeps — its visits,
+        // 21 -> 22: the fitness app's preferences — which figure performs each exercise
+        // ([FitnessPreferencesEntity], a new table). Nothing already there is touched.
+        AutoMigration(from = 21, to = 22),
+        // 22 -> 23: the atlas app's copy of the location history the relay keeps — its visits,
         // moves, paths, places, and which years of it this device holds, all new tables
         // (AtlasEntities.kt). Nothing already there is touched.
-        AutoMigration(from = 21, to = 22),
+        AutoMigration(from = 22, to = 23),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

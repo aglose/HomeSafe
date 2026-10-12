@@ -11,7 +11,7 @@ import androidx.room3.Upsert
 
 /**
  * A stay somewhere, from the location history the relay keeps (`relay/relay.py`, "timeline").
- * Added in schema 22, with the rest of this file: the atlas app's own copy, fetched a [year] at a
+ * Added in schema 23, with the rest of this file: the atlas app's own copy, fetched a [year] at a
  * time so that it opens with the server out of reach. [offsetMinutes] is how far ahead of UTC the
  * clock on the wall was, so a day is the day it was there. [placeId] is Google's, null for a stay
  * Google never matched to a place; [kind] is `home`, `work` or `other`.

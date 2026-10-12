@@ -1,6 +1,15 @@
 package com.meticulouscreations.homesafe.fitness.ui.shader
 
+import android.graphics.Bitmap
+import android.graphics.BitmapShader
 import android.graphics.RuntimeShader
+import android.graphics.Shader
+import com.meticulouscreations.homesafe.fitness.ui.movement.FIBRE_SHADER
+import com.meticulouscreations.homesafe.fitness.ui.movement.HEAT_SHADER
+import com.meticulouscreations.homesafe.fitness.ui.movement.MARBLE_BONES
+import com.meticulouscreations.homesafe.fitness.ui.movement.MARBLE_HEADS
+import com.meticulouscreations.homesafe.fitness.ui.movement.MARBLE_SHADER
+import com.meticulouscreations.homesafe.fitness.ui.movement.PULSE_SHADER
 import kotlin.test.Test
 
 /**
@@ -53,5 +62,49 @@ class FitnessShadersTest {
         shader.setFloatUniform("progress", 0.4f)
         shader.setFloatUniform("tint", 1f, 0.85f, 0.42f)
         shader.setFloatUniform("tint2", 1f, 0.35f, 0.12f)
+    }
+
+    // The exercise figures' shaders (fitness/ui/movement), which draw the muscles of the rig and light the rendered lifter.
+
+    @Test
+    fun theMuscleGrainShaderCompilesAndTakesItsUniform() {
+        val shader = RuntimeShader(FIBRE_SHADER)
+        shader.setFloatUniform("grain", 3f)
+    }
+
+    @Test
+    fun theMusclePulseShaderCompilesAndTakesItsUniforms() {
+        val shader = RuntimeShader(PULSE_SHADER)
+        shader.setFloatUniform("grain", 3f)
+        shader.setFloatUniform("time", 3.2f)
+    }
+
+    @Test
+    fun theStoneFigureShaderCompilesAndTakesItsArrays() {
+        val shader = RuntimeShader(MARBLE_SHADER)
+        shader.setFloatUniform("size", 1080f, 900f)
+        shader.setFloatUniform("unit", 420f)
+        // Each is an array of float4: four floats to an entry, the whole array at once.
+        shader.setFloatUniform("bones", FloatArray(MARBLE_BONES * 4))
+        shader.setFloatUniform("boneR", FloatArray(MARBLE_BONES * 4))
+        shader.setFloatUniform("heads", FloatArray(MARBLE_HEADS * 4))
+        shader.setFloatUniform("headR", FloatArray(MARBLE_HEADS * 4))
+    }
+
+    @Test
+    fun theRenderedFigureShaderCompilesAndTakesItsPicturesAndUniforms() {
+        val shader = RuntimeShader(HEAT_SHADER)
+        val sheet = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
+        // The two sheets of frames it reads from, as the app hands them over (FitnessShaders.android.kt).
+        for (name in listOf("body", "muscle")) {
+            shader.setInputShader(name, BitmapShader(sheet, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply { filterMode = BitmapShader.FILTER_MODE_LINEAR })
+        }
+        shader.setFloatUniform("origin", 0f, 60f)
+        shader.setFloatUniform("extent", 1080f, 1080f)
+        shader.setFloatUniform("cells", floatArrayOf(0f, 0f, 2f, 0f))
+        shader.setFloatUniform("lights", floatArrayOf(0f, 0f, 1f, 0f))
+        shader.setFloatUniform("frames", 2f, 1f)
+        shader.setFloatUniform("blend", 0.4f)
+        shader.setFloatUniform("effort", 0.8f)
     }
 }

@@ -30,6 +30,7 @@ import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.SettingsFold
 import com.meticulouscreations.homesafe.ui.screens.SettingsHome
@@ -98,6 +99,7 @@ class SettingsHomeUiTest {
         onOpen: (String) -> Unit = {},
         onDetection: (String, Boolean) -> Unit = { _, _ -> },
         onTone: (EconomyTone) -> Unit = {},
+        onFigureStyle: (FigureStyle) -> Unit = {},
         block: ComposeUiTest.() -> Unit,
     ) = runComposeUiTest {
         mainClock.autoAdvance = false
@@ -114,6 +116,7 @@ class SettingsHomeUiTest {
                     onMotion = { _, _ -> },
                     onDismissCameraError = {},
                     onTone = onTone,
+                    onFigureStyle = onFigureStyle,
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     initialFold = initialFold,
                 )
@@ -211,6 +214,22 @@ class SettingsHomeUiTest {
             mainClock.advanceTimeBy(SETTLE_MS)
 
             assertEquals(listOf(EconomyTone.STRAIGHT), asked)
+        }
+    }
+
+    @Test
+    fun theFiguresRowNamesTheStyleInUseAndItsFoldPicksAnother() {
+        val asked = mutableListOf<FigureStyle>()
+        runHome(state = loaded.copy(figureStyle = FigureStyle.STONE), initialFold = SettingsFold.FIGURES, onFigureStyle = { asked += it }) {
+            onNode(hasText("Exercise figures") and hasText("Stone")).assertExists()
+            onNode(hasText("Exercise figures") and hasClickAction()).assert(openedOut)
+
+            // All three are offered; "Forged study" is only on its own choice while another is the one in use.
+            onNodeWithText("True 3D").assertExists()
+            scrollIntoView(onNodeWithText("Forged study")).performClick()
+            mainClock.advanceTimeBy(SETTLE_MS)
+
+            assertEquals(listOf(FigureStyle.FORGED), asked)
         }
     }
 

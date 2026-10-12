@@ -111,6 +111,17 @@ data class FitnessHeartSummaryEntity(
     val peakBpm: Int,
 )
 
+/**
+ * A singleton row (always [id] = 0) holding the fitness app's preferences. Added in schema 22; a
+ * missing row means the defaults.
+ */
+@Entity
+data class FitnessPreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    /** A `FigureStyle` name. Stored as text so an unknown value degrades to the default instead of failing to read. */
+    val figureStyle: String,
+)
+
 @Dao
 interface FitnessDao {
     @Query("SELECT * FROM FitnessExerciseEntity ORDER BY name")
@@ -197,6 +208,12 @@ interface FitnessDao {
     @Query("DELETE FROM FitnessHeartSummaryEntity WHERE workoutId = :workoutId")
     suspend fun deleteHeartSummary(workoutId: Long)
 
+    @Query("SELECT * FROM FitnessPreferencesEntity WHERE id = 0")
+    fun observePreferences(): Flow<FitnessPreferencesEntity?>
+
+    @Upsert
+    suspend fun upsertPreferences(preferences: FitnessPreferencesEntity)
+
     /**
      * Writes everything a copy of a log brings, in one transaction: all of it lands or none of it
      * does, so a set is never left pointing at a workout that didn't make it in. Sets go before
@@ -232,6 +249,7 @@ class InMemoryFitnessDao : FitnessDao {
     private val bodyweights = MutableStateFlow<List<FitnessBodyweightEntity>>(emptyList())
     private val heartSettings = MutableStateFlow<FitnessHeartSettingsEntity?>(null)
     private val heartSummaries = MutableStateFlow<List<FitnessHeartSummaryEntity>>(emptyList())
+    private val preferences = MutableStateFlow<FitnessPreferencesEntity?>(null)
 
     override fun observeExercises(): Flow<List<FitnessExerciseEntity>> = exercises
 
@@ -322,5 +340,11 @@ class InMemoryFitnessDao : FitnessDao {
 
     override suspend fun deleteHeartSummary(workoutId: Long) {
         heartSummaries.update { current -> current.filter { it.workoutId != workoutId } }
+    }
+
+    override fun observePreferences(): Flow<FitnessPreferencesEntity?> = preferences
+
+    override suspend fun upsertPreferences(preferences: FitnessPreferencesEntity) {
+        this.preferences.value = preferences
     }
 }
