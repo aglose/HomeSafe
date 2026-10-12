@@ -65,8 +65,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         FitnessHeartSettingsEntity::class,
         FitnessHeartSummaryEntity::class,
         FinanceSavedEntity::class,
+        FitnessPreferencesEntity::class,
     ],
-    version = 21,
+    version = 22,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -113,6 +114,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 20 -> 21: what the finance app last fetched, kept to open on without a connection
         // ([FinanceSavedEntity], a new table). Nothing already there is touched.
         AutoMigration(from = 20, to = 21),
+        // 21 -> 22: the fitness app's preferences — which figure performs each exercise
+        // ([FitnessPreferencesEntity], a new table). Nothing already there is touched.
+        AutoMigration(from = 21, to = 22),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
