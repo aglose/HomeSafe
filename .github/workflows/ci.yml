@@ -347,14 +347,15 @@ jobs:
           cp "$RUNNER_TEMP/base/androidApp/build/outputs/apk/benchmarkRelease/androidApp-benchmarkRelease.apk" build/startup-perf/base.apk
 
       # Saved here rather than when the job ends, so that a run cancelled by the next merge has
-      # still left its APK behind. Only main's: no other branch's head becomes a base.
+      # still left its APK behind. Only main's: no other branch's head becomes a base. That is a
+      # push to main, or the run the Dependency updates workflow starts there after a merge.
       - name: Keep this commit's benchmark APK
-        if: steps.base.outputs.present == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.base.outputs.present == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         run: |
           mkdir -p build/startup-perf/kept
           cp build/startup-perf/head.apk build/startup-perf/kept/benchmark.apk
       - name: Save it for the runs this commit is the base of
-        if: steps.base.outputs.present == 'true' && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: steps.base.outputs.present == 'true' && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         uses: actions/cache/save@v6
         with:
           path: build/startup-perf/kept
