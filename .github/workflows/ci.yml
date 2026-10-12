@@ -78,8 +78,11 @@ jobs:
 
       # Same-repo runs get the real Firebase config; fork PRs get no secrets and build
       # without it (androidApp/build.gradle.kts applies the plugin only when it exists).
+      # A Dependabot branch builds without it as well. GitHub already withholds secrets from the
+      # run a Dependabot pull request starts; a run the Dependency updates workflow starts on that
+      # branch would be handed them, and it is building versions nobody has vetted yet.
       - name: Write google-services.json
-        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ !startsWith(github.ref, 'refs/heads/dependabot/') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: |

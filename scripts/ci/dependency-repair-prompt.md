@@ -3,7 +3,8 @@ the updates that are fine merged without the one that isn't.
 
 Where things are:
 
-- The working directory is the pull request's branch.
+- The working directory is the pull request's branch. You can read, search and edit files in it.
+  You have no shell: nothing here can be built or run, so reason from the log.
 - `build/dependency-repair/failed.log` is the log of every failed step, and
   `build/dependency-repair/jobs.txt` lists the jobs and how each ended. The log is long: search it,
   don't read it from the top.
@@ -28,7 +29,7 @@ So, in this order:
    that timed out, a test that is known to be timing-dependent and failed on timing), change
    nothing and ask for a rerun.
 2. Otherwise find which update broke the build, and hold it back: put its version line back to
-   exactly what main has (`git show origin/main:<file>` shows it). Dependencies that have to move
+   exactly what main has (the `-` line for it in `changes.diff`). Dependencies that have to move
    together go back together: everything sharing one `version.ref` already does, and so must
    `javacpp` with `ffmpeg`, and anything whose release notes say it needs the version you are
    holding back. Hold back as little as you can. Leave every other update in.
@@ -39,14 +40,11 @@ So, in this order:
    `shared/stability/shared.stability` or `shared/config/ktlint/baseline.xml` to make a gate pass.
 4. If you can't tell what broke it, or can't fix it, give up and say what you found.
 
-Check your work before you finish, as far as this machine allows. It is a Linux runner with JDK
-21 and the Android SDK: `./gradlew :shared:compileKotlinJvm`, `:shared:jvmTest`,
-`:androidApp:assembleDebug`, `:shared:ktlintCheck`, `:shared:stabilityCheck` and
-`python3 -m unittest relay/test_relay.py` all run here. The emulator and iOS jobs don't; reason
-about those from the log. CI runs in full again after your change either way.
+CI runs in full on your change, and you get one more try if it is still red, so prefer the
+change you are sure of: an update held back always builds, because main does.
 
-Don't edit anything under `.github/`, the Gradle wrapper (`gradle/wrapper/`, `gradlew`,
-`gradlew.bat`) or `build/`: changes there are thrown away. If the Gradle version itself is what
+Don't edit anything under `.github/` or `.claude/`, the Gradle wrapper (`gradle/wrapper/`,
+`gradlew`, `gradlew.bat`) or `build/`: a change there gets the whole repair thrown away. If the Gradle version itself is what
 broke the build, that is a give-up, with the reason.
 
 When you are done, write `build/dependency-repair/result.json`, and nothing else outside the

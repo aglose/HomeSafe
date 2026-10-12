@@ -74,8 +74,9 @@ the pull request's head, and says yes only if both of these hold:
   Dependabot proposed. So the repair job can take an update out, but it cannot pick a different
   version or slip in an update of its own and still have the pull request merge.
 
-The first commit has to be one GitHub itself attributes to Dependabot and marks as signed. The
-script runs from `main` and only reads the pull request out of git, so a branch cannot change the
+Every commit the script takes for Dependabot's has to be one GitHub itself attributes to
+Dependabot and marks as signed. The Gradle wrapper's jar and scripts count only when the Gradle
+version itself changed, not beside a new checksum alone. The script runs from `main` and only reads the pull request out of git, so a branch cannot change the
 rules it is judged by. Its tests are `scripts/ci/test_dependency_gate.py`, which CI runs.
 
 ## The agent key
@@ -91,15 +92,19 @@ Without either, a green update still merges, a red one is retried once and then 
 
 The agent is kept away from anything it could do harm with:
 
-- Both agent jobs run with a read-only token. The review has no shell at all. The repair job hands
-  its change over as a patch, and a separate job with no agent in it commits that to the branch.
+- Both agent jobs run with a read-only token and no shell: they read and, for the repair, edit
+  files. Nothing from the pull request is built or run in a job that holds the key, and Claude
+  Code itself is installed in a step with no secret in its environment. The repair job hands its
+  change over as a patch, and a separate job with no agent in it commits that to the branch.
 - The agent can only ever stop a merge, never cause one. Whatever it changes goes back through CI
   and the gate above, which is a script, not a judgement.
-- The repair job cannot change workflows or the Gradle wrapper; a patch that tries is refused.
+- The repair job cannot change workflows, `.claude/` or the Gradle wrapper; a patch that touches
+  one, renames included, is refused whole.
+- CI started on a Dependabot branch after a repair gets no secrets, the same as the run GitHub
+  starts for a Dependabot pull request.
 
-One thing to know: the repair job builds the pull request, which runs the new versions' code
-(Gradle plugins, annotation processors) on a runner where the agent key is in the environment. The
-one-week cooldown is the guard against a release that was published to steal exactly that.
+Because it cannot build anything, the repair job works from the failed log alone, and CI is what
+tells whether it was right. Holding an update back always builds, since `main` does.
 
 ## When something needs you
 

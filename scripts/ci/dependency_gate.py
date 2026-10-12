@@ -91,6 +91,7 @@ class Verdict:
     base: str
     head: str
     dependabot_commit: str | None
+    dependabot_commits: list[str]
     other_commits: int
     problems: list[str]
     files: list[FileVerdict]
@@ -102,6 +103,7 @@ class Verdict:
             "base": self.base,
             "head": self.head,
             "dependabot_commit": self.dependabot_commit,
+            "dependabot_commits": self.dependabot_commits,
             "other_commits": self.other_commits,
             "problems": self.problems,
             "files": [{"path": f.path, "ok": f.ok, "problems": f.problems, "updates": f.updates} for f in self.files],
@@ -296,10 +298,25 @@ def is_gradle_script(path: str) -> bool:
     return path.endswith((".gradle.kts", ".gradle"))
 
 
-def check_file(verdict: FileVerdict, old_bytes: bytes, new_bytes: bytes, changed: set[str]) -> None:
+def distribution_url(properties: bytes | None) -> str | None:
+    for line in text_lines(properties or b"") or []:
+        match = PROPERTY_LINE.match(line)
+        if match and match["key"] == "distributionUrl":
+            return match["value"]
+    return None
+
+
+def is_new_gradle(old_properties: bytes | None, new_properties: bytes | None) -> bool:
+    """The wrapper's properties name a different Gradle than before, from Gradle's own server."""
+    before, after = distribution_url(old_properties), distribution_url(new_properties)
+    return bool(after) and after != before and bool(GRADLE_DISTRIBUTION.match(after))
+
+
+def check_file(verdict: FileVerdict, old_bytes: bytes, new_bytes: bytes, new_gradle: bool) -> None:
     path = verdict.path
     if path in WRAPPER_COMPANIONS:
-        if WRAPPER_PROPERTIES not in changed:
+        # The properties file merely being in the diff is not enough: a new checksum is not a new Gradle.
+        if not new_gradle:
             verdict.problems.append("the Gradle wrapper's files changed without a new Gradle version")
         return
     if text_lines(old_bytes) is None or text_lines(new_bytes) is None:
@@ -354,21 +371,25 @@ def evaluate(repo: Repo, base_rev: str, head_rev: str) -> Verdict:
 
     # The branch is Dependabot's commits first, then possibly the repair job's on top.
     commits = repo.commits(base, head)
-    dependabot_commit = None
+    # "Dependabot's" here is the author name git records, which anyone who can push could type.
+    # The workflow asks GitHub about every commit in dependabot_commits before it believes any.
+    dependabot_commits: list[str] = []
     others = 0
     for sha, author in commits:
         if author == DEPENDABOT_AUTHOR:
             if others:
                 problems.append("Dependabot's commits are not all first on the branch")
                 break
-            dependabot_commit = sha
+            dependabot_commits.append(sha)
         else:
             others += 1
+    dependabot_commit = dependabot_commits[-1] if dependabot_commits else None
     if dependabot_commit is None:
         problems.append("no commit by Dependabot on the branch")
 
     changes = repo.changes(base, head)
     changed = {path for _, path in changes}
+    new_gradle = is_new_gradle(repo.blob(base, WRAPPER_PROPERTIES), repo.blob(head, WRAPPER_PROPERTIES))
     if not changes:
         problems.append("nothing differs from main")
     files: list[FileVerdict] = []
@@ -379,7 +400,7 @@ def evaluate(repo: Repo, base_rev: str, head_rev: str) -> Verdict:
             verdict.problems.append({"A": "a new file", "D": "a deleted file"}.get(status, f"status {status}"))
             continue
         old_bytes, new_bytes = repo.blob(base, path), repo.blob(head, path)
-        check_file(verdict, old_bytes, new_bytes, changed)
+        check_file(verdict, old_bytes, new_bytes, new_gradle)
         if others and dependabot_commit:
             check_against_proposal(verdict, old_bytes, repo.blob(dependabot_commit, path), new_bytes, held_back)
 
@@ -390,7 +411,7 @@ def evaluate(repo: Repo, base_rev: str, head_rev: str) -> Verdict:
                 held_back.append(f"`{path}`: every change")
 
     simple = not problems and all(verdict.ok for verdict in files)
-    return Verdict(simple, base, head, dependabot_commit, others, problems, files, held_back)
+    return Verdict(simple, base, head, dependabot_commit, dependabot_commits, others, problems, files, held_back)
 
 
 def main(argv: list[str] | None = None) -> int:

