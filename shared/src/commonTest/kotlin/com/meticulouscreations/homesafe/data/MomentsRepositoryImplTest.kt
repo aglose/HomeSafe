@@ -118,6 +118,11 @@ class MomentsRepositoryImplTest {
         /** When set, every request waits on it before anything else happens: a server that accepts connections but is still coming up. */
         var stalled: CompletableDeferred<Unit>? = null
 
+        private val heldPages = MutableStateFlow<Map<Double, CompletableDeferred<Unit>>>(emptyMap())
+
+        /** Keeps the `/api/events` page asked for with `before` = [before] waiting until the returned deferred completes: a slow request. */
+        fun holdPageBefore(before: Double): CompletableDeferred<Unit> = CompletableDeferred<Unit>().also { gate -> heldPages.update { it + (before to gate) } }
+
         // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
         // on whatever thread Ktor finished its request on — [eventually] spends real time off the
         // test dispatcher, so that is genuinely another thread — while the test body reads what has
@@ -137,6 +142,7 @@ class MomentsRepositoryImplTest {
             if (req.url.encodedPath.endsWith("/api/events")) _eventQueries.update { it + req.url.encodedQuery }
             val server = server
             if (req.url.encodedPath.endsWith("/api/events")) server?.hold(req.url.parameters["before"]?.toDouble())?.await()
+            if (req.url.encodedPath.endsWith("/api/events")) req.url.parameters["before"]?.toDouble()?.let { heldPages.value[it] }?.await()
             val gapReadFails = server?.failGapReads == true && req.url.encodedPath.endsWith("/api/events") && req.url.parameters["after"] != null
             when {
                 offline || gapReadFails -> respond("boom", HttpStatusCode.InternalServerError)
@@ -242,12 +248,12 @@ class MomentsRepositoryImplTest {
     }
 
     /**
-     * [count] cars driving down Front Yard's street, one a second, newest first from [newestStart]:
-     * the evening traffic (2026-09-16) that filled a whole page with detections [configJson]'s
-     * birds-only street rejects. The path is the real street car's from [zonedEventsJson].
+     * [count] cars driving down Front Yard's street, one every [everySeconds], newest first from
+     * [newestStart]: the evening traffic (2026-09-16) that filled a whole page with detections
+     * [configJson]'s birds-only street rejects. The path is the real street car's from [zonedEventsJson].
      */
-    private fun streetCarsJson(newestStart: Long, count: Int): String = (0 until count).joinToString(",", "[", "]") {
-        val start = newestStart - it
+    private fun streetCarsJson(newestStart: Long, count: Int, everySeconds: Long = 1): String = (0 until count).joinToString(",", "[", "]") {
+        val start = newestStart - it * everySeconds
         """{"id":"car$start","label":"car","sub_label":null,"camera":"hikvision_1","start_time":$start.0,"end_time":${start + 20}.0,
             "has_clip":true,"has_snapshot":false,"zones":[],
             "data":{"type":"object","score":0.71,"top_score":0.78,"box":[0.65,0.27,0.14,0.1],
@@ -1277,28 +1283,176 @@ class MomentsRepositoryImplTest {
         }
     }
 
+    /**
+     * What the Moments tab opened on one Sunday evening (2026-10-11): Front Yard's street had put
+     * six hundred cars through the newest six pages in two hours forty, and the last thing to
+     * happen in the yard was below all of them. The walk down used to stop after five pages
+     * whatever stretch they covered, so the feed said "Nothing to show yet" with the afternoon one
+     * page further on.
+     */
     @Test
-    fun aCameraThatOnlySeesTheStreetStopsReachingDownAfterAFewPages() = runTest {
+    fun aQuietAfternoonBehindSixPagesOfTrafficIsStillFound() = runTest {
+        val newest = 1_000_000L
+        // A car every sixteen seconds, as that evening ran; the oldest of the six hundred is where the street ends.
+        val streetEnds = newest - 599 * 16L
         Harness.config = configJson
-        Harness.eventsFor = { before -> streetCarsJson(before?.toLong()?.minus(1) ?: 2000, 100) }
+        Harness.eventsFor = { before ->
+            if (before == null || before > streetEnds) {
+                streetCarsJson(before?.toLong()?.minus(16) ?: newest, 100, everySeconds = 16)
+            } else {
+                personsJson((streetEnds - 60 downTo streetEnds - 79).toList(), camera = "amcrest_1")
+            }
+        }
         try {
             val h = Harness(this)
             backgroundScope.launch { h.repo.observeMoments().collect {} }
-            eventually("the feed to page down") { h.pageQueries.size == 5 }
-            settle()
+            var list = h.repo.observeMoments().first()
+            eventually("the afternoon's moments") {
+                list = h.repo.observeMoments().first()
+                list.isNotEmpty()
+            }
 
-            // Still empty, and still offering more, but the walk down is left to the reader now —
-            // however many polls have come and gone meanwhile.
-            assertEquals(5, h.pageQueries.size, "a bounded walk, not the server's whole history")
-            assertEquals(emptyList(), h.repo.observeMoments().first())
-            assertEquals(true, h.repo.paging().hasOlder)
-
-            h.repo.loadOlder()
-            assertEquals(6, h.pageQueries.size, "asking by hand still goes further")
+            assertEquals((streetEnds - 60 downTo streetEnds - 79).map { "e$it" }, list.map { it.id })
+            assertEquals(6, h.pageQueries.size, "every page of traffic was read past, and the one below it")
+            assertEquals(false, h.repo.paging().loadingOlder)
         } finally {
             Harness.eventsFor = null
             Harness.config = null
         }
+    }
+
+    @Test
+    fun aCameraThatOnlySeesTheStreetIsReadADayDownAndNoFurther() = runTest {
+        // A car every five minutes: a page is eight and a quarter hours of the street.
+        val newest = 1_000_000L
+        Harness.config = configJson
+        Harness.eventsFor = { before -> streetCarsJson(before?.toLong()?.minus(300) ?: newest, 100, everySeconds = 300) }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to read a day down") { h.pageQueries.size == 2 }
+            settle()
+
+            // Still empty, and still offering more, but the walk down is left to the reader now —
+            // however many polls have come and gone meanwhile.
+            assertEquals(2, h.pageQueries.size, "a day of the street, not the server's whole history")
+            assertEquals(emptyList(), h.repo.observeMoments().first())
+            assertEquals(true, h.repo.paging().hasOlder)
+            assertEquals(false, h.repo.paging().loadingOlder)
+
+            h.repo.loadOlder()
+            assertEquals(5, h.pageQueries.size, "asking by hand reads another day, and stops there too")
+            assertEquals(emptyList(), h.repo.observeMoments().first())
+            assertEquals(true, h.repo.paging().hasOlder)
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    /**
+     * "Look further back" is an ask for moments, not for a page: the pages between here and the
+     * next thing the feed shows may be nothing but the street, and a tap that read one of them and
+     * stopped left the same empty feed and the same button.
+     */
+    @Test
+    fun lookingFurtherBackReadsOnUntilThereIsAMomentToShow() = runTest {
+        val newest = 1_000_000L
+        // Five pages of the street, a car every five minutes: more than the day the feed reads down by itself.
+        val streetEnds = newest - 499 * 300L
+        Harness.config = configJson
+        Harness.eventsFor = { before ->
+            if (before == null || before > streetEnds) {
+                streetCarsJson(before?.toLong()?.minus(300) ?: newest, 100, everySeconds = 300)
+            } else {
+                personsJson((streetEnds - 60 downTo streetEnds - 79).toList(), camera = "amcrest_1")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to read a day down") { h.pageQueries.size == 2 }
+            settle()
+            assertEquals(emptyList(), h.repo.observeMoments().first(), "nothing in the day the feed read by itself")
+
+            h.repo.loadOlder()
+
+            assertEquals((streetEnds - 60 downTo streetEnds - 79).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
+            assertEquals(5, h.pageQueries.size, "one ask read the two pages of street left, and the moments below them")
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    /**
+     * The poll goes on re-reading the head while a walk is on its way down, so the feed can grow
+     * at the top in the middle of one. That is not what "Look further back" was asked for, and
+     * the walk doesn't take it for an answer.
+     */
+    @Test
+    fun aMomentArrivingAtTheTopDoesNotEndALookFurtherBack() = runTest {
+        val newest = 1_000_000L
+        val streetEnds = newest - 499 * 300L
+        // Read on the engine's thread while the test writes it.
+        val someoneArrived = MutableStateFlow(false)
+        Harness.config = configJson
+        Harness.eventsFor = { before ->
+            when {
+                // The newest page once someone has walked up to the other camera: them, and the street's latest below.
+                before == null && someoneArrived.value ->
+                    personsJson(listOf(newest + 60), camera = "amcrest_1").dropLast(1) + "," + streetCarsJson(newest, 99, everySeconds = 300).drop(1)
+
+                before == null || before > streetEnds -> streetCarsJson(before?.toLong()?.minus(300) ?: newest, 100, everySeconds = 300)
+
+                else -> personsJson((streetEnds - 60 downTo streetEnds - 79).toList(), camera = "amcrest_1")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to read a day down") { h.pageQueries.size == 2 }
+            settle()
+
+            // The first page of the walk is slow to come back, and someone arrives meanwhile.
+            val slowPage = h.holdPageBefore(newest - 299 * 300.0)
+            val looking = launch { h.repo.loadOlder() }
+            eventually("the page down to be asked for") { h.pageQueries.size == 3 }
+            someoneArrived.value = true
+            h.repo.refresh()
+            assertEquals(listOf("e${newest + 60}"), h.repo.observeMoments().first().map { it.id }, "the arrival is in the feed")
+
+            slowPage.complete(Unit)
+            looking.join()
+
+            val ids = h.repo.observeMoments().first().map { it.id }
+            assertEquals(listOf("e${newest + 60}") + (streetEnds - 60 downTo streetEnds - 79).map { "e$it" }, ids, "and the walk still read down to the older ones")
+            assertEquals(5, h.pageQueries.size)
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    /**
+     * Leaving the tab stops the poll a few seconds later, whatever it was in the middle of. A
+     * request cut short that way came back as a failed one, so the feed went on to report a
+     * server it couldn't reach — to nobody, until the tab was opened again with the message up.
+     */
+    @Test
+    fun leavingTheFeedWhileItIsStillAskingIsNotAServerThatCouldNotBeReached() = runTest {
+        Harness.events = personsJson(2000, 3)
+        val h = Harness(this)
+        // The server takes its time: every request is still out when the reader goes.
+        h.stalled = CompletableDeferred()
+        val looking = backgroundScope.launch { h.repo.observeMoments().collect {} }
+        settle()
+
+        looking.cancel()
+        passVirtual(10)
+        settle()
+
+        assertNull(h.repo.observeError().first())
     }
 
     @Test
