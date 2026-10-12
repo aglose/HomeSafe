@@ -4,4 +4,4 @@ google-auth==2.59.1
 requests==2.34.2
 pydantic==2.13.5
 tzdata==2025.2
-Pillow==11.1.0
+Pillow==12.3.0
