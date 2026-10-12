@@ -86,6 +86,7 @@ import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RecordFlash
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
@@ -167,6 +168,7 @@ internal class FitnessActions(
     val onStopHeartSearch: () -> Unit = {},
     val onSaveHeartProfile: (HeartProfile) -> Unit = {},
     val onDismissZoneNotice: () -> Unit = {},
+    val onFigureStyle: (FigureStyle) -> Unit = {},
     /** Sends a copy of the whole log out through the platform's share sheet; null where there is none to send it through. */
     val onSendCopy: (() -> Unit)? = null,
 )
@@ -214,6 +216,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onStopHeartSearch = viewModel::stopHeartSearch,
             onSaveHeartProfile = viewModel::saveHeartProfile,
             onDismissZoneNotice = viewModel::dismissZoneNotice,
+            onFigureStyle = viewModel::setFigureStyle,
             onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }

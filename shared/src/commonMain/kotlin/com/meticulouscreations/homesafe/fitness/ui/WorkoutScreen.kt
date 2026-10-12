@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -80,6 +81,9 @@ import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
+import com.meticulouscreations.homesafe.fitness.domain.MovementClassifier
+import com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure
+import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
@@ -246,7 +250,11 @@ internal fun WorkoutScreen(
     }
 }
 
-/** One exercise in the workout: a row saying where it stands, opening in place into its [SetLogger]. */
+/**
+ * One exercise in the workout: a row saying where it stands, opening in place into its
+ * [SetLogger]. The row opens on a still of the movement ([ExerciseFigure]), with how many sets
+ * have been done today on its corner; opened, the figure performs it above the ladder.
+ */
 @Composable
 private fun WorkoutExercise(
     board: ExerciseBoard,
@@ -265,6 +273,7 @@ private fun WorkoutExercise(
     val exercise = board.exercise
     val sets = entry?.sets.orEmpty()
     val done = sets.isNotEmpty()
+    val movement = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.movement(exercise) }
     val edge by animateColorAsState(
         if (expanded) {
             tints.first
@@ -290,17 +299,27 @@ private fun WorkoutExercise(
                 .fillMaxWidth()
                 .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_workout_expand, exercise.name), onClick = onToggle)
                 .testTag("fitness_exercise_row_${exercise.id}")
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(30.dp).clip(CircleShape).background(if (done) colors.good.copy(alpha = 0.18f) else colors.surfaceRaised),
-                contentAlignment = Alignment.Center,
-            ) {
+            Box {
+                ExerciseFigure(movement, state.figureStyle, tints, size = FigureSize.BADGE)
                 if (done) {
-                    Text(sets.size.toString(), style = type.label, color = colors.good)
-                } else {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(tints.first.copy(alpha = 0.7f)))
+                    // Today's sets, counted on the figure's corner; the ring is the card's own colour, so the count sits clear of the picture.
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 5.dp, y = 5.dp)
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(colors.surface)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(colors.good),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(sets.size.toString(), style = type.micro, color = colors.background)
+                    }
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -354,6 +373,9 @@ private fun WorkoutExercise(
         }
         if (expanded) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                // Only an open card has the figure moving, and only it holds a rendered rep in memory.
+                ExerciseFigure(movement, state.figureStyle, tints)
+                Spacer(Modifier.height(12.dp))
                 if (board.ladder.size > 1) {
                     LadderChart(board.ladder, tints.first, tints.second, Modifier.fillMaxWidth().height(96.dp), targetWeight = board.target?.weight, targetReps = board.target?.reps)
                     Spacer(Modifier.height(12.dp))

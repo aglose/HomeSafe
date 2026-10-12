@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Public
@@ -67,6 +68,7 @@ import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -79,6 +81,7 @@ import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.common_cancel
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.fitness_figure_settings_title
 import homesafe.shared.generated.resources.presence_allow_location
 import homesafe.shared.generated.resources.presence_allow_location_always
 import homesafe.shared.generated.resources.presence_allow_location_settings
@@ -228,6 +231,7 @@ fun SettingsTabContent(
         onMotion = viewModel::setCameraMotion,
         onDismissCameraError = viewModel::dismissCameraError,
         onTone = viewModel::setEconomyTone,
+        onFigureStyle = viewModel::setFigureStyle,
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
@@ -239,13 +243,13 @@ fun SettingsTabContent(
 }
 
 /** The rows of the main Settings page that open out in place rather than onto a page of their own. */
-internal enum class SettingsFold { CAMERAS, ECONOMY }
+internal enum class SettingsFold { CAMERAS, ECONOMY, FIGURES }
 
 /**
  * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: this device's alerts
  * and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
- * detection switches and how Finance talks about the economy — a few controls each, so they open
- * out in place — and last the way into what the server is and is doing. Every row's second line
+ * detection switches, how Finance talks about the economy and how Fitness draws its exercises — a
+ * few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
  * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
  *
  * One fold is open at a time, so the page never grows back into the long list it replaced;
@@ -263,6 +267,7 @@ internal fun SettingsHome(
     onMotion: (String, Boolean) -> Unit,
     onDismissCameraError: () -> Unit,
     onTone: (EconomyTone) -> Unit,
+    onFigureStyle: (FigureStyle) -> Unit,
     modifier: Modifier = Modifier,
     initialFold: SettingsFold? = null,
 ) {
@@ -308,6 +313,16 @@ internal fun SettingsHome(
                 onToggle = { openFold = SettingsFold.ECONOMY.takeIf { it != openFold } },
             ) {
                 EconomyToneOptions(tone = state.economyTone, onTone = onTone)
+            }
+            SettingsRowDivider()
+            SettingsExpandableRow(
+                icon = Icons.Filled.FitnessCenter,
+                title = stringResource(Res.string.fitness_figure_settings_title),
+                summary = stringResource(state.figureStyle.label),
+                expanded = openFold == SettingsFold.FIGURES,
+                onToggle = { openFold = SettingsFold.FIGURES.takeIf { it != openFold } },
+            ) {
+                FigureStyleOptions(style = state.figureStyle, onStyle = onFigureStyle)
             }
             SettingsRowDivider()
             ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError).resolve(), onOpen = onOpenServer)

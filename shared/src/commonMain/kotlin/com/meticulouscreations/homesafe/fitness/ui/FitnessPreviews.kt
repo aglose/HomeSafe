@@ -14,6 +14,7 @@ import com.meticulouscreations.homesafe.fitness.WorkoutHeart
 import com.meticulouscreations.homesafe.fitness.ZoneNotice
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartRecovery
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
@@ -313,6 +314,26 @@ private fun FitnessTodayWorkingPreview() {
 @Composable
 private fun FitnessWorkoutPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+// The figure that performs each exercise, each of the three ways it can be drawn: a still on every row, and on the open
+// card the movement itself with its muscles named.
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureTrue3dPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.TRUE_3D), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureStonePreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.STONE), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutFigureForgedPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true).copy(figureStyle = FigureStyle.FORGED), FitnessActions(), initialPage = FitnessPage.Workout) }
 }
 
 // The heart rate, where there is a sensor: the workout with it live and a rest counting, the moment a zone changes,

@@ -64,8 +64,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         FitnessBodyweightEntity::class,
         FitnessHeartSettingsEntity::class,
         FitnessHeartSummaryEntity::class,
+        FitnessPreferencesEntity::class,
     ],
-    version = 20,
+    version = 21,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -109,6 +110,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // ([FitnessHeartSettingsEntity]) and each workout's time in zone ([FitnessHeartSummaryEntity]),
         // both new tables. Nothing already there is touched.
         AutoMigration(from = 19, to = 20),
+        // 20 -> 21: the fitness app's preferences — which figure performs each exercise
+        // ([FitnessPreferencesEntity], a new table). Nothing already there is touched.
+        AutoMigration(from = 20, to = 21),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
