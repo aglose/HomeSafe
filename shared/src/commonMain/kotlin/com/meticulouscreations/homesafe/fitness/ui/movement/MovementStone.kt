@@ -340,7 +340,9 @@ private const val STRAP = 0.014f
 /** The layer of the stone figure a group is drawn in: a nearer one covers a farther one. */
 internal fun Scene.layer(group: Group): Float = when (group) {
     Group.FAR_LEG -> 0f
+
     Group.BODY, Group.LEG -> 1f
+
     // Only from the side does an arm lie in front of the body; from front and back it is beside it, and joins it.
     Group.ARM -> if (figure.view == View.SIDE) 2f else 1f
 }

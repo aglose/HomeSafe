@@ -353,8 +353,10 @@ internal fun DrawScope.body(scene: Scene, style: MovementStyle, shaders: Shaders
     val marble = shaders.marble
     when {
         style == MovementStyle.FORGE -> forged(scene, shapes, stroke)
+
         // Where the stone figure's shader can't be had, the study stands in for it.
         style == MovementStyle.MARBLE && marble != null -> marble(scene, shapes, marble)
+
         else -> studied(scene, shapes, stroke)
     }
 }

@@ -2464,6 +2464,115 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.heartStatus(sensor: com
     - sensor: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.AnatomyPlate(view: com.meticulouscreations.homesafe.fitness.ui.movement.View, style: com.meticulouscreations.homesafe.fitness.ui.movement.MovementStyle, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, modifier: androidx.compose.ui.Modifier, names: com.meticulouscreations.homesafe.fitness.ui.movement.HeadNames?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - view: STABLE (class with no mutable properties)
+    - style: STABLE (class with no mutable properties)
+    - tints: STABLE (known stable type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - names: STABLE (class with no mutable properties)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure(kind: com.meticulouscreations.homesafe.fitness.domain.MovementKind, style: com.meticulouscreations.homesafe.fitness.domain.FigureStyle, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, modifier: androidx.compose.ui.Modifier, size: com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize, running: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - kind: STABLE (class with no mutable properties)
+    - style: STABLE (class with no mutable properties)
+    - tints: STABLE (known stable type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - size: STABLE (class with no mutable properties)
+    - running: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.MovementFigure(movement: com.meticulouscreations.homesafe.fitness.ui.movement.Movement, style: com.meticulouscreations.homesafe.fitness.ui.movement.MovementStyle, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, seconds: kotlin.Function0<kotlin.Float>, modifier: androidx.compose.ui.Modifier, names: com.meticulouscreations.homesafe.fitness.ui.movement.HeadNames?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - movement: STABLE (class with no mutable properties)
+    - style: STABLE (class with no mutable properties)
+    - tints: STABLE (known stable type)
+    - seconds: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - names: STABLE (class with no mutable properties)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.MovementLoop(movement: com.meticulouscreations.homesafe.fitness.ui.movement.Movement, style: com.meticulouscreations.homesafe.fitness.ui.movement.MovementStyle, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, modifier: androidx.compose.ui.Modifier, running: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - movement: STABLE (class with no mutable properties)
+    - style: STABLE (class with no mutable properties)
+    - tints: STABLE (known stable type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - running: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.movement.RenderedFigure(sheets: com.meticulouscreations.homesafe.fitness.ui.movement.MovementSheets, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, running: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - sheets: STABLE (marked @Stable or @Immutable)
+    - tints: STABLE (known stable type)
+    - running: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.movement.RigFigure(movement: com.meticulouscreations.homesafe.fitness.ui.movement.Movement, style: com.meticulouscreations.homesafe.fitness.ui.movement.MovementStyle, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, running: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - movement: STABLE (class with no mutable properties)
+    - style: STABLE (class with no mutable properties)
+    - tints: STABLE (known stable type)
+    - running: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.headNameStyle(): androidx.compose.ui.text.TextStyle
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberHeadNames(heads: kotlin.collections.Set<com.meticulouscreations.homesafe.fitness.ui.movement.HeadId>): com.meticulouscreations.homesafe.fitness.ui.movement.HeadNames
+  skippable: false
+  restartable: false
+  params:
+    - heads: RUNTIME (requires runtime check)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberLoaded(kind: com.meticulouscreations.homesafe.fitness.domain.MovementKind, kept: com.meticulouscreations.homesafe.fitness.ui.movement.Kept<T of com.meticulouscreations.homesafe.fitness.ui.movement.rememberLoaded>): com.meticulouscreations.homesafe.fitness.ui.movement.Loaded<T of com.meticulouscreations.homesafe.fitness.ui.movement.rememberLoaded>
+  skippable: false
+  restartable: false
+  params:
+    - kind: STABLE (class with no mutable properties)
+    - kept: UNKNOWN (interface or non-final class; concrete implementation unknown)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberMovementBadge(kind: com.meticulouscreations.homesafe.fitness.domain.MovementKind): com.meticulouscreations.homesafe.fitness.ui.movement.Loaded<androidx.compose.ui.graphics.ImageBitmap>
+  skippable: false
+  restartable: false
+  params:
+    - kind: STABLE (class with no mutable properties)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberMovementSheets(kind: com.meticulouscreations.homesafe.fitness.domain.MovementKind): com.meticulouscreations.homesafe.fitness.ui.movement.Loaded<com.meticulouscreations.homesafe.fitness.ui.movement.MovementSheets>
+  skippable: false
+  restartable: false
+  params:
+    - kind: STABLE (class with no mutable properties)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberShaders(style: com.meticulouscreations.homesafe.fitness.ui.movement.MovementStyle): com.meticulouscreations.homesafe.fitness.ui.movement.Shaders
+  skippable: false
+  restartable: false
+  params:
+    - style: STABLE (class with no mutable properties)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.phaseBands(phases: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.Phase>, fromEpochSeconds: kotlin.Long, toEpochSeconds: kotlin.Long): kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartPeriod>
   skippable: false
   restartable: false
@@ -2823,7 +2932,7 @@ public fun com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview(c
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBack(enabled: kotlin.Boolean, onBack: kotlin.Function1<kotlin.Float, kotlin.Unit>): com.meticulouscreations.homesafe.ui.PredictiveBack
+internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBack(enabled: kotlin.Boolean, onBack: kotlin.Function1<@[ParameterName(name = \): com.meticulouscreations.homesafe.ui.PredictiveBack
   skippable: false
   restartable: false
   params:
@@ -2831,7 +2940,7 @@ internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBack(enabled:
     - onBack: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition(target: S, previous: S?, back: com.meticulouscreations.homesafe.ui.PredictiveBack, label: kotlin.String): androidx.compose.animation.core.Transition<S>
+internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition(target: S of com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition, previous: S of com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition?, back: com.meticulouscreations.homesafe.ui.PredictiveBack, label: kotlin.String): androidx.compose.animation.core.Transition<S of com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransition>
   skippable: false
   restartable: false
   params:
@@ -3498,6 +3607,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.FeedEnd(hasOlder: kotlin
     - hasOlder: STABLE (primitive type)
     - loadingOlder: STABLE (primitive type)
     - onLoadOlder: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.FigureStyleOptions(style: com.meticulouscreations.homesafe.fitness.domain.FigureStyle, onStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - style: STABLE (class with no mutable properties)
+    - onStyle: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FilterMenuChip(label: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector?, active: kotlin.Boolean, menuDescription: kotlin.String, menu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
@@ -4373,7 +4491,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsGroup(modifier:
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4387,6 +4505,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com
     - onMotion: STABLE (function type)
     - onDismissCameraError: STABLE (function type)
     - onTone: STABLE (function type)
+    - onFigureStyle: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - initialFold: STABLE (class with no mutable properties)
 
