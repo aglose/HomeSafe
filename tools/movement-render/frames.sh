@@ -3,6 +3,7 @@
 #   tools/movement-render/frames.sh <output directory> <lift> <camera> <frame> [frame ...]
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$1"; lift="$2"; view="$3"; shift 3
+mkdir -p "$out"
 stills=()
 for frame in "$@"; do
   /Applications/Blender.app/Contents/MacOS/Blender --background --python "$here/lifts.py" -- "$lift" "$view" "$out/$lift-$view" $frame > "$out/blender-$lift-$view.log" 2>&1

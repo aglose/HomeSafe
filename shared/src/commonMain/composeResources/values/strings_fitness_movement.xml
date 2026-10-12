@@ -14,6 +14,9 @@
     <string name="fitness_figure_forged_label">Forged study</string>
     <string name="fitness_figure_forged_blurb">An anatomy study in dark iron, drawn as you watch, with every working muscle traced and gauged.</string>
 
+    <!-- What a screen reader says of the large figure, whose labels are painted and not text: the names of the muscles it calls out, head to toe, with commas between -->
+    <string name="fitness_figure_working_muscles">Working muscles: %1$s</string>
+
     <!-- The Settings row, and the caption over its choices once it's opened out -->
     <string name="fitness_figure_settings_title">Exercise figures</string>
     <string name="fitness_figure_settings_caption">How Fitness draws the movement on each exercise. The lift and the muscles it works are the same in all three.</string>

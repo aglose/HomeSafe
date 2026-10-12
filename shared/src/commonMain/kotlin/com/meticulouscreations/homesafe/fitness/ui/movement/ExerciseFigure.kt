@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -48,6 +50,9 @@ import com.meticulouscreations.homesafe.fitness.ui.FitnessTheme
 import com.meticulouscreations.homesafe.fitness.ui.shader.FitnessShader
 import com.meticulouscreations.homesafe.fitness.ui.shader.fitnessShaderOrNull
 import com.meticulouscreations.homesafe.fitness.ui.shader.rememberFitnessClock
+import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_figure_working_muscles
+import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -113,10 +118,20 @@ internal fun ExerciseFigure(
 @Composable
 private fun RigFigure(movement: Movement, style: MovementStyle, tints: Pair<Color, Color>, running: Boolean, modifier: Modifier = Modifier) {
     val clock = rememberFitnessClock(running)
-    val names = rememberHeadNames(remember(movement) { MovementCatalog.named(movement) })
+    val heads = remember(movement) { MovementCatalog.named(movement) }
+    val names = rememberHeadNames(heads)
+    val spoken = workingMuscles(heads, names)
     // The rig keeps the names as it first measured them: other names are another figure.
-    key(names) { MovementFigure(movement, style, tints, { clock.floatValue }, modifier, names) }
+    key(names) { MovementFigure(movement, style, tints, { clock.floatValue }, modifier.semantics { contentDescription = spoken }, names) }
 }
+
+/**
+ * The names drawn on a figure, as a sentence: they are painted, not text on the screen, so a
+ * screen reader has only this to read them from.
+ */
+@Composable
+private fun workingMuscles(heads: Set<HeadId>, names: HeadNames): String =
+    stringResource(Res.string.fitness_figure_working_muscles, heads.sortedBy { it.ordinal }.joinToString { names.of(it).replace('\n', ' ') })
 
 /**
  * The rendered lifter, moving as the rep does: a rep is [SHEET_FRAMES] pictures, too few to
@@ -133,12 +148,13 @@ private fun RenderedFigure(sheets: MovementSheets, tints: Pair<Color, Color>, ru
     // How far through the frames the rep is: a whole number is that frame, anything between is a blend of the two either side.
     val place = remember(clock) { derivedStateOf { repProgress(clock.floatValue).coerceIn(0f, 1f) * (SHEET_FRAMES - 1) } }
     val names = rememberHeadNames(sheets.named)
+    val spoken = workingMuscles(sheets.named, names)
     val measurer = rememberTextMeasurer()
     val lights = remember { MuscleLights() }
     val heat = remember { fitnessShaderOrNull(HEAT_SHADER) }
     Spacer(
         // A layer of its own to blend in: one frame is added to another, and a muscle's colour is stained into the lifter alone.
-        modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithCache {
+        modifier.semantics { contentDescription = spoken }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithCache {
             val texts = sheets.named.associateWith { measurer.measure(names.of(it), names.style) }
             // The frame is square, and is given all the height: the names go over its edges, where a lifter leaves room.
             val side = min(size.width, size.height)

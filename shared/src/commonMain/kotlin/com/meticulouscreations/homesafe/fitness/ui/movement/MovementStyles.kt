@@ -85,7 +85,9 @@ internal fun MovementFigure(
     val shaders = rememberShaders(style)
     val measurer = rememberTextMeasurer()
     val still = remember(movement) { Still(movement) }
-    val scratch = remember { Scratch() }
+    // The names are kept as they were measured, and each style sets them differently (the study in capitals): a new
+    // style starts with none.
+    val scratch = remember(style) { Scratch() }
     Canvas(modifier) {
         val time = seconds()
         val t = repProgress(time)
@@ -124,7 +126,7 @@ internal fun AnatomyPlate(view: View, style: MovementStyle, tints: Pair<Color, C
     val shaders = rememberShaders(style)
     val measurer = rememberTextMeasurer()
     val figure = remember(view) { standing(view) }
-    val scratch = remember { Scratch() }
+    val scratch = remember(style) { Scratch() }
     Canvas(modifier) {
         val callouts = names?.let { Callouts(measurer, it, scratch.texts) }
         val fit = fit(STANDING_BOUNDS, if (callouts != null) size.width * LABEL_MARGIN else 0f)

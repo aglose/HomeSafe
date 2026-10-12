@@ -151,8 +151,9 @@ internal object MovementPictures {
         Loaded.Ready(block())
     } catch (e: CancellationException) {
         throw e
-    } catch (_: Throwable) {
-        // No such file (this movement's frames aren't packed yet), or one that can't be decoded.
+    } catch (_: Exception) {
+        // No such file (this movement's frames aren't packed yet), or one that can't be decoded. An Error (out of
+        // memory decoding a sheet, say) is neither, and is left to be thrown: it says nothing about the file.
         Loaded.Missing
     }
 }

@@ -3,6 +3,7 @@
 #   tools/movement-render/try.sh <output directory> <name of the sheet> squat:front bench_press:front ...
 here="$(cd "$(dirname "$0")" && pwd)"
 out="$1"; sheet="$2"; shift 2
+mkdir -p "$out"
 stills=()
 for spec in "$@"; do
   IFS=: read -r lift view <<< "$spec"

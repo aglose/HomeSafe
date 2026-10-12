@@ -2573,6 +2573,14 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.movement.rememberShader
     - style: STABLE (class with no mutable properties)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.movement.workingMuscles(heads: kotlin.collections.Set<com.meticulouscreations.homesafe.fitness.ui.movement.HeadId>, names: com.meticulouscreations.homesafe.fitness.ui.movement.HeadNames): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - heads: RUNTIME (requires runtime check)
+    - names: STABLE (class with no mutable properties)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.phaseBands(phases: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.Phase>, fromEpochSeconds: kotlin.Long, toEpochSeconds: kotlin.Long): kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartPeriod>
   skippable: false
   restartable: false
