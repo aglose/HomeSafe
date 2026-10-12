@@ -233,7 +233,7 @@ internal fun PlaceScreen(
     LaunchedEffect(placeKey) { map.show(MapBounds(place.latitude - 0.006, place.longitude - 0.008, place.latitude + 0.006, place.longitude + 0.008)) }
     val visits = remember(history, placeKey) { history.visits.filter { it.placeKey == placeKey } }
     val rhythm = remember(history, placeKey) { AtlasAnalyzer.rhythm(history, placeKey) }
-    val byYear = remember(visits) { visits.groupingBy { CivilDate.of(it.startDay).year }.eachCount().toSortedMap().toList() }
+    val byYear = remember(visits) { visits.groupingBy { CivilDate.of(it.startDay).year }.eachCount().toList().sortedBy { it.first } }
 
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).testTag("atlas_place"), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Column(Modifier.padding(horizontal = AtlasGutter + 4.dp)) {
