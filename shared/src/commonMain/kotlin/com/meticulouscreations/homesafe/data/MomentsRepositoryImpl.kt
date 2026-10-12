@@ -478,13 +478,17 @@ class MomentsRepositoryImpl(
      * fetched one of those and stopped looked like a button that did nothing. The walk is
      * [readDown]'s, so it gives up [REACH_SECONDS] below where it started and says so by
      * leaving [MomentsPaging.hasOlder] up for the next ask.
+     *
+     * "A moment more" is one from below where the walk started, not a longer feed: the poll
+     * re-reads the head while a walk is on its way down, and a moment arriving at the top is
+     * not the older one that was asked for.
      */
     override suspend fun loadOlder() {
         if (!olderInFlight.tryLock()) return
         try {
-            val (target, shown, bottom) = stateLock.withLock { Triple(loadedFor, _moments.value.size, loadedBottom()) }
+            val (target, bottom) = stateLock.withLock { loadedFor to loadedBottom() }
             if (target == null || bottom == null) return
-            readDown(target, floor = { bottom - REACH_SECONDS }, enough = { _moments.value.size > shown })
+            readDown(target, floor = { bottom - REACH_SECONDS }, enough = { _moments.value.any { it.startEpochSeconds < bottom } })
         } finally {
             olderInFlight.unlock()
         }
@@ -501,14 +505,16 @@ class MomentsRepositoryImpl(
      * "Look further back" and back each time would say otherwise.
      */
     private suspend fun readDown(target: Pair<String, Window>, floor: () -> Double?, enough: () -> Boolean) {
-        var reached = Double.POSITIVE_INFINITY
+        var askedFrom: Double? = null
         try {
             while (true) {
                 val bottom = stateLock.withLock { if (hasFurtherToRead(target, floor, enough)) loadedBottom() else null } ?: return
                 // A page that left the bottom where it was (the cursor is rounded to the millisecond,
                 // so a page can be the rows the last one closed on) would be asked for again forever.
-                if (bottom >= reached) return
-                reached = bottom
+                // Only that: a bottom that moved up is a head re-read letting the older pages go
+                // (see fetchHead), and the walk carries on down from there.
+                if (bottom == askedFrom) return
+                askedFrom = bottom
                 _paging.update { it.copy(loadingOlder = true) }
                 if (!appendOlderPage()) return
             }

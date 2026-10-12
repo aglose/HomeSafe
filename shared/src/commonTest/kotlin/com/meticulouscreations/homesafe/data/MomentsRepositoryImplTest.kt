@@ -118,6 +118,11 @@ class MomentsRepositoryImplTest {
         /** When set, every request waits on it before anything else happens: a server that accepts connections but is still coming up. */
         var stalled: CompletableDeferred<Unit>? = null
 
+        private val heldPages = MutableStateFlow<Map<Double, CompletableDeferred<Unit>>>(emptyMap())
+
+        /** Keeps the `/api/events` page asked for with `before` = [before] waiting until the returned deferred completes: a slow request. */
+        fun holdPageBefore(before: Double): CompletableDeferred<Unit> = CompletableDeferred<Unit>().also { gate -> heldPages.update { it + (before to gate) } }
+
         // What the engine saw, as flows of immutable lists rather than mutable lists. A poll resumes
         // on whatever thread Ktor finished its request on — [eventually] spends real time off the
         // test dispatcher, so that is genuinely another thread — while the test body reads what has
@@ -137,6 +142,7 @@ class MomentsRepositoryImplTest {
             if (req.url.encodedPath.endsWith("/api/events")) _eventQueries.update { it + req.url.encodedQuery }
             val server = server
             if (req.url.encodedPath.endsWith("/api/events")) server?.hold(req.url.parameters["before"]?.toDouble())?.await()
+            if (req.url.encodedPath.endsWith("/api/events")) req.url.parameters["before"]?.toDouble()?.let { heldPages.value[it] }?.await()
             val gapReadFails = server?.failGapReads == true && req.url.encodedPath.endsWith("/api/events") && req.url.parameters["after"] != null
             when {
                 offline || gapReadFails -> respond("boom", HttpStatusCode.InternalServerError)
@@ -1373,6 +1379,55 @@ class MomentsRepositoryImplTest {
 
             assertEquals((streetEnds - 60 downTo streetEnds - 79).map { "e$it" }, h.repo.observeMoments().first().map { it.id })
             assertEquals(5, h.pageQueries.size, "one ask read the two pages of street left, and the moments below them")
+        } finally {
+            Harness.eventsFor = null
+            Harness.config = null
+        }
+    }
+
+    /**
+     * The poll goes on re-reading the head while a walk is on its way down, so the feed can grow
+     * at the top in the middle of one. That is not what "Look further back" was asked for, and
+     * the walk doesn't take it for an answer.
+     */
+    @Test
+    fun aMomentArrivingAtTheTopDoesNotEndALookFurtherBack() = runTest {
+        val newest = 1_000_000L
+        val streetEnds = newest - 499 * 300L
+        // Read on the engine's thread while the test writes it.
+        val someoneArrived = MutableStateFlow(false)
+        Harness.config = configJson
+        Harness.eventsFor = { before ->
+            when {
+                // The newest page once someone has walked up to the other camera: them, and the street's latest below.
+                before == null && someoneArrived.value ->
+                    personsJson(listOf(newest + 60), camera = "amcrest_1").dropLast(1) + "," + streetCarsJson(newest, 99, everySeconds = 300).drop(1)
+
+                before == null || before > streetEnds -> streetCarsJson(before?.toLong()?.minus(300) ?: newest, 100, everySeconds = 300)
+
+                else -> personsJson((streetEnds - 60 downTo streetEnds - 79).toList(), camera = "amcrest_1")
+            }
+        }
+        try {
+            val h = Harness(this)
+            backgroundScope.launch { h.repo.observeMoments().collect {} }
+            eventually("the feed to read a day down") { h.pageQueries.size == 2 }
+            settle()
+
+            // The first page of the walk is slow to come back, and someone arrives meanwhile.
+            val slowPage = h.holdPageBefore(newest - 299 * 300.0)
+            val looking = launch { h.repo.loadOlder() }
+            eventually("the page down to be asked for") { h.pageQueries.size == 3 }
+            someoneArrived.value = true
+            h.repo.refresh()
+            assertEquals(listOf("e${newest + 60}"), h.repo.observeMoments().first().map { it.id }, "the arrival is in the feed")
+
+            slowPage.complete(Unit)
+            looking.join()
+
+            val ids = h.repo.observeMoments().first().map { it.id }
+            assertEquals(listOf("e${newest + 60}") + (streetEnds - 60 downTo streetEnds - 79).map { "e$it" }, ids, "and the walk still read down to the older ones")
+            assertEquals(5, h.pageQueries.size)
         } finally {
             Harness.eventsFor = null
             Harness.config = null
