@@ -111,10 +111,16 @@ script dumps every thread of the app and test processes and the journey watchdog
 prints the last tests the runner started, so a hang shows up in the job log.
 
 The same script looks after the emulator, which says it has booted long before it is quiet. Before Gradle starts it
-waits, up to two minutes, for the broadcast queue to drain and the launcher to be in front and readable. While the tests
-run it checks every few seconds for a system "isn't responding" or "keeps stopping" dialog and closes it, since one of
-those keeps window focus and fails every end-to-end test after it. A dialog about the app itself is left alone: that one
-should fail the tests. Both leave a line in the job log when they had something to do.
+waits, up to two minutes (about 25 seconds in practice), for the broadcast queue to drain and the launcher to be in
+front and readable. While the tests run it checks every few seconds for a system "isn't responding" or "keeps stopping"
+dialog and closes it, since one of those keeps window focus and fails every end-to-end test after it. A dialog about the
+app itself is left alone: that one should fail the tests. Both leave a line in the job log when they had something to do.
+
+The Activity `runComposeUiTest` hosts every UI test and journey in is declared in
+`shared/src/androidDeviceTest/AndroidManifest.xml` with the same `configChanges` as `MainActivity`, so a change to the
+window or the keyboard lays the content out again rather than recreating the Activity. A recreation throws the test's content away ("No compose hierarchies found"), and the
+emulator makes one happen by itself: a second or two after the test APK is installed the system reloads its keyboard
+layouts, and the keyboard configuration changes under whichever test is running, which is the first of the run.
 
 ## When CI goes red on main
 

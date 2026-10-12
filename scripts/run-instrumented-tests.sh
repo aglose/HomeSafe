@@ -62,12 +62,13 @@ watch_for_system_dialogs() {
 }
 
 # The emulator says it has booted well before it has stopped starting things. Resumed from its
-# snapshot, it spends the next minute or two on Google's own start-up work (queued broadcasts,
-# Play services' configuration, downloads), and a suite that starts in the middle of that has had
-# its first test's activity recreated under it. Gradle starting at the same moment takes the
-# processors that work needs. So first: up to a minute for the broadcast queue to drain, then up
-# to another for the launcher to be in front and the screen to hold still long enough for
-# uiautomator to read it. Carries on regardless; the tests' own failures say more than this could.
+# snapshot, it spends the next minute or so on Google's own start-up work (queued broadcasts,
+# Play services' configuration, downloads), and Gradle starting at the same moment takes the
+# processors that work needs: that is when the launcher has been declared not responding. So
+# first: up to a minute for the broadcast queue to drain, then up to another for the launcher to
+# be in front and the screen to hold still long enough for uiautomator to read it (about 25
+# seconds in all on a hosted runner). Carries on regardless; the tests' own failures say more
+# than this could.
 settle() {
   started=$SECONDS
   adb shell 'timeout 60 am wait-for-broadcast-idle' >/dev/null 2>&1 || true
