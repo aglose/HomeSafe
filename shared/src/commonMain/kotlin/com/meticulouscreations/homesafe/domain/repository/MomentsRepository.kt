@@ -29,10 +29,12 @@ interface MomentsRepository {
     fun observePaging(): Flow<MomentsPaging>
 
     /**
-     * Appends the next page down: the detections that started before the oldest one loaded.
-     * Returns once the page is in [observeMoments] (or the fetch has failed and
-     * [observeError] says so). A no-op while a page is already in flight, or once
-     * [MomentsPaging.hasOlder] is false.
+     * Reads further down: the detections that started before the oldest one loaded, a page at a
+     * time until [observeMoments] has a moment more to show, since a page may hold nothing the
+     * feed shows at all. It stops a day below where it started if that day held nothing, leaving
+     * [MomentsPaging.hasOlder] up for the next ask. Returns once what it read is in
+     * [observeMoments] (or a fetch has failed and [observeError] says so). A no-op while a read
+     * down is already in flight, or once [MomentsPaging.hasOlder] is false.
      */
     suspend fun loadOlder()
 
