@@ -138,7 +138,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.AtlasNav(selected: com.met
     - onSelect: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasRoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, size: androidx.compose.ui.unit.Dp, tint: androidx.compose.ui.graphics.Color, fill: androidx.compose.ui.graphics.Color): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasRoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, size: androidx.compose.ui.unit.Dp, tint: androidx.compose.ui.graphics.Color, fill: androidx.compose.ui.graphics.Color, enabled: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -149,6 +149,7 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasRoundButton(icon: an
     - size: STABLE (marked @Stable or @Immutable)
     - tint: STABLE (marked @Stable or @Immutable)
     - fill: STABLE (marked @Stable or @Immutable)
+    - enabled: STABLE (primitive type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasStat(value: kotlin.String, label: kotlin.String, modifier: androidx.compose.ui.Modifier, tint: androidx.compose.ui.graphics.Color): kotlin.Unit
@@ -398,6 +399,13 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.SyncScreen(state: com.met
     - padding: STABLE (marked @Stable or @Immutable)
     - onCheckNow: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.Technical(text: kotlin.String?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.TripCard(trip: com.meticulouscreations.homesafe.atlas.domain.Trip, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
