@@ -20,6 +20,8 @@ import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_generic
+import homesafe.shared.generated.resources.fin_bank_fill_notice_undone
+import homesafe.shared.generated.resources.fin_bank_fill_notice_undone_partly
 import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_linking_unreachable
 import homesafe.shared.generated.resources.fin_bank_notice_exited
@@ -60,9 +62,20 @@ data class BankSyncUiState(
     val syncRequested: Boolean = false,
     /** The institution being unlinked, by id. */
     val unlinking: String? = null,
+    /** The write to the budget sheet being undone, by id. */
+    val undoing: Long? = null,
+    /** The line of the sheet fill being paused or resumed, by id. */
+    val changingLine: String? = null,
     val notice: BankNotice? = null,
 ) {
     val syncing: Boolean get() = syncRequested || bank?.syncing == true
+
+    /**
+     * Something that changes what the relay keeps or writes has been asked for and not answered: a
+     * sync, an unlinking, an undo, a line paused or resumed. One at a time, so nothing else of the
+     * kind can be started meanwhile.
+     */
+    val acting: Boolean get() = syncRequested || unlinking != null || undoing != null || changingLine != null
 }
 
 /**
@@ -86,7 +99,7 @@ class BankSyncViewModel(
     private var linkJob: Job? = null
     private var syncJob: Job? = null
 
-    /** A sync being asked for, or an unlinking. */
+    /** A sync being asked for, an unlinking, or a change to the sheet fill. */
     private var actionJob: Job? = null
 
     /** The page came up, or asked again. */
@@ -222,7 +235,7 @@ class BankSyncViewModel(
     private fun endLink(notice: BankNotice) = _uiState.update { it.copy(linking = null, notice = notice) }
 
     fun syncNow() {
-        if (_uiState.value.syncing || _uiState.value.unlinking != null) return
+        if (_uiState.value.syncing || _uiState.value.acting) return
         _uiState.update { it.copy(syncRequested = true, notice = null) }
         actionJob = viewModelScope.launch {
             repository.syncNow()
@@ -260,7 +273,7 @@ class BankSyncViewModel(
     }
 
     fun unlink(institutionId: String) {
-        if (_uiState.value.unlinking != null || _uiState.value.syncRequested) return
+        if (_uiState.value.acting) return
         val name = _uiState.value.bank?.institutions?.firstOrNull { it.id == institutionId }?.name.orEmpty()
         _uiState.update { it.copy(unlinking = institutionId, notice = null) }
         actionJob = viewModelScope.launch {
@@ -274,10 +287,54 @@ class BankSyncViewModel(
         }
     }
 
+    /** Puts back what one write to the budget sheet changed. The relay pauses those lines, so the next sync doesn't write them again. */
+    fun undoWrite(writeId: Long) {
+        if (_uiState.value.acting) return
+        _uiState.update { it.copy(undoing = writeId, notice = null) }
+        actionJob = viewModelScope.launch {
+            repository.undoWrite(writeId)
+                .onSuccess { bank ->
+                    val changes = bank.fill.writes.firstOrNull { it.id == writeId }?.changes.orEmpty()
+                    val back = changes.count { it.restored == true }
+                    val notice = if (back == changes.size) {
+                        BankNotice(UiText.of(Res.string.fin_bank_fill_notice_undone))
+                    } else {
+                        // Some cells no longer held what was written, so they were left: not a failure, but worth saying.
+                        BankNotice(UiText.of(Res.string.fin_bank_fill_notice_undone_partly, back, changes.size), isError = true)
+                    }
+                    _uiState.update { it.copy(bank = bank, undoing = null, notice = notice) }
+                }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
+                    _uiState.update { it.copy(undoing = null, notice = BankNotice(e.shown(), isError = true)) }
+                }
+        }
+    }
+
+    /** Pauses a line of the sheet fill, or resumes it. */
+    fun setLinePaused(lineId: String, paused: Boolean) {
+        if (_uiState.value.acting) return
+        _uiState.update { it.copy(changingLine = lineId, notice = null) }
+        actionJob = viewModelScope.launch {
+            repository.setLinePaused(lineId, paused)
+                .onSuccess { bank -> _uiState.update { it.copy(bank = bank, changingLine = null) } }
+                .onFailure { e ->
+                    if (e is CancellationException) throw e
+                    if (shutOut(e)) return@onFailure
+                    _uiState.update { it.copy(changingLine = null, notice = BankNotice(e.shown(), isError = true)) }
+                }
+        }
+    }
+
     fun dismissNotice() = _uiState.update { it.copy(notice = null) }
 
-    /** The app's own words when the failure is one it understands, the server's as written when it gave some, a plain line otherwise. */
-    private fun Throwable.shown(): UiText = if (this !is LocalizedException && message.isNullOrBlank()) UiText.of(Res.string.fin_bank_error_generic) else userMessage()
+    /**
+     * The app's own words when the failure is one it understands, the relay's as written when it
+     * answered with some, a plain line otherwise: anything else is the network's or a parser's,
+     * whose message is a URL and a timeout or a JSON offset.
+     */
+    private fun Throwable.shown(): UiText = if (this is LocalizedException) userMessage() else UiText.of(Res.string.fin_bank_error_generic)
 
     internal companion object {
         const val LINK_POLL_MS = 3_000L

@@ -1,13 +1,20 @@
 package com.meticulouscreations.homesafe.integration
 
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.performTouchInput
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.fakefrigate.RecordedRequest
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.ui.screens.PLAYER_TAPS_TEST_TAG
+import com.meticulouscreations.homesafe.ui.screens.STREAM_STATS_TEST_TAG
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
 
 /**
  * A camera's own screen, reached by tapping its card: its name in the header, the timeline drawn
@@ -92,6 +99,57 @@ class CameraDetailJourneyTest {
     }
 
     @Test
+    fun aDoubleTapOnTheLeftOfTheVideoStepsBackTenSecondsAndTappingOnKeepsStepping() = runAppJourney {
+        val home = HomeRobot(this)
+        signIn.signInAs()
+        home.openCamera("front_door", "Front Door")
+        // Nowhere to step to until the recordings have landed.
+        awaitText("Timeline")
+        awaitGone(hasText(NO_RECORDINGS), "the \"nothing recorded\" line")
+        val video = awaitTag(PLAYER_TAPS_TEST_TAG)
+
+        // Live, there is nothing ahead: a double tap on the right says nothing.
+        video.performTouchInput { doubleClick(Offset(width * 0.85f, centerY)) }
+        settle()
+        assertFalse(exists(hasText("seconds", substring = true)), "no step forward from the live edge")
+
+        video.performTouchInput { doubleClick(Offset(width * 0.15f, centerY)) }
+        awaitText("10 seconds")
+        // Into the recording: the player is sent to the server's playlist of it. (The fake has no
+        // video to serve, so that is as far as this can follow it.)
+        server.awaitRequest(description = "the front door's recording playlist") { it.path.startsWith("/vod/front_door/") }
+
+        // While that is still up, each further tap on the same side is another ten.
+        video.performTouchInput { doubleClick(Offset(width * 0.15f, centerY)) }
+        awaitText("20 seconds")
+        snapshot("stepped back twice")
+
+        // Left alone, it goes.
+        settle(2.seconds)
+        awaitGone(hasText("seconds", substring = true), "the step's badge")
+    }
+
+    @Test
+    fun theTimelineStaysStraightUnderThePlayerWhenTheScreenHasADetectionToAskAbout() = runAppJourney {
+        val moments = MomentsRobot(this)
+        signIn.signInAs()
+        // Opened from a detection of a person nobody named, the page has a question about it.
+        moments.open()
+        moments.awaitMoment(PERSON_ON_PORCH)
+        moments.openClip(PERSON_ON_PORCH)
+        moments.playFullScreen()
+        awaitText("Front Door")
+
+        // Where each is laid out, not where it shows: the page is longer than the window.
+        val question = awaitSingle(hasText("Was anyone there?")).fetchSemanticsNode().positionInRoot.y
+        val timeline = awaitSingle(hasText("Timeline")).fetchSemanticsNode().positionInRoot.y
+        val recent = awaitSingle(hasText(CameraRobot.RECENT_ACTIVITY)).fetchSemanticsNode().positionInRoot.y
+
+        assertTrue(timeline < question, "the timeline ($timeline) is above the question ($question), not pushed down by it")
+        assertTrue(question < recent, "and the question is above Recent Activity ($recent)")
+    }
+
+    @Test
     fun aCameraWithNoHistorySaysSoUnderTheTimelineAndInRecentActivity() = runAppJourney(FakeFrigateState.quiet()) {
         val home = HomeRobot(this)
         signIn.signInAs()
@@ -136,6 +194,29 @@ class CameraDetailJourneyTest {
     }
 
     @Test
+    fun theMenuPutsStatsForNerdsOverTheVideoAndItsCrossTakesThemAway() = runAppJourney {
+        val home = HomeRobot(this)
+        signIn.signInAs()
+        home.openCamera("front_door", "Front Door")
+
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        tapText(STATS_FOR_NERDS)
+
+        // With no stream to measure (the fake serves none) the panel is up and still waiting.
+        awaitNode(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel")
+        awaitText("Measuring…")
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        awaitText("Hide stats for nerds")
+        tapText("Hide stats for nerds")
+        awaitGone(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel, hidden from the menu")
+
+        tap(hasContentDescription(MORE_OPTIONS), "the camera's menu")
+        tapText(STATS_FOR_NERDS)
+        tap(hasContentDescription("Close stats for nerds"), "the panel's cross")
+        awaitGone(hasTestTag(STREAM_STATS_TEST_TAG), "the stats panel, closed by its cross")
+    }
+
+    @Test
     fun theScissorsOpenTheClipEditorAndCloseBackToTheCamera() = runAppJourney {
         val home = HomeRobot(this)
         val camera = CameraRobot(this)
@@ -170,11 +251,14 @@ class CameraDetailJourneyTest {
     private companion object {
         const val LIVE = "LIVE"
         const val CLOSE_EDITOR = "Close clip editor"
+        const val MORE_OPTIONS = "More options"
+        const val STATS_FOR_NERDS = "Stats for nerds"
 
         /** The editor opened at live reads ~16 minutes back (its 15-minute reach plus a minute's padding). */
         const val CLIP_REACH_UPPER_BOUND = 3_000.0
         const val RECENT_ACTIVITY = "Recent Activity"
         const val NO_RECORDINGS = "No recordings in this window yet"
+        const val PERSON_ON_PORCH = "Person in the porch"
         const val DAY_SECONDS = 86_400.0
 
         /** The app pads each window by a minute so a segment straddling its left edge still draws. */

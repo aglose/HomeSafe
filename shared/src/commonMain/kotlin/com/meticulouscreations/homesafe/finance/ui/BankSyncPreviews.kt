@@ -11,6 +11,13 @@ import com.meticulouscreations.homesafe.finance.domain.BankFeed
 import com.meticulouscreations.homesafe.finance.domain.BankInstitution
 import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSync
+import com.meticulouscreations.homesafe.finance.domain.SheetChange
+import com.meticulouscreations.homesafe.finance.domain.SheetFill
+import com.meticulouscreations.homesafe.finance.domain.SheetFillLine
+import com.meticulouscreations.homesafe.finance.domain.SheetFillStatus
+import com.meticulouscreations.homesafe.finance.domain.SheetWrite
+import com.meticulouscreations.homesafe.finance.domain.StockPlan
+import com.meticulouscreations.homesafe.finance.domain.StockVest
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -85,18 +92,108 @@ internal object BankSyncFixtures {
 
     val empty = BankSync(configured = true, sandbox = true, institutions = emptyList(), syncedAtEpochSeconds = null, syncing = false, nextSyncAtEpochSeconds = null, feed = feed.copy(configured = false, url = null, writtenAtEpochSeconds = null))
 
+    private fun line(label: String, accounts: List<String>, status: SheetFillStatus, cell: String?, value: Double?, missing: List<String> = emptyList()) =
+        SheetFillLine(id = "Home|$label|2", tab = "Home", label = label, accounts = accounts, status = status, cell = cell, value = value, missing = missing)
+
+    /** The sheet fill after a morning's write and an earlier one that was undone: a line written, one unchanged, one paused, and two a person has to look at. */
+    val filled = linked.copy(
+        fill = SheetFill(
+            configured = true,
+            checkedAtEpochSeconds = now - 3 * 3_600,
+            serviceAccount = "relay@example.iam.gserviceaccount.com",
+            lines = listOf(
+                line("Roth IRA", listOf("Fidelity Roth IRA 7788"), SheetFillStatus.WRITTEN, "K10", 96_340.12),
+                line("Checking and savings", listOf("Chase Total Checking 0123", "Chase Premier Savings 4410"), SheetFillStatus.SAME, "J20", 49_612.55),
+                line("Credit cards", listOf("Chase Sapphire Preferred 9911"), SheetFillStatus.PAUSED, "F39", null),
+                line("Old 401(k)", listOf("Vanguard Acme 401(k) 3301"), SheetFillStatus.NO_ACCOUNT, null, null, missing = listOf("Vanguard Acme 401(k) 3301")),
+                line("Total", listOf("Fidelity Individual 2040"), SheetFillStatus.NOT_A_NUMBER, "K17", 58_117.03),
+                line("Brokerage", listOf("Fidelity Individual 2040"), SheetFillStatus.SAME_CELL, "K11", 58_117.03),
+            ),
+            writes = listOf(
+                SheetWrite(
+                    id = 12,
+                    atEpochSeconds = now - 3 * 3_600,
+                    undoneAtEpochSeconds = null,
+                    undoneBy = null,
+                    changes = listOf(
+                        SheetChange("Roth IRA", "Home", "K10", before = 95_102.40, after = 96_340.12, restored = null),
+                        SheetChange("Brokerage", "Home", "K11", before = null, after = 58_117.03, restored = null),
+                    ),
+                ),
+                SheetWrite(
+                    id = 11,
+                    atEpochSeconds = now - 27 * 3_600,
+                    undoneAtEpochSeconds = now - 26 * 3_600,
+                    undoneBy = "alex",
+                    changes = listOf(
+                        SheetChange("Credit cards", "Home", "F39", before = 0.0, after = -1_284.17, restored = true),
+                        SheetChange("Checking and savings", "Home", "J20", before = 48_000.0, after = 49_612.55, restored = false),
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    /** A stock plan five vests from its end, as its last four vests say. */
+    val vesting = filled.copy(
+        stockPlans = listOf(
+            StockPlan(
+                account = "Morgan Stanley Acme Corp 0042",
+                name = "Acme Corp",
+                institution = "Morgan Stanley",
+                ticker = "ACME",
+                price = 24.10,
+                unvested = 4_150.0,
+                everyMonths = 3,
+                perVest = 820.0,
+                vests = listOf(StockVest("2026-05-15", 820.0), StockVest("2026-08-15", 820.0)),
+                upcoming = listOf(
+                    StockVest("2026-11-15", 820.0, 19_762.0),
+                    StockVest("2027-02-15", 820.0, 19_762.0),
+                    StockVest("2027-05-15", 820.0, 19_762.0),
+                    StockVest("2027-08-15", 820.0, 19_762.0),
+                    StockVest("2027-11-15", 870.0, 20_967.0),
+                ),
+            ),
+        ),
+    )
+
     val unshared = linked.copy(institutions = linked.institutions.take(1), feed = feed.copy(writtenAtEpochSeconds = null, error = "not_shared"))
 }
 
 @Composable
 private fun BankSyncPreview(state: BankSyncUiState) {
-    FinanceStage { BankSyncScreen(state, previewPadding, onLink = {}, onRelink = {}, onCancelLink = {}, onSyncNow = {}, onUnlink = {}, onRetry = {}) }
+    FinanceStage { BankSyncScreen(state, previewPadding, onLink = {}, onRelink = {}, onCancelLink = {}, onSyncNow = {}, onUnlink = {}, onUndoWrite = {}, onPauseLine = { _, _ -> }, onRetry = {}) }
 }
 
 @Preview(name = "Bank sync · linked", widthDp = 412, heightDp = 1500)
 @Composable
 private fun FinanceBankSyncPreview() {
     BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.linked, loading = false))
+}
+
+@Preview(name = "Bank sync · sheet fill", widthDp = 412, heightDp = 2600)
+@Composable
+private fun FinanceBankSyncFillPreview() {
+    BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.filled, loading = false))
+}
+
+@Preview(name = "Bank sync · stock plan", widthDp = 412, heightDp = 3200)
+@Composable
+private fun FinanceBankSyncStockPlanPreview() {
+    BankSyncPreview(BankSyncUiState(bank = BankSyncFixtures.vesting, loading = false))
+}
+
+@Preview(name = "Bank sync · sheet fill can't write", widthDp = 412, heightDp = 1100)
+@Composable
+private fun FinanceBankSyncFillUnsharedPreview() {
+    val bank = BankSyncFixtures.filled
+    BankSyncPreview(
+        BankSyncUiState(
+            bank = bank.copy(institutions = bank.institutions.take(1), fill = bank.fill.copy(error = "not_shared", writes = emptyList())),
+            loading = false,
+        ),
+    )
 }
 
 @Preview(name = "Bank sync · nothing linked", widthDp = 412, heightDp = 760)

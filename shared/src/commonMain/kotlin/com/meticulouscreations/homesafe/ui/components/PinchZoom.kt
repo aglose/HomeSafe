@@ -187,11 +187,28 @@ fun Modifier.pinchZoomGestures(state: PinchZoomState, onPinchEnded: () -> Unit =
  * on into dragging the picture without lifting; a hold on a picture already zoomed in only takes
  * hold of it to drag. A single tap is [onTap]'s.
  *
- * [onHoldZoom] runs as a hold zooms in — the place for a haptic tick. Both callbacks key the
- * gesture node, so hand it remembered ones: fresh lambdas would restart it under a finger.
+ * [onHoldZoom] runs as a hold zooms in — the place for a haptic tick.
+ *
+ * [onEdgeTap] has first refusal of the taps that land in the surface's outer thirds ([tapEdgeAt]),
+ * which is where a video player steps back and forward: it is told the edge and how many taps
+ * there were (2 for a double tap, 1 for a single one) and returns whether it took them. Taps it
+ * leaves are what they would have been without it. Taking single taps is how a run of quick taps
+ * keeps stepping: the odd one out arrives as a tap of its own, once the wait for its pair is up.
+ *
+ * The callbacks key the gesture node, so hand it remembered ones: fresh lambdas would restart it
+ * under a finger.
  */
-fun Modifier.zoomTapGestures(state: PinchZoomState, onTap: () -> Unit, onHoldZoom: () -> Unit = {}): Modifier =
-    pointerInput(state, onTap, onHoldZoom) {
+fun Modifier.zoomTapGestures(
+    state: PinchZoomState,
+    onTap: () -> Unit,
+    onHoldZoom: () -> Unit = {},
+    onEdgeTap: ((edge: TapEdge, taps: Int) -> Boolean)? = null,
+): Modifier =
+    pointerInput(state, onTap, onHoldZoom, onEdgeTap) {
+        val takenByEdge = { at: Offset, taps: Int ->
+            val edge = tapEdgeAt(at.x, size.width)
+            edge != null && onEdgeTap != null && onEdgeTap(edge, taps)
+        }
         // Whether the press now down has turned into a hold.
         var held = false
         coroutineScope {
@@ -209,10 +226,12 @@ fun Modifier.zoomTapGestures(state: PinchZoomState, onTap: () -> Unit, onHoldZoo
                 )
             }
             detectTapGestures(
-                onTap = { onTap() },
+                onTap = { tapAt -> if (!takenByEdge(tapAt, 1)) onTap() },
                 onDoubleTap = { tapAt ->
-                    launch {
-                        if (state.isZoomed) state.animateReset() else state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
+                    if (!takenByEdge(tapAt, 2)) {
+                        launch {
+                            if (state.isZoomed) state.animateReset() else state.animateZoomTo(PinchZoomState.DOUBLE_TAP_SCALE, tapAt)
+                        }
                     }
                 },
                 onLongPress = { pressAt ->
@@ -225,6 +244,23 @@ fun Modifier.zoomTapGestures(state: PinchZoomState, onTap: () -> Unit, onHoldZoo
             )
         }
     }
+
+/** The outer thirds of a surface, where a video player takes a double tap as a step back or forward. */
+enum class TapEdge { Left, Right }
+
+/**
+ * Which edge of a surface [width] across a tap at [x] landed in, or null for the middle third.
+ * Left and right as they are on the glass, whichever way the language reads: back in time is to
+ * the left on every player.
+ */
+internal fun tapEdgeAt(x: Float, width: Int): TapEdge? = when {
+    width <= 0 -> null
+    x < width * TAP_EDGE_FRACTION -> TapEdge.Left
+    x > width * (1 - TAP_EDGE_FRACTION) -> TapEdge.Right
+    else -> null
+}
+
+private const val TAP_EDGE_FRACTION = 1f / 3f
 
 /**
  * Lets the finger whose long press took hold of something carry straight on into dragging it,

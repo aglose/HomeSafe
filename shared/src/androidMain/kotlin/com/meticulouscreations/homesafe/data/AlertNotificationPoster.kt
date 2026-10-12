@@ -18,10 +18,13 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.shared.R
+import com.meticulouscreations.homesafe.ui.notification.NotificationGlyph
+import com.meticulouscreations.homesafe.ui.notification.drawableRes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -53,6 +56,17 @@ object AlertNotificationPoster {
 
     /** The quiet channel for the relay's summaries of what the cameras saw while someone was home. */
     const val SUMMARY_CHANNEL_ID = "summaries"
+
+    /**
+     * The colour Android tints the icon, the app's name and the buttons with: the app's own warm
+     * orange (the theme's primary, deepened so it also reads on a light shade), and red for someone
+     * seen while nobody is home.
+     */
+    const val ACCENT_COLOR = 0xFFE8663D.toInt()
+    private const val AWAY_COLOR = 0xFFE5484D.toInt()
+
+    /** What the relay joins a summary's cameras with (`digest_text` in relay.py). */
+    private const val SUMMARY_SEPARATOR = " · "
 
     private const val NOTIFICATION_ID = 1
     private const val FRAME_COUNT = 10
@@ -176,11 +190,31 @@ object AlertNotificationPoster {
     private fun build(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
         if (notification.summary) buildSummary(context, notification, postedAt) else buildAlert(context, notification, postedAt, picture, largeIcon)
 
+    /**
+     * The icon in the status bar: what was seen, where the notification knows (a figure, a car,
+     * a paw), and the camera where it doesn't. Someone seen while nobody is home wears the shield
+     * whatever they are: that nobody is home is the news.
+     */
+    internal fun glyph(notification: AlertNotification): NotificationGlyph = when {
+        notification.summary -> NotificationGlyph.SUMMARY
+
+        notification.urgent -> NotificationGlyph.AWAY
+
+        else -> when (notification.subject) {
+            MomentCategory.PEOPLE -> NotificationGlyph.PERSON
+            MomentCategory.VEHICLES -> NotificationGlyph.CAR
+            MomentCategory.ANIMALS -> NotificationGlyph.ANIMAL
+            MomentCategory.ALL -> NotificationGlyph.CAMERA
+        }
+    }
+
     private fun buildAlert(context: Context, notification: AlertNotification, postedAt: Long, picture: Bitmap?, largeIcon: Bitmap?): Notification =
         NotificationCompat.Builder(context, if (notification.urgent) AWAY_CHANNEL_ID else CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_detection)
+            .setSmallIcon(glyph(notification).drawableRes)
+            .setColor(if (notification.urgent) AWAY_COLOR else ACCENT_COLOR)
             .setContentTitle(notification.title)
             .setContentText(notification.body)
+            .setTicker(notification.title)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             // Every stage after the first is an update: no second sound, no second buzz.
@@ -191,26 +225,29 @@ object AlertNotificationPoster {
             .setAutoCancel(true)
             .setContentIntent(openIntent(context, notification))
             .apply {
-                tagCarIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, context.getString(R.string.notif_action_tag_car), it) }
-                notAPersonIntent(context, notification)?.let { addAction(R.drawable.ic_notification_detection, context.getString(R.string.notif_action_not_a_person), it) }
+                tagCarIntent(context, notification)?.let { addAction(NotificationGlyph.CAR.drawableRes, context.getString(R.string.notif_action_tag_car), it) }
+                notAPersonIntent(context, notification)?.let { addAction(NotificationGlyph.PERSON.drawableRes, context.getString(R.string.notif_action_not_a_person), it) }
                 if (largeIcon != null) setLargeIcon(largeIcon)
                 if (picture != null) {
-                    setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?))
+                    // The picture says what the title does, to someone who can't see it.
+                    setStyle(NotificationCompat.BigPictureStyle().bigPicture(picture).bigLargeIcon(null as Bitmap?).setContentDescription(notification.title))
                 }
             }
             .build()
 
     /**
      * The relay's summary: several cameras' worth of text, so [NotificationCompat.BigTextStyle]
-     * shows all of it when expanded. Low priority on its own low channel — no sound, no heads-up —
-     * and never a picture: it's about no one detection. A tap opens the app as it was.
+     * shows all of it when expanded, a camera to a line (the relay joins them with a dot; a line
+     * too long for the shade still wraps). Low priority on its own low channel — no sound, no
+     * heads-up — and never a picture: it's about no one detection. A tap opens the app as it was.
      */
     private fun buildSummary(context: Context, notification: AlertNotification, postedAt: Long): Notification =
         NotificationCompat.Builder(context, SUMMARY_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_detection)
+            .setSmallIcon(glyph(notification).drawableRes)
+            .setColor(ACCENT_COLOR)
             .setContentTitle(notification.title)
             .setContentText(notification.body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(notification.body.replace(SUMMARY_SEPARATOR, "\n")))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setOnlyAlertOnce(true)
@@ -308,7 +345,9 @@ object AlertNotificationPoster {
     private fun confirm(context: Context, id: String, target: MomentDeepLink, title: String, body: String, action: Pair<String, String>?) {
         if (!canPost(context)) return
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_notification_detection)
+            // A tick once the mark is in (it offers Undo); the camera while it is on its way, or didn't arrive.
+            .setSmallIcon((if (action?.second == NotAPersonReceiver.ACTION_UNDO) NotificationGlyph.DONE else NotificationGlyph.CAMERA).drawableRes)
+            .setColor(ACCENT_COLOR)
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -318,7 +357,7 @@ object AlertNotificationPoster {
             .setTimeoutAfter(CONFIRM_TIMEOUT_MS)
             .setContentIntent(openIntent(context, AlertNotification(id = confirmTag(id), title = title, body = body, target = target)))
             .apply {
-                action?.let { (label, act) -> addAction(R.drawable.ic_notification_detection, label, NotAPersonReceiver.intent(context, act, id, target)) }
+                action?.let { (label, act) -> addAction(NotificationGlyph.DONE.drawableRes, label, NotAPersonReceiver.intent(context, act, id, target)) }
             }
             .build()
         notify(context, confirmTag(id), notification)

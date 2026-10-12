@@ -78,13 +78,26 @@ class FinanceViewModelTest {
         /** When set, every quote call waits on it: Yahoo being slow. */
         var slowQuotes: CompletableDeferred<Unit>? = null
 
+        /** Yahoo can't be reached: every quote and chart fails. */
+        var marketsDown = false
+
+        /** What the device kept from the last time it could. */
+        var keptQuotes = emptyList<Quote>()
+        var keptHistory: PriceHistory? = null
+
         override suspend fun quotes(symbols: List<String>, maxAgeMillis: Long): Result<List<Quote>> {
             quoteCalls++
             slowQuotes?.await()
+            if (marketsDown) return Result.failure(IllegalStateException("Unable to resolve host"))
             return Result.success(emptyList())
         }
 
-        override suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory> = Result.success(histories.removeFirst().await())
+        override suspend fun savedQuotes(symbols: List<String>): List<Quote> = keptQuotes.filter { it.symbol in symbols }
+
+        override suspend fun history(symbol: String, range: ChartRange): Result<PriceHistory> =
+            if (marketsDown) Result.failure(IllegalStateException("Unable to resolve host")) else Result.success(histories.removeFirst().await())
+
+        override suspend fun savedHistory(symbol: String, range: ChartRange): PriceHistory? = keptHistory
 
         val searches = mutableListOf<String>()
 
@@ -138,7 +151,7 @@ class FinanceViewModelTest {
     @Test
     fun theDrawersTeaserLoadsQuotesAndTheSheetButNotTheEconomy() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true, full = false)
         runCurrent()
         assertTrue(repo.quoteCalls >= 1)
@@ -159,7 +172,7 @@ class FinanceViewModelTest {
         val ticking = object : Clock {
             override fun now(): Instant = Instant.fromEpochSeconds(1_790_000_000 + testScheduler.currentTime / 1000)
         }
-        val vm = FinanceViewModel(repo, FakeWatchlist(), ticking, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), ticking, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true)
         runCurrent()
         assertEquals(1, repo.sheetCalls)
@@ -180,7 +193,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val never = CompletableDeferred<Result<PersonalFinance>>()
         repo.slowSheet = never
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -194,7 +207,7 @@ class FinanceViewModelTest {
     fun closingFinanceMidReadIsNotASyncError() = runTest(dispatcher) {
         val repo = FakeRepository()
         repo.slowSheet = CompletableDeferred()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true)
         runCurrent()
         vm.setActive(false)
@@ -207,7 +220,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         val read = PersonalFinanceParser.parse("Budget", 1_790_000_000, emptyList())
         repo.sheet = { Result.success(read) }
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.retrySheet()
         runCurrent()
         assertEquals(read, vm.uiState.value.finance)
@@ -228,7 +241,7 @@ class FinanceViewModelTest {
     @Test
     fun goingInactiveStopsThePolling() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true)
         runCurrent()
         val first = repo.quoteCalls
@@ -246,7 +259,7 @@ class FinanceViewModelTest {
     @Test
     fun theToneFollowsThePreferenceAndIsSavedWhenChanged() = runTest(dispatcher) {
         val prefs = FakePreferences()
-        val vm = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, InMemoryFinanceTipLedger(), prefs)
+        val vm = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, InMemoryFinanceTipLedger(), prefs, FakeFinanceAccess())
         runCurrent()
         assertEquals(EconomyTone.STRAIGHT, vm.uiState.value.tone)
 
@@ -264,7 +277,7 @@ class FinanceViewModelTest {
     @Test
     fun aRefreshEndsRefreshing() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.refresh()
         assertTrue(vm.uiState.value.refreshing)
         runCurrent()
@@ -275,7 +288,7 @@ class FinanceViewModelTest {
     @Test
     fun aSlowOlderChartAnswerDoesNotReplaceANewerOne() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         val first = CompletableDeferred<PriceHistory>()
         val older = CompletableDeferred<PriceHistory>()
         val newer = CompletableDeferred<PriceHistory>()
@@ -302,7 +315,7 @@ class FinanceViewModelTest {
     fun theWatchlistIsTheSheetsTickersThenTheAppsAndSuggestionsOnlyWhenThereAreNeither() = runTest(dispatcher) {
         val repo = FakeRepository()
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         runCurrent()
         assertEquals(MarketCatalog.defaultWatchlist, vm.uiState.value.watchlist)
         assertTrue(vm.uiState.value.watchEntries.all { it.isSuggestion })
@@ -325,7 +338,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         repo.sheet = { Result.success(sheetNaming("TSLA")) }
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.retrySheet()
         runCurrent()
         vm.addSymbol(SymbolMatch("TSLA", "Tesla", InstrumentKind.EQUITY, "Equity", null))
@@ -342,7 +355,7 @@ class FinanceViewModelTest {
         val repo = FakeRepository()
         repo.sheet = { Result.success(sheetNaming("TSLA")) }
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.retrySheet()
         runCurrent()
 
@@ -372,7 +385,7 @@ class FinanceViewModelTest {
     @Test
     fun searchWaitsForTypingToPauseAndOnlyTheLastQueryGoes() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.searchSymbols("v")
         advanceTimeBy(100)
         vm.searchSymbols("vt")
@@ -393,7 +406,7 @@ class FinanceViewModelTest {
     @Test
     fun aFailedSearchClearsTheLastQuerysMatches() = runTest(dispatcher) {
         val repo = FakeRepository()
-        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.searchSymbols("vti")
         advanceTimeBy(301)
         runCurrent()
@@ -411,7 +424,7 @@ class FinanceViewModelTest {
     fun aSlowQuoteFetchDoesNotHoldUpTheNextWatchlistChange() = runTest(dispatcher) {
         val repo = FakeRepository()
         val watchlist = FakeWatchlist()
-        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences())
+        val vm = FinanceViewModel(repo, watchlist, clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
         vm.setActive(true, full = false)
         runCurrent()
         val slow = CompletableDeferred<Unit>()
@@ -431,7 +444,7 @@ class FinanceViewModelTest {
     @Test
     fun theNewToThisTipComesUpOnTheFirstTwoOpeningsOnlyEvenWhenPutAway() {
         val ledger = InMemoryFinanceTipLedger()
-        val first = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences())
+        val first = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences(), FakeFinanceAccess())
         assertFalse(first.uiState.value.explainTipVisible, "nothing shows before the app is opened")
 
         first.onAppOpened()
@@ -440,12 +453,118 @@ class FinanceViewModelTest {
         assertFalse(first.uiState.value.explainTipVisible)
 
         // A later launch: a new view model over the same install's ledger.
-        val second = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences())
+        val second = FinanceViewModel(FakeRepository(), FakeWatchlist(), clock, ledger, FakePreferences(), FakeFinanceAccess())
         second.onAppOpened()
         assertTrue(second.uiState.value.explainTipVisible, "put away the first time, it still has its second showing")
 
         second.onAppOpened()
         assertFalse(second.uiState.value.explainTipVisible, "the third opening is past the limit")
         assertEquals(FinanceViewModel.EXPLAIN_TIP_SHOWINGS, ledger.timesShown(FinanceViewModel.EXPLAIN_TIP))
+    }
+
+    private fun quote(symbol: String, price: Double) = Quote(symbol, price, price, null, null, null, null, null, 1_789_990_000, 0, null, null, Series.Empty)
+
+    @Test
+    fun withNoWayToTheMarketsTheQuotesTheDeviceKeptAreShownUnderTheError() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            marketsDown = true
+            keptQuotes = listOf(quote("^GSPC", 5000.0), quote("TSLA", 250.0))
+        }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.setActive(true, full = false)
+        runCurrent()
+
+        assertEquals(5000.0, vm.uiState.value.quotes["^GSPC"]?.price)
+        assertEquals(250.0, vm.uiState.value.quotes["TSLA"]?.price)
+        assertTrue(vm.uiState.value.quotesError != null, "and the page still says the markets couldn't be reached")
+        assertNull(vm.uiState.value.quotesUpdatedEpochSeconds, "nothing was updated")
+        vm.setActive(false)
+    }
+
+    @Test
+    fun aChartThatCannotBeFetchedShowsTheOneTheDeviceKept() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            marketsDown = true
+            keptHistory = history(4990.0)
+        }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.requestHistory("^GSPC", ChartRange.DAY)
+        runCurrent()
+
+        val chart = vm.uiState.value.chart("^GSPC", ChartRange.DAY)
+        assertEquals(4990.0, chart?.history?.series?.lastValue)
+        assertFalse(chart?.loading ?: true)
+        assertTrue(chart?.error != null)
+    }
+
+    @Test
+    fun theSheetLeavesWithTheLockAndComesBackWhenItIsUnlocked() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val access = FakeFinanceAccess()
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), access)
+        vm.setActive(true, full = false)
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols)
+        assertEquals(1, repo.sheetCalls)
+
+        // The server goes away while the drawer is open: the net worth on its card must go too.
+        access.goOffline()
+        runCurrent()
+        assertNull(vm.uiState.value.finance, "nothing of the household's is held while locked")
+
+        access.unlock()
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols, "asked for again at once, not at the next poll")
+        assertEquals(2, repo.sheetCalls)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun theServerComingBackFetchesTheSheetAfresh() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val access = FakeFinanceAccess().apply {
+            goOffline()
+            locked.value = false
+        }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), access)
+        vm.setActive(true, full = false)
+        runCurrent()
+        assertEquals(1, repo.sheetCalls)
+
+        access.comeOnline()
+        runCurrent()
+        assertEquals(2, repo.sheetCalls, "what was up was what the device kept; the server has newer")
+        vm.setActive(false)
+    }
+
+    @Test
+    fun theServerRefusingTheAccountTakesTheSheetOffTheScreen() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.setActive(true, full = false)
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols)
+
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.NOT_ALLOWED, "admins only".asUiText())) }
+        vm.retrySheet()
+        runCurrent()
+        assertNull(vm.uiState.value.finance, "not left up (or on the drawer's card) for an account the server no longer shows it to")
+        assertEquals(SheetProblem.NOT_ALLOWED, vm.uiState.value.sheetIssue?.problem)
+        vm.setActive(false)
+    }
+
+    @Test
+    fun anyOtherFailureLeavesTheSheetAlreadyShown() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { sheet = { Result.success(sheetNaming("AAPL")) } }
+        val vm = FinanceViewModel(repo, FakeWatchlist(), clock, InMemoryFinanceTipLedger(), FakePreferences(), FakeFinanceAccess())
+        vm.setActive(true, full = false)
+        runCurrent()
+
+        repo.sheet = { Result.failure(SheetUnavailableException(SheetProblem.API_DISABLED, "switch it on".asUiText())) }
+        vm.retrySheet()
+        runCurrent()
+        assertEquals(listOf("AAPL"), vm.uiState.value.sheetSymbols)
+        assertEquals(SheetProblem.API_DISABLED, vm.uiState.value.sheetIssue?.problem)
+        vm.setActive(false)
     }
 }

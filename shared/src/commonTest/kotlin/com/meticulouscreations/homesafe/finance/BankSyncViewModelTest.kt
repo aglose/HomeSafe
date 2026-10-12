@@ -10,11 +10,16 @@ import com.meticulouscreations.homesafe.finance.domain.BankProblem
 import com.meticulouscreations.homesafe.finance.domain.BankSync
 import com.meticulouscreations.homesafe.finance.domain.BankSyncException
 import com.meticulouscreations.homesafe.finance.domain.BankSyncRepository
+import com.meticulouscreations.homesafe.finance.domain.SheetChange
+import com.meticulouscreations.homesafe.finance.domain.SheetFill
+import com.meticulouscreations.homesafe.finance.domain.SheetWrite
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fin_bank_error_generic
 import homesafe.shared.generated.resources.fin_bank_error_tailscale_off
+import homesafe.shared.generated.resources.fin_bank_fill_notice_undone
+import homesafe.shared.generated.resources.fin_bank_fill_notice_undone_partly
 import homesafe.shared.generated.resources.fin_bank_linking_tailscale_off
 import homesafe.shared.generated.resources.fin_bank_linking_unreachable
 import homesafe.shared.generated.resources.fin_bank_notice_exited
@@ -98,7 +103,32 @@ class BankSyncViewModelTest {
         override suspend fun syncNow(): Result<BankSync> = sync
 
         override suspend fun unlink(institutionId: String): Result<BankSync> = unlinked
+
+        var undone: Result<BankSync> = Result.success(bank("Chase"))
+        var lineChanged: Result<BankSync> = Result.success(bank("Chase"))
+        val undoneWrites = mutableListOf<Long>()
+        val lineChanges = mutableListOf<Pair<String, Boolean>>()
+
+        override suspend fun undoWrite(writeId: Long): Result<BankSync> {
+            undoneWrites += writeId
+            return undone
+        }
+
+        override suspend fun setLinePaused(lineId: String, paused: Boolean): Result<BankSync> {
+            lineChanges += lineId to paused
+            return lineChanged
+        }
     }
+
+    /** A bank whose sheet fill has one write, undone, with each of its cells put back or not as [restored] says. */
+    private fun undone(vararg restored: Boolean) = bank("Chase").copy(
+        fill = SheetFill(
+            configured = true,
+            writes = listOf(
+                SheetWrite(7, START, undoneAtEpochSeconds = START + 60, undoneBy = "alex", changes = restored.map { SheetChange("Roth IRA", "Home", "K10", 1.0, 2.0, it) }),
+            ),
+        ),
+    )
 
     private fun TestScope.ticking() = object : Clock {
         override fun now(): Instant = Instant.fromEpochSeconds(START + testScheduler.currentTime / 1000)
@@ -145,6 +175,16 @@ class BankSyncViewModelTest {
         vm.load()
         runCurrent()
         assertEquals(BankProblem.OTHER, vm.uiState.value.problem)
+        assertEquals(UiText.of(Res.string.fin_bank_error_generic), vm.uiState.value.problemText)
+    }
+
+    @Test
+    fun theNetworksOwnWordsAreNotShown() = runTest(dispatcher) {
+        val timeout = IllegalStateException("Connect timeout has expired [url=http://192.168.1.2:8787/finance/bank, connect_timeout=unknown ms]")
+        val repo = FakeRepository().apply { statuses += Result.failure(timeout) }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
         assertEquals(UiText.of(Res.string.fin_bank_error_generic), vm.uiState.value.problemText)
     }
 
@@ -226,6 +266,26 @@ class BankSyncViewModelTest {
     }
 
     @Test
+    fun aRelayOutOfReachIsWaitedOnUntilTheLinkLapses() = runTest(dispatcher) {
+        // Android holds back the app's network while it sits behind the bank's own app for an OAuth sign-in.
+        val unreachable = BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_bank_error_generic), technical = "Connect timeout has expired")
+        val repo = FakeRepository().apply {
+            repeat(BankSyncViewModel.LINK_POLL_FAILURES * 3) { progress += Result.failure(unreachable) }
+            progress += Result.success(BankLinkProgress(BankLinkStatus.LINKED, listOf("Fidelity"), bank("Fidelity", syncing = true)))
+        }
+        repo.statuses += Result.success(bank("Fidelity"))
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.INVESTMENTS)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_FAILURES * 3 * BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNotNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_linking_unreachable), isError = true), vm.uiState.value.notice)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_MS)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_linked_named, "Fidelity".asUiText())), vm.uiState.value.notice)
+        vm.cancelLink()
+    }
+
+    @Test
     fun aLinkWaitsOutTailscaleBeingOffAndCollectsTheSignInAfter() = runTest(dispatcher) {
         // Another VPN on to sign in to the bank: Tailscale is off for a good while, then back.
         val off = BankSyncException(BankProblem.TAILSCALE_OFF, UiText.of(Res.string.fin_bank_error_tailscale_off))
@@ -260,6 +320,27 @@ class BankSyncViewModelTest {
         assertNotNull(vm.uiState.value.linking)
         assertNull(vm.uiState.value.notice)
         vm.cancelLink()
+    }
+
+    @Test
+    fun aRelayOutOfReachPastTheLinksDeadlineCallsItExpired() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { progress += Result.failure(BankSyncException(BankProblem.UNREACHABLE, UiText.of(Res.string.fin_bank_error_generic))) }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(1_800_000L + BankSyncViewModel.LINK_POLL_MS)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_notice_expired), isError = true), vm.uiState.value.notice)
+    }
+
+    @Test
+    fun anAnswerThatCantBeReadEndsTheWaitWithoutItsOwnWords() = runTest(dispatcher) {
+        // An older or newer relay whose answer doesn't parse: not the network, so it isn't waited out.
+        val repo = FakeRepository().apply { progress += Result.failure(IllegalStateException("Unexpected JSON token at offset 0: Expected start of the object '{'")) }
+        val vm = viewModel(repo)
+        vm.link(BankLinkKind.BANK)
+        advanceTimeBy(BankSyncViewModel.LINK_POLL_FAILURES * BankSyncViewModel.LINK_POLL_MS + 1)
+        assertNull(vm.uiState.value.linking)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_error_generic), isError = true), vm.uiState.value.notice)
     }
 
     @Test
@@ -463,6 +544,100 @@ class BankSyncViewModelTest {
         vm.load()
         runCurrent()
         assertEquals(listOf("Chase"), vm.uiState.value.bank?.institutions?.map { it.name })
+    }
+
+    @Test
+    fun undoingAWriteShowsTheSheetAsItNowStandsAndSaysTheLinesArePaused() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            undone = Result.success(undone(true, true))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        vm.undoWrite(7)
+        assertEquals(7L, vm.uiState.value.undoing)
+        assertTrue(vm.uiState.value.acting)
+        runCurrent()
+        val state = vm.uiState.value
+        assertNull(state.undoing)
+        assertEquals(listOf(7L), repo.undoneWrites)
+        assertTrue(state.bank?.fill?.writes?.single()?.undone == true)
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_fill_notice_undone)), state.notice)
+    }
+
+    @Test
+    fun anUndoThatLeftCellsSomeoneHadChangedSaysHowManyWentBack() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            undone = Result.success(undone(true, false, true))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        vm.undoWrite(7)
+        runCurrent()
+        assertEquals(BankNotice(UiText.of(Res.string.fin_bank_fill_notice_undone_partly, 2, 3), isError = true), vm.uiState.value.notice)
+    }
+
+    @Test
+    fun anUndoThatFailsLeavesThePageAndSaysWhy() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            undone = Result.failure(BankSyncException(BankProblem.OTHER, "That write was undone already".asUiText()))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        vm.undoWrite(7)
+        runCurrent()
+        val state = vm.uiState.value
+        assertNull(state.undoing)
+        assertEquals(listOf("Chase"), state.bank?.institutions?.map { it.name })
+        assertEquals(BankNotice("That write was undone already".asUiText(), isError = true), state.notice)
+    }
+
+    @Test
+    fun pausingAndResumingALineAsksTheRelayOneThingAtATime() = runTest(dispatcher) {
+        val repo = FakeRepository().apply { statuses += Result.success(bank("Chase")) }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        assertFalse(vm.uiState.value.acting)
+        vm.setLinePaused("Home|roth ira|2", paused = true)
+        assertEquals("Home|roth ira|2", vm.uiState.value.changingLine)
+        // What the page goes by to switch its other buttons off meanwhile.
+        assertTrue(vm.uiState.value.acting)
+        // Nothing else that changes what the relay keeps starts while it is asked.
+        vm.setLinePaused("Home|checking|2", paused = true)
+        vm.undoWrite(7)
+        vm.syncNow()
+        vm.unlink("chase")
+        runCurrent()
+        assertNull(vm.uiState.value.changingLine)
+        assertFalse(vm.uiState.value.acting)
+        assertEquals(listOf("Home|roth ira|2" to true), repo.lineChanges)
+        assertTrue(repo.undoneWrites.isEmpty())
+        assertFalse(vm.uiState.value.syncRequested)
+        assertNull(vm.uiState.value.unlinking)
+        vm.setLinePaused("Home|roth ira|2", paused = false)
+        runCurrent()
+        assertEquals("Home|roth ira|2" to false, repo.lineChanges.last())
+    }
+
+    @Test
+    fun aRelayThatStopsShowingTheMoneyMidUndoClearsThePage() = runTest(dispatcher) {
+        val repo = FakeRepository().apply {
+            statuses += Result.success(bank("Chase"))
+            undone = Result.failure(BankSyncException(BankProblem.NOT_ALLOWED, "admins only".asUiText()))
+        }
+        val vm = viewModel(repo)
+        vm.load()
+        runCurrent()
+        vm.undoWrite(7)
+        runCurrent()
+        assertNull(vm.uiState.value.bank)
+        assertEquals(BankProblem.NOT_ALLOWED, vm.uiState.value.problem)
     }
 
     private companion object {

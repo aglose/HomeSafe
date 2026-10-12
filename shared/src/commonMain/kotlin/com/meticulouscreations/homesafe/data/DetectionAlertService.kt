@@ -296,6 +296,7 @@ class DetectionAlertService(
             target = MomentDeepLink(eventId = moment.id, cameraName = moment.cameraName, startEpochSeconds = moment.startEpochSeconds),
             urgent = urgent,
             offerCarTag = moment.isGenericCar,
+            subject = moment.category,
         )
         notifier.notify(text)
         // Off the poll loop: the next detection mustn't wait on this one's downloads.

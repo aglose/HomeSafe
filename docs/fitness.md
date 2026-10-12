@@ -346,7 +346,7 @@ A movement of its own is four things, and the tests name whichever is still miss
   interfaces below). Pure Kotlin.
 - `fitness/data`: `FitnessRepositoryImpl` over `FitnessDao` (eight tables in the app's Room
   database: five from schema 19, the heart-rate settings and each workout's time in zone from
-  schema 20, and the app's preferences from schema 21; `data/FitnessEntities.kt`). Everything
+  schema 20, and the app's preferences from schema 22; `data/FitnessEntities.kt`). Everything
   stays on the device. The preferences (`FitnessPreferencesRepository`: which figure is drawn)
   are this install's own, and no part of the log or of a copy of it.
 - The heart-rate sensor is in two halves. `HeartRateLink` is the platform's radio and carries
@@ -381,7 +381,7 @@ A movement of its own is four things, and the tests name whichever is still miss
   itself (`HeartRateLink.android.kt`) has no test: it needs a band.
 - The figures: `MovementClassifierTest` (every exercise is a movement), `MovementCatalogTest`
   (every movement has a rig figure; the anchors' reader), `FitnessPreferencesRepositoryImplTest`,
-  `jvmTest/.../FitnessFigureMigrationTest` (schema 20 to 21 on a real SQLite file), and
+  `jvmTest/.../FitnessFigureMigrationTest` (schema 21 to 22 on a real SQLite file), and
   `jvmTest/.../MovementPicturesTest`, which reads every packed movement's files the way the app
   does, so that the renderer and the app can't drift apart unnoticed.
 - `uiTest/.../FitnessAppUiTest`: the screens through their test tags.

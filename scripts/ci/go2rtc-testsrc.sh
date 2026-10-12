@@ -9,6 +9,11 @@
 # back_yard, and driveway with its separate driveway_sub grid stream. Needs ffmpeg with libx264.
 # The API listens on 1984 and WebRTC on 127.0.0.1:8555, advertising 10.0.2.2 — the host as the emulator
 # sees it. Exits non-zero unless /api/streams lists every stream.
+#
+# Run again with the same log dir, it stops the go2rtc it started there and starts a new one: the
+# quick way to a go2rtc that nobody is joined to and that has no test pattern running. The
+# cold-launch gate does that before every run (--go2rtc-reset in scripts/bench-first-live-pixel.py)
+# rather than wait half a minute for go2rtc to give up on the last run's force-stopped app.
 set -euo pipefail
 
 # The release baseline-profile.yml pins too; its linux_amd64 asset's checksum is verified below.
@@ -40,8 +45,30 @@ SOURCE='exec:ffmpeg -hide_banner -loglevel error -re -f lavfi -i testsrc2=size=6
   for s in "${STREAMS[@]}"; do echo "  $s: \"$SOURCE\""; done
 } > "$LOG_DIR/go2rtc.yaml"
 
-nohup "$BIN" -config "$LOG_DIR/go2rtc.yaml" > "$LOG_DIR/go2rtc.log" 2>&1 &
-for _ in $(seq 1 30); do
+# The one this script started here before, and the ffmpegs it was running. Waited for, so its
+# ports are free for the next; an ffmpeg left behind would only lose its connection and exit.
+PID_FILE=$LOG_DIR/go2rtc.pid
+if [ -f "$PID_FILE" ]; then
+  OLD=$(cat "$PID_FILE")
+  if kill -0 "$OLD" 2>/dev/null; then
+    pkill -P "$OLD" 2>/dev/null || true
+    kill "$OLD" 2>/dev/null || true
+    for _ in $(seq 1 50); do
+      kill -0 "$OLD" 2>/dev/null || break
+      sleep 0.1
+    done
+    if kill -0 "$OLD" 2>/dev/null; then
+      kill -9 "$OLD" 2>/dev/null || true
+      sleep 0.2
+    fi
+  fi
+  rm -f "$PID_FILE"
+fi
+
+# Appended, so the log in the job's artifact is every go2rtc of the run and not just the last.
+nohup "$BIN" -config "$LOG_DIR/go2rtc.yaml" >> "$LOG_DIR/go2rtc.log" 2>&1 &
+echo $! > "$PID_FILE"
+for _ in $(seq 1 150); do
   if LISTED=$(curl -sf http://127.0.0.1:1984/api/streams); then
     for s in "${STREAMS[@]}"; do
       python3 -c 'import json,sys; sys.exit(0 if sys.argv[1] in json.load(sys.stdin) else 1)' "$s" <<<"$LISTED" \
@@ -50,6 +77,6 @@ for _ in $(seq 1 30); do
     echo "go2rtc serving: ${STREAMS[*]}"
     exit 0
   fi
-  sleep 1
+  sleep 0.2
 done
 echo "::error::go2rtc did not start"; cat "$LOG_DIR/go2rtc.log"; exit 1

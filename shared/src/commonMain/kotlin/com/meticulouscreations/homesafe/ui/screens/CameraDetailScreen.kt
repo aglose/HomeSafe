@@ -17,11 +17,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -30,8 +35,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CropFree
 import androidx.compose.material.icons.filled.DirectionsCar
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +60,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -71,7 +80,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalAccessibilityManager
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
@@ -91,6 +105,7 @@ import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
+import com.meticulouscreations.homesafe.ui.components.TapEdge
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
@@ -116,6 +131,8 @@ import homesafe.shared.generated.resources.camera_go_live
 import homesafe.shared.generated.resources.camera_hide_controls
 import homesafe.shared.generated.resources.camera_live
 import homesafe.shared.generated.resources.camera_menu_detection_zones
+import homesafe.shared.generated.resources.camera_menu_stats_hide
+import homesafe.shared.generated.resources.camera_menu_stats_show
 import homesafe.shared.generated.resources.camera_menu_tag_cars
 import homesafe.shared.generated.resources.camera_moment_clip_length
 import homesafe.shared.generated.resources.camera_no_recordings
@@ -124,6 +141,9 @@ import homesafe.shared.generated.resources.camera_recent_activity
 import homesafe.shared.generated.resources.camera_recent_empty
 import homesafe.shared.generated.resources.camera_recent_loading
 import homesafe.shared.generated.resources.camera_show_controls
+import homesafe.shared.generated.resources.camera_skip_back
+import homesafe.shared.generated.resources.camera_skip_forward
+import homesafe.shared.generated.resources.camera_skip_seconds
 import homesafe.shared.generated.resources.camera_timeline
 import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.common_dot_separator
@@ -132,6 +152,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -181,6 +202,7 @@ fun CameraDetailScreen(
     // screen — header, recent-activity cards and all.
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
+    val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val hasQualityChoice = (uiState as? CameraDetailUiState.Found)?.let { it.gridStreamUrl != null && it.gridStreamUrl != it.streamUrl } ?: false
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
@@ -267,7 +289,12 @@ fun CameraDetailScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     textAlign = TextAlign.Center,
                 )
-                CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars)
+                CameraOverflowMenu(
+                    onEditDetectionZones = onEditDetectionZones,
+                    onTagCars = onTagCars,
+                    statsShown = statsShown,
+                    onToggleStats = viewModel::toggleStats,
+                )
             }
         }
 
@@ -297,7 +324,14 @@ fun CameraDetailScreen(
                 onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
                 // The header's own menu, in white, at the end of the chrome's top row.
                 overflowMenu = { onOpenChange ->
-                    CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars, tint = Color.White, onOpenChange = onOpenChange)
+                    CameraOverflowMenu(
+                        onEditDetectionZones = onEditDetectionZones,
+                        onTagCars = onTagCars,
+                        statsShown = statsShown,
+                        onToggleStats = viewModel::toggleStats,
+                        tint = Color.White,
+                        onOpenChange = onOpenChange,
+                    )
                 },
                 modifier = with(sharedTransitionScope) {
                     // The video is the one thing that moves between here and the card (this
@@ -346,6 +380,11 @@ fun CameraDetailScreen(
                     )
                 }
 
+                // First on the page, straight under the video it drives, and there whatever else
+                // the page has to say: the prompts and the cars in view below come and go, and
+                // would move it out from under a thumb each time they did.
+                TimelineSection(cameraName = cameraName)
+
                 // The detection this screen was opened on, when its car went unrecognised.
                 tagState.landed?.let { landed ->
                     TagCarPrompt(summary = landed.summary, taggedAs = tagState.tagged[landed.eventId], onTag = tagViewModel::openLanded)
@@ -357,8 +396,6 @@ fun CameraDetailScreen(
                 // Cars in view that a classifier still wants a name for. Polls and recomposes on
                 // its own, and takes no room when there's nothing to ask about.
                 LiveLabelingSection(cameraName = cameraName)
-
-                TimelineSection(cameraName = cameraName)
 
                 Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text(
@@ -411,9 +448,13 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
     }
 
 /**
- * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
+ * The video, plus its overlays: the LIVE pill, play/pause, buffering, the "behind live" readout,
+ * and the "stats for nerds" panel when the menu has asked for it ([PlayerStreamStats]).
  *
  * At rest this is a 16:9 strip at the top of the scroll.
+ * A double tap on its left or right third steps the recording [SKIP_SECONDS] back or forward, as
+ * on any video player, and says so over that side ([SkipBadge]); further taps there while that is
+ * up keep stepping. The middle third is the zoom's.
  * Zooming in — a pinch, a double tap, or a finger held on the picture, as on a Home card — takes
  * over the whole scroll viewport ([viewportHeight]): the surface grows downward
  * until it fills the screen, pushing the rest of the page out of view, and the video sits centred
@@ -453,6 +494,7 @@ private fun PlayerSurface(
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val haptic = LocalHapticFeedback.current
@@ -471,6 +513,32 @@ private fun PlayerSurface(
     val onTap = remember(viewModel) { { if (isFullScreen) chromeShown = !chromeShown else viewModel.togglePlayPause() } }
     // The same tick a held Home card gives as its video lifts out.
     val onHoldZoom = remember(haptic) { { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } }
+    // What the taps on one side of the video have stepped, while the badge saying so is up.
+    var skip by remember { mutableStateOf<SkipFeedback?>(null) }
+    LaunchedEffect(skip) {
+        if (skip != null) {
+            delay(timeMillis = SKIP_BADGE_MS)
+            skip = null
+        }
+    }
+    val skipToward = remember(viewModel) {
+        { edge: TapEdge ->
+            val seconds = if (edge == TapEdge.Left) -SKIP_SECONDS else SKIP_SECONDS
+            // Nowhere to go (forward at the live edge, or nothing recorded) says nothing.
+            if (viewModel.skipBy(seconds.toDouble())) {
+                skip = SkipFeedback(edge, seconds = (skip?.takeIf { it.edge == edge }?.seconds ?: 0) + SKIP_SECONDS)
+            }
+        }
+    }
+    val onEdgeTap = remember(skipToward) {
+        { edge: TapEdge, taps: Int ->
+            // A double tap steps. A single one is a step too while the badge from the last is
+            // still up on its side, so tapping on keeps going; otherwise it is an ordinary tap.
+            val steps = taps >= 2 || skip?.edge == edge
+            if (steps) skipToward(edge)
+            steps
+        }
+    }
     // The chrome reports its menus and its focus while it is composed, and it can leave with
     // either still set — turned upright with a menu open, hidden by a tap. Whenever it goes,
     // or comes back afresh, nothing is holding it.
@@ -562,6 +630,8 @@ private fun PlayerSurface(
                         onPlaybackEnded = viewModel::onPlaybackEnded,
                         onPlaybackError = viewModel::onPlaybackError,
                         onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
+                        // The player measures the stream only while the panel is up to show it.
+                        onStreamStats = if (statsShown) viewModel::onStreamStats else null,
                     )
                 } else {
                     Icon(
@@ -589,9 +659,12 @@ private fun PlayerSurface(
                 // input stays as it was — a clickable would swallow the double tap and the hold
                 // that zoom.
                 val toggleChromeLabel = stringResource(if (chromeShown) Res.string.camera_hide_controls else Res.string.camera_show_controls)
+                val skipBackLabel = pluralStringResource(Res.plurals.camera_skip_back, SKIP_SECONDS, SKIP_SECONDS)
+                val skipForwardLabel = pluralStringResource(Res.plurals.camera_skip_forward, SKIP_SECONDS, SKIP_SECONDS)
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
+                        .testTag(PLAYER_TAPS_TEST_TAG)
                         .then(
                             if (fullScreen) {
                                 Modifier
@@ -601,6 +674,17 @@ private fun PlayerSurface(
                                             chromeShown = !chromeShown
                                             true
                                         }
+                                        // The double taps on the sides, for someone who has none to give.
+                                        customActions = listOf(
+                                            CustomAccessibilityAction(skipBackLabel) {
+                                                skipToward(TapEdge.Left)
+                                                true
+                                            },
+                                            CustomAccessibilityAction(skipForwardLabel) {
+                                                skipToward(TapEdge.Right)
+                                                true
+                                            },
+                                        )
                                     }
                                     .onKeyEvent { event ->
                                         val activates = event.type == KeyEventType.KeyUp && event.key in ACTIVATION_KEYS
@@ -612,9 +696,11 @@ private fun PlayerSurface(
                                 Modifier
                             },
                         )
-                        .zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom),
+                        .zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom, onEdgeTap = onEdgeTap),
                 )
             }
+
+            SkipBadge(skip = skip, modifier = Modifier.matchParentSize())
 
             when {
                 playback.isLoadingPlaylist || playback.isBuffering -> CircularProgressIndicator(
@@ -665,6 +751,15 @@ private fun PlayerSurface(
                         overflowMenu = overflowMenu,
                     )
                 }
+                // Over the chrome, so its close button is always there to press, and down the
+                // side, between the chrome's top row and its timeline.
+                PlayerStreamStats(
+                    cameraName = cameraName,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .padding(start = 16.dp),
+                )
                 return@Box
             }
 
@@ -684,6 +779,12 @@ private fun PlayerSurface(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
                 )
             }
+
+            // The corner the LIVE pill leaves free; on a narrow phone it folds its lines sooner than cover the pill.
+            PlayerStreamStats(
+                cameraName = cameraName,
+                modifier = Modifier.align(Alignment.TopEnd).padding(start = STATS_CLEAR_OF_LIVE_PILL, top = 12.dp, end = 12.dp),
+            )
         }
     }
 }
@@ -720,6 +821,71 @@ private fun SeekPreview(epochSeconds: Double, snapshotUrlFor: (Double) -> String
     }
 }
 
+/**
+ * What the taps on a side of the video have done, said over that side: which way, and how many
+ * seconds in all. It fades in on the first step, counts up with each further one, and goes once
+ * the tapping stops. It takes no touches, so the taps that keep it going land on the video under it.
+ */
+@Composable
+private fun SkipBadge(skip: SkipFeedback?, modifier: Modifier = Modifier) {
+    // The badge outlasts the step by the length of its fade.
+    var lastSkip by remember { mutableStateOf(skip) }
+    if (skip != null) lastSkip = skip
+    AnimatedVisibility(visible = skip != null, modifier = modifier, enter = fadeIn(tween(SKIP_BADGE_FADE_MS)), exit = fadeOut(tween(SKIP_BADGE_FADE_MS))) {
+        val shown = lastSkip ?: return@AnimatedVisibility
+        val back = shown.edge == TapEdge.Left
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Centred in the third that was tapped. Left and right as on the glass, like the taps.
+            Box(
+                modifier = Modifier
+                    .align(if (back) AbsoluteAlignment.CenterLeft else AbsoluteAlignment.CenterRight)
+                    .fillMaxWidth(SKIP_BADGE_WIDTH_FRACTION),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(LocalFrigateExtraColors.current.glassFill)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    Icon(
+                        imageVector = if (back) Icons.Filled.FastRewind else Icons.Filled.FastForward,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Text(
+                        text = pluralStringResource(Res.plurals.camera_skip_seconds, shown.seconds, shown.seconds),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        // Said aloud as well: a step taken through a screen reader's action shows nowhere else.
+                        modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** The layer over the video that takes its taps, for tests: a tap, a double tap on a side, a hold. */
+const val PLAYER_TAPS_TEST_TAG = "camera_player_taps"
+
+/** A fresh instance per step (identity equality), so each one restarts the badge's wait. */
+private class SkipFeedback(val edge: TapEdge, val seconds: Int)
+
+/** How far a double tap on a side of the video steps. */
+private const val SKIP_SECONDS = 10
+
+/** How long the badge stays after the last step: long enough for the next tap of a run to find it up. */
+private const val SKIP_BADGE_MS = 900L
+private const val SKIP_BADGE_FADE_MS = 120
+
+/** The badge's side of the video is the third the taps land in. */
+private const val SKIP_BADGE_WIDTH_FRACTION = 1f / 3f
+
 private const val SCRUB_PREVIEW_DEBOUNCE_MS = 150L
 
 private const val QUICK_ACTION_HINT_MS = 3_000L
@@ -728,6 +894,9 @@ private const val ZOOM_TAKEOVER_MS = 300
 /** How long the full-screen player's chrome stays up once it has been left alone. */
 private const val FULL_SCREEN_CHROME_MS = 4_000L
 private const val FULL_SCREEN_CHROME_FADE_MS = 180
+
+/** How much of the player's top edge the stats panel leaves to the LIVE pill beside it. */
+private val STATS_CLEAR_OF_LIVE_PILL = 104.dp
 
 /** The most of the window's height the player takes while the page is under it. */
 private const val PLAYER_MAX_HEIGHT_FRACTION = 0.6f
@@ -935,7 +1104,8 @@ internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit
  * This camera's less-used settings, kept out of the page itself: the polygon editor — what
  * Google Home calls activity zones and Frigate calls masks — and tagging the cars in view by
  * hand, reached from the header rather than cards competing with the timeline and recent
- * activity for the eye.
+ * activity for the eye. Last, the switch for the "stats for nerds" panel over the video
+ * ([statsShown], [onToggleStats]), where every video player keeps it.
  *
  * The full-screen player's chrome carries the same menu, in its own [tint], and is told through
  * [onOpenChange] while the menu is open so it doesn't fade away from under it.
@@ -944,6 +1114,8 @@ internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit
 private fun CameraOverflowMenu(
     onEditDetectionZones: () -> Unit,
     onTagCars: () -> Unit,
+    statsShown: Boolean,
+    onToggleStats: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
     onOpenChange: (Boolean) -> Unit = {},
 ) {
@@ -984,6 +1156,19 @@ private fun CameraOverflowMenu(
                 onClick = {
                     setExpanded(false)
                     onTagCars()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(if (statsShown) Res.string.camera_menu_stats_hide else Res.string.camera_menu_stats_show),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                },
+                leadingIcon = { Icon(imageVector = Icons.Filled.QueryStats, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = {
+                    setExpanded(false)
+                    onToggleStats()
                 },
             )
         }

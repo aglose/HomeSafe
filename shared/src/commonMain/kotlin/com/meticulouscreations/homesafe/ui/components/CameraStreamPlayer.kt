@@ -138,6 +138,9 @@ expect val liveAudioCodecs: List<String>
  * @param onAudioAvailabilityChanged whether what's playing carries an audio track this platform
  *   can decode — false for go2rtc's video-only sub-streams, for recordings Frigate saved without
  *   audio, and for codecs the platform can't play. What a mute button should key its enabled state on.
+ * @param onStreamStats when given, the player measures a live source as it plays and
+ *   reports here every [LIVE_STATS_INTERVAL_MS]: null until it has something to say, and for a
+ *   recording. Left null (the default) nothing is measured at all.
  * @param reconnectRequests a count the caller bumps to ask a live source that isn't playing to
  *   reconnect now, rather than when its own back-off says — the Home page's pull to refresh. Only
  *   a change after this call site first composed counts; whether the player acts on it is
@@ -154,6 +157,7 @@ expect fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit = {},
     onPlaybackError: () -> Unit = {},
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
+    onStreamStats: ((stats: LiveStreamStats?) -> Unit)? = null,
     reconnectRequests: Int = 0,
 )
 

@@ -70,6 +70,9 @@ interface WebRtcPeer {
 
     fun setMuted(muted: Boolean)
 
+    /** What the engine's own statistics say about the incoming video right now, or null when it has none to give. */
+    suspend fun receiverStats(): WebRtcReceiverStats? = null
+
     /** Tears the connection down. Idempotent. */
     fun close()
 }

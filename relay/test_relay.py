@@ -4146,6 +4146,517 @@ class BankRoutesTest(_ScratchDb):
         self.assertEqual(404, unknown.exception.status_code)
 
 
+class _BudgetSheet:
+    """Stands in for the budget sheet's AuthorizedSession: each tab's cells, which a write changes, and every write made."""
+
+    def __init__(self, status=200, body=None, **tabs):
+        self.tabs = {tab: [list(row) for row in rows] for tab, rows in tabs.items()}
+        self.status, self.body, self.posts, self.render = status, body, [], None
+
+    def get(self, url, params=None, timeout=None):
+        if self.status != 200:
+            return _GoogleResponse(self.status, self.body)
+        if not url.endswith(":batchGet"):
+            return _GoogleResponse(200, {"sheets": [{"properties": {"title": tab}} for tab in self.tabs]})
+        self.render = dict(params)["valueRenderOption"]
+        return _GoogleResponse(200, {"valueRanges": [{"values": self.tabs[value.strip("'")]} for name, value in params if name == "ranges"]})
+
+    def post(self, url, json=None, timeout=None):
+        if self.status != 200:
+            return _GoogleResponse(self.status, self.body)
+        self.posts.append((url, json))
+        for written in json["data"]:
+            tab, cell = written["range"].split("!")
+            rows, row, column = self.tabs[tab.strip("'")], int(cell[1:]) - 1, ord(cell[0]) - ord("A")
+            while len(rows) <= row:
+                rows.append([])
+            rows[row] += [""] * (column + 1 - len(rows[row]))
+            rows[row][column] = written["values"][0][0]
+        return _GoogleResponse(200, {})
+
+    def cell(self, a1, tab="Home"):
+        return self.tabs[tab][int(a1[1:]) - 1][ord(a1[0]) - ord("A")]
+
+
+class SheetFillTest(_ScratchDb):
+    """The sheet fill: which of the budget sheet's cells are written, what is kept of each write, and undoing one."""
+
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "feed_google", "require_finance_user", "FINANCE_FEED_SHEET_ID", "FINANCE_SHEET_ID",
+                                "FINANCE_FILL_FILE", "PLAID_CLIENT_ID", "PLAID_SECRET", "BANK_UNLINK_WAIT_SECONDS")
+    T = 1_791_000_000.0
+    HOME = [
+        ["Savings", "", "Alex", "Sam"],
+        ["Roth IRA", "", "", 50000],
+        ["Checking", "", 4000.25, ""],
+        ["Total", "", "=SUM(C2:C3)", "=SUM(D2:D3)"],
+        [],
+        ["Debt", "Alex", "Sam"],
+        ["Credit Cards", -100, 0],
+    ]
+    LINES = [
+        {"label": "Roth IRA", "right": 3, "accounts": ["Chase Roth IRA 7788"]},
+        {"label": "Checking", "right": 2, "accounts": ["Chase Total Checking 0123"]},
+        {"label": "credit cards", "accounts": ["Chase Sapphire 9911"], "negative": True},
+    ]
+
+    def setUp(self):
+        super().setUp()
+        relay.PLAID_CLIENT_ID, relay.PLAID_SECRET, relay.FINANCE_FEED_SHEET_ID, relay.FINANCE_SHEET_ID = "client", "secret", "", "budget123"
+        relay.FINANCE_FILL_FILE = os.path.join(self._dir.name, "sheet-fill.json")
+        relay.require_finance_user = lambda request: "alex"
+        relay.bank_sync_in_background = lambda: None
+        self.response = types.SimpleNamespace(headers={})
+        self.sheet = _BudgetSheet(Home=self.HOME)
+        relay.feed_google = lambda: self.sheet
+        relay.plaid_save_item("item1", "access-item1", {"institution_id": "ins_3", "name": "Chase"}, "alex", self.T)
+        self.read()
+        self.lines(self.LINES)
+
+    def read(self, **balances):
+        """Plaid's answer for the three accounts, with any of their balances changed."""
+        accounts = [{**a, "balances": {**a["balances"], "current": balances.get(a["account_id"], a["balances"]["current"])}} for a in BankSyncTest.ACCOUNTS]
+        relay.plaid_post = _FakePlaid(item_get={"item": {"products": ["transactions"]}}, accounts_get={"accounts": accounts})
+        relay.plaid_sync_item("item1", "access-item1", self.T)
+
+    def lines(self, lines, tab="Home"):
+        with open(relay.FINANCE_FILL_FILE, "w") as f:
+            json.dump({"tab": tab, "lines": lines}, f)
+
+    def statuses(self):
+        return {line["label"]: line["status"] for line in relay.fill_status()["lines"]}
+
+    def writes(self):
+        return relay.fill_status()["writes"]
+
+    def test_each_line_s_sum_goes_into_the_cell_beside_its_label_and_what_changed_is_kept(self):
+        relay.fill_sheet(self.T)
+        self.assertEqual((51000.0, 4200.5, -812.4), (self.sheet.cell("D2"), self.sheet.cell("C3"), self.sheet.cell("B7")))
+        self.assertEqual("FORMULA", self.sheet.render, "a formula must be told from the number it comes to")
+        (url, written), = self.sheet.posts
+        self.assertTrue(url.endswith("/budget123/values:batchUpdate"))
+        self.assertEqual("RAW", written["valueInputOption"])
+        self.assertEqual(["'Home'!D2", "'Home'!C3", "'Home'!B7"], [d["range"] for d in written["data"]])
+        write, = self.writes()
+        self.assertEqual((self.T, None), (write["at"], write["undone_at"]))
+        self.assertEqual([("Roth IRA", "D2", 50000.0, 51000.0), ("Checking", "C3", 4000.25, 4200.5), ("credit cards", "B7", -100.0, -812.4)],
+                         [(c["label"], c["cell"], c["before"], c["after"]) for c in write["changes"]])
+        self.assertEqual({"Roth IRA": "written", "Checking": "written", "credit cards": "written"}, self.statuses())
+
+    def test_nothing_is_written_or_kept_when_the_numbers_are_already_there(self):
+        relay.fill_sheet(self.T)
+        relay.fill_sheet(self.T + 60)
+        self.assertEqual(1, len(self.sheet.posts))
+        self.assertEqual(1, len(self.writes()))
+        self.assertEqual({"same"}, set(self.statuses().values()))
+        # Only the balance that moved is written the next day.
+        self.read(chk=4300.0)
+        relay.fill_sheet(self.T + 86400)
+        self.assertEqual(["'Home'!C3"], [d["range"] for d in self.sheet.posts[-1][1]["data"]])
+        self.assertEqual([("Checking", 4200.5, 4300.0)], [(c["label"], c["before"], c["after"]) for c in self.writes()[0]["changes"]])
+
+    def test_a_row_inserted_above_takes_the_write_with_its_label(self):
+        self.sheet.tabs["Home"].insert(1, ["Brokerage", "", 1, 2])
+        relay.fill_sheet(self.T)
+        self.assertEqual(51000.0, self.sheet.cell("D3"))
+        self.assertEqual(2, self.sheet.cell("D2"), "the row that took its place is left alone")
+
+    def test_a_cell_that_is_not_a_typed_number_is_left_alone(self):
+        self.lines([{"label": "Total", "right": 2, "accounts": ["Chase Total Checking 0123"]},
+                    {"label": "Savings", "right": 2, "accounts": ["Chase Total Checking 0123"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual([], self.sheet.posts)
+        self.assertEqual({"Total": "not_a_number", "Savings": "not_a_number"}, self.statuses())
+        self.assertEqual("=SUM(C2:C3)", self.sheet.cell("C4"))
+
+    def test_an_empty_cell_is_filled_and_undoing_empties_it_again(self):
+        self.lines([{"label": "Roth IRA", "right": 2, "accounts": ["Chase Roth IRA 7788"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual(51000.0, self.sheet.cell("C2"))
+        self.assertIsNone(self.writes()[0]["changes"][0]["before"])
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 5)
+        self.assertEqual("", self.sheet.cell("C2"))
+
+    def test_a_label_that_is_gone_or_there_twice_is_not_guessed(self):
+        self.sheet.tabs["Home"].append(["Checking", "", 1])
+        self.lines([{"label": "Checking", "right": 2, "accounts": ["Chase Total Checking 0123"]},
+                    {"label": "Brokerage", "right": 2, "accounts": ["Chase Roth IRA 7788"]},
+                    {"label": "Roth IRA", "tab": "Elsewhere", "right": 3, "accounts": ["Chase Roth IRA 7788"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual([], self.sheet.posts)
+        self.assertEqual(["ambiguous", "no_label", "no_tab"], [line["status"] for line in relay.fill_status()["lines"]])
+
+    def test_a_line_with_an_account_that_is_not_linked_is_not_written_as_the_sum_of_the_rest(self):
+        self.lines([{"label": "Checking", "right": 2, "accounts": ["Chase Total Checking 0123", "Ally Savings 4455"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual([], self.sheet.posts)
+        line, = relay.fill_status()["lines"]
+        self.assertEqual(("no_account", ["Ally Savings 4455"]), (line["status"], line["missing"]))
+
+    def test_several_accounts_in_one_line_add_up(self):
+        self.lines([{"label": "Checking", "right": 2, "accounts": ["Chase Total Checking 0123", "Chase Roth IRA 7788"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual(55200.5, self.sheet.cell("C3"))
+
+    def test_undoing_a_write_puts_the_numbers_back_and_pauses_its_lines(self):
+        relay.fill_sheet(self.T)
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        self.assertEqual((50000.0, 4000.25, -100.0), (self.sheet.cell("D2"), self.sheet.cell("C3"), self.sheet.cell("B7")))
+        write, = self.writes()
+        self.assertEqual((self.T + 30, "alex", [True, True, True]), (write["undone_at"], write["undone_by"], [c["restored"] for c in write["changes"]]))
+        # The next sync would otherwise write them straight back.
+        relay.fill_sheet(self.T + 86400)
+        self.assertEqual(2, len(self.sheet.posts), "the fill and its undo, nothing since")
+        self.assertEqual({"paused"}, set(self.statuses().values()))
+        with self.assertRaises(relay.HTTPException) as again:
+            relay.fill_undo(write["id"], "alex", self.T + 60)
+        self.assertEqual((409, "already_undone"), (again.exception.status_code, again.exception.detail["error"]))
+        with self.assertRaises(relay.HTTPException) as unknown:
+            relay.fill_undo(999, "alex", self.T + 60)
+        self.assertEqual(404, unknown.exception.status_code)
+
+    def test_an_undo_leaves_a_cell_someone_has_typed_in_since(self):
+        relay.fill_sheet(self.T)
+        self.sheet.tabs["Home"][2][2] = 9999
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        self.assertEqual(9999, self.sheet.cell("C3"))
+        self.assertEqual(50000.0, self.sheet.cell("D2"))
+        self.assertEqual([True, False, True], [c["restored"] for c in self.writes()[0]["changes"]])
+
+    def test_an_undo_follows_a_cell_whose_row_moved(self):
+        relay.fill_sheet(self.T)
+        self.sheet.tabs["Home"].insert(1, ["Brokerage", "", 1, 2])
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        self.assertEqual((50000.0, 4000.25, -100.0), (self.sheet.cell("D3"), self.sheet.cell("C4"), self.sheet.cell("B8")))
+        self.assertEqual([True, True, True], [c["restored"] for c in self.writes()[0]["changes"]])
+
+    def test_an_undo_never_goes_by_where_a_cell_was(self):
+        relay.fill_sheet(self.T)
+        # The label is renamed, and a row put in above it leaves another cell at the old address
+        # (C3), one that happens to hold the very number that was written.
+        rows = self.sheet.tabs["Home"]
+        rows[2][0] = "Everyday account"
+        rows.insert(2, ["Brokerage", "", 4200.5, 7])
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        self.assertEqual(4200.5, self.sheet.cell("C3"), "the stranger at the old address is untouched")
+        self.assertEqual(4200.5, self.sheet.cell("C4"), "its label is gone, so it stays as written")
+        self.assertEqual((50000.0, -100.0), (self.sheet.cell("D2"), self.sheet.cell("B8")))
+        self.assertEqual([True, False, True], [c["restored"] for c in self.writes()[0]["changes"]])
+
+    def test_two_lines_that_come_to_the_same_cell_are_both_left_alone(self):
+        # "Debt" and "Owed" sit side by side: two columns right of one is one right of the other.
+        self.sheet.tabs["Home"][5] = ["Debt", "Owed", 5, "Sam"]
+        self.lines([{"label": "Debt", "right": 2, "accounts": ["Chase Total Checking 0123"]},
+                    {"label": "Owed", "right": 1, "accounts": ["Chase Roth IRA 7788"]},
+                    {"label": "Roth IRA", "right": 3, "accounts": ["Chase Roth IRA 7788"]}])
+        relay.fill_sheet(self.T)
+        self.assertEqual(5, self.sheet.cell("C6"))
+        self.assertEqual({"Debt": "same_cell", "Owed": "same_cell", "Roth IRA": "written"}, self.statuses())
+        self.assertEqual(["Roth IRA"], [c["label"] for c in self.writes()[0]["changes"]])
+
+    def test_a_resumed_line_is_written_at_once_and_a_paused_one_is_not(self):
+        relay.fill_sheet(self.T)
+        relay.fill_undo(self.writes()[0]["id"], "alex", self.T + 30)
+        ids = {line["label"]: line["id"] for line in relay.fill_status()["lines"]}
+        body = relay.post_bank_fill_line(types.SimpleNamespace(line=ids["Checking"], paused=False), object(), self.response)
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
+        self.assertEqual((4200.5, 50000.0), (self.sheet.cell("C3"), self.sheet.cell("D2")))
+        self.assertEqual({"Roth IRA": "paused", "Checking": "written", "credit cards": "paused"}, {line["label"]: line["status"] for line in body["fill"]["lines"]})
+        self.assertEqual(2, len(body["fill"]["writes"]))
+        relay.post_bank_fill_line(types.SimpleNamespace(line=ids["Checking"], paused=True), object(), self.response)
+        self.read(chk=1.0)
+        relay.fill_sheet(self.T + 86400)
+        self.assertEqual(4200.5, self.sheet.cell("C3"))
+        with self.assertRaises(relay.HTTPException) as unknown:
+            relay.post_bank_fill_line(types.SimpleNamespace(line="Home|nothing|1", paused=True), object(), self.response)
+        self.assertEqual(404, unknown.exception.status_code)
+
+    def test_the_undo_route_answers_the_page_and_waits_its_turn(self):
+        relay.fill_sheet(self.T)
+        body = relay.post_bank_fill_undo(self.writes()[0]["id"], object(), self.response)
+        self.assertEqual("alex", body["fill"]["writes"][0]["undone_by"])
+        self.assertFalse(relay._bank_lock.locked())
+        relay.BANK_UNLINK_WAIT_SECONDS = 0.01
+        relay._bank_lock.acquire()
+        try:
+            with self.assertRaises(relay.HTTPException) as busy:
+                relay.post_bank_fill_undo(1, object(), self.response)
+            self.assertEqual((503, "busy"), (busy.exception.status_code, busy.exception.detail["error"]))
+        finally:
+            relay._bank_lock.release()
+
+    def test_a_file_with_a_line_that_cannot_be_understood_is_refused_whole(self):
+        for bad in ({"label": "Checking", "accounts": []}, {"accounts": ["a"]}, {"label": "Checking", "accounts": ["a"], "right": 0},
+                    {"label": "Checking", "accounts": ["a"], "right": True}, "Checking"):
+            self.lines([self.LINES[0], bad])
+            relay.fill_sheet(self.T)
+            fill = relay.fill_status()
+            self.assertEqual(("bad_file", [], []), (fill["error"], fill["lines"], self.sheet.posts), bad)
+            # What is wrong goes to the app as a reason and a line number, for it to say in its own words.
+            self.assertEqual(("bad_line", 2), (fill["reason"], fill["line"]))
+            self.assertIn("Line 2", fill["message"])
+        self.lines([self.LINES[1], {**self.LINES[1], "label": " CHECKING "}])
+        self.assertEqual(("same_line", 2), (relay.fill_lines()[1]["reason"], relay.fill_lines()[1]["line"]))
+        self.lines([{"label": "Checking", "accounts": ["a"]}], tab=None)
+        self.assertEqual(("bad_line", 1), (relay.fill_lines()[1]["reason"], relay.fill_lines()[1]["line"]))
+        with open(relay.FINANCE_FILL_FILE, "w") as f:
+            json.dump({"cells": []}, f)
+        self.assertEqual("no_lines", relay.fill_lines()[1]["reason"])
+        with open(relay.FINANCE_FILL_FILE, "w") as f:
+            f.write("{not json")
+        fill = relay.fill_status()
+        self.assertEqual(("bad_file", "unreadable", None), (fill["error"], fill["reason"], fill["line"]))
+
+    def test_without_the_file_there_is_no_fill(self):
+        os.remove(relay.FINANCE_FILL_FILE)
+        relay.feed_google = lambda: self.fail("nothing lists a cell to write")
+        relay.fill_sheet(self.T)
+        fill = relay.fill_status()
+        self.assertEqual((False, None, []), (fill["configured"], fill["error"], fill["lines"]))
+
+    def test_a_budget_sheet_not_shared_for_editing_is_kept_as_the_fill_s_problem(self):
+        self.sheet = _BudgetSheet(status=403, body={"error": {"code": 403, "message": "The caller does not have permission", "status": "PERMISSION_DENIED"}})
+        relay.fill_sheet(self.T)
+        fill = relay.bank_status(self.T)["fill"]
+        self.assertEqual((True, "not_shared", []), (fill["configured"], fill["error"], fill["writes"]))
+        self.assertEqual({"waiting"}, {line["status"] for line in fill["lines"]})
+
+    def test_a_sync_of_everything_fills_the_sheet_and_freshens_the_app_s_next_read_of_it(self):
+        saved = dict(relay._finance_cache)
+        try:
+            relay._finance_cache["at"] = self.T
+            self.assertTrue(relay.plaid_sync_all(now=self.T + 10))
+            self.assertEqual(0.0, relay._finance_cache["at"])
+        finally:
+            relay._finance_cache.update(saved)
+        self.assertEqual(51000.0, self.sheet.cell("D2"))
+        self.assertEqual(self.T + 10, relay.bank_status(self.T + 10)["fill"]["checked_at"])
+
+    def test_only_the_newest_writes_are_kept(self):
+        saved, relay.FILL_WRITES_KEPT = relay.FILL_WRITES_KEPT, 3
+        try:
+            for day in range(5):
+                self.read(chk=100.0 + day)
+                relay.fill_sheet(self.T + day)
+        finally:
+            relay.FILL_WRITES_KEPT = saved
+        self.assertEqual([104.0, 103.0, 102.0], [w["changes"][-1]["after"] for w in self.writes()])
+
+
+class StockPlanTest(_ScratchDb):
+    """A stock plan account: every grant kept, the vests read from its activity, the vests worked out from them, and a sheet cell filled from one."""
+
+    NAMES = _ScratchDb.NAMES + ("plaid_post", "bank_sync_in_background", "feed_google", "FINANCE_FEED_SHEET_ID", "FINANCE_SHEET_ID", "FINANCE_FILL_FILE",
+                                "PLAID_CLIENT_ID", "PLAID_SECRET")
+    T = 1_791_000_000.0  # 2026-10-03
+    KEY = "Acme Plans Acme Corp 0042"
+    ACCOUNTS = [{"account_id": "plan", "name": "Acme Corp", "mask": "0042", "type": "investment", "subtype": "stock plan",
+                 "balances": {"current": 9000.0, "available": None, "limit": None, "iso_currency_code": "USD"}}]
+    # Three grants of the same share, one of them all vested and gone, and the plan's cash.
+    HOLDINGS = {
+        "holdings": [{"account_id": "plan", "security_id": "acme", "quantity": quantity, "vested_quantity": 0, "institution_price": 10.0,
+                      "institution_price_as_of": "2026-10-02", "institution_value": quantity * 10.0, "iso_currency_code": "USD"} for quantity in (0, 250, 650)]
+        + [{"account_id": "plan", "security_id": "usd", "quantity": 0, "institution_price": 1, "institution_value": 0, "iso_currency_code": "USD"}],
+        "securities": [{"security_id": "acme", "ticker_symbol": "ACME", "name": "Acme Corp", "type": "equity"},
+                       {"security_id": "usd", "ticker_symbol": "CUR:USD", "name": "U S Dollar", "type": "cash"}],
+    }
+    VESTS = [("2025-11-17", 280), ("2026-02-14", 300), ("2026-05-15", 300), ("2026-08-15", 300)]
+
+    def setUp(self):
+        super().setUp()
+        relay.PLAID_CLIENT_ID, relay.PLAID_SECRET, relay.FINANCE_FEED_SHEET_ID, relay.FINANCE_SHEET_ID = "client", "secret", "", "budget123"
+        relay.FINANCE_FILL_FILE = os.path.join(self._dir.name, "sheet-fill.json")
+        relay.bank_sync_in_background = lambda: None
+        self.T = StockPlanTest.T
+        relay.plaid_save_item("item1", "access-item1", {"institution_id": "ins_9", "name": "Acme Plans"}, "alex", self.T)
+
+    def activity(self, vests=None, sales=(("2026-08-20", -180),)):
+        """Plaid's account of what happened in the plan: each vest a transfer in, each sale a sell."""
+        moved = [(day, "transfer", shares, "Distribution") for day, shares in (self.VESTS if vests is None else vests)] + [(day, "sell", shares, "Sale") for day, shares in sales]
+        return {"investment_transactions": [{"investment_transaction_id": f"t{n}", "account_id": "plan", "security_id": "acme", "date": day, "type": kind,
+                                             "subtype": kind, "quantity": shares, "price": 10.0, "amount": -shares * 10.0, "name": name}
+                                            for n, (day, kind, shares, name) in enumerate(moved)],
+                "securities": self.HOLDINGS["securities"], "total_investment_transactions": len(moved)}
+
+    def read(self, **overrides):
+        answers = {"item_get": {"item": {"products": ["investments"]}}, "accounts_get": {"accounts": self.ACCOUNTS},
+                   "investments_holdings_get": self.HOLDINGS, "investments_transactions_get": self.activity()}
+        answers.update(overrides)
+        relay.plaid_post = _FakePlaid(**answers)
+        self.assertIsNone(relay.plaid_sync_item("item1", "access-item1", self.T))
+        return relay.plaid_post
+
+    def test_every_grant_of_the_same_share_is_kept(self):
+        self.read()
+        rows = relay.with_db(lambda c: c.execute("SELECT ticker, lot, quantity FROM plaid_holdings ORDER BY ticker, lot").fetchall())
+        self.assertEqual([("ACME", 0, 0.0), ("ACME", 1, 250.0), ("ACME", 2, 650.0), ("CUR:USD", 0, 0.0)], rows)
+        self.assertEqual(4, relay.bank_institutions()[0]["accounts"][0]["holdings"])
+        holdings = relay.with_db(lambda c: c.execute(
+            "SELECT account_id, ticker, name, quantity, price, value, cost_basis, kind, currency, price_as_of FROM plaid_holdings ORDER BY value DESC, lot").fetchall())
+        fed = relay.feed_tables(relay.bank_institutions(), holdings, None)[relay.FEED_HOLDINGS_TAB]
+        self.assertEqual([650.0, 250.0, 0.0, 0.0], [row[3] for row in fed[1:]], "each grant has its own row in the feed")
+        # A grant that is gone the next day takes its row with it.
+        self.read(investments_holdings_get={**self.HOLDINGS, "holdings": self.HOLDINGS["holdings"][2:]})
+        self.assertEqual(2, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0]))
+
+    def test_holdings_kept_before_there_were_lots_move_over(self):
+        relay.CONN.execute("DROP TABLE plaid_holdings")
+        relay.CONN.execute("CREATE TABLE plaid_holdings (account_id TEXT, security_id TEXT, item_id TEXT, ticker TEXT, name TEXT, kind TEXT,"
+                           " quantity REAL, price REAL, price_as_of TEXT, value REAL, cost_basis REAL, currency TEXT, PRIMARY KEY (account_id, security_id))")
+        relay.CONN.execute("INSERT INTO plaid_holdings VALUES ('ira','s1','item1','VTI','Vanguard','etf',100,510,'2026-10-02',51000,40000,'USD')")
+        relay.CONN.commit()
+        relay.CONN.close()
+        relay.CONN = relay.db()
+        self.assertEqual([("ira", "s1", 0, "VTI", 100.0, None, 51000.0)],
+                         relay.CONN.execute("SELECT account_id, security_id, lot, ticker, quantity, vested, value FROM plaid_holdings").fetchall())
+        self.assertEqual([], relay.CONN.execute("SELECT name FROM sqlite_master WHERE name='plaid_holdings_before_lots'").fetchall())
+        relay.CONN.close()
+        relay.CONN = relay.db()
+        self.assertEqual(1, relay.CONN.execute("SELECT COUNT(*) FROM plaid_holdings").fetchone()[0], "opened again, nothing moves twice")
+
+    def test_the_plan_s_activity_is_asked_for_and_kept_by_date_and_shares(self):
+        plaid = self.read()
+        asked = next(body for path, body in plaid.calls if path == "/investments/transactions/get")
+        self.assertEqual((["plan"], 0), (asked["options"]["account_ids"], asked["options"]["offset"]))
+        self.assertEqual(("2024-10-03", "2026-10-03"), (asked["start_date"], asked["end_date"]))
+        kept = relay.with_db(lambda c: c.execute("SELECT date, kind, ticker, quantity FROM plaid_stock_events ORDER BY date").fetchall())
+        self.assertEqual(("2025-11-17", "transfer", "ACME", 280.0), kept[0])
+        self.assertEqual(("2026-08-20", "sell", "ACME", -180.0), kept[-1])
+        # Plaid failing at this the next day keeps what was read, and the balances are still a good read.
+        self.read(investments_transactions_get=relay.PlaidError("PRODUCT_NOT_READY"))
+        self.assertEqual(5, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_stock_events").fetchone()[0]))
+        self.assertIsNone(relay.bank_institutions()[0]["error"])
+
+    def test_an_account_that_is_not_a_stock_plan_is_never_asked_for_its_activity(self):
+        plaid = self.read(accounts_get={"accounts": [{**self.ACCOUNTS[0], "subtype": "brokerage"}]})
+        self.assertNotIn("/investments/transactions/get", plaid.paths())
+        self.assertEqual([], relay.stock_plans())
+
+    def test_activity_longer_than_a_page_is_read_to_its_end(self):
+        saved, relay.STOCK_EVENTS_PAGE = relay.STOCK_EVENTS_PAGE, 2
+        try:
+            everything = self.activity()["investment_transactions"]
+            answers = {"item_get": {"item": {"products": ["investments"]}}, "accounts_get": {"accounts": self.ACCOUNTS}, "investments_holdings_get": self.HOLDINGS}
+            fake = _FakePlaid(**answers)
+
+            def post(path, body):
+                if path != "/investments/transactions/get":
+                    return fake(path, body)
+                offset = body["options"]["offset"]
+                return {"investment_transactions": everything[offset:offset + 2], "securities": self.HOLDINGS["securities"], "total_investment_transactions": len(everything)}
+
+            relay.plaid_post = post
+            relay.plaid_sync_item("item1", "access-item1", self.T)
+        finally:
+            relay.STOCK_EVENTS_PAGE = saved
+        self.assertEqual(5, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_stock_events").fetchone()[0]))
+
+    def test_the_vests_to_come_follow_the_pace_and_size_of_those_read(self):
+        self.read()
+        plan, = relay.stock_plans()
+        self.assertEqual((self.KEY, "ACME", 900.0, 10.0, 3, 300.0), (plan["account"], plan["ticker"], plan["unvested"], plan["price"], plan["every_months"], plan["per_vest"]))
+        self.assertEqual([("2026-11-15", 300.0, 3000.0), ("2027-02-15", 300.0, 3000.0), ("2027-05-15", 300.0, 3000.0)],
+                         [(v["date"], v["shares"], v["value"]) for v in plan["upcoming"]])
+        self.assertEqual("2026-08-15", plan["vests"][-1]["date"])
+
+    def test_what_is_left_over_comes_with_the_last_vest_and_a_real_part_vest_stands_alone(self):
+        events = [(day, "transfer", "ACME", float(shares)) for day, shares in self.VESTS]
+        outlook = relay.stock_plan_outlook(events, [("ACME", 620.0, 0.0, 10.0)])
+        self.assertEqual([300.0, 320.0], [v["shares"] for v in outlook["upcoming"]], "20 left over is no vest of its own")
+        outlook = relay.stock_plan_outlook(events, [("ACME", 750.0, 0.0, 10.0)])
+        self.assertEqual([300.0, 300.0, 150.0], [v["shares"] for v in outlook["upcoming"]])
+        # Shares the person already owns in the plan are not waiting to vest.
+        outlook = relay.stock_plan_outlook(events, [("ACME", 700.0, 400.0, 10.0)])
+        self.assertEqual((300.0, [300.0]), (outlook["unvested"], [v["shares"] for v in outlook["upcoming"]]))
+
+    def test_the_pace_takes_two_vests_and_a_plan_nothing_vested_in_has_no_outlook(self):
+        self.assertIsNone(relay.stock_plan_outlook([("2026-08-20", "sell", "ACME", -180.0)], [("ACME", 900.0, 0.0, 10.0)]))
+        one = relay.stock_plan_outlook([("2026-08-15", "transfer", "ACME", 300.0)], [("ACME", 900.0, 0.0, 10.0)])
+        self.assertEqual((None, []), (one["every_months"], one["upcoming"]))
+        # A vest at the end of the month stays in its month where the next one is shorter.
+        monthly = relay.stock_plan_outlook([("2026-12-31", "transfer", "ACME", 100.0), ("2027-01-31", "transfer", "ACME", 100.0)], [("ACME", 200.0, 0.0, None)])
+        self.assertEqual([("2027-02-28", None), ("2027-03-31", None)], [(v["date"], v["value"]) for v in monthly["upcoming"]])
+
+    def test_every_vest_is_worked_out_and_only_the_page_is_cut_short(self):
+        # Four years of a new grant, a quarter at a time: sixteen vests, more than the page shows.
+        self.read(investments_holdings_get={**self.HOLDINGS, "holdings": [{**self.HOLDINGS["holdings"][2], "quantity": 4800}]})
+        whole, = relay.stock_plans()
+        self.assertEqual((16, "2030-08-15", 4), (len(whole["upcoming"]), whole["upcoming"][-1]["date"], len(whole["vests"])))
+        page, = relay.bank_status(self.T)["stock_plans"]
+        self.assertEqual(relay.VESTS_AHEAD, len(page["upcoming"]))
+        # A line for the last of them is still that vest, not one the plan hasn't got.
+        sheet, lines = self.fill([{"label": "Last", "right": 1, "vest": {"account": self.KEY, "on": "2030-08-15"}}], [["Last", 1]])
+        self.assertEqual(("written", 3000.0), (lines["Last"]["status"], sheet.cell("B1")))
+
+    def test_a_line_means_the_vest_nearest_its_day(self):
+        monthly = {"vests": [{"date": "2026-11-30", "shares": 100.0}, {"date": "2026-12-31", "shares": 100.0}],
+                   "upcoming": [{"date": "2027-01-31", "shares": 100.0, "value": 1000.0}, {"date": "2027-02-28", "shares": 120.0, "value": 1200.0}]}
+        # Both of a monthly plan's next vests are within reach of the middle of February; the nearer is meant.
+        self.assertEqual(("upcoming", "2027-02-28"), (lambda found: (found[0], found[1]["date"]))(relay.fill_vest(monthly, "2027-02-15")))
+        self.assertEqual(("upcoming", "2027-01-31"), (lambda found: (found[0], found[1]["date"]))(relay.fill_vest(monthly, "2027-02-10")))
+        # A vest already read is the one meant when it is the nearer, though one to come is in reach too.
+        self.assertEqual(("vested", None), relay.fill_vest(monthly, "2027-01-10"))
+        self.assertEqual("upcoming", relay.fill_vest(monthly, "2027-01-20")[0])
+        self.assertEqual(("no_vest", None), relay.fill_vest(monthly, "2027-06-15"))
+        self.assertEqual(("no_vest", None), relay.fill_vest(None, "2027-02-15"))
+
+    def test_a_vest_s_worth_needs_the_share_s_price_and_its_share_count_does_not(self):
+        priceless = [{**h, "institution_price": None} for h in self.HOLDINGS["holdings"]]
+        self.read(investments_holdings_get={**self.HOLDINGS, "holdings": priceless})
+        sheet, lines = self.fill(
+            [{"label": "Worth", "right": 1, "vest": {"account": self.KEY, "on": "2026-11-15"}},
+             {"label": "Shares", "right": 1, "vest": {"account": self.KEY, "on": "2026-11-15"}, "as": "shares"}],
+            [["Worth", 1], ["Shares", 1]])
+        self.assertEqual({"Worth": "no_price", "Shares": "written"}, {label: line["status"] for label, line in lines.items()})
+        self.assertEqual((1, 300.0), (sheet.cell("B1"), sheet.cell("B2")))
+
+    def fill(self, lines, home):
+        with open(relay.FINANCE_FILL_FILE, "w") as f:
+            json.dump({"tab": "Home", "lines": lines}, f)
+        sheet = _BudgetSheet(Home=home)
+        relay.feed_google = lambda: sheet
+        relay.fill_sheet(self.T)
+        return sheet, {line["label"]: line for line in relay.fill_status()["lines"]}
+
+    def test_a_line_that_is_a_vest_fills_its_cell_with_what_the_vest_is_worth(self):
+        self.read()
+        sheet, lines = self.fill(
+            [{"label": "Nov 15th", "right": 2, "vest": {"account": self.KEY, "on": "2026-11-15"}},
+             # Typed from memory a fortnight off, and as a number of shares.
+             {"label": "Feb 28th", "right": 3, "vest": {"account": self.KEY, "on": "2027-02-28"}, "as": "shares"},
+             {"label": "Aug 15th", "right": 2, "vest": {"account": self.KEY, "on": "2026-08-15"}},
+             {"label": "Aug 2029", "right": 2, "vest": {"account": self.KEY, "on": "2029-08-15"}},
+             {"label": "Other plan", "right": 2, "vest": {"account": "Nobody's Plan 1", "on": "2026-11-15"}}],
+            [["Nov 15th", "RSU", 2500, ""], ["Feb 28th", "RSU", 2500, ""], ["Aug 15th", "RSU", 2900, ""], ["Aug 2029", "RSU", 1, ""], ["Other plan", "RSU", 1, ""]])
+        self.assertEqual((3000.0, 300.0), (sheet.cell("C1"), sheet.cell("D2")))
+        self.assertEqual({"Nov 15th": "written", "Feb 28th": "written", "Aug 15th": "vested", "Aug 2029": "no_vest", "Other plan": "no_account"},
+                         {label: line["status"] for label, line in lines.items()})
+        self.assertEqual((2900, 1), (sheet.cell("C3"), sheet.cell("C4")), "a vest that has happened keeps its last estimate")
+        self.assertEqual(("2026-11-15", [self.KEY]), (lines["Nov 15th"]["vest_on"], lines["Nov 15th"]["accounts"]))
+        self.assertEqual([("Nov 15th", 2500.0, 3000.0), ("Feb 28th", None, 300.0)], [(c["label"], c["before"], c["after"]) for c in relay.fill_status()["writes"][0]["changes"]])
+
+    def test_a_vest_line_that_is_not_a_plan_and_a_day_is_refused_with_the_file(self):
+        for bad in ({"label": "Nov", "vest": {"account": self.KEY}}, {"label": "Nov", "vest": {"account": self.KEY, "on": "Nov 15th"}},
+                    {"label": "Nov", "vest": {"on": "2026-11-15"}}, {"label": "Nov", "vest": {"account": self.KEY, "on": "2026-11-15"}, "as": "dollars"},
+                    {"label": "Nov", "vest": {"account": self.KEY, "on": "2026-11-15"}, "accounts": ["Chase Checking 1"]},
+                    {"label": "Nov", "accounts": ["Chase Checking 1"], "as": "shares"}):
+            with open(relay.FINANCE_FILL_FILE, "w") as f:
+                json.dump({"tab": "Home", "lines": [bad]}, f)
+            self.assertEqual("bad_line", (relay.fill_lines()[1] or {}).get("reason"), bad)
+
+    def test_the_page_is_told_the_plan_s_outlook_and_unlinking_forgets_its_activity(self):
+        self.read()
+        plan, = relay.bank_status(self.T)["stock_plans"]
+        self.assertEqual(("Acme Plans", "Acme Corp", 3), (plan["institution"], plan["name"], len(plan["upcoming"])))
+        relay.plaid_post = _FakePlaid()
+        relay.require_finance_user, saved = (lambda request: "alex"), relay.require_finance_user
+        try:
+            relay.delete_bank_institution("item1", object(), types.SimpleNamespace(headers={}))
+        finally:
+            relay.require_finance_user = saved
+        self.assertEqual(0, relay.with_db(lambda c: c.execute("SELECT COUNT(*) FROM plaid_stock_events").fetchone()[0]))
+        self.assertEqual([], relay.bank_status(self.T)["stock_plans"])
+
+
 class _PagedPlaid:
     """Stands in for `plaid_post` where the same path is asked more than once: each path's answers in turn, the last one repeating."""
 

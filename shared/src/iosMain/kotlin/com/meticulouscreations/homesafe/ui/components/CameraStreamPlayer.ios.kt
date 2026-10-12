@@ -85,6 +85,7 @@ actual fun CameraStreamPlayer(
     onPlaybackEnded: () -> Unit,
     onPlaybackError: () -> Unit,
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
+    onStreamStats: ((stats: LiveStreamStats?) -> Unit)?,
     reconnectRequests: Int,
 ) {
     val holder = remember(playerKey) { HolderLease(playerKey) }.holder
@@ -174,6 +175,12 @@ actual fun CameraStreamPlayer(
                 toleranceAfter = kCMTimeZero.readValue(),
             )
         }
+    }
+
+    // Measured only while somebody is reading: a peer's statistics are not free to collect.
+    val currentOnStreamStats by rememberUpdatedState(onStreamStats)
+    if (onStreamStats != null) {
+        LaunchedEffect(holder) { holder.reportStats { currentOnStreamStats?.invoke(it) } }
     }
 
     // What the poll below last reported, for a reconnect request to judge the picture by.

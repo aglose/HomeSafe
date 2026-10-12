@@ -112,7 +112,7 @@ data class FitnessHeartSummaryEntity(
 )
 
 /**
- * A singleton row (always [id] = 0) holding the fitness app's preferences. Added in schema 21; a
+ * A singleton row (always [id] = 0) holding the fitness app's preferences. Added in schema 22; a
  * missing row means the defaults.
  */
 @Entity

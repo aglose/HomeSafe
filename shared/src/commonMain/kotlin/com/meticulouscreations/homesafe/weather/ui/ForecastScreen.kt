@@ -6,9 +6,9 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,20 +34,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -72,7 +71,6 @@ import homesafe.shared.generated.resources.weather_day_description
 import homesafe.shared.generated.resources.weather_day_expanded
 import homesafe.shared.generated.resources.weather_forecast_days_title
 import homesafe.shared.generated.resources.weather_forecast_less_certain
-import homesafe.shared.generated.resources.weather_forecast_trend_description
 import homesafe.shared.generated.resources.weather_forecast_trend_title
 import homesafe.shared.generated.resources.weather_stat_amount_chance
 import homesafe.shared.generated.resources.weather_stat_feels
@@ -84,19 +82,22 @@ import homesafe.shared.generated.resources.weather_stat_uv
 import homesafe.shared.generated.resources.weather_stat_wind
 import homesafe.shared.generated.resources.weather_stat_wind_gusts
 import homesafe.shared.generated.resources.weather_today
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
-import kotlin.math.max
+import kotlin.math.abs
+import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.sqrt
 
 /** From this day on (counting today as the first) a forecast is more a likelihood than a promise, and is drawn that way. */
-private const val LESS_CERTAIN_FROM = 7
+internal const val LESS_CERTAIN_FROM = 7
 
 /**
- * The Forecast tab for one place: the days ahead as one picture (highs and lows as two lines,
- * what falls as bars under them), then the list — each day's sky, chance of rain and range
- * against the week's, opening in place into that day's own sky, its hours, and its numbers.
+ * The Forecast tab for one place: the days ahead as a strip to scroll along (each day's sky, its
+ * high and low on the week's two curves, what falls and how hard it blows), then the list — each
+ * day's sky, chance of rain and range against the week's, opening in place into that day's own
+ * sky, its hours, and its numbers. A day picked in the strip is the day opened in the list.
  */
 @Composable
 internal fun ForecastScreen(
@@ -116,19 +117,33 @@ internal fun ForecastScreen(
     var opened by rememberSaveable(entry.place.id) { mutableLongStateOf(-1L) }
     val weekLow = remember(days) { days.minOf { it.lowC } }
     val weekHigh = remember(days) { days.maxOf { it.highC } }
+    val scope = rememberCoroutineScope()
+    val places = remember { DayPlaces() }
+    // Opens the day at [index], or shuts it if it is the one open. A tap on the day's own row also sees
+    // that what opened can be read; a tap in the strip leaves the list where it is, the strip under the finger.
+    val toggle: (Int, Boolean) -> Unit = { index, follow ->
+        val day = days[index].epochSeconds
+        places.following?.cancel()
+        if (opened == day) {
+            opened = -1L
+        } else {
+            opened = day
+            if (follow) places.following = scope.launch { listState.follow(places, index) }
+        }
+    }
     LazyColumn(
-        modifier.fillMaxSize().testTag("weather_forecast"),
+        modifier.fillMaxSize().testTag("weather_forecast").onPlaced { places.list = it },
         state = listState,
         contentPadding = padding,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item(key = "trend", contentType = "card") {
-            WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.AutoMirrored.Filled.ShowChart) {
-                WeekTrendChart(report, nowEpochSeconds)
+            WeatherCard(Modifier.cardWidth(), title = stringResource(Res.string.weather_forecast_trend_title), icon = Icons.AutoMirrored.Filled.ShowChart, padding = 0.dp) {
+                DayTimeline(report, nowEpochSeconds, selected = days.indexOfFirst { it.epochSeconds == opened }, onSelect = { toggle(it, false) })
             }
         }
-        item(key = "days", contentType = "card") {
+        item(key = DAYS_KEY, contentType = "card") {
             WeatherCard(
                 Modifier.cardWidth(),
                 title = pluralStringResource(Res.plurals.weather_forecast_days_title, days.size, days.size),
@@ -146,7 +161,8 @@ internal fun ForecastScreen(
                         weekHighC = weekHigh,
                         currentC = if (i == 0) report.current.temperatureC else null,
                         expanded = opened == day.epochSeconds,
-                        onToggle = { opened = if (opened == day.epochSeconds) -1L else day.epochSeconds },
+                        onToggle = { toggle(i, true) },
+                        modifier = Modifier.onPlaced { places.rows[i] = it },
                     )
                 }
                 if (days.size > LESS_CERTAIN_FROM) {
@@ -161,6 +177,53 @@ internal fun ForecastScreen(
         }
     }
 }
+
+private const val DAYS_KEY = "days"
+
+/**
+ * Where the list and each of its day rows were last placed, and the scroll that is following a
+ * day open. Plain fields: written as things are laid out, read on a tap, drawn from by nothing.
+ */
+private class DayPlaces {
+    var list: LayoutCoordinates? = null
+    val rows = mutableMapOf<Int, LayoutCoordinates>()
+    var following: Job? = null
+}
+
+/**
+ * Keeps the day row at [index] in the part of the list that nothing lies over while its detail
+ * opens under it: each frame, a share of the way to where it should be, so the scroll follows
+ * the opening and comes to rest with it. A row taller than the window is shown from its top. A
+ * finger on the list takes over, as it does from any scroll the app starts.
+ */
+private suspend fun LazyListState.follow(places: DayPlaces, index: Int) {
+    if (layoutInfo.visibleItemsInfo.none { it.key == DAYS_KEY }) animateScrollToItem(layoutInfo.totalItemsCount - 1)
+    var height = -1
+    var still = 0
+    var frames = 0
+    while (still < FOLLOW_STILL_FRAMES && frames++ < FOLLOW_FRAMES_AT_MOST) {
+        withFrameNanos { }
+        val list = places.list?.takeIf { it.isAttached } ?: return
+        val row = places.rows[index]?.takeIf { it.isAttached } ?: return
+        val top = list.localPositionOf(row, Offset.Zero).y
+        val from = layoutInfo.beforeContentPadding.toFloat()
+        val to = (list.size.height - layoutInfo.afterContentPadding).toFloat()
+        val away = when {
+            top < from -> top - from
+            top + row.size.height > to -> min(top + row.size.height - to, top - from)
+            else -> 0f
+        }
+        val step = if (abs(away) < 2f) away else away * FOLLOW_SHARE
+        val moved = if (step == 0f) 0f else scrollBy(step)
+        // Done once the row has stopped growing and there is nowhere further to take it.
+        if (row.size.height == height && abs(moved) < 0.5f) still++ else still = 0
+        height = row.size.height
+    }
+}
+
+private const val FOLLOW_SHARE = 0.28f
+private const val FOLLOW_STILL_FRAMES = 6
+private const val FOLLOW_FRAMES_AT_MOST = 180
 
 /** One day of the list, and under it (when [expanded]) the day in full. */
 @Composable
@@ -291,73 +354,6 @@ private fun DayDetail(report: WeatherReport, place: Place, day: DayForecast, ind
                 }
                 if (pair.size == 1) Spacer(Modifier.weight(1f))
             }
-        }
-    }
-}
-
-/**
- * The days ahead at a glance: the highs as one line and the lows as another, each in the colours
- * of its temperatures, the band between them shaded, and each day's rain or snow as a bar at
- * the foot. The days' names run along the top.
- */
-@Composable
-private fun WeekTrendChart(report: WeatherReport, nowEpochSeconds: Long, modifier: Modifier = Modifier) {
-    val days = remember(report, nowEpochSeconds) { report.daysFromToday(nowEpochSeconds) }
-    if (days.size < 2) return
-    val colors = WeatherTheme.colors
-    val units = WeatherTheme.units
-    val offset = report.utcOffsetSeconds
-    val low = remember(days) { days.minOf { it.lowC } }
-    val high = remember(days) { days.maxOf { it.highC } }
-    val description = stringResource(Res.string.weather_forecast_trend_description, WeatherFormat.degrees(days.maxOf { it.highC }, units), WeatherFormat.degrees(days.minOf { it.lowC }, units))
-    Column(modifier.fillMaxWidth()) {
-        Row(Modifier.fillMaxWidth()) {
-            days.forEachIndexed { i, day ->
-                Text(
-                    stringResource(WeatherFormat.weekday(day.epochSeconds + 12 * 3600, offset)),
-                    style = WeatherTheme.type.micro.copy(letterSpacing = WeatherTheme.type.label.letterSpacing),
-                    // Today in the sun's colour; the weekend a little brighter than the working days.
-                    color = when {
-                        i == 0 -> colors.sun
-                        WeatherFormat.isWeekend(day.epochSeconds + 12 * 3600, offset) -> colors.onSky
-                        else -> colors.onSkyFaint
-                    },
-                    maxLines = 1,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Canvas(Modifier.fillMaxWidth().height(132.dp).semantics { contentDescription = description }) {
-            val step = size.width / days.size
-            val top = 10.dp.toPx()
-            val bottom = size.height - 30.dp.toPx()
-            val span = (high - low).coerceAtLeast(1.0)
-            fun yOf(celsius: Double) = (bottom - (celsius - low) / span * (bottom - top)).toFloat()
-            val highs = days.mapIndexed { i, day -> Offset((i + 0.5f) * step, yOf(day.highC)) }
-            val lows = days.mapIndexed { i, day -> Offset((i + 0.5f) * step, yOf(day.lowC)) }
-            val wettest = max(6.0, days.maxOf { max(it.precipitationMm, it.snowfallCm) })
-            days.forEachIndexed { i, day ->
-                val amount = max(day.precipitationMm, day.snowfallCm)
-                if (amount >= 0.2) {
-                    val h = (sqrt(amount / wettest).toFloat() * 24.dp.toPx()).coerceAtLeast(3.dp.toPx())
-                    val alpha = 0.4f + 0.6f * ((day.precipitationProbability ?: 70) / 100f)
-                    drawRoundRect((if (day.isSnowy) colors.snow else colors.rain).copy(alpha = alpha), Offset(i * step + step * 0.28f, size.height - h), Size(step * 0.44f, h), CornerRadius(3.dp.toPx()))
-                }
-            }
-            val band = Path().apply {
-                addPath(smoothPath(highs))
-                lows.reversed().forEach { lineTo(it.x, it.y) }
-                close()
-            }
-            drawPath(band, Color(0x1FFFFFFF))
-            val highStops = days.mapIndexed { i, day -> (i + 0.5f) / days.size to colors.temperature(day.highC) }.toTypedArray()
-            val lowStops = days.mapIndexed { i, day -> (i + 0.5f) / days.size to colors.temperature(day.lowC) }.toTypedArray()
-            drawPath(smoothPath(highs), Brush.horizontalGradient(*highStops, startX = 0f, endX = size.width), style = Stroke(2.8.dp.toPx(), cap = StrokeCap.Round))
-            drawPath(smoothPath(lows), Brush.horizontalGradient(*lowStops, startX = 0f, endX = size.width), style = Stroke(2.2.dp.toPx(), cap = StrokeCap.Round), alpha = 0.8f)
-            highs.forEachIndexed { i, p -> drawCircle(colors.temperature(days[i].highC), 3.dp.toPx(), p) }
-            lows.forEachIndexed { i, p -> drawCircle(colors.temperature(days[i].lowC), 2.4.dp.toPx(), p, alpha = 0.85f) }
         }
     }
 }

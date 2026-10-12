@@ -77,7 +77,10 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
   under the real Activity — which must not recreate it — is `AppE2eTest`'s.
 
 On the JVM, the journeys keep the desktop app's database in `shared/build/tmp/jvmTest/homesafe-data`, not
-`~/.homesafe`. The directory is set with the `homesafe.dataDir` system property.
+`~/.homesafe`. The directory is set with the `homesafe.dataDir` system property, and each test process takes a
+`worker-N` directory of its own under it (`testPlatformContext()` in `src/jvmTest`): `-PjvmTestForks=2` deals the test
+classes out to two JVMs running side by side, which is how CI's unit-test job runs them. A test that builds an app
+graph must get its `PlatformContext` from `testPlatformContext()`, or two processes share one database.
 
 ## Running the suites
 
@@ -97,6 +100,11 @@ instrumentation and a wiped app, because sign-in history lives in Room and there
 
 The two device suites can't share an emulator at the same time, because each covers the other's Activities. The build
 orders the end-to-end suite after the shared module's when you run both.
+
+CI runs them on two emulators at once: the integration journeys on one
+(`-Pandroid.testInstrumentationRunnerArguments.package=com.meticulouscreations.homesafe.integration`), and everything
+else in `shared` plus the end-to-end suite on the other (`notPackage=` the same). A new test needs listing nowhere; its
+package decides.
 
 On CI, `scripts/run-instrumented-tests.sh` runs them with a time limit. If they're still running when it expires, the
 script dumps every thread of the app and test processes and the journey watchdog's output from logcat. Either way it

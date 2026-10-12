@@ -114,7 +114,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncRoute(contentPa
     - contentPadding: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: com.meticulouscreations.homesafe.finance.BankSyncUiState, contentPadding: androidx.compose.foundation.layout.PaddingValues, onLink: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BankLinkKind, kotlin.Unit>, onRelink: kotlin.Function1<kotlin.String, kotlin.Unit>, onCancelLink: kotlin.Function0<kotlin.Unit>, onSyncNow: kotlin.Function0<kotlin.Unit>, onUnlink: kotlin.Function1<kotlin.String, kotlin.Unit>, onUndoWrite: kotlin.Function1<kotlin.Long, kotlin.Unit>, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onRetry: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -125,6 +125,8 @@ internal fun com.meticulouscreations.homesafe.finance.ui.BankSyncScreen(state: c
     - onCancelLink: STABLE (function type)
     - onSyncNow: STABLE (function type)
     - onUnlink: STABLE (function type)
+    - onUndoWrite: STABLE (function type)
+    - onPauseLine: STABLE (function type)
     - onRetry: STABLE (function type)
 
 @Composable
@@ -458,6 +460,33 @@ private fun com.meticulouscreations.homesafe.finance.ui.FeedCard(feed: com.metic
     - now: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillLineRow(line: com.meticulouscreations.homesafe.finance.domain.SheetFillLine, busy: kotlin.Boolean, enabled: kotlin.Boolean, onPause: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - line: STABLE (marked @Stable or @Immutable)
+    - busy: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - onPause: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillLinesCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill, changing: kotlin.String?, enabled: kotlin.Boolean, onPauseLine: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fill: STABLE (marked @Stable or @Immutable)
+    - changing: STABLE (class with no mutable properties)
+    - enabled: STABLE (primitive type)
+    - onPauseLine: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FillProblemCard(fill: com.meticulouscreations.homesafe.finance.domain.SheetFill): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fill: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FilterChips(budget: com.meticulouscreations.homesafe.finance.domain.Budget, selected: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -478,6 +507,18 @@ public fun com.meticulouscreations.homesafe.finance.ui.FinanceApp(onClose: kotli
     - onShowRequestedTab: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.FinanceAppContent(onClose: kotlin.Function0<kotlin.Unit>, active: kotlin.Boolean, requestedTab: com.meticulouscreations.homesafe.finance.ui.FinanceTab?, onShowRequestedTab: kotlin.Function0<kotlin.Unit>, offline: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClose: STABLE (function type)
+    - active: STABLE (primitive type)
+    - requestedTab: STABLE (class with no mutable properties)
+    - onShowRequestedTab: STABLE (function type)
+    - offline: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FinanceBottomNav(selected: com.meticulouscreations.homesafe.finance.ui.FinanceTab, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.FinanceTab, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -494,6 +535,16 @@ internal fun com.meticulouscreations.homesafe.finance.ui.FinanceCard(modifier: a
     - onClick: STABLE (function type)
     - padding: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.finance.ui.FinanceLockScreen(state: com.meticulouscreations.homesafe.finance.FinanceLockUiState, onUnlock: kotlin.Function0<kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - onUnlock: STABLE (function type)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.FinanceNavItem(tab: com.meticulouscreations.homesafe.finance.ui.FinanceTab, isSelected: kotlin.Boolean, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.finance.ui.FinanceTab, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, horizontalPadding: androidx.compose.ui.unit.Dp): kotlin.Unit
@@ -540,13 +591,14 @@ public fun com.meticulouscreations.homesafe.finance.ui.FinanceTheme.type(): com.
   params:
 
 @Composable
-private fun com.meticulouscreations.homesafe.finance.ui.FinanceTopBar(title: kotlin.String, isDetail: kotlin.Boolean, refreshing: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, onGlossary: kotlin.Function0<kotlin.Unit>, onChartSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.finance.ui.FinanceTopBar(title: kotlin.String, isDetail: kotlin.Boolean, refreshing: kotlin.Boolean, offline: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onRefresh: kotlin.Function0<kotlin.Unit>, onGlossary: kotlin.Function0<kotlin.Unit>, onChartSettings: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - title: STABLE (String is immutable)
     - isDetail: STABLE (primitive type)
     - refreshing: STABLE (primitive type)
+    - offline: STABLE (primitive type)
     - onBack: STABLE (function type)
     - onRefresh: STABLE (function type)
     - onGlossary: STABLE (function type)
@@ -1328,6 +1380,13 @@ private fun com.meticulouscreations.homesafe.finance.ui.StatusRow(color: android
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.finance.ui.StockPlanCard(plan: com.meticulouscreations.homesafe.finance.domain.StockPlan): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - plan: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.StressScale(stress: com.meticulouscreations.homesafe.finance.domain.StressScore?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -1394,6 +1453,14 @@ private fun com.meticulouscreations.homesafe.finance.ui.TourCaption(link: com.me
   params:
     - link: STABLE (marked @Stable or @Immutable)
     - step: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.UndoDialog(onConfirm: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onConfirm: STABLE (function type)
+    - onDismiss: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.UnlinkDialog(name: kotlin.String, onConfirm: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -1467,6 +1534,17 @@ private fun com.meticulouscreations.homesafe.finance.ui.WhatIfCard(whatIf: com.m
   params:
     - whatIf: STABLE (marked @Stable or @Immutable)
     - kind: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.finance.ui.WriteCard(write: com.meticulouscreations.homesafe.finance.domain.SheetWrite, now: kotlin.Long, undoing: kotlin.Boolean, enabled: kotlin.Boolean, onUndo: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - write: STABLE (marked @Stable or @Immutable)
+    - now: STABLE (primitive type)
+    - undoing: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - onUndo: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.YieldCurveBlock(state: com.meticulouscreations.homesafe.finance.FinanceUiState): kotlin.Unit
@@ -2532,7 +2610,7 @@ public fun com.meticulouscreations.homesafe.ui.components.BufferingDots(color: a
     - dotSize: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(request: com.meticulouscreations.homesafe.ui.components.PlayerRequest, modifier: androidx.compose.ui.Modifier, playerKey: kotlin.String?, onPositionChanged: kotlin.Function1<@[ParameterName(name = \, onBufferingChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, onPlaybackEnded: kotlin.Function0<kotlin.Unit>, onPlaybackError: kotlin.Function0<kotlin.Unit>, onAudioAvailabilityChanged: kotlin.Function1<@[ParameterName(name = \, onStreamStats: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2545,6 +2623,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(req
     - onPlaybackEnded: STABLE (function type)
     - onPlaybackError: STABLE (function type)
     - onAudioAvailabilityChanged: STABLE (function type)
+    - onStreamStats: STABLE (function type)
     - reconnectRequests: STABLE (primitive type)
 
 @Composable
@@ -2997,12 +3076,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras
     - onSelect: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEditDetectionZones: kotlin.Function0<kotlin.Unit>, onTagCars: kotlin.Function0<kotlin.Unit>, statsShown: kotlin.Boolean, onToggleStats: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, onOpenChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onEditDetectionZones: STABLE (function type)
     - onTagCars: STABLE (function type)
+    - statsShown: STABLE (primitive type)
+    - onToggleStats: STABLE (function type)
     - tint: STABLE (marked @Stable or @Immutable)
     - onOpenChange: STABLE (function type)
 
@@ -3440,11 +3521,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.FilterMenuItem(label: ko
     - onClick: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.FinanceDrawerCard(finance: com.meticulouscreations.homesafe.finance.FinanceUiState, onOpen: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.FinanceDrawerCard(finance: com.meticulouscreations.homesafe.finance.FinanceUiState, locked: kotlin.Boolean, onOpen: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - finance: STABLE (marked @Stable or @Immutable)
+    - locked: STABLE (primitive type)
     - onOpen: STABLE (function type)
 
 @Composable
@@ -3933,6 +4015,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.NotAPersonPrompt(state:
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.OpenAppsButton(onClick: kotlin.Function0<kotlin.Unit>, extraColors: com.meticulouscreations.homesafe.ui.theme.FrigateExtraColors): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClick: STABLE (function type)
+    - extraColors: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.OtherDevicesToggle(count: kotlin.Int, counted: kotlin.Int, expanded: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -3978,6 +4068,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.PlayPauseButton(isPlayin
     - isPlaying: STABLE (primitive type)
     - enabled: STABLE (primitive type)
     - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.PlayerStreamStats(cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - cameraName: STABLE (String is immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -4385,7 +4483,16 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title
     - enabled: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, signedIn: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - tab: STABLE (class with no mutable properties)
+    - signedIn: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, showHomeSecurity: kotlin.Boolean, financeLocked: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4394,11 +4501,14 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotli
     - finance: STABLE (marked @Stable or @Immutable)
     - weather: STABLE (marked @Stable or @Immutable)
     - fitness: STABLE (marked @Stable or @Immutable)
+    - pull: STABLE (marked @Stable or @Immutable)
     - onSelectTab: STABLE (function type)
     - onOpenFinance: STABLE (function type)
     - onOpenWeather: STABLE (function type)
     - onOpenFitness: STABLE (function type)
     - onClose: STABLE (function type)
+    - showHomeSecurity: STABLE (primitive type)
+    - financeLocked: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ShellOverlays(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
@@ -4410,7 +4520,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ShellOverlays(nav: com.m
     - tab: STABLE (class with no mutable properties)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBar: kotlin.Boolean, topBar: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, overlay: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, showBottomNav: kotlin.Boolean, contentCovered: kotlin.Boolean, contentObscured: kotlin.Boolean, immersive: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBar: kotlin.Boolean, topBar: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, overlay: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, showBottomNav: kotlin.Boolean, contentCovered: kotlin.Boolean, contentObscured: kotlin.Boolean, immersive: kotlin.Boolean, drawerPull: com.meticulouscreations.homesafe.ui.screens.DrawerPull?, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4423,13 +4533,15 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBa
     - contentCovered: STABLE (primitive type)
     - contentObscured: STABLE (primitive type)
     - immersive: STABLE (primitive type)
+    - drawerPull: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellSkeleton(): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellSkeleton(onMenu: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
+    - onMenu: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.ShellTab(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
@@ -4444,6 +4556,14 @@ private fun com.meticulouscreations.homesafe.ui.screens.Shimmer(modifier: androi
   skippable: true
   restartable: true
   params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.SkipBadge(skip: com.meticulouscreations.homesafe.ui.screens.SkipFeedback?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - skip: STABLE (class with no mutable properties)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -4464,6 +4584,20 @@ internal fun com.meticulouscreations.homesafe.ui.screens.StageAndControls(sideBy
     - stage: STABLE (composable function type)
     - controls: STABLE (composable function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.StatsLine(row: com.meticulouscreations.homesafe.ui.screens.StreamStatsRow): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - row: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.StatsNote(text: org.jetbrains.compose.resources.StringResource): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.StatusBadge(enabled: kotlin.Boolean, status: com.meticulouscreations.homesafe.ui.components.LiveStreamStatus, textColor: androidx.compose.ui.graphics.Color, pillColor: androidx.compose.ui.graphics.Color): kotlin.Unit
@@ -4506,6 +4640,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.StorageUsageBar(label: k
     - usedFraction: STABLE (primitive type)
     - usedText: STABLE (String is immutable)
     - totalText: STABLE (String is immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.StreamStatsPanel(stats: com.meticulouscreations.homesafe.ui.components.LiveStreamStats?, isLive: kotlin.Boolean, onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - stats: STABLE (marked @Stable or @Immutable)
+    - isLive: STABLE (primitive type)
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState): kotlin.Unit
@@ -4946,6 +5090,21 @@ internal fun com.meticulouscreations.homesafe.weather.ui.ComfortStrip(report: co
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.weather.ui.DayColumn(day: com.meticulouscreations.homesafe.weather.domain.DayForecast, index: kotlin.Int, utcOffsetSeconds: kotlin.Int, highAt: androidx.compose.ui.unit.Dp, lowAt: androidx.compose.ui.unit.Dp, selected: kotlin.Boolean, jiggle: kotlin.Function0<kotlin.Float>, onSelect: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - day: STABLE (marked @Stable or @Immutable)
+    - index: STABLE (primitive type)
+    - utcOffsetSeconds: STABLE (primitive type)
+    - highAt: STABLE (marked @Stable or @Immutable)
+    - lowAt: STABLE (marked @Stable or @Immutable)
+    - selected: STABLE (primitive type)
+    - jiggle: STABLE (function type)
+    - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.DayDetail(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, place: com.meticulouscreations.homesafe.weather.domain.Place, day: com.meticulouscreations.homesafe.weather.domain.DayForecast, index: kotlin.Int, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -4979,6 +5138,17 @@ private fun com.meticulouscreations.homesafe.weather.ui.DayRow(report: com.metic
     - currentC: STABLE (class with no mutable properties)
     - expanded: STABLE (primitive type)
     - onToggle: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.weather.ui.DayTimeline(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, nowEpochSeconds: kotlin.Long, selected: kotlin.Int, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - report: STABLE (marked @Stable or @Immutable)
+    - nowEpochSeconds: STABLE (primitive type)
+    - selected: STABLE (primitive type)
+    - onSelect: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -5349,16 +5519,18 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WaitingForForecast(entr
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.weather.ui.WeatherApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+public fun com.meticulouscreations.homesafe.weather.ui.WeatherApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, link: com.meticulouscreations.homesafe.navigation.WeatherDeepLink?, onShowLink: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - onClose: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - active: STABLE (primitive type)
+    - link: STABLE (class with no mutable properties)
+    - onShowLink: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, initialPage: com.meticulouscreations.homesafe.weather.ui.WeatherPage?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state: com.meticulouscreations.homesafe.weather.WeatherUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, actions: com.meticulouscreations.homesafe.weather.ui.WeatherActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.weather.ui.WeatherTab, initialPage: com.meticulouscreations.homesafe.weather.ui.WeatherPage?, link: com.meticulouscreations.homesafe.navigation.WeatherDeepLink?, onShowLink: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -5369,6 +5541,8 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WeatherAppContent(state
     - active: STABLE (primitive type)
     - initialTab: STABLE (class with no mutable properties)
     - initialPage: STABLE (marked @Stable or @Immutable)
+    - link: STABLE (class with no mutable properties)
+    - onShowLink: STABLE (function type)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.weather.ui.WeatherCard(modifier: androidx.compose.ui.Modifier, title: kotlin.String?, icon: androidx.compose.ui.graphics.vector.ImageVector?, padding: androidx.compose.ui.unit.Dp, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
@@ -5400,7 +5574,7 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherNav(selected: com
     - vertical: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUnitsChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherUnits, kotlin.Unit>, onNoticesChange: kotlin.Function1<com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings, kotlin.Unit>, onStillSkyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onAllowNotifications: kotlin.Function0<kotlin.Unit>, onSendSample: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -5410,6 +5584,7 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WeatherSettingsScreen(s
     - onNoticesChange: STABLE (function type)
     - onStillSkyChange: STABLE (function type)
     - onAllowNotifications: STABLE (function type)
+    - onSendSample: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
@@ -5443,15 +5618,6 @@ private fun com.meticulouscreations.homesafe.weather.ui.WeatherTopBar(state: com
     - onOpenSettings: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.weather.ui.WeekTrendChart(report: com.meticulouscreations.homesafe.weather.domain.WeatherReport, nowEpochSeconds: kotlin.Long, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - report: STABLE (marked @Stable or @Immutable)
-    - nowEpochSeconds: STABLE (primitive type)
-    - modifier: STABLE (marked @Stable or @Immutable)
-
-@Composable
 private fun com.meticulouscreations.homesafe.weather.ui.Welcome(state: com.meticulouscreations.homesafe.weather.WeatherUiState, padding: androidx.compose.foundation.layout.PaddingValues, onUseLocation: kotlin.Function0<kotlin.Unit>, onOpenPlaces: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -5469,6 +5635,14 @@ internal fun com.meticulouscreations.homesafe.weather.ui.WindTile(report: com.me
   params:
     - report: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.weather.ui.notice.NoticeCard(art: com.meticulouscreations.homesafe.weather.domain.WeatherNoticeArt, heightDp: kotlin.Int): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - art: STABLE (marked @Stable or @Immutable)
+    - heightDp: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.radar.MapButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit

@@ -11,9 +11,11 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -23,14 +25,18 @@ import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
+import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.weather.RadarLoad
 import com.meticulouscreations.homesafe.weather.WeatherUiState
+import com.meticulouscreations.homesafe.weather.domain.AlertSeverity
 import com.meticulouscreations.homesafe.weather.domain.MeasureSystem
 import com.meticulouscreations.homesafe.weather.domain.RadarFrame
 import com.meticulouscreations.homesafe.weather.domain.RadarSource
 import com.meticulouscreations.homesafe.weather.domain.RadarTimeline
 import com.meticulouscreations.homesafe.weather.domain.TemperatureUnit
+import com.meticulouscreations.homesafe.weather.domain.WeatherAlert
 import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
 import com.meticulouscreations.homesafe.weather.domain.WeatherNoticeSettings
 import com.meticulouscreations.homesafe.weather.domain.WeatherPreferences
@@ -43,6 +49,7 @@ import com.meticulouscreations.homesafe.weather.ui.WeatherFixtures
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.minutes
 
 /**
@@ -71,9 +78,14 @@ class WeatherAppUiTest {
         val notices = mutableListOf<WeatherNoticeSettings>()
         val stillSky = mutableListOf<Boolean>()
         val radarVisible = mutableListOf<Boolean>()
+        val selected = mutableListOf<String>()
+        var linksShown = 0
+        var samples = 0
 
         fun actions() = WeatherActions(
             onClose = { closed++ },
+            onSelect = { selected += it },
+            onSendSample = { samples++ },
             onSearch = { searches += it },
             onUseLocation = { locate++ },
             onUnitsChange = { units += it },
@@ -88,14 +100,14 @@ class WeatherAppUiTest {
      * gets the sky drawn by them: here they run on the CPU, seconds a frame, and what these tests
      * check is the same over the plain gradient that stands in.
      */
-    private fun ComposeUiTest.show(state: WeatherUiState, calls: Calls, shaders: Boolean = false) {
+    private fun ComposeUiTest.show(state: WeatherUiState, calls: Calls, shaders: Boolean = false, link: WeatherDeepLink? = null) {
         mainClock.autoAdvance = false
         setContent {
             FrigatePreview {
                 CompositionLocalProvider(LocalWeatherShaders provides shaders) {
                     Box(Modifier.fillMaxSize()) {
                         Box(Modifier.requiredSize(300.dp, 600.dp)) {
-                            WeatherAppContent(state, NoTiles, calls.actions())
+                            WeatherAppContent(state, NoTiles, calls.actions(), link = link, onShowLink = { calls.linksShown++ })
                         }
                     }
                 }
@@ -166,6 +178,63 @@ class WeatherAppUiTest {
         assertNotShown("weather_forecast")
     }
 
+    @Test
+    fun aDayPickedInTheTimelineIsTheDayOpenInTheList() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls())
+        tap("weather_tab_forecast")
+        assertShown("weather_timeline")
+
+        fun picked(day: Int) = onNodeWithTag("weather_timeline_day_$day").fetchSemanticsNode().config.getOrNull(SemanticsProperties.Selected)
+        fun stateOfRow(day: Int) = onNodeWithTag("weather_day_$day").fetchSemanticsNode().config.getOrNull(SemanticsProperties.StateDescription)
+        val collapsed = stateOfRow(3)
+        assertEquals(false, picked(3))
+
+        tap("weather_timeline_day_3")
+        assertEquals(true, picked(3))
+        assertNotEquals(collapsed, stateOfRow(3), "the day picked in the strip is open in the list")
+
+        // The list's own rows pick in the strip too, and one day is open at a time.
+        tap("weather_day_1")
+        assertEquals(true, picked(1))
+        assertEquals(false, picked(3))
+        assertEquals(collapsed, stateOfRow(3))
+
+        tap("weather_timeline_day_1")
+        assertEquals(false, picked(1), "a second tap puts the day back")
+        assertEquals(collapsed, stateOfRow(1))
+    }
+
+    @Test
+    fun theTimelineTellsAScreenReaderWhichOfTwoFridaysADayIs() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls())
+        tap("weather_tab_forecast")
+        fun said(day: Int) = onNodeWithTag("weather_timeline_day_$day").fetchSemanticsNode().config.getOrNull(SemanticsProperties.ContentDescription).orEmpty().joinToString()
+        // Tomorrow and a week from tomorrow have the same name, and different dates.
+        assertTrue("Oct 10" in said(1), said(1))
+        assertTrue("Oct 17" in said(8), said(8))
+        assertNotEquals(said(1), said(8))
+        // What the column shows is said: tomorrow's shower with its odds and amount, and the wind.
+        assertTrue("85%" in said(1) && "mph" in said(1), said(1))
+    }
+
+    @Test
+    fun aDayPickedInTheTimelineLeavesTheListWhereItIs() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls())
+        tap("weather_tab_forecast")
+        fun list() = onNodeWithTag("weather_forecast").fetchSemanticsNode().boundsInRoot
+        fun stripTop() = onNodeWithTag("weather_timeline").fetchSemanticsNode().positionInRoot.y
+
+        // Where the row is, in the window or out of it: its bounds would be cut to what shows.
+        fun rowTop() = onNodeWithTag("weather_day_8").fetchSemanticsNode().positionInRoot.y
+        val stripAt = stripTop()
+        assertTrue(rowTop() >= list().bottom, "the ninth day starts out below the window: ${rowTop()} in ${list()}")
+
+        tap("weather_timeline_day_8")
+        settle()
+        assertEquals(stripAt, stripTop(), "the strip stays under the finger that picked the day")
+        assertTrue(rowTop() >= list().bottom, "and the day it opened is still below, to be scrolled to: ${rowTop()} in ${list()}")
+    }
+
     // ---- Radar --------------------------------------------------------------------------------
 
     private val timeline = RadarTimeline(
@@ -191,6 +260,88 @@ class WeatherAppUiTest {
         tap("weather_tab_radar")
         assertShown("weather_radar")
         onNodeWithTag("weather_radar_play").assertIsNotEnabled()
+    }
+
+    @Test
+    fun settingsOffersASampleNotificationOnlyWhereOneCouldArrive() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(state.copy(notificationPermission = NotificationPermission.GRANTED), calls)
+        tap("weather_settings_button")
+        tap("weather_notices_sample")
+        assertEquals(1, calls.samples)
+    }
+
+    @Test
+    fun settingsOffersNoSampleWhileNotificationsAreBlocked() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state.copy(notificationPermission = NotificationPermission.DENIED), Calls())
+        tap("weather_settings_button")
+        assertShown("weather_settings")
+        assertNotShown("weather_notices_sample")
+    }
+
+    // ---- Opened by a notification -------------------------------------------------------------
+
+    private val tornado = WeatherAlert(id = "urn:second-message", key = "KPQR.TO.W.0012", event = "Tornado Warning", headline = "Take cover now", severity = AlertSeverity.EXTREME)
+
+    @Test
+    fun aNotificationsRadarButtonOpensTheAppOnTheRadar() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(state, calls, link = WeatherDeepLink(WeatherDeepLink.View.RADAR, placeId = WeatherFixtures.portland.id))
+        assertShown("weather_radar")
+        assertEquals(1, calls.linksShown, "the shell was told, so it doesn't ask again")
+    }
+
+    @Test
+    fun aTapOnTomorrowsOutlookOpensTheForecast() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls(), link = WeatherDeepLink(WeatherDeepLink.View.FORECAST))
+        assertShown("weather_forecast")
+    }
+
+    @Test
+    fun aTapOnAWarningOpensThatWarningByWhatItIsNotByItsMessage() = runComposeUiTest(testTimeout = 5.minutes) {
+        // The notification was for an earlier message of the same warning: its key is what they share.
+        val warned = WeatherFixtures.state(alerts = listOf(tornado)).copy(preferences = stillSky)
+        show(warned, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertShown("weather_alert_detail")
+        onNodeWithTag("weather_alert_detail").assert(hasAnyDescendant(hasText("Take cover now")))
+    }
+
+    @Test
+    fun aTapOnAWarningThatHasLapsedLandsOnToday() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(state, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertNotShown("weather_alert_detail")
+        assertShown("weather_today")
+    }
+
+    @Test
+    fun aTapOnAWarningWhoseEndHasPassedInAnOldForecastLandsOnTodayToo() = runComposeUiTest(testTimeout = 5.minutes) {
+        // Opened with no network: the forecast on screen is the one the phone had, warning and all.
+        val stale = WeatherFixtures.state(alerts = listOf(tornado.copy(endsEpochSeconds = WeatherFixtures.NOW - 60))).copy(preferences = stillSky)
+        show(stale, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertNotShown("weather_alert_detail")
+        assertShown("weather_today")
+    }
+
+    @Test
+    fun aTapOnAWarningStillInForceOpensItWhateverItsEnd() = runComposeUiTest(testTimeout = 5.minutes) {
+        val warned = WeatherFixtures.state(alerts = listOf(tornado.copy(endsEpochSeconds = WeatherFixtures.NOW + 60))).copy(preferences = stillSky)
+        show(warned, Calls(), link = WeatherDeepLink(placeId = WeatherFixtures.portland.id, alertKey = "KPQR.TO.W.0012"))
+        assertShown("weather_alert_detail")
+    }
+
+    @Test
+    fun aNotificationForAPlaceNotInViewTurnsTheAppToIt() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(state.copy(selectedId = WeatherFixtures.seattle.id), calls, link = WeatherDeepLink(placeId = WeatherFixtures.portland.id))
+        assertEquals(listOf(WeatherFixtures.portland.id), calls.selected)
+    }
+
+    @Test
+    fun aNotificationForAPlaceTheAppNoLongerHasOpensWhereItWas() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(state.copy(settled = true), calls, link = WeatherDeepLink(placeId = "somewhere-removed"))
+        assertEquals(emptyList(), calls.selected)
+        assertShown("weather_today")
     }
 
     // ---- Places -------------------------------------------------------------------------------

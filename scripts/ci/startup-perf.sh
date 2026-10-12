@@ -23,14 +23,20 @@ HEAD_APK=${2:?head apk}
 RUNS=${3:-4}
 SERIAL=${ANDROID_SERIAL:-emulator-5554}
 PACKAGE=com.meticulouscreations.homesafe
+# Where the workflow started go2rtc from (its binary, config, pid and log).
+GO2RTC_DIR=build/startup-perf
 
-# Every run starts from cold streams: the last run's consumers linger on go2rtc until their
-# connections time out, so wait for it to have none (the emulator's arrive from 127.0.0.1) and for
-# go2rtc to stop the test-pattern producers, rather than trusting a fixed pause.
+# Every run starts from cold streams. The last run's consumers linger on go2rtc until their
+# connections time out, half a minute for a force-stopped app, and twenty runs of that were most
+# of this job; so go2rtc is started afresh before each run instead (scripts/ci/go2rtc-testsrc.sh
+# stops the one it started), which leaves nobody joined and no test pattern running. The run still
+# checks that it has no consumers (the emulator's arrive from 127.0.0.1), then gives the new
+# go2rtc a second to finish opening its ports.
 bench() {
   python3 scripts/bench-first-live-pixel.py --serial "$SERIAL" --package "$PACKAGE" \
     --cameras 1 --timeout 30 --settle 1 --pause 0 --retries 2 \
-    --go2rtc http://127.0.0.1:1984 --go2rtc-count-local --idle-extra 2 "$@"
+    --go2rtc http://127.0.0.1:1984 --go2rtc-count-local --idle-extra 1 \
+    --go2rtc-reset "scripts/ci/go2rtc-testsrc.sh $GO2RTC_DIR" "$@"
 }
 
 # Up to two minutes for the launcher to be in front and the screen to hold still long enough for

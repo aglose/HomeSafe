@@ -81,9 +81,45 @@ someone who may see the finances, and on Android they have a **Budget** channel 
 (`budget=1` in the push's data, `notif_id=budget-<month>-<line>`). Quiet hours hold them back;
 "only when everyone's away" and "only strangers" don't apply to them.
 
+## Icons
+
+On Android each notification says what it is from the status bar, before the shade is opened:
+
+| Notification | Icon | Accent |
+| --- | --- | --- |
+| A person, where the notification knows that is what was seen | A figure | The app's orange |
+| A car (an unnamed one, or a household car arriving or leaving) | A car | The app's orange |
+| An animal (in-app alerts) | A paw | The app's orange |
+| Anything else from a camera | The camera | The app's orange |
+| Someone seen while everyone is away | A shield | Red |
+| A summary | A list | The app's orange |
+| "Marked not a person" | A tick | The app's orange |
+| A budget alert | A card | Amber close to a limit, red past one |
+| The weather | One per kind: see [weather.md](weather.md#what-one-looks-like) | The kind's own |
+
+A push says what it is about only as far as the relay already lets on: `car_unnamed`,
+`person_unnamed`, and a household car's `notif_id=car-<name>`. Everything else from the relay
+wears the camera. The in-app alerts know the detection's label and always wear the right one.
+
+Every icon is drawn once, in `NotificationGlyph` (`shared/.../ui/notification/NotificationGlyphs.kt`),
+as paths on a 24-unit grid. The drawables under `shared/src/androidMain/res/drawable/ic_notification_*.xml`
+are written from it, and `NotificationGlyphsTest` fails when one has drifted. To change or add
+one, edit the glyph and run:
+
+```sh
+UPDATE_NOTIFICATION_ICONS=1 ./gradlew :shared:jvmTest --tests '*NotificationGlyphsTest*' --rerun
+```
+
+`:shared:renderPreviews -Ppreview=NotificationGlyphs` draws the whole set, large and at status-bar size.
+
+On iOS (local notifications only, until APNs lands) there is no icon to choose, but each camera's
+alerts stack in a thread of their own, someone seen while everyone is away is time-sensitive, and
+a summary or more of a visit already announced arrives passively.
+
 ## Weather
 
 The weather app's notifications (rain on the way, the day ahead, government warnings) are a
 separate thing from everything above: they don't come from the cameras or the relay. The phone
 checks the forecast itself and posts them on channels of their own, **Weather** and **Severe
-weather**. See [weather.md](weather.md#notifications).
+weather**, each with its kind's icon and colour and a picture of the forecast behind it. See
+[weather.md](weather.md#notifications).

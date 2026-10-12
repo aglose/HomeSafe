@@ -4,6 +4,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
+import platform.Foundation.NSNumber
 import platform.UIKit.UIView
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -56,8 +57,17 @@ interface IosWebRtcPeer {
 
     fun setMuted(muted: Boolean)
 
+    /** Asks the engine for its statistics report; [completion] gets it, or null from a peer that is closed. */
+    fun collectStats(completion: (report: IosWebRtcStatsReport?) -> Unit)
+
     fun close()
 }
+
+/** One entry of the engine's statistics report: an `RTCStatistics`, with its values as the engine gave them. */
+class IosWebRtcStat(val id: String, val type: String, val values: Map<String, Any>)
+
+/** A statistics report taken at [timestampMs] on the engine's own clock. */
+class IosWebRtcStatsReport(val timestampMs: Double, val stats: List<IosWebRtcStat>)
 
 /** Where the Swift app registers its engine; see `startIosApp`. */
 object IosWebRtc {
@@ -131,6 +141,18 @@ internal class IosWebRtcPeerAdapter(factory: IosWebRtcPeerFactory, audio: Boolea
     override fun setVideoEnabled(enabled: Boolean) = peer.setVideoEnabled(enabled)
 
     override fun setMuted(muted: Boolean) = peer.setMuted(muted)
+
+    override suspend fun receiverStats(): WebRtcReceiverStats? {
+        if (closed) return null
+        val report = suspendCancellableCoroutine<IosWebRtcStatsReport?> { continuation ->
+            peer.collectStats { report -> if (continuation.isActive) continuation.resume(report) }
+        } ?: return null
+        // The engine's numbers and flags are all NSNumber; the common reader wants Kotlin's.
+        val stats = report.stats.map { stat ->
+            RtcStat(stat.id, stat.type, stat.values.mapValues { (_, value) -> (value as? NSNumber)?.doubleValue ?: value })
+        }
+        return webRtcReceiverStats(stats, report.timestampMs)
+    }
 
     override fun close() {
         if (closed) return

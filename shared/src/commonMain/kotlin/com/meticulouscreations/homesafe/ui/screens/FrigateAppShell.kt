@@ -84,6 +84,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
+import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
@@ -96,6 +97,7 @@ import com.meticulouscreations.homesafe.navigation.MomentDeepLinks
 import com.meticulouscreations.homesafe.navigation.TOP_LEVEL_ROUTES
 import com.meticulouscreations.homesafe.navigation.TopLevelBackStack
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
+import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLinks
 import com.meticulouscreations.homesafe.ui.BackScope
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
@@ -148,6 +150,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     /** Whether the drawer the top bar's menu button opens is out. */
     var drawerOpen by mutableStateOf(false)
 
+    /** The swipe across the shell that draws the drawer out by hand, and opens it when let go far enough. */
+    val drawerPull = DrawerPull(onOpen = { drawerOpen = true })
+
+    /** The drawer is out, or a swipe is drawing it out: what's on it should be up to date. */
+    val drawerShowing: Boolean get() = drawerOpen || drawerPull.active
+
+    /**
+     * The swipe for [tab] to wear, or null while the drawer can't be drawn out there: only where
+     * the menu button is, at the tab's root. A nested screen has sideways gestures of its own.
+     */
+    fun drawerPullOn(tab: TopLevelRoute): DrawerPull? = drawerPull.takeIf { showsTopBar(tab) }
+
     /** Which of the apps inside PercySafe the overlay holds: the one that is up, or the one on its way out. */
     var app by mutableStateOf(InnerApp.FINANCE)
         private set
@@ -177,11 +191,20 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
     var financeTab by mutableStateOf<FinanceTab?>(null)
         private set
 
-    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null) {
+    /**
+     * What a notification asked the weather app to show (see [openWeatherFromNotifications]): one
+     * of its tabs, a place, a warning. Held until the app has turned to it; null when it opens
+     * wherever it was left.
+     */
+    var weatherLink by mutableStateOf<WeatherDeepLink?>(null)
+        private set
+
+    fun openApp(which: InnerApp, origin: Offset, from: TopLevelRoute, financeTab: FinanceTab? = null, weatherLink: WeatherDeepLink? = null) {
         app = which
         appOrigin = origin
         appHost = from
         this.financeTab = financeTab.takeIf { which == InnerApp.FINANCE }
+        this.weatherLink = weatherLink.takeIf { which == InnerApp.WEATHER }
         appOpen = true
         drawerOpen = false
     }
@@ -191,9 +214,15 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
         financeTab = null
     }
 
+    /** The weather app has turned to what it was asked for. */
+    fun onWeatherLinkShown() {
+        weatherLink = null
+    }
+
     fun closeApp() {
         appOpen = false
         financeTab = null
+        weatherLink = null
         // The shell comes back as the app starts closing — and if a tab switch takes the
         // overlay away before it can say so itself (a notification tap), it still comes back.
         appCovering = false
@@ -334,17 +363,18 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
 
     /**
      * Opens the weather app whenever a weather notification's tap asks for it, for as long as the
-     * caller runs: over whatever tab is up, with no card to grow from. Consumed here for the same
-     * reason a moment's link is: a tap that cold-starts the app has to wait out the sign-in screen.
+     * caller runs: over whatever tab is up, with no card to grow from, on the part of it the
+     * notification was about ([weatherLink]). Consumed here for the same reason a moment's link
+     * is: a tap that cold-starts the app has to wait out the sign-in screen.
      */
     suspend fun openWeatherFromNotifications() {
-        WeatherDeepLinks.pending.filter { it }.collect {
+        WeatherDeepLinks.pending.filterNotNull().collect { link ->
             val host = selectedTab
-            openApp(InnerApp.WEATHER, Offset.Zero, host)
+            openApp(InnerApp.WEATHER, Offset.Zero, host, weatherLink = link)
             // Under a native tab bar the tab Compose last asked for may not be the one on screen;
             // asking for it again puts the tab that holds the app in front.
             onTabSelected(host)
-            WeatherDeepLinks.consume()
+            WeatherDeepLinks.consume(link)
         }
     }
 
@@ -401,6 +431,7 @@ fun FrigateAppShell() {
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
         contentCovered = nav.appCovering,
         contentObscured = nav.drawerOpen || nav.appOpen,
+        drawerPull = nav.drawerPullOn(nav.selectedTab),
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
@@ -454,6 +485,7 @@ internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         overlay = { ShellOverlays(nav, cardZoom, tab) },
         contentCovered = nav.appCovering,
         contentObscured = nav.drawerOpen || nav.appOpen,
+        drawerPull = nav.drawerPullOn(tab),
     ) {
         TabContent(tab, nav, cardZoom)
     }
@@ -475,35 +507,54 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 }
 
 /**
- * Everything the shell draws over its tabs and bars: the pinched camera card's layer, the drawer,
- * and the app opened from it (finance, weather or fitness). Their state is only fetched while this
- * composition is on screen — under the iOS 26 host each tab has its own, and only the visible
- * one may run it.
+ * Everything the shell draws over its tabs and bars: the pinched camera card's layer, and the
+ * drawer with the app opened from it ([ShellApps]).
  */
 // Overlays, not a laid-out element: each piece fills the scaffold's layer itself.
 @Suppress("ktlint:compose:modifier-missing-check")
 @Composable
 private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
     CardZoomOverlay(nav, cardZoom)
+    ShellApps(nav, tab)
+}
+
+/**
+ * The drawer, and the app opened from it (finance, weather or fitness) over everything else.
+ * Their state is only fetched while this composition is on screen — under the iOS 26 host each
+ * tab has its own, and only the visible one may run it.
+ *
+ * None of the three needs the camera server (weather and the markets are public, fitness is all on
+ * the device, and each opens on what the device kept), so the sign-in screen draws this too, with
+ * a [ShellNavigation] of its own and [signedIn] false: the drawer then lists the apps alone, there
+ * being no cameras to go to yet. That is how they are reached while Tailscale or the server isn't.
+ */
+// Overlays, not a laid-out element: each piece fills its parent's layer itself.
+@Suppress("ktlint:compose:modifier-missing-check")
+@Composable
+internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boolean = true) {
     val finance: FinanceViewModel = metroViewModel()
     val financeState by finance.uiState.collectAsStateWithLifecycle()
+    val financeLock: FinanceLockViewModel = metroViewModel()
+    val financeLockState by financeLock.uiState.collectAsStateWithLifecycle()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val financeUp = nav.isOpen(InnerApp.FINANCE)
-    LaunchedEffect(visible, nav.drawerOpen, financeUp) {
-        finance.setActive(visible && (nav.drawerOpen || financeUp), full = financeUp)
+    // The cards fetch as a swipe starts to draw the drawer out, not only once it is out.
+    val drawerShowing = nav.drawerShowing
+    LaunchedEffect(visible, drawerShowing, financeUp) {
+        finance.setActive(visible && (drawerShowing || financeUp), full = financeUp)
     }
     val weather: WeatherViewModel = metroViewModel()
     val weatherState by weather.uiState.collectAsStateWithLifecycle()
     val weatherUp = nav.isOpen(InnerApp.WEATHER)
-    LaunchedEffect(visible, nav.drawerOpen, weatherUp) {
-        weather.setActive(visible && (nav.drawerOpen || weatherUp), full = weatherUp)
+    LaunchedEffect(visible, drawerShowing, weatherUp) {
+        weather.setActive(visible && (drawerShowing || weatherUp), full = weatherUp)
     }
     val fitness: FitnessViewModel = metroViewModel()
     val fitnessState by fitness.uiState.collectAsStateWithLifecycle()
     val fitnessUp = nav.isOpen(InnerApp.FITNESS)
-    LaunchedEffect(visible, nav.drawerOpen, fitnessUp) {
-        fitness.setActive(visible && (nav.drawerOpen || fitnessUp), full = fitnessUp)
+    LaunchedEffect(visible, drawerShowing, fitnessUp) {
+        fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
     }
     // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
     if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
@@ -513,6 +564,7 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
         finance = financeState,
         weather = weatherState,
         fitness = fitnessState,
+        pull = nav.drawerPull,
         onSelectTab = { route ->
             nav.drawerOpen = false
             nav.selectTab(route)
@@ -521,6 +573,8 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
         onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
         onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
         onClose = { nav.drawerOpen = false },
+        showHomeSecurity = signedIn,
+        financeLocked = financeLockState.locked,
     )
     if (nav.appHost == tab) {
         InnerAppOverlay(
@@ -537,7 +591,7 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
                     onShowRequestedTab = nav::onFinanceTabShown,
                 )
 
-                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen)
+                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
 
                 InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
             }
@@ -590,6 +644,10 @@ private fun AnimatedContentTransitionScope<Scene<TopLevelRoute>>.tabHandOver(): 
  * [immersive] gives the content the whole window, cutout and all: a camera's video, full screen
  * with the phone on its side, which is black to the glass and places its own controls clear of
  * the edges.
+ *
+ * [drawerPull] is the swipe that draws the drawer out without a reach for the menu button: across
+ * the content or either bar, wherever nothing under the finger wants the swipe itself. Null where
+ * the drawer isn't on offer; and it is never taken under an overlay.
  */
 @Composable
 internal fun ShellScaffold(
@@ -602,6 +660,7 @@ internal fun ShellScaffold(
     contentCovered: Boolean = false,
     contentObscured: Boolean = false,
     immersive: Boolean = false,
+    drawerPull: DrawerPull? = null,
     content: @Composable () -> Unit,
 ) {
     // While an overlay covers the whole shell (the finance or weather app) the tab content isn't drawn at
@@ -623,8 +682,16 @@ internal fun ShellScaffold(
             .then(if (immersive) Modifier else Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))),
     ) {
         // Under the drawer or an app opened from it the shell is out of reach for screen readers too,
-        // so focus can't wander behind the scrim to a camera or the menu button.
-        Box(Modifier.fillMaxSize().then(if (contentObscured) Modifier.clearAndSetSemantics {} else Modifier)) {
+        // so focus can't wander behind the scrim to a camera or the menu button. The same from the
+        // moment a swipe starts to draw the drawer out over it — which only takes the shell's
+        // semantics away: the swipe itself stays on, or it would be cut off as it began.
+        val underOverlay = contentObscured || drawerPull?.active == true
+        Box(
+            Modifier
+                .fillMaxSize()
+                .drawerPull(drawerPull.takeUnless { contentObscured || contentCovered || immersive })
+                .then(if (underOverlay) Modifier.clearAndSetSemantics {} else Modifier),
+        ) {
             Box(Modifier.fillMaxSize().padding(start = railClearance)) {
                 // Back is the overlay's while one is up, even where the shell shows through it.
                 if (!contentCovered) saveableState.SaveableStateProvider("shell-content") { BackScope(enabled = !contentObscured) { content() } }
@@ -680,12 +747,15 @@ internal fun ShellScaffold(
  * The shell as it will look the moment sign-in succeeds, with the home page's loading skeleton
  * where the cameras will be. The sign-in screen shows this while the server is authenticating,
  * so the cross-fade into the real shell changes only the content, never the chrome.
+ *
+ * [onMenu] is the top bar's menu button, which works already: the apps in the drawer don't need
+ * the server this is waiting on (see [ShellApps]).
  */
 @Composable
-internal fun ShellSkeleton() {
+internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
     ShellScaffold(
         showTopBar = true,
-        topBar = { FrigateTopBar(activeConnection = null, appVersion = "") },
+        topBar = { FrigateTopBar(activeConnection = null, appVersion = "", onMenu = onMenu) },
         selectedTab = TopLevelRoute.Home,
         onSelectTab = {},
     ) {

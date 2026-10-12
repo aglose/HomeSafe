@@ -10,8 +10,32 @@ import com.meticulouscreations.homesafe.PlatformContext
 import java.io.File
 import javax.imageio.ImageIO
 
-/** What the app graph is built with in the JVM integration journeys; the desktop needs nothing. */
-internal fun testPlatformContext(): PlatformContext = PlatformContext()
+/**
+ * What the app graph is built with in the JVM tests. The desktop needs nothing in it, but its
+ * data layer keeps state on disk, so every test that builds a graph comes through here first:
+ * see [ownStateOnDisk].
+ */
+internal fun testPlatformContext(): PlatformContext {
+    ownStateOnDisk
+    return PlatformContext()
+}
+
+/**
+ * Gives this test process its own copy of what the desktop app keeps on disk: the Room database
+ * under `homesafe.dataDir` (AppDatabase.jvm.kt) and the Java user preferences the Finance tips
+ * are remembered in (FinanceTipLedger.jvm.kt; the JDK reads `java.util.prefs.userRoot` on Linux
+ * and ignores it on macOS). `-PjvmTestForks` runs the suite in several processes at once
+ * (shared/build.gradle.kts), and two journeys writing one database would each see the other's
+ * sign-ins. Gradle numbers every test process in `org.gradle.test.worker`; outside Gradle there
+ * is only the one, and nothing to keep apart.
+ */
+private val ownStateOnDisk: Unit by lazy {
+    val worker = System.getProperty("org.gradle.test.worker") ?: return@lazy
+    val shared = System.getProperty("homesafe.dataDir") ?: return@lazy
+    val own = File(shared, "worker-$worker")
+    System.setProperty("homesafe.dataDir", own.path)
+    System.setProperty("java.util.prefs.userRoot", own.path)
+}
 
 /** Set by `-PjourneyScreens` (shared/build.gradle.kts); journeys take no screenshots without it. */
 private val journeyScreensDir: File? = System.getProperty("homesafe.journeyScreens")?.let(::File)

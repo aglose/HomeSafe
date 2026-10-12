@@ -14,6 +14,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.swing.Swing
+import kotlin.math.roundToInt
 import kotlin.time.TimeSource
 
 /**
@@ -86,6 +87,14 @@ internal class LivePlayerHolder(val key: String?) {
         private set
 
     private var session: FfmpegPlaybackSession? = null
+
+    /** What the current session's video turned out to be, for [reportStats]; null until its first frame. */
+    private var videoWidth: Int? = null
+    private var videoHeight: Int? = null
+    private var videoCodec: String? = null
+
+    /** Frames put on screen since this holder was made. */
+    private var framesShown = 0L
 
     /**
      * Ticks on every session opened or closed, so a session's callbacks can tell whether they are
@@ -200,6 +209,36 @@ internal class LivePlayerHolder(val key: String?) {
         scope.cancel()
     }
 
+    /**
+     * Describes the live source for as long as the caller keeps collecting, handing [onStats] a
+     * reading every [LIVE_STATS_INTERVAL_MS]; null while a recording plays, and until the
+     * session has decoded a frame to describe.
+     *
+     * No delay is reported here. FFmpeg fetches each segment only when it has decoded the one
+     * before, and says nothing as it does, so there is no moment at which this player is known
+     * to hold the server's newest video — which is what [LiveEdgeTracker] goes by.
+     */
+    suspend fun reportStats(onStats: (LiveStreamStats?) -> Unit): Nothing {
+        val frames = RateMeter()
+        val clock = TimeSource.Monotonic.markNow()
+        while (true) {
+            val framesPerSecond = frames.perSecond(framesShown, clock.elapsedNow().inWholeMilliseconds)
+            val stats = if (source is VideoSource.Live && session != null && videoWidth != null) {
+                LiveStreamStats(
+                    transport = LiveTransport.HLS,
+                    width = videoWidth,
+                    height = videoHeight,
+                    framesPerSecond = framesPerSecond?.roundToInt(),
+                    codec = videoCodec,
+                )
+            } else {
+                null
+            }
+            onStats(stats)
+            delay(LIVE_STATS_INTERVAL_MS)
+        }
+    }
+
     private fun isPlaying(): Boolean = requestedPlayWhenReady && activeBinders > 0
 
     private fun resume() {
@@ -245,6 +284,9 @@ internal class LivePlayerHolder(val key: String?) {
         needsColdStart = false
         startedAt = TimeSource.Monotonic.markNow()
         if (cold) coldStartGeneration++
+        videoWidth = null
+        videoHeight = null
+        videoCodec = null
         val startPositionMs = when (toLoad) {
             is VideoSource.Live -> 0L
             is VideoSource.Recording -> resumePositionMs ?: toLoad.startPositionMs
@@ -287,6 +329,7 @@ internal class LivePlayerHolder(val key: String?) {
         override fun onFrame(image: ImageBitmap, positionMs: Long) {
             if (!isCurrent()) return
             frame = image
+            framesShown++
             renderedGeneration = coldStartGeneration
             isStalled = false
             consecutiveFailures = 0
@@ -295,6 +338,13 @@ internal class LivePlayerHolder(val key: String?) {
 
         override fun onAudioAvailability(hasAudio: Boolean) {
             if (isCurrent()) this@LivePlayerHolder.hasAudio = hasAudio
+        }
+
+        override fun onVideoFormat(width: Int, height: Int, codec: String?) {
+            if (!isCurrent()) return
+            videoWidth = width
+            videoHeight = height
+            videoCodec = codec
         }
 
         override fun onStalled(stalled: Boolean) {

@@ -72,6 +72,14 @@ previous session the app is connected the moment the session is confirmed, and `
 refreshed behind the grid (in place, so the list never blinks empty). A first sign-in with no cache
 still waits for the list.
 
+**Before sign-in.** Weather, Fitness and Finance don't need the camera server, so they don't wait
+for it. The sign-in screen opens the shell's drawer with just those three in it: from a button
+under the form, and from the menu button of the skeleton shown while the server is being asked.
+Weather and the markets fetch from the public internet and fall back to the last forecast and
+quotes the device kept; Fitness is all on the device; Finance opens on what it kept, behind a
+fingerprint (docs/finance.md, "Without the server"). A sign-in that finishes while one of them is
+open waits for it to be closed before the shell takes the screen.
+
 For the LAN route to work the server has to accept Frigate's ports (8971 and 1984) from the
 LAN, not only from its Tailscale interface, and `LOCAL_SERVER_URL` has to match its actual LAN
 address (a DHCP reservation on the router keeps that from drifting). What the LAN route does *not*

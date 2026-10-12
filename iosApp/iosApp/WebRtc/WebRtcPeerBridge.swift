@@ -148,6 +148,20 @@ final class WebRtcPeerBridge: NSObject, IosWebRtcPeer, RTCPeerConnectionDelegate
         audioTrack?.isEnabled = !muted
     }
 
+    func collectStats(completion: @escaping (IosWebRtcStatsReport?) -> Void) {
+        guard !closed else {
+            completion(nil)
+            return
+        }
+        connection.statistics { report in
+            // Handed over as they are: picking the video stream and its candidate pair out of
+            // the report is the shared module's job, the same as on Android.
+            let stats = report.statistics.values.map { IosWebRtcStat(id: $0.id, type: $0.type, values: $0.values) }
+            let converted = IosWebRtcStatsReport(timestampMs: report.timestamp_us / 1000, stats: stats)
+            DispatchQueue.main.async { completion(converted) }
+        }
+    }
+
     func close() {
         guard !closed else { return }
         closed = true

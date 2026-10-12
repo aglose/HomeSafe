@@ -158,8 +158,11 @@ The `startup-perf` job in ci.yml (part of `ci-green`) builds the base branch's b
 app and this branch's, signed in to the fake Frigate (`http://10.0.2.2:8971`, `admin`) with go2rtc
 serving ffmpeg test patterns under the fake's stream names (`scripts/ci/go2rtc-testsrc.sh`), and
 times both on one API 34 emulator in ABBA blocks, each block starting with a discarded run and
-every run waiting for go2rtc to have no consumers left, so each join is a cold one
-(`scripts/ci/startup-perf.sh`). It gates two medians:
+every run starting from a go2rtc with no consumers, so each join is a cold one
+(`scripts/ci/startup-perf.sh`). The job restarts its go2rtc before each run (`--go2rtc-reset`)
+rather than wait for it to drop the last run's consumers: a force-stopped app's linger for half a
+minute there, which over twenty runs was most of the job. That is for a go2rtc the test owns;
+against the real server, keep the wait. It gates two medians:
 
 - **cold launch (TTID)** — `am start -W` TotalTime: process start to the first frame;
 - **sign-in → first live pixel** — the milestones above, sign-in submit to the first video frame
@@ -170,7 +173,9 @@ than a floor (40 ms for TTID, 150 ms for the pixel): hosted emulators are noisy 
 percent of a small number means nothing, while a real regression — a blocking call on the main
 thread at launch, a join that waits for something new — shows up well past both. A result over
 the limit is measured again with twice the samples before the job fails. On a push to main the
-base is the commit main was at before. A base from before the milestones existed can only have
+base is the commit main was at before. The base's APK is not rebuilt when main's own run already
+built that commit: each run on main keeps its APK in the Actions cache under the commit's hash.
+A base from before the milestones existed can only have
 its cold launch compared, and the job says so. The medians land in the job summary; the raw runs
 are in the `startup-perf` artifact.
 
@@ -184,6 +189,37 @@ logcat are in the artifact as `failure-screen.png`, `failure-screen.xml` and `fa
 
 Run the same comparison by hand with `python3 scripts/bench-first-live-pixel.py --gate A B`
 against any two labels recorded on one device.
+
+## How far behind live ("stats for nerds")
+
+The camera screen's ⋮ menu has **Stats for nerds**: a panel over the video that reports, once a
+second, how old the picture is by the time it is shown, and what the stream is (connection,
+resolution, frame rate, codec, bitrate, drops). The player measures only while the panel is up
+(`onStreamStats` on `CameraStreamPlayer`); the arithmetic is in `LiveStreamStats.kt`.
+
+The delay is counted **from go2rtc**, the earliest point the app can see. What the camera spends
+encoding a frame and sending it to the server comes before that and is not in the figure;
+nothing between the camera and the app carries a wall-clock time for a frame, so the app can't
+know it. A camera's on-screen clock against a real one is still the only end-to-end check.
+
+- **WebRTC** (`WebRtcStatsMeter`). From the peer connection's own statistics, differenced
+  between reports: half the selected candidate pair's round trip (network), `jitterBufferDelay`
+  per frame (buffer), `totalDecodeTime` per frame (decode), and for the total
+  `totalProcessingDelay` per frame, which is first packet in to decoded frame out. Against the
+  server on the LAN this reads about 25 ms: 2 ms network, 22 ms buffer, 1 ms decode.
+- **HLS** (`LiveEdgeTracker`). go2rtc's playlists have no `EXT-X-PROGRAM-DATE-TIME`, so there is
+  no clock to read. What holds instead (measured: the last frame of a segment is within 50 ms of
+  the request for it) is that a segment contains everything up to the moment it was asked for.
+  So the newest video in a download marks the live edge at the time of the download, and the
+  delay is how far the playhead is behind that mark as it moves on. It reads short by the frame
+  or two the server had not yet cut, about a tenth of a second.
+  - Android gets each video sample's timestamp as ExoPlayer parses it
+    (`ArrivalReportingExtractorFactory`). ExoPlayer's own buffered position can't be used: for
+    HLS it is the later of the newest sample held and the end the playlist claims for the last
+    segment, and go2rtc claims `#EXTINF:0.500` for every segment whatever is in it.
+  - iOS watches `loadedTimeRanges` grow, ten times a second.
+  - Desktop reports no delay. FFmpeg fetches a segment only once it has decoded the one
+    before and says nothing as it does, so there is no arrival to mark.
 
 ## Platforms
 

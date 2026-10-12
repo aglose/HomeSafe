@@ -93,6 +93,14 @@ interface ConnectionRepository {
      * A fake that never signs in needn't override it.
      */
     suspend fun reconnect() {}
+
+    /**
+     * Something asked the server and got no answer: one pass, now, of the same route and session
+     * check, without the camera list after it. [serverUnreachable] says what it found by the time
+     * this returns. For whoever has to know, before showing what the device kept, whether the
+     * server is really gone. A fake that never signs in needn't override it.
+     */
+    suspend fun checkServer() {}
 }
 
 private val NoExpectedConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)

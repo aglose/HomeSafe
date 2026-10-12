@@ -245,6 +245,12 @@ tasks.named<Test>("jvmTest") {
     val dataDir = layout.buildDirectory.dir("tmp/jvmTest/homesafe-data")
     systemProperty("homesafe.dataDir", dataDir.get().asFile.absolutePath)
     doFirst { dataDir.get().asFile.deleteRecursively() }
+    // -PjvmTestForks=2: the test classes are dealt out to that many JVMs running side by side.
+    // The suite is one long queue otherwise (the journeys and the shader-heavy UI tests are most
+    // of it), and CI's runners have four cores; the unit-test job passes 2. Each JVM keeps its own
+    // database under dataDir (testPlatformContext() in src/jvmTest). One is the default: nothing
+    // changes for a local run, where the memory for a second JVM may not be there.
+    maxParallelForks = providers.gradleProperty("jvmTestForks").orNull?.toInt() ?: 1
     // -PjourneyScreens: every integration journey saves what is on screen after each tap, at its
     // end and when it fails, to build/journey-screens/<journey>/ (see docs/ui-previews.md).
     if (providers.gradleProperty("journeyScreens").isPresent) {
@@ -298,6 +304,26 @@ ktlint {
     // The style itself lives in .editorconfig at the repo root.
     reporters {
         reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.PLAIN)
+    }
+}
+
+// The plugin hands each of its tasks a source set's directories, and with them the tasks that
+// write the generated ones under build/: KSP for Room, the Compose resource accessors. KSP for a
+// test source set needs the main one compiled, so checking the style compiled every target
+// (Android, JVM, both iOS, JS, Wasm) for files the filter above then throws away: nine minutes on
+// CI for under a minute of linting. Give the tasks only the hand-written directories instead,
+// which no task has to produce. Inside sourceSets.all so it runs after the plugin's own callback
+// has registered the tasks, whenever the source set turns up.
+kotlin.sourceSets.all {
+    val sourceSet = this
+    val buildDir = layout.buildDirectory.get().asFile
+    val handWritten = provider { sourceSet.kotlin.srcDirs.filterNot { it.startsWith(buildDir) } }
+    listOf("Check", "Format").forEach { kind ->
+        tasks.named<org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask>(
+            "runKtlint${kind}Over${name.replaceFirstChar(Char::uppercase)}SourceSet",
+        ) {
+            setSource(handWritten)
+        }
     }
 }
 

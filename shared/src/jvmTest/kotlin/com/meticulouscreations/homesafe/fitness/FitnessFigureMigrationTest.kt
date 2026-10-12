@@ -21,35 +21,35 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 /**
- * Schema 20 to 21, on a real SQLite file: the fitness app's preferences table arrives, and the
+ * Schema 21 to 22, on a real SQLite file: the fitness app's preferences table arrives, and the
  * training log and the heart-rate settings that were there are still there. As with
  * [FitnessHeartMigrationTest], no fallback to wiping the database is allowed here, so a missing
  * or wrong migration fails instead of quietly taking the log with it.
  */
 class FitnessFigureMigrationTest {
 
-    /** The database as version 20 created it, read from the schema Room exported then. */
-    private fun createVersion20(connection: SQLiteConnection) {
+    /** The database as version 21 created it, read from the schema Room exported then. */
+    private fun createVersion21(connection: SQLiteConnection) {
         // Gradle runs the JVM tests from the module's directory, where the exported schemas are.
-        val schema = Json.parseToJsonElement(File("schemas/com.meticulouscreations.homesafe.data.AppDatabase/20.json").readText()).jsonObject.getValue("database").jsonObject
+        val schema = Json.parseToJsonElement(File("schemas/com.meticulouscreations.homesafe.data.AppDatabase/21.json").readText()).jsonObject.getValue("database").jsonObject
         for (entity in schema.getValue("entities").jsonArray.map { it.jsonObject }) {
             val table = entity.getValue("tableName").jsonPrimitive.content
             connection.execSQL(entity.sql("createSql", table))
             for (index in (entity["indices"] as? JsonArray).orEmpty()) connection.execSQL(index.jsonObject.sql("createSql", table))
         }
         for (query in schema.getValue("setupQueries").jsonArray) connection.execSQL(query.jsonPrimitive.content)
-        connection.execSQL("PRAGMA user_version = 20")
+        connection.execSQL("PRAGMA user_version = 21")
     }
 
     private fun JsonObject.sql(key: String, table: String) = getValue(key).jsonPrimitive.content.replace("\${TABLE_NAME}", table)
 
     @Test
-    fun aLogKeptUnderSchema20IsAllThereUnder21WithTheFigureChoiceBesideIt() = runBlocking {
-        val file = File.createTempFile("homesafe-20-to-21", ".db").apply { delete() }
+    fun aLogKeptUnderSchema21IsAllThereUnder22WithTheFigureChoiceBesideIt() = runBlocking {
+        val file = File.createTempFile("homesafe-21-to-22", ".db").apply { delete() }
         val driver = BundledSQLiteDriver()
         try {
             val old = driver.open(file.absolutePath)
-            createVersion20(old)
+            createVersion21(old)
             old.execSQL("INSERT INTO FitnessExerciseEntity VALUES ('legs/hack-squat', 'Hack squat', 'LEGS', 'MACHINE', 'WEIGHT', 'QUADS', 'GLUTES', 8, 12, 10.0, 150, '', 0)")
             old.execSQL("INSERT INTO FitnessWorkoutEntity VALUES (7, 'LEGS', 1000, 4000)")
             old.execSQL("INSERT INTO FitnessSetEntity VALUES (1, 'legs/hack-squat', 7, 1200, 250.0, 11, NULL, '', 0)")

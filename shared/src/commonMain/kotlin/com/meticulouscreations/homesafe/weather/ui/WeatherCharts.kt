@@ -206,6 +206,11 @@ private fun curvePointDp(rise: Float): Dp = HourCurve * (0.4f + 0.46f * (1f - ri
 internal fun smoothPath(points: List<Offset>): Path = Path().apply {
     if (points.isEmpty()) return@apply
     moveTo(points.first().x, points.first().y)
+    smoothThrough(points)
+}
+
+/** Carries a path that has reached the first of [points] on through the rest, as [smoothPath] draws them. */
+internal fun Path.smoothThrough(points: List<Offset>) {
     for (i in 0 until points.lastIndex) {
         val p0 = points[max(i - 1, 0)]
         val p1 = points[i]

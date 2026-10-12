@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.domain.platform
 
+import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 
 /** Where the OS stands on letting this app post notifications. */
@@ -64,6 +65,13 @@ data class AlertNotification(
      * [target] and never gets media. iOS gets the relay's passive banner instead.
      */
     val summary: Boolean = false,
+    /**
+     * What it is about, where that is known: a person, a vehicle, an animal. It picks the
+     * notification's icon on Android (a figure, a car, a paw; the camera otherwise), so the status
+     * bar says what was seen before the shade is opened. [MomentCategory.ALL] when it isn't known:
+     * a push says so only for an unnamed car or person, or a household car coming or going.
+     */
+    val subject: MomentCategory = MomentCategory.ALL,
 )
 
 /**

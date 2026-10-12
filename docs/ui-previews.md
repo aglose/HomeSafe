@@ -70,7 +70,8 @@ draws through Layoutlib, the renderer behind Android Studio's preview pane, so i
 The **UI previews** workflow (`.github/workflows/ui-previews.yml`) runs on every push to a branch other than `main`.
 It isn't part of `ci-green`.
 
-1. It draws the branch with `scripts/render-ui-previews.sh`, then the merge base with the same script.
+1. It draws the branch with `scripts/render-ui-previews.sh`, then the merge base with the same script. The merge
+   base's pictures are kept in the Actions cache under its commit, so a later push to the branch draws only the branch.
 2. `scripts/ui_previews.py` compares the two runs file by file and lays out a gallery.
 3. The branch run also plays the JVM integration journeys with `-PjourneyScreens`. Their flipbooks go into the
    gallery as a Journeys section, and nowhere else: they drive the real app over real HTTP, so a frame can differ

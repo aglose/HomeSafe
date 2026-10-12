@@ -149,8 +149,15 @@
 
     <!-- Forecast -->
     <string name="weather_forecast_trend_title">The days ahead</string>
-    <!-- For a screen reader: %1$s the highest high, %2$s the lowest low -->
-    <string name="weather_forecast_trend_description">Highs up to %1$s and lows down to %2$s over the days ahead</string>
+    <!--
+      For a screen reader, one day of the strip. %1$s its name ("Fri"), %2$s its date ("Oct 10"), %3$s the sky,
+      %4$s the high, %5$s the low. Then, where the strip shows them, the chance of rain or snow ("85%") and
+      how much ("0.31 in"), and last the wind ("13 mph").
+    -->
+    <string name="weather_timeline_day_dry">%1$s, %2$s: %3$s, high %4$s, low %5$s, wind %6$s</string>
+    <string name="weather_timeline_day_chance">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s chance of precipitation, wind %7$s</string>
+    <string name="weather_timeline_day_amount">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s of precipitation, wind %7$s</string>
+    <string name="weather_timeline_day_chance_amount">%1$s, %2$s: %3$s, high %4$s, low %5$s, %6$s chance of %7$s of precipitation, wind %8$s</string>
     <plurals name="weather_forecast_days_title">
         <item quantity="one">%1$d-day forecast</item>
         <item quantity="other">%1$d-day forecast</item>
@@ -266,6 +273,8 @@
     <string name="weather_settings_notices_severe_body">Government warnings for where you are, whatever the hour</string>
     <string name="weather_settings_notices_extremes">Wind, heat, cold, sun and air</string>
     <string name="weather_settings_notices_extremes_body">Added to the look ahead: strong gusts, a first freeze, a big swing in temperature, a very high UV index, unhealthy air</string>
+    <string name="weather_settings_notices_sample">Send a sample</string>
+    <string name="weather_settings_notices_sample_body">Today's forecast as a notification, to see how one looks</string>
     <string name="weather_settings_notices_place">These are for where your phone is; when it can't tell, for where it last was. Nothing but warnings is sent between 10 PM and 6 AM.</string>
     <string name="weather_settings_sky">The sky</string>
     <string name="weather_settings_still_sky">Hold the sky still</string>
