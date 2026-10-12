@@ -76,10 +76,14 @@ services:
       # TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_CARS (docs/tesla.md), only on the box.
       - path: tesla.env
         required: false
+      # TIMELINE_DRIVE_FOLDER and TIMELINE_PLACES_KEY (relay.py, "timeline"; docs/atlas.md), only on
+      # the box. Without the first no export is fetched; without the second places go unnamed.
+      - path: timeline.env
+        required: false
     volumes:
       - ./fcm-service-account.json:/secrets/fcm.json:ro
-      # relay.db, the vehicle memory's picture of each household car (data/vehicles/), and
-      # sheet-fill.json.
+      # relay.db, timeline.db, the vehicle memory's picture of each household car
+      # (data/vehicles/), and sheet-fill.json.
       - ./data:/data
       # Frigate's clips (same drive Frigate mounts at /media/frigate), for adding tagged cars to a
       # classifier's dataset; see add_classification_example.

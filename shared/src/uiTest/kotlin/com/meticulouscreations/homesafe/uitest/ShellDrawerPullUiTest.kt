@@ -27,6 +27,7 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
+import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
@@ -66,11 +67,13 @@ class ShellDrawerPullUiTest {
                             finance = FinanceUiState(),
                             weather = WeatherUiState(),
                             fitness = FitnessUiState(),
+                            atlas = AtlasUiState(),
                             pull = nav.drawerPull,
                             onSelectTab = {},
                             onOpenFinance = {},
                             onOpenWeather = {},
                             onOpenFitness = {},
+                            onOpenAtlas = {},
                             onClose = { nav.drawerOpen = false },
                         )
                     },

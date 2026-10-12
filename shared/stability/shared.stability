@@ -21,6 +21,555 @@ internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulous
     - content: STABLE (composable function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.AnniversaryCard(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, day: kotlin.Int, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - day: STABLE (primitive type)
+    - onOpenDay: STABLE (function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.atlas.ui.AtlasApp(onClose: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - onClose: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasAppContent(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, actions: com.meticulouscreations.homesafe.atlas.ui.AtlasActions, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, initialTab: com.meticulouscreations.homesafe.atlas.ui.AtlasTab, initialPage: com.meticulouscreations.homesafe.atlas.ui.AtlasPage?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - actions: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+    - initialTab: STABLE (class with no mutable properties)
+    - initialPage: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasBackdrop(tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, seed: kotlin.Float, energy: kotlin.Float, running: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - tint: STABLE (marked @Stable or @Immutable)
+    - tint2: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - seed: STABLE (primitive type)
+    - energy: STABLE (primitive type)
+    - running: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasButton(label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, enabled: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - enabled: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasCard(modifier: androidx.compose.ui.Modifier, title: kotlin.String?, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.ColumnScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - title: STABLE (class with no mutable properties)
+    - content: STABLE (composable function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasChips(options: kotlin.collections.List<kotlin.Pair<T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, kotlin.String>>, selected: T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, onSelect: kotlin.Function1<T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - options: RUNTIME (requires runtime check)
+    - selected: RUNTIME (requires runtime check)
+    - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasEmpty(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onSetUp: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onSetUp: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasLockScreen(lock: com.meticulouscreations.homesafe.finance.FinanceLockUiState, onUnlock: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - lock: STABLE (marked @Stable or @Immutable)
+    - onUnlock: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasMap(state: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, paths: com.meticulouscreations.homesafe.atlas.AtlasPaths?, years: kotlin.Int, markers: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.ui.MapMarker>, flights: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Move>, highlight: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Track>, head: kotlin.Function0<kotlin.Long>, interactive: kotlin.Boolean, animated: kotlin.Boolean, onTapMarker: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.MapMarker, kotlin.Unit>?): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - paths: STABLE (marked @Stable or @Immutable)
+    - years: STABLE (primitive type)
+    - markers: RUNTIME (requires runtime check)
+    - flights: RUNTIME (requires runtime check)
+    - highlight: RUNTIME (requires runtime check)
+    - head: STABLE (function type)
+    - interactive: STABLE (primitive type)
+    - animated: STABLE (primitive type)
+    - onTapMarker: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.AtlasNav(selected: com.meticulouscreations.homesafe.atlas.ui.AtlasTab, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.AtlasTab, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - selected: STABLE (class with no mutable properties)
+    - onSelect: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasRoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, size: androidx.compose.ui.unit.Dp, tint: androidx.compose.ui.graphics.Color, fill: androidx.compose.ui.graphics.Color, enabled: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - size: STABLE (marked @Stable or @Immutable)
+    - tint: STABLE (marked @Stable or @Immutable)
+    - fill: STABLE (marked @Stable or @Immutable)
+    - enabled: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasStat(value: kotlin.String, label: kotlin.String, modifier: androidx.compose.ui.Modifier, tint: androidx.compose.ui.graphics.Color): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - value: STABLE (String is immutable)
+    - label: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - tint: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.atlas.ui.AtlasTheme.colors(): com.meticulouscreations.homesafe.atlas.ui.AtlasPalette
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
+public fun com.meticulouscreations.homesafe.atlas.ui.AtlasTheme.type(): com.meticulouscreations.homesafe.atlas.ui.AtlasTypography
+  skippable: false
+  restartable: false
+  params:
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.AtlasTopBar(title: kotlin.String, paged: kotlin.Boolean, onBack: kotlin.Function0<kotlin.Unit>, onOpenSync: kotlin.Function0<kotlin.Unit>?, syncNeedsAttention: kotlin.Boolean, syncing: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - title: STABLE (String is immutable)
+    - paged: STABLE (primitive type)
+    - onBack: STABLE (function type)
+    - onOpenSync: STABLE (function type)
+    - syncNeedsAttention: STABLE (primitive type)
+    - syncing: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.CommuteCard(commute: com.meticulouscreations.homesafe.atlas.domain.Commute): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - commute: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.CommuteLegBlock(label: kotlin.String, leg: com.meticulouscreations.homesafe.atlas.domain.CommuteLeg, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - leg: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.DayRibbon(plan: com.meticulouscreations.homesafe.atlas.ui.DayPlan, head: kotlin.Function0<kotlin.Float>, onScrub: kotlin.Function1<kotlin.Float, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - plan: STABLE (marked @Stable or @Immutable)
+    - head: STABLE (function type)
+    - onScrub: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.DayRow(tint: androidx.compose.ui.graphics.Color, title: kotlin.String, detail: kotlin.String, icon: androidx.compose.ui.graphics.vector.ImageVector?, onClick: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - tint: STABLE (marked @Stable or @Immutable)
+    - title: STABLE (String is immutable)
+    - detail: STABLE (String is immutable)
+    - icon: STABLE (marked @Stable or @Immutable)
+    - onClick: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.DayScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, day: kotlin.Int, padding: androidx.compose.foundation.layout.PaddingValues, onDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - day: STABLE (primitive type)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onDay: STABLE (function type)
+    - onOpenPlace: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.DaysScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenDay: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.EraCard(era: com.meticulouscreations.homesafe.atlas.domain.Era, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, current: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - era: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - current: STABLE (primitive type)
+    - onClick: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.InsightRow(insight: com.meticulouscreations.homesafe.atlas.domain.Insight, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - insight: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - onOpenPlace: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.Legend(tint: androidx.compose.ui.graphics.Color, label: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - tint: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenPlace: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.ModesCard(years: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.YearStat>, records: com.meticulouscreations.homesafe.atlas.domain.Records): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - years: RUNTIME (requires runtime check)
+    - records: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.PatternsScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenPlace: STABLE (function type)
+    - onOpenDay: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.PlaceRow(rank: kotlin.Int, stat: com.meticulouscreations.homesafe.atlas.domain.PlaceStat, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, most: kotlin.Long, sort: com.meticulouscreations.homesafe.atlas.ui.PlaceSort, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - rank: STABLE (primitive type)
+    - stat: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - most: STABLE (primitive type)
+    - sort: STABLE (class with no mutable properties)
+    - onClick: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.PlaceScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, placeKey: kotlin.String, padding: androidx.compose.foundation.layout.PaddingValues, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - placeKey: STABLE (String is immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenDay: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.PlacesScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenPlace: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.RecordRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, value: kotlin.String, day: kotlin.Int, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - icon: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+    - value: STABLE (String is immutable)
+    - day: STABLE (primitive type)
+    - onOpenDay: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.RecordsCard(records: com.meticulouscreations.homesafe.atlas.domain.Records, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - records: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - onOpenDay: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.RouteSketch(stops: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Place>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - stops: RUNTIME (requires runtime check)
+    - tint: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.RoutineCard(routine: com.meticulouscreations.homesafe.atlas.domain.Routine): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - routine: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.SectionTitle(text: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (String is immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.StatusLine(ok: kotlin.Boolean, text: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - ok: STABLE (primitive type)
+    - text: STABLE (String is immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.SyncScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onCheckNow: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onCheckNow: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.Technical(text: kotlin.String?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - text: STABLE (class with no mutable properties)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.TripCard(trip: com.meticulouscreations.homesafe.atlas.domain.Trip, state: com.meticulouscreations.homesafe.atlas.AtlasUiState, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - trip: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.TripScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, trip: com.meticulouscreations.homesafe.atlas.domain.Trip, padding: androidx.compose.foundation.layout.PaddingValues, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - tiles: STABLE (marked @Stable or @Immutable)
+    - trip: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenDay: STABLE (function type)
+    - onOpenPlace: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - active: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.TripsScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenTrip: kotlin.Function1<kotlin.Int, kotlin.Unit>, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenTrip: STABLE (function type)
+    - onOpenPlace: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.WeekGrid(description: kotlin.String, modifier: androidx.compose.ui.Modifier, cell: kotlin.Function2<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - description: STABLE (String is immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - cell: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.YearGrid(year: kotlin.Int, days: com.meticulouscreations.homesafe.atlas.domain.DayStats, measure: com.meticulouscreations.homesafe.atlas.ui.DayMeasure, full: kotlin.Float, today: kotlin.Int, onOpenDay: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - year: STABLE (primitive type)
+    - days: STABLE (marked @Stable or @Immutable)
+    - measure: STABLE (class with no mutable properties)
+    - full: STABLE (primitive type)
+    - today: STABLE (primitive type)
+    - onOpenDay: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.YearPill(label: kotlin.String, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - label: STABLE (String is immutable)
+    - selected: STABLE (primitive type)
+    - onClick: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.YearsCard(years: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.YearStat>): kotlin.Unit
+  skippable: false
+  restartable: true
+  params:
+    - years: RUNTIME (requires runtime check)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.agoText(days: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - days: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.clockText(minuteOfDay: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - minuteOfDay: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.dateText(day: kotlin.Int, weekday: kotlin.Boolean, year: kotlin.Boolean): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - day: STABLE (primitive type)
+    - weekday: STABLE (primitive type)
+    - year: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.distanceText(meters: kotlin.Double): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - meters: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.durationText(seconds: kotlin.Long): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - seconds: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.hourText(hour: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - hour: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.insightText(insight: com.meticulouscreations.homesafe.atlas.domain.Insight, state: com.meticulouscreations.homesafe.atlas.AtlasUiState): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - insight: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.localityText(locality: com.meticulouscreations.homesafe.atlas.domain.Locality?): kotlin.String?
+  skippable: false
+  restartable: false
+  params:
+    - locality: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.monthText(monthIndex: kotlin.Int): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - monthIndex: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.placeTitle(place: com.meticulouscreations.homesafe.atlas.domain.Place, history: com.meticulouscreations.homesafe.atlas.domain.AtlasHistory): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - place: STABLE (marked @Stable or @Immutable)
+    - history: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.atlas.ui.span(event: com.meticulouscreations.homesafe.atlas.ui.DayEvent, plan: com.meticulouscreations.homesafe.atlas.ui.DayPlan): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - event: STABLE (marked @Stable or @Immutable)
+    - plan: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.atlas.ui.tripTitle(trip: com.meticulouscreations.homesafe.atlas.domain.Trip, state: com.meticulouscreations.homesafe.atlas.AtlasUiState): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - trip: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.finance.ui.AccountRow(account: com.meticulouscreations.homesafe.finance.domain.BankAccount): kotlin.Unit
   skippable: true
   restartable: true
@@ -3016,6 +3565,16 @@ public fun com.meticulouscreations.homesafe.ui.screens.AlertsSettingsScreen(onBa
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.AtlasDrawerCard(atlas: com.meticulouscreations.homesafe.atlas.AtlasUiState, locked: kotlin.Boolean, animated: kotlin.Boolean, onOpen: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - atlas: STABLE (marked @Stable or @Immutable)
+    - locked: STABLE (primitive type)
+    - animated: STABLE (primitive type)
+    - onOpen: STABLE (function type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, people: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.KnownPerson>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: false
   restartable: true
@@ -4627,7 +5186,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meti
     - signedIn: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, showHomeSecurity: kotlin.Boolean, financeLocked: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, atlas: com.meticulouscreations.homesafe.atlas.AtlasUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenAtlas: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, showHomeSecurity: kotlin.Boolean, financeLocked: kotlin.Boolean, atlasLocked: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -4636,14 +5195,17 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotli
     - finance: STABLE (marked @Stable or @Immutable)
     - weather: STABLE (marked @Stable or @Immutable)
     - fitness: STABLE (marked @Stable or @Immutable)
+    - atlas: STABLE (marked @Stable or @Immutable)
     - pull: STABLE (marked @Stable or @Immutable)
     - onSelectTab: STABLE (function type)
     - onOpenFinance: STABLE (function type)
     - onOpenWeather: STABLE (function type)
     - onOpenFitness: STABLE (function type)
+    - onOpenAtlas: STABLE (function type)
     - onClose: STABLE (function type)
     - showHomeSecurity: STABLE (primitive type)
     - financeLocked: STABLE (primitive type)
+    - atlasLocked: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ShellOverlays(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
