@@ -65,7 +65,12 @@ jobs:
             reports: shared/build/reports/ktlint/**
           - name: Desktop and web
             # Links the JS and Wasm executables without bundling them; see the note at the top.
-            tasks: :desktopApp:build :webApp:compileDevelopmentExecutableKotlinJs :webApp:compileDevelopmentExecutableKotlinWasmJs
+            # The two links run at once in one Kotlin daemon, and each holds the whole program:
+            # at gradle.properties' 4 GB that daemon ends up at its limit, and on a runner it has
+            # been seen to stop making headway there, collecting garbage until the job's time ran
+            # out. So this leg alone gives it 6 GB, on its own command line: gradle.properties is
+            # also what a laptop and the iOS runner build with, and they have no such link to do.
+            tasks: :desktopApp:build :webApp:compileDevelopmentExecutableKotlinJs :webApp:compileDevelopmentExecutableKotlinWasmJs -Pkotlin.daemon.jvmargs=-Xmx6144M
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6

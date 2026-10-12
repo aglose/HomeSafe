@@ -8404,6 +8404,8 @@ class TimelineStage:
         # What the export itself says of a place: which is home and work, and (Takeout) its name.
         self.kinds: dict[str, str] = {}
         self.names: dict[str, tuple[str, str | None]] = {}
+        # Where the clock on the wall last was, from the phone's export (see `timeline_phone_segment`).
+        self.local_offset: int | None = None
         for table in TIMELINE_TABLES:
             conn.execute(f"DROP TABLE IF EXISTS temp.new_{table}")
             conn.execute(f"CREATE TEMP TABLE new_{table} AS SELECT * FROM {table} WHERE 0")
@@ -8445,10 +8447,24 @@ class TimelineStage:
 
 
 def timeline_phone_segment(segment: dict[str, Any], stage: TimelineStage) -> None:
-    """One entry of the phone's export: a visit, an activity, or a stretch of path."""
+    """
+    One entry of the phone's export: a visit, an activity, or a stretch of path.
+
+    Android writes every time on the clock the phone keeps *now*, with that clock's offset, and
+    says where the clock on the wall was at the time in a field of its own
+    (`startTimeTimezoneUtcOffsetMinutes`): a decade lived in Philadelphia, exported from a phone
+    since moved to Seattle, is all written in Pacific time. The field is the one that says when in
+    the day something was. Visits and activities carry it; a stretch of path doesn't, and takes the
+    last one seen, which is from the visit or activity it lies beside.
+    """
     began, ended = timeline_time(segment.get("startTime"), stage.zone), timeline_time(segment.get("endTime"), stage.zone)
     if began is None or ended is None or ended[0] < began[0]:
         return
+    local = segment.get("startTimeTimezoneUtcOffsetMinutes")
+    if isinstance(local, (int, float)) and not isinstance(local, bool):
+        stage.local_offset = int(local)
+    if stage.local_offset is not None:
+        began = (began[0], stage.local_offset)
     visit, activity, path = segment.get("visit"), segment.get("activity"), segment.get("timelinePath")
     if isinstance(visit, dict):
         # A shop inside the mall that is also a visit: the mall is the one that counts the time.
@@ -8763,7 +8779,9 @@ def timeline_newest_file(session: Any) -> dict[str, Any] | None:
     if listing.status_code != 200:
         raise HTTPException(*sheet_problem(listing.status_code, _google_json(listing), account))
     for found in _google_json(listing).get("files", []):
-        if str(found.get("name", "")).lower().endswith((".json", ".zip")):
+        # A file with nothing in it yet is one the phone is still sending: Drive lists it the
+        # moment the upload starts, a hundred megabytes before it ends.
+        if str(found.get("name", "")).lower().endswith((".json", ".zip")) and _number(found.get("size")) > 0:
             return found
     # A folder the key can't see lists as empty rather than refused: asking for the folder itself tells them apart.
     folder = session.get(f"{DRIVE_API}/{quote(TIMELINE_DRIVE_FOLDER, safe='')}", params={"fields": "id", **shared}, timeout=20)
@@ -8785,9 +8803,10 @@ def timeline_download(session: Any, found: dict[str, Any], path: str) -> None:
             out.write(piece)
 
 
-def timeline_pull(now: float | None = None) -> dict[str, Any] | None:
+def timeline_pull(now: float | None = None, again: bool = False) -> dict[str, Any] | None:
     """
-    Looks in the Drive folder and reads the newest export when it isn't the one already read.
+    Looks in the Drive folder and reads the newest export when it isn't the one already read
+    (or, with [again], even when it is: for after the reading itself has been changed).
     What it read, or None when there was nothing new (or no folder, or a pull already running).
     How it went is kept for `GET /timeline` either way.
     """
@@ -8809,7 +8828,7 @@ def timeline_pull(now: float | None = None) -> dict[str, Any] | None:
         else:
             stamp = [found.get("id"), found.get("md5Checksum"), found.get("modifiedTime")]
             status["found"] = found.get("name")
-            if seen.get("stamp") != stamp:
+            if again or seen.get("stamp") != stamp:
                 path = os.path.join(os.path.dirname(TIMELINE_DB) or ".", "timeline-incoming")
                 try:
                     timeline_download(session, found, path)
@@ -9068,8 +9087,8 @@ def post_timeline_sync(request: Request, response: Response) -> dict[str, Any]:
 
 
 if __name__ == "__main__":
-    # `python relay.py tesla-register` / `tesla-link` / `timeline-import FILE` / `timeline-pull`,
-    # run in the relay's container.
+    # `python relay.py tesla-register` / `tesla-link` / `timeline-import FILE` / `timeline-pull` /
+    # `timeline-reread`, run in the relay's container.
     import sys
 
     CONN = db()
@@ -9081,6 +9100,10 @@ if __name__ == "__main__":
     if command == "timeline-pull":
         print(json.dumps(timeline_check(), indent=2))
         sys.exit(0)
+    if command == "timeline-reread":
+        # The export already read, read again: after a change to how it is read.
+        print(json.dumps({"read": timeline_pull(again=True), "named": timeline_name_places()}, indent=2))
+        sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")
     if command == "tesla-register":
@@ -9088,4 +9111,4 @@ if __name__ == "__main__":
     elif command == "tesla-link":
         print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
     else:
-        sys.exit("usage: python relay.py tesla-register | tesla-link | timeline-import FILE | timeline-pull")
+        sys.exit("usage: python relay.py tesla-register | tesla-link | timeline-import FILE | timeline-pull | timeline-reread")
