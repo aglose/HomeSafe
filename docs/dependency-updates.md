@@ -102,6 +102,9 @@ The agent is kept away from anything it could do harm with:
   one, renames included, is refused whole.
 - CI started on a Dependabot branch after a repair gets no secrets, the same as the run GitHub
   starts for a Dependabot pull request.
+- A Dependabot branch's iOS job runs on a GitHub-hosted macOS runner, not the self-hosted Mac that
+  other branches use: the new versions' build code runs on a machine that is thrown away. It is
+  slower there, since nothing is cached between runs.
 
 Because it cannot build anything, the repair job works from the failed log alone, and CI is what
 tells whether it was right. Holding an update back always builds, since `main` does.

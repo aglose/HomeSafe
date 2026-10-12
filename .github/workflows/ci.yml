@@ -414,8 +414,13 @@ jobs:
     name: iOS tests and build
     # Branches in this repo run on the self-hosted Mac. A fork's pull request must never
     # execute there, so it goes to a GitHub-hosted macOS runner instead (it needs no secrets).
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'macos-latest' || fromJSON('["self-hosted", "macOS"]') }}
-    timeout-minutes: 40
+    # So does a Dependabot branch, whether the run is its pull request's or one the Dependency
+    # updates workflow started on it: it builds versions of plugins nobody has vetted yet, and
+    # those should run on a machine that is thrown away afterwards.
+    runs-on: ${{ ((github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) || startsWith(github.head_ref, 'dependabot/') || startsWith(github.ref, 'refs/heads/dependabot/')) && 'macos-latest' || fromJSON('["self-hosted", "macOS"]') }}
+    # The Mac takes a few minutes, with everything already built once. A hosted runner starts
+    # from nothing each time: Kotlin/Native to download, and the whole of :shared to compile.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
       # The Mac has its own JDK and a persistent ~/.konan; only the hosted runner needs these.
@@ -430,6 +435,9 @@ jobs:
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
+          # A Dependabot pull request changes the catalog every time; an older ~/.konan still
+          # holds most of what the new one needs.
+          restore-keys: konan-${{ runner.os }}-
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
