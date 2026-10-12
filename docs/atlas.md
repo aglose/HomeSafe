@@ -56,9 +56,14 @@ years twice over, worked out and raw; the raw fixes are only gone to when it has
   rewritten from it; a day it doesn't mention is left alone. A phone that only remembers the last
   three months adds to the history rather than replacing it.
 - A file that turns out to be cut short changes nothing.
-- Takeout's files write times in UTC with no word of where the clock was; those take the
-  household's time zone, which is right at home and an hour or more out on a trip elsewhere. The
-  phone's export writes the offset, and is right everywhere.
+- **Where the clock was.** Android's export writes every time on the clock the phone keeps
+  *now*, and says where the clock on the wall was at the time in a field of its own
+  (`startTimeTimezoneUtcOffsetMinutes`); that field is the one used, so years lived in another
+  time zone keep their own mornings and nights. Takeout's files write UTC and say nothing of
+  where the clock was; those take the household's time zone, which is right at home and an hour
+  or more out on a trip elsewhere.
+- A file Drive lists with nothing in it is one the phone is still sending, and is left for the
+  next look.
 
 ### Place names
 
@@ -109,7 +114,8 @@ which step is missing.
 
 To load a file without Drive, copy it to `relay/data/` on the box and run
 `docker exec homesafe-relay python relay.py timeline-import /data/Timeline.json`;
-`timeline-pull` looks in the folder and names some places right now.
+`timeline-pull` looks in the folder and names some places right now, and `timeline-reread` reads
+the export again after a change to how it is read.
 
 ## What the app works out
 
