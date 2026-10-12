@@ -2907,12 +2907,11 @@ private fun com.meticulouscreations.homesafe.fitness.ui.SensorCard(heart: com.me
     - actions: STABLE (marked @Stable or @Immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.SessionCard(session: com.meticulouscreations.homesafe.fitness.WorkoutSession, utcOffsetSeconds: kotlin.Int, onOpen: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.SessionCard(session: com.meticulouscreations.homesafe.fitness.WorkoutSession, onOpen: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - session: STABLE (marked @Stable or @Immutable)
-    - utcOffsetSeconds: STABLE (primitive type)
     - onOpen: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 

@@ -742,6 +742,53 @@ class FitnessBoardBuilderTest {
     }
 
     @Test
+    fun eachSessionIsFiledAndTimedByTheOffsetAtItsOwnMomentNotTodays() {
+        // Half past eleven at night, UTC, in "summer"; the offset is an hour then and none in "winter", when it is looked back on.
+        val summer = 20_000L * DAY + 23 * 3_600L + 1_800L
+        val winter = summer + 120 * DAY
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            sets = listOf(logged(1, 100.0, 10, summer + 60, workoutId = 1), logged(2, 100.0, 10, summer + 5 * DAY), logged(3, 100.0, 10, winter - DAY)),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, summer, summer + 600)),
+        )
+        val offsetAt = { at: Long -> if (at < summer + 60 * DAY) 3_600 else 0 }
+
+        val (late, loose, workout) = FitnessBoardBuilder.build(log, winter, 0, offsetAt).history
+
+        // By today's offset it would be the 20,000th day still; by its own it was already the next.
+        assertEquals(20_001L, workout.epochDay)
+        assertEquals(3_600, workout.utcOffsetSeconds)
+        assertEquals(20_006L, loose.epochDay)
+        assertEquals(3_600, loose.utcOffsetSeconds)
+        assertEquals(0, late.utcOffsetSeconds)
+        assertEquals(20_119L, late.epochDay)
+        // Left to itself, the one offset given serves throughout.
+        assertEquals(20_000L, build(log, now = winter, offset = 0).history.last().epochDay)
+    }
+
+    @Test
+    fun aRecordOnAnExerciseSincePutAwayIsStillARecordInTheHistoryAndNowhereElse() {
+        val old = exercise(id = "chest/old", name = "Old press", archived = true)
+        val log = FitnessLog(
+            exercises = listOf(bench, old),
+            sets = listOf(
+                logged(1, 100.0, 10, ago(9), exerciseId = old.id, workoutId = 1),
+                logged(2, 110.0, 10, ago(2), exerciseId = old.id, workoutId = 2),
+            ),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, ago(9), ago(9) + 600), Workout(2, WorkoutFocus.CHEST, ago(2), ago(2) + 600)),
+        )
+        val boards = build(log)
+        val latest = boards.history.first()
+        assertEquals(old.id, latest.lifts.single().exercise.id)
+        assertEquals(mapOf(2L to Record(RecordScope.ALL_TIME, RecordKind.WEIGHT)), latest.lifts.single().records)
+        assertEquals(1, latest.recordCount)
+        // It has no board, and isn't among the records the other screens count.
+        assertEquals(listOf(bench.id), boards.boards.map { it.exercise.id })
+        assertEquals(emptyList(), boards.recentRecords)
+        assertEquals(0, boards.week.records)
+    }
+
+    @Test
     fun aSessionCountsTheRecordsSetInIt() {
         val log = FitnessLog(
             exercises = listOf(bench),

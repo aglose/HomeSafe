@@ -104,7 +104,9 @@ data class SessionLift(val exercise: Exercise, val sets: List<LoggedSet>, val to
 /**
  * One entry in the history: a [workout] with what was logged in it, or (with none) a day's sets
  * that were logged with no workout open. [epochDay] is the local day it is filed under on the
- * calendar: the day a workout began, whenever it ended. [durationSeconds] is known only for a
+ * calendar: the day a workout began, whenever it ended, by the offset from UTC at that moment
+ * ([utcOffsetSeconds], which is also what its time of day is read in: an evening in July stays an
+ * evening when it is looked back on in December). [durationSeconds] is known only for a
  * workout that was finished. [pounds] is everything moved in it, rep by rep, leaving out what
  * isn't counted in pounds ([Strength.poundsMoved]).
  */
@@ -113,6 +115,7 @@ data class WorkoutSession(
     val workout: Workout?,
     val epochDay: Long,
     val startedAtEpochSeconds: Long,
+    val utcOffsetSeconds: Int = 0,
     val durationSeconds: Long? = null,
     val lifts: List<SessionLift> = emptyList(),
     val pounds: Double = 0.0,
@@ -158,7 +161,12 @@ object FitnessBoardBuilder {
     private const val RECENT_RECORD_DAYS = 30L
     private const val WEEK_SECONDS = 7 * SECONDS_PER_DAY
 
-    fun build(log: FitnessLog, nowEpochSeconds: Long, utcOffsetSeconds: Int): FitnessBoards {
+    /**
+     * [utcOffsetSeconds] is the offset now, which is what "today" and the last few weeks are read
+     * in. The history reaches back across summer time and winter time, so each of its sessions is
+     * filed by the offset at its own moment ([offsetAt]); left out, that is the one offset throughout.
+     */
+    fun build(log: FitnessLog, nowEpochSeconds: Long, utcOffsetSeconds: Int, offsetAt: (Long) -> Int = { utcOffsetSeconds }): FitnessBoards {
         val phases = log.phases.sortedBy { it.startedAtEpochSeconds }
         val current = phases.lastOrNull { it.startedAtEpochSeconds <= nowEpochSeconds }
         val phaseKind = current?.kind ?: PhaseKind.MAINTAIN
@@ -172,18 +180,25 @@ object FitnessBoardBuilder {
         val open = log.workouts.lastOrNull { it.isInProgress(nowEpochSeconds) }
         val records = ArrayList<RecordEvent>()
         val recordById = HashMap<Long, Record>()
-        val boards = log.exercises.filter { !it.archived }.map { exercise ->
-            val sets = setsByExercise[exercise.id].orEmpty().sortedWith(compareBy({ it.epochSeconds }, { it.id }))
-            val done = sets.filter { it.reps > 0 }
-            val dated = done.filter { !it.isBenchmark }
+
+        fun doneOf(exercise: Exercise) = setsByExercise[exercise.id].orEmpty().sortedWith(compareBy({ it.epochSeconds }, { it.id })).filter { it.reps > 0 }
+
+        /** Judges each of [done] against what came before it. [listed] among the records to show; either way the set is known as one. */
+        fun mark(exercise: Exercise, done: List<LoggedSet>, listed: Boolean) {
             for ((index, set) in done.withIndex()) {
                 // Only what was logged here can be a record: the notes' numbers are what there was to beat.
                 if (set.isBenchmark || set.imported) continue
                 val start = phases.lastOrNull { it.startedAtEpochSeconds <= set.epochSeconds }?.startedAtEpochSeconds ?: 0L
                 val record = Strength.record(exercise, set, done.subList(0, index), start, pounds) ?: continue
                 recordById[set.id] = record
-                records += RecordEvent(exercise, set, record)
+                if (listed) records += RecordEvent(exercise, set, record)
             }
+        }
+
+        val boards = log.exercises.filter { !it.archived }.map { exercise ->
+            val done = doneOf(exercise)
+            val dated = done.filter { !it.isBenchmark }
+            mark(exercise, done, listed = true)
             val best = Strength.best(exercise, done, pounds)
             // While a workout is open, "last time" and the target stay what they were when it began: the sets
             // being logged are the attempt at the target, and must not move it.
@@ -205,6 +220,9 @@ object FitnessBoardBuilder {
                 setCount = done.size,
             )
         }.sortedWith(compareBy({ it.exercise.bodyPart.ordinal }, { it.exercise.name.lowercase() }))
+
+        // An exercise since put away has no board, but the history still shows what was done on it, records and all.
+        log.exercises.filter { it.archived }.forEach { mark(it, doneOf(it), listed = false) }
 
         val workout = open?.let { session ->
             val mine = log.sets.filter { it.workoutId == session.id }.sortedWith(compareBy({ it.epochSeconds }, { it.id }))
@@ -249,23 +267,24 @@ object FitnessBoardBuilder {
                 .take(12),
             bodyweight = bodyweight,
             calendar = calendar,
-            history = history(log, recordById, nowEpochSeconds, utcOffsetSeconds, pounds),
+            history = history(log, recordById, nowEpochSeconds, offsetAt, pounds),
         )
     }
 
     /**
      * The log as sessions, the latest first: each workout with its sets, and for the sets that
      * belong to none (logged from an exercise's page with no workout open) one entry a day. The
-     * notes' own numbers are no session: they are what there was before the log.
+     * notes' own numbers are no session: they are what there was before the log. Each is filed
+     * under the local day it began, by the offset at that moment ([offsetAt]).
      */
-    private fun history(log: FitnessLog, records: Map<Long, Record>, nowEpochSeconds: Long, utcOffsetSeconds: Int, bodyweight: Double?): List<WorkoutSession> {
+    private fun history(log: FitnessLog, records: Map<Long, Record>, nowEpochSeconds: Long, offsetAt: (Long) -> Int, bodyweight: Double?): List<WorkoutSession> {
         val exercises = log.exercises.associateBy { it.id }
         val workoutIds = log.workouts.mapTo(HashSet()) { it.id }
         val done = log.sets.filter { it.reps > 0 }.sortedWith(compareBy({ it.epochSeconds }, { it.id }))
         val (inWorkouts, apart) = done.partition { it.workoutId != null && it.workoutId in workoutIds }
         val byWorkout = inWorkouts.groupBy { it.workoutId }
 
-        fun epochDay(epochSeconds: Long) = (epochSeconds + utcOffsetSeconds).floorDiv(SECONDS_PER_DAY)
+        fun epochDay(epochSeconds: Long) = (epochSeconds + offsetAt(epochSeconds)).floorDiv(SECONDS_PER_DAY)
 
         fun lifts(sets: List<LoggedSet>): List<SessionLift> = sets.groupBy { it.exerciseId }.mapNotNull { (id, mine) ->
             val exercise = exercises[id] ?: return@mapNotNull null
@@ -281,6 +300,7 @@ object FitnessBoardBuilder {
                 workout = workout,
                 epochDay = epochDay(workout.startedAtEpochSeconds),
                 startedAtEpochSeconds = workout.startedAtEpochSeconds,
+                utcOffsetSeconds = offsetAt(workout.startedAtEpochSeconds),
                 durationSeconds = workout.finishedAtEpochSeconds?.let { (it - workout.startedAtEpochSeconds).coerceAtLeast(0) },
                 lifts = mine,
                 pounds = pounds(mine),
@@ -289,7 +309,8 @@ object FitnessBoardBuilder {
         }
         val loose = apart.filter { !it.isBenchmark && !it.imported }.groupBy { epochDay(it.epochSeconds) }.mapNotNull { (day, sets) ->
             val mine = lifts(sets)
-            if (mine.isEmpty()) null else WorkoutSession(workout = null, epochDay = day, startedAtEpochSeconds = sets.first().epochSeconds, lifts = mine, pounds = pounds(mine))
+            val start = sets.first().epochSeconds
+            if (mine.isEmpty()) null else WorkoutSession(workout = null, epochDay = day, startedAtEpochSeconds = start, utcOffsetSeconds = offsetAt(start), lifts = mine, pounds = pounds(mine))
         }
         return (workouts + loose).sortedWith(compareByDescending<WorkoutSession> { it.startedAtEpochSeconds }.thenByDescending { it.workout?.id ?: 0L })
     }

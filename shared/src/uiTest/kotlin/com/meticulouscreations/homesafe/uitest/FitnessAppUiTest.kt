@@ -311,8 +311,11 @@ class FitnessAppUiTest {
         assertShown("fitness_history")
         onNodeWithTag("fitness_history_month").assertTextEquals("October 2026")
         // Legs on the 2nd, chest on the 4th, back on the 6th; the 8th is today.
-        onNodeWithTag("fitness_history_day_6").assert(hasContentDescription("October 6, 1 workout"))
+        onNodeWithTag("fitness_history_day_6").assert(hasContentDescription("October 6, 1 session logged"))
         onNodeWithTag("fitness_history_day_7").assert(hasContentDescription("October 7, nothing logged"))
+        // The ring round today is said in words.
+        onNodeWithTag("fitness_history_day_8").assert(hasContentDescription("Today, October 8, nothing logged"))
+        onNodeWithTag("fitness_history_month_stats").assert(says("3"))
         onNodeWithTag("fitness_history_month_stats").assert(says("22"))
         assertShown("fitness_session_${lastBack.workout?.id}")
         onNodeWithTag("fitness_session_${lastBack.workout?.id}").assert(says("6 sets · 3 exercises · 7,722 lb"))
@@ -344,6 +347,38 @@ class FitnessAppUiTest {
         tap("fitness_history_this_month")
         onNodeWithTag("fitness_history_month").assertTextEquals("October 2026")
         assertShown("fitness_session_${lastBack.workout?.id}")
+    }
+
+    @Test
+    fun aDayPickedInOneMonthIsNotCarriedIntoAnother() = runComposeUiTest(testTimeout = 5.minutes) {
+        val state = FitnessFixtures.state()
+        val lastChest = state.history.first { it.focus == WorkoutFocus.CHEST }
+        show(state, Calls(), tab = FitnessTab.HISTORY, tall = true)
+        tap("fitness_history_day_6")
+        assertNotShown("fitness_session_${lastChest.workout?.id}")
+        tap("fitness_history_previous")
+        // September's list is the whole of September, not the 6th of October's.
+        assertNotShown("fitness_history_show_month")
+        assertNotShown("fitness_history_empty")
+        tap("fitness_history_this_month")
+        assertNotShown("fitness_history_show_month")
+        assertShown("fitness_session_${lastChest.workout?.id}")
+    }
+
+    @Test
+    fun setsLoggedOutsideAWorkoutLightTheirDayButAreNotCountedAsOne() = runComposeUiTest(testTimeout = 5.minutes) {
+        val state = FitnessFixtures.state()
+        // The last back day's sets again, the day after, with no workout round them.
+        val loose = lastBack.copy(workout = null, epochDay = lastBack.epochDay + 1, startedAtEpochSeconds = lastBack.startedAtEpochSeconds + 86_400, durationSeconds = null)
+        show(state.copy(history = listOf(loose) + state.history), Calls(), tab = FitnessTab.HISTORY, tall = true)
+        onNodeWithTag("fitness_history_day_7").assert(hasContentDescription("October 7, 1 session logged"))
+        assertShown("fitness_session_day_${loose.epochDay}")
+        // Three workouts still, with the loose sets among the month's 28.
+        onNodeWithTag("fitness_history_month_stats").assert(says("3"))
+        onNodeWithTag("fitness_history_month_stats").assert(says("28"))
+        tap("fitness_session_day_${loose.epochDay}")
+        assertShown("fitness_session")
+        onNodeWithTag("fitness_session_delete").assert(says("Delete these sets"))
     }
 
     @Test

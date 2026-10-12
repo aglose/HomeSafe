@@ -114,10 +114,14 @@ numbers are no session: they are what there was before the log.
 
 - **The month** is a grid of days in weeks that begin on Monday. A day something was trained is
   filled with its workout's colour (the legend under the grid names the ones in view), a day with
-  more than one session carries a dot for each, and today is ringed. The arrows walk back as far
+  more than one session carries a dot for each (up to three, all a square has room for), and
+  today is ringed. The arrows walk back as far
   as the log goes and forward no further than now; off the present month, **This month** comes
-  back to it. A workout is filed under the local day it began, whenever it ended.
-- **Under the grid**, what the month came to: workouts, sets, hours and records.
+  back to it. A workout is filed under the local day it began, whenever it ended, and that day and
+  its time of day are read by the offset from UTC at that moment, not today's: a workout from
+  July keeps its day and its hour when it is looked back on after the clocks have changed.
+- **Under the grid**, what the month came to: workouts, sets, hours and records. A day's loose
+  sets are in the sets and the records, but aren't counted as a workout.
 - **The list** is the month's sessions, the latest first: what it was, when it began, how long it
   ran, and its sets, exercises and volume in a line, with a trophy and a count where records were
   set. A tap on a lit day narrows the list to that day; **Whole month** brings the rest back.

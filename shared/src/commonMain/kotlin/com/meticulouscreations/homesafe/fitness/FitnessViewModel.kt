@@ -658,7 +658,7 @@ class FitnessViewModel(
     private fun publish(loaded: Boolean? = null) {
         val at = now()
         val offset = localUtcOffsetSeconds(at.toDouble())
-        val boards = FitnessBoardBuilder.build(log, at, offset)
+        val boards = FitnessBoardBuilder.build(log, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) })
         _uiState.update { state ->
             state.copy(
                 loaded = loaded ?: state.loaded,

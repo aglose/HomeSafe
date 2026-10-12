@@ -32,12 +32,15 @@
     <!-- A chip that brings the calendar back to the month it is now -->
     <string name="fitness_history_this_month">This month</string>
 
-    <!-- For a screen reader, a day of the calendar: %1$s the month, %2$d the day, %3$d how many workouts -->
+    <!-- For a screen reader, a day of the calendar: %1$s the month, %2$d the day, %3$d how many sessions were logged
+         on it. A session is a workout, or a day's sets logged outside one, so the word must cover both -->
     <plurals name="fitness_history_day_sessions">
-        <item quantity="one">%1$s %2$d, %3$d workout</item>
-        <item quantity="other">%1$s %2$d, %3$d workouts</item>
+        <item quantity="one">%1$s %2$d, %3$d session logged</item>
+        <item quantity="other">%1$s %2$d, %3$d sessions logged</item>
     </plurals>
     <string name="fitness_history_day_none">%1$s %2$d, nothing logged</string>
+    <!-- For a screen reader, the day it is now: %1$s one of the two above, whole, like "October 8, nothing logged" -->
+    <string name="fitness_history_day_today">Today, %1$s</string>
 
     <!-- A day: %1$s the weekday ("Mon"), %2$s the month, %3$d the day -->
     <string name="fitness_history_date">%1$s, %2$s %3$d</string>

@@ -69,6 +69,7 @@ import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_history_day_none
 import homesafe.shared.generated.resources.fitness_history_day_sessions
+import homesafe.shared.generated.resources.fitness_history_day_today
 import homesafe.shared.generated.resources.fitness_history_empty
 import homesafe.shared.generated.resources.fitness_history_empty_month
 import homesafe.shared.generated.resources.fitness_history_exercises
@@ -122,8 +123,10 @@ internal fun HistoryScreen(state: FitnessUiState, padding: PaddingValues, onOpen
     // The month on show, counted in months so that a step is one more or one fewer. Until an arrow is tapped there is
     // none chosen, and the calendar follows the clock into a new month by itself.
     var chosen by rememberSaveable { mutableStateOf<Int?>(null) }
-    var picked by rememberSaveable { mutableStateOf<Long?>(null) }
     val month = chosen ?: current
+    // The day the list is narrowed to belongs to the month on show: another month, come to by an arrow or by the clock
+    // running into it, starts with none.
+    var picked by rememberSaveable(month) { mutableStateOf<Long?>(null) }
     val earliest = remember(state.history, current) { state.history.lastOrNull()?.let { monthIndex(it.epochDay) }?.coerceAtMost(current) ?: current }
     val first = firstDay(month)
     val next = firstDay(month + 1)
@@ -134,7 +137,6 @@ internal fun HistoryScreen(state: FitnessUiState, padding: PaddingValues, onOpen
     // Held to the months there is something to show: a button that is off can still be pressed by a screen reader.
     fun show(target: Int) {
         chosen = target.coerceIn(earliest, current).takeIf { it != current }
-        picked = null
     }
 
     Column(
@@ -199,7 +201,8 @@ internal fun HistoryScreen(state: FitnessUiState, padding: PaddingValues, onOpen
             Spacer(Modifier.height(16.dp))
             Row(Modifier.fillMaxWidth().testTag("fitness_history_month_stats"), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 val records = sessions.sumOf { it.recordCount }
-                Stat(sessions.size.toString(), stringResource(Res.string.fitness_history_stat_workouts), Modifier.weight(1f))
+                // A day's loose sets are in the sets and the records, but they are no workout.
+                Stat(sessions.count { it.workout != null }.toString(), stringResource(Res.string.fitness_history_stat_workouts), Modifier.weight(1f))
                 Stat(sessions.sumOf { it.setCount }.toString(), stringResource(Res.string.fitness_history_stat_sets), Modifier.weight(1f))
                 Stat(FitnessFormat.number(sessions.sumOf { it.durationSeconds ?: 0L } / 3_600.0), stringResource(Res.string.fitness_history_stat_hours), Modifier.weight(1f))
                 Stat(records.toString(), stringResource(Res.string.fitness_history_stat_records), Modifier.weight(1f), color = if (records > 0) colors.gold else colors.text)
@@ -224,7 +227,7 @@ internal fun HistoryScreen(state: FitnessUiState, padding: PaddingValues, onOpen
                 modifier = Modifier.padding(horizontal = 4.dp).testTag("fitness_history_empty"),
             )
         }
-        listed.forEach { session -> SessionCard(session, state.utcOffsetSeconds, { onOpenSession(session) }) }
+        listed.forEach { session -> SessionCard(session, { onOpenSession(session) }) }
     }
 }
 
@@ -285,18 +288,21 @@ private fun MonthGrid(month: Int, days: MonthDays, today: Long, picked: Long?, o
 /**
  * A day of the month. One something was trained on ([sessions] of them) is filled with its
  * workout's colour ([fill]) and can be tapped; with more than one session it carries a dot for
- * each. Today is ringed, and the day the list is narrowed to is ringed heavier.
+ * each, up to three, which is all a square has room for (a screen reader is told the true count).
+ * Today is ringed, and the day the list is narrowed to is ringed heavier.
  */
 @Composable
 private fun DayCell(number: Int, monthName: String, sessions: Int, fill: Color?, isToday: Boolean, ahead: Boolean, picked: Boolean, onPick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val shape = RoundedCornerShape(12.dp)
     val trained = sessions > 0
-    val described = if (trained) {
+    val day = if (trained) {
         pluralStringResource(Res.plurals.fitness_history_day_sessions, sessions, monthName, number, sessions)
     } else {
         stringResource(Res.string.fitness_history_day_none, monthName, number)
     }
+    // The ring round today is all a sighted eye gets; a screen reader is told in words.
+    val described = if (isToday) stringResource(Res.string.fitness_history_day_today, day) else day
     Box(
         modifier
             .aspectRatio(1f)
@@ -357,7 +363,7 @@ private fun sessionName(session: WorkoutSession): String = session.focus?.let { 
 
 /** A session in the list: what it was and when, how long it ran, and what it came to in sets, exercises, pounds and records. */
 @Composable
-private fun SessionCard(session: WorkoutSession, utcOffsetSeconds: Int, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+private fun SessionCard(session: WorkoutSession, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val tints = sessionTints(session)
@@ -381,7 +387,7 @@ private fun SessionCard(session: WorkoutSession, utcOffsetSeconds: Int, onOpen: 
         Column(Modifier.weight(1f)) {
             Text(name, style = type.headline, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(
-                stringResource(Res.string.fitness_history_when, day, FitnessFormat.timeOfDay(session.startedAtEpochSeconds, utcOffsetSeconds).resolve()),
+                stringResource(Res.string.fitness_history_when, day, FitnessFormat.timeOfDay(session.startedAtEpochSeconds, session.utcOffsetSeconds).resolve()),
                 style = type.label,
                 color = colors.textFaint,
                 maxLines = 1,
@@ -458,7 +464,7 @@ internal fun SessionScreen(
                     Res.string.fitness_history_when,
                     // The year, once it is no longer plain which one.
                     FitnessFormat.day(session.epochDay, withYear = today - session.epochDay > 300).resolve(),
-                    FitnessFormat.timeOfDay(session.startedAtEpochSeconds, state.utcOffsetSeconds).resolve(),
+                    FitnessFormat.timeOfDay(session.startedAtEpochSeconds, session.utcOffsetSeconds).resolve(),
                 ),
                 style = type.body,
                 color = colors.textMuted,
