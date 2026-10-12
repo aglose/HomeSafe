@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's History tab: the month as a calendar, the workouts in it with what each came
+  to, and the page a workout is looked back on (and deleted from).
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The month's heading: %1$s the month's name, %2$d the year -->
+    <string name="fitness_history_month_year">%1$s %2$d</string>
+    <string name="fitness_history_month_january">January</string>
+    <string name="fitness_history_month_february">February</string>
+    <string name="fitness_history_month_march">March</string>
+    <string name="fitness_history_month_april">April</string>
+    <string name="fitness_history_month_may">May</string>
+    <string name="fitness_history_month_june">June</string>
+    <string name="fitness_history_month_july">July</string>
+    <string name="fitness_history_month_august">August</string>
+    <string name="fitness_history_month_september">September</string>
+    <string name="fitness_history_month_october">October</string>
+    <string name="fitness_history_month_november">November</string>
+    <string name="fitness_history_month_december">December</string>
+    <!-- The heads of the calendar's columns, and the weekday in a workout's date -->
+    <string name="fitness_history_weekday_monday">Mon</string>
+    <string name="fitness_history_weekday_tuesday">Tue</string>
+    <string name="fitness_history_weekday_wednesday">Wed</string>
+    <string name="fitness_history_weekday_thursday">Thu</string>
+    <string name="fitness_history_weekday_friday">Fri</string>
+    <string name="fitness_history_weekday_saturday">Sat</string>
+    <string name="fitness_history_weekday_sunday">Sun</string>
+    <string name="fitness_history_previous_month">Previous month</string>
+    <string name="fitness_history_next_month">Next month</string>
+    <!-- A chip that brings the calendar back to the month it is now -->
+    <string name="fitness_history_this_month">This month</string>
+
+    <!-- For a screen reader, a day of the calendar: %1$s the month, %2$d the day, %3$d how many workouts -->
+    <plurals name="fitness_history_day_sessions">
+        <item quantity="one">%1$s %2$d, %3$d workout</item>
+        <item quantity="other">%1$s %2$d, %3$d workouts</item>
+    </plurals>
+    <string name="fitness_history_day_none">%1$s %2$d, nothing logged</string>
+
+    <!-- A day: %1$s the weekday ("Mon"), %2$s the month, %3$d the day -->
+    <string name="fitness_history_date">%1$s, %2$s %3$d</string>
+    <!-- %4$d the year -->
+    <string name="fitness_history_date_year">%1$s, %2$s %3$d, %4$d</string>
+    <!-- A time of day: %1$d the hour, %2$s the minutes, two digits -->
+    <string name="fitness_history_time_am">%1$d:%2$s AM</string>
+    <string name="fitness_history_time_pm">%1$d:%2$s PM</string>
+    <!-- When a workout began: %1$s the day, %2$s the time -->
+    <string name="fitness_history_when">%1$s · %2$s</string>
+    <!-- How long a workout ran -->
+    <string name="fitness_history_minutes">%1$d min</string>
+    <string name="fitness_history_hours_minutes">%1$d h %2$d min</string>
+    <!-- In place of a number there is none of -->
+    <string name="fitness_history_none">–</string>
+
+    <!-- Words under the month's counts, and under a workout's -->
+    <string name="fitness_history_stat_workouts">Workouts</string>
+    <string name="fitness_history_stat_sets">Sets</string>
+    <string name="fitness_history_stat_reps">Reps</string>
+    <string name="fitness_history_stat_exercises">Exercises</string>
+    <string name="fitness_history_stat_time">Time</string>
+    <!-- Under how long the month's workouts ran in all, in hours: "7.3" -->
+    <string name="fitness_history_stat_hours">Hours</string>
+    <string name="fitness_history_stat_records">Records</string>
+    <string name="fitness_history_stat_volume">Volume</string>
+
+    <!-- The list under the calendar. %1$s the month's name -->
+    <string name="fitness_history_list_month">Workouts in %1$s</string>
+    <string name="fitness_history_show_month">Whole month</string>
+    <string name="fitness_history_empty_month">Nothing logged this month.</string>
+    <string name="fitness_history_empty">Finish a workout and it lands here, on the day it was done.</string>
+    <!-- An entry for sets logged from an exercise's page, with no workout open -->
+    <string name="fitness_history_loose">Outside a workout</string>
+    <string name="fitness_history_in_progress">In progress</string>
+    <plurals name="fitness_history_sets">
+        <item quantity="one">%1$d set</item>
+        <item quantity="other">%1$d sets</item>
+    </plurals>
+    <plurals name="fitness_history_exercises">
+        <item quantity="one">%1$d exercise</item>
+        <item quantity="other">%1$d exercises</item>
+    </plurals>
+    <plurals name="fitness_history_records">
+        <item quantity="one">%1$d record</item>
+        <item quantity="other">%1$d records</item>
+    </plurals>
+    <!-- Everything moved in a workout, in pounds: %1$s like "6,240" -->
+    <string name="fitness_history_volume">%1$s lb</string>
+    <!-- A workout in a line: %1$s like "8 sets", %2$s like "4 exercises", %3$s like "6,240 lb" -->
+    <string name="fitness_history_row_stats">%1$s · %2$s · %3$s</string>
+    <string name="fitness_history_row_stats_short">%1$s · %2$s</string>
+    <!-- For a screen reader: opens a workout. %1$s like "Legs", %2$s its day -->
+    <string name="fitness_history_open">Open %1$s, %2$s</string>
+
+    <!-- A workout, looked back on -->
+    <string name="fitness_title_session">Workout</string>
+    <string name="fitness_session_heart">Heart rate</string>
+    <string name="fitness_session_lifts">What was done</string>
+    <string name="fitness_session_empty">No sets are left in this workout.</string>
+    <string name="fitness_session_volume_caption">Volume is every rep times its weight. Machines counted by pin number aren't in it.</string>
+    <!-- For a screen reader: opens the exercise's own page. %1$s its name -->
+    <string name="fitness_session_open_exercise">Open %1$s</string>
+    <string name="fitness_session_delete">Delete workout</string>
+    <string name="fitness_session_delete_sets">Delete these sets</string>
+    <string name="fitness_session_delete_confirm">Tap again to delete for good</string>
+</resources>

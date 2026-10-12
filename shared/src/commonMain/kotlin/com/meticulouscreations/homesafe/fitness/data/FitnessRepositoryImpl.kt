@@ -121,6 +121,10 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
 
     override suspend fun deleteSet(id: Long) = writes.withLock { dao.deleteSet(id) }
 
+    override suspend fun deleteSets(ids: List<Long>) {
+        if (ids.isNotEmpty()) writes.withLock { dao.deleteSets(ids) }
+    }
+
     override suspend fun startWorkout(focus: WorkoutFocus, atEpochSeconds: Long): Workout = writes.withLock {
         dao.openWorkout()?.toDomain()?.takeIf { it.isInProgress(atEpochSeconds) }?.let { return@withLock it }
         val row = FitnessWorkoutEntity((dao.maxWorkoutId() ?: 0L) + 1, focus.name, atEpochSeconds, null)
@@ -137,6 +141,8 @@ class FitnessRepositoryImpl(private val dao: FitnessDao) : FitnessRepository {
             dao.upsertWorkout(row.copy(finishedAtEpochSeconds = atEpochSeconds))
         }
     }
+
+    override suspend fun deleteWorkout(id: Long) = writes.withLock { dao.removeWorkout(id) }
 
     override suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long) = writes.withLock {
         dao.upsertPhase(FitnessPhaseEntity((dao.maxPhaseId() ?: 0L) + 1, kind.name, atEpochSeconds))

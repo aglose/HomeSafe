@@ -33,7 +33,8 @@ import kotlin.test.assertFailsWith
 /**
  * A copy of a log brought in through the real database, on a SQLite file: the repository tests
  * run on [com.meticulouscreations.homesafe.data.InMemoryFitnessDao], which has no transactions,
- * so that a copy is written as one (all of it or none) is only shown here.
+ * so that a copy is written as one (all of it or none) is only shown here. The same goes for a
+ * workout deleted with its sets and its heart.
  */
 class FitnessLogCopyDatabaseTest {
 
@@ -83,6 +84,36 @@ class FitnessLogCopyDatabaseTest {
         assertEquals(2, merge.newExercises)
         assertEquals(copy, repository.logCopy())
         assertEquals(LogMerge(), repository.bringIn(copy))
+    }
+
+    @Test
+    fun aWorkoutDeletedThroughTheDatabaseTakesItsSetsAndItsHeartAndNothingElse() = withDatabase { dao ->
+        val repository = FitnessRepositoryImpl(dao)
+        repository.bringIn(copy)
+        val loose = repository.addSets(listOf(SetDraft(squat.id, 225.0, 5, 9_000), SetDraft(squat.id, 225.0, 4, 9_100)))
+
+        repository.deleteWorkout(1)
+
+        assertEquals(emptyList(), repository.workouts.first())
+        assertEquals(emptyMap(), repository.heartSummaries.first())
+        assertEquals(listOf(1L) + loose.map { it.id }, repository.sets.first().map { it.id })
+        assertEquals(copy.exercises.map { it.id }.sorted(), repository.exercises.first().map { it.id }.sorted())
+
+        repository.deleteSets(loose.map { it.id })
+        assertEquals(listOf(1L), repository.sets.first().map { it.id })
+    }
+
+    @Test
+    fun aWorkoutWhoseDeletionFailsPartWayIsLeftWhole() = withDatabase(
+        // The workout's own row refuses to go, after its sets and its heart have: all three must still be there.
+        prepare = { it.execSQL("CREATE TRIGGER refuse_workout BEFORE DELETE ON FitnessWorkoutEntity BEGIN SELECT RAISE(ABORT, 'refused'); END") },
+    ) { dao ->
+        val repository = FitnessRepositoryImpl(dao)
+        repository.bringIn(copy)
+
+        assertFailsWith<Exception> { repository.deleteWorkout(1) }
+
+        assertEquals(copy, repository.logCopy())
     }
 
     @Test

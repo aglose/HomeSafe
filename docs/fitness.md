@@ -10,11 +10,13 @@ in a notes app, and it reads those notes as its starting point.
 |---|---|
 | **Today** | The phase (bulk, cut, maintain) and how long it has run, which workout has waited longest, the week in three numbers, and the workouts as doors: Chest, Back and Legs, then Shoulders and Arms. The one that is up next says what it opens on. Below, the records lately set |
 | **Lifts** | Every exercise, shelf by shelf, with its best set, its ladder in miniature and where it stands against its best. Add one by name; bring the notes in; [send a copy of the log](#moving-the-log) to another install |
+| **History** | [A month as a calendar](#looking-back), each day something was trained lit in that workout's colour, what the month came to, and the month's workouts with what each came to. A workout opens onto its own page, where it can be deleted |
 | **Progress** | The phase and how the lifts are holding up in it, bodyweight with the noise taken out, the week's sets drawn on the body, the last twelve weeks as a calendar, and each lift against its best |
 
 A **workout** lists the exercises on its shelves with last time's peak set and today's target,
 each with a still of [the movement](#the-figure-on-an-exercise) at the start of its row. A
-tap opens one into its logger, in place, with the figure performing it above. An **exercise** has a page of its own: the target and
+tap opens one into its logger, in place, with the figure performing it above. At its foot it is
+finished, which keeps it, or [cancelled](#cancelling-and-deleting), which throws it away. An **exercise** has a page of its own: the target and
 why, the ladder, the logger, strength over time, and an editor behind the pencil. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
 
@@ -103,6 +105,48 @@ Bodyweight is tracked as a trend (`BodyweightTrend`): an exponentially smoothed 
 weekly rate of change read against the phase. A cut is paced at 0.5 to 1% of bodyweight a week
 (Helms et al. 2014), a bulk at 0.25 to 0.5% (Iraki et al. 2019).
 
+## Looking back
+
+**History** is the log as sessions (`WorkoutSession`, worked out by `FitnessBoardBuilder` with
+everything else): each workout with the sets logged in it, and, for sets logged from an
+exercise's page with no workout open, one entry a day ("Outside a workout"). The notes' own
+numbers are no session: they are what there was before the log.
+
+- **The month** is a grid of days in weeks that begin on Monday. A day something was trained is
+  filled with its workout's colour (the legend under the grid names the ones in view), a day with
+  more than one session carries a dot for each, and today is ringed. The arrows walk back as far
+  as the log goes and forward no further than now; off the present month, **This month** comes
+  back to it. A workout is filed under the local day it began, whenever it ended.
+- **Under the grid**, what the month came to: workouts, sets, hours and records.
+- **The list** is the month's sessions, the latest first: what it was, when it began, how long it
+  ran, and its sets, exercises and volume in a line, with a trophy and a count where records were
+  set. A tap on a lit day narrows the list to that day; **Whole month** brings the rest back.
+- **A session's page** has the same numbers larger (time, sets, reps, volume, exercises,
+  records), its heart if a sensor was on for it (average, peak, time in each zone), and every set
+  under its exercise in the order they were logged, the records among them marked. An exercise's
+  name opens its own page. The workout in progress isn't looked back on: its entry in the list
+  says so, and a tap carries on with it.
+
+**Volume** is every rep times its weight (`Strength.poundsMoved`): a pair of dumbbells counts
+both hands, a bodyweight movement the body and what was hung from it. A machine counted by its
+pin number isn't pounds and is left out, and the page says so where that applies. Like the
+week's sets it is only what was logged, so for someone who writes down one peak set per exercise
+it is the shape of a session, not its whole tonnage.
+
+### Cancelling and deleting
+
+- **Cancel workout**, under Finish on a workout in progress, throws it away as though it had
+  never been started: the sets logged in it go, its heart goes, and a record one of those sets
+  was is no record any more. It takes a second tap, which says how many sets would go. A workout
+  with nothing logged in it yet has only the one button, and closing it leaves no trace.
+- **Delete workout**, at the foot of a session's page, does the same to a finished one, again on
+  a second tap. For an "Outside a workout" entry it deletes that day's loose sets.
+
+Either is one transaction in the database (`FitnessDao.removeWorkout`: the sets, the heart, the
+workout), so one cut off part-way leaves the workout whole. There is no undo. A workout that was
+[sent as a copy](#moving-the-log) beforehand comes back if that copy is brought in again, since
+a copy adds whatever the log hasn't got.
+
 ## Heart rate
 
 A workout can show the heart rate live, with the zone it is in, from a Bluetooth heart-rate
@@ -157,8 +201,9 @@ The age is whatever is entered on the page; nothing about the lifter is built in
   (`ZoneTracker`), so a heart rate sitting on a line doesn't buzz at every beat.
 - **During a rest** the timer shows the heart coming back down: the highest it read since the
   set, what it reads now, and the zone it has fallen to.
-- **Afterwards**, Today shows the last workout's heart: average, peak, and time in each zone.
-  Only the totals are kept (one row a workout); the readings themselves are not stored.
+- **Afterwards**, Today shows the last workout's heart: average, peak, and time in each zone;
+  and any workout's is on its page in History. Only the totals are kept (one row a workout); the
+  readings themselves are not stored.
 
 Readings are approximate. An optical sensor on the wrist can read wrong while a bar is gripped
 hard, so the numbers are a guide and nothing in the progression rules uses them. A reading of 0,
@@ -359,7 +404,7 @@ A movement of its own is four things, and the tests name whichever is still miss
   advertisement is the chosen sensor, reading the measurement, and trying again when a link
   drops, goes quiet or never comes up. So all of that is tested against a fake radio.
 - `fitness/FitnessBoard.kt`: `FitnessBoardBuilder` works every screen's state out of the whole
-  log in one pass. The log is a few thousand rows at most, so it is simply rebuilt when it changes.
+  log in one pass, the history's sessions included. The log is a few thousand rows at most, so it is simply rebuilt when it changes.
 - `fitness/FitnessViewModel.kt`: scoped to the activity and shared with the drawer's card. It
   follows the log once the drawer or the app has been on screen, and holds the open workout's
   rest timer, the record flash and the import draft. The heart rate is a second state beside
@@ -377,7 +422,9 @@ A movement of its own is four things, and the tests name whichever is still miss
   plan, records, the progression table, volume, the bodyweight trend, and `LogCopyTest` (a copy
   as text and back, and what it adds to an empty log, the same log and one in use).
 - `commonTest/.../fitness`: `FitnessBoardBuilderTest`, and `FitnessViewModelTest` over the real
-  repository and an in-memory DAO.
+  repository and an in-memory DAO; `ui/FitnessFormatTest` for how a month, a day, a time and a
+  workout's length are written. `jvmTest/.../FitnessLogCopyDatabaseTest` deletes a workout
+  through a real SQLite file, and checks that one whose deletion fails part-way is left whole.
 - Heart rate: `HeartRateTest` (zones, the measurement's bytes, settling, time in zone),
   `HeartRateMonitorImplTest` (the connection's whole life against a fake radio, on virtual time),
   `FitnessHeartViewModelTest`, and `jvmTest/.../FitnessHeartMigrationTest`, which takes a real

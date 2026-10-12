@@ -60,6 +60,7 @@ class FitnessBoardBuilderTest {
         assertNull(boards.workout)
         assertEquals(emptyList(), boards.recentRecords)
         assertEquals(emptyList(), boards.calendar)
+        assertEquals(emptyList(), boards.history)
         assertEquals(BodyweightTrend(), boards.bodyweight)
     }
 
@@ -645,6 +646,156 @@ class FitnessBoardBuilderTest {
             workouts = listOf(Workout(1, WorkoutFocus.BACK, late, late + 3_600)),
         )
         assertEquals(WorkoutFocus.BACK, build(log, now = late + 7_200, offset = 2 * 3_600).calendar.single().focus)
+    }
+
+    // ---- The history --------------------------------------------------------------------------
+
+    @Test
+    fun aFinishedWorkoutIsASessionWithItsSetsUnderTheirExercisesInTheOrderTheyWereLogged() {
+        val start = ago(2)
+        val workout = Workout(7, WorkoutFocus.LEGS, start, start + 3_000)
+        val log = FitnessLog(
+            exercises = listOf(bench, squat),
+            sets = listOf(
+                logged(1, 225.0, 5, start + 60, exerciseId = squat.id, workoutId = 7),
+                logged(2, 135.0, 8, start + 120, workoutId = 7),
+                logged(3, 225.0, 4, start + 180, exerciseId = squat.id, workoutId = 7),
+            ),
+            workouts = listOf(workout),
+        )
+        val session = build(log).history.single()
+        assertEquals(workout, session.workout)
+        assertEquals(WorkoutFocus.LEGS, session.focus)
+        assertEquals(NOW / DAY - 2, session.epochDay)
+        assertEquals(start, session.startedAtEpochSeconds)
+        assertEquals(3_000L, session.durationSeconds)
+        assertFalse(session.inProgress)
+        assertEquals(listOf(squat.id, bench.id), session.lifts.map { it.exercise.id })
+        assertEquals(listOf(1L, 3L), session.lifts.first().sets.map { it.id })
+        assertEquals(1L, session.lifts.first().top.id)
+        assertEquals(3, session.setCount)
+        assertEquals(17, session.repCount)
+        assertEquals(225.0 * 5 + 135.0 * 8 + 225.0 * 4, session.pounds)
+    }
+
+    @Test
+    fun sessionsAreListedTheLatestFirst() {
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            sets = listOf(logged(1, 100.0, 10, ago(9), workoutId = 1), logged(2, 100.0, 10, ago(2), workoutId = 2), logged(3, 100.0, 10, ago(5))),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, ago(9), ago(9) + 600), Workout(2, WorkoutFocus.BACK, ago(2), ago(2) + 600)),
+        )
+        assertEquals(listOf(2L, null, 1L), build(log).history.map { it.workout?.id })
+    }
+
+    @Test
+    fun theWorkoutInProgressIsMarkedSoAndHasNoLengthYet() {
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            sets = listOf(logged(1, 100.0, 10, hoursAgo(1) + 60, workoutId = 1)),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, hoursAgo(1))),
+        )
+        val session = build(log).history.single()
+        assertTrue(session.inProgress)
+        assertNull(session.durationSeconds)
+        assertEquals(1, session.setCount)
+    }
+
+    @Test
+    fun setsLoggedWithNoWorkoutOpenAreASessionForEachDay() {
+        val log = FitnessLog(
+            exercises = listOf(bench, squat),
+            sets = listOf(logged(1, 100.0, 10, ago(3)), logged(2, 225.0, 5, ago(3) + 300, exerciseId = squat.id), logged(3, 105.0, 10, ago(1))),
+        )
+        val history = build(log).history
+        assertTrue(history.all { it.workout == null && it.focus == null && it.durationSeconds == null && !it.inProgress })
+        assertEquals(listOf(NOW / DAY - 1, NOW / DAY - 3), history.map { it.epochDay })
+        assertEquals(listOf(listOf(3L), listOf(1L, 2L)), history.map { session -> session.lifts.flatMap { lift -> lift.sets.map { it.id } } })
+        assertEquals(ago(3), history.last().startedAtEpochSeconds)
+    }
+
+    @Test
+    fun aSetWhoseWorkoutHasGoneIsCountedWithItsDaysLooseSets() {
+        val log = FitnessLog(exercises = listOf(bench), sets = listOf(logged(1, 100.0, 10, ago(1), workoutId = 99), logged(2, 100.0, 9, ago(1) + 200)))
+        val session = build(log).history.single()
+        assertNull(session.workout)
+        assertEquals(2, session.setCount)
+    }
+
+    @Test
+    fun theNotesOwnNumbersAreNoSession() {
+        val log = FitnessLog(exercises = listOf(bench), sets = listOf(fromNotes(1, 100.0, 10), fromNotes(2, 110.0, 8, at = ago(4))))
+        assertEquals(emptyList(), build(log).history)
+    }
+
+    @Test
+    fun aWorkoutIsFiledUnderTheLocalDayItBeganWheneverItsSetsWereLogged() {
+        val late = 20_000L * DAY + 23 * 3_600L
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            // Begun before midnight, its set logged after it.
+            sets = listOf(logged(1, 100.0, 10, late + 2 * 3_600, workoutId = 1)),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, late, late + 3 * 3_600)),
+        )
+        assertEquals(20_000L, build(log, now = late + DAY, offset = 0).history.single().epochDay)
+        assertEquals(20_001L, build(log, now = late + DAY, offset = 2 * 3_600).history.single().epochDay)
+    }
+
+    @Test
+    fun aSessionCountsTheRecordsSetInIt() {
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            sets = listOf(logged(1, 100.0, 10, ago(9), workoutId = 1), logged(2, 110.0, 10, ago(2), workoutId = 2), logged(3, 110.0, 8, ago(2) + 200, workoutId = 2)),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, ago(9), ago(9) + 600), Workout(2, WorkoutFocus.CHEST, ago(2), ago(2) + 600)),
+        )
+        val (latest, first) = build(log).history
+        assertEquals(mapOf(2L to Record(RecordScope.ALL_TIME, RecordKind.WEIGHT)), latest.lifts.single().records)
+        assertEquals(1, latest.recordCount)
+        // A first set of an exercise had nothing to beat.
+        assertEquals(0, first.recordCount)
+    }
+
+    @Test
+    fun theVolumeCountsBothHandsAndTheBodyAndLeavesOutWhatIsNotInPounds() {
+        val dumbbell = exercise(id = "chest/dumbbell-press", name = "Dumbbell press", loadKind = LoadKind.PER_HAND)
+        val calves = exercise(id = "legs/calf-machine", name = "Calf machine", bodyPart = BodyPart.LEGS, loadKind = LoadKind.LEVEL, primary = Muscle.CALVES)
+        val log = FitnessLog(
+            exercises = listOf(dumbbell, calves, pullUps),
+            sets = listOf(
+                logged(1, 50.0, 10, ago(1), exerciseId = dumbbell.id, workoutId = 1),
+                logged(2, 14.0, 25, ago(1) + 100, exerciseId = calves.id, workoutId = 1),
+                logged(3, 20.0, 5, ago(1) + 200, exerciseId = pullUps.id, workoutId = 1, bodyweight = 180.0),
+            ),
+            workouts = listOf(Workout(1, WorkoutFocus.CHEST, ago(1), ago(1) + 600)),
+        )
+        val session = build(log).history.single()
+        assertEquals(50.0 * 2 * 10 + (180.0 + 20.0) * 5, session.pounds)
+        assertEquals(3, session.setCount)
+    }
+
+    @Test
+    fun aWorkoutWithNoSetsLeftInItIsStillInTheHistory() {
+        val session = build(FitnessLog(workouts = listOf(Workout(1, WorkoutFocus.BACK, ago(4), ago(4) + 900)))).history.single()
+        assertEquals(emptyList(), session.lifts)
+        assertEquals(0.0, session.pounds)
+        assertEquals(900L, session.durationSeconds)
+    }
+
+    @Test
+    fun aSessionIsFoundByItsWorkoutOrForLooseSetsByItsDay() {
+        val log = FitnessLog(
+            exercises = listOf(bench),
+            sets = listOf(logged(1, 100.0, 10, ago(2), workoutId = 4), logged(2, 100.0, 10, ago(2) + 3_600)),
+            workouts = listOf(Workout(4, WorkoutFocus.CHEST, ago(2), ago(2) + 600)),
+        )
+        val history = build(log).history
+        val day = NOW / DAY - 2
+        assertEquals(4L, history.single { it.matches(4, day) }.workout?.id)
+        // The workout's own day says nothing: it is known by its id alone.
+        assertEquals(4L, history.single { it.matches(4, 0) }.workout?.id)
+        assertNull(history.single { it.matches(null, day) }.workout)
+        assertTrue(history.none { it.matches(null, day + 1) })
+        assertTrue(history.none { it.matches(5, day) })
     }
 
     // ---- The phase ----------------------------------------------------------------------------

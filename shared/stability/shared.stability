@@ -2450,6 +2450,21 @@ private fun com.meticulouscreations.homesafe.fitness.ui.CopyRow(label: kotlin.St
     - count: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.DayCell(number: kotlin.Int, monthName: kotlin.String, sessions: kotlin.Int, fill: androidx.compose.ui.graphics.Color?, isToday: kotlin.Boolean, ahead: kotlin.Boolean, picked: kotlin.Boolean, onPick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - number: STABLE (primitive type)
+    - monthName: STABLE (String is immutable)
+    - sessions: STABLE (primitive type)
+    - fill: STABLE (marked @Stable or @Immutable)
+    - isToday: STABLE (primitive type)
+    - ahead: STABLE (primitive type)
+    - picked: STABLE (primitive type)
+    - onPick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.DayDoor(day: com.meticulouscreations.homesafe.fitness.DayCard, state: com.meticulouscreations.homesafe.fitness.FitnessUiState, seed: kotlin.Float, animated: kotlin.Boolean, onStart: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, small: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
@@ -2628,6 +2643,24 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.HeartScreen(heart: com.
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.HeartSummaryBody(summary: com.meticulouscreations.homesafe.fitness.domain.HeartSummary, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - summary: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.HistoryScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenSession: kotlin.Function1<com.meticulouscreations.homesafe.fitness.WorkoutSession, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenSession: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.ImportScreen(import: com.meticulouscreations.homesafe.fitness.ImportState, padding: androidx.compose.foundation.layout.PaddingValues, onText: kotlin.Function1<kotlin.String, kotlin.Unit>, onPart: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.BodyPart?, kotlin.Unit>, onConfirm: kotlin.Function0<kotlin.Unit>, onDone: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -2665,6 +2698,14 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.LastHeartCard(last: com
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.LegendDot(color: androidx.compose.ui.graphics.Color, label: kotlin.String): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - color: STABLE (marked @Stable or @Immutable)
+    - label: STABLE (String is immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.LiftRow(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -2684,6 +2725,18 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.LiftsScreen(state: com.
     - onAddExercise: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - onSendCopy: STABLE (function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.MonthGrid(month: kotlin.Int, days: com.meticulouscreations.homesafe.fitness.ui.MonthDays, today: kotlin.Long, picked: kotlin.Long?, onPick: kotlin.Function1<kotlin.Long, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - month: STABLE (primitive type)
+    - days: STABLE (marked @Stable or @Immutable)
+    - today: STABLE (primitive type)
+    - picked: STABLE (class with no mutable properties)
+    - onPick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.MuscleMap(volumes: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.MuscleVolume>, modifier: androidx.compose.ui.Modifier, contentDescription: kotlin.String): kotlin.Unit
@@ -2832,7 +2885,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.RestNudge(text: kotlin.S
     - onClick: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.RoundIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, size: androidx.compose.ui.unit.Dp, tint: androidx.compose.ui.graphics.Color, fill: androidx.compose.ui.graphics.Color): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.RoundIconButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, size: androidx.compose.ui.unit.Dp, tint: androidx.compose.ui.graphics.Color, fill: androidx.compose.ui.graphics.Color, enabled: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2843,6 +2896,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.RoundIconButton(icon: a
     - size: STABLE (marked @Stable or @Immutable)
     - tint: STABLE (marked @Stable or @Immutable)
     - fill: STABLE (marked @Stable or @Immutable)
+    - enabled: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.SensorCard(heart: com.meticulouscreations.homesafe.fitness.HeartUiState, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions): kotlin.Unit
@@ -2851,6 +2905,39 @@ private fun com.meticulouscreations.homesafe.fitness.ui.SensorCard(heart: com.me
   params:
     - heart: STABLE (marked @Stable or @Immutable)
     - actions: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.SessionCard(session: com.meticulouscreations.homesafe.fitness.WorkoutSession, utcOffsetSeconds: kotlin.Int, onOpen: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - session: STABLE (marked @Stable or @Immutable)
+    - utcOffsetSeconds: STABLE (primitive type)
+    - onOpen: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.SessionLiftBlock(lift: com.meticulouscreations.homesafe.fitness.SessionLift, phase: com.meticulouscreations.homesafe.fitness.domain.PhaseKind, onOpen: kotlin.Function0<kotlin.Unit>?, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - lift: STABLE (marked @Stable or @Immutable)
+    - phase: STABLE (class with no mutable properties)
+    - onOpen: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.SessionScreen(session: com.meticulouscreations.homesafe.fitness.WorkoutSession, state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onDelete: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, heart: com.meticulouscreations.homesafe.fitness.domain.HeartSummary?): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - session: STABLE (marked @Stable or @Immutable)
+    - state: STABLE (marked @Stable or @Immutable)
+    - padding: STABLE (marked @Stable or @Immutable)
+    - onOpenExercise: STABLE (function type)
+    - onDelete: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - heart: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.SetLogger(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, todaysSets: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.LoggedSet>, records: kotlin.collections.Map<kotlin.Long, com.meticulouscreations.homesafe.fitness.domain.Record>, phase: com.meticulouscreations.homesafe.fitness.domain.PhaseKind, colors: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, onLog: kotlin.Function2<@[ParameterName(name = \, onDeleteSet: kotlin.Function1<kotlin.Long, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -2955,7 +3042,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutExercise(board: c
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpenHeart: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, onCancel: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpenHeart: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -2966,6 +3053,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: co
     - onOpenExercise: STABLE (function type)
     - onEditExercise: STABLE (function type)
     - onFinish: STABLE (function type)
+    - onCancel: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - initiallyOpen: STABLE (class with no mutable properties)
     - heart: STABLE (marked @Stable or @Immutable)
@@ -3160,6 +3248,20 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.sensorName(sensor: com.
   restartable: false
   params:
     - sensor: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.sessionName(session: com.meticulouscreations.homesafe.fitness.WorkoutSession): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - session: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.sessionTints(session: com.meticulouscreations.homesafe.fitness.WorkoutSession): kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>
+  skippable: false
+  restartable: false
+  params:
+    - session: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.shader.FiberField(tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, seed: kotlin.Float, modifier: androidx.compose.ui.Modifier, energy: kotlin.Float, running: kotlin.Boolean): kotlin.Unit

@@ -154,6 +154,15 @@ interface FitnessDao {
     @Query("DELETE FROM FitnessSetEntity WHERE exerciseId = :exerciseId")
     suspend fun deleteSetsOfExercise(exerciseId: String)
 
+    @Query("DELETE FROM FitnessSetEntity WHERE workoutId = :workoutId")
+    suspend fun deleteSetsOfWorkout(workoutId: Long)
+
+    /** Removes the sets with these ids, all of them or none. */
+    @Transaction
+    suspend fun deleteSets(ids: List<Long>) {
+        ids.forEach { deleteSet(it) }
+    }
+
     @Query("SELECT * FROM FitnessWorkoutEntity ORDER BY startedAtEpochSeconds, id")
     fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>>
 
@@ -171,6 +180,19 @@ interface FitnessDao {
 
     @Query("DELETE FROM FitnessWorkoutEntity WHERE id = :id")
     suspend fun deleteWorkout(id: Long)
+
+    /**
+     * Removes a workout with everything that hangs off it, in one transaction: the sets logged in
+     * it and its heart. The sets go first, for the one implementation that has no transactions
+     * ([InMemoryFitnessDao]): whoever follows the log there sees the workout empty and then gone,
+     * never its sets left with no workout.
+     */
+    @Transaction
+    suspend fun removeWorkout(id: Long) {
+        deleteSetsOfWorkout(id)
+        deleteHeartSummary(id)
+        deleteWorkout(id)
+    }
 
     @Query("SELECT * FROM FitnessPhaseEntity ORDER BY startedAtEpochSeconds, id")
     fun observePhases(): Flow<List<FitnessPhaseEntity>>
@@ -283,6 +305,10 @@ class InMemoryFitnessDao : FitnessDao {
 
     override suspend fun deleteSetsOfExercise(exerciseId: String) {
         sets.update { current -> current.filter { it.exerciseId != exerciseId } }
+    }
+
+    override suspend fun deleteSetsOfWorkout(workoutId: Long) {
+        sets.update { current -> current.filter { it.workoutId != workoutId } }
     }
 
     override fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>> = workouts

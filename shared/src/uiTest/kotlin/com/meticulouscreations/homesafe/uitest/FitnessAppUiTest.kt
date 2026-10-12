@@ -14,6 +14,7 @@ import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -26,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.ImportState
+import com.meticulouscreations.homesafe.fitness.WorkoutSession
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
@@ -67,6 +69,7 @@ class FitnessAppUiTest {
     private class Calls {
         var closed = 0
         var finished = 0
+        var cancelled = 0
         var importConfirmed = 0
         var importCleared = 0
         var copiesSent = 0
@@ -90,11 +93,14 @@ class FitnessAppUiTest {
         val deletedExercises = mutableListOf<String>()
         val saved = mutableListOf<Exercise>()
         val figureStyles = mutableListOf<FigureStyle>()
+        val deletedSessions = mutableListOf<WorkoutSession>()
 
         fun actions() = FitnessActions(
             onClose = { closed++ },
             onStartWorkout = { started += it },
             onFinishWorkout = { finished++ },
+            onCancelWorkout = { cancelled++ },
+            onDeleteSession = { deletedSessions += it },
             onLogSet = { id, weight, reps -> logged += Triple(id, weight, reps) },
             onSkipRest = { restSkipped++ },
             onDismissFlash = { flashDismissed++ },
@@ -154,6 +160,9 @@ class FitnessAppUiTest {
     }
 
     private fun SemanticsNodeInteraction.tap() = performSemanticsAction(SemanticsActions.OnClick)
+
+    /** The node says [text], itself or in something inside it: a tappable row speaks for its children, a plain one doesn't. */
+    private fun says(text: String) = hasText(text) or hasAnyDescendant(hasText(text))
 
     private fun ComposeUiTest.assertShown(tag: String) {
         onNodeWithTag(tag).assertExists()
@@ -263,6 +272,119 @@ class FitnessAppUiTest {
         tap("fitness_workout_finish")
         assertEquals(1, calls.finished)
         assertNotShown("fitness_workout")
+    }
+
+    @Test
+    fun cancellingAWorkoutWithSetsInItTakesASecondTapAndLeavesItsPage() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(working = true), calls, page = FitnessPage.Workout, tall = true)
+        // The first tap only asks, saying what would go.
+        tap("fitness_workout_cancel")
+        assertEquals(0, calls.cancelled)
+        onNodeWithTag("fitness_workout_cancel").assert(says("Tap again to discard all 3 sets"))
+        tap("fitness_workout_cancel")
+        assertEquals(1, calls.cancelled)
+        assertEquals(0, calls.finished)
+        assertNotShown("fitness_workout")
+    }
+
+    @Test
+    fun aWorkoutWithNothingLoggedHasOnlyTheOneButtonToCloseIt() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        val working = FitnessFixtures.state(working = true, resting = false)
+        val empty = working.copy(workout = working.workout?.copy(entries = emptyList()))
+        show(empty, calls, page = FitnessPage.Workout, tall = true)
+        assertNotShown("fitness_workout_cancel")
+        // Closed through the log, which keeps it after all if a set was on its way in.
+        tap("fitness_workout_finish")
+        assertEquals(1, calls.finished)
+        assertEquals(0, calls.cancelled)
+    }
+
+    // ---- History ------------------------------------------------------------------------------
+
+    private val lastBack = FitnessFixtures.state().history.first { it.focus == WorkoutFocus.BACK }
+
+    @Test
+    fun historyShowsTheMonthItIsWithItsWorkoutsAndWhatTheyCameTo() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), tab = FitnessTab.HISTORY, tall = true)
+        assertShown("fitness_history")
+        onNodeWithTag("fitness_history_month").assertTextEquals("October 2026")
+        // Legs on the 2nd, chest on the 4th, back on the 6th; the 8th is today.
+        onNodeWithTag("fitness_history_day_6").assert(hasContentDescription("October 6, 1 workout"))
+        onNodeWithTag("fitness_history_day_7").assert(hasContentDescription("October 7, nothing logged"))
+        onNodeWithTag("fitness_history_month_stats").assert(says("22"))
+        assertShown("fitness_session_${lastBack.workout?.id}")
+        onNodeWithTag("fitness_session_${lastBack.workout?.id}").assert(says("6 sets · 3 exercises · 7,722 lb"))
+        onNodeWithTag("fitness_session_${lastBack.workout?.id}").assert(says("55 min"))
+    }
+
+    @Test
+    fun aDayOfTheMonthNarrowsTheListToItAndTheWholeMonthComesBack() = runComposeUiTest(testTimeout = 5.minutes) {
+        val state = FitnessFixtures.state()
+        val inOctober = state.history.filter { it.epochDay >= lastBack.epochDay - 5 }
+        show(state, Calls(), tab = FitnessTab.HISTORY, tall = true)
+        inOctober.forEach { assertShown("fitness_session_${it.workout?.id}") }
+        tap("fitness_history_day_6")
+        assertShown("fitness_session_${lastBack.workout?.id}")
+        inOctober.filter { it != lastBack }.forEach { assertNotShown("fitness_session_${it.workout?.id}") }
+        tap("fitness_history_show_month")
+        inOctober.forEach { assertShown("fitness_session_${it.workout?.id}") }
+    }
+
+    @Test
+    fun theArrowsWalkBackThroughTheMonthsAndNoFurtherForwardThanNow() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), tab = FitnessTab.HISTORY, tall = true)
+        // Already on the month it is: the way forward does nothing.
+        tap("fitness_history_next")
+        onNodeWithTag("fitness_history_month").assertTextEquals("October 2026")
+        tap("fitness_history_previous")
+        onNodeWithTag("fitness_history_month").assertTextEquals("September 2026")
+        assertNotShown("fitness_session_${lastBack.workout?.id}")
+        tap("fitness_history_this_month")
+        onNodeWithTag("fitness_history_month").assertTextEquals("October 2026")
+        assertShown("fitness_session_${lastBack.workout?.id}")
+    }
+
+    @Test
+    fun aWorkoutOpensFromTheHistoryAndIsDeletedOnASecondTap() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        show(FitnessFixtures.state(), calls, tab = FitnessTab.HISTORY, tall = true)
+        tap("fitness_session_${lastBack.workout?.id}")
+        assertShown("fitness_session")
+        onNodeWithTag("fitness_session_stats").assert(says("55 min"))
+        assertShown("fitness_session_lift_${FitnessFixtures.exercise("High row").id}")
+        // No sensor was on for it.
+        assertNotShown("fitness_session_heart")
+        tap("fitness_session_delete")
+        assertEquals(emptyList(), calls.deletedSessions)
+        tap("fitness_session_delete")
+        assertEquals(listOf(lastBack), calls.deletedSessions)
+        assertNotShown("fitness_session")
+        assertShown("fitness_history")
+    }
+
+    @Test
+    fun aWorkoutLookedBackOnShowsItsHeartWhereASensorWasOnForItAndOpensItsExercises() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.state(), Calls(), page = FitnessFixtures.sessionPage(), tall = true, heart = FitnessFixtures.heartAtRest())
+        assertShown("fitness_session_heart")
+        tap("fitness_session_lift_${FitnessFixtures.exercise("High row").id}")
+        assertShown("fitness_exercise")
+    }
+
+    @Test
+    fun theWorkoutInProgressIsCarriedOnWithFromTheHistory() = runComposeUiTest(testTimeout = 5.minutes) {
+        val state = FitnessFixtures.state(working = true, resting = false)
+        show(state, Calls(), tab = FitnessTab.HISTORY, tall = true)
+        tap("fitness_session_${state.workout?.workout?.id}")
+        assertShown("fitness_workout")
+        assertNotShown("fitness_session")
+    }
+
+    @Test
+    fun withNothingLoggedHistorySaysWhereWorkoutsWillLand() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(FitnessFixtures.empty, Calls(), tab = FitnessTab.HISTORY)
+        onNodeWithTag("fitness_history_empty").assertTextEquals("Finish a workout and it lands here, on the day it was done.")
     }
 
     @Test

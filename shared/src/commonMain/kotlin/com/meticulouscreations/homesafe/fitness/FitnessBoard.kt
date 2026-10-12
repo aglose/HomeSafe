@@ -97,6 +97,37 @@ data class PhaseStatus(
 @Immutable
 data class TrainedDay(val epochDay: Long, val focus: WorkoutFocus?, val sets: Int)
 
+/** An exercise as it was done in one session: its sets in the order they were logged, the best of them, and which were records. */
+@Immutable
+data class SessionLift(val exercise: Exercise, val sets: List<LoggedSet>, val top: LoggedSet, val records: Map<Long, Record> = emptyMap())
+
+/**
+ * One entry in the history: a [workout] with what was logged in it, or (with none) a day's sets
+ * that were logged with no workout open. [epochDay] is the local day it is filed under on the
+ * calendar: the day a workout began, whenever it ended. [durationSeconds] is known only for a
+ * workout that was finished. [pounds] is everything moved in it, rep by rep, leaving out what
+ * isn't counted in pounds ([Strength.poundsMoved]).
+ */
+@Immutable
+data class WorkoutSession(
+    val workout: Workout?,
+    val epochDay: Long,
+    val startedAtEpochSeconds: Long,
+    val durationSeconds: Long? = null,
+    val lifts: List<SessionLift> = emptyList(),
+    val pounds: Double = 0.0,
+    /** The workout that is open now: it is carried on with, not looked back on. */
+    val inProgress: Boolean = false,
+) {
+    val focus: WorkoutFocus? get() = workout?.focus
+    val setCount: Int get() = lifts.sumOf { it.sets.size }
+    val repCount: Int get() = lifts.sumOf { lift -> lift.sets.sumOf { it.reps } }
+    val recordCount: Int get() = lifts.sumOf { it.records.size }
+
+    /** Whether this is the entry for [workoutId], or with none for the sets logged outside a workout on [epochDay]. */
+    fun matches(workoutId: Long?, epochDay: Long): Boolean = if (workoutId != null) workout?.id == workoutId else workout == null && this.epochDay == epochDay
+}
+
 /** Everything worked out from the log at one moment. */
 @Immutable
 data class FitnessBoards(
@@ -108,6 +139,8 @@ data class FitnessBoards(
     val recentRecords: List<RecordEvent> = emptyList(),
     val bodyweight: BodyweightTrend = BodyweightTrend(),
     val calendar: List<TrainedDay> = emptyList(),
+    /** Every session there has been, the latest first. */
+    val history: List<WorkoutSession> = emptyList(),
 )
 
 /** The log as the repository hands it over. */
@@ -216,7 +249,49 @@ object FitnessBoardBuilder {
                 .take(12),
             bodyweight = bodyweight,
             calendar = calendar,
+            history = history(log, recordById, nowEpochSeconds, utcOffsetSeconds, pounds),
         )
+    }
+
+    /**
+     * The log as sessions, the latest first: each workout with its sets, and for the sets that
+     * belong to none (logged from an exercise's page with no workout open) one entry a day. The
+     * notes' own numbers are no session: they are what there was before the log.
+     */
+    private fun history(log: FitnessLog, records: Map<Long, Record>, nowEpochSeconds: Long, utcOffsetSeconds: Int, bodyweight: Double?): List<WorkoutSession> {
+        val exercises = log.exercises.associateBy { it.id }
+        val workoutIds = log.workouts.mapTo(HashSet()) { it.id }
+        val done = log.sets.filter { it.reps > 0 }.sortedWith(compareBy({ it.epochSeconds }, { it.id }))
+        val (inWorkouts, apart) = done.partition { it.workoutId != null && it.workoutId in workoutIds }
+        val byWorkout = inWorkouts.groupBy { it.workoutId }
+
+        fun epochDay(epochSeconds: Long) = (epochSeconds + utcOffsetSeconds).floorDiv(SECONDS_PER_DAY)
+
+        fun lifts(sets: List<LoggedSet>): List<SessionLift> = sets.groupBy { it.exerciseId }.mapNotNull { (id, mine) ->
+            val exercise = exercises[id] ?: return@mapNotNull null
+            val top = Strength.best(exercise, mine, bodyweight) ?: return@mapNotNull null
+            SessionLift(exercise, mine, top, mine.mapNotNull { set -> records[set.id]?.let { set.id to it } }.toMap())
+        }
+
+        fun pounds(lifts: List<SessionLift>): Double = lifts.sumOf { lift -> lift.sets.sumOf { Strength.poundsMoved(lift.exercise, it, bodyweight) ?: 0.0 } }
+
+        val workouts = log.workouts.map { workout ->
+            val mine = lifts(byWorkout[workout.id].orEmpty())
+            WorkoutSession(
+                workout = workout,
+                epochDay = epochDay(workout.startedAtEpochSeconds),
+                startedAtEpochSeconds = workout.startedAtEpochSeconds,
+                durationSeconds = workout.finishedAtEpochSeconds?.let { (it - workout.startedAtEpochSeconds).coerceAtLeast(0) },
+                lifts = mine,
+                pounds = pounds(mine),
+                inProgress = workout.isInProgress(nowEpochSeconds),
+            )
+        }
+        val loose = apart.filter { !it.isBenchmark && !it.imported }.groupBy { epochDay(it.epochSeconds) }.mapNotNull { (day, sets) ->
+            val mine = lifts(sets)
+            if (mine.isEmpty()) null else WorkoutSession(workout = null, epochDay = day, startedAtEpochSeconds = sets.first().epochSeconds, lifts = mine, pounds = pounds(mine))
+        }
+        return (workouts + loose).sortedWith(compareByDescending<WorkoutSession> { it.startedAtEpochSeconds }.thenByDescending { it.workout?.id ?: 0L })
     }
 
     /**
