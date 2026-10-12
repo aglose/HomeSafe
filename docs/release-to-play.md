@@ -143,10 +143,14 @@ one that only goes up.
 
 ## Things worth knowing
 
-- **Back-to-back merges cancel each other.** The workflow's `concurrency` group has
-  `cancel-in-progress: true`, so a second push to `main` cancels the first run — including a
-  publish that is mid-upload. The newer commit publishes instead, which is usually what you want,
-  but it means a versionCode can be skipped.
+- **Back-to-back merges cancel each other.** A new run on `main` cancels the one before it,
+  including a publish that is mid-upload. The newer commit publishes instead, which is usually
+  what you want, but it means a versionCode can be skipped.
+- **A run started again cancels nothing, and ships only main's newest commit.** A second attempt
+  of a run (by hand, or by `ci-retry.yml`) waits behind a run already in progress instead of
+  cancelling it. And the publish job first asks whether its commit is still the newest on `main`:
+  if not, it builds and uploads nothing and ends green, because the newer commit's run publishes
+  a build that contains this one.
 - **A red run on `main` is tried again, once.** Nothing is published from a red run, and on `main`
   red has usually been the runner rather than the code. `ci-retry.yml` reruns the failed jobs of
   such a run if its commit is still the newest (see

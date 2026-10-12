@@ -19,9 +19,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# A new run on a ref cancels the one before it. A run started again (a second attempt, by hand or
+# by "Retry CI on main") does not: it waits its turn instead. On main it may be an older commit's
+# run that is being tried again, and it must not take the place of the newest commit's.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.run_attempt == 1 }}
 
 permissions:
   contents: read
@@ -592,10 +595,29 @@ jobs:
           mkdir -p androidApp/keystore
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > androidApp/keystore/homesafe-release.jks
 
+      # A run that is tried again can get here after main has moved on: nothing cancels it then
+      # (see `concurrency` at the top), and it may be queued behind the newer commit's run. That
+      # commit's run is the one that ships, with the higher versionCode; this one would put an
+      # older build on the track, or be refused by Play for a versionCode below the newest. So it
+      # builds and uploads nothing, and ends green. Asked here, in the job itself, so that a rerun
+      # of this job alone asks again.
+      - name: Is this still main's newest commit?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "STILL_NEWEST=true" >> "$GITHUB_ENV"
+          else
+            echo "::notice::main has moved on from ${GITHUB_SHA:0:7} to ${tip:0:7}, whose own run publishes; nothing is built or uploaded here."
+            echo "STILL_NEWEST=false" >> "$GITHUB_ENV"
+          fi
+
       # androidApp/build.gradle.kts reads these four when there is no keystore.properties, and
       # -PrequireReleaseSigning=true turns a missing one into a failed build instead of a bundle
       # signed with the debug key.
       - name: ./gradlew :androidApp:bundleRelease
+        if: env.STILL_NEWEST == 'true'
         env:
           ANDROID_KEYSTORE_FILE: androidApp/keystore/homesafe-release.jks
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -611,6 +633,7 @@ jobs:
       # Play shows this to internal testers as the release notes for the build: the commit subject,
       # then the version the app will show when its route badge is tapped.
       - name: Release notes from the commit subject
+        if: env.STILL_NEWEST == 'true'
         run: |
           mkdir -p build/whatsnew
           {
@@ -627,6 +650,7 @@ jobs:
       # them together.
       - name: Upload to the internal track
         id: upload
+        if: env.STILL_NEWEST == 'true'
         continue-on-error: true
         uses: r0adkll/upload-google-play@v1
         with:
@@ -656,7 +680,7 @@ jobs:
       # Keeps the exact artefact and its mapping file for the versionCode that went out — the
       # mapping is the only way to read a stack trace from that build once R8 has renamed it.
       - uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && env.STILL_NEWEST == 'true'
         with:
           name: release-bundle-${{ env.VERSION_CODE }}
           path: |
