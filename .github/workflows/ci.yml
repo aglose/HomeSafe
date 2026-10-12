@@ -8,10 +8,16 @@ name: CI
 # Compose-for-JS output took ~18 of the old ~25 minutes and nothing consumed the result;
 # the web targets are linked instead, which still catches a missing actual or dependency.
 
+# workflow_dispatch is how the "Dependency updates" workflow starts a run: on a Dependabot branch
+# after it has pushed a commit there, and on main after it has merged one. Both of those are done
+# with GITHUB_TOKEN, and GitHub starts no pull_request or push run for anything GITHUB_TOKEN does.
+# A run started that way on main publishes like a push to main does.
+
 on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -95,6 +101,23 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.reports }}
           retention-days: 7
+
+  # The relay is deployed by hand, so this is the only place a new version of one of its packages
+  # or of its base image is tried before it reaches the box: the image has to build, and relay.py
+  # has to import against what was installed (every route and request model is declared at import).
+  # relay/test_relay.py stubs the packages out, so it checks the relay's own logic, not them.
+  relay:
+    name: Relay and CI scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Unit tests
+        run: python3 -m unittest relay/test_relay.py scripts/ci/test_dependency_gate.py
+      - name: Build the relay image
+        run: docker build --tag homesafe-relay relay
+      - name: Import the relay against its installed packages
+        run: docker run --rm --env FCM_PROJECT=ci homesafe-relay python -c "import relay; print(len(relay.app.routes), 'routes')"
 
   android-ui:
     name: Android UI tests (emulator)
@@ -185,14 +208,15 @@ jobs:
   # against the fake Frigate plus go2rtc test patterns. Fails when this branch's median is slower
   # by more than 15% (and more than a per-metric floor) — see scripts/ci/startup-perf.sh and
   # "Time to the first live picture" in docs/webrtc-live.md. On a push to main, the base is the
-  # commit main was at before.
+  # commit main was at before. A run started by hand has neither a pull request nor a push to
+  # read the base from: on main it is the commit before, on a branch where it left main.
   startup-perf:
     name: Cold launch vs base (emulator)
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       API_LEVEL: 34
-      BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+      EVENT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -208,6 +232,15 @@ jobs:
       - name: Check there is a base to compare against
         id: base
         run: |
+          BASE_SHA=$EVENT_BASE_SHA
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" = "refs/heads/main" ]; then
+              BASE_SHA=$(git rev-parse --quiet --verify 'HEAD^' || true)
+            else
+              BASE_SHA=$(git merge-base origin/main HEAD || true)
+            fi
+          fi
+          echo "BASE_SHA=$BASE_SHA" >> "$GITHUB_ENV"
           if [ -n "$BASE_SHA" ] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
@@ -347,7 +380,7 @@ jobs:
     # The single required status check. Jobs can be added or renamed without touching
     # branch protection, as long as they are listed here.
     if: always()
-    needs: [gradle, android-ui, startup-perf, ios]
+    needs: [gradle, relay, android-ui, startup-perf, ios]
     runs-on: ubuntu-24.04
     steps:
       - name: Show job results
@@ -360,8 +393,10 @@ jobs:
     name: Publish to Play internal testing
     # Only on main, and only once every job feeding ci-green has passed: what reaches the
     # testers has been through exactly the same gate as a merge. A red CI leaves this skipped.
+    # workflow_dispatch: a merge made by the Dependency updates workflow sets off no push run, so
+    # it starts one on main instead, and that build ships like any other merge.
     needs: ci-green
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Holds the release secrets, so they exist on no other job in this workflow. Add required

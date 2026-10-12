@@ -3,7 +3,9 @@
 Every push to `main` that gets a green CI publishes a signed Android App Bundle to the
 **internal testing** track. The job is `publish-internal` in
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml); it runs only after `ci-green`, so a
-failing test never reaches a tester's phone.
+failing test never reaches a tester's phone. A dependency update the automation merges sets off
+no push run (see [dependency-updates.md](dependency-updates.md)), so CI is started on `main` for
+it, and that run publishes in the same way.
 
 Nothing here is automatic on a fresh repo — the six secrets below have to exist first, and Play
 itself needs some one-time setup that its API cannot do for you.
