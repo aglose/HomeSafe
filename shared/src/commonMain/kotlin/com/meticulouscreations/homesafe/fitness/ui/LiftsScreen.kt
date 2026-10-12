@@ -67,6 +67,7 @@ import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.Strength
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure
+import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_copy_unsent
@@ -252,7 +253,7 @@ internal fun ExerciseScreen(
     val kind = exercise.loadKind
     val tints = colors.focus(focusOf(exercise.bodyPart))
     val entry = state.workout?.entry(exercise.id)
-    val movement = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.movement(exercise) }
+    val match = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.match(exercise) }
     Column(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = FitnessGutter).testTag("fitness_exercise"),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -271,7 +272,8 @@ internal fun ExerciseScreen(
         }
 
         // The movement, performed; and under it, which of the three figures performs it (the Settings tab has the same choice).
-        ExerciseFigure(movement, state.figureStyle, tints)
+        ExerciseFigure(match.kind, state.figureStyle, tints)
+        NearestFigureNote(match, Modifier.padding(start = 4.dp))
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             CardLabel(stringResource(Res.string.fitness_figure_style_label), Modifier.padding(start = 4.dp, end = 4.dp))
             FigureStyle.entries.forEach { style ->

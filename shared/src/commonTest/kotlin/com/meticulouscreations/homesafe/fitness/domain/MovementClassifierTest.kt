@@ -61,4 +61,43 @@ class MovementClassifierTest {
         assertEquals(MovementKind.SQUAT, movementOf("Thing three", BodyPart.LEGS))
         assertEquals(MovementKind.CRUNCH, movementOf("Thing four", BodyPart.CORE))
     }
+
+    // ---- Whether the name said so ----------------------------------------------------------------
+
+    /** As [movementOf], with whether the name gave the movement. */
+    private fun matchOf(name: String, section: BodyPart? = null): MovementMatch {
+        val classification = ExerciseClassifier.classify(name, section)
+        return MovementClassifier.match(name, classification.bodyPart, classification.primary)
+    }
+
+    @Test
+    fun aNameThatSaysItsMovementIsNotMarkedAsAStandIn() {
+        val named = listOf(
+            "Hack squat", "Leg press", "Leg extension", "Leg curl", "Calf machine", "Romanian deadlift", "Abductor machine", "Adductor machine",
+            "Bench press", "Incline press machine", "Chest fly machine", "Shoulder press machine", "Lateral raises", "Middle delt cable",
+            "Rear delt cable perp", "Lat pulldown (strict)", "High row", "Weighted pullups", "Hammer curls",
+        )
+        assertEquals(emptyList(), named.filterNot { matchOf(it).named })
+        assertEquals(true, matchOf("Weighted dips", BodyPart.TRICEPS).named)
+        assertEquals(true, matchOf("Triangle bar cable", BodyPart.TRICEPS).named)
+        assertEquals(true, matchOf("Anterior delt cable", BodyPart.SHOULDERS).named)
+        assertEquals(true, matchOf("Cable crunch", BodyPart.CORE).named)
+    }
+
+    @Test
+    fun aNameThatSaysOnlyItsShelfGetsTheShelfsMovementMarkedAsNearest() {
+        assertEquals(MovementMatch(MovementKind.BENCH_PRESS, named = false), matchOf("Thing one", BodyPart.CHEST))
+        assertEquals(MovementMatch(MovementKind.LAT_PULLDOWN, named = false), matchOf("Thing two", BodyPart.BACK))
+        assertEquals(MovementMatch(MovementKind.SQUAT, named = false), matchOf("Thing three", BodyPart.LEGS))
+        assertEquals(MovementMatch(MovementKind.CRUNCH, named = false), matchOf("Plank", BodyPart.CORE))
+        assertEquals(MovementMatch(MovementKind.TRICEPS_PUSHDOWN, named = false), matchOf("Skull crushers", BodyPart.TRICEPS))
+        assertEquals(MovementMatch(MovementKind.BICEPS_CURL, named = false), matchOf("Thing five", BodyPart.BICEPS))
+    }
+
+    @Test
+    fun aMovementReachedOnlyThroughTheMuscleIsMarkedAsNearestToo() {
+        // Nothing in the name says "calf raise": it is one because that is the muscle the exercise was set to.
+        assertEquals(MovementMatch(MovementKind.CALF_RAISE, named = false), MovementClassifier.match("Donkey thing", BodyPart.LEGS, Muscle.CALVES))
+        assertEquals(MovementMatch(MovementKind.SHRUG, named = false), MovementClassifier.match("Thing six", BodyPart.BACK, Muscle.TRAPS))
+    }
 }

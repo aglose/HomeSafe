@@ -447,6 +447,22 @@ class FitnessAppUiTest {
         assertEquals(listOf(FigureStyle.FORGED), calls.figureStyles)
     }
 
+    @Test
+    fun aFigureIsMarkedAsTheNearestOnlyWhereTheExercisesNameSaysNoMovement() = runComposeUiTest(testTimeout = 5.minutes) {
+        // A hack squat is a squat by its name: the figure is its own, and nothing is said under it.
+        show(FitnessFixtures.state(), Calls(), page = FitnessPage.Lift(hackSquat.id))
+        assertShown("fitness_figure")
+        assertNotShown("fitness_figure_nearest")
+    }
+
+    @Test
+    fun anExerciseTheAppKnowsNoMovementForSaysItsFigureIsTheNearest() = runComposeUiTest(testTimeout = 5.minutes) {
+        // The same exercise under a name that says nothing: on the legs shelf, the nearest figure is the squat.
+        show(FitnessFixtures.renamed(FitnessFixtures.state(), "Hack squat", "Sled push"), Calls(), page = FitnessPage.Lift(hackSquat.id))
+        assertShown("fitness_figure")
+        onNodeWithTag("fitness_figure_nearest").assertTextEquals("Nearest figure: Squat")
+    }
+
     // ---- Lifts --------------------------------------------------------------------------------
 
     @Test

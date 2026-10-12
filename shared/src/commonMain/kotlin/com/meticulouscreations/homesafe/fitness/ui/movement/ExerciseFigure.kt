@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.key
@@ -45,12 +46,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.MovementKind
+import com.meticulouscreations.homesafe.fitness.domain.MovementMatch
 import com.meticulouscreations.homesafe.fitness.ui.FitnessPalette
 import com.meticulouscreations.homesafe.fitness.ui.FitnessTheme
 import com.meticulouscreations.homesafe.fitness.ui.shader.FitnessShader
 import com.meticulouscreations.homesafe.fitness.ui.shader.fitnessShaderOrNull
 import com.meticulouscreations.homesafe.fitness.ui.shader.rememberFitnessClock
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_figure_nearest
 import homesafe.shared.generated.resources.fitness_figure_working_muscles
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
@@ -112,6 +115,22 @@ internal fun ExerciseFigure(
             }
         }
     }
+}
+
+/**
+ * The line under a figure that may not be doing the exercise it is shown for: nothing in the
+ * exercise's name said which movement it is ([MovementMatch.named] false), so the figure is the
+ * likeliest for its shelf, and this names it. Draws nothing for a movement the name did give.
+ */
+@Composable
+internal fun NearestFigureNote(match: MovementMatch, modifier: Modifier = Modifier) {
+    if (match.named) return
+    Text(
+        stringResource(Res.string.fitness_figure_nearest, stringResource(match.kind.label)),
+        style = FitnessTheme.type.label,
+        color = FitnessTheme.colors.textFaint,
+        modifier = modifier.testTag("fitness_figure_nearest"),
+    )
 }
 
 /** The jointed rig performing [movement], rep after rep, its working heads named. */

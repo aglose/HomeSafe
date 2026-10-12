@@ -84,6 +84,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.MovementClassifier
 import com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure
 import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
+import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
@@ -273,7 +274,8 @@ private fun WorkoutExercise(
     val exercise = board.exercise
     val sets = entry?.sets.orEmpty()
     val done = sets.isNotEmpty()
-    val movement = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.movement(exercise) }
+    val match = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.match(exercise) }
+    val movement = match.kind
     val edge by animateColorAsState(
         if (expanded) {
             tints.first
@@ -375,6 +377,7 @@ private fun WorkoutExercise(
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 // Only an open card has the figure moving, and only it holds a rendered rep in memory.
                 ExerciseFigure(movement, state.figureStyle, tints)
+                NearestFigureNote(match, Modifier.padding(start = 4.dp, top = 6.dp))
                 Spacer(Modifier.height(12.dp))
                 if (board.ladder.size > 1) {
                     LadderChart(board.ladder, tints.first, tints.second, Modifier.fillMaxWidth().height(96.dp), targetWeight = board.target?.weight, targetReps = board.target?.reps)

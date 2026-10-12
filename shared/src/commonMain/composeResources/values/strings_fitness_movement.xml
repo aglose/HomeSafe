@@ -17,6 +17,37 @@
     <!-- What a screen reader says of the large figure, whose labels are painted and not text: the names of the muscles it calls out, head to toe, with commas between -->
     <string name="fitness_figure_working_muscles">Working muscles: %1$s</string>
 
+    <!--
+      Under a figure that may not be doing this exercise: its name wasn't one the app knows a movement for, so the
+      figure is the likeliest for its shelf. %1$s is that movement's name, from the list below.
+    -->
+    <string name="fitness_figure_nearest">Nearest figure: %1$s</string>
+
+    <!-- The movements a figure can perform, as nouns -->
+    <string name="fitness_movement_squat">Squat</string>
+    <string name="fitness_movement_leg_press">Leg press</string>
+    <string name="fitness_movement_leg_extension">Leg extension</string>
+    <string name="fitness_movement_leg_curl">Leg curl</string>
+    <string name="fitness_movement_calf_raise">Calf raise</string>
+    <string name="fitness_movement_hip_hinge">Hip hinge</string>
+    <string name="fitness_movement_hip_abduction">Hip abduction</string>
+    <string name="fitness_movement_hip_adduction">Hip adduction</string>
+    <string name="fitness_movement_bench_press">Bench press</string>
+    <string name="fitness_movement_incline_press">Incline press</string>
+    <string name="fitness_movement_chest_fly">Chest fly</string>
+    <string name="fitness_movement_dip">Dip</string>
+    <string name="fitness_movement_overhead_press">Overhead press</string>
+    <string name="fitness_movement_lateral_raise">Lateral raise</string>
+    <string name="fitness_movement_front_raise">Front raise</string>
+    <string name="fitness_movement_rear_delt_fly">Rear delt fly</string>
+    <string name="fitness_movement_shrug">Shrug</string>
+    <string name="fitness_movement_lat_pulldown">Lat pulldown</string>
+    <string name="fitness_movement_pull_up">Pull-up</string>
+    <string name="fitness_movement_seated_row">Seated row</string>
+    <string name="fitness_movement_biceps_curl">Biceps curl</string>
+    <string name="fitness_movement_triceps_pushdown">Triceps pushdown</string>
+    <string name="fitness_movement_crunch">Crunch</string>
+
     <!-- The Settings row, and the caption over its choices once it's opened out -->
     <string name="fitness_figure_settings_title">Exercise figures</string>
     <string name="fitness_figure_settings_caption">How Fitness draws the movement on each exercise. The lift and the muscles it works are the same in all three.</string>

@@ -189,6 +189,10 @@ Hammer curls
 
     fun exercise(name: String): Exercise = log.exercises.first { it.name == name }
 
+    /** [state] with the exercise called [name] going by [as] instead: a name the app knows no movement for, say. */
+    fun renamed(state: FitnessUiState, name: String, `as`: String): FitnessUiState =
+        state.copy(boards = state.boards.map { if (it.exercise.name == name) it.copy(exercise = it.exercise.copy(name = `as`)) else it })
+
     /** A band for the heart-rate screens: the name such a band gives itself, at an address that is nobody's. */
     val band = HeartSensor("AA:BB:CC:00:00:01", "Fitbit Air")
 
@@ -393,6 +397,19 @@ private fun FitnessRecordPreview() {
 @Composable
 private fun FitnessLiftsPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialTab = FitnessTab.LIFTS) }
+}
+
+/** An exercise whose name says no movement: its figure is the nearest for its shelf, and is marked so. */
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FitnessExerciseNearestFigurePreview() {
+    FrigateTheme {
+        FitnessAppContent(
+            FitnessFixtures.renamed(FitnessFixtures.state(), "Hack squat", "Sled push"),
+            FitnessActions(),
+            initialPage = FitnessPage.Lift(FitnessFixtures.exercise("Hack squat").id),
+        )
+    }
 }
 
 @Preview(widthDp = 412, heightDp = 1900)

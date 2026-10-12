@@ -317,11 +317,15 @@ An exercise added in the app (by name, or from notes) needs nothing done for it:
 reads its movement from its name, and a name that says no more than its shelf gets that shelf's
 plainest movement (anything filed under legs that isn't recognised is a squat). So it always has
 a figure, though for an exercise unlike any of the twenty-three it is the nearest one, doing
-something else.
+something else. Where that is so the screens say it: when nothing in the name says which movement
+it is (`MovementMatch.named` is false, the movement having come from the shelf or the muscle
+alone), a line under the large figure reads "Nearest figure: Squat" (`NearestFigureNote`). That
+line is the list of exercises still wanting a movement of their own, or a clearer name.
 
 A movement of its own is four things, and the tests name whichever is still missing:
 
-1. **The kind.** An entry in `MovementKind`, and the names that mean it in `MovementClassifier`
+1. **The kind.** An entry in `MovementKind` with its name (`fitness_movement_…` in
+   `strings_fitness_movement.xml`), and the words that mean it in `MovementClassifier`
    (`MovementClassifierTest`).
 2. **The rig**, for the stone figure and the forged study: an entry of the same name in
    `Movement` (`MovementRig.kt`: the pose at each end of the rep, and what it is done on) and

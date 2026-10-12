@@ -2510,6 +2510,14 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.movement.MovementLoop(m
     - running: STABLE (primitive type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote(match: com.meticulouscreations.homesafe.fitness.domain.MovementMatch, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - match: STABLE (class with no mutable properties)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.movement.RenderedFigure(sheets: com.meticulouscreations.homesafe.fitness.ui.movement.MovementSheets, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, running: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
