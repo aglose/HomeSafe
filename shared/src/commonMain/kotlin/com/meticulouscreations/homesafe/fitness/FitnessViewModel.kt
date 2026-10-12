@@ -118,6 +118,8 @@ data class HeartUiState(
     val recovery: HeartRecovery? = null,
     val summary: HeartSummary? = null,
     val last: WorkoutHeart? = null,
+    /** Each workout's heart as it was saved, by the workout's id, for looking back on one. */
+    val summaries: Map<Long, HeartSummary> = emptyMap(),
 ) {
     val supported: Boolean get() = sensor != HeartSensorState.Unsupported
 
@@ -142,6 +144,8 @@ data class FitnessUiState(
     val recentRecords: List<RecordEvent> = emptyList(),
     val bodyweight: BodyweightTrend = BodyweightTrend(),
     val calendar: List<TrainedDay> = emptyList(),
+    /** Every session there has been, the latest first: what the History tab's month and list are drawn from. */
+    val history: List<WorkoutSession> = emptyList(),
     val import: ImportState = ImportState(),
     /** The log holds something a copy of it would carry: an exercise, a set, a phase, a weigh-in, or the heart-rate settings. */
     val copyable: Boolean = false,
@@ -151,6 +155,9 @@ data class FitnessUiState(
     val figureStyle: FigureStyle = FigureStyle.DEFAULT,
 ) {
     fun board(exerciseId: String): ExerciseBoard? = boards.firstOrNull { it.exercise.id == exerciseId }
+
+    /** The history's entry for a workout, or with no [workoutId] for the sets logged outside one on [epochDay]. */
+    fun session(workoutId: Long?, epochDay: Long): WorkoutSession? = history.firstOrNull { it.matches(workoutId, epochDay) }
 
     /** Nothing to train from yet: the notes haven't been brought in and no exercise has been added. */
     val isEmpty: Boolean get() = loaded && boards.isEmpty()
@@ -249,20 +256,48 @@ class FitnessViewModel(
     }
 
     fun finishWorkout() {
-        val workout = _uiState.value.workout ?: return
-        _uiState.update { it.copy(rest = null) }
-        val id = workout.workout.id
-        val heart = tally?.takeIf { it.workoutId == id }?.summary
-        closing = id
-        tally = null
-        restPeak = null
-        _heart.update { it.copy(summary = null, recovery = null) }
+        val id = _uiState.value.workout?.workout?.id ?: return
+        val heart = letGo(id)
         // Whether it has anything in it is the repository's to say, at the moment it closes it: a set still on its way in counts.
         viewModelScope.launch {
             // Its heart first, so that a workout closed as empty takes that with it.
             if (heart != null && !heart.isEmpty) repository.saveHeartSummary(id, heart)
             repository.finishWorkout(id, now())
         }
+    }
+
+    /**
+     * Abandons the workout in progress as though it had never been started: the sets logged in
+     * it go with it, and so does its heart. A record one of those sets was is no record now.
+     */
+    fun cancelWorkout() {
+        val id = _uiState.value.workout?.workout?.id ?: return
+        letGo(id)
+        _uiState.update { it.copy(flash = null) }
+        viewModelScope.launch { repository.deleteWorkout(id) }
+    }
+
+    /**
+     * Takes [session] out of the history for good: a workout with every set logged in it and its
+     * heart, or the sets of a day that were logged with no workout open. The workout in progress
+     * is cancelled instead, which is the same thing done to it.
+     */
+    fun deleteSession(session: WorkoutSession) {
+        val id = session.workout?.id
+        if (id != null && id == _uiState.value.workout?.workout?.id) return cancelWorkout()
+        val setIds = session.lifts.flatMap { lift -> lift.sets.map { it.id } }
+        viewModelScope.launch { if (id != null) repository.deleteWorkout(id) else repository.deleteSets(setIds) }
+    }
+
+    /** Stops what rides on the open workout [id] (the rest, its heart being added up), and hands back its heart as it stood. */
+    private fun letGo(id: Long): HeartSummary? {
+        val heart = tally?.takeIf { it.workoutId == id }?.summary
+        closing = id
+        tally = null
+        restPeak = null
+        _uiState.update { it.copy(rest = null) }
+        _heart.update { it.copy(summary = null, recovery = null) }
+        return heart
     }
 
     /**
@@ -473,7 +508,7 @@ class FitnessViewModel(
         viewModelScope.launch {
             repository.heartSummaries.collect { summaries ->
                 heartSummaries = summaries
-                _heart.update { it.copy(last = lastHeart()) }
+                _heart.update { it.copy(last = lastHeart(), summaries = summaries) }
             }
         }
         viewModelScope.launch { monitor.state.collect(::onSensor) }
@@ -623,7 +658,7 @@ class FitnessViewModel(
     private fun publish(loaded: Boolean? = null) {
         val at = now()
         val offset = localUtcOffsetSeconds(at.toDouble())
-        val boards = FitnessBoardBuilder.build(log, at, offset)
+        val boards = FitnessBoardBuilder.build(log, at, offset, offsetAt = { localUtcOffsetSeconds(it.toDouble()) })
         _uiState.update { state ->
             state.copy(
                 loaded = loaded ?: state.loaded,
@@ -640,6 +675,7 @@ class FitnessViewModel(
                 recentRecords = boards.recentRecords,
                 bodyweight = boards.bodyweight,
                 calendar = boards.calendar,
+                history = boards.history,
                 import = state.import.refreshed(),
                 copyable = copyable(),
             )

@@ -106,6 +106,37 @@ class StrengthTest {
         assertEquals(Strength.e1rm(205.0, 11), Strength.score(pullUps, pullUpSet(1, 25.0, 11, phaseStart)), 1e-9)
     }
 
+    // ---- Pounds moved -------------------------------------------------------------------------
+
+    @Test
+    fun thePoundsASetMovedAreItsWeightForEveryRep() {
+        assertEquals(135.0 * 8, Strength.poundsMoved(bench, benchSet(1, 135.0, 8, phaseStart)))
+    }
+
+    @Test
+    fun aPairOfDumbbellsCountsBothHands() {
+        val dumbbells = exercise(id = "chest/dumbbell-press", name = "Dumbbell press", loadKind = LoadKind.PER_HAND)
+        assertEquals(50.0 * 2 * 10, Strength.poundsMoved(dumbbells, set(1, 50.0, 10, phaseStart, exerciseId = dumbbells.id)))
+    }
+
+    @Test
+    fun platesAreAlreadyTheWholeWeight() {
+        val press = exercise(id = "legs/leg-press", name = "Leg press", bodyPart = BodyPart.LEGS, loadKind = LoadKind.PLATES, primary = Muscle.QUADS)
+        assertEquals(360.0 * 12, Strength.poundsMoved(press, set(1, 360.0, 12, phaseStart, exerciseId = press.id)))
+    }
+
+    @Test
+    fun aBodyweightSetMovesTheBodyAndWhatWasHungFromIt() {
+        assertEquals((180.0 + 25.0) * 6, Strength.poundsMoved(pullUps, pullUpSet(1, 25.0, 6, phaseStart)))
+        assertEquals((175.0 + 25.0) * 6, Strength.poundsMoved(pullUps, pullUpSet(1, 25.0, 6, phaseStart, bodyweight = null), bodyweight = 175.0))
+    }
+
+    @Test
+    fun aPinNumberIsNotPoundsAndMovesNoneThatCanBeCounted() {
+        val calves = exercise(id = "legs/calf-machine", name = "Calf machine", bodyPart = BodyPart.LEGS, loadKind = LoadKind.LEVEL, primary = Muscle.CALVES)
+        assertNull(Strength.poundsMoved(calves, set(1, 14.0, 25, phaseStart, exerciseId = calves.id)))
+    }
+
     // ---- Best ---------------------------------------------------------------------------------
 
     @Test

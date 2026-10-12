@@ -2,7 +2,8 @@
 <!--
   The fitness app's screens: Today, a workout and its set logger, Lifts, an exercise, Progress,
   the notes import, and the drawer's card. What is said about the log itself (body parts,
-  muscles, how a weight is written, the coaching beside a target) is in strings_fitness_data.xml.
+  muscles, how a weight is written, the coaching beside a target) is in strings_fitness_data.xml;
+  the History tab is in strings_fitness_history.xml.
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
@@ -10,6 +11,7 @@
     <string name="fitness_title">Fitness</string>
     <string name="fitness_tab_today">Today</string>
     <string name="fitness_tab_lifts">Lifts</string>
+    <string name="fitness_tab_history">History</string>
     <string name="fitness_tab_progress">Progress</string>
     <string name="fitness_title_exercise">Exercise</string>
     <string name="fitness_title_edit">Edit exercise</string>
@@ -89,6 +91,11 @@
     </plurals>
     <string name="fitness_workout_finish">Finish workout</string>
     <string name="fitness_workout_cancel">Cancel workout</string>
+    <!-- The same button once tapped: a second tap throws the workout away, with the sets logged in it -->
+    <plurals name="fitness_workout_cancel_confirm">
+        <item quantity="one">Tap again to discard %1$d set</item>
+        <item quantity="other">Tap again to discard all %1$d sets</item>
+    </plurals>
     <!-- %1$s last session's best set, %2$s how long ago -->
     <string name="fitness_workout_last">Last %1$s · %2$s</string>
     <string name="fitness_workout_from_notes">From your notes</string>

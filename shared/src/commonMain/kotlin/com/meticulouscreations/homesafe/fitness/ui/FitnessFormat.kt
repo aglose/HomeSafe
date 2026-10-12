@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.fitness.ui
 
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
+import com.meticulouscreations.homesafe.fitness.domain.NotesParser
 import com.meticulouscreations.homesafe.fitness.domain.PaceVerdict
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.Record
@@ -18,6 +19,33 @@ import homesafe.shared.generated.resources.fitness_date_month_day_year
 import homesafe.shared.generated.resources.fitness_heart_time_minutes
 import homesafe.shared.generated.resources.fitness_heart_time_none
 import homesafe.shared.generated.resources.fitness_heart_time_seconds
+import homesafe.shared.generated.resources.fitness_history_date
+import homesafe.shared.generated.resources.fitness_history_date_year
+import homesafe.shared.generated.resources.fitness_history_hours_minutes
+import homesafe.shared.generated.resources.fitness_history_minutes
+import homesafe.shared.generated.resources.fitness_history_month_april
+import homesafe.shared.generated.resources.fitness_history_month_august
+import homesafe.shared.generated.resources.fitness_history_month_december
+import homesafe.shared.generated.resources.fitness_history_month_february
+import homesafe.shared.generated.resources.fitness_history_month_january
+import homesafe.shared.generated.resources.fitness_history_month_july
+import homesafe.shared.generated.resources.fitness_history_month_june
+import homesafe.shared.generated.resources.fitness_history_month_march
+import homesafe.shared.generated.resources.fitness_history_month_may
+import homesafe.shared.generated.resources.fitness_history_month_november
+import homesafe.shared.generated.resources.fitness_history_month_october
+import homesafe.shared.generated.resources.fitness_history_month_september
+import homesafe.shared.generated.resources.fitness_history_month_year
+import homesafe.shared.generated.resources.fitness_history_time_am
+import homesafe.shared.generated.resources.fitness_history_time_pm
+import homesafe.shared.generated.resources.fitness_history_volume
+import homesafe.shared.generated.resources.fitness_history_weekday_friday
+import homesafe.shared.generated.resources.fitness_history_weekday_monday
+import homesafe.shared.generated.resources.fitness_history_weekday_saturday
+import homesafe.shared.generated.resources.fitness_history_weekday_sunday
+import homesafe.shared.generated.resources.fitness_history_weekday_thursday
+import homesafe.shared.generated.resources.fitness_history_weekday_tuesday
+import homesafe.shared.generated.resources.fitness_history_weekday_wednesday
 import homesafe.shared.generated.resources.fitness_pace_bulk_fast
 import homesafe.shared.generated.resources.fitness_pace_bulk_on
 import homesafe.shared.generated.resources.fitness_pace_bulk_slow
@@ -191,6 +219,80 @@ internal object FitnessFormat {
         val year = (yoe + era * 400 + if (month <= 2) 1 else 0).toInt()
         return Triple(year, month, day)
     }
+
+    /** The first day of [month] (1 to 12) of [year], counted from 1970. */
+    fun firstOfMonth(year: Int, month: Int): Long = NotesParser.epochDay(year, month, 1)
+
+    /** Which day of the week [epochDay] is, Monday being 0: 1970-01-01 was a Thursday. */
+    fun weekday(epochDay: Long): Int = (epochDay + 3).mod(7)
+
+    fun monthName(month: Int): StringResource = MONTHS[(month - 1).mod(MONTHS.size)]
+
+    /** A weekday's short name, Monday being 0: "Mon". */
+    fun weekdayName(weekday: Int): StringResource = WEEKDAYS[weekday.mod(WEEKDAYS.size)]
+
+    /** A month as a calendar is headed: "October 2026". */
+    fun monthYear(year: Int, month: Int): UiText = UiText.of(Res.string.fitness_history_month_year, UiText.of(monthName(month)), year)
+
+    /** A day with its weekday, "Mon, October 5", and [withYear] the year after it. */
+    fun day(epochDay: Long, withYear: Boolean = false): UiText {
+        val (year, month, day) = civil(epochDay)
+        val weekday = UiText.of(weekdayName(weekday(epochDay)))
+        return if (withYear) {
+            UiText.of(Res.string.fitness_history_date_year, weekday, UiText.of(monthName(month)), day, year)
+        } else {
+            UiText.of(Res.string.fitness_history_date, weekday, UiText.of(monthName(month)), day)
+        }
+    }
+
+    /** The time of day at [epochSeconds], by a twelve-hour clock: "5:05 PM". */
+    fun timeOfDay(epochSeconds: Long, utcOffsetSeconds: Int): UiText {
+        val minutes = ((epochSeconds + utcOffsetSeconds).mod(SECONDS_PER_DAY) / 60).toInt()
+        val hour = minutes / 60
+        return UiText.of(if (hour < 12) Res.string.fitness_history_time_am else Res.string.fitness_history_time_pm, (hour + 11) % 12 + 1, (minutes % 60).toString().padStart(2, '0'))
+    }
+
+    /** How long a workout ran, to the minute: "55 min", "1 h 5 min". */
+    fun duration(seconds: Long): UiText {
+        val minutes = ((seconds.coerceAtLeast(0) + 30) / 60).toInt()
+        return if (minutes < 60) UiText.of(Res.string.fitness_history_minutes, minutes) else UiText.of(Res.string.fitness_history_hours_minutes, minutes / 60, minutes % 60)
+    }
+
+    /** A whole number with its thousands marked off: 12,400. */
+    fun grouped(value: Long): String {
+        val digits = abs(value).toString()
+        val head = digits.length % 3
+        val groups = (if (head > 0) listOf(digits.substring(0, head)) else emptyList()) + digits.substring(head).chunked(3)
+        return (if (value < 0) "−" else "") + groups.joinToString(",")
+    }
+
+    /** Everything moved in a workout: "6,240 lb". */
+    fun volume(pounds: Double): UiText = UiText.of(Res.string.fitness_history_volume, grouped(pounds.roundToLong()))
+
+    private val MONTHS = listOf(
+        Res.string.fitness_history_month_january,
+        Res.string.fitness_history_month_february,
+        Res.string.fitness_history_month_march,
+        Res.string.fitness_history_month_april,
+        Res.string.fitness_history_month_may,
+        Res.string.fitness_history_month_june,
+        Res.string.fitness_history_month_july,
+        Res.string.fitness_history_month_august,
+        Res.string.fitness_history_month_september,
+        Res.string.fitness_history_month_october,
+        Res.string.fitness_history_month_november,
+        Res.string.fitness_history_month_december,
+    )
+
+    private val WEEKDAYS = listOf(
+        Res.string.fitness_history_weekday_monday,
+        Res.string.fitness_history_weekday_tuesday,
+        Res.string.fitness_history_weekday_wednesday,
+        Res.string.fitness_history_weekday_thursday,
+        Res.string.fitness_history_weekday_friday,
+        Res.string.fitness_history_weekday_saturday,
+        Res.string.fitness_history_weekday_sunday,
+    )
 
     /** Minutes and seconds of a rest: "1:30". */
     fun clock(seconds: Int): String {
