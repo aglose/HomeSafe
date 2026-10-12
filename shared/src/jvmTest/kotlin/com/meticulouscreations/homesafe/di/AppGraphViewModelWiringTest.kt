@@ -1,12 +1,12 @@
 package com.meticulouscreations.homesafe.di
 
-import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.finance.BankSyncViewModel
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
+import com.meticulouscreations.homesafe.integration.testPlatformContext
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
 import com.meticulouscreations.homesafe.viewmodel.CarTaggingViewModel
@@ -37,7 +37,7 @@ class AppGraphViewModelWiringTest {
 
     @Test
     fun everyScreenViewModelIsRegisteredWithTheFactory() {
-        val graph = createAppGraph(PlatformContext())
+        val graph = createAppGraph(testPlatformContext())
 
         assertEquals(
             setOf(

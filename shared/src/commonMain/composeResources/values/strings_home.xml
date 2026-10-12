@@ -129,6 +129,53 @@
     <!-- The camera screen's overflow menu. -->
     <string name="camera_menu_detection_zones">Detection zones</string>
     <string name="camera_menu_tag_cars">Tag cars in view</string>
+    <!-- The menu's switch for the panel below, named as video players name theirs. -->
+    <string name="camera_menu_stats_show">Stats for nerds</string>
+    <string name="camera_menu_stats_hide">Hide stats for nerds</string>
+
+    <!-- The "stats for nerds" panel over a camera's live video: what the stream is doing, measured as it plays. -->
+    <string name="camera_stats_title">Stats for nerds</string>
+    <string name="camera_stats_close">Close stats for nerds</string>
+    <!-- In place of the figures until the player has its first reading. -->
+    <string name="camera_stats_measuring">Measuring…</string>
+    <!-- In place of the figures while a recording plays: there is nothing live to measure. -->
+    <string name="camera_stats_recording">Go live to see the stream's stats</string>
+    <!-- The label beside how old the picture is by the time it is shown, counted from the moment the camera server had it: "Behind server  240 ms". -->
+    <string name="camera_stats_delay">Behind server</string>
+    <!-- In place of a delay on a device whose player can't measure one. -->
+    <string name="camera_stats_delay_unknown">Not measured on this device</string>
+    <!-- What the delay is made of: crossing the network, waiting in the player's buffer, being decoded. -->
+    <string name="camera_stats_network">Network</string>
+    <string name="camera_stats_buffer">Buffer</string>
+    <string name="camera_stats_decode">Decode</string>
+    <!-- A length of time in whole milliseconds. -->
+    <string name="camera_stats_milliseconds">%1$d ms</string>
+    <!-- A length of time in seconds to one decimal place: %1$d is the whole seconds and %2$d the tenths ("1.4 s"). The mark between them is the language's decimal separator. -->
+    <string name="camera_stats_seconds">%1$d.%2$d s</string>
+    <!-- How the video is reaching this device. -->
+    <string name="camera_stats_connection">Connection</string>
+    <string name="camera_stats_connection_webrtc">WebRTC</string>
+    <string name="camera_stats_connection_hls">HLS</string>
+    <string name="camera_stats_video">Video</string>
+    <!-- %1$d and %2$d are the picture's width and height in pixels. -->
+    <string name="camera_stats_resolution">%1$d×%2$d</string>
+    <!-- %1$d is frames a second. -->
+    <string name="camera_stats_frame_rate">%1$d fps</string>
+    <string name="camera_stats_bitrate">Bitrate</string>
+    <!-- %1$d is kilobits a second. -->
+    <string name="camera_stats_kbps">%1$d kbps</string>
+    <!-- Megabits a second to one decimal place: %1$d is the whole megabits and %2$d the tenths ("2.1 Mbps"). The mark between them is the language's decimal separator. -->
+    <string name="camera_stats_mbps">%1$d.%2$d Mbps</string>
+    <!-- Beside what never made it to the screen: frames the player had to skip, then packets the network lost ("0 frames · 3 packets"). -->
+    <string name="camera_stats_dropped">Dropped</string>
+    <plurals name="camera_stats_dropped_frames">
+        <item quantity="one">%1$d frame</item>
+        <item quantity="other">%1$d frames</item>
+    </plurals>
+    <plurals name="camera_stats_lost_packets">
+        <item quantity="one">%1$d packet</item>
+        <item quantity="other">%1$d packets</item>
+    </plurals>
 
     <!-- The app shell: top bar, bottom tabs and the drawer. -->
     <!-- The app's name as the top bar and the drawer spell it, in capitals. -->

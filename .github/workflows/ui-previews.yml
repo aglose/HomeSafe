@@ -92,23 +92,49 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Branch $BRANCH, pull request ${pr:-none}, merge base with $base_ref: $base"
 
-      # The branch also runs the JVM journeys for their screenshots (gallery only; see the script).
+      # The branch also runs the JVM journeys for their screenshots (gallery only; see the script),
+      # in two JVMs side by side (-PjvmTestForks, shared/build.gradle.kts): one after another they
+      # were most of this step.
       - name: Draw the branch
         id: head
         continue-on-error: true
         env:
           UI_PREVIEWS_JOURNEYS: 1
-        run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace
+        run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace -PjvmTestForks=2
+
+      # The merge base's pictures are the same on every push until the base itself moves, so a
+      # later push to this branch takes them from the first one's cache. What draws them is the
+      # base's code with this branch's script, hence both in the key.
+      - name: The merge base's previews, if an earlier push drew them
+        if: env.PREVIEW_BASE_SHA != env.PREVIEW_HEAD_SHA
+        id: base-cache
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ runner.temp }}/previews/base
+          key: ui-previews-base-${{ env.PREVIEW_BASE_SHA }}-${{ hashFiles('scripts/render-ui-previews.sh', '.github/workflows/ui-previews.yml') }}
 
       # With this branch's script: the base's copy may predate it. A base that predates the
       # renderers themselves draws nothing, and every preview counts as new.
       - name: Draw the merge base
-        if: env.PREVIEW_BASE_SHA != env.PREVIEW_HEAD_SHA
+        if: env.PREVIEW_BASE_SHA != env.PREVIEW_HEAD_SHA && steps.base-cache.outputs.cache-hit != 'true'
+        id: base
         run: |
           git worktree add --detach "$RUNNER_TEMP/base" "$PREVIEW_BASE_SHA"
           cd "$RUNNER_TEMP/base"
-          "$GITHUB_WORKSPACE/scripts/render-ui-previews.sh" "$RUNNER_TEMP/previews/base" \
-            || echo "::notice::The merge base didn't draw everything; what it didn't draw counts as new."
+          if "$GITHUB_WORKSPACE/scripts/render-ui-previews.sh" "$RUNNER_TEMP/previews/base"; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::The merge base didn't draw everything; what it didn't draw counts as new."
+          fi
+
+      # Only a base that drew everything: one that didn't may have failed for a passing reason,
+      # and is worth drawing again next time.
+      - name: Keep the merge base's previews for the next push
+        if: steps.base.outputs.complete == 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ runner.temp }}/previews/base
+          key: ui-previews-base-${{ env.PREVIEW_BASE_SHA }}-${{ hashFiles('scripts/render-ui-previews.sh', '.github/workflows/ui-previews.yml') }}
 
       - name: Lay out the gallery
         env:

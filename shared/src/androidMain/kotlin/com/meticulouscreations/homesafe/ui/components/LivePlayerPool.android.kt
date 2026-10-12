@@ -11,13 +11,18 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import com.meticulouscreations.homesafe.PlatformContext
 import com.meticulouscreations.homesafe.network.WhepSignalingClient
 import io.ktor.client.HttpClient
@@ -32,8 +37,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.math.roundToInt
 
 private const val LOG_TAG = "HomeSafeLive"
+
+/** How long a peer gets to answer a statistics request; one closed in the meantime never does. */
+private const val WEBRTC_STATS_TIMEOUT_MS = 1_000L
 
 /**
  * One long-lived player per camera that outlives any single composable, so a camera's video is
@@ -278,6 +288,13 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
     /** [SystemClock.elapsedRealtime] at the last [start]: how long the current attempt has had, for [reconnect]. */
     private var startedAtMs = 0L
 
+    /** When the live HLS stream's video reached the player, as its extractors report it; see [hlsStats]. */
+    private val hlsArrivals = HlsSampleArrivals()
+    private val hlsEdge = LiveEdgeTracker()
+
+    /** Media bytes the HLS session has downloaded, for the bitrate. Main thread only, like the listener that counts them. */
+    private var hlsBytesLoaded = 0L
+
     private val listener = object : Player.Listener {
         override fun onRenderedFirstFrame() {
             consecutiveFailures = 0
@@ -286,10 +303,23 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         override fun onPlayerError(error: PlaybackException) {
             handleHlsError(error)
         }
+
+        // A jump can empty the buffer, and ExoPlayer then starts media time over from wherever
+        // the next segment says it is: the arrivals seen so far no longer place the live edge.
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            forgetHlsArrivals()
+        }
+    }
+
+    private val loadListener = object : AnalyticsListener {
+        override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
+            if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA) hlsBytesLoaded += loadEventInfo.bytesLoaded
+        }
     }
 
     init {
         player.addListener(listener)
+        player.addAnalyticsListener(loadListener)
     }
 
     /**
@@ -384,7 +414,98 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         keptFrame = null
         scope.cancel()
         player.removeListener(listener)
+        player.removeAnalyticsListener(loadListener)
         player.release()
+    }
+
+    /**
+     * Measures the live source for as long as the caller keeps collecting, handing [onStats] a
+     * reading every [LIVE_STATS_INTERVAL_MS]: null while there is nothing to go on yet (a peer's
+     * first report, which has no earlier one to be compared with) and while a recording plays.
+     */
+    suspend fun reportStats(onStats: (LiveStreamStats?) -> Unit): Nothing {
+        val webRtcMeter = WebRtcStatsMeter()
+        var metered: AndroidWebRtcPeer? = null
+        val hlsBytes = RateMeter()
+        val hlsFrames = RateMeter()
+        while (true) {
+            val live = source is VideoSource.Live
+            // Each meter compares a reading with the one before it, so one that sat out a spell
+            // on the other transport (or a recording) starts over: the same peer can come back
+            // from standby, and its totals since it left are not the last second's.
+            if (!live || transport != LiveTransport.WEBRTC) {
+                webRtcMeter.reset()
+                metered = null
+            }
+            if (!live || transport != LiveTransport.HLS) {
+                hlsBytes.reset()
+                hlsFrames.reset()
+            }
+            val stats = when {
+                !live -> null
+
+                transport == LiveTransport.WEBRTC -> {
+                    val current = peer
+                    if (current !== metered) {
+                        webRtcMeter.reset()
+                        metered = current
+                    }
+                    current?.let { withTimeoutOrNull(WEBRTC_STATS_TIMEOUT_MS) { it.receiverStats() } }?.let(webRtcMeter::update)
+                }
+
+                else -> hlsStats(hlsBytes, hlsFrames)
+            }
+            onStats(stats)
+            delay(LIVE_STATS_INTERVAL_MS)
+        }
+    }
+
+    /**
+     * The HLS session as ExoPlayer has it: how far the playhead is behind the newest video the
+     * server had ([hlsEdge]), how much of that is already here, and what is being decoded. Null
+     * until some video has arrived to place the live edge by.
+     */
+    private fun hlsStats(bytes: RateMeter, frames: RateMeter): LiveStreamStats? {
+        val now = SystemClock.elapsedRealtime()
+        hlsArrivals.drain()?.let { arrival ->
+            hlsEdge.observe(arrival.mediaTimeMs, arrival.atMs)
+            hlsEdge.holds(arrival.newestMediaMs)
+        }
+        val counters = player.videoDecoderCounters?.also { it.ensureUpdated() }
+        // Read every time, wanted or not: a rate is the change since the reading before.
+        val framesPerSecond = frames.perSecond(counters?.renderedOutputBufferCount?.toLong(), now)
+        val bytesPerSecond = bytes.perSecond(hlsBytesLoaded, now)
+        val position = hlsPeriodPositionMs() ?: return null
+        val behind = hlsEdge.behindMs(position, now) ?: return null
+        val size = player.videoSize
+        val format = player.videoFormat
+        return LiveStreamStats(
+            transport = LiveTransport.HLS,
+            delayMs = behind.toInt(),
+            bufferMs = hlsEdge.bufferedMs(position)?.toInt(),
+            width = size.width.takeIf { it > 0 },
+            height = size.height.takeIf { it > 0 },
+            framesPerSecond = framesPerSecond?.roundToInt(),
+            bitrateKbps = bytesPerSecond?.bytesPerSecondAsKbps(),
+            codec = format?.sampleMimeType ?: format?.codecs,
+            droppedFrames = counters?.droppedBufferCount?.toLong(),
+        )
+    }
+
+    /**
+     * The playhead in the period's own time, which is what sample timestamps are in. The
+     * player's position is relative to the live window instead, and the window slides along the
+     * period every time the playlist does.
+     */
+    private fun hlsPeriodPositionMs(): Long? {
+        val timeline = player.currentTimeline
+        if (timeline.isEmpty) return null
+        return player.currentPosition - timeline.getPeriod(player.currentPeriodIndex, Timeline.Period()).positionInWindowMs
+    }
+
+    private fun forgetHlsArrivals() {
+        hlsArrivals.clear()
+        hlsEdge.reset()
     }
 
     private fun resume() {
@@ -683,7 +804,12 @@ internal class LivePlayerHolder(context: Context, val key: String?, private val 
         transport = LiveTransport.HLS
         LiveStartupMilestones.mark("hls.start $key")
         val dataSourceFactory = DefaultHttpDataSource.Factory().setDefaultRequestProperties(toLoad.headers)
-        val mediaSource = HlsMediaSource.Factory(dataSourceFactory).createMediaSource(MediaItem.fromUri(toLoad.url))
+        val mediaSourceFactory = HlsMediaSource.Factory(dataSourceFactory)
+        // A new session is a new media timeline. Only live video is timed on its way in: a
+        // recording has no live edge to be behind.
+        forgetHlsArrivals()
+        if (toLoad is VideoSource.Live) mediaSourceFactory.setExtractorFactory(ArrivalReportingExtractorFactory(hlsArrivals))
+        val mediaSource = mediaSourceFactory.createMediaSource(MediaItem.fromUri(toLoad.url))
         when (toLoad) {
             is VideoSource.Live -> player.setMediaSource(mediaSource)
             is VideoSource.Recording -> player.setMediaSource(mediaSource, resumePositionMs ?: toLoad.startPositionMs)

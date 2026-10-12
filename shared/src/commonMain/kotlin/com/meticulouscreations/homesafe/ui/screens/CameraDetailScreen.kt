@@ -17,11 +17,16 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -34,6 +39,7 @@ import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.QueryStats
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.CircularProgressIndicator
@@ -125,6 +131,8 @@ import homesafe.shared.generated.resources.camera_go_live
 import homesafe.shared.generated.resources.camera_hide_controls
 import homesafe.shared.generated.resources.camera_live
 import homesafe.shared.generated.resources.camera_menu_detection_zones
+import homesafe.shared.generated.resources.camera_menu_stats_hide
+import homesafe.shared.generated.resources.camera_menu_stats_show
 import homesafe.shared.generated.resources.camera_menu_tag_cars
 import homesafe.shared.generated.resources.camera_moment_clip_length
 import homesafe.shared.generated.resources.camera_no_recordings
@@ -194,6 +202,7 @@ fun CameraDetailScreen(
     // screen — header, recent-activity cards and all.
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val recentMoments by viewModel.recentMoments.collectAsStateWithLifecycle()
+    val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val cameraAvailable = (uiState as? CameraDetailUiState.Found)?.streamUrl != null
     val hasQualityChoice = (uiState as? CameraDetailUiState.Found)?.let { it.gridStreamUrl != null && it.gridStreamUrl != it.streamUrl } ?: false
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
@@ -280,7 +289,12 @@ fun CameraDetailScreen(
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                     textAlign = TextAlign.Center,
                 )
-                CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars)
+                CameraOverflowMenu(
+                    onEditDetectionZones = onEditDetectionZones,
+                    onTagCars = onTagCars,
+                    statsShown = statsShown,
+                    onToggleStats = viewModel::toggleStats,
+                )
             }
         }
 
@@ -310,7 +324,14 @@ fun CameraDetailScreen(
                 onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
                 // The header's own menu, in white, at the end of the chrome's top row.
                 overflowMenu = { onOpenChange ->
-                    CameraOverflowMenu(onEditDetectionZones = onEditDetectionZones, onTagCars = onTagCars, tint = Color.White, onOpenChange = onOpenChange)
+                    CameraOverflowMenu(
+                        onEditDetectionZones = onEditDetectionZones,
+                        onTagCars = onTagCars,
+                        statsShown = statsShown,
+                        onToggleStats = viewModel::toggleStats,
+                        tint = Color.White,
+                        onOpenChange = onOpenChange,
+                    )
                 },
                 modifier = with(sharedTransitionScope) {
                     // The video is the one thing that moves between here and the card (this
@@ -427,7 +448,8 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
     }
 
 /**
- * The video, plus its overlays: the LIVE pill, play/pause, buffering, and the "behind live" readout.
+ * The video, plus its overlays: the LIVE pill, play/pause, buffering, the "behind live" readout,
+ * and the "stats for nerds" panel when the menu has asked for it ([PlayerStreamStats]).
  *
  * At rest this is a 16:9 strip at the top of the scroll.
  * A double tap on its left or right third steps the recording [SKIP_SECONDS] back or forward, as
@@ -472,6 +494,7 @@ private fun PlayerSurface(
 ) {
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
+    val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val haptic = LocalHapticFeedback.current
@@ -607,6 +630,8 @@ private fun PlayerSurface(
                         onPlaybackEnded = viewModel::onPlaybackEnded,
                         onPlaybackError = viewModel::onPlaybackError,
                         onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
+                        // The player measures the stream only while the panel is up to show it.
+                        onStreamStats = if (statsShown) viewModel::onStreamStats else null,
                     )
                 } else {
                     Icon(
@@ -726,6 +751,15 @@ private fun PlayerSurface(
                         overflowMenu = overflowMenu,
                     )
                 }
+                // Over the chrome, so its close button is always there to press, and down the
+                // side, between the chrome's top row and its timeline.
+                PlayerStreamStats(
+                    cameraName = cameraName,
+                    modifier = Modifier
+                        .align(Alignment.CenterStart)
+                        .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+                        .padding(start = 16.dp),
+                )
                 return@Box
             }
 
@@ -745,6 +779,12 @@ private fun PlayerSurface(
                     modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
                 )
             }
+
+            // The corner the LIVE pill leaves free; on a narrow phone it folds its lines sooner than cover the pill.
+            PlayerStreamStats(
+                cameraName = cameraName,
+                modifier = Modifier.align(Alignment.TopEnd).padding(start = STATS_CLEAR_OF_LIVE_PILL, top = 12.dp, end = 12.dp),
+            )
         }
     }
 }
@@ -854,6 +894,9 @@ private const val ZOOM_TAKEOVER_MS = 300
 /** How long the full-screen player's chrome stays up once it has been left alone. */
 private const val FULL_SCREEN_CHROME_MS = 4_000L
 private const val FULL_SCREEN_CHROME_FADE_MS = 180
+
+/** How much of the player's top edge the stats panel leaves to the LIVE pill beside it. */
+private val STATS_CLEAR_OF_LIVE_PILL = 104.dp
 
 /** The most of the window's height the player takes while the page is under it. */
 private const val PLAYER_MAX_HEIGHT_FRACTION = 0.6f
@@ -1061,7 +1104,8 @@ internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit
  * This camera's less-used settings, kept out of the page itself: the polygon editor — what
  * Google Home calls activity zones and Frigate calls masks — and tagging the cars in view by
  * hand, reached from the header rather than cards competing with the timeline and recent
- * activity for the eye.
+ * activity for the eye. Last, the switch for the "stats for nerds" panel over the video
+ * ([statsShown], [onToggleStats]), where every video player keeps it.
  *
  * The full-screen player's chrome carries the same menu, in its own [tint], and is told through
  * [onOpenChange] while the menu is open so it doesn't fade away from under it.
@@ -1070,6 +1114,8 @@ internal fun SpanChip(span: TimelineSpan, selected: Boolean, onClick: () -> Unit
 private fun CameraOverflowMenu(
     onEditDetectionZones: () -> Unit,
     onTagCars: () -> Unit,
+    statsShown: Boolean,
+    onToggleStats: () -> Unit,
     tint: Color = MaterialTheme.colorScheme.primary,
     onOpenChange: (Boolean) -> Unit = {},
 ) {
@@ -1110,6 +1156,19 @@ private fun CameraOverflowMenu(
                 onClick = {
                     setExpanded(false)
                     onTagCars()
+                },
+            )
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = stringResource(if (statsShown) Res.string.camera_menu_stats_hide else Res.string.camera_menu_stats_show),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                },
+                leadingIcon = { Icon(imageVector = Icons.Filled.QueryStats, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                onClick = {
+                    setExpanded(false)
+                    onToggleStats()
                 },
             )
         }
