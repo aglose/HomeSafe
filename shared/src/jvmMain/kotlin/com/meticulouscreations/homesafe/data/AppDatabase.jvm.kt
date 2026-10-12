@@ -45,3 +45,6 @@ actual fun createFitnessDao(context: PlatformContext): FitnessDao =
 
 actual fun createFinanceSavedDao(context: PlatformContext): FinanceSavedDao =
     appDatabase.financeSavedDao()
+
+actual fun createAtlasDao(context: PlatformContext): AtlasDao =
+    appDatabase.atlasDao()

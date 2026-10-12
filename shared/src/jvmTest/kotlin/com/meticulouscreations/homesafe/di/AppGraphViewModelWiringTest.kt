@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.di
 
+import com.meticulouscreations.homesafe.atlas.AtlasViewModel
 import com.meticulouscreations.homesafe.finance.BankSyncViewModel
 import com.meticulouscreations.homesafe.finance.BudgetViewModel
 import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
@@ -42,6 +43,7 @@ class AppGraphViewModelWiringTest {
         assertEquals(
             setOf(
                 HomeViewModel::class,
+                AtlasViewModel::class,
                 MomentsViewModel::class,
                 SettingsViewModel::class,
                 SecureConnectionViewModel::class,

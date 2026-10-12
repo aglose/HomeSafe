@@ -52,3 +52,6 @@ private fun documentDirectory(): String {
     )
     return requireNotNull(documentDirectory?.path)
 }
+
+actual fun createAtlasDao(context: PlatformContext): AtlasDao =
+    appDatabase.atlasDao()

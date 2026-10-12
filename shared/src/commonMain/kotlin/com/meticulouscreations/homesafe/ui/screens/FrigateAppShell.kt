@@ -81,6 +81,8 @@ import androidx.lifecycle.compose.currentStateAsState
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
+import com.meticulouscreations.homesafe.atlas.AtlasViewModel
+import com.meticulouscreations.homesafe.atlas.ui.AtlasApp
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
@@ -133,7 +135,7 @@ import org.jetbrains.compose.resources.stringResource
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
 /** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
-internal enum class InnerApp { FINANCE, WEATHER, FITNESS }
+internal enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS }
 
 @Stable
 internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
@@ -523,8 +525,8 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
  * Their state is only fetched while this composition is on screen — under the iOS 26 host each
  * tab has its own, and only the visible one may run it.
  *
- * None of the three needs the camera server (weather and the markets are public, fitness is all on
- * the device, and each opens on what the device kept), so the sign-in screen draws this too, with
+ * None of them needs the camera server (weather and the markets are public, fitness is all on
+ * the device, and each, the atlas among them, opens on what the device kept), so the sign-in screen draws this too, with
  * a [ShellNavigation] of its own and [signedIn] false: the drawer then lists the apps alone, there
  * being no cameras to go to yet. That is how they are reached while Tailscale or the server isn't.
  */
@@ -556,6 +558,12 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
     LaunchedEffect(visible, drawerShowing, fitnessUp) {
         fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
     }
+    val atlas: AtlasViewModel = metroViewModel()
+    val atlasState by atlas.uiState.collectAsStateWithLifecycle()
+    val atlasUp = nav.isOpen(InnerApp.ATLAS)
+    LaunchedEffect(visible, drawerShowing, atlasUp) {
+        atlas.setActive(visible && (drawerShowing || atlasUp), full = atlasUp)
+    }
     // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
     if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
     ShellDrawer(
@@ -564,6 +572,7 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
         finance = financeState,
         weather = weatherState,
         fitness = fitnessState,
+        atlas = atlasState,
         pull = nav.drawerPull,
         onSelectTab = { route ->
             nav.drawerOpen = false
@@ -572,9 +581,12 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
         onOpenFinance = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) },
         onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
         onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
+        onOpenAtlas = { origin -> nav.openApp(InnerApp.ATLAS, origin, tab) },
         onClose = { nav.drawerOpen = false },
         showHomeSecurity = signedIn,
         financeLocked = financeLockState.locked,
+        // The same lock: where someone has been is kept shut exactly when their money is.
+        atlasLocked = financeLockState.locked,
     )
     if (nav.appHost == tab) {
         InnerAppOverlay(
@@ -594,6 +606,8 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
                 InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
 
                 InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
+
+                InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
             }
         }
     }

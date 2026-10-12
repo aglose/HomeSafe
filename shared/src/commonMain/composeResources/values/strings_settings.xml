@@ -28,7 +28,7 @@
     <string name="connection_sign_in_with_biometrics">Sign in with %1$s</string>
     <string name="connection_forget_saved_login">Forget saved login</string>
     <!-- Under the sign-in buttons: opens the menu of the apps that don't need the server. -->
-    <string name="connection_open_apps">Weather, Fitness and Finance</string>
+    <string name="connection_open_apps">Weather, Atlas, Fitness and Finance</string>
     <string name="connection_open_apps_hint">These open without signing in.</string>
     <string name="connection_biometric_update_title">Update %1$s sign-in?</string>
     <string name="connection_biometric_enable_title">Enable %1$s sign-in?</string>

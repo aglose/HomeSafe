@@ -28,9 +28,11 @@ of each car kept on the box.
 """
 
 import calendar
+import gzip
 import hashlib
 import html
 import http.client
+import io
 import json
 import logging
 import os
@@ -41,9 +43,10 @@ import sqlite3
 from statistics import median
 import threading
 import time
+import zipfile
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, quote, urlencode
 from zoneinfo import ZoneInfo
 
 import requests
@@ -4447,6 +4450,7 @@ def startup() -> None:
     threading.Thread(target=boot_report, name="boot-report", daemon=True).start()
     threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
     threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
+    threading.Thread(target=timeline_forever, name="timeline", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
 
 
@@ -8095,12 +8099,953 @@ def tesla_register() -> dict[str, Any]:
     return r.json()
 
 
+# ---------------------------------------------------------------- timeline
+#
+# Where one person has been since they first carried a phone, from Google Maps Timeline. Google
+# keeps Timeline on the phone now, and the only way out is the phone's own export (Settings,
+# Location, Location services, Timeline, Export Timeline data): one JSON file of every visit and
+# every trip. Saved into a Drive folder shared with the relay's key, that file is found here on a
+# schedule, read once, and kept in a database of its own (timeline.db: a twelve-year export is
+# millions of points, and relay.db is read every few seconds). The app's Atlas section then fetches
+# a year at a time and keeps its own copy, so it works with the box out of reach (docs/atlas.md).
+#
+# Three shapes of file are read: the phone's export (Android's `semanticSegments`, the iPhone's
+# bare array), and the two older Takeout ones (the monthly `timelineObjects` files and the raw
+# `Records.json`), loose or inside a Takeout zip. Whatever the shape, it becomes three kinds of row:
+# a *visit* (stayed somewhere), a *move* (went from one place to another, and how) and a *path*
+# (the points along the way, each with its time).
+#
+# A newer export replaces what an older one said a day at a time: every day the new file mentions
+# is dropped and written again, and a day it doesn't mention is left alone. So a phone that only
+# remembers the last three months adds to the history rather than replacing it.
+#
+# The export names no places, only Google's place ids. Each is asked of the Places API once, the
+# places most time was spent at first, and never more in a month than TIMELINE_PLACES_MONTHLY: a
+# name is the "Pro" price, which is free up to a monthly allowance.
+#
+# This is one person's whereabouts, so it is narrower than a Frigate sign-in: a Frigate admin may
+# read it, or, once TIMELINE_USERS lists usernames, only those.
+#
+# Setup, once (docs/atlas.md): switch on the Google Drive API for the key's Cloud project, share a
+# Drive folder with the key's `client_email` (read-only), and put the folder's id and a Places API
+# key in timeline.env on the box (the repo is public). `GET /timeline` says which step is missing.
+
+TIMELINE_DB = os.environ.get("TIMELINE_DB", os.path.join(os.path.dirname(DB_PATH) or ".", "timeline.db"))
+TIMELINE_DRIVE_FOLDER = os.environ.get("TIMELINE_DRIVE_FOLDER", "").strip()
+TIMELINE_KEY = os.environ.get("TIMELINE_KEY", KEY_FILE)
+TIMELINE_USERS = {u.strip() for u in os.environ.get("TIMELINE_USERS", "").split(",") if u.strip()}
+TIMELINE_PLACES_KEY = os.environ.get("TIMELINE_PLACES_KEY", "").strip()
+# Below Google's free monthly allowance for the Pro price (5,000 when this was written), with room
+# for the month turning over at midnight Pacific rather than UTC.
+TIMELINE_PLACES_MONTHLY = int(os.environ.get("TIMELINE_PLACES_MONTHLY", "4000"))
+TIMELINE_PLACES_PER_RUN = 500
+# How often the Drive folder is looked in. A listing is one small call; the file is only fetched
+# when it isn't the one already read.
+TIMELINE_CHECK_SECONDS = max(300.0, float(os.environ.get("TIMELINE_CHECK_SECONDS", "3600")))
+DRIVE_API = "https://www.googleapis.com/drive/v3/files"
+DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+PLACES_API = "https://places.googleapis.com/v1/places"
+# `displayName` and `primaryType` are what make this the Pro price; the rest ride along free.
+# `addressComponents` is where the town, state and country come from: what the app counts as
+# "cities and states visited" without a map of borders.
+PLACES_FIELDS = "id,displayName,formattedAddress,shortFormattedAddress,primaryType,types,addressComponents"
+TIMELINE_CACHE_CONTROL = "private, no-store"
+
+# A stay, when all there is to go on is raw fixes (Records.json): within this far of where it
+# began, for at least this long.
+STAY_METRES = 150.0
+STAY_SECONDS = 600
+# A fix less sure of itself than this says nothing about which street it was.
+FIX_MAX_ACCURACY_METRES = 200.0
+# Fixes further apart in time than this aren't one journey.
+FIX_GAP_SECONDS = 3600
+
+TIMELINE_SCHEMA = (
+    "CREATE TABLE IF NOT EXISTS visits (started INTEGER, ended INTEGER, utc_offset INTEGER, lat REAL, lon REAL, place TEXT, kind TEXT, p REAL, day INTEGER)",
+    "CREATE TABLE IF NOT EXISTS moves (started INTEGER, ended INTEGER, utc_offset INTEGER, mode TEXT, lat REAL, lon REAL, to_lat REAL, to_lon REAL, metres REAL, day INTEGER)",
+    "CREATE TABLE IF NOT EXISTS paths (started INTEGER, ended INTEGER, utc_offset INTEGER, points TEXT, times TEXT, n INTEGER, day INTEGER)",
+    "CREATE TABLE IF NOT EXISTS places (place TEXT PRIMARY KEY, lat REAL, lon REAL, kind TEXT, name TEXT, address TEXT, type TEXT, asked REAL, status TEXT, city TEXT, region TEXT, country TEXT)",
+    "CREATE TABLE IF NOT EXISTS years (year INTEGER PRIMARY KEY, etag TEXT, body BLOB, visits INTEGER, moves INTEGER, points INTEGER)",
+    "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)",
+    "CREATE INDEX IF NOT EXISTS visits_day ON visits (day)",
+    "CREATE INDEX IF NOT EXISTS visits_started ON visits (started)",
+    "CREATE INDEX IF NOT EXISTS visits_place ON visits (place)",
+    "CREATE INDEX IF NOT EXISTS moves_day ON moves (day)",
+    "CREATE INDEX IF NOT EXISTS moves_started ON moves (started)",
+    "CREATE INDEX IF NOT EXISTS paths_day ON paths (day)",
+    "CREATE INDEX IF NOT EXISTS paths_started ON paths (started)",
+)
+TIMELINE_TABLES = ("visits", "moves", "paths")
+
+# How Google has named ways of getting about, across the three exports ("IN_PASSENGER_VEHICLE",
+# "in passenger vehicle", "DRIVE"), as the app's handful. Looked up with any "IN_" taken off.
+TIMELINE_MODES = {
+    "WALKING": "walk", "WALK": "walk", "ON_FOOT": "walk", "HIKING": "walk", "RUNNING": "run", "RUN": "run",
+    "CYCLING": "cycle", "CYCLE": "cycle", "ON_BICYCLE": "cycle", "BICYCLE": "cycle",
+    "PASSENGER_VEHICLE": "drive", "VEHICLE": "drive", "ROAD_VEHICLE": "drive", "DRIVE": "drive", "DRIVING": "drive", "TAXI": "drive", "CAR": "drive",
+    "MOTORCYCLING": "motorcycle", "MOTORCYCLE": "motorcycle", "BUS": "bus", "TRAIN": "train", "RAIL_VEHICLE": "train",
+    "SUBWAY": "subway", "TRAM": "tram", "FLYING": "fly", "FLY": "fly", "PLANE": "fly",
+    "FERRY": "ferry", "SAILING": "boat", "BOATING": "boat", "BOAT": "boat", "SKIING": "ski", "SNOWBOARDING": "ski",
+}
+
+_timeline_sync_lock = threading.Lock()
+_timeline_google: dict[str, Any] = {"session": None, "account": None}
+_TIMELINE_NUMBER = re.compile(r"-?\d+(?:\.\d+)?")
+
+
+def json_items(stream: Any, chunk: int = 1 << 20):
+    """
+    A JSON document too large to hold, a piece at a time: `(key, element)` for every element of
+    an array one level into the top object, `(key, value)` for anything else there, and
+    `(None, element)` when the document is itself an array. [stream] is read as text.
+    """
+    decoder = json.JSONDecoder()
+    buffer, at, done = "", 0, False
+
+    def more() -> bool:
+        nonlocal buffer, at, done
+        piece = stream.read(chunk)
+        if not piece:
+            done = True
+            return False
+        buffer, at = buffer[at:] + piece, 0
+        return True
+
+    def peek() -> str:
+        """The next character that says something, without taking it; "" at the end."""
+        nonlocal at
+        while True:
+            while at < len(buffer) and buffer[at] in " \t\r\n,:":
+                at += 1
+            if at < len(buffer):
+                return buffer[at]
+            if not more():
+                return ""
+
+    def value() -> Any:
+        nonlocal at
+        while True:
+            try:
+                parsed, end = decoder.raw_decode(buffer, at)
+                # A number or a word that runs to the end of what has been read may go on.
+                if end < len(buffer) or done:
+                    at = end
+                    return parsed
+            except json.JSONDecodeError:
+                if done:
+                    raise
+            more()
+
+    first = peek()
+    if first == "[":
+        at += 1
+        while peek() not in ("]", ""):
+            yield None, value()
+        return
+    if first != "{":
+        return
+    at += 1
+    while peek() not in ("}", ""):
+        key = value()
+        if peek() != "[":
+            yield key, value()
+            continue
+        at += 1
+        while True:
+            following = peek()
+            if following == "]":
+                at += 1
+                break
+            if following == "":
+                return
+            yield key, value()
+
+
+def _polyline_number(value: int) -> str:
+    value = ~(value << 1) if value < 0 else value << 1
+    out = []
+    while value >= 0x20:
+        out.append(chr((0x20 | (value & 0x1F)) + 63))
+        value >>= 5
+    out.append(chr(value + 63))
+    return "".join(out)
+
+
+def polyline(points: list[tuple[float, float]]) -> str:
+    """Google's encoded polyline: each point as its difference from the last, to five decimal places (about a metre). The app's `Polyline.kt` reads it."""
+    out, last_lat, last_lon = [], 0, 0
+    for lat, lon in points:
+        a, b = round(lat * 1e5), round(lon * 1e5)
+        out.append(_polyline_number(a - last_lat))
+        out.append(_polyline_number(b - last_lon))
+        last_lat, last_lon = a, b
+    return "".join(out)
+
+
+def polyline_numbers(numbers: list[int]) -> str:
+    """Whole numbers the same way: each as its difference from the last. A path's times, in seconds."""
+    out, last = [], 0
+    for number in numbers:
+        out.append(_polyline_number(number - last))
+        last = number
+    return "".join(out)
+
+
+def _number(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def timeline_point(value: Any) -> tuple[float, float] | None:
+    """
+    A place on Earth however an export wrote it: "41.88°, -87.63°" (Android), "geo:41.88,-87.63"
+    (iPhone), an object holding either, or Takeout's `latitudeE7`/`lngE7` integers. None when it
+    isn't one (and 0, 0 isn't: it is what a missing fix is written as).
+    """
+    if isinstance(value, dict):
+        for lat_key, lon_key in (("latitudeE7", "longitudeE7"), ("latE7", "lngE7")):
+            if lat_key in value and lon_key in value:
+                lat, lon = _number(value[lat_key]) / 1e7, _number(value[lon_key]) / 1e7
+                break
+        else:
+            return timeline_point(value.get("latLng") or value.get("point"))
+    elif isinstance(value, str):
+        found = _TIMELINE_NUMBER.findall(value)
+        if len(found) < 2:
+            return None
+        lat, lon = float(found[0]), float(found[1])
+    else:
+        return None
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180) or (lat == 0 and lon == 0):
+        return None
+    return lat, lon
+
+
+def timeline_time(value: Any, zone: ZoneInfo | None = None) -> tuple[int, int] | None:
+    """
+    A moment as (epoch seconds, minutes ahead of UTC the clock on the wall was). The phone's export
+    writes the offset; Takeout writes UTC or milliseconds and says nothing of where the clock was,
+    so those take [zone]'s offset at that moment (the household's: right at home, an hour or more
+    out on a trip to another zone).
+    """
+    if value is None or value == "":
+        return None
+    text = str(value)
+    if isinstance(value, (int, float)) or text.isdigit():
+        epoch = float(value)
+        epoch, explicit = (epoch / 1000 if epoch > 1e11 else epoch), None
+    else:
+        try:
+            moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+        explicit = None if text.endswith("Z") or moment.tzinfo is None else moment.utcoffset()
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=timezone.utc)
+        epoch = moment.timestamp()
+    if explicit is None:
+        explicit = datetime.fromtimestamp(epoch, zone).utcoffset() if zone is not None else timedelta(0)
+    return int(epoch), int(explicit.total_seconds() // 60)
+
+
+def timeline_mode(value: Any) -> str:
+    key = re.sub(r"[^A-Z]+", "_", str(value or "").upper()).strip("_")
+    return TIMELINE_MODES.get(key.removeprefix("IN_"), "other")
+
+
+def timeline_kind(value: Any) -> str:
+    """Home, work, or anywhere else, from "HOME", "INFERRED_WORK", "TYPE_HOME" and the like."""
+    key = str(value or "").upper().removeprefix("TYPE_").removeprefix("INFERRED_")
+    return "home" if key == "HOME" else "work" if key == "WORK" else "other"
+
+
+def timeline_db(path: str | None = None) -> sqlite3.Connection:
+    """
+    A connection of the caller's own, to close when done. Write-ahead logging, so a phone can go on
+    fetching years while an export is being read in.
+    """
+    path = path or TIMELINE_DB
+    if os.path.dirname(path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    conn = sqlite3.connect(path, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    for statement in TIMELINE_SCHEMA:
+        conn.execute(statement)
+    conn.commit()
+    return conn
+
+
+def timeline_meta(conn: sqlite3.Connection, key: str) -> Any | None:
+    row = conn.execute("SELECT value FROM meta WHERE key=?", (key,)).fetchone()
+    return json.loads(row[0]) if row else None
+
+
+def timeline_meta_set(conn: sqlite3.Connection, key: str, value: Any) -> None:
+    conn.execute("INSERT OR REPLACE INTO meta VALUES (?,?)", (key, json.dumps(value)))
+    conn.commit()
+
+
+class TimelineStage:
+    """
+    The rows read from one export, held aside until the whole file has been read: a file that
+    turns out to be cut short then changes nothing (see `timeline_ingest`).
+    """
+
+    FLUSH = 5000
+
+    def __init__(self, conn: sqlite3.Connection, zone: ZoneInfo | None = None):
+        self.conn, self.zone = conn, zone
+        self.rows: dict[str, list[tuple]] = {table: [] for table in TIMELINE_TABLES}
+        self.counts = {"visits": 0, "moves": 0, "paths": 0, "points": 0}
+        # What the export itself says of a place: which is home and work, and (Takeout) its name.
+        self.kinds: dict[str, str] = {}
+        self.names: dict[str, tuple[str, str | None]] = {}
+        for table in TIMELINE_TABLES:
+            conn.execute(f"DROP TABLE IF EXISTS temp.new_{table}")
+            conn.execute(f"CREATE TEMP TABLE new_{table} AS SELECT * FROM {table} WHERE 0")
+
+    def visit(self, began: tuple[int, int], ended: tuple[int, int], at: tuple[float, float], place: Any, kind: str, p: float) -> None:
+        place = str(place) if place else None
+        self._add("visits", (began[0], ended[0], began[1], round(at[0], 6), round(at[1], 6), place, kind, round(p, 3), began[0] // 86400))
+        if place and kind != "other":
+            self.kinds[place] = kind
+
+    def move(self, began: tuple[int, int], ended: tuple[int, int], mode: str, a: tuple[float, float], b: tuple[float, float], metres: float) -> None:
+        if metres <= 0:
+            metres = haversine_metres(a, b)
+        self._add("moves", (began[0], ended[0], began[1], mode, round(a[0], 6), round(a[1], 6), round(b[0], 6), round(b[1], 6), round(metres, 1), began[0] // 86400))
+
+    def path(self, offset: int, points: list[tuple[int, float, float]]) -> None:
+        """[points] as (epoch seconds, latitude, longitude). Sorted here; two in a row at one spot are one."""
+        kept: list[tuple[int, float, float]] = []
+        for point in sorted(points):
+            if not kept or (round(point[1], 5), round(point[2], 5)) != (round(kept[-1][1], 5), round(kept[-1][2], 5)):
+                kept.append(point)
+        if len(kept) < 2:
+            return
+        started, ended = kept[0][0], kept[-1][0]
+        self._add("paths", (started, ended, offset, polyline([(p[1], p[2]) for p in kept]), polyline_numbers([p[0] - started for p in kept]), len(kept), started // 86400))
+        self.counts["points"] += len(kept)
+
+    def _add(self, table: str, row: tuple) -> None:
+        self.rows[table].append(row)
+        self.counts[table] += 1
+        if len(self.rows[table]) >= self.FLUSH:
+            self.flush(table)
+
+    def flush(self, table: str | None = None) -> None:
+        for name in (table,) if table else TIMELINE_TABLES:
+            rows, self.rows[name] = self.rows[name], []
+            if rows:
+                self.conn.executemany(f"INSERT INTO temp.new_{name} VALUES ({','.join('?' * len(rows[0]))})", rows)
+
+
+def timeline_phone_segment(segment: dict[str, Any], stage: TimelineStage) -> None:
+    """One entry of the phone's export: a visit, an activity, or a stretch of path."""
+    began, ended = timeline_time(segment.get("startTime"), stage.zone), timeline_time(segment.get("endTime"), stage.zone)
+    if began is None or ended is None or ended[0] < began[0]:
+        return
+    visit, activity, path = segment.get("visit"), segment.get("activity"), segment.get("timelinePath")
+    if isinstance(visit, dict):
+        # A shop inside the mall that is also a visit: the mall is the one that counts the time.
+        if _number(visit.get("hierarchyLevel")) > 0:
+            return
+        top = visit.get("topCandidate") if isinstance(visit.get("topCandidate"), dict) else {}
+        at = timeline_point(top.get("placeLocation"))
+        if at:
+            stage.visit(began, ended, at, top.get("placeId") or top.get("placeID"), timeline_kind(top.get("semanticType")), _number(top.get("probability")))
+    elif isinstance(activity, dict):
+        a, b = timeline_point(activity.get("start")), timeline_point(activity.get("end"))
+        top = activity.get("topCandidate") if isinstance(activity.get("topCandidate"), dict) else {}
+        if a and b:
+            stage.move(began, ended, timeline_mode(top.get("type")), a, b, _number(activity.get("distanceMeters")))
+    elif isinstance(path, list):
+        points = []
+        for entry in path:
+            if not isinstance(entry, dict):
+                continue
+            at, when = timeline_point(entry.get("point")), timeline_time(entry.get("time"), stage.zone)
+            # The iPhone writes minutes since the stretch began instead of a time.
+            seconds = when[0] if when else began[0] + int(60 * _number(entry.get("durationMinutesOffsetFromStartTime")))
+            if at:
+                points.append((seconds, at[0], at[1]))
+        stage.path(began[1], points)
+
+
+def _takeout_span(duration: Any, zone: ZoneInfo | None) -> tuple[tuple[int, int], tuple[int, int]] | None:
+    if not isinstance(duration, dict):
+        return None
+    began = timeline_time(duration.get("startTimestamp") or duration.get("startTimestampMs"), zone)
+    ended = timeline_time(duration.get("endTimestamp") or duration.get("endTimestampMs"), zone)
+    return (began, ended) if began and ended and ended[0] >= began[0] else None
+
+
+def timeline_takeout_object(item: dict[str, Any], stage: TimelineStage) -> None:
+    """One entry of Takeout's monthly Semantic Location History: a `placeVisit` or an `activitySegment`."""
+    visit, segment = item.get("placeVisit"), item.get("activitySegment")
+    if isinstance(visit, dict):
+        span = _takeout_span(visit.get("duration"), stage.zone)
+        location = visit.get("location") if isinstance(visit.get("location"), dict) else {}
+        at = timeline_point(location) or timeline_point({"latitudeE7": visit.get("centerLatE7"), "longitudeE7": visit.get("centerLngE7")})
+        if span is None or at is None:
+            return
+        confidence = {"HIGH_CONFIDENCE": 0.9, "MEDIUM_CONFIDENCE": 0.6, "LOW_CONFIDENCE": 0.3}.get(str(visit.get("placeConfidence")), _number(visit.get("visitConfidence")) / 100)
+        place = location.get("placeId")
+        stage.visit(span[0], span[1], at, place, timeline_kind(location.get("semanticType")), confidence)
+        if place and location.get("name"):
+            stage.names[str(place)] = (str(location["name"]), str(location["address"]).replace("\n", ", ") if location.get("address") else None)
+    elif isinstance(segment, dict):
+        span = _takeout_span(segment.get("duration"), stage.zone)
+        a, b = timeline_point(segment.get("startLocation")), timeline_point(segment.get("endLocation"))
+        if span is None or a is None or b is None:
+            return
+        began, ended = span
+        stage.move(began, ended, timeline_mode(segment.get("activityType")), a, b, _number(segment.get("distance")))
+        raw = (segment.get("simplifiedRawPath") or {}).get("points") if isinstance(segment.get("simplifiedRawPath"), dict) else None
+        points = [(began[0], a[0], a[1])]
+        if isinstance(raw, list) and raw:
+            for entry in raw:
+                at, when = timeline_point(entry), timeline_time(entry.get("timestamp") or entry.get("timestampMs"), stage.zone)
+                if at and when:
+                    points.append((when[0], at[0], at[1]))
+        else:
+            # Waypoints carry no times: spread evenly over the trip.
+            way = (segment.get("waypointPath") or {}).get("waypoints") if isinstance(segment.get("waypointPath"), dict) else None
+            found = [p for p in (timeline_point(w) for w in way or []) if p]
+            for i, at in enumerate(found):
+                points.append((began[0] + int((ended[0] - began[0]) * (i + 1) / (len(found) + 1)), at[0], at[1]))
+        points.append((ended[0], b[0], b[1]))
+        stage.path(began[1], points)
+
+
+class TimelineFixes:
+    """
+    Takeout's Records.json is every raw fix and nothing else, so the stays are found here: fixes
+    that keep within STAY_METRES of where they began for STAY_SECONDS are a visit, and what lies
+    between two visits is a move with its path. The fixes arrive in time order.
+    """
+
+    def __init__(self, stage: TimelineStage):
+        self.stage = stage
+        self.stay: list[tuple[int, float, float]] = []
+        self.trail: list[tuple[int, float, float]] = []
+        self.offset = 0
+
+    def add(self, item: dict[str, Any]) -> None:
+        at, when = timeline_point(item), timeline_time(item.get("timestamp") or item.get("timestampMs"), self.stage.zone)
+        if at is None or when is None or _number(item.get("accuracy")) > FIX_MAX_ACCURACY_METRES:
+            return
+        last = self.stay[-1] if self.stay else self.trail[-1] if self.trail else None
+        if last is not None and when[0] - last[0] > FIX_GAP_SECONDS:
+            self.finish()
+        elif self.stay and haversine_metres((self.stay[0][1], self.stay[0][2]), at) > STAY_METRES:
+            self._close()
+        self.offset = when[1]
+        self.stay.append((when[0], at[0], at[1]))
+
+    def _close(self) -> None:
+        stay, self.stay = self.stay, []
+        if not stay:
+            return
+        if stay[-1][0] - stay[0][0] < STAY_SECONDS:
+            self.trail.extend(stay)
+            return
+        centre = (sum(p[1] for p in stay) / len(stay), sum(p[2] for p in stay) / len(stay))
+        self._flush(self.trail + [stay[0]])
+        self.stage.visit((stay[0][0], self.offset), (stay[-1][0], self.offset), centre, None, "other", 0.0)
+        self.trail = [stay[-1]]
+
+    def _flush(self, trail: list[tuple[int, float, float]]) -> None:
+        if len(trail) < 2:
+            return
+        metres = sum(haversine_metres((a[1], a[2]), (b[1], b[2])) for a, b in zip(trail, trail[1:]))
+        if metres < STAY_METRES:
+            return
+        self.stage.move((trail[0][0], self.offset), (trail[-1][0], self.offset), "other", (trail[0][1], trail[0][2]), (trail[-1][1], trail[-1][2]), metres)
+        self.stage.path(self.offset, trail)
+
+    def finish(self) -> None:
+        self._close()
+        self._flush(self.trail)
+        self.trail = []
+
+
+def timeline_read(stream: Any, stage: TimelineStage) -> None:
+    """Reads one export of any of the three shapes into [stage]. A file that is none of them adds nothing."""
+    fixes = TimelineFixes(stage)
+    for key, item in json_items(stream):
+        if not isinstance(item, dict):
+            continue
+        if key is None or key == "semanticSegments":
+            timeline_phone_segment(item, stage)
+        elif key == "timelineObjects":
+            timeline_takeout_object(item, stage)
+        elif key == "locations":
+            fixes.add(item)
+        elif key == "userLocationProfile":
+            for place in item.get("frequentPlaces") or []:
+                if isinstance(place, dict) and place.get("placeId") and timeline_kind(place.get("label")) != "other":
+                    stage.kinds[str(place["placeId"])] = timeline_kind(place.get("label"))
+    fixes.finish()
+
+
+def timeline_read_file(path: str, stage: TimelineStage) -> None:
+    """An export, or a Takeout zip of them: every JSON file inside is read, and those that aren't Timeline add nothing."""
+    if zipfile.is_zipfile(path):
+        with zipfile.ZipFile(path) as archive:
+            for name in sorted(archive.namelist()):
+                if name.lower().endswith(".json"):
+                    with archive.open(name) as raw:
+                        timeline_read(io.TextIOWrapper(raw, encoding="utf-8-sig"), stage)
+    else:
+        with open(path, encoding="utf-8-sig") as f:
+            timeline_read(f, stage)
+
+
+def timeline_year_body(conn: sqlite3.Connection, year: int) -> dict[str, Any]:
+    """
+    One calendar year (UTC, by when each row began) as the app fetches it. Columns rather than
+    rows, a place as its index into `places`, and a path as two encoded strings: a year of a
+    busy life is about a megabyte this way.
+    """
+    span = (calendar.timegm((year, 1, 1, 0, 0, 0)), calendar.timegm((year + 1, 1, 1, 0, 0, 0)))
+    visits = conn.execute("SELECT started, ended, utc_offset, lat, lon, place, kind, p FROM visits WHERE started >= ? AND started < ? ORDER BY started, ended", span).fetchall()
+    moves = conn.execute("SELECT started, ended, utc_offset, mode, lat, lon, to_lat, to_lon, metres FROM moves WHERE started >= ? AND started < ? ORDER BY started, ended", span).fetchall()
+    paths = conn.execute("SELECT started, utc_offset, points, times, n FROM paths WHERE started >= ? AND started < ? ORDER BY started", span).fetchall()
+    places = sorted({v[5] for v in visits if v[5]})
+    index = {place: i for i, place in enumerate(places)}
+
+    def column(rows: list[tuple], i: int) -> list[Any]:
+        return [row[i] for row in rows]
+
+    return {
+        "year": year,
+        "places": places,
+        "visits": {
+            "started": column(visits, 0), "ended": column(visits, 1), "offset": column(visits, 2), "lat": column(visits, 3), "lon": column(visits, 4),
+            "place": [index.get(v[5], -1) for v in visits], "kind": column(visits, 6), "p": column(visits, 7),
+        },
+        "moves": {
+            "started": column(moves, 0), "ended": column(moves, 1), "offset": column(moves, 2), "mode": column(moves, 3), "lat": column(moves, 4),
+            "lon": column(moves, 5), "to_lat": column(moves, 6), "to_lon": column(moves, 7), "metres": column(moves, 8),
+        },
+        "paths": {"started": column(paths, 0), "offset": column(paths, 1), "points": column(paths, 2), "times": column(paths, 3), "count": column(paths, 4)},
+    }
+
+
+def timeline_rebuild_years(conn: sqlite3.Connection) -> list[int]:
+    """Writes each year's body again and says which changed. A year's `etag` is how a phone knows to fetch it."""
+    have = {row[0]: row[1] for row in conn.execute("SELECT year, etag FROM years")}
+    present = {
+        int(row[0]) for table in TIMELINE_TABLES
+        for row in conn.execute(f"SELECT DISTINCT strftime('%Y', started, 'unixepoch') FROM {table}") if row[0]
+    }
+    changed = []
+    for year in sorted(present):
+        body = timeline_year_body(conn, year)
+        text = json.dumps(body, separators=(",", ":")).encode()
+        etag = hashlib.sha1(text).hexdigest()[:16]
+        if have.get(year) != etag:
+            conn.execute(
+                "INSERT OR REPLACE INTO years VALUES (?,?,?,?,?,?)",
+                (year, etag, gzip.compress(text, mtime=0), len(body["visits"]["started"]), len(body["moves"]["started"]), sum(body["paths"]["count"])),
+            )
+            changed.append(year)
+    for year in set(have) - present:
+        conn.execute("DELETE FROM years WHERE year=?", (year,))
+        changed.append(year)
+    conn.commit()
+    return sorted(changed)
+
+
+def timeline_ingest(conn: sqlite3.Connection, stage: TimelineStage, now: float | None = None) -> dict[str, Any]:
+    """
+    Puts what [stage] read into the history, a day at a time: each day the export mentions is
+    dropped and written from it, and the rest are left as they were. One transaction, so a phone
+    never fetches half of it.
+    """
+    now = time.time() if now is None else now
+    stage.flush()
+    days = "SELECT day FROM temp.new_visits UNION SELECT day FROM temp.new_moves UNION SELECT day FROM temp.new_paths"
+    with conn:
+        day_count = conn.execute(f"SELECT COUNT(*) FROM ({days})").fetchone()[0]
+        for table in TIMELINE_TABLES:
+            conn.execute(f"DELETE FROM {table} WHERE day IN ({days})")
+            conn.execute(f"INSERT INTO {table} SELECT * FROM temp.new_{table}")
+        for table in TIMELINE_TABLES:
+            conn.execute(f"DROP TABLE temp.new_{table}")
+        conn.execute("INSERT OR IGNORE INTO places (place, lat, lon, kind) SELECT place, AVG(lat), AVG(lon), 'other' FROM visits WHERE place IS NOT NULL GROUP BY place")
+        # A place nobody goes to any more (a corrected visit) has nothing to show and no name worth paying for.
+        conn.execute("DELETE FROM places WHERE place NOT IN (SELECT place FROM visits WHERE place IS NOT NULL)")
+        for place, kind in stage.kinds.items():
+            conn.execute("UPDATE places SET kind=? WHERE place=?", (kind, place))
+        for place, (name, address) in stage.names.items():
+            # A name to go by until Google is asked: the lookup still happens, for the town and state.
+            conn.execute("UPDATE places SET name=?, address=? WHERE place=? AND name IS NULL", (name, address, place))
+    changed = timeline_rebuild_years(conn)
+    timeline_meta_set(conn, "places_version", int(timeline_meta(conn, "places_version") or 0) + 1)
+    return {**stage.counts, "days": day_count, "years_changed": changed}
+
+
+def timeline_import(path: str, source: dict[str, Any] | None = None, zone: ZoneInfo | None = None) -> dict[str, Any]:
+    """Reads the export at [path] into the history and remembers it as the file last read."""
+    began = time.time()
+    conn = timeline_db()
+    try:
+        stage = TimelineStage(conn, zone)
+        timeline_read_file(path, stage)
+        summary = timeline_ingest(conn, stage)
+        timeline_meta_set(conn, "file", {**(source or {"name": os.path.basename(path)}), "ingested_at": time.time(), **summary})
+    finally:
+        conn.close()
+    log.info("timeline: read %s in %.0fs: %s", (source or {}).get("name") or path, time.time() - began, summary)
+    return summary
+
+
+def timeline_account() -> str | None:
+    """Who the Drive folder is to be shared with: the key's `client_email`. None when there is no key to read."""
+    if _timeline_google["account"] is None:
+        try:
+            with open(TIMELINE_KEY, encoding="utf-8") as f:
+                _timeline_google["account"] = json.load(f).get("client_email")
+        except (OSError, ValueError):
+            return None
+    return _timeline_google["account"]
+
+
+def timeline_google() -> Any:
+    """The read-only Drive session, made on first use from TIMELINE_KEY."""
+    if _timeline_google["session"] is None:
+        if not os.path.exists(TIMELINE_KEY):
+            raise HTTPException(503, {"error": "no_key", "message": "The relay has no service-account key to read Drive with"})
+        try:
+            creds = service_account.Credentials.from_service_account_file(TIMELINE_KEY, scopes=[DRIVE_SCOPE])
+        except (ValueError, KeyError) as e:
+            raise HTTPException(503, {"error": "no_key", "message": "The relay's key isn't a service-account key"}) from e
+        _timeline_google["account"] = creds.service_account_email
+        _timeline_google["session"] = AuthorizedSession(creds)
+    return _timeline_google["session"]
+
+
+def timeline_newest_file(session: Any) -> dict[str, Any] | None:
+    """
+    The export most recently changed in the Drive folder, or None when it holds none. Raises
+    HTTPException with the app's setup problem when Google refuses (see `sheet_problem`).
+    """
+    account = timeline_account()
+    shared = {"supportsAllDrives": "true", "includeItemsFromAllDrives": "true"}
+    listing = session.get(DRIVE_API, params={
+        "q": f"'{TIMELINE_DRIVE_FOLDER}' in parents and trashed = false", "orderBy": "modifiedTime desc", "pageSize": 100,
+        "fields": "files(id,name,size,md5Checksum,modifiedTime)", **shared,
+    }, timeout=20)
+    if listing.status_code != 200:
+        raise HTTPException(*sheet_problem(listing.status_code, _google_json(listing), account))
+    for found in _google_json(listing).get("files", []):
+        if str(found.get("name", "")).lower().endswith((".json", ".zip")):
+            return found
+    # A folder the key can't see lists as empty rather than refused: asking for the folder itself tells them apart.
+    folder = session.get(f"{DRIVE_API}/{quote(TIMELINE_DRIVE_FOLDER, safe='')}", params={"fields": "id", **shared}, timeout=20)
+    if folder.status_code != 200:
+        status, detail = sheet_problem(folder.status_code, _google_json(folder), account)
+        if detail.get("error") == "not_found":
+            detail["error"] = "not_shared"
+        raise HTTPException(status, detail)
+    return None
+
+
+def timeline_download(session: Any, found: dict[str, Any], path: str) -> None:
+    """Fetches the file's bytes to [path], a megabyte at a time."""
+    answer = session.get(f"{DRIVE_API}/{quote(str(found['id']), safe='')}", params={"alt": "media", "supportsAllDrives": "true"}, stream=True, timeout=120)
+    if answer.status_code != 200:
+        raise HTTPException(*sheet_problem(answer.status_code, _google_json(answer), timeline_account()))
+    with open(path, "wb") as out:
+        for piece in answer.iter_content(1 << 20):
+            out.write(piece)
+
+
+def timeline_pull(now: float | None = None) -> dict[str, Any] | None:
+    """
+    Looks in the Drive folder and reads the newest export when it isn't the one already read.
+    What it read, or None when there was nothing new (or no folder, or a pull already running).
+    How it went is kept for `GET /timeline` either way.
+    """
+    if not TIMELINE_DRIVE_FOLDER or not _timeline_sync_lock.acquire(blocking=False):
+        return None
+    now = time.time() if now is None else now
+    status: dict[str, Any] = {"checked_at": now, "error": None}
+    summary = None
+    try:
+        conn = timeline_db()
+        try:
+            seen = timeline_meta(conn, "file") or {}
+        finally:
+            conn.close()
+        session = timeline_google()
+        found = timeline_newest_file(session)
+        if found is None:
+            status.update(error="empty", message="The Drive folder has no Timeline export in it yet")
+        else:
+            stamp = [found.get("id"), found.get("md5Checksum"), found.get("modifiedTime")]
+            status["found"] = found.get("name")
+            if seen.get("stamp") != stamp:
+                path = os.path.join(os.path.dirname(TIMELINE_DB) or ".", "timeline-incoming")
+                try:
+                    timeline_download(session, found, path)
+                    summary = timeline_import(path, {"name": found.get("name"), "modified": found.get("modifiedTime"), "size": int(_number(found.get("size"))), "stamp": stamp}, household_zone())
+                finally:
+                    if os.path.exists(path):
+                        os.remove(path)
+    except HTTPException as e:
+        detail = e.detail if isinstance(e.detail, dict) else {"error": "google_error", "message": str(e.detail)}
+        log.warning("timeline: Drive unavailable (%s): %s", e.status_code, detail.get("error"))
+        status.update(error=detail.get("error"), message=detail.get("message"), activation_url=detail.get("activation_url"))
+    except Exception as e:
+        log.exception("timeline: couldn't read the export")
+        status.update(error="failed", message=f"Couldn't read the export: {type(e).__name__}")
+    finally:
+        _timeline_sync_lock.release()
+    conn = timeline_db()
+    try:
+        timeline_meta_set(conn, "drive", status)
+    finally:
+        conn.close()
+    return summary
+
+
+def timeline_place_lookup(place: str) -> tuple[int, dict[str, Any]]:
+    """Asks Google what a place id is. The status, and the body when it is JSON."""
+    answer = requests.get(
+        f"{PLACES_API}/{quote(place, safe='')}", params={"languageCode": "en"},
+        headers={"X-Goog-Api-Key": TIMELINE_PLACES_KEY, "X-Goog-FieldMask": PLACES_FIELDS}, timeout=10,
+    )
+    body = _google_json(answer)
+    return answer.status_code, body if isinstance(body, dict) else {}
+
+
+def place_locality(components: Any) -> tuple[str | None, str | None, str | None]:
+    """
+    The town, the state or province (its short form, "IL") and the country (its code, "US") from a
+    place's `addressComponents`. A place with no `locality` (much of the UK, the countryside) goes
+    by the next thing down that names where it is.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for part in components if isinstance(components, list) else []:
+        if isinstance(part, dict):
+            for kind in part.get("types") or []:
+                found.setdefault(str(kind), part)
+    city = next((found[k].get("longText") for k in ("locality", "postal_town", "sublocality", "administrative_area_level_3", "administrative_area_level_2") if k in found), None)
+    region = found.get("administrative_area_level_1", {}).get("shortText")
+    country = found.get("country", {}).get("shortText")
+    return city, region, country
+
+
+def timeline_month(now: float) -> str:
+    return time.strftime("%Y-%m", time.gmtime(now))
+
+
+def timeline_name_places(now: float | None = None, limit: int = TIMELINE_PLACES_PER_RUN, pause: float = 0.05) -> int:
+    """
+    Names places that have never been asked about, the ones most time was spent at first, until
+    [limit] or the month's allowance runs out. Each is asked once: a place Google no longer knows
+    is marked gone and not asked again. How many it named.
+    """
+    if not TIMELINE_PLACES_KEY:
+        return 0
+    now = time.time() if now is None else now
+    conn = timeline_db()
+    try:
+        asked = timeline_meta(conn, "asked") or {}
+        if asked.get("month") != timeline_month(now):
+            asked = {"month": timeline_month(now), "count": 0}
+        room = min(limit, TIMELINE_PLACES_MONTHLY - int(asked.get("count") or 0))
+        if room <= 0:
+            return 0
+        wanted = [row[0] for row in conn.execute(
+            "SELECT p.place FROM places p LEFT JOIN (SELECT place, SUM(ended - started) AS spent FROM visits GROUP BY place) v ON v.place = p.place"
+            " WHERE p.asked IS NULL ORDER BY v.spent DESC LIMIT ?", (room,),
+        )]
+        named, error = 0, None
+        for place in wanted:
+            try:
+                status, body = timeline_place_lookup(place)
+            except Exception as e:
+                error = {"error": "google_error", "message": f"Couldn't reach Google: {type(e).__name__}"}
+                break
+            asked["count"] = int(asked.get("count") or 0) + 1
+            if status == 200:
+                display = body.get("displayName") if isinstance(body.get("displayName"), dict) else {}
+                kinds = body.get("types") if isinstance(body.get("types"), list) else []
+                conn.execute(
+                    "UPDATE places SET name=COALESCE(?, name), address=COALESCE(?, address), type=?, asked=?, status='ok', city=?, region=?, country=? WHERE place=?",
+                    (display.get("text"), body.get("shortFormattedAddress") or body.get("formattedAddress"), body.get("primaryType") or (kinds[0] if kinds else None), now,
+                     *place_locality(body.get("addressComponents")), place),
+                )
+                named += 1
+            elif status in (400, 404):
+                # An id Google has retired. The visit keeps its spot on the map and goes by its town.
+                conn.execute("UPDATE places SET asked=?, status='gone' WHERE place=?", (now, place))
+            else:
+                problem = body.get("error") if isinstance(body.get("error"), dict) else {}
+                error = {"error": "api_disabled" if status == 403 else "google_error", "message": str(problem.get("message") or f"Google answered {status}")}
+                break
+            if pause:
+                time.sleep(pause)
+        conn.commit()
+        timeline_meta_set(conn, "asked", asked)
+        timeline_meta_set(conn, "naming", {"at": now, **(error or {"error": None})})
+        if named:
+            timeline_meta_set(conn, "places_version", int(timeline_meta(conn, "places_version") or 0) + 1)
+        if error:
+            log.warning("timeline: place names unavailable: %s", error["message"])
+        return named
+    finally:
+        conn.close()
+
+
+def timeline_forever() -> None:
+    """Every TIMELINE_CHECK_SECONDS: a look in the Drive folder, then some more places named."""
+    time.sleep(30)
+    while True:
+        try:
+            timeline_pull()
+            timeline_name_places()
+        except Exception:
+            log.exception("timeline: check failed")
+        time.sleep(TIMELINE_CHECK_SECONDS)
+
+
+def timeline_manifest(conn: sqlite3.Connection, now: float | None = None) -> dict[str, Any]:
+    """What the app asks first: which years there are and each one's `etag`, how far the names have got, and how the last look in Drive went."""
+    now = time.time() if now is None else now
+    years = [
+        {"year": year, "etag": etag, "visits": visits, "moves": moves, "points": points, "bytes": size}
+        for year, etag, visits, moves, points, size in conn.execute("SELECT year, etag, visits, moves, points, LENGTH(body) FROM years ORDER BY year")
+    ]
+    first, last = conn.execute("SELECT MIN(started), MAX(ended) FROM (SELECT started, ended FROM visits UNION ALL SELECT started, ended FROM moves)").fetchone()
+    total, named, gone = conn.execute("SELECT COUNT(*), COUNT(name), SUM(status = 'gone') FROM places").fetchone()
+    asked = timeline_meta(conn, "asked") or {}
+    naming = timeline_meta(conn, "naming") or {}
+    drive = timeline_meta(conn, "drive") or {}
+    source = timeline_meta(conn, "file") or {}
+    return {
+        "years": years,
+        "first": first,
+        "last": last,
+        "places": {"version": int(timeline_meta(conn, "places_version") or 0), "total": total, "named": named, "gone": int(gone or 0)},
+        "file": {key: source.get(key) for key in ("name", "modified", "size", "ingested_at", "visits", "moves", "points", "days")} if source else None,
+        "drive": {
+            "configured": bool(TIMELINE_DRIVE_FOLDER), "service_account": timeline_account(), "checked_at": drive.get("checked_at"),
+            "error": drive.get("error"), "message": drive.get("message"), "activation_url": drive.get("activation_url"),
+            "next_check_at": (drive.get("checked_at") or now) + TIMELINE_CHECK_SECONDS if TIMELINE_DRIVE_FOLDER else None,
+        },
+        "naming": {
+            "configured": bool(TIMELINE_PLACES_KEY), "error": naming.get("error"), "message": naming.get("message"),
+            "asked_this_month": int(asked.get("count") or 0) if asked.get("month") == timeline_month(now) else 0, "monthly_cap": TIMELINE_PLACES_MONTHLY,
+        },
+        "syncing": _timeline_sync_lock.locked(),
+    }
+
+
+def timeline_may_read(profile: dict[str, Any]) -> bool:
+    """Whether Frigate's `/api/profile` answer is someone allowed the timeline: a listed user, or with no list an admin."""
+    if TIMELINE_USERS:
+        return str(profile.get("username", "")) in TIMELINE_USERS
+    return profile.get("role") == "admin"
+
+
+def require_timeline_user(request: Request) -> str:
+    """A signed-in Frigate user who may read the timeline (see "timeline"); their username."""
+    profile = frigate_profile(request)
+    if profile is None:
+        raise HTTPException(status_code=401, detail="Frigate session required")
+    if not timeline_may_read(profile):
+        raise HTTPException(403, {"error": "not_allowed", "message": "This account can't see the timeline"})
+    return str(profile.get("username", "?"))
+
+
+@app.get("/timeline")
+def get_timeline(request: Request, response: Response) -> dict[str, Any]:
+    """The timeline's years and how its upkeep is going (see "timeline"). A Frigate admin, or a user in TIMELINE_USERS."""
+    response.headers["Cache-Control"] = TIMELINE_CACHE_CONTROL
+    require_timeline_user(request)
+    conn = timeline_db()
+    try:
+        return timeline_manifest(conn)
+    finally:
+        conn.close()
+
+
+@app.get("/timeline/year/{year}")
+def get_timeline_year(year: int, request: Request) -> Response:
+    """One year's visits, moves and paths (see `timeline_year_body`), gzipped for a caller that says it reads gzip."""
+    require_timeline_user(request)
+    conn = timeline_db()
+    try:
+        row = conn.execute("SELECT etag, body FROM years WHERE year=?", (year,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise HTTPException(status_code=404, detail="No such year")
+    headers = {"Cache-Control": TIMELINE_CACHE_CONTROL, "ETag": f'"{row[0]}"'}
+    if "gzip" in (request.headers.get("accept-encoding") or "").lower():
+        return Response(content=bytes(row[1]), media_type="application/json", headers={**headers, "Content-Encoding": "gzip"})
+    return Response(content=gzip.decompress(row[1]), media_type="application/json", headers=headers)
+
+
+@app.get("/timeline/places")
+def get_timeline_places(request: Request, response: Response) -> dict[str, Any]:
+    """Every place visited, with the name Google gave it once asked. `version` is the manifest's, so the app fetches this only when it moved."""
+    response.headers["Cache-Control"] = TIMELINE_CACHE_CONTROL
+    require_timeline_user(request)
+    conn = timeline_db()
+    try:
+        return {
+            "version": int(timeline_meta(conn, "places_version") or 0),
+            "places": [
+                {"id": place, "lat": round(lat, 6), "lon": round(lon, 6), "kind": kind, "name": name, "address": address, "type": kind_of, "city": city, "region": region, "country": country}
+                for place, lat, lon, kind, name, address, kind_of, city, region, country in conn.execute(
+                    "SELECT place, lat, lon, kind, name, address, type, city, region, country FROM places ORDER BY place")
+            ],
+        }
+    finally:
+        conn.close()
+
+
+def timeline_check_now() -> None:
+    timeline_pull()
+    timeline_name_places()
+
+
+@app.post("/timeline/sync")
+def post_timeline_sync(request: Request, response: Response) -> dict[str, Any]:
+    """Looks in the Drive folder now rather than at the next check. Answers at once with the manifest; `syncing` says a read is under way."""
+    response.headers["Cache-Control"] = TIMELINE_CACHE_CONTROL
+    require_timeline_user(request)
+    if TIMELINE_DRIVE_FOLDER and not _timeline_sync_lock.locked():
+        threading.Thread(target=timeline_check_now, name="timeline-sync-now", daemon=True).start()
+    conn = timeline_db()
+    try:
+        return timeline_manifest(conn)
+    finally:
+        conn.close()
+
+
 if __name__ == "__main__":
-    # `python relay.py tesla-register` / `tesla-link`, run in the relay's container.
+    # `python relay.py tesla-register` / `tesla-link` / `timeline-import FILE` / `timeline-pull`,
+    # run in the relay's container.
     import sys
 
     CONN = db()
     command = sys.argv[1] if len(sys.argv) > 1 else ""
+    if command == "timeline-import" and len(sys.argv) > 2:
+        # An export copied to the box by hand, for a first load before the Drive folder is set up.
+        print(json.dumps(timeline_import(sys.argv[2], zone=household_zone()), indent=2))
+        sys.exit(0)
+    if command == "timeline-pull":
+        print(json.dumps({"read": timeline_pull(), "named": timeline_name_places()}, indent=2))
+        sys.exit(0)
     if not tesla_on():
         sys.exit("Set TESLA_CLIENT_ID, TESLA_CLIENT_SECRET and TESLA_PUBLIC_URL first (tesla.env).")
     if command == "tesla-register":
@@ -8108,4 +9053,4 @@ if __name__ == "__main__":
     elif command == "tesla-link":
         print(f"Open within {TESLA_LINK_SECONDS // 60} minutes, signed in as the Tesla account that owns the car:\n\n{tesla_link_url()}")
     else:
-        sys.exit("usage: python relay.py tesla-register | tesla-link")
+        sys.exit("usage: python relay.py tesla-register | tesla-link | timeline-import FILE | timeline-pull")

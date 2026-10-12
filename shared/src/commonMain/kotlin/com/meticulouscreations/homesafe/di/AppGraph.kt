@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.Platform
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.data.AtlasDao
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
@@ -16,6 +17,7 @@ import com.meticulouscreations.homesafe.data.PushedAlertMedia
 import com.meticulouscreations.homesafe.data.SettingsDao
 import com.meticulouscreations.homesafe.data.WeatherDao
 import com.meticulouscreations.homesafe.data.createAlertNotifier
+import com.meticulouscreations.homesafe.data.createAtlasDao
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
@@ -192,6 +194,12 @@ interface AppGraph : ViewModelGraph {
     @Provides
     fun provideFinanceSavedDao(platformContext: PlatformContext): FinanceSavedDao =
         createFinanceSavedDao(platformContext)
+
+    /** The atlas app's copy of the location history, for opening on without a connection. */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideAtlasDao(platformContext: PlatformContext): AtlasDao =
+        createAtlasDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides
