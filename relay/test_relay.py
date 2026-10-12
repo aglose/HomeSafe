@@ -5434,6 +5434,21 @@ class TimelineExports(_TimelineDb):
         self.assertEqual(relay.polyline([HOME, (40.02, -89.01), WORK]), points)
         self.assertEqual(relay.polyline_numbers([0, 600, 1800]), times)
 
+    def test_the_clock_on_the_wall_is_the_offset_field_not_the_one_the_time_is_written_in(self):
+        # Lived on Eastern time, exported from a phone now on Pacific: every time is written at
+        # -07:00, and the field says where the clock was.
+        t = DAY1 + 6 * 3600
+        eastern, pacific = -240, -420
+        visit = android_visit(t, t + 3600, HOME, "ChIJhome", "HOME", offset=pacific)
+        visit["startTimeTimezoneUtcOffsetMinutes"] = visit["endTimeTimezoneUtcOffsetMinutes"] = eastern
+        drive = android_activity(t + 3600, t + 5400, HOME, WORK, offset=pacific)
+        drive["startTimeTimezoneUtcOffsetMinutes"] = eastern
+        self.read({"semanticSegments": [visit, drive, android_path(t + 3600, [(0, *HOME), (1800, *WORK)], offset=pacific)]})
+        self.assertEqual([(t, eastern)], self.rows("SELECT started, utc_offset FROM visits"))
+        self.assertEqual([(t + 3600, eastern)], self.rows("SELECT started, utc_offset FROM moves"))
+        # A stretch of path says nothing of its own: it takes the journey's it lies beside.
+        self.assertEqual([(t + 3600, eastern)], self.rows("SELECT started, utc_offset FROM paths"))
+
     def test_the_iphones_export_is_a_bare_array_of_the_same(self):
         t = DAY1 + 6 * 3600
         export = [
@@ -5785,6 +5800,21 @@ class TimelinePull(_TimelineDb):
         self.drive.files = [{**self.FILE, "md5Checksum": "def", "modifiedTime": "2026-10-08T10:00:00.000Z"}]
         self.assertIsNotNone(relay.timeline_pull(now=4100.0))
         self.assertEqual(2, self.drive.downloads)
+
+    def test_a_file_still_being_sent_is_not_read_until_it_has_arrived(self):
+        # Drive lists the file as soon as the phone starts sending it, with nothing in it yet.
+        self.drive.files = [{**self.FILE, "size": "0", "md5Checksum": "empty"}]
+        self.assertIsNone(relay.timeline_pull(now=4000.0))
+        self.assertEqual((0, "empty"), (self.drive.downloads, self.status()["error"]))
+        self.drive.files = [self.FILE]
+        self.assertEqual(3, relay.timeline_pull(now=4100.0)["visits"])
+
+    def test_the_same_export_can_be_read_again_when_asked(self):
+        relay.timeline_pull(now=4000.0)
+        self.assertIsNone(relay.timeline_pull(now=4100.0))
+        again = relay.timeline_pull(now=4200.0, again=True)
+        self.assertEqual((3, 2), (again["visits"], self.drive.downloads))
+        self.assertEqual(3, self.rows("SELECT COUNT(*) FROM visits")[0][0])
 
     def test_an_empty_folder_says_so(self):
         self.drive.files = [{"id": "n1", "name": "notes.txt"}]
