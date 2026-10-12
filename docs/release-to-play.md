@@ -147,6 +147,15 @@ one that only goes up.
   `cancel-in-progress: true`, so a second push to `main` cancels the first run — including a
   publish that is mid-upload. The newer commit publishes instead, which is usually what you want,
   but it means a versionCode can be skipped.
+- **A red run on `main` is tried again, once.** Nothing is published from a red run, and on `main`
+  red has usually been the runner rather than the code. `ci-retry.yml` reruns the failed jobs of
+  such a run if its commit is still the newest (see
+  [testing.md](testing.md#when-ci-goes-red-on-main)); when they pass, the publish follows with the
+  versionCode the run always had.
+- **The upload itself is tried twice.** Play's API sometimes answers "The service is currently
+  unavailable"; the job waits a minute and uploads again. If the first try did reach Play before
+  failing, the second is refused because that versionCode is taken, and the job goes red although
+  the build is on the track: check Play before rerunning.
 - **A debug-signed bundle can never be uploaded.** `-PrequireReleaseSigning=true` makes the
   build fail rather than fall back to the debug key. Local builds keep the old lenient behaviour.
 - **Testing a change to the publish job.** It only runs on `push` to `main`, so a PR will not

@@ -1,0 +1,61 @@
+name: Retry CI on main
+
+# A commit on main has been through ci-green once already, on its pull request. When main's own
+# run of that same code goes red, it has nearly always been the machinery and not the code: an
+# emulator that was still booting, a full disk on the Mac, a compiler daemon out of memory, Play
+# answering "unavailable". And a red run on main publishes nothing, so the merge stays off the
+# phone until something else is merged after it.
+#
+# So the failed jobs of such a run are started once more, and ci-green and the publish job follow
+# them. Once only: a second failure stays red for a person to read, and the first attempt's logs
+# stay on the run beside the second's.
+#
+# Only main, and only its tip. A pull request's red run is left alone, since there a failure is
+# as likely to be the change itself. And a run whose commit is no longer main's newest is left
+# too: the newer commit's run is the one that ships, and CI's concurrency group would have this
+# rerun cancel it.
+#
+# Like "Dependency updates", this is a workflow_run workflow so that it is always the copy on
+# main, with a token that may restart a run. It checks nothing out and runs nothing from the
+# run it restarts.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  rerun:
+    name: Rerun the failed jobs once
+    if: >-
+      github.event.workflow_run.conclusion == 'failure'
+      && github.event.workflow_run.run_attempt == 1
+      && github.event.workflow_run.head_branch == github.event.repository.default_branch
+      && (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write # rerun CI
+    steps:
+      - name: Rerun them, if this is still main's newest commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          tip=$(gh api "repos/$GITHUB_REPOSITORY/commits/$DEFAULT_BRANCH" --jq .sha)
+          if [ "$tip" != "$HEAD_SHA" ]; then
+            echo "::notice::$DEFAULT_BRANCH has moved on from ${HEAD_SHA:0:7} to ${tip:0:7}, whose own run will publish; nothing rerun."
+            exit 0
+          fi
+          echo "Failed in the first attempt of $RUN_URL:"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/attempts/1/jobs" --paginate \
+            --jq '.jobs[] | select(.conclusion == "failure" and .name != "ci-green") | "- \(.name)"' | tee -a "$GITHUB_STEP_SUMMARY"
+          gh run rerun "$RUN_ID" --repo "$GITHUB_REPOSITORY" --failed
+          echo "::notice::Rerunning the failed jobs of CI run $RUN_ID on ${HEAD_SHA:0:7}."

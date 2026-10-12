@@ -447,6 +447,27 @@ jobs:
         with:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
+      # The Mac's disk is shared with everything else done on it, and when it fills, this job is
+      # where it shows: the two links below each write a few gigabytes, and both have failed on
+      # main with nothing but "ld: write() failed, errno=28". Under 15 GB free, what this runner
+      # can rebuild is cleared first (Xcode's derived data and the simulators' caches; ~/.konan
+      # and Gradle's caches are left, they are the slow ones to get back). Under 8 GB after that,
+      # the job stops here and says so, instead of twenty minutes later as a linker error.
+      - name: Check the Mac has room to link
+        if: runner.environment == 'self-hosted'
+        run: |
+          free_gb() { df -g "$HOME" | awk 'NR == 2 { print $4 }'; }
+          echo "$(free_gb) GB free on the disk holding $HOME."
+          if [ "$(free_gb)" -lt 15 ]; then
+            echo "::warning::Only $(free_gb) GB free on the Mac; clearing this runner's Xcode derived data and simulator caches."
+            rm -rf "$HOME/Library/Developer/Xcode/DerivedData" "$HOME/Library/Developer/CoreSimulator/Caches"
+            echo "$(free_gb) GB free afterwards."
+          fi
+          if [ "$(free_gb)" -lt 8 ]; then
+            echo "::error::The Mac that runs this job has $(free_gb) GB of disk left, too little to link the iOS tests and app. Free some space on it and run this job again."
+            exit 1
+          fi
+
       - name: iOS simulator unit tests
         run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
 
@@ -599,7 +620,14 @@ jobs:
           } | head -c 500 > build/whatsnew/whatsnew-en-US
           cat build/whatsnew/whatsnew-en-US
 
+      # Play's API now and then answers "The service is currently unavailable" within a second, and
+      # that alone has kept a green build off the phone. So a failed upload is made once more a
+      # minute later; an upload Play refuses for a reason of its own is refused again, and that
+      # second answer is the one that fails the job. The two steps take the same inputs: change
+      # them together.
       - name: Upload to the internal track
+        id: upload
+        continue-on-error: true
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
@@ -608,6 +636,20 @@ jobs:
           track: internal
           status: completed
           # Lets Play deobfuscate R8-minified stack traces from testers' crash reports.
+          mappingFile: androidApp/build/outputs/mapping/release/mapping.txt
+          whatsNewDirectory: build/whatsnew
+      - name: Wait a minute before uploading again
+        if: steps.upload.outcome == 'failure'
+        run: sleep 60
+      - name: Upload to the internal track, second try
+        if: steps.upload.outcome == 'failure'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.meticulouscreations.homesafe
+          releaseFiles: androidApp/build/outputs/bundle/release/androidApp-release.aab
+          track: internal
+          status: completed
           mappingFile: androidApp/build/outputs/mapping/release/mapping.txt
           whatsNewDirectory: build/whatsnew
 
