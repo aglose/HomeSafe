@@ -1,11 +1,11 @@
 package com.meticulouscreations.homesafe.atlas.ui
 
 import androidx.compose.animation.core.AnimationState
-import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.DecayAnimationSpec
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.tween
@@ -266,7 +266,11 @@ private class MarkerShapes(val markers: List<MapMarker>, val radius: FloatArray,
 /** How far east of the camera's middle [x] is, the short way round the world. */
 private fun MapCamera.east(x: Double): Double {
     val dx = x - centerX
-    return if (dx > 0.5) dx - 1.0 else if (dx < -0.5) dx + 1.0 else dx
+    return when {
+        dx > 0.5 -> dx - 1.0
+        dx < -0.5 -> dx + 1.0
+        else -> dx
+    }
 }
 
 /**

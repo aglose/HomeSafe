@@ -150,9 +150,18 @@ class HeatRaster(val size: Int, val apron: Int) {
         for (i in 0 until ends.size / 4) {
             // The short way round the world, and again a world over, for the one that crosses the date line.
             var toX = ends[4 * i + 2]
-            if (toX - ends[4 * i] > 0.5) toX -= 1.0 else if (toX - ends[4 * i] < -0.5) toX += 1.0
+            if (toX - ends[4 * i] > 0.5) {
+                toX -= 1.0
+            } else if (toX - ends[4 * i] < -0.5) {
+                toX += 1.0
+            }
             for (turn in 0..1) {
-                val shift = if (turn == 0) 0.0 else if (toX < 0.0) 1.0 else if (toX > 1.0) -1.0 else break
+                val shift = when {
+                    turn == 0 -> 0.0
+                    toX < 0.0 -> 1.0
+                    toX > 1.0 -> -1.0
+                    else -> break
+                }
                 val ax = ((ends[4 * i] + shift - originX) * scale).toFloat() + apron
                 val ay = ((ends[4 * i + 1] - originY) * scale).toFloat() + apron
                 val bx = ((toX + shift - originX) * scale).toFloat() + apron
