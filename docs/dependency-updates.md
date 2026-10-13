@@ -31,6 +31,12 @@ Not updated, because Dependabot can't read them: the go2rtc build CI downloads
 (`scripts/ci/go2rtc-testsrc.sh`, pinned with a checksum), the iOS app's WebRTC Swift package (it
 is in the Xcode project, with no `Package.swift`), and anything installed at `latest`.
 
+One library is left out on purpose (`ignore` in `dependabot.yml`): `material3` is never proposed a
+new minor version. It is numbered after the Compose it is built for and is still an alpha, so the
+next one is on offer while `composeMultiplatform` stays on the stable release, and taking it
+brings that whole alpha Compose in over the pinned version (1.13.0-alpha01 did, and broke the iOS
+weather notification's painting). Move it by hand when `composeMultiplatform` moves.
+
 A relay update that merges changes nothing on the box until the relay is next deployed. CI's
 **Relay and CI scripts** job is what tries it first: it builds the image and imports `relay.py`
 against the packages that were installed.
