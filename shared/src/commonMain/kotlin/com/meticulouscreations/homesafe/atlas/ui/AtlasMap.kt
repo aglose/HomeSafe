@@ -1,11 +1,23 @@
 package com.meticulouscreations.homesafe.atlas.ui
 
+import androidx.compose.animation.core.AnimationState
+import androidx.compose.animation.core.DecayAnimationSpec
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateDecay
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.rememberSplineBasedDecay
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateCentroid
+import androidx.compose.foundation.gestures.calculateCentroidSize
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -21,25 +33,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.FilterQuality
-import androidx.compose.ui.graphics.Paint
-import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PointMode
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.IntOffset
@@ -47,7 +65,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.atlas.AtlasPaths
-import com.meticulouscreations.homesafe.atlas.domain.AtlasDensity
 import com.meticulouscreations.homesafe.atlas.domain.Move
 import com.meticulouscreations.homesafe.atlas.domain.Track
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
@@ -62,15 +79,18 @@ import com.meticulouscreations.homesafe.weather.ui.radar.baseTileUrl
 import com.meticulouscreations.homesafe.weather.ui.shader.MAP_NIGHT_SHADER
 import com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock
 import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import kotlin.math.exp
+import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 internal const val ATLAS_MIN_ZOOM = 2.5
 internal const val ATLAS_MAX_ZOOM = 17.0
@@ -112,7 +132,12 @@ data class MapBounds(val south: Double, val west: Double, val north: Double, val
 @Immutable
 data class MapMarker(val key: String, val latitude: Double, val longitude: Double, val role: VisitRole, val weight: Float, val label: String? = null)
 
-/** Where an atlas map is looking. Held by the screen, so the map can be told to go somewhere ([show]). */
+/**
+ * Where an atlas map is looking. Held by the screen, so the map can be told to go somewhere
+ * ([show]) and so that where it was left is where it is found. Everything that moves the map by
+ * itself (a glide, a zoom from a button or a double tap, the run-on after a flick) goes through
+ * here, one at a time, and a finger put down stops it ([halt]).
+ */
 @Stable
 internal class AtlasMapState(camera: MapCamera = MapCamera(0.25, 0.38, 3.5)) {
     var camera by mutableStateOf(camera)
@@ -123,6 +148,15 @@ internal class AtlasMapState(camera: MapCamera = MapCamera(0.25, 0.38, 3.5)) {
     var pendingGlide by mutableStateOf(false)
         private set
 
+    /** Where the map is travelling to by itself, while it is: what is wanted there can be got ready before it lands. */
+    var destination by mutableStateOf<MapCamera?>(null)
+        private set
+
+    /** What the screen last opened the map on, for one that sends it somewhere once and not again each time it comes back. */
+    var openedOn: Any? = null
+
+    private var motion: Job? = null
+
     /** Turns the map to hold [bounds] with room round it; with [glide], by travelling there. */
     fun show(bounds: MapBounds, glide: Boolean = false) {
         pending = bounds
@@ -131,6 +165,72 @@ internal class AtlasMapState(camera: MapCamera = MapCamera(0.25, 0.38, 3.5)) {
 
     fun shown() {
         pending = null
+    }
+
+    /** Stops the map where it is: a finger has it now. */
+    fun halt() {
+        motion?.cancel()
+        motion = null
+        destination = null
+    }
+
+    private fun move(scope: CoroutineScope, target: MapCamera?, block: suspend () -> Unit) {
+        halt()
+        destination = target
+        lateinit var job: Job
+        job = scope.launch {
+            try {
+                block()
+            } finally {
+                // Only its own: a move that took over has said where it is going.
+                if (motion === job) {
+                    motion = null
+                    destination = null
+                }
+            }
+        }
+        if (job.isActive) motion = job else destination = null
+    }
+
+    /** Travels to [target] over [millis]: by default straight there, or along whatever [at] gives for each share of the way. */
+    fun travel(scope: CoroutineScope, target: MapCamera, millis: Int = GLIDE_MS, easing: Easing = FastOutSlowInEasing, at: ((Float) -> MapCamera)? = null) {
+        val from = camera
+        move(scope, target) {
+            animate(0f, 1f, animationSpec = tween(millis, easing = easing)) { t, _ ->
+                camera = at?.invoke(t) ?: MapCamera(from.centerX + (target.centerX - from.centerX) * t, from.centerY + (target.centerY - from.centerY) * t, from.zoom + (target.zoom - from.zoom) * t)
+            }
+            camera = target
+        }
+    }
+
+    /** Zooms by [factor] about a point of the screen ([focusX], [focusY], from the view's middle), which stays where it is throughout. */
+    fun zoomBy(scope: CoroutineScope, factor: Float, focusX: Float, focusY: Float, tilePx: Float) {
+        // From where a zoom still under way was heading, so two quick taps are two steps.
+        val start = destination ?: camera
+        val target = start.zoomed(factor, focusX, focusY, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM)
+        if (target == start) return
+        val from = camera
+        val whole = target.zoom - from.zoom
+        travel(scope, target, ZOOM_MS, LinearOutSlowInEasing) { t ->
+            if (from === start) from.zoomed(2f.pow((whole * t).toFloat()), focusX, focusY, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM) else MapCamera(from.centerX + (target.centerX - from.centerX) * t, from.centerY + (target.centerY - from.centerY) * t, from.zoom + whole * t)
+        }
+    }
+
+    /** Lets the map run on from a flick at [velocity] pixels a second, slowing as a list does. */
+    fun fling(scope: CoroutineScope, velocity: Offset, tilePx: Float, decay: DecayAnimationSpec<Offset>) {
+        move(scope, null) {
+            var last = Offset.Zero
+            AnimationState(Offset.VectorConverter, Offset.Zero, velocity).animateDecay(decay) {
+                val step = value - last
+                last = value
+                camera = camera.panned(step.x, step.y, tilePx)
+            }
+        }
+    }
+
+    private companion object {
+        const val GLIDE_MS = 700
+        const val ZOOM_MS = 280
     }
 }
 
@@ -148,24 +248,30 @@ internal fun cameraFor(bounds: MapBounds, width: Float, height: Float, tilePx: F
     return MapCamera((x0 + spanX / 2).mod(1.0), (y0 + y1) / 2, zoom.coerceIn(ATLAS_MIN_ZOOM, maxZoom))
 }
 
-// Points to draw, grown as needed and reused from one frame to the next.
-private class PointBuffer {
-    var values = FloatArray(1024)
-    var size = 0
+/** A flick slower than this, in dp a second, is a drag that stopped. */
+private const val MIN_FLING_DP = 160f
 
-    fun add(x: Float, y: Float) {
-        if (size + 2 > values.size) values = values.copyOf(values.size * 2)
-        values[size++] = x
-        values[size++] = y
-    }
+/** The map's own light (the night under it, the shimmer of its glow) moves this often: slow things, which a faster step would only draw more times. */
+internal const val ATLAS_FRAME_SECONDS = 1f / 30f
 
-    fun take(): FloatArray = values.copyOf(size).also { size = 0 }
+/** The places on a map, worked out once for drawing them every frame: where in the world, how large, and their names laid out. */
+private class MarkerShapes(val markers: List<MapMarker>, val radius: FloatArray, val labels: Array<TextLayoutResult?>) {
+    val x = DoubleArray(markers.size) { WebMercator.x(markers[it].longitude) }
+    val y = DoubleArray(markers.size) { WebMercator.y(markers[it].latitude) }
+
+    /** Those with names, the weightiest first: each is written only where it doesn't sit on one already written. */
+    val named: IntArray = markers.indices.filter { labels[it] != null }.sortedByDescending { markers[it].weight }.toIntArray()
 }
 
-private const val HEAT_STEPS = 8
-
-/** How wide a path's glow is drawn before the shader blooms it, in dp. */
-private const val GLOW_DP = 4.6f
+/** How far east of the camera's middle [x] is, the short way round the world. */
+private fun MapCamera.east(x: Double): Double {
+    val dx = x - centerX
+    return when {
+        dx > 0.5 -> dx - 1.0
+        dx < -0.5 -> dx + 1.0
+        else -> dx
+    }
+}
 
 /**
  * The atlas map: OpenStreetMap turned to night, with everywhere the paths go glowing on it, the
@@ -174,10 +280,10 @@ private const val GLOW_DP = 4.6f
  * at, its own paths picked out ([highlight]) as far as the moment [head] says, with a point of
  * light at the head of them.
  *
- * Far out the glow is drawn from the counted squares ([AtlasDensity]), some thousands of dots that
- * run together into lines; close in, where the finest squares would show as squares, from the
- * paths in view themselves. Either way what is drawn is a picture of how often, in greys, and a
- * shader makes light of it.
+ * The glow is a picture of how often, made off the screen and kept ([AtlasHeat]): far out from
+ * the counted squares (`AtlasDensity`), close in, where the finest squares would show as squares,
+ * from the paths themselves. A shader makes light of it. So a frame of this map, however much
+ * history is on it, is some tiles and some pictures put down, and the map follows the finger.
  */
 @Composable
 internal fun AtlasMap(
@@ -196,31 +302,60 @@ internal fun AtlasMap(
 ) {
     val density = LocalDensity.current
     val tilePx = with(density) { MAP_TILE_DP.dp.toPx() }
+    val glowPx = with(density) { GLOW_DP.dp.toPx() }
+    val resolution = heatResolution(density.density)
     val colors = AtlasTheme.colors
     val shaded = LocalAtlasShaders.current
     val night = remember(shaded) { if (shaded) weatherShaderOrNull(ATLAS_NIGHT_SHADER) else null }
     val mapTone = remember(shaded) { if (shaded) weatherShaderOrNull(MAP_NIGHT_SHADER) else null }
     val heat = remember(shaded) { if (shaded) weatherShaderOrNull(ATLAS_HEAT_SHADER) else null }
+    // Without the shader the glow is the paths' own colour, as strong as the picture says.
+    val plainGlow = remember(heat, colors) {
+        if (heat != null) {
+            null
+        } else {
+            val trail = colors.trail
+            ColorFilter.colorMatrix(ColorMatrix(floatArrayOf(0f, 0f, 0f, 0f, trail.red * 255f, 0f, 0f, 0f, 0f, trail.green * 255f, 0f, 0f, 0f, 0f, trail.blue * 255f, 1f, 0f, 0f, 0f, 0f)))
+        }
+    }
     val arrivals by tiles.arrivals.collectAsStateWithLifecycle()
-    val clock = rememberWeatherShaderClock(running = animated)
+    val clock = rememberWeatherShaderClock(running = animated, frameSeconds = ATLAS_FRAME_SECONDS)
     val scope = rememberCoroutineScope()
+    // A preview or a test takes one look: the glow is drawn for it there and then.
+    val immediate = LocalInspectionMode.current || !shaded
+    val glow = remember(scope, immediate) { AtlasHeat(scope, immediate) }
+    val decay = rememberSplineBasedDecay<Offset>()
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val headAt by rememberUpdatedState(head)
     val tapMarker by rememberUpdatedState(onTapMarker)
-    val shownMarkers by rememberUpdatedState(markers)
     val labels = rememberTextMeasurer(cacheSize = 32)
     val labelStyle = AtlasTheme.type.label
-    val buffers = remember { Array(HEAT_STEPS) { PointBuffer() } }
-    val lines = remember { PointBuffer() }
-    val paint = remember {
-        Paint().apply {
-            color = Color.White
-            style = PaintingStyle.Stroke
-            strokeCap = StrokeCap.Round
-            blendMode = BlendMode.Plus
-            isAntiAlias = true
+    val shapes = remember(markers, labelStyle, density) {
+        MarkerShapes(
+            markers,
+            FloatArray(markers.size) { with(density) { (3.5f + 6.5f * markers[it].weight).dp.toPx() } },
+            Array(markers.size) { index -> markers[index].label?.let { labels.measure(it, labelStyle.copy(color = Color.White), maxLines = 1) } },
+        )
+    }
+    val shownShapes by rememberUpdatedState(shapes)
+    val halos = remember(colors) { VisitRole.entries.map { Brush.radialGradient(listOf(colors.role(it).copy(alpha = 0.45f), Color.Transparent), center = Offset.Zero, radius = 1f) } }
+    val headGlow = remember(colors) { Brush.radialGradient(listOf(colors.trail.copy(alpha = 0.55f), Color.Transparent), center = Offset.Zero, radius = 1f) }
+    // Each flight's two ends in the map's world, in fours.
+    val flightEnds = remember(flights) {
+        DoubleArray(flights.size * 4).also { ends ->
+            flights.forEachIndexed { i, flight ->
+                ends[4 * i] = WebMercator.x(flight.longitude)
+                ends[4 * i + 1] = WebMercator.y(flight.latitude)
+                ends[4 * i + 2] = WebMercator.x(flight.toLongitude)
+                ends[4 * i + 3] = WebMercator.y(flight.toLatitude)
+            }
         }
     }
+    // Where there is a glow and a shader for it, the flights are drawn into its pictures and coloured by it.
+    val flightsInGlow = paths != null && heat != null
+    val arcs = remember { Path() }
+    val route = remember { Path() }
+    val tileUrls = remember { HashMap<Long, String>() }
 
     // Somewhere the screen asked to be shown, once the map knows how big it is.
     LaunchedEffect(state, state.pending, viewport, tilePx) {
@@ -228,28 +363,36 @@ internal fun AtlasMap(
         if (viewport.width <= 0 || viewport.height <= 0) return@LaunchedEffect
         val target = cameraFor(bounds, viewport.width.toFloat(), viewport.height.toFloat(), tilePx)
         if (state.pendingGlide) {
-            val from = state.camera
-            animate(0f, 1f, animationSpec = tween(700, easing = FastOutSlowInEasing)) { t, _ ->
-                state.camera = MapCamera(from.centerX + (target.centerX - from.centerX) * t, from.centerY + (target.centerY - from.centerY) * t, from.zoom + (target.zoom - from.zoom) * t)
-            }
+            state.travel(scope, target)
         } else {
+            state.halt()
             state.camera = target
         }
         state.shown()
     }
 
-    // Ask for the tiles in view whenever the view moves on to others.
+    // Ask for the tiles in view whenever the view moves on to others. A glide asks for those where
+    // it will land, not for every level it passes through on the way.
     LaunchedEffect(state, tiles, tilePx) {
         snapshotFlow {
-            val camera = state.camera
+            val camera = state.destination ?: state.camera
             val count = 1 shl camera.level
             listOf(camera.level, floor(camera.centerX * count * 2).toInt(), floor(camera.centerY * count * 2).toInt(), viewport.width, viewport.height)
         }.collectLatest {
             val width = viewport.width.toFloat()
             val height = viewport.height.toFloat()
             if (width <= 0f || height <= 0f) return@collectLatest
-            val camera = state.camera
+            val camera = state.destination ?: state.camera
             tiles.request(camera.tiles(width, height, tilePx, camera.level).map { baseTileUrl(it.z, it.x, it.y) }, scope, keep = true)
+        }
+    }
+
+    // And for the glow's pictures of it.
+    if (paths != null) {
+        LaunchedEffect(state, glow, paths, years, tilePx, glowPx, resolution, flightEnds, flightsInGlow) {
+            snapshotFlow { Triple(state.camera, state.destination, viewport) }.collect { (camera, destination, size) ->
+                glow.want(paths, years, camera, destination, size.width.toFloat(), size.height.toFloat(), tilePx, glowPx, resolution, flightEnds.takeIf { flightsInGlow }, density.density)
+            }
         }
     }
 
@@ -262,36 +405,28 @@ internal fun AtlasMap(
                     Modifier
                 } else {
                     Modifier
-                        .pointerInput(state, tilePx) {
-                            detectTransformGestures { centroid, pan, zoom, _ ->
-                                state.camera = state.camera
-                                    .zoomed(zoom, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM)
-                                    .panned(pan.x, pan.y, tilePx)
-                            }
-                        }
+                        .pointerInput(state, tilePx, decay) { detectMapGestures(state, tilePx, scope, decay) }
                         .pointerInput(state, tilePx) {
                             detectTapGestures(
-                                onDoubleTap = { at ->
-                                    val start = state.camera
-                                    val focusX = at.x - size.width / 2f
-                                    val focusY = at.y - size.height / 2f
-                                    scope.launch {
-                                        animate(0f, 1f, animationSpec = tween(260)) { t, _ ->
-                                            state.camera = start.zoomed(2f.pow(t), focusX, focusY, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM)
-                                        }
-                                    }
-                                },
+                                onDoubleTap = { at -> state.zoomBy(scope, 2f, at.x - size.width / 2f, at.y - size.height / 2f, tilePx) },
                                 onTap = { at ->
                                     val tap = tapMarker ?: return@detectTapGestures
                                     val reach = 28.dp.toPx()
-                                    shownMarkers
-                                        .map { marker ->
-                                            val (dx, dy) = state.camera.project(marker.latitude, marker.longitude, tilePx)
-                                            marker to (Offset(size.width / 2f + dx, size.height / 2f + dy) - at).getDistance()
+                                    val shown = shownShapes
+                                    val camera = state.camera
+                                    val scale = 2.0.pow(camera.zoom) * tilePx
+                                    var nearest = -1
+                                    var nearestAway = reach
+                                    for (i in shown.markers.indices) {
+                                        val x = (camera.east(shown.x[i]) * scale).toFloat() + size.width / 2f
+                                        val y = ((shown.y[i] - camera.centerY) * scale).toFloat() + size.height / 2f
+                                        val away = (Offset(x, y) - at).getDistance()
+                                        if (away <= nearestAway) {
+                                            nearestAway = away
+                                            nearest = i
                                         }
-                                        .filter { it.second <= reach }
-                                        .minByOrNull { it.second }
-                                        ?.let { tap(it.first) }
+                                    }
+                                    if (nearest >= 0) tap(shown.markers[nearest])
                                 },
                             )
                         }
@@ -329,8 +464,9 @@ internal fun AtlasMap(
             // Read so a tile's arrival redraws the map.
             arrivals
             val camera = state.camera
+            if (tileUrls.size > 2048) tileUrls.clear()
             camera.tiles(size.width, size.height, tilePx, camera.level).forEach { tile ->
-                drawTile(tiles, tile, ancestors = 5)
+                drawTile(tiles, tileUrls, tile, ancestors = 5)
             }
         }
 
@@ -338,172 +474,183 @@ internal fun AtlasMap(
             Canvas(
                 Modifier.fillMaxSize().graphicsLayer {
                     if (heat != null) {
-                        heat.setUniform("size", size.width, size.height)
-                        heat.setUniform("spread", GLOW_DP.dp.toPx() * 0.62f)
                         heat.setUniform("time", clock.floatValue)
+                        heat.setUniform("air", colors.air)
                         renderEffect = heat.renderEffect()
                     }
+                    // The pictures replace what is under them, which must be nothing but each other.
                     compositingStrategy = CompositingStrategy.Offscreen
                 },
             ) {
-                val camera = state.camera
-                val scale = 2.0.pow(camera.zoom) * tilePx
-                val halfWidth = size.width / 2.0 / scale
-                val halfHeight = size.height / 2.0 / scale
-                val glow = GLOW_DP.dp.toPx()
-                // For the shader the layer is a picture of strengths: black for nowhere, lighter
-                // the more often gone. Without it the paths are drawn as they are, in their own colour.
-                if (heat != null) drawRect(Color.Black)
-                drawIntoCanvas { canvas ->
-                    val level = paths.density.levelFor(camera.zoom, tilePx, glow / 2f)
-                    if (level != null) {
-                        level.forEachIn(camera.centerX - halfWidth, camera.centerY - halfHeight, camera.centerX + halfWidth, camera.centerY + halfHeight) { i ->
-                            if (level.years[i] and years != 0) {
-                                // Brightness that climbs fast at first and then levels: once and twice differ, a thousand and two thousand don't.
-                                val bright = 1f - exp(-1.6f * level.weight[i] / level.typicalWeight)
-                                buffers[(bright * HEAT_STEPS).toInt().coerceIn(0, HEAT_STEPS - 1)]
-                                    .add(((level.x[i] - camera.centerX) * scale + size.width / 2).toFloat(), ((level.y[i] - camera.centerY) * scale + size.height / 2).toFloat())
-                            }
-                        }
-                        paint.strokeWidth = glow
-                        // The stronger of two dots where they overlap, not their sum: squares side by
-                        // side along a road are one road, and each already says how often it was driven.
-                        paint.blendMode = if (heat != null) BlendMode.Lighten else BlendMode.SrcOver
-                        buffers.forEachIndexed { step, buffer ->
-                            if (buffer.size > 0) {
-                                val strength = 0.16f + 0.84f * (step + 0.5f) / HEAT_STEPS
-                                paint.color = if (heat != null) Color(strength, strength, strength) else colors.trail.copy(alpha = strength)
-                                canvas.drawRawPoints(PointMode.Points, buffer.take(), paint)
-                            }
-                        }
-                    } else {
-                        val west = camera.centerX - halfWidth
-                        val east = camera.centerX + halfWidth
-                        val north = camera.centerY - halfHeight
-                        val south = camera.centerY + halfHeight
-                        paths.tracks.forEachIndexed { index, track ->
-                            if (track.maxX < west || track.minX > east || track.maxY < north || track.minY > south || paths.trackYears[index] and years == 0) return@forEachIndexed
-                            addSegments(track, camera, scale, lines, Long.MAX_VALUE)
-                        }
-                        // Here each line is one journey, and journeys along the same road do add up.
-                        paint.strokeWidth = glow * 0.7f
-                        paint.blendMode = BlendMode.Plus
-                        paint.color = if (heat != null) Color(0.2f, 0.2f, 0.2f) else colors.trail.copy(alpha = 0.26f)
-                        if (lines.size > 0) canvas.drawRawPoints(PointMode.Lines, lines.take(), paint)
-                    }
-                }
+                with(glow) { drawHeat(state.camera, tilePx, plainGlow) }
             }
         }
 
         Canvas(Modifier.fillMaxSize()) {
             val camera = state.camera
             val scale = 2.0.pow(camera.zoom) * tilePx
-            val centre = Offset(size.width / 2f, size.height / 2f)
+            val centreX = size.width / 2f
+            val centreY = size.height / 2f
 
-            flights.forEach { flight ->
-                val (ax, ay) = camera.project(flight.latitude, flight.longitude, tilePx)
-                val (bx, by) = camera.project(flight.toLatitude, flight.toLongitude, tilePx)
-                val a = centre + Offset(ax, ay)
-                val b = centre + Offset(bx, by)
-                val span = (b - a).getDistance()
-                if (span < 12.dp.toPx()) return@forEach
-                // A shallow arc, bowed toward the pole as a great circle is on this projection.
-                val arc = Path().apply {
-                    moveTo(a.x, a.y)
-                    quadraticTo((a.x + b.x) / 2f, (a.y + b.y) / 2f - span * 0.18f, b.x, b.y)
+            if (flightEnds.isNotEmpty() && !flightsInGlow) {
+                arcs.rewind()
+                val least = 12.dp.toPx()
+                for (i in 0 until flightEnds.size / 4) {
+                    val ax = (camera.east(flightEnds[4 * i]) * scale).toFloat() + centreX
+                    val ay = ((flightEnds[4 * i + 1] - camera.centerY) * scale).toFloat() + centreY
+                    val bx = (camera.east(flightEnds[4 * i + 2]) * scale).toFloat() + centreX
+                    val by = ((flightEnds[4 * i + 3] - camera.centerY) * scale).toFloat() + centreY
+                    val span = Offset(bx - ax, by - ay).getDistance()
+                    if (span < least) continue
+                    // A shallow arc, bowed toward the pole as a great circle is on this projection.
+                    val bow = span * 0.18f
+                    // Wholly off one side of the view, bow and all.
+                    if (max(ax, bx) < 0f || min(ax, bx) > size.width || max(ay, by) < 0f || min(ay, by) - bow > size.height) continue
+                    arcs.moveTo(ax, ay)
+                    arcs.quadraticTo((ax + bx) / 2f, (ay + by) / 2f - bow, bx, by)
                 }
-                drawPath(arc, colors.air, alpha = 0.16f, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
-                drawPath(arc, colors.air, alpha = 0.7f, style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(arcs, colors.air, alpha = 0.16f, style = Stroke(4.dp.toPx(), cap = StrokeCap.Round))
+                drawPath(arcs, colors.air, alpha = 0.7f, style = Stroke(1.2.dp.toPx(), cap = StrokeCap.Round))
             }
 
             if (highlight.isNotEmpty()) {
                 val until = headAt()
-                val path = Path()
-                var last: Offset? = null
+                route.rewind()
+                var lastX = Float.NaN
+                var lastY = Float.NaN
                 highlight.forEach { track ->
                     var pen = false
                     for (i in 0 until track.size) {
                         val at = track.start + track.seconds[i]
-                        val point = Offset(((track.x(i) - camera.centerX) * scale).toFloat(), ((track.y(i) - camera.centerY) * scale).toFloat()) + centre
+                        val x = ((track.x(i) - camera.centerX) * scale).toFloat() + centreX
+                        val y = ((track.y(i) - camera.centerY) * scale).toFloat() + centreY
                         if (at > until) {
                             // Part-way along the stretch the moment falls in.
                             if (i > 0 && pen) {
                                 val before = track.start + track.seconds[i - 1]
                                 val t = ((until - before).toFloat() / (at - before).coerceAtLeast(1)).coerceIn(0f, 1f)
-                                val from = Offset(((track.x(i - 1) - camera.centerX) * scale).toFloat(), ((track.y(i - 1) - camera.centerY) * scale).toFloat()) + centre
-                                val part = from + (point - from) * t
-                                path.lineTo(part.x, part.y)
-                                last = part
+                                lastX += (x - lastX) * t
+                                lastY += (y - lastY) * t
+                                route.lineTo(lastX, lastY)
                             }
                             break
                         }
-                        if (!pen) path.moveTo(point.x, point.y) else path.lineTo(point.x, point.y)
+                        if (!pen) route.moveTo(x, y) else route.lineTo(x, y)
                         pen = true
-                        last = point
+                        lastX = x
+                        lastY = y
                     }
                 }
-                drawPath(path, colors.trail, alpha = 0.28f, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                drawPath(path, colors.trail, style = Stroke(3.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                drawPath(path, Color.White, alpha = 0.85f, style = Stroke(1.3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
-                if (until != Long.MAX_VALUE) {
-                    last?.let { at ->
-                        val pulse = if (animated) 0.5f + 0.5f * kotlin.math.sin(clock.floatValue * 5f) else 0.5f
-                        drawCircle(Brush.radialGradient(listOf(colors.trail.copy(alpha = 0.55f), Color.Transparent), at, (20 + 6 * pulse).dp.toPx()), (20 + 6 * pulse).dp.toPx(), at)
-                        drawCircle(Color.White, 4.5.dp.toPx(), at)
-                    }
+                drawPath(route, colors.trail, alpha = 0.28f, style = Stroke(9.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawPath(route, colors.trail, style = Stroke(3.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                drawPath(route, Color.White, alpha = 0.85f, style = Stroke(1.3.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+                if (until != Long.MAX_VALUE && !lastX.isNaN()) {
+                    val pulse = if (animated) 0.5f + 0.5f * sin(clock.floatValue * 5f) else 0.5f
+                    val reach = (20 + 6 * pulse).dp.toPx()
+                    withTransform({
+                        translate(lastX, lastY)
+                        scale(reach, reach, Offset.Zero)
+                    }) { drawCircle(headGlow, 1f, Offset.Zero) }
+                    drawCircle(Color.White, 4.5.dp.toPx(), Offset(lastX, lastY))
                 }
             }
 
-            markers.forEach { marker ->
-                val (dx, dy) = camera.project(marker.latitude, marker.longitude, tilePx)
-                val at = centre + Offset(dx, dy)
-                if (at.x < -40f || at.y < -40f || at.x > size.width + 40f || at.y > size.height + 40f) return@forEach
-                val tint = colors.role(marker.role)
-                val radius = (3.5f + 6.5f * marker.weight).dp.toPx()
-                drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = 0.45f), Color.Transparent), at, radius * 3.2f), radius * 3.2f, at)
-                drawCircle(colors.background, radius + 1.5.dp.toPx(), at)
-                drawCircle(tint, radius, at)
-                drawCircle(Color.White, radius * 0.38f, at, alpha = 0.9f)
+            // Every halo, then every disc: one kind of thing at a time is one piece of work for the
+            // graphics chip, where a halo and three discs for each place in turn is four apiece.
+            val rim = 1.5.dp.toPx()
+            for (pass in 0..1) {
+                for (i in shapes.markers.indices) {
+                    val x = (camera.east(shapes.x[i]) * scale).toFloat() + centreX
+                    val y = ((shapes.y[i] - camera.centerY) * scale).toFloat() + centreY
+                    if (x < -40f || y < -40f || x > size.width + 40f || y > size.height + 40f) continue
+                    val role = shapes.markers[i].role
+                    val radius = shapes.radius[i]
+                    if (pass == 0) {
+                        withTransform({
+                            translate(x, y)
+                            scale(radius * 3.2f, radius * 3.2f, Offset.Zero)
+                        }) { drawCircle(halos[role.ordinal], 1f, Offset.Zero) }
+                    } else {
+                        val at = Offset(x, y)
+                        drawCircle(colors.background, radius + rim, at)
+                        drawCircle(colors.role(role), radius, at)
+                        drawCircle(Color.White, radius * 0.38f, at, alpha = 0.9f)
+                    }
+                }
             }
-            // Names, the weightiest first, each only where it doesn't sit on one already written.
-            val taken = ArrayList<androidx.compose.ui.geometry.Rect>()
-            markers.sortedByDescending { it.weight }.forEach { marker ->
-                val label = marker.label ?: return@forEach
-                val (dx, dy) = camera.project(marker.latitude, marker.longitude, tilePx)
-                val at = centre + Offset(dx, dy)
-                if (at.x < 0f || at.y < 0f || at.x > size.width || at.y > size.height) return@forEach
-                val laid = labels.measure(label, labelStyle.copy(color = Color.White), maxLines = 1)
+            if (shapes.named.isNotEmpty()) {
+                val taken = ArrayList<Rect>(shapes.named.size)
                 val pad = 4.dp.toPx()
-                val topLeft = Offset(at.x + (3.5f + 6.5f * marker.weight).dp.toPx() + 8.dp.toPx(), at.y - laid.size.height / 2f)
-                val box = androidx.compose.ui.geometry.Rect(topLeft - Offset(pad, pad / 2), androidx.compose.ui.geometry.Size(laid.size.width + pad * 2, laid.size.height + pad))
-                if (box.right > size.width || taken.any { it.overlaps(box) }) return@forEach
-                taken += box
-                drawRoundRect(colors.background.copy(alpha = 0.72f), box.topLeft, box.size, androidx.compose.ui.geometry.CornerRadius(8.dp.toPx()))
-                drawText(laid, topLeft = topLeft)
+                val gap = 8.dp.toPx()
+                val corner = CornerRadius(8.dp.toPx())
+                val plate = colors.background.copy(alpha = 0.72f)
+                for (i in shapes.named) {
+                    val laid = shapes.labels[i] ?: continue
+                    val x = (camera.east(shapes.x[i]) * scale).toFloat() + centreX
+                    val y = ((shapes.y[i] - camera.centerY) * scale).toFloat() + centreY
+                    if (x < 0f || y < 0f || x > size.width || y > size.height) continue
+                    val topLeft = Offset(x + shapes.radius[i] + gap, y - laid.size.height / 2f)
+                    val box = Rect(topLeft - Offset(pad, pad / 2), Size(laid.size.width + pad * 2, laid.size.height + pad))
+                    if (box.right > size.width || taken.any { it.overlaps(box) }) continue
+                    taken += box
+                    drawRoundRect(plate, box.topLeft, box.size, corner)
+                    drawText(laid, topLeft = topLeft)
+                }
             }
         }
     }
 }
 
-/** The stretches of [track] that are one journey, up to [until], as pairs of points for `PointMode.Lines`. */
-private fun DrawScope.addSegments(track: Track, camera: MapCamera, scale: Double, into: PointBuffer, until: Long) {
-    var previousX = 0f
-    var previousY = 0f
-    for (i in 0 until track.size) {
-        if (track.start + track.seconds[i] > until) break
-        val x = ((track.x(i) - camera.centerX) * scale + size.width / 2).toFloat()
-        val y = ((track.y(i) - camera.centerY) * scale + size.height / 2).toFloat()
-        // A gap of a hundred and fifty kilometres between fixes is a flight or a hole in the record, not a road.
-        if (i > 0 && kotlin.math.abs(track.xy[2 * i] - track.xy[2 * i - 2]) < JUMP && kotlin.math.abs(track.xy[2 * i + 1] - track.xy[2 * i - 1]) < JUMP) {
-            into.add(previousX, previousY)
-            into.add(x, y)
+/**
+ * One finger drags the map and two pinch it, as `detectTransformGestures` has it, and a drag let
+ * go of at speed runs on ([AtlasMapState.fling]). Putting a finger down stops the map wherever it
+ * was going by itself.
+ */
+private suspend fun PointerInputScope.detectMapGestures(state: AtlasMapState, tilePx: Float, scope: CoroutineScope, decay: DecayAnimationSpec<Offset>) {
+    val tracker = VelocityTracker()
+    awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false)
+        state.halt()
+        tracker.resetTracking()
+        tracker.addPosition(down.uptimeMillis, down.position)
+        val slop = viewConfiguration.touchSlop
+        var zoom = 1f
+        var pan = Offset.Zero
+        var moving = false
+        var pinched = false
+        var over: Boolean
+        do {
+            val event = awaitPointerEvent()
+            over = event.changes.any { it.isConsumed }
+            if (!over) {
+                val zoomed = event.calculateZoom()
+                val panned = event.calculatePan()
+                if (event.changes.count { it.pressed } > 1) pinched = true
+                if (!moving) {
+                    zoom *= zoomed
+                    pan += panned
+                    if (abs(1 - zoom) * event.calculateCentroidSize(useCurrent = false) > slop || pan.getDistance() > slop) moving = true
+                }
+                if (moving) {
+                    val centroid = event.calculateCentroid(useCurrent = false)
+                    if (zoomed != 1f || panned != Offset.Zero) {
+                        state.camera = state.camera
+                            .zoomed(zoomed, centroid.x - size.width / 2f, centroid.y - size.height / 2f, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM)
+                            .panned(panned.x, panned.y, tilePx)
+                    }
+                    event.changes.forEach { if (it.positionChanged()) it.consume() }
+                }
+                event.changes.firstOrNull { it.id == down.id }?.let { tracker.addPosition(it.uptimeMillis, it.position) }
+            }
+        } while (!over && event.changes.any { it.pressed })
+        // Two fingers lifting are never quite together, and the one left behind would throw the map.
+        if (moving && !pinched && !over) {
+            val velocity = tracker.calculateVelocity()
+            val speed = Offset(velocity.x, velocity.y)
+            if (speed.getDistance() > MIN_FLING_DP.dp.toPx()) state.fling(scope, speed, tilePx, decay)
         }
-        previousX = x
-        previousY = y
     }
 }
-
-private const val JUMP = (150.0 / 40_075.0).toFloat()
 
 /** A whole, round number of degrees for the graticule: the one whose squares come out nearest [wanted] pixels at [pixelsPerDegree]. */
 internal fun graticuleDegrees(pixelsPerDegree: Double, wanted: Float): Double =
@@ -512,15 +659,16 @@ internal fun graticuleDegrees(pixelsPerDegree: Double, wanted: Float): Double =
 /**
  * Draws the picture for [tile], or failing that the right quarter (or sixteenth…) of the nearest
  * of its [ancestors] that has arrived, so a map zooming in sharpens rather than blanks. The same
- * as the radar map's.
+ * as the radar map's. [urls] is where the tiles' addresses are kept.
  */
-private fun DrawScope.drawTile(tiles: MapTileSource, tile: PlacedTile, ancestors: Int) {
+private fun DrawScope.drawTile(tiles: MapTileSource, urls: HashMap<Long, String>, tile: PlacedTile, ancestors: Int) {
     var z = tile.z
     var x = tile.x
     var y = tile.y
     var up = 0
     while (true) {
-        val image = tiles.image(baseTileUrl(z, x, y))
+        // The address of a tile is asked for on every frame it is drawn in: made once and kept.
+        val image = tiles.image(urls.getOrPut((z.toLong() shl 48) or (x.toLong() shl 24) or y.toLong()) { baseTileUrl(z, x, y) })
         if (image != null) {
             val span = 1 shl up
             val srcSize = IntSize(image.width / span, image.height / span)

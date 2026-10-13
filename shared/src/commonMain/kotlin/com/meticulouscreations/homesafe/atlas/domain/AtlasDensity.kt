@@ -1,6 +1,13 @@
 package com.meticulouscreations.homesafe.atlas.domain
 
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -111,10 +118,24 @@ class AtlasDensity(val levels: List<DensityLevel>, val baseYear: Int) {
          */
         fun of(tracks: List<Track>): AtlasDensity {
             if (tracks.isEmpty()) return Empty
-            val baseYear = tracks.minOf { CivilDate.of(localDay(it.start, it.offsetMinutes)).year }
+            val baseYear = baseYear(tracks)
             val levels = LEVELS.map { level -> level(level, tracks, baseYear) }
             return AtlasDensity(levels.filter { it.size > 0 }, baseYear)
         }
+
+        /**
+         * [of], with every level counted at once on threads of their own. The finest level is
+         * about half of all the counting, so the map has its glow in about half the time.
+         */
+        suspend fun counted(tracks: List<Track>): AtlasDensity {
+            if (tracks.isEmpty()) return Empty
+            val baseYear = baseYear(tracks)
+            // Each is told whose work it is, so that a history replaced while it is being counted stops the counting.
+            val levels = coroutineScope { LEVELS.map { level -> async(Dispatchers.Default) { level(level, tracks, baseYear, coroutineContext.job) } }.awaitAll() }
+            return AtlasDensity(levels.filter { it.size > 0 }, baseYear)
+        }
+
+        private fun baseYear(tracks: List<Track>): Int = tracks.minOf { CivilDate.of(localDay(it.start, it.offsetMinutes)).year }
 
         private class Keys(capacity: Int = 1 shl 14) {
             var values = LongArray(capacity)
@@ -126,11 +147,13 @@ class AtlasDensity(val levels: List<DensityLevel>, val baseYear: Int) {
             }
         }
 
-        private fun level(level: Int, tracks: List<Track>, baseYear: Int): DensityLevel {
+        /** With [job], gives up (as a cancelled coroutine does) once that job has been cancelled: looked at every few hundred paths, and again before the sort. */
+        internal fun level(level: Int, tracks: List<Track>, baseYear: Int, job: Job? = null): DensityLevel {
             val perSide = 1 shl level
             val blocksPerSide = perSide shr DensityLevel.BLOCK_BITS
             val keys = Keys()
-            tracks.forEach { track ->
+            tracks.forEachIndexed { index, track ->
+                if (index and 0xFF == 0) job?.ensureActive()
                 val year = (CivilDate.of(localDay(track.start, track.offsetMinutes)).year - baseYear).coerceIn(0, 31)
                 var lastCell = -1L
                 for (i in 0 until track.size) {
@@ -160,7 +183,9 @@ class AtlasDensity(val levels: List<DensityLevel>, val baseYear: Int) {
                     }
                 }
             }
+            job?.ensureActive()
             keys.values.sort(0, keys.size)
+            job?.ensureActive()
 
             // Runs of one square (in whichever years) become one entry.
             var cells = 0

@@ -108,9 +108,10 @@ class AtlasViewModel(
                         return@collectLatest
                     }
                     _uiState.update { it.copy(loaded = true, history = history, analyzing = !history.isEmpty, paths = it.paths.takeIf { pathsOf === history }) }
+                    // Beside the working out, not after it: the map's glow has nothing to wait for in the analysis.
+                    if (wantPaths) loadPaths(history)
                     val analysis = withContext(Dispatchers.Default) { AtlasAnalyzer.analyze(history) }
                     _uiState.update { it.copy(analysis = analysis, analyzing = false) }
-                    if (wantPaths) loadPaths(history)
                 }
             }
         }
@@ -130,7 +131,7 @@ class AtlasViewModel(
                 AtlasPaths.Empty
             } else {
                 val tracks = repository.tracks()
-                AtlasPaths(tracks, withContext(Dispatchers.Default) { AtlasDensity.of(tracks) })
+                AtlasPaths(tracks, AtlasDensity.counted(tracks))
             }
             pathsOf = history
             _uiState.update { if (it.history === history) it.copy(paths = paths) else it }

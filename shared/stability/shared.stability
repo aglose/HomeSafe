@@ -6,7 +6,7 @@
 
 @Composable
 public fun com.meticulouscreations.homesafe.App(appGraph: com.meticulouscreations.homesafe.di.AppGraph, debugAutofillCredentials: com.meticulouscreations.homesafe.ui.screens.DebugAutofillCredentials?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - appGraph: UNKNOWN (interface or non-final class; concrete implementation unknown)
@@ -14,7 +14,7 @@ public fun com.meticulouscreations.homesafe.App(appGraph: com.meticulouscreation
 
 @Composable
 internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulouscreations.homesafe.di.AppGraph, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - appGraph: UNKNOWN (interface or non-final class; concrete implementation unknown)
@@ -84,7 +84,7 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasCard(modifier: andro
 
 @Composable
 internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasChips(options: kotlin.collections.List<kotlin.Pair<T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, kotlin.String>>, selected: T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, onSelect: kotlin.Function1<T of com.meticulouscreations.homesafe.atlas.ui.AtlasChips, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - options: RUNTIME (requires runtime check)
@@ -113,7 +113,7 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasLockScreen(lock: com
 
 @Composable
 internal fun com.meticulouscreations.homesafe.atlas.ui.AtlasMap(state: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, modifier: androidx.compose.ui.Modifier, paths: com.meticulouscreations.homesafe.atlas.AtlasPaths?, years: kotlin.Int, markers: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.ui.MapMarker>, flights: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Move>, highlight: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Track>, head: kotlin.Function0<kotlin.Long>, interactive: kotlin.Boolean, animated: kotlin.Boolean, onTapMarker: kotlin.Function1<com.meticulouscreations.homesafe.atlas.ui.MapMarker, kotlin.Unit>?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - state: STABLE (marked @Stable or @Immutable)
@@ -274,7 +274,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.Legend(tint: androidx.comp
     - label: STABLE (String is immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, map: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -284,10 +284,11 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meti
     - onOpenPlace: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - active: STABLE (primitive type)
+    - map: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.ModesCard(years: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.YearStat>, records: com.meticulouscreations.homesafe.atlas.domain.Records): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - years: RUNTIME (requires runtime check)
@@ -361,7 +362,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.RecordsCard(records: com.m
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.RouteSketch(stops: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.Place>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - stops: RUNTIME (requires runtime check)
@@ -474,7 +475,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.YearPill(label: kotlin.Str
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.YearsCard(years: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.YearStat>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - years: RUNTIME (requires runtime check)
@@ -602,7 +603,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.AddSymbolButton(onClick
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.AddSymbolSheet(search: com.meticulouscreations.homesafe.finance.SymbolSearch, sheetSymbols: kotlin.collections.List<kotlin.String>, addedSymbols: kotlin.collections.Set<kotlin.String>, onQuery: kotlin.Function1<kotlin.String, kotlin.Unit>, onAdd: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.SymbolMatch, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - search: STABLE (marked @Stable or @Immutable)
@@ -635,7 +636,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.AlertSwitches(alerts: co
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.AllocationBlock(accounts: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.Account>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - accounts: RUNTIME (requires runtime check)
@@ -791,7 +792,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.Callout(heading: kotlin
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.CardHolders(card: com.meticulouscreations.homesafe.finance.domain.BudgetCard, people: kotlin.collections.List<kotlin.String>, enabled: kotlin.Boolean, onSay: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - card: STABLE (marked @Stable or @Immutable)
@@ -891,7 +892,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.CheckupSheet(checkup: c
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.ChipRow(options: kotlin.collections.List<T of com.meticulouscreations.homesafe.finance.ui.ChipRow>, selected: T of com.meticulouscreations.homesafe.finance.ui.ChipRow, label: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<T of com.meticulouscreations.homesafe.finance.ui.ChipRow, kotlin.String>, color: androidx.compose.ui.graphics.Color, onSelect: kotlin.Function1<T of com.meticulouscreations.homesafe.finance.ui.ChipRow, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - options: RUNTIME (requires runtime check)
@@ -1321,7 +1322,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.LedgerRow(row: com.metic
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.Legend(items: kotlin.collections.List<kotlin.Triple<kotlin.String, kotlin.String, androidx.compose.ui.graphics.Color>>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - items: RUNTIME (requires runtime check)
@@ -1368,7 +1369,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.LinePanel(chart: com.met
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.LinkGroup(title: kotlin.String, links: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.EconLink>, color: androidx.compose.ui.graphics.Color, outgoing: kotlin.Boolean, onFollow: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - title: STABLE (String is immutable)
@@ -1500,7 +1501,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.OneLineText(text: kotli
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.OverlayBlock(lines: kotlin.collections.List<kotlin.Triple<kotlin.String, com.meticulouscreations.homesafe.finance.domain.IndicatorReading?, androidx.compose.ui.graphics.Color>>, rules: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartRule>, defaultRange: com.meticulouscreations.homesafe.finance.ui.EconRange, howToRead: kotlin.String?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - lines: RUNTIME (requires runtime check)
@@ -1573,7 +1574,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.PreviewCard(): kotlin.Un
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.PriceHeroAndChart(symbol: kotlin.String, state: com.meticulouscreations.homesafe.finance.FinanceUiState, range: com.meticulouscreations.homesafe.finance.domain.ChartRange, onRange: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.ChartRange, kotlin.Unit>, onRequestHistory: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.finance.domain.ChartRange, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, verdictPeers: kotlin.collections.List<kotlin.String>, trailing: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - symbol: STABLE (String is immutable)
@@ -1681,7 +1682,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.RiskScreen(state: com.m
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.RoleChips(selected: com.meticulouscreations.homesafe.finance.domain.CardRole, people: kotlin.collections.List<kotlin.String>, enabled: kotlin.Boolean, onPick: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.CardRole, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - selected: STABLE (marked @Stable or @Immutable)
@@ -1692,7 +1693,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.RoleChips(selected: com
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.RoleSetupCard(cards: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.BudgetCard>, saving: kotlin.Boolean, onSetRole: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.finance.domain.CardRole, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - cards: RUNTIME (requires runtime check)
@@ -1831,7 +1832,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.SliderRow(label: kotlin.
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.SortRow(purchase: com.meticulouscreations.homesafe.finance.domain.Purchase, people: kotlin.collections.List<kotlin.String>, busy: kotlin.Boolean, onPick: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.BucketId, kotlin.Unit>, onOpen: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - purchase: STABLE (marked @Stable or @Immutable)
@@ -1858,7 +1859,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.StartHere(check: com.met
 
 @Composable
 internal fun com.meticulouscreations.homesafe.finance.ui.StatGrid(stats: kotlin.collections.List<kotlin.Pair<kotlin.String, kotlin.String>>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - stats: RUNTIME (requires runtime check)
@@ -1954,7 +1955,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.SymbolMatchRow(match: co
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.TagSheet(purchase: com.meticulouscreations.homesafe.finance.domain.Purchase, card: com.meticulouscreations.homesafe.finance.domain.BudgetCard?, people: kotlin.collections.List<kotlin.String>, onPick: kotlin.Function2<com.meticulouscreations.homesafe.finance.domain.BucketId, kotlin.Boolean, kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - purchase: STABLE (marked @Stable or @Immutable)
@@ -1989,7 +1990,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.ThresholdTrack(th: com.m
 
 @Composable
 private fun com.meticulouscreations.homesafe.finance.ui.TickerTape(quotes: kotlin.collections.Map<kotlin.String, com.meticulouscreations.homesafe.finance.domain.Quote>, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - quotes: RUNTIME (requires runtime check)
@@ -2135,7 +2136,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.components.AuroraBackgr
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.BarChart(bars: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.Bar>, modifier: androidx.compose.ui.Modifier, selected: kotlin.Int?, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - bars: RUNTIME (requires runtime check)
@@ -2183,7 +2184,7 @@ private fun com.meticulouscreations.homesafe.finance.ui.components.DigitWheel(di
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.DonutChart(slices: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.DonutSlice>, modifier: androidx.compose.ui.Modifier, highlighted: kotlin.Int?, thickness: androidx.compose.ui.unit.Dp): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - slices: RUNTIME (requires runtime check)
@@ -2193,7 +2194,7 @@ public fun com.meticulouscreations.homesafe.finance.ui.components.DonutChart(sli
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.GroupedBarChart(labels: kotlin.collections.List<kotlin.String>, series: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.BarSeries>, modifier: androidx.compose.ui.Modifier, stacked: kotlin.Boolean, selected: kotlin.Int?, contentDescription: kotlin.String, onSelect: kotlin.Function1<kotlin.Int?, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - labels: RUNTIME (requires runtime check)
@@ -2216,7 +2217,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.components.HeatMeter(le
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.LineChart(lines: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartLine>, modifier: androidx.compose.ui.Modifier, baseline: kotlin.Double?, zones: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartZone>, rules: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartRule>, timeAxis: kotlin.Boolean, extent: kotlin.Float, live: kotlin.Boolean, axis: com.meticulouscreations.homesafe.finance.ui.components.ChartAxis?, fitZones: kotlin.Boolean, periods: kotlin.collections.List<com.meticulouscreations.homesafe.finance.ui.components.ChartPeriod>, contentDescription: kotlin.String, onScrub: kotlin.Function1<kotlin.Int?, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - lines: RUNTIME (requires runtime check)
@@ -2246,7 +2247,7 @@ public fun com.meticulouscreations.homesafe.finance.ui.components.Meter(fraction
 
 @Composable
 public fun com.meticulouscreations.homesafe.finance.ui.components.RangeSelector(options: kotlin.collections.List<T of com.meticulouscreations.homesafe.finance.ui.components.RangeSelector>, selected: T of com.meticulouscreations.homesafe.finance.ui.components.RangeSelector, label: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<T of com.meticulouscreations.homesafe.finance.ui.components.RangeSelector, kotlin.String>, color: androidx.compose.ui.graphics.Color, onSelect: kotlin.Function1<T of com.meticulouscreations.homesafe.finance.ui.components.RangeSelector, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - options: RUNTIME (requires runtime check)
@@ -2379,7 +2380,7 @@ internal fun com.meticulouscreations.homesafe.finance.ui.zonesFor(indicator: com
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.AddExerciseCard(parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onAdd: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - parts: RUNTIME (requires runtime check)
@@ -2434,7 +2435,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.CardLabel(title: kotlin
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.ChipRow(options: kotlin.collections.List<kotlin.Pair<kotlin.String, kotlin.String>>, selected: kotlin.String, tag: kotlin.String, onSelect: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - options: RUNTIME (requires runtime check)
@@ -2716,7 +2717,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.ImportScreen(import: co
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.LadderChart(ladder: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.Rung>, tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, targetWeight: kotlin.Double?, targetReps: kotlin.Int?, maxRungs: kotlin.Int, labels: kotlin.Boolean, contentDescription: kotlin.String): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - ladder: RUNTIME (requires runtime check)
@@ -2789,7 +2790,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.MonthGrid(month: kotlin.
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.MuscleMap(volumes: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.MuscleVolume>, modifier: androidx.compose.ui.Modifier, contentDescription: kotlin.String): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - volumes: RUNTIME (requires runtime check)
@@ -2798,7 +2799,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.MuscleMap(volumes: kotl
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.MusclesCard(muscles: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.MuscleVolume>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - muscles: RUNTIME (requires runtime check)
@@ -3071,7 +3072,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.SessionScreen(session: 
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.SetLogger(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, todaysSets: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.LoggedSet>, records: kotlin.collections.Map<kotlin.Long, com.meticulouscreations.homesafe.fitness.domain.Record>, phase: com.meticulouscreations.homesafe.fitness.domain.PhaseKind, colors: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, onLog: kotlin.Function2<@[ParameterName(name = \, onDeleteSet: kotlin.Function1<kotlin.Long, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - board: STABLE (marked @Stable or @Immutable)
@@ -3155,7 +3156,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.StepsTile(steps: com.met
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.StrengthChart(board: com.meticulouscreations.homesafe.fitness.ExerciseBoard, phases: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.Phase>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - board: STABLE (marked @Stable or @Immutable)
@@ -3619,7 +3620,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(str
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.ClipTrimmer(window: com.meticulouscreations.homesafe.domain.model.ClipWindow, range: com.meticulouscreations.homesafe.domain.model.ClipRange, playheadEpochSeconds: kotlin.Double?, recorded: com.meticulouscreations.homesafe.viewmodel.RecordedSpans, activeHandle: com.meticulouscreations.homesafe.viewmodel.TrimHandle?, isScrubbing: kotlin.Boolean, thumbnailUrl: kotlin.Function1<@[ParameterName(name = \, onTrimStart: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.TrimHandle, kotlin.Unit>, onTrim: kotlin.Function2<com.meticulouscreations.homesafe.viewmodel.TrimHandle, kotlin.Double, kotlin.Boolean>, onTrimEnd: kotlin.Function0<kotlin.Unit>, onScrubStart: kotlin.Function0<kotlin.Unit>, onScrub: kotlin.Function1<kotlin.Double, kotlin.Unit>, onScrubEnd: kotlin.Function0<kotlin.Unit>, onTap: kotlin.Function1<kotlin.Double, kotlin.Boolean>, onPan: kotlin.Function1<kotlin.Double, kotlin.Unit>, onZoom: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, moments: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.ClipMoment>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - window: STABLE (class with no mutable properties)
@@ -3666,7 +3667,7 @@ internal fun com.meticulouscreations.homesafe.ui.components.LiveViewUnavailableP
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.MaskPolygonEditor(polygons: kotlin.collections.List<com.meticulouscreations.homesafe.ui.components.EditorPolygon>, selectedIndex: kotlin.Int?, selectedVertexIndex: kotlin.Int?, draft: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.MaskPoint>?, draftColor: androidx.compose.ui.graphics.Color, onTap: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MaskPoint, kotlin.Unit>, onFinishDraft: kotlin.Function0<kotlin.Unit>, onSelectVertex: kotlin.Function1<@[ParameterName(name = \, onInsertVertex: kotlin.Function3<@[ParameterName(name = \, onMoveVertex: kotlin.Function3<@[ParameterName(name = \, onMoveDraftVertex: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, labelStyle: androidx.compose.ui.text.TextStyle): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - polygons: RUNTIME (requires runtime check)
@@ -3703,7 +3704,7 @@ public fun com.meticulouscreations.homesafe.ui.components.PulsingDot(color: andr
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.RecordingTimeline(segments: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.RecordingSegment>, span: com.meticulouscreations.homesafe.viewmodel.TimelineSpan, nowEpochSeconds: kotlin.Double, playheadEpochSeconds: kotlin.Double?, scrubEpochSeconds: kotlin.Double?, isLive: kotlin.Boolean, onScrubStart: kotlin.Function0<kotlin.Unit>, onScrub: kotlin.Function1<@[ParameterName(name = \, onScrubEnd: kotlin.Function0<kotlin.Unit>, onSeek: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, detections: kotlin.collections.List<com.meticulouscreations.homesafe.ui.components.TimelineDetection>, onDetectionTap: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - segments: RUNTIME (requires runtime check)
@@ -3820,14 +3821,14 @@ internal fun com.meticulouscreations.homesafe.ui.rememberPredictiveBackTransitio
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.AiFeaturesSection(overview: com.meticulouscreations.homesafe.domain.model.ServerOverview?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - overview: RUNTIME (requires runtime check)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AlertPresetChips(offered: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.AlertPreset>, selected: com.meticulouscreations.homesafe.domain.model.AlertPreset?, onPreset: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.AlertPreset, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - offered: RUNTIME (requires runtime check)
@@ -3880,7 +3881,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.AtlasDrawerCard(atlas: c
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.AttemptCard(attempt: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, people: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.KnownPerson>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - attempt: STABLE (class with no mutable properties)
@@ -3960,28 +3961,28 @@ private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Body(uiState: com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState, data: com.meticulouscreations.homesafe.domain.model.ClassifierDataset, viewModel: com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
     - data: RUNTIME (requires runtime check)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Body(uiState: com.meticulouscreations.homesafe.viewmodel.FaceLibraryUiState, library: com.meticulouscreations.homesafe.domain.model.FaceLibrary, viewModel: com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
     - library: RUNTIME (requires runtime check)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.BottomNavBar(selected: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
-    - selected: STABLE (class with no mutable properties)
+    - selected: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - onSelect: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
@@ -3990,7 +3991,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.BottomNavItemView(route:
   skippable: true
   restartable: true
   params:
-    - route: STABLE (class with no mutable properties)
+    - route: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - isSelected: STABLE (primitive type)
     - onClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
@@ -3998,7 +3999,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.BottomNavItemView(route:
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraAlertZones(camera: com.meticulouscreations.homesafe.domain.model.CameraPipeline, alerts: com.meticulouscreations.homesafe.domain.model.AlertSettings, volume: com.meticulouscreations.homesafe.domain.model.AlertVolume?, onZoneCategory: kotlin.Function3<com.meticulouscreations.homesafe.domain.model.AlertZone, com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Boolean, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - camera: RUNTIME (requires runtime check)
@@ -4055,7 +4056,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraDetectionRows(stat
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraFilterChip(cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.MomentCameraOption>, selectedCameraName: kotlin.String?, selectedCameraLabel: kotlin.String?, onSelect: kotlin.Function1<kotlin.String?, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - cameras: RUNTIME (requires runtime check)
@@ -4077,7 +4078,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraOverflowMenu(onEdi
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CameraPipelineRows(camera: com.meticulouscreations.homesafe.domain.model.CameraPipeline, editable: kotlin.Boolean, busy: kotlin.Boolean, onDetection: kotlin.Function1<kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - camera: RUNTIME (requires runtime check)
@@ -4104,7 +4105,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(disp
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: com.meticulouscreations.homesafe.domain.model.CarProfile, makes: kotlin.collections.List<kotlin.String>, colours: kotlin.collections.List<kotlin.String>, saving: kotlin.Boolean, error: com.meticulouscreations.homesafe.text.UiText?, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CarProfile, kotlin.Unit>, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>, onForget: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - draft: STABLE (marked @Stable or @Immutable)
@@ -4119,7 +4120,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: 
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarProfilesCard(cars: kotlin.collections.List<kotlin.String>, profiles: com.meticulouscreations.homesafe.domain.model.CarProfiles, onEdit: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - cars: RUNTIME (requires runtime check)
@@ -4159,12 +4160,12 @@ private fun com.meticulouscreations.homesafe.ui.screens.CardZoomOverlay(nav: com
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CategoriesCard(uiState: com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState, data: com.meticulouscreations.homesafe.domain.model.ClassifierDataset, viewModel: com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
     - data: RUNTIME (requires runtime check)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CategoryFilterChip(selected: com.meticulouscreations.homesafe.domain.model.MomentCategory, unfamiliarOnly: kotlin.Boolean, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.MomentCategory, kotlin.Unit>, onUnfamiliarOnlyChange: kotlin.Function1<kotlin.Boolean, kotlin.Unit>): kotlin.Unit
@@ -4344,7 +4345,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ControlsPanel(state: com
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.CropCard(crop: com.meticulouscreations.homesafe.domain.model.UnlabeledCrop, imageUrl: kotlin.String?, categories: kotlin.collections.List<kotlin.String>, busy: kotlin.Boolean, decided: kotlin.String?, onLabel: kotlin.Function1<kotlin.String, kotlin.Unit>, onDiscard: kotlin.Function0<kotlin.Unit>?, knownAs: kotlin.String?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - crop: STABLE (class with no mutable properties)
@@ -4403,11 +4404,11 @@ internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneOptions(tone
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.EditorCanvas(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.EditorChip(selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>, contentDescription: kotlin.String, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
@@ -4647,7 +4648,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.HistoryChip(dayLabel: ko
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, onAwayBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, statusHeadline: kotlin.String?, statusDetails: kotlin.String?, onStatusClick: kotlin.Function0<kotlin.Unit>, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onInViewClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.InViewItem, kotlin.Unit>, onInViewCheck: kotlin.Function0<kotlin.Unit>, scrollToTopRequests: com.meticulouscreations.homesafe.ui.screens.ScrollToTopRequests, refreshing: kotlin.Boolean, onRefresh: kotlin.Function0<kotlin.Unit>?, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, connectionRetrying: kotlin.Boolean, onConnectionRetry: kotlin.Function0<kotlin.Unit>, onOpenTailscale: kotlin.Function0<kotlin.Unit>?, cameraCard: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction2<androidx.compose.foundation.lazy.grid.LazyGridItemScope, com.meticulouscreations.homesafe.viewmodel.CameraTile, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - everyoneAway: STABLE (primitive type)
@@ -4671,7 +4672,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, refreshing: kotlin.Boolean, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - everyoneAway: STABLE (primitive type)
@@ -4723,7 +4724,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.InViewCard(item: com.met
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.InViewNowReveal(items: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.InViewItem, kotlin.Unit>, onCheck: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - items: RUNTIME (requires runtime check)
@@ -4732,7 +4733,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.InViewNowReveal(items: k
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.InViewNowSection(items: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, onClick: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.InViewItem, kotlin.Unit>, onCheck: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - items: RUNTIME (requires runtime check)
@@ -4887,7 +4888,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.MomentCard(item: com.met
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.MomentChips(moments: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.ClipMoment>, range: com.meticulouscreations.homesafe.domain.model.ClipRange?, onSelect: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.ClipMoment, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - moments: RUNTIME (requires runtime check)
@@ -4970,7 +4971,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.NavRail(selected: com.me
   skippable: true
   restartable: true
   params:
-    - selected: STABLE (class with no mutable properties)
+    - selected: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - onSelect: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
@@ -5040,16 +5041,16 @@ private fun com.meticulouscreations.homesafe.ui.screens.OutageRow(title: kotlin.
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PeopleCard(uiState: com.meticulouscreations.homesafe.viewmodel.FaceLibraryUiState, library: com.meticulouscreations.homesafe.domain.model.FaceLibrary, viewModel: com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
     - library: RUNTIME (requires runtime check)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PersonGallery(person: com.meticulouscreations.homesafe.domain.model.KnownPerson, busyFiles: kotlin.collections.Set<kotlin.String>, imageUrl: kotlin.Function1<kotlin.String, kotlin.String?>, onDelete: kotlin.Function1<kotlin.String, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - person: RUNTIME (requires runtime check)
@@ -5077,7 +5078,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.PlayerStreamStats(camer
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.PlayerSurface(cameraAvailable: kotlin.Boolean, cameraName: kotlin.String, playerKey: kotlin.String, warmStreamUrl: kotlin.String?, warmPosterUrl: kotlin.String?, viewportHeight: androidx.compose.runtime.IntState, bottomInsetPx: kotlin.Int, takeover: androidx.compose.animation.core.Animatable<kotlin.Float, *>, onZoomStarted: kotlin.Function0<kotlin.Unit>, fullScreen: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, hint: org.jetbrains.compose.resources.StringResource?, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onBack: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, overflowMenu: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - cameraAvailable: STABLE (primitive type)
@@ -5206,7 +5207,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.RecentMomentCard(item: c
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.screens.RecognitionSection(models: kotlin.collections.List<com.meticulouscreations.homesafe.domain.model.ClassifierModel>, faceRecognitionEnabled: kotlin.Boolean?, onOpen: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - models: RUNTIME (requires runtime check)
@@ -5398,7 +5399,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.SettingsHomePreviewConte
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.SettingsInfoGrid(items: kotlin.collections.List<com.meticulouscreations.homesafe.ui.screens.InfoItem>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - items: RUNTIME (requires runtime check)
@@ -5486,7 +5487,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meti
   restartable: true
   params:
     - nav: STABLE (marked @Stable or @Immutable)
-    - tab: STABLE (class with no mutable properties)
+    - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - signedIn: STABLE (primitive type)
 
 @Composable
@@ -5495,7 +5496,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotli
   restartable: true
   params:
     - open: STABLE (primitive type)
-    - selectedTab: STABLE (class with no mutable properties)
+    - selectedTab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - finance: STABLE (marked @Stable or @Immutable)
     - weather: STABLE (marked @Stable or @Immutable)
     - fitness: STABLE (marked @Stable or @Immutable)
@@ -5518,7 +5519,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.ShellOverlays(nav: com.m
   params:
     - nav: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
-    - tab: STABLE (class with no mutable properties)
+    - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBar: kotlin.Boolean, topBar: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, overlay: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, showBottomNav: kotlin.Boolean, contentCovered: kotlin.Boolean, contentObscured: kotlin.Boolean, immersive: kotlin.Boolean, drawerPull: com.meticulouscreations.homesafe.ui.screens.DrawerPull?, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
@@ -5527,7 +5528,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellScaffold(showTopBa
   params:
     - showTopBar: STABLE (primitive type)
     - topBar: STABLE (composable function type)
-    - selectedTab: STABLE (class with no mutable properties)
+    - selectedTab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - onSelectTab: STABLE (function type)
     - overlay: STABLE (composable function type)
     - showBottomNav: STABLE (primitive type)
@@ -5550,7 +5551,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.ShellTab(nav: com.metic
   restartable: true
   params:
     - nav: STABLE (marked @Stable or @Immutable)
-    - tab: STABLE (class with no mutable properties)
+    - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Shimmer(modifier: androidx.compose.ui.Modifier): kotlin.Unit
@@ -5627,7 +5628,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.StayAtTheTopForNewerMome
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.StorageSection(overview: com.meticulouscreations.homesafe.domain.model.ServerOverview?): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - overview: RUNTIME (requires runtime check)
@@ -5657,7 +5658,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.TabContent(tab: com.meti
   skippable: true
   restartable: true
   params:
-    - tab: STABLE (class with no mutable properties)
+    - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - nav: STABLE (marked @Stable or @Immutable)
     - cardZoom: STABLE (marked @Stable or @Immutable)
 
@@ -5713,15 +5714,15 @@ internal fun com.meticulouscreations.homesafe.ui.screens.TimelineSection(cameraN
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.Toolbar(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.TrainCard(uiState: com.meticulouscreations.homesafe.viewmodel.ClassifierLabelingUiState, data: com.meticulouscreations.homesafe.domain.model.ClassifierDataset, onTrain: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
@@ -5802,7 +5803,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.WeatherDrawerCard(weathe
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ZoneDetailsEditor(zoneName: kotlin.String, friendlyName: kotlin.String, isPlaceholderName: kotlin.Boolean, objects: kotlin.collections.List<kotlin.String>, trackedObjects: kotlin.collections.List<kotlin.String>, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - zoneName: STABLE (String is immutable)
@@ -5810,15 +5811,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.ZoneDetailsEditor(zoneNa
     - isPlaceholderName: STABLE (primitive type)
     - objects: RUNTIME (requires runtime check)
     - trackedObjects: RUNTIME (requires runtime check)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.ZoneList(uiState: com.meticulouscreations.homesafe.viewmodel.DetectionZonesUiState, viewModel: com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - uiState: STABLE (marked @Stable or @Immutable)
-    - viewModel: RUNTIME (requires runtime check)
+    - viewModel: UNSTABLE (has mutable properties or unstable members)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.alertChipColors(): androidx.compose.material3.SelectableChipColors
@@ -6072,7 +6073,7 @@ internal fun com.meticulouscreations.homesafe.weather.ui.CardLabel(title: kotlin
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.ChoiceRow(label: kotlin.String, options: kotlin.collections.List<kotlin.String>, selected: kotlin.Int, tag: kotlin.String, onSelect: kotlin.Function1<kotlin.Int, kotlin.Unit>): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - label: STABLE (String is immutable)
@@ -6390,7 +6391,7 @@ internal fun com.meticulouscreations.homesafe.weather.ui.RoundAction(icon: andro
 
 @Composable
 private fun com.meticulouscreations.homesafe.weather.ui.ScaleBar(fraction: kotlin.Float, scale: kotlin.collections.List<androidx.compose.ui.graphics.Color>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: false
+  skippable: true
   restartable: true
   params:
     - fraction: STABLE (primitive type)
@@ -6721,12 +6722,13 @@ internal fun com.meticulouscreations.homesafe.weather.ui.shader.WeatherShaderWar
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock(running: kotlin.Boolean, wrapSeconds: kotlin.Float): androidx.compose.runtime.FloatState
+internal fun com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock(running: kotlin.Boolean, wrapSeconds: kotlin.Float, frameSeconds: kotlin.Float): androidx.compose.runtime.FloatState
   skippable: false
   restartable: false
   params:
     - running: STABLE (primitive type)
     - wrapSeconds: STABLE (primitive type)
+    - frameSeconds: STABLE (primitive type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky(scene: com.meticulouscreations.homesafe.weather.ui.sky.SkyScene, modifier: androidx.compose.ui.Modifier, glass: kotlin.Boolean, running: kotlin.Boolean, freeze: com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze?): kotlin.Unit

@@ -37,6 +37,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -45,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.domain.TravelMode
 import com.meticulouscreations.homesafe.atlas.ui.shader.ATLAS_CONTOUR_SHADER
+import com.meticulouscreations.homesafe.weather.ui.shader.layersKeepTheirPixels
 import com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock
 import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull
 
@@ -57,23 +60,34 @@ import com.meticulouscreations.homesafe.weather.ui.shader.weatherShaderOrNull
 internal fun AtlasBackdrop(tint: Color, tint2: Color, modifier: Modifier = Modifier, seed: Float = 0f, energy: Float = 0.6f, running: Boolean = true) {
     val shaded = LocalAtlasShaders.current
     val shader = remember(shaded) { if (shaded) weatherShaderOrNull(ATLAS_CONTOUR_SHADER) else null }
-    val clock = rememberWeatherShaderClock(running)
+    val clock = rememberWeatherShaderClock(running, frameSeconds = ATLAS_FRAME_SECONDS)
     Box(
-        modifier.drawBehind {
-            if (shader != null) {
-                shader.setUniform("size", size.width, size.height)
-                shader.setUniform("time", clock.floatValue)
-                shader.setUniform("seed", seed)
-                shader.setUniform("tint", tint)
-                shader.setUniform("tint2", tint2)
-                shader.setUniform("energy", energy)
-                drawRect(shader.brush())
-            } else {
-                drawRect(Brush.linearGradient(listOf(tint2.copy(alpha = 0.55f), Color(0xFF04060B))))
-            }
-        },
+        modifier
+            // Where a layer is a picture kept, the contours are shaded when they move and copied
+            // for the frames between: a list scrolled over them doesn't shade them again.
+            .then(if (shader != null && layersKeepTheirPixels) Modifier.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } else Modifier)
+            .drawBehind {
+                if (shader != null) {
+                    shader.setUniform("size", size.width, size.height)
+                    shader.setUniform("time", clock.floatValue)
+                    shader.setUniform("seed", seed)
+                    shader.setUniform("tint", tint)
+                    shader.setUniform("tint2", tint2)
+                    shader.setUniform("energy", energy)
+                    drawRect(shader.brush())
+                } else {
+                    drawRect(Brush.linearGradient(listOf(tint2.copy(alpha = 0.55f), Color(0xFF04060B))))
+                }
+            },
     )
 }
+
+/**
+ * For something drawn from hundreds of small shapes that a list then scrolls: a year of days, a
+ * week of hours. Where a layer is a picture kept (Android), it is drawn once and the picture is
+ * what moves; elsewhere a layer is drawn over on every frame anyway, and this does nothing.
+ */
+internal fun Modifier.keptPicture(): Modifier = if (layersKeepTheirPixels) graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen } else this
 
 /** A small round button with an icon, named for a screen reader by [label]. Not [enabled], it is drawn faint and says it is off. */
 @Composable

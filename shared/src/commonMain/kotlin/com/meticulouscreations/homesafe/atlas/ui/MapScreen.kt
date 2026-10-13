@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -77,20 +78,31 @@ private const val YEAR_STEP_MS = 1100L
  * them so the footprint grows year on year.
  */
 @Composable
-internal fun MapScreen(state: AtlasUiState, tiles: MapTileSource, padding: PaddingValues, onOpenPlace: (String) -> Unit, modifier: Modifier = Modifier, active: Boolean = true) {
+internal fun MapScreen(
+    state: AtlasUiState,
+    tiles: MapTileSource,
+    padding: PaddingValues,
+    onOpenPlace: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    active: Boolean = true,
+    map: AtlasMapState = remember { AtlasMapState() },
+) {
     val colors = AtlasTheme.colors
     val analysis = state.analysis
     val history = state.history
-    val map = remember { AtlasMapState() }
+    val scope = rememberCoroutineScope()
     val tilePx = with(LocalDensity.current) { MAP_TILE_DP.dp.toPx() }
     val years = remember(analysis) { analysis.years.map { it.year } }
     var year by rememberSaveable { mutableStateOf<Int?>(null) }
     var playing by remember { mutableStateOf(false) }
 
     val home = analysis.eras.lastOrNull()?.home
-    // Opens on home, wide enough to take in the town round it.
+    // Opens on home, wide enough to take in the town round it. Once: coming back from another tab finds the map where it was left.
     LaunchedEffect(home?.key) {
-        if (home != null) map.show(MapBounds(home.latitude - 0.22, home.longitude - 0.3, home.latitude + 0.22, home.longitude + 0.3))
+        if (home != null && map.openedOn != home.key) {
+            map.openedOn = home.key
+            map.show(MapBounds(home.latitude - 0.22, home.longitude - 0.3, home.latitude + 0.22, home.longitude + 0.3))
+        }
     }
     LaunchedEffect(playing, years) {
         if (!playing) return@LaunchedEffect
@@ -172,13 +184,13 @@ internal fun MapScreen(state: AtlasUiState, tiles: MapTileSource, padding: Paddi
             if (home != null) {
                 AtlasRoundButton(Icons.Filled.Home, stringResource(Res.string.atlas_map_home), {
                     map.show(MapBounds(home.latitude - 0.22, home.longitude - 0.3, home.latitude + 0.22, home.longitude + 0.3), glide = true)
-                }, fill = fill)
+                }, Modifier.testTag("atlas_map_home"), fill = fill)
             }
             AtlasRoundButton(Icons.Filled.Public, stringResource(Res.string.atlas_map_everywhere), {
                 MapBounds.of(history.places.values.map { it.latitude to it.longitude })?.let { map.show(it, glide = true) }
             }, Modifier.testTag("atlas_map_everywhere"), fill = fill)
-            AtlasRoundButton(Icons.Filled.Add, stringResource(Res.string.atlas_map_zoom_in), { map.camera = map.camera.zoomed(2f, 0f, 0f, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM) }, fill = fill)
-            AtlasRoundButton(Icons.Filled.Remove, stringResource(Res.string.atlas_map_zoom_out), { map.camera = map.camera.zoomed(0.5f, 0f, 0f, tilePx, ATLAS_MIN_ZOOM, ATLAS_MAX_ZOOM) }, fill = fill)
+            AtlasRoundButton(Icons.Filled.Add, stringResource(Res.string.atlas_map_zoom_in), { map.zoomBy(scope, 2f, 0f, 0f, tilePx) }, Modifier.testTag("atlas_map_zoom_in"), fill = fill)
+            AtlasRoundButton(Icons.Filled.Remove, stringResource(Res.string.atlas_map_zoom_out), { map.zoomBy(scope, 0.5f, 0f, 0f, tilePx) }, Modifier.testTag("atlas_map_zoom_out"), fill = fill)
         }
 
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = padding.calculateBottomPadding())) {
@@ -187,7 +199,7 @@ internal fun MapScreen(state: AtlasUiState, tiles: MapTileSource, padding: Paddi
                     stringResource(Res.string.atlas_map_reading_paths),
                     style = AtlasTheme.type.label,
                     color = colors.textMuted,
-                    modifier = Modifier.padding(start = AtlasGutter, bottom = 8.dp).clip(CircleShape).background(colors.background.copy(alpha = 0.78f)).padding(horizontal = 12.dp, vertical = 6.dp),
+                    modifier = Modifier.testTag("atlas_map_reading_paths").padding(start = AtlasGutter, bottom = 8.dp).clip(CircleShape).background(colors.background.copy(alpha = 0.78f)).padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
             Text(

@@ -32,6 +32,12 @@ updates:
       app-and-build:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # material3 is numbered after the Compose it is built for, and is still an alpha, so its next
+      # minor is proposed while composeMultiplatform stays on the stable one. Taking it brings that
+      # whole alpha Compose in over the pinned version. It moves by hand, with composeMultiplatform.
+      - dependency-name: "org.jetbrains.compose.material3:material3"
+        update-types: ["version-update:semver-minor"]
 
   # The actions the workflows use. They are pinned to a major tag, so every update is a major one
   # and they all go together.

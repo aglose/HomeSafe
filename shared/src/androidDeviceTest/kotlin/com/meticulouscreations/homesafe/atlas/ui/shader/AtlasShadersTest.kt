@@ -24,9 +24,8 @@ class AtlasShadersTest {
     @Test
     fun theHeatShaderCompilesAndTakesItsUniforms() {
         val shader = RuntimeShader(ATLAS_HEAT_SHADER)
-        shader.setFloatUniform("size", 1080f, 2200f)
-        shader.setFloatUniform("spread", 7.4f)
         shader.setFloatUniform("time", 3.2f)
+        shader.setFloatUniform("air", 0.69f, 0.55f, 1f)
     }
 
     @Test

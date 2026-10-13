@@ -84,6 +84,7 @@ import homesafe.shared.generated.resources.atlas_day_visit_detail
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.roundToInt
 
 private const val REPLAY_MS = 14_000
 
@@ -302,6 +303,9 @@ internal fun DayRibbon(plan: DayPlan, head: () -> Float, onScrub: (Float) -> Uni
     // often than that while the day plays.
     val headMinute by remember(plan) { derivedStateOf { if (head() >= 1f) -1 else localMinute(plan.start + (span * head()).toLong(), plan.offsetMinutes) / 5 * 5 } }
     val position = if (headMinute < 0) stringResource(Res.string.atlas_day_ribbon_whole) else clockText(headMinute)
+    // And as a share of the day, to the hundredth: read where it is said, which while the day
+    // plays would otherwise be said over on every frame.
+    val headShare by remember(plan) { derivedStateOf { (head().coerceIn(0f, 1f) * 100).roundToInt() / 100f } }
 
     fun share(x: Float, width: Float): Float {
         val at = plan.dayStart + (x / width).coerceIn(0f, 1f) * SECONDS_PER_DAY
@@ -314,7 +318,7 @@ internal fun DayRibbon(plan: DayPlan, head: () -> Float, onScrub: (Float) -> Uni
             .semantics {
                 contentDescription = description
                 stateDescription = position
-                progressBarRangeInfo = ProgressBarRangeInfo(head().coerceIn(0f, 1f), 0f..1f)
+                progressBarRangeInfo = ProgressBarRangeInfo(headShare, 0f..1f)
                 setProgress { to ->
                     onScrub(to.coerceIn(0f, 1f))
                     true
