@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.DayCard
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.HealthUiState
 import com.meticulouscreations.homesafe.fitness.PhaseStatus
 import com.meticulouscreations.homesafe.fitness.RecordEvent
 import com.meticulouscreations.homesafe.fitness.WorkoutHeart
@@ -58,6 +59,9 @@ import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_phase_day
+import homesafe.shared.generated.resources.fitness_run_none
+import homesafe.shared.generated.resources.fitness_run_open
+import homesafe.shared.generated.resources.fitness_run_title
 import homesafe.shared.generated.resources.fitness_today_add_button
 import homesafe.shared.generated.resources.fitness_today_exercises
 import homesafe.shared.generated.resources.fitness_today_headline_due
@@ -86,9 +90,10 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The fitness app's front page: what stretch of the year it is, which workout has waited
- * longest, the three days as doors to start one, what the heart did last time if a sensor was
- * on for it, and the records lately set. With nothing in the log yet it is one invitation: bring
- * the notes in.
+ * longest, what the band says about the body today (readiness, steps, sleep), the three days as
+ * doors to start one and a door to the runs, what the heart did last time if a sensor was on for
+ * it, and the records lately set. With nothing in the log yet it is one invitation: bring the
+ * notes in.
  */
 @Composable
 internal fun TodayScreen(
@@ -103,6 +108,11 @@ internal fun TodayScreen(
     modifier: Modifier = Modifier,
     animated: Boolean = true,
     lastHeart: WorkoutHeart? = null,
+    /** What the device's health store says; left out, Today is as it is where there is none. */
+    health: HealthUiState = HealthUiState(),
+    onConnectHealth: () -> Unit = {},
+    onManageHealth: () -> Unit = {},
+    onOpenRuns: () -> Unit = {},
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -135,6 +145,9 @@ internal fun TodayScreen(
             }
         }
 
+        // The body first: how ready it is decides how the rest of the page is read.
+        if (health.supported) BodyCard(health, onConnectHealth, onManageHealth, animated = animated)
+
         if (state.isEmpty) {
             FitnessCard(Modifier.testTag("fitness_today_empty")) {
                 Text(stringResource(Res.string.fitness_today_import_title), style = type.title, color = colors.text)
@@ -145,6 +158,8 @@ internal fun TodayScreen(
                 Spacer(Modifier.height(10.dp))
                 GhostButton(stringResource(Res.string.fitness_today_add_button), onOpenLifts, Modifier.fillMaxWidth(), icon = Icons.Filled.Add)
             }
+            // Runs come from the band, and are there whether or not anything has been lifted yet.
+            if (health.runsShared) RunsDoor(health, animated, onOpenRuns)
             return@Column
         }
 
@@ -177,6 +192,8 @@ internal fun TodayScreen(
                 }
             }
         }
+
+        if (health.runsShared) RunsDoor(health, animated, onOpenRuns)
 
         // While a workout is open its own heart is on its page; this is for looking back.
         if (lastHeart != null && workout == null) LastHeartCard(lastHeart, state, Modifier.padding(top = 6.dp))
@@ -275,6 +292,29 @@ private fun DayDoor(day: DayCard, state: FitnessUiState, seed: Float, animated: 
             }
         }
         if (!small) Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
+    }
+}
+
+/** The way to the runs: this week's miles and the last run in a line, over fibre in the runs' own colours. */
+@Composable
+private fun RunsDoor(health: HealthUiState, animated: Boolean, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val type = FitnessTheme.type
+    DoorCard(
+        FitnessTheme.colors.run,
+        seed = 0.73f,
+        energy = 0.3f,
+        animated = animated,
+        height = 112.dp,
+        onClickLabel = stringResource(Res.string.fitness_run_open),
+        onClick = onOpen,
+        modifier = modifier.testTag("fitness_runs_door"),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(Res.string.fitness_run_title), style = type.hero, color = Color.White, maxLines = 1)
+            Text(runWeekLine(health.runs.thisWeek), style = type.label, color = Color.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(lastRunLine(health) ?: stringResource(Res.string.fitness_run_none), style = type.label, color = Color(0xDDFFFFFF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = Color.White, modifier = Modifier.size(28.dp))
     }
 }
 

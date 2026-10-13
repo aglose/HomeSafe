@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.finance.ChartStyleViewModel
 import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
 import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
+import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.integration.testPlatformContext
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraDetailViewModel
@@ -60,6 +61,7 @@ class AppGraphViewModelWiringTest {
                 ConnectionNoticeViewModel::class,
                 WeatherViewModel::class,
                 FitnessViewModel::class,
+                HealthViewModel::class,
             ),
             graph.viewModelProviders.keys,
         )

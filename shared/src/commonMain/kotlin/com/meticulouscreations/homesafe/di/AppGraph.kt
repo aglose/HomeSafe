@@ -43,7 +43,9 @@ import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.repository.SettingsRepository
 import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.createFinanceTipLedger
+import com.meticulouscreations.homesafe.fitness.data.createHealthSource
 import com.meticulouscreations.homesafe.fitness.data.createHeartRateLink
+import com.meticulouscreations.homesafe.fitness.domain.HealthSource
 import com.meticulouscreations.homesafe.fitness.domain.HeartRateLink
 import com.meticulouscreations.homesafe.getPlatform
 import com.meticulouscreations.homesafe.network.FrigateApiClient
@@ -264,6 +266,11 @@ interface AppGraph : ViewModelGraph {
     @SingleIn(AppScope::class)
     @Provides
     fun provideHeartRateLink(platformContext: PlatformContext): HeartRateLink = createHeartRateLink(platformContext)
+
+    /** The device's health store, which the fitness app reads steps, sleep and runs from (`HealthViewModel`). */
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideHealthSource(platformContext: PlatformContext): HealthSource = createHealthSource(platformContext)
 
     /** How often the finance app's nudges have been shown on this install. */
     @SingleIn(AppScope::class)

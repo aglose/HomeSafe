@@ -159,6 +159,8 @@ kotlin {
             implementation(libs.androidx.fragment)
             // The weather app's periodic background check (WeatherNotifier.android.kt).
             implementation(libs.androidx.work.runtime)
+            // Steps, sleep and runs from the band, by way of Google Health (HealthSource.android.kt).
+            implementation(libs.androidx.health.connect)
         }
         jvmMain.dependencies {
             implementation(libs.sqlite.bundled)

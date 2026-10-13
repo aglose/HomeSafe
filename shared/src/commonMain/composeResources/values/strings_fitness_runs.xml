@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's runs, read from the device's health store (Health Connect on Android): the
+  door on Today, the page of every run with the weeks added up, and a run opened up into its
+  pace, heart rate, splits and route. See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <string name="fitness_run_title">Runs</string>
+    <!-- The top bar over one run -->
+    <string name="fitness_run_page_title">Run</string>
+
+    <!-- What a run is called, by when in the day it began -->
+    <string name="fitness_run_name_morning">Morning run</string>
+    <string name="fitness_run_name_midday">Lunch run</string>
+    <string name="fitness_run_name_afternoon">Afternoon run</string>
+    <string name="fitness_run_name_evening">Evening run</string>
+    <string name="fitness_run_name_night">Night run</string>
+    <string name="fitness_run_treadmill">Treadmill</string>
+
+    <!-- Measures. %1$s a number already written, like "3.10" or "9:12" -->
+    <string name="fitness_run_miles">%1$s mi</string>
+    <string name="fitness_run_pace">%1$s /mi</string>
+    <string name="fitness_run_feet">%1$s ft</string>
+    <string name="fitness_run_bpm">%1$d bpm</string>
+    <!-- Steps a minute -->
+    <string name="fitness_run_spm">%1$d spm</string>
+
+    <!-- The door on Today -->
+    <string name="fitness_run_open">Open your runs</string>
+    <!-- %1$s the week's miles, like "12.4 mi"; %2$d how many runs -->
+    <plurals name="fitness_run_week">
+        <item quantity="one">%1$s this week · %2$d run</item>
+        <item quantity="other">%1$s this week · %2$d runs</item>
+    </plurals>
+    <string name="fitness_run_week_none">Nothing this week yet</string>
+    <!-- The last run in a line: %1$s how long ago ("Yesterday"), %2$s how far, %3$s its pace -->
+    <string name="fitness_run_last">Last: %1$s · %2$s · %3$s</string>
+    <!-- The same for a run with no distance recorded: %1$s how long ago, %2$s how long it took -->
+    <string name="fitness_run_last_timed">Last: %1$s · %2$s</string>
+    <string name="fitness_run_none">No runs yet. Record one with your band or in Google Health and it appears here.</string>
+    <string name="fitness_run_not_shared">Exercise isn't shared with PercySafe, so there are no runs to show.</string>
+
+    <!-- The runs page -->
+    <string name="fitness_run_this_week">This week</string>
+    <string name="fitness_run_stat_miles">Miles</string>
+    <string name="fitness_run_stat_runs">Runs</string>
+    <string name="fitness_run_stat_time">Time</string>
+    <string name="fitness_run_weeks_title">Miles a week</string>
+    <!-- Under the first bar of the weeks: %1$s the day that week began, like "8/17" -->
+    <string name="fitness_run_weeks_from">Week of %1$s</string>
+    <!-- For a screen reader: %1$d how many weeks are drawn, %2$s this week's miles -->
+    <string name="fitness_run_weeks_described">Miles a week over the last %1$d weeks. This week, %2$s.</string>
+    <string name="fitness_run_all">Every run</string>
+    <!-- A run in the list: %1$s how far, %2$s its pace, %3$s how long it took -->
+    <string name="fitness_run_row_stats">%1$s · %2$s · %3$s</string>
+    <string name="fitness_run_badge_longest">Longest</string>
+    <string name="fitness_run_badge_fastest">Fastest pace</string>
+    <!-- For a screen reader, a run to open: %1$s its name, %2$s its day -->
+    <string name="fitness_run_open_run">Open %1$s, %2$s</string>
+    <string name="fitness_run_source">Runs are recorded by your band or the Google Health app, and read from Health Connect.</string>
+
+    <!-- One run -->
+    <string name="fitness_run_stat_distance">Distance</string>
+    <string name="fitness_run_stat_pace">Pace</string>
+    <string name="fitness_run_stat_heart">Avg heart rate</string>
+    <string name="fitness_run_stat_peak">Max heart rate</string>
+    <string name="fitness_run_stat_calories">Calories</string>
+    <string name="fitness_run_stat_cadence">Cadence</string>
+    <string name="fitness_run_stat_climb">Climb</string>
+    <string name="fitness_run_stat_steps">Steps</string>
+    <string name="fitness_run_reading">Reading the run…</string>
+    <string name="fitness_run_heart">Heart rate</string>
+    <!-- For a screen reader: the lowest and highest the heart read in the run -->
+    <string name="fitness_run_heart_described">Heart rate through the run, between %1$d and %2$d beats a minute</string>
+    <string name="fitness_run_zones_unset">Set your max heart rate to see this run in zones.</string>
+    <string name="fitness_run_splits">Splits</string>
+    <string name="fitness_run_split_mile">Mile</string>
+    <string name="fitness_run_route">Route</string>
+    <string name="fitness_run_route_ask">Show the route</string>
+    <string name="fitness_run_route_described">The route of the run, drawn as a line from its start to its finish</string>
+</resources>
