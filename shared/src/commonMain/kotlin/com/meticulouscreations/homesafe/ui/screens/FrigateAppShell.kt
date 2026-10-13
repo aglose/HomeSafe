@@ -91,6 +91,7 @@ import com.meticulouscreations.homesafe.finance.FinanceViewModel
 import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
+import com.meticulouscreations.homesafe.fitness.HealthViewModel
 import com.meticulouscreations.homesafe.fitness.ui.FitnessApp
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
@@ -557,6 +558,11 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
     val fitnessUp = nav.isOpen(InnerApp.FITNESS)
     LaunchedEffect(visible, drawerShowing, fitnessUp) {
         fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
+    }
+    // The health store is read only for the fitness app itself: the drawer's card shows none of it.
+    val health: HealthViewModel = metroViewModel()
+    LaunchedEffect(visible, fitnessUp) {
+        health.setActive(visible && fitnessUp)
     }
     val atlas: AtlasViewModel = metroViewModel()
     val atlasState by atlas.uiState.collectAsStateWithLifecycle()

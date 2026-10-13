@@ -23,13 +23,57 @@
         android:name="android.hardware.bluetooth_le"
         android:required="false" />
 
+    <!-- The fitness app's steps, sleep, readiness and runs, read from Health Connect, which is
+         where the Google Health app puts what a Fitbit band records (HealthSource.android.kt).
+         Read only: nothing is written there, and nothing read leaves the phone. Asked for when
+         the user taps Connect on the fitness app's front page, each kind allowed or refused by
+         itself. -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
+    <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
+    <!-- Runs from more than thirty days before the app was first let in. -->
+    <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
+    <!-- What "Allow all routes" grants on the sheet Health Connect shows when a run's route is
+         asked for; without it declared the sheet only offers the one route. -->
+    <uses-permission android:name="android.permission.health.READ_EXERCISE_ROUTES" />
+
     <!-- The "Open Tailscale" button on the Home notice (TailscaleApp.android.kt): Android 11+
          hides other apps from this one unless they are named here. -->
     <queries>
         <package android:name="com.tailscale.ipn" />
+        <!-- Health Connect, which is an app of its own on Android 13. -->
+        <package android:name="com.google.android.apps.healthdata" />
     </queries>
 
     <application>
+        <!-- What the app reads from Health Connect and why: Health Connect won't show its
+             permission sheet for an app that has no such page, and links to it from its own
+             settings. On Android 13 it asks for it by the androidx action; from 14 it is part of
+             the system and asks through the alias below. -->
+        <activity
+            android:name="com.meticulouscreations.homesafe.fitness.HealthRationaleActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+        <activity-alias
+            android:name="com.meticulouscreations.homesafe.fitness.ViewHealthPermissionUsage"
+            android:exported="true"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE"
+            android:targetActivity="com.meticulouscreations.homesafe.fitness.HealthRationaleActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
+
         <receiver
             android:name="com.meticulouscreations.homesafe.data.GeofenceBroadcastReceiver"
             android:exported="false" />

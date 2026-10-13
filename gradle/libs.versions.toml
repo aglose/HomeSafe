@@ -62,6 +62,8 @@ playServicesLocation = "21.3.0"
 firebaseBom = "34.18.0"
 # The push path's picture and clip outlive the messaging service's callback; see HomeSafeMessagingService.
 androidx-work = "2.11.2"
+# Health Connect, where Google Health puts what a Fitbit band records (HealthSource.android.kt).
+androidx-health-connect = "1.1.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -127,6 +129,7 @@ androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstall
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebaseBom" }
 firebase-messaging = { module = "com.google.firebase:firebase-messaging" }
 androidx-work-runtime = { module = "androidx.work:work-runtime", version.ref = "androidx-work" }
+androidx-health-connect = { module = "androidx.health.connect:connect-client", version.ref = "androidx-health-connect" }
 # Geofencing + fused location for automatic presence (GeofenceMonitor.android.kt).
 play-services-location = { module = "com.google.android.gms:play-services-location", version.ref = "playServicesLocation" }
 

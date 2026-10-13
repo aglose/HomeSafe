@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The fitness app's reading of the body, from the device's health store (Health Connect on
+  Android): the card on Today with a readiness score, steps and last night's sleep, connecting
+  the store, and the page Health Connect links to that says what is read and why. See AGENTS.md,
+  "Strings and localization".
+-->
+<resources>
+    <!-- The card's small capital heading -->
+    <string name="fitness_body_title">Body</string>
+
+    <!-- Connecting. "Health Connect" and "Google Health" are the names of Android's health store and Google's app -->
+    <string name="fitness_body_connect_body">See a readiness score, your steps, last night's sleep and your runs here. They are read from Health Connect, where Google Health puts what your band records. Nothing leaves this phone.</string>
+    <string name="fitness_body_connect_hint">In Google Health, switch on Health Connect under Connections first.</string>
+    <string name="fitness_body_connect_button">Connect Health Connect</string>
+    <string name="fitness_body_missing_body">Steps, sleep and runs from your band come through Health Connect, which this phone doesn't have yet.</string>
+    <string name="fitness_body_missing_button">Get Health Connect</string>
+    <!-- Shown once asking has come to nothing twice: Android shows its permission sheet for a refusal and for one more, and then not at all -->
+    <string name="fitness_body_refused">Android stops asking after two refusals. Allow PercySafe in Health Connect itself.</string>
+    <string name="fitness_body_manage_button">Open Health Connect</string>
+    <string name="fitness_body_reading">Reading Health Connect…</string>
+    <string name="fitness_body_failed">Couldn't reach Health Connect just now. This is from the last time it could.</string>
+    <!-- Connected, but none of steps, sleep or the heart's readings is shared -->
+    <string name="fitness_body_nothing_shared">Steps, sleep and heart readings aren't shared with PercySafe.</string>
+
+    <!-- Readiness. The score is out of 100 -->
+    <string name="fitness_body_readiness">Readiness</string>
+    <string name="fitness_body_readiness_high">Ready to push</string>
+    <string name="fitness_body_readiness_moderate">Steady</string>
+    <string name="fitness_body_readiness_low">Take it easy</string>
+    <string name="fitness_body_readiness_high_advice">A good day to go after a target.</string>
+    <string name="fitness_body_readiness_moderate_advice">Train as planned.</string>
+    <string name="fitness_body_readiness_low_advice">Keep it light, or settle for matching last time.</string>
+    <!-- Nothing from last night has arrived -->
+    <string name="fitness_body_readiness_waiting_title">Waiting for last night</string>
+    <string name="fitness_body_readiness_waiting">Nothing from last night has arrived yet. Open Google Health to sync your band.</string>
+    <string name="fitness_body_readiness_unshared_title">No score</string>
+    <string name="fitness_body_readiness_unshared">Share sleep or heart rate variability to get a readiness score.</string>
+    <string name="fitness_body_readiness_none">––</string>
+    <!-- Too few nights so far to say what is usual for this person -->
+    <string name="fitness_body_readiness_learning">Still learning what is usual for you: after a week of nights the score reads your heart as well.</string>
+    <!-- What the score was read from. %1$d the reading, %2$d what is usual for this person -->
+    <string name="fitness_body_part_variability">HRV %1$d ms · usually %2$d</string>
+    <string name="fitness_body_part_resting">Resting %1$d bpm · usually %2$d</string>
+    <!-- For a screen reader: %1$d the score, %2$s one of the three levels above -->
+    <string name="fitness_body_readiness_described">Readiness %1$d out of 100. %2$s</string>
+
+    <!-- Steps -->
+    <string name="fitness_body_steps">Steps</string>
+    <!-- %1$s a count with its thousands marked off, like "7,900" -->
+    <string name="fitness_body_steps_average">Usually %1$s a day</string>
+    <string name="fitness_body_steps_no_average">Today so far</string>
+    <!-- For a screen reader: %1$s today's count -->
+    <string name="fitness_body_steps_described">%1$s steps today</string>
+    <!-- For a screen reader: %1$s today's count, %2$s the usual -->
+    <string name="fitness_body_steps_described_average">%1$s steps today, usually %2$s a day</string>
+
+    <!-- Sleep -->
+    <string name="fitness_body_sleep">Sleep</string>
+    <string name="fitness_body_sleep_none">Nothing from last night yet</string>
+    <!-- When it began and ended: %1$s and %2$s are times of day, like "11:42 PM" -->
+    <string name="fitness_body_sleep_span">%1$s – %2$s</string>
+    <!-- %1$s a length of time, like "6 h 50 min" -->
+    <string name="fitness_body_sleep_average">Usually %1$s</string>
+    <string name="fitness_body_sleep_deep">Deep</string>
+    <string name="fitness_body_sleep_light">Light</string>
+    <string name="fitness_body_sleep_rem">REM</string>
+    <string name="fitness_body_sleep_awake">Awake</string>
+    <!-- For a screen reader: %1$s how long was slept, then how long in each stage -->
+    <string name="fitness_body_sleep_described">Slept %1$s last night</string>
+    <string name="fitness_body_sleep_described_stages">Slept %1$s last night: %2$s deep, %3$s light, %4$s REM, %5$s awake</string>
+
+    <!-- A tile whose kind of record isn't shared with the app -->
+    <string name="fitness_body_not_shared">Not shared</string>
+
+    <!-- The page Health Connect opens for "why does this app want my data" -->
+    <string name="fitness_body_rationale_title">What PercySafe reads from Health Connect</string>
+    <string name="fitness_body_rationale_intro">The fitness app shows what your band records beside your training log. It only reads; it never writes to Health Connect.</string>
+    <string name="fitness_body_rationale_steps">Steps, for the week's count on the front page.</string>
+    <string name="fitness_body_rationale_sleep">Sleep, for last night's length and stages, and as part of the readiness score.</string>
+    <string name="fitness_body_rationale_heart">Resting heart rate and heart rate variability, which the readiness score compares with your own last four weeks.</string>
+    <string name="fitness_body_rationale_runs">Exercise, distance, heart rate, calories, elevation and routes, for your runs: their pace, splits, heart-rate zones and where they went.</string>
+    <string name="fitness_body_rationale_privacy">Everything read stays on this phone. None of it is sent to the home server or to anyone else, and none of it is kept by PercySafe: it is read again from Health Connect each time.</string>
+    <string name="fitness_body_rationale_change">You can stop sharing any of it at any time in Health Connect, under App permissions.</string>
+    <string name="fitness_body_rationale_done">Done</string>
+</resources>

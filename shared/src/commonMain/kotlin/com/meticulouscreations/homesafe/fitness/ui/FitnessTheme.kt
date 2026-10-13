@@ -67,6 +67,9 @@ data class FitnessPalette(
         WorkoutFocus.ARMS -> Color(0xFFC08BFF) to Color(0xFF5B2FD6)
     }
 
+    /** A run's two colours, the brighter first: sea-green into deep water, which none of the workouts has. */
+    val run: Pair<Color, Color> get() = Color(0xFF3CF0D0) to Color(0xFF0B7FAB)
+
     /** A phase's two colours: a bulk burns, a cut is cold, maintenance sits between. */
     fun phase(kind: PhaseKind): Pair<Color, Color> = when (kind) {
         PhaseKind.BULK -> ember to Color(0xFFB3123A)

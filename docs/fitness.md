@@ -8,7 +8,7 @@ in a notes app, and it reads those notes as its starting point.
 
 | Tab | What it shows |
 |---|---|
-| **Today** | The phase (bulk, cut, maintain) and how long it has run, which workout has waited longest, the week in three numbers, and the workouts as doors: Chest, Back and Legs, then Shoulders and Arms. The one that is up next says what it opens on. Below, the records lately set |
+| **Today** | The phase (bulk, cut, maintain) and how long it has run, which workout has waited longest, [the body today](#the-body-and-runs) (a readiness score, steps, last night's sleep), the week in three numbers, and the workouts as doors: Chest, Back and Legs, then Shoulders and Arms, and a door to the [runs](#runs). The one that is up next says what it opens on. Below, the records lately set |
 | **Lifts** | Every exercise, shelf by shelf, with its best set, its ladder in miniature and where it stands against its best. Add one by name; bring the notes in; [send a copy of the log](#moving-the-log) to another install |
 | **History** | [A month as a calendar](#looking-back), each day something was trained lit in that workout's colour, what the month came to, and the month's workouts with what each came to. A workout opens onto its own page, where it can be deleted |
 | **Progress** | The phase and how the lifts are holding up in it, bodyweight with the noise taken out, the week's sets drawn on the body, the last twelve weeks as a calendar, and each lift against its best |
@@ -19,6 +19,9 @@ tap opens one into its logger, in place, with the figure performing it above. At
 finished, which keeps it, or [cancelled](#cancelling-and-deleting), which throws it away. An **exercise** has a page of its own: the target and
 why, the ladder, the logger, strength over time, and an editor behind the pencil. With a
 heart-rate sensor connected (Android), the workout also shows the [heart rate](#heart-rate) live.
+
+What a band records away from the app (steps, sleep, runs) is read from [Health Connect](#the-body-and-runs)
+(Android), and is the one part of the app that isn't the app's own log.
 
 ## The model: a ladder
 
@@ -154,8 +157,8 @@ a copy adds whatever the log hasn't got.
 ## Heart rate
 
 A workout can show the heart rate live, with the zone it is in, from a Bluetooth heart-rate
-sensor. It was built for a Google Fitbit Air, a band with no screen and no API of its own, which
-can be made to behave like a chest strap; any sensor that speaks the standard Bluetooth Heart
+sensor. It was built for a Google Fitbit Air, a band with no screen and nothing an app can ask
+it for directly, which can be made to behave like a chest strap; any sensor that speaks the standard Bluetooth Heart
 Rate Service (0x180D, notifying on Heart Rate Measurement, 0x2A37) works the same way. **Android
 only for now**: on iOS, the desktop and the web the port answers "unsupported" and none of this
 is shown.
@@ -225,6 +228,128 @@ screen off will show a short "recorded" time, not a wrong one.
 If the link drops mid-workout (out of range, band off) the panel says so and the app keeps
 looking, backing off from two seconds to thirty. A link that has said nothing for twelve seconds
 is treated as dropped without waiting for Android to notice.
+
+## The body, and runs
+
+What the band records when the app isn't looking, it gives to the Google Health app, and Google
+Health can write it into **Health Connect**, Android's store of health records on the phone.
+The fitness app reads it from there. **Android only**: on iOS, the desktop and the web the port
+answers "unsupported" and none of this is shown. It only reads. Nothing read leaves the phone
+(not to the home server, not anywhere), and nothing read is kept by the app: Health Connect is
+asked again each time the fitness app comes on screen, at most once a minute.
+
+### Setting it up
+
+1. In the Google Health app: **Connections → Partner apps → Health Connect**, switched on, with
+   the kinds to share ticked. The band syncs through the phone about every quarter of an hour.
+2. In PercySafe: the **Body** card at the top of Today has **Connect Health Connect**. Android
+   puts up its sheet here, at the tap, with each kind of record to allow or refuse by itself:
+   steps, sleep, heart rate, resting heart rate, heart rate variability, exercise, distance,
+   calories and elevation, and (where the phone offers it) history older than thirty days.
+3. After two refusals Android stops showing the sheet. Once asking has come to nothing twice the
+   card says so and offers **Open Health Connect**, which is the app's page in Health Connect's
+   own settings. The same button is on the card whenever some kinds are shared and others
+   aren't (the sheet is only for the first asking), and at the foot of the runs page.
+
+A kind switched off in Health Connect is gone from the screens the next time it is read, an open
+run's heart rate included. A kind that is still shared but couldn't be read just then keeps what
+it last showed, and the card says it may be behind.
+
+On Android 13 Health Connect is an app from the Play Store, and the card offers to get it; from
+14 it is part of the system. The page Health Connect links to for "why does this app want my
+data" is `HealthRationaleActivity`, which Android requires before it will show the sheet at all.
+
+### Readiness
+
+A score out of 100 for how ready the body looks for hard training today, in a ring on the Body
+card with the readings behind it. It is this app's own (`ReadinessScore`), a plain one, and
+**not Fitbit's "Daily Readiness"**, which is worked out on Google's servers and isn't written to
+Health Connect.
+
+| Part | Weight | How it is scored |
+|---|---|---|
+| Heart rate variability overnight (RMSSD) | 40% | Against this person's own last 28 days, on its logarithm: 75 when it is what is usual, 25 more or fewer for each standard deviation above or below |
+| Resting heart rate | 30% | The same, turned over: lower than usual is better |
+| Last night's sleep | 30% | Time asleep: 100 at eight hours or more, 0 at four or fewer, even between |
+
+- The score is the weighted average of whichever parts there are. 80 and up reads **Ready to
+  push**, 55 to 79 **Steady**, under 55 **Take it easy**.
+- Variability and the resting rate are held against one's own baseline and not a population's,
+  and variability on its logarithm, after Plews et al. 2013. Neither is scored until there are
+  seven days to compare with; until then the score is sleep's alone and the card says it is
+  still learning. A standard deviation is never taken as smaller than a floor (about 8% for
+  variability, 1.5 beats for the resting rate), so a week of near-identical nights doesn't make
+  an alarm of one ordinary night.
+- Seven hours is the least recommended for an adult (Watson et al. 2015); eight is the mark
+  used here for someone training.
+- It needs something from last night: the sleep itself, or the variability measured in it. A
+  reading after six in the evening belongs to the night ahead. Before the band has synced in the
+  morning the card says **Waiting for last night**, and shows no number sooner than a stale one.
+- A night is the longest sleep that ended on that day, so an afternoon nap doesn't stand for the
+  night before it; a sleep of under an hour is nobody's night. Its day and its two times are
+  read in the offsets from UTC the tracker recorded it in, so a night away from home, or across
+  a change of the clocks, reads as the clock by the bed did.
+
+It is a guide. Nothing in the [progression rules](#what-to-aim-for) reads it.
+
+### Steps and sleep
+
+- **Steps**: today's count, the last seven days as bars with today's lit, and what a day usually
+  comes to (the days before today the band was worn on). The count is Health Connect's own
+  total, which counts a step once when both the phone and the band saw it.
+- **Sleep**: last night's time asleep, the night as a bar of its stages (deep, REM, light, then
+  awake, the deeper the fuller the colour), when it began and ended, and the average of the week
+  before it.
+
+A kind that isn't shared says **Not shared** on its tile, which is a different thing from there
+being nothing to show.
+
+### Runs
+
+Runs are **not started in this app**. The band records one (or the Google Health app does, with
+the phone's GPS), and it turns up behind the **Runs** door on Today once the band has synced:
+this week's miles and the last run in a line on the door, and behind it:
+
+- **The runs page**: this week in three numbers (miles, runs, time), the last eight weeks' miles
+  as bars (Monday to Sunday, this week's lit), and every run of the last sixteen weeks, the
+  latest first: what it is called (by the part of the day it began in: Morning, Lunch,
+  Afternoon, Evening, Night), when, how far, its pace and how long, and the heart's average.
+  The **longest** and the **fastest pace** (over a mile or more) carry a trophy once there are
+  two runs to choose between; a treadmill run says so.
+- **A run's page**: distance, pace and time large; the heart's average and maximum, calories,
+  cadence, climb and steps under them; then, once its track has been read:
+  - **The route**, as a line with its start ringed and its finish dotted. No map is drawn under
+    it: the shape is enough to know a route by, and a map would send where the runner lives to a
+    tile server. Health Connect hands another app's routes over one at a time, each when asked:
+    **Show the route** puts up its sheet, which also offers to allow all of them.
+  - **Heart rate** through the run as a line over bands of the [zones](#zones)' colours, and the
+    time in each zone. The zones are the ones set on the heart-rate page; with none set the page
+    says so and links there. A reading stands until the next one, for up to five minutes.
+  - **Splits**, mile by mile: the pace, a bar that is longer the quicker the mile, and the
+    heart's average through it, with the part of a mile the run ended on as its own row. A mile
+    mark that falls inside a stretch of recorded distance is taken as that far through it.
+    Splits are only shown when the distance came in at least three stretches a mile; coarser
+    than that, where a mile began would be a guess.
+
+Miles, and feet for a climb, as the weights are pounds. Pace is moving time over distance: what
+the run was paused for is left out when the tracker says. A run's totals and its track are both
+read from the app that recorded it, so a second tracker worn on the same run isn't added in;
+what that app recorded none of is taken from whichever did. The heart-rate line breaks where the
+band lost the wrist for more than five minutes.
+
+### What it can't do
+
+- **It has never been run against a real Health Connect.** `HealthSource.android.kt` compiles
+  against the library and everything above it is tested against a fake, as the heart-rate radio
+  was: which records Google Health really writes for a Fitbit Air (whether there are stages,
+  variability, distance fine enough for splits, routes) is only known once it has been tried on
+  the phone. `adb logcat -s HomeSafeHealth` says what was read, without the readings.
+- No live run: no GPS is used by the app and nothing is recorded by it. The live heart rate on a
+  workout is the Bluetooth sensor's, above.
+- Without the history permission Health Connect only gives the thirty days before the app was
+  first let in, and everything since.
+- Runs are not in the log: they aren't on History's calendar, aren't in [a copy of the log](#moving-the-log),
+  and aren't on another device.
 
 ## Bringing notes in
 
@@ -407,6 +532,11 @@ A movement of its own is four things, and the tests name whichever is still miss
   link, the others are stubs). `HeartRateMonitorImpl` is everything else, in common code: which
   advertisement is the chosen sensor, reading the measurement, and trying again when a link
   drops, goes quiet or never comes up. So all of that is tested against a fake radio.
+- The health store is in two halves the same way. `HealthSource` is the platform's and only
+  hands records over (`createHealthSource`; Android reads Health Connect, the others are stubs).
+  What they mean is common code: `Body.kt` (`SleepNights`, `ReadinessScore`, `BodyBoards`) and
+  `Runs.kt` (a run's pace, the weeks, splits, the heart in zones). `HealthViewModel` sits beside
+  `FitnessViewModel`, scoped to the activity, and reads when the fitness app comes on screen.
 - `fitness/FitnessBoard.kt`: `FitnessBoardBuilder` works every screen's state out of the whole
   log in one pass, the history's sessions included. The log is a few thousand rows at most, so it is simply rebuilt when it changes.
 - `fitness/FitnessViewModel.kt`: scoped to the activity and shared with the drawer's card. It
@@ -414,7 +544,8 @@ A movement of its own is four things, and the tests name whichever is still miss
   rest timer, the record flash and the import draft. The heart rate is a second state beside
   the first (`heart`), since it alone changes every second.
 - `fitness/ui`: the screens. `FitnessAppContent` is the whole app from one state, for previews
-  (`./gradlew :shared:renderPreviews -Ppreview=Fitness`) and UI tests.
+  (`./gradlew :shared:renderPreviews -Ppreview=Fitness`) and UI tests. `BodyUi.kt` is Today's
+  body card, `RunsUi.kt` the runs; `HealthFixtures` is a made-up health store to draw them from.
 - `fitness/ui/movement`: the figures. `ExerciseFigure` is the one the screens use, a
   `MovementKind` drawn in a `FigureStyle` as a badge or large; behind it, the rendered frames
   (`MovementSheets.kt`), the rig and its two looks, the map from one to the other
@@ -434,6 +565,11 @@ A movement of its own is four things, and the tests name whichever is still miss
   `FitnessHeartViewModelTest`, and `jvmTest/.../FitnessHeartMigrationTest`, which takes a real
   SQLite file from schema 19 to 20 and checks the training log is still in it. The Android radio
   itself (`HeartRateLink.android.kt`) has no test: it needs a band.
+- The body and runs: `domain/BodyTest` (nights out of sleep sessions, each part of the readiness
+  score and the score, Today's board) and `domain/RunsTest` (pace, the weeks, splits, the heart
+  in zones), `HealthViewModelTest` over a fake store (what is asked of the user, what is read
+  and when, a read that fails, a run opened), and `uiTest/.../FitnessHealthUiTest`. The Android
+  reader itself (`HealthSource.android.kt`) has no test: it needs a phone with Health Connect.
 - The figures: `MovementClassifierTest` (every exercise is a movement), `MovementCatalogTest`
   (every movement has a rig figure; the anchors' reader), `FitnessPreferencesRepositoryImplTest`,
   `jvmTest/.../FitnessFigureMigrationTest` (schema 21 to 22 on a real SQLite file), and
