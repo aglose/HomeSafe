@@ -274,7 +274,7 @@ private fun com.meticulouscreations.homesafe.atlas.ui.Legend(tint: androidx.comp
     - label: STABLE (String is immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meticulouscreations.homesafe.atlas.AtlasUiState, tiles: com.meticulouscreations.homesafe.weather.data.MapTileSource, padding: androidx.compose.foundation.layout.PaddingValues, onOpenPlace: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean, map: com.meticulouscreations.homesafe.atlas.ui.AtlasMapState): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -284,6 +284,7 @@ internal fun com.meticulouscreations.homesafe.atlas.ui.MapScreen(state: com.meti
     - onOpenPlace: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
     - active: STABLE (primitive type)
+    - map: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.atlas.ui.ModesCard(years: kotlin.collections.List<com.meticulouscreations.homesafe.atlas.domain.YearStat>, records: com.meticulouscreations.homesafe.atlas.domain.Records): kotlin.Unit
@@ -6417,12 +6418,13 @@ internal fun com.meticulouscreations.homesafe.weather.ui.shader.WeatherShaderWar
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock(running: kotlin.Boolean, wrapSeconds: kotlin.Float): androidx.compose.runtime.FloatState
+internal fun com.meticulouscreations.homesafe.weather.ui.shader.rememberWeatherShaderClock(running: kotlin.Boolean, wrapSeconds: kotlin.Float, frameSeconds: kotlin.Float): androidx.compose.runtime.FloatState
   skippable: false
   restartable: false
   params:
     - running: STABLE (primitive type)
     - wrapSeconds: STABLE (primitive type)
+    - frameSeconds: STABLE (primitive type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky(scene: com.meticulouscreations.homesafe.weather.ui.sky.SkyScene, modifier: androidx.compose.ui.Modifier, glass: kotlin.Boolean, running: kotlin.Boolean, freeze: com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze?): kotlin.Unit

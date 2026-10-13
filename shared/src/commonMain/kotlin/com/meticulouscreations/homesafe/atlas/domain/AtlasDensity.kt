@@ -1,6 +1,10 @@
 package com.meticulouscreations.homesafe.atlas.domain
 
 import androidx.compose.runtime.Immutable
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -111,10 +115,23 @@ class AtlasDensity(val levels: List<DensityLevel>, val baseYear: Int) {
          */
         fun of(tracks: List<Track>): AtlasDensity {
             if (tracks.isEmpty()) return Empty
-            val baseYear = tracks.minOf { CivilDate.of(localDay(it.start, it.offsetMinutes)).year }
+            val baseYear = baseYear(tracks)
             val levels = LEVELS.map { level -> level(level, tracks, baseYear) }
             return AtlasDensity(levels.filter { it.size > 0 }, baseYear)
         }
+
+        /**
+         * [of], with every level counted at once on threads of their own. The finest level is
+         * about half of all the counting, so the map has its glow in about half the time.
+         */
+        suspend fun counted(tracks: List<Track>): AtlasDensity {
+            if (tracks.isEmpty()) return Empty
+            val baseYear = baseYear(tracks)
+            val levels = coroutineScope { LEVELS.map { level -> async(Dispatchers.Default) { level(level, tracks, baseYear) } }.awaitAll() }
+            return AtlasDensity(levels.filter { it.size > 0 }, baseYear)
+        }
+
+        private fun baseYear(tracks: List<Track>): Int = tracks.minOf { CivilDate.of(localDay(it.start, it.offsetMinutes)).year }
 
         private class Keys(capacity: Int = 1 shl 14) {
             var values = LongArray(capacity)

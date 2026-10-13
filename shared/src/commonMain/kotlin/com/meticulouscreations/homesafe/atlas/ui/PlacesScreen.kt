@@ -311,7 +311,7 @@ internal fun WeekGrid(description: String, modifier: Modifier = Modifier, cell: 
     val style = AtlasTheme.type.micro.copy(color = colors.textFaint)
     val days = (0..6).map { stringResource(AtlasFormat.weekday(it)).take(1) }
     val hours = listOf(0, 6, 12, 18).map { hourText(it) }
-    Canvas(modifier.fillMaxWidth().aspectRatio(2.6f).semantics { contentDescription = description }) {
+    Canvas(modifier.fillMaxWidth().aspectRatio(2.6f).keptPicture().semantics { contentDescription = description }) {
         val left = 16.dp.toPx()
         val bottom = 16.dp.toPx()
         val width = (size.width - left) / 24f

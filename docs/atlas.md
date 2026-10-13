@@ -148,18 +148,28 @@ Hand-rolled, like the radar's, and sharing its tile store and projection
 1. **Night**, a shader (`ATLAS_NIGHT_SHADER`): dark with a graticule that moves with the map, so
    a pan with no tiles loaded still reads as moving over the Earth.
 2. **OpenStreetMap's tiles**, turned to night by the radar's `MAP_NIGHT_SHADER`.
-3. **The glow.** Far out it is drawn from `AtlasDensity`: the world cut into squares at eleven
-   sizes, each square holding how many paths crossed it and in which years, a few thousand dots a
-   frame however many million points the history has. Close in, where the finest squares would
-   show as squares, from the paths in view themselves. Either way what is drawn is greys on
-   black, and `ATLAS_HEAT_SHADER` makes light of it: a thirteen-tap bloom and a ramp from violet
-   through ember and amber to white.
+3. **The glow.** A picture of how often each spot was gone through, made off the main thread
+   and kept in squares the way the base map is kept in tiles (`AtlasHeat`, `HeatRaster`). Far
+   out a square is drawn from `AtlasDensity`: the world cut into squares at eleven sizes, each
+   holding how many paths crossed it and in which years. Close in, where the finest of those
+   would show as squares, from the paths themselves. The bloom is worked into the picture as it
+   is made, and `ATLAS_HEAT_SHADER` only colours it: a ramp from violet through ember and amber
+   to white, one look at each pixel.
 4. **What is picked out**: places, flights as arcs, and a day's or trip's own route with a point
    of light at its head.
 
+A frame of the map is therefore a few dozen pictures put down, however much history is on it.
+A drag asks for the squares coming in at the edge; a pinch stretches the squares it has until
+those for the new scale arrive, a few frames on (four scales to each doubling, so none is ever
+stretched far); a glide prepares the squares for where it will land. A flick runs on, and the
+zoom buttons and a double tap travel rather than jump (`AtlasMapState`). The map's own light
+(the night's drift, the glow's shimmer) steps thirty times a second, not on every frame. How this
+came about, and what it measured, is in `docs/perf-audit-2026-10-12-atlas.md`.
+
 The paths are packed as Google's encoded polylines on the relay and decoded once on the device
 (`Polyline`, `Track`). Cards and the heads of screens are drawn on drifting contour lines
-(`ATLAS_CONTOUR_SHADER`).
+(`ATLAS_CONTOUR_SHADER`), kept as a layer on Android so that a list scrolled over them copies
+the picture instead of shading it again.
 
 ## Not yet
 

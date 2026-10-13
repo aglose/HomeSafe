@@ -230,6 +230,7 @@ private fun YearGrid(year: Int, days: DayStats, measure: DayMeasure, full: Float
         Modifier
             .fillMaxWidth()
             .aspectRatio(weeks / 8.3f)
+            .keptPicture()
             .semantics {
                 contentDescription = description
                 if (lastOpenable >= first) {
