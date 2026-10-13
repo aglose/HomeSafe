@@ -43,11 +43,20 @@ interface FitnessRepository {
 
     suspend fun deleteSet(id: Long)
 
+    /** Removes the sets with these ids as one step: a day's sets that were logged with no workout open. */
+    suspend fun deleteSets(ids: List<Long>)
+
     /** Opens a workout, or hands back the one already in progress: there is only ever one. */
     suspend fun startWorkout(focus: WorkoutFocus, atEpochSeconds: Long): Workout
 
     /** Closes the workout at [atEpochSeconds]. One with no sets in it was opened by mistake, and is removed instead. */
     suspend fun finishWorkout(id: Long, atEpochSeconds: Long)
+
+    /**
+     * Removes the workout as though it had never been: every set logged in it and its heart go
+     * with it. This is cancelling the one in progress and deleting one from the history alike.
+     */
+    suspend fun deleteWorkout(id: Long)
 
     suspend fun startPhase(kind: PhaseKind, atEpochSeconds: Long)
 

@@ -1,3 +1,5 @@
+import com.skydoves.compose.stability.gradle.StabilityCheckTask
+import com.skydoves.compose.stability.gradle.StabilityDumpTask
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -351,12 +353,28 @@ composeStabilityAnalyzer {
     }
 }
 
-// The analyzer's dump/check tasks read what the Android compilation wrote to build/stability but
-// (in this KMP + AGP 9 layout) don't wire the dependency themselves; the Android variant is the
-// one that ships, so it is the one the baseline is taken from.
-tasks.matching { it.name == "stabilityDump" || it.name == "stabilityCheck" }.configureEach {
-    dependsOn("compileAndroidMain")
-    mustRunAfter(tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompilationTask<*>>())
+// The analyzer's dump and check tasks read one report: the first stability-info.json they find
+// under build/stability, which is the Android compilation's. That is the variant that ships, so
+// it is the one the baseline is taken from. The plugin doesn't know that. It makes both tasks
+// depend on every Kotlin compilation in the module (JVM, JS, Wasm, both iOS targets, and each
+// one's KSP run), whose reports are never read, and not on the Android one, whose task name it
+// doesn't recognise in this KMP + AGP 9 layout. Six compilations of this module at once is also
+// more than the Kotlin daemon's heap holds comfortably. So the tasks are handed the one file
+// they read, built by the task that writes it, and nothing else.
+// In afterEvaluate because that is where the plugin adds its dependencies: anything set before
+// then is added to, not replaced.
+val androidStabilityInfo = files(layout.buildDirectory.file("stability/compileAndroidMain/stability-info.json")) {
+    builtBy("compileAndroidMain")
+}
+afterEvaluate {
+    tasks.withType<StabilityDumpTask>().configureEach {
+        setDependsOn(emptyList<Any>())
+        stabilityInputFiles.setFrom(androidStabilityInfo)
+    }
+    tasks.withType<StabilityCheckTask>().configureEach {
+        setDependsOn(emptyList<Any>())
+        stabilityInputFiles.setFrom(androidStabilityInfo)
+    }
 }
 
 composeCompiler {

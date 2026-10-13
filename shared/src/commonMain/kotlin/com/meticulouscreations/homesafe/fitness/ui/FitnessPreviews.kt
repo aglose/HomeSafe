@@ -170,6 +170,7 @@ Hammer curls
             recentRecords = boards.recentRecords,
             bodyweight = boards.bodyweight,
             calendar = boards.calendar,
+            history = boards.history,
             copyable = true,
         )
     }
@@ -229,8 +230,19 @@ Hammer curls
     }
 
     /** Away from a workout, the band chosen but not being listened to, and the last workout's heart to look back on. */
-    fun heartAtRest(): HeartUiState =
-        HeartUiState(sensor = HeartSensorState.Off, settings = HeartSettings(heartProfile, band), bounds = bounds, last = WorkoutHeart(log.workouts.last(), heartSummary))
+    fun heartAtRest(): HeartUiState = HeartUiState(
+        sensor = HeartSensorState.Off,
+        settings = HeartSettings(heartProfile, band),
+        bounds = bounds,
+        last = WorkoutHeart(log.workouts.last(), heartSummary),
+        summaries = mapOf(log.workouts.last().id to heartSummary),
+    )
+
+    /** The page a finished workout is looked back on: the last one of [focus]. */
+    fun sessionPage(focus: WorkoutFocus = WorkoutFocus.BACK): FitnessPage.Session {
+        val session = state().history.first { it.focus == focus }
+        return FitnessPage.Session(session.workout?.id, session.epochDay)
+    }
 
     /** Before any band has been chosen: Bluetooth there to be used, and [sensor] what it is doing. */
     fun heartUnset(sensor: HeartSensorState = HeartSensorState.Off): HeartUiState = HeartUiState(sensor = sensor)
@@ -422,6 +434,19 @@ private fun FitnessExercisePreview() {
 @Composable
 private fun FitnessEditExercisePreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessPage.Edit(FitnessFixtures.exercise("Leg press").id)) }
+}
+
+// Looking back: the month with its workouts, and one of them opened, with its heart where a sensor was on for it.
+@Preview(widthDp = 412, heightDp = 1100)
+@Composable
+private fun FitnessHistoryPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialTab = FitnessTab.HISTORY) }
+}
+
+@Preview(widthDp = 412, heightDp = 1000)
+@Composable
+private fun FitnessSessionPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), initialPage = FitnessFixtures.sessionPage(), heart = FitnessFixtures.heartAtRest()) }
 }
 
 @Preview(widthDp = 412, heightDp = 2300)
