@@ -80,8 +80,11 @@ class GateTest(unittest.TestCase):
         self.base = self.commit("someone", MAIN)
 
     def git(self, *args, **env):
+        # No background maintenance: after a commit git starts `git maintenance run --auto` detached,
+        # which takes a lock file in .git/objects, and a test that ended in that moment failed while
+        # removing its directory ("Directory not empty: 'objects'").
         return subprocess.run(
-            ["git", "-C", self.dir.name, *args],
+            ["git", "-C", self.dir.name, "-c", "maintenance.auto=false", "-c", "gc.auto=0", *args],
             check=True,
             capture_output=True,
             env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_SYSTEM": os.devnull, **env},
