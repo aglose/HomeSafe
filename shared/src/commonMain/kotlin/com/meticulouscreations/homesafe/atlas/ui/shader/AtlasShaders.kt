@@ -45,40 +45,29 @@ half4 main(float2 fragCoord) {
 """
 
 /**
- * The glow. `content` is a layer the paths were drawn into in greys on black: the lighter, the
- * more often somewhere was gone through. This makes light of it, the way a city is seen from orbit.
+ * The glow. `content` is a layer of pictures of how often somewhere was gone through, made off
+ * the screen with their bloom already in them (`HeatRaster`): in each pixel's red the road itself
+ * (the spot and the ring just round it), in its green the soft halo beyond. This makes light of
+ * it, the way a city is seen from orbit, and it looks once at each pixel to do so: the looking
+ * round, thirteen times a pixel, used to be done here on every frame.
  *
- * - **Bloom.** Thirteen taps, a tight ring and a wide one ([spread] pixels), so a road has a
- *   bright core and a soft halo. The halo is what makes a faint, once-driven road visible at all.
  * - **Colour.** From a dim violet for somewhere gone once, through ember and amber for the usual
  *   roads, to white where every day runs. Lightness only rises along it.
  * - **Life.** The brightest parts shimmer very slightly, out of step with each other, as lights
  *   seen through air do.
+ * - **Flights.** The pictures carry the flights' arcs in their blue, and those are laid over the
+ *   glow in [air]'s colour: drawn as paths they were a mask the size of the screen, made and
+ *   handed to the graphics chip on every frame the map moved.
  */
 internal const val ATLAS_HEAT_SHADER = """
 uniform shader content;
-uniform float2 size;
-uniform float spread;
 uniform float time;
+uniform float3 air;
 """ + SHADER_NOISE + """
-float tap(float2 p) { return float(content.eval(p).r); }
-
 half4 main(float2 fragCoord) {
-    float core = tap(fragCoord);
-    float near = 0.0;
-    float far = 0.0;
-    for (int i = 0; i < 6; i++) {
-        float a = float(i) * 1.0472;
-        float2 d = float2(cos(a), sin(a));
-        near += tap(fragCoord + d * spread * 0.5);
-        far += tap(fragCoord + d.yx * float2(1.0, -1.0) * spread * 1.35);
-    }
-    near /= 6.0;
-    far /= 6.0;
-    float halo = far * 0.6 + near * 0.3;
-    // Mostly the ring just round the point, so a row of dots reads as one even line.
-    float v = clamp(core * 0.4 + near * 0.6, 0.0, 1.0);
-    float glow = clamp(halo, 0.0, 1.0);
+    half4 picture = content.eval(fragCoord);
+    float v = float(picture.r);
+    float glow = float(picture.g);
     float3 dim = float3(0.36, 0.20, 0.62);
     float3 ember = float3(1.00, 0.36, 0.20);
     float3 amber = float3(1.00, 0.72, 0.33);
@@ -91,7 +80,9 @@ half4 main(float2 fragCoord) {
     float body = smoothstep(0.0, 0.16, v);
     float alpha = clamp(max(body * 0.96, glow * 0.5), 0.0, 1.0);
     float3 lit = clamp(mix(mix(dim, ember, 0.5), col * shimmer, body), 0.0, 1.0);
-    return half4(half3(lit * alpha), half(alpha));
+    // The flights lie over the glow, most of the way to solid along their line.
+    float flight = float(picture.b) * 0.7;
+    return half4(half3(lit * alpha * (1.0 - flight) + air * flight), half(alpha + flight - alpha * flight));
 }
 """
 

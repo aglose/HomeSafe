@@ -1,10 +1,14 @@
 package com.meticulouscreations.homesafe.atlas.domain
 
 import com.meticulouscreations.homesafe.atlas.ui.AtlasFixtures
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -319,6 +323,30 @@ class AtlasDensityTest {
     fun noPathsNoDensity() {
         assertTrue(AtlasDensity.of(emptyList()).levels.isEmpty())
         assertNull(AtlasDensity.Empty.levelFor(8.0, 256f, 4f))
+    }
+
+    @Test
+    fun countedSideBySideIsTheSameCount() = runTest {
+        val counted = AtlasDensity.counted(AtlasFixtures.tracks)
+        assertEquals(density.baseYear, counted.baseYear)
+        assertEquals(density.levels.map { it.level }, counted.levels.map { it.level })
+        density.levels.zip(counted.levels).forEach { (one, other) ->
+            assertContentEquals(one.x, other.x)
+            assertContentEquals(one.y, other.y)
+            assertContentEquals(one.weight, other.weight)
+            assertContentEquals(one.years, other.years)
+            assertEquals(one.typicalWeight, other.typicalWeight)
+        }
+        assertTrue(AtlasDensity.counted(emptyList()).levels.isEmpty())
+    }
+
+    @Test
+    fun aCountNobodyIsWaitingForStops() {
+        // The history was replaced while its paths were being counted: the job the count was for is cancelled.
+        val gone = Job().apply { cancel() }
+        assertFailsWith<CancellationException> { AtlasDensity.level(AtlasDensity.LEVELS.last(), AtlasFixtures.tracks, 2023, gone) }
+        // And with nobody to stop it, it counts.
+        assertTrue(AtlasDensity.level(AtlasDensity.LEVELS.last(), AtlasFixtures.tracks, 2023).size > 0)
     }
 
     @Test

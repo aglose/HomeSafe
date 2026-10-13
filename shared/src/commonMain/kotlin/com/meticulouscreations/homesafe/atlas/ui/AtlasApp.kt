@@ -190,6 +190,8 @@ internal fun AtlasAppContent(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<AtlasPage>().apply { initialPage?.let(::add) } }
+    // Held here, above the tabs: the map is left for another tab and found again where it was.
+    val map = remember { AtlasMapState() }
     val haptics = LocalHapticFeedback.current
 
     fun pop() {
@@ -250,7 +252,7 @@ internal fun AtlasAppContent(
                         val openPlace: (String) -> Unit = { pages += AtlasPage.PlaceDetail(it) }
                         val openDay: (Int) -> Unit = { pages += AtlasPage.Day(it) }
                         when (shown) {
-                            AtlasTab.MAP -> MapScreen(state, tiles, tabPadding, openPlace, active = active)
+                            AtlasTab.MAP -> MapScreen(state, tiles, tabPadding, openPlace, active = active, map = map)
 
                             AtlasTab.DAYS -> DaysScreen(state, tabPadding, openDay)
 
