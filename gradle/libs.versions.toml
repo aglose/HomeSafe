@@ -20,7 +20,9 @@ junit = "4.13.2"
 kotlin = "2.4.20"
 kotlin-wrappers = "2026.9.3"
 kotlinx-coroutines = "1.11.0"
-material3 = "1.13.0-alpha01"
+# Moves with composeMultiplatform, by hand: a material3 built for the next Compose brings that
+# whole Compose in with it, over the version pinned above (.github/dependabot.yml leaves it alone).
+material3 = "1.12.0-alpha03"
 material-icons-extended = "1.7.3"
 metro = "1.4.5"
 navigation3 = "1.1.2"
