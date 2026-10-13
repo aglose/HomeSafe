@@ -42,6 +42,8 @@ import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
+import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.userMessage
 import dev.zacsweers.metro.AppScope
@@ -109,6 +111,8 @@ data class SettingsUiState(
     val relayPushes: Boolean = false,
     /** How the finance app's Economy and Risk tabs talk about the economy. */
     val economyTone: EconomyTone = EconomyTone.DEFAULT,
+    /** How the fitness app draws the figure that performs each exercise. */
+    val figureStyle: FigureStyle = FigureStyle.DEFAULT,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -183,6 +187,7 @@ class SettingsViewModel(
     private val estimateAlertVolumeUseCase: EstimateAlertVolumeUseCase,
     observeRelayPushUseCase: ObserveRelayPushUseCase,
     private val financePreferences: FinancePreferencesRepository,
+    private val fitnessPreferences: FitnessPreferencesRepository,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -228,8 +233,11 @@ class SettingsViewModel(
         presence,
         locationAccess,
         relayPushes,
-        financePreferences.observeEconomyTone(),
-    ) { state, presence, access, pushed, tone -> state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone) }
+        // The drawer apps' own preferences, as one: there is room for five flows here.
+        combine(financePreferences.observeEconomyTone(), fitnessPreferences.observeFigureStyle(), ::Pair),
+    ) { state, presence, access, pushed, (tone, figures) ->
+        state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone, figureStyle = figures)
+    }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
@@ -310,6 +318,10 @@ class SettingsViewModel(
 
     fun setEconomyTone(tone: EconomyTone) {
         viewModelScope.launch { financePreferences.setEconomyTone(tone) }
+    }
+
+    fun setFigureStyle(style: FigureStyle) {
+        viewModelScope.launch { fitnessPreferences.setFigureStyle(style) }
     }
 
     /** Familiar vs. stranger: skip notifications for people Frigate has put a name to. */

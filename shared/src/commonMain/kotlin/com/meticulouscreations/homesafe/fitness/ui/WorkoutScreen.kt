@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,6 +38,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Flag
@@ -80,6 +82,10 @@ import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
+import com.meticulouscreations.homesafe.fitness.domain.MovementClassifier
+import com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure
+import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
+import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
@@ -97,6 +103,7 @@ import homesafe.shared.generated.resources.fitness_workout_add
 import homesafe.shared.generated.resources.fitness_workout_add_confirm
 import homesafe.shared.generated.resources.fitness_workout_add_hint
 import homesafe.shared.generated.resources.fitness_workout_cancel
+import homesafe.shared.generated.resources.fitness_workout_cancel_confirm
 import homesafe.shared.generated.resources.fitness_workout_done
 import homesafe.shared.generated.resources.fitness_workout_elapsed
 import homesafe.shared.generated.resources.fitness_workout_empty_shelf
@@ -121,6 +128,10 @@ import kotlin.time.Clock
  * already done today rise to the head of the list, the rest follow in the order they were most
  * recently trained. With a heart-rate sensor chosen, the heart rate and its zone sit over it all
  * ([HeartPanel]), and the rest clock shows the heart coming back down.
+ *
+ * At the foot it is finished, which keeps it, or cancelled, which throws it away with the sets
+ * logged in it and so takes a second tap. One with nothing logged in it yet has only the one
+ * button, which closes it and leaves no trace.
  */
 @Composable
 internal fun WorkoutScreen(
@@ -131,6 +142,7 @@ internal fun WorkoutScreen(
     onOpenExercise: (String) -> Unit,
     onEditExercise: (String) -> Unit,
     onFinish: () -> Unit,
+    onCancel: () -> Unit,
     modifier: Modifier = Modifier,
     /** The exercise whose logger is open to begin with. */
     initiallyOpen: String? = null,
@@ -143,6 +155,7 @@ internal fun WorkoutScreen(
     val tints = colors.focus(focus)
     var shelves by rememberSaveable(workout.workout.id) { mutableStateOf(focus.parts.map { it.name }) }
     var open by rememberSaveable(workout.workout.id) { mutableStateOf(initiallyOpen) }
+    var discarding by rememberSaveable(workout.workout.id) { mutableStateOf(false) }
     // Shelf by shelf, the workout's own first: within each, what has been done today leads (in the order it was done),
     // then the rest as the routine has them. A shelf that isn't picked still shows anything logged from it today.
     val sections = remember(state.boards, workout, shelves) {
@@ -237,16 +250,33 @@ internal fun WorkoutScreen(
         item(key = "finish") {
             ForgeButton(
                 stringResource(if (workout.setCount == 0) Res.string.fitness_workout_cancel else Res.string.fitness_workout_finish),
+                // Empty or not, this one closes it: whether there is anything in it to keep is the log's to say, since a set may be on its way in.
                 onFinish,
                 Modifier.fillMaxWidth().padding(top = 8.dp).testTag("fitness_workout_finish"),
                 colors = if (workout.setCount == 0) colors.surfaceRaised to colors.surfaceRaised else tints,
                 icon = if (workout.setCount == 0) null else Icons.Filled.Check,
             )
         }
+        if (workout.setCount > 0) {
+            item(key = "cancel") {
+                // The sets logged so far go with it, so it asks once more before it does.
+                GhostButton(
+                    if (discarding) pluralStringResource(Res.plurals.fitness_workout_cancel_confirm, workout.setCount, workout.setCount) else stringResource(Res.string.fitness_workout_cancel),
+                    { if (discarding) onCancel() else discarding = true },
+                    Modifier.fillMaxWidth().testTag("fitness_workout_cancel"),
+                    icon = Icons.Filled.Close,
+                    tint = if (discarding) colors.danger else colors.textMuted,
+                )
+            }
+        }
     }
 }
 
-/** One exercise in the workout: a row saying where it stands, opening in place into its [SetLogger]. */
+/**
+ * One exercise in the workout: a row saying where it stands, opening in place into its
+ * [SetLogger]. The row opens on a still of the movement ([ExerciseFigure]), with how many sets
+ * have been done today on its corner; opened, the figure performs it above the ladder.
+ */
 @Composable
 private fun WorkoutExercise(
     board: ExerciseBoard,
@@ -265,6 +295,8 @@ private fun WorkoutExercise(
     val exercise = board.exercise
     val sets = entry?.sets.orEmpty()
     val done = sets.isNotEmpty()
+    val match = remember(exercise.name, exercise.bodyPart, exercise.primary) { MovementClassifier.match(exercise) }
+    val movement = match.kind
     val edge by animateColorAsState(
         if (expanded) {
             tints.first
@@ -290,17 +322,27 @@ private fun WorkoutExercise(
                 .fillMaxWidth()
                 .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_workout_expand, exercise.name), onClick = onToggle)
                 .testTag("fitness_exercise_row_${exercise.id}")
-                .padding(horizontal = 16.dp, vertical = 14.dp),
+                .padding(horizontal = 14.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                Modifier.size(30.dp).clip(CircleShape).background(if (done) colors.good.copy(alpha = 0.18f) else colors.surfaceRaised),
-                contentAlignment = Alignment.Center,
-            ) {
+            Box {
+                ExerciseFigure(movement, state.figureStyle, tints, size = FigureSize.BADGE)
                 if (done) {
-                    Text(sets.size.toString(), style = type.label, color = colors.good)
-                } else {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(tints.first.copy(alpha = 0.7f)))
+                    // Today's sets, counted on the figure's corner; the ring is the card's own colour, so the count sits clear of the picture.
+                    Box(
+                        Modifier
+                            .align(Alignment.BottomEnd)
+                            .offset(x = 5.dp, y = 5.dp)
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .background(colors.surface)
+                            .padding(2.dp)
+                            .clip(CircleShape)
+                            .background(colors.good),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(sets.size.toString(), style = type.micro, color = colors.background)
+                    }
                 }
             }
             Spacer(Modifier.width(12.dp))
@@ -354,6 +396,10 @@ private fun WorkoutExercise(
         }
         if (expanded) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                // Only an open card has the figure moving, and only it holds a rendered rep in memory.
+                ExerciseFigure(movement, state.figureStyle, tints)
+                NearestFigureNote(match, Modifier.padding(start = 4.dp, top = 6.dp))
+                Spacer(Modifier.height(12.dp))
                 if (board.ladder.size > 1) {
                     LadderChart(board.ladder, tints.first, tints.second, Modifier.fillMaxWidth().height(96.dp), targetWeight = board.target?.weight, targetReps = board.target?.reps)
                     Spacer(Modifier.height(12.dp))

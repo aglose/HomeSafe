@@ -31,7 +31,7 @@ class AppsWithoutServerJourneyTest {
     @Test
     fun fitnessOpensFromTheSignInFormAndClosesBackToIt() = runAppJourney {
         openDrawerFromTheForm()
-        assertTrue(exists(hasTestTag("drawer_weather")) && exists(hasTestTag("drawer_finance")), "all three apps are in the drawer")
+        assertTrue(exists(hasTestTag("drawer_weather")) && exists(hasTestTag("drawer_finance")) && exists(hasTestTag("drawer_atlas")), "all four apps are in the drawer")
         assertFalse(exists(hasText("Cameras")), "and nothing that needs the server: there are no cameras to go to yet")
 
         tap(hasTestTag("drawer_fitness"), "the Fitness card")

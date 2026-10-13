@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The atlas app: what is said about fetching the location history from the relay. -->
+<resources>
+    <string name="atlas_error_signed_out">Sign in to the camera server to fetch your history</string>
+    <string name="atlas_error_unreachable">Couldn't reach the server. Showing what this device has kept.</string>
+    <string name="atlas_error_not_allowed">This account can't see the location history</string>
+    <string name="atlas_error_relay_outdated">The relay on the server is older than this app and has no location history yet</string>
+    <!-- %1$s is an HTTP status, e.g. "502 Bad Gateway". -->
+    <string name="atlas_error_relay_answered">The relay answered %1$s</string>
+</resources>

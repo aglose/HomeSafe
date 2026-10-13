@@ -5,12 +5,14 @@ import com.meticulouscreations.homesafe.fitness.FitnessTestData.DAY
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOTES
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.exercise
+import com.meticulouscreations.homesafe.fitness.data.FitnessPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.LoadKind
 import com.meticulouscreations.homesafe.fitness.domain.LogCopy
@@ -61,12 +63,14 @@ class FitnessViewModelTest {
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
     private class Harness {
-        val repository = FitnessRepositoryImpl(InMemoryFitnessDao())
+        private val dao = InMemoryFitnessDao()
+        val repository = FitnessRepositoryImpl(dao)
+        val preferences = FitnessPreferencesRepositoryImpl(dao)
         val clock = MutableClock(NOW)
 
         private val made = mutableListOf<FitnessViewModel>()
 
-        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock).also { made += it }
+        fun viewModel() = FitnessViewModel(repository, FakeHeartRateMonitor(), clock, preferences).also { made += it }
 
         /** Stops the view models' minute tick, which would otherwise keep a finished test's clock turning for ever. */
         fun stop() = made.forEach { it.setActive(false) }
@@ -649,6 +653,160 @@ class FitnessViewModelTest {
         assertEquals(emptyList(), h.repository.workouts.first())
     }
 
+    // ---- Cancelling a workout, and deleting one from the history -------------------------------
+
+    @Test
+    fun cancellingAWorkoutDiscardsItWithTheSetsLoggedInItAndNothingElse() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 135.0, 7)
+        vm.logSet(benchId, 135.0, 6)
+        runCurrent()
+        assertNotNull(vm.uiState.value.rest)
+
+        vm.cancelWorkout()
+        runCurrent()
+
+        assertNull(vm.uiState.value.workout)
+        assertNull(vm.uiState.value.rest)
+        assertEquals(emptyList(), h.repository.workouts.first())
+        assertEquals(listOf(8), h.repository.sets.first().map { it.reps })
+        assertEquals(1, assertNotNull(vm.uiState.value.board(benchId)).setCount)
+    }
+
+    @Test
+    fun aRecordSetInACancelledWorkoutIsNoRecordAnyMore() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 140.0, 8)
+        runCurrent()
+        assertNotNull(vm.uiState.value.flash)
+        assertEquals(1, vm.uiState.value.recentRecords.size)
+
+        vm.cancelWorkout()
+        runCurrent()
+
+        assertNull(vm.uiState.value.flash)
+        assertEquals(emptyList(), vm.uiState.value.recentRecords)
+        assertEquals(135.0, assertNotNull(vm.uiState.value.board(benchId)).best?.weight)
+    }
+
+    @Test
+    fun cancellingWithNoWorkoutOpenDoesNothing() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.cancelWorkout()
+        runCurrent()
+        assertEquals(1, h.repository.sets.first().size)
+    }
+
+    @Test
+    fun anotherWorkoutCanBeStartedOnceOneIsCancelled() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.cancelWorkout()
+        runCurrent()
+
+        vm.startWorkout(WorkoutFocus.BACK)
+        runCurrent()
+
+        assertEquals(WorkoutFocus.BACK, vm.uiState.value.workout?.workout?.focus)
+        assertEquals(0, vm.uiState.value.workout?.setCount)
+    }
+
+    @Test
+    fun aFinishedWorkoutIsInTheHistoryWithWhatItCameTo() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 135.0, 8)
+        vm.logSet(benchId, 135.0, 6)
+        runCurrent()
+        h.clock.seconds += 1_800
+        vm.finishWorkout()
+        runCurrent()
+
+        val session = vm.uiState.value.history.single()
+        assertEquals(WorkoutFocus.CHEST, session.focus)
+        assertEquals(1_800L, session.durationSeconds)
+        assertEquals(2, session.setCount)
+        assertEquals(14, session.repCount)
+        assertEquals(135.0 * 14, session.pounds)
+        assertEquals(session, vm.uiState.value.session(session.workout?.id, session.epochDay))
+    }
+
+    @Test
+    fun deletingAWorkoutFromTheHistoryRemovesItAndItsSets() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 140.0, 8)
+        runCurrent()
+        vm.finishWorkout()
+        runCurrent()
+
+        vm.deleteSession(vm.uiState.value.history.single { it.workout != null })
+        runCurrent()
+
+        assertEquals(emptyList(), h.repository.workouts.first())
+        assertEquals(listOf(135.0), h.repository.sets.first().map { it.weight })
+        assertEquals(listOf<Long?>(null), vm.uiState.value.history.map { it.workout?.id })
+        // With it went the day's claim on the chest workout having been done.
+        assertNull(vm.uiState.value.days.single { it.focus == WorkoutFocus.CHEST }.lastEpochSeconds)
+    }
+
+    @Test
+    fun deletingADaysLooseSetsLeavesTheWorkoutsAlone() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.logSet(benchId, 135.0, 8)
+        vm.logSet(benchId, 135.0, 7)
+        runCurrent()
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 140.0, 8)
+        runCurrent()
+        vm.finishWorkout()
+        runCurrent()
+
+        vm.deleteSession(vm.uiState.value.history.single { it.workout == null })
+        runCurrent()
+
+        assertEquals(listOf(140.0), h.repository.sets.first().map { it.weight })
+        assertEquals(1, h.repository.workouts.first().size)
+        assertEquals(1, vm.uiState.value.history.size)
+    }
+
+    @Test
+    fun deletingTheSessionThatIsInProgressCancelsIt() = runFitnessTest { h ->
+        val vm = activeWithBench(h)
+        vm.startWorkout(WorkoutFocus.CHEST)
+        runCurrent()
+        vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        val session = vm.uiState.value.history.single()
+        assertTrue(session.inProgress)
+
+        vm.deleteSession(session)
+        runCurrent()
+
+        assertNull(vm.uiState.value.workout)
+        assertNull(vm.uiState.value.rest)
+        assertEquals(emptyList(), vm.uiState.value.history)
+        assertEquals(emptyList(), h.repository.sets.first())
+    }
+
     @Test
     fun deletingASetRemovesItFromTheBoard() = runFitnessTest { h ->
         val vm = activeWithBench(h)
@@ -1087,6 +1245,39 @@ class FitnessViewModelTest {
         runCurrent()
 
         assertNull(vm.uiState.value.workout)
+    }
+
+    // ---- Which figure performs the exercises ---------------------------------------------------
+
+    @Test
+    fun theFigureIsTheRenderedOneUntilAnotherIsChosenAndTheChoiceIsKept() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+        assertEquals(FigureStyle.TRUE_3D, vm.uiState.value.figureStyle)
+
+        vm.setFigureStyle(FigureStyle.STONE)
+        assertEquals(FigureStyle.STONE, vm.uiState.value.figureStyle, "the screen has it at once")
+        runCurrent()
+        assertEquals(FigureStyle.STONE, h.preferences.observeFigureStyle().first(), "the choice is saved")
+
+        // The app opened again: another view model over the same database.
+        val again = h.viewModel()
+        again.setActive(true)
+        runCurrent()
+        assertEquals(FigureStyle.STONE, again.uiState.value.figureStyle)
+    }
+
+    @Test
+    fun aFigureChosenOnTheSettingsTabReachesTheOpenApp() = runFitnessTest { h ->
+        val vm = h.viewModel()
+        vm.setActive(true)
+        runCurrent()
+
+        h.preferences.setFigureStyle(FigureStyle.FORGED)
+        runCurrent()
+
+        assertEquals(FigureStyle.FORGED, vm.uiState.value.figureStyle)
     }
 
     // ---- Two taps, and things asked for at once ------------------------------------------------

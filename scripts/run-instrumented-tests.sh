@@ -4,6 +4,9 @@
 # blocks the main thread can't be interrupted, so a hung suite would otherwise sit silent until
 # the job's timeout with no clue where it stopped.
 #
+# - Before Gradle starts, the emulator is given time to finish what it began at boot (settle), and
+#   for as long as the tests run a system dialog that takes the screen is answered (the watch
+#   started by watch_for_system_dialogs).
 # - Gradle runs under a time limit shorter than the job's, so there is time left to look.
 # - On a timeout, every Java thread of each app and test process is dumped (debuggerd -j), after
 #   the journey watchdog's own dump (it writes to System.err, which Android sends to logcat).
@@ -24,8 +27,72 @@ fi
 adb logcat -G 16M >/dev/null 2>&1 || true
 adb logcat -c || true
 
+# What has the screen, as dumpsys names it: "mCurrentFocus=Window{1a2b3c u0 <title>}". Read into a
+# variable and matched there, never piped into `grep -q` or `head`: those stop reading at the first
+# line, adb dies of SIGPIPE, and under pipefail a match then reads as "not found".
+current_focus() {
+  adb shell dumpsys window 2>/dev/null | grep 'mCurrentFocus=' || true
+}
+
+# A system "isn't responding" or "keeps stopping" dialog keeps window focus until somebody answers
+# it, and on a runner nobody does. The emulator's launcher has been declared not responding half a
+# minute after boot, while Gradle had the runner's processors, and every end-to-end test of that
+# run then failed ten minutes later with "Waited for the root of the view hierarchy to have window
+# focus". So the screen is looked at every few seconds, and such a dialog is closed: asked to
+# first, and if it is still there its process is stopped, which takes its dialogs with it (the
+# launcher comes back by itself). A dialog about the app or its tests is left where it is. That
+# one is a finding, and the tests it covers should fail on it.
+watch_for_system_dialogs() {
+  while sleep 5; do
+    focus=$(current_focus)
+    [[ "$focus" =~ Application\ (Not\ Responding|Error):\ ([^}\ ]+) ]] || continue
+    package=${BASH_REMATCH[2]}
+    case "$package" in
+      com.meticulouscreations.*) continue ;;
+    esac
+    echo "::warning::A system dialog about $package had the emulator's screen; closing it."
+    adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null 2>&1 || true
+    sleep 2
+    focus=$(current_focus)
+    if [[ "$focus" == *"Application "*": $package"* ]]; then
+      echo "It stayed, so $package is stopped."
+      adb shell am force-stop "$package" || true
+    fi
+  done
+}
+
+# The emulator says it has booted well before it has stopped starting things. Resumed from its
+# snapshot, it spends the next minute or so on Google's own start-up work (queued broadcasts,
+# Play services' configuration, downloads), and Gradle starting at the same moment takes the
+# processors that work needs: that is when the launcher has been declared not responding. So
+# first: up to a minute for the broadcast queue to drain, then up to another for the launcher to
+# be in front and the screen to hold still long enough for uiautomator to read it (about 25
+# seconds in all on a hosted runner). Carries on regardless; the tests' own failures say more
+# than this could.
+settle() {
+  started=$SECONDS
+  adb shell 'timeout 60 am wait-for-broadcast-idle' >/dev/null 2>&1 || true
+  for _ in $(seq 30); do
+    focus=$(current_focus)
+    if [[ "$focus" == *[Ll]auncher* && "$focus" != *"Application "* ]] \
+      && [ "$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -c '<hierarchy' || true)" -gt 0 ]; then
+      echo "The emulator settled in $((SECONDS - started)) seconds."
+      return 0
+    fi
+    sleep 2
+  done
+  echo "::warning::The emulator had not settled after $((SECONDS - started)) seconds; running the tests anyway."
+}
+
+watch_for_system_dialogs &
+dialog_watch=$!
+settle
+
 timeout --signal=TERM --kill-after=60 "${limit_minutes}m" ./gradlew "$@"
 status=$?
+
+kill "$dialog_watch" 2>/dev/null
+wait "$dialog_watch" 2>/dev/null
 
 if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
   echo "::error::Instrumented tests were still running after ${limit_minutes} minutes."

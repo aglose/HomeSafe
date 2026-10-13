@@ -163,14 +163,23 @@ internal fun ChoiceChip(text: String, selected: Boolean, onClick: () -> Unit, mo
     }
 }
 
-/** A small round button with an icon, named for a screen reader by [label]. */
+/** A small round button with an icon, named for a screen reader by [label]. Not [enabled], it is there but faint, and does nothing. */
 @Composable
-internal fun RoundIconButton(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, size: Dp = 44.dp, tint: Color = FitnessTheme.colors.text, fill: Color = Color.Transparent) {
+internal fun RoundIconButton(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 44.dp,
+    tint: Color = FitnessTheme.colors.text,
+    fill: Color = Color.Transparent,
+    enabled: Boolean = true,
+) {
     Box(
-        modifier.size(size).clip(CircleShape).background(fill).clickable(role = Role.Button, onClickLabel = label, onClick = onClick),
+        modifier.size(size).clip(CircleShape).background(fill).clickable(enabled = enabled, role = Role.Button, onClickLabel = label, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(size * 0.5f))
+        Icon(icon, contentDescription = label, tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.25f), modifier = Modifier.size(size * 0.5f))
     }
 }
 

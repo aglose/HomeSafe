@@ -28,7 +28,8 @@ relay/presence.env
 relay/finance.env
 relay/plaid.env
 relay/tesla.env
-# relay.db and sheet-fill.json (which names the household's accounts) live here on the box
+relay/timeline.env
+# relay.db, timeline.db (where one person has been) and sheet-fill.json (which names the household's accounts) live here on the box
 relay/data/
 .codex/
 

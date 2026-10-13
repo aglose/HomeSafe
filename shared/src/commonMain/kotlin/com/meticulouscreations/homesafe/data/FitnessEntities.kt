@@ -111,6 +111,17 @@ data class FitnessHeartSummaryEntity(
     val peakBpm: Int,
 )
 
+/**
+ * A singleton row (always [id] = 0) holding the fitness app's preferences. Added in schema 22; a
+ * missing row means the defaults.
+ */
+@Entity
+data class FitnessPreferencesEntity(
+    @PrimaryKey val id: Int = 0,
+    /** A `FigureStyle` name. Stored as text so an unknown value degrades to the default instead of failing to read. */
+    val figureStyle: String,
+)
+
 @Dao
 interface FitnessDao {
     @Query("SELECT * FROM FitnessExerciseEntity ORDER BY name")
@@ -143,6 +154,15 @@ interface FitnessDao {
     @Query("DELETE FROM FitnessSetEntity WHERE exerciseId = :exerciseId")
     suspend fun deleteSetsOfExercise(exerciseId: String)
 
+    @Query("DELETE FROM FitnessSetEntity WHERE workoutId = :workoutId")
+    suspend fun deleteSetsOfWorkout(workoutId: Long)
+
+    /** Removes the sets with these ids, all of them or none. */
+    @Transaction
+    suspend fun deleteSets(ids: List<Long>) {
+        ids.forEach { deleteSet(it) }
+    }
+
     @Query("SELECT * FROM FitnessWorkoutEntity ORDER BY startedAtEpochSeconds, id")
     fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>>
 
@@ -160,6 +180,19 @@ interface FitnessDao {
 
     @Query("DELETE FROM FitnessWorkoutEntity WHERE id = :id")
     suspend fun deleteWorkout(id: Long)
+
+    /**
+     * Removes a workout with everything that hangs off it, in one transaction: the sets logged in
+     * it and its heart. The sets go first, for the one implementation that has no transactions
+     * ([InMemoryFitnessDao]): whoever follows the log there sees the workout empty and then gone,
+     * never its sets left with no workout.
+     */
+    @Transaction
+    suspend fun removeWorkout(id: Long) {
+        deleteSetsOfWorkout(id)
+        deleteHeartSummary(id)
+        deleteWorkout(id)
+    }
 
     @Query("SELECT * FROM FitnessPhaseEntity ORDER BY startedAtEpochSeconds, id")
     fun observePhases(): Flow<List<FitnessPhaseEntity>>
@@ -197,6 +230,12 @@ interface FitnessDao {
     @Query("DELETE FROM FitnessHeartSummaryEntity WHERE workoutId = :workoutId")
     suspend fun deleteHeartSummary(workoutId: Long)
 
+    @Query("SELECT * FROM FitnessPreferencesEntity WHERE id = 0")
+    fun observePreferences(): Flow<FitnessPreferencesEntity?>
+
+    @Upsert
+    suspend fun upsertPreferences(preferences: FitnessPreferencesEntity)
+
     /**
      * Writes everything a copy of a log brings, in one transaction: all of it lands or none of it
      * does, so a set is never left pointing at a workout that didn't make it in. Sets go before
@@ -232,6 +271,7 @@ class InMemoryFitnessDao : FitnessDao {
     private val bodyweights = MutableStateFlow<List<FitnessBodyweightEntity>>(emptyList())
     private val heartSettings = MutableStateFlow<FitnessHeartSettingsEntity?>(null)
     private val heartSummaries = MutableStateFlow<List<FitnessHeartSummaryEntity>>(emptyList())
+    private val preferences = MutableStateFlow<FitnessPreferencesEntity?>(null)
 
     override fun observeExercises(): Flow<List<FitnessExerciseEntity>> = exercises
 
@@ -265,6 +305,10 @@ class InMemoryFitnessDao : FitnessDao {
 
     override suspend fun deleteSetsOfExercise(exerciseId: String) {
         sets.update { current -> current.filter { it.exerciseId != exerciseId } }
+    }
+
+    override suspend fun deleteSetsOfWorkout(workoutId: Long) {
+        sets.update { current -> current.filter { it.workoutId != workoutId } }
     }
 
     override fun observeWorkouts(): Flow<List<FitnessWorkoutEntity>> = workouts
@@ -322,5 +366,11 @@ class InMemoryFitnessDao : FitnessDao {
 
     override suspend fun deleteHeartSummary(workoutId: Long) {
         heartSummaries.update { current -> current.filter { it.workoutId != workoutId } }
+    }
+
+    override fun observePreferences(): Flow<FitnessPreferencesEntity?> = preferences
+
+    override suspend fun upsertPreferences(preferences: FitnessPreferencesEntity) {
+        this.preferences.value = preferences
     }
 }

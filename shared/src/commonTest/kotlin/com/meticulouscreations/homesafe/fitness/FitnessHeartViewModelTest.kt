@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.fitness
 
 import com.meticulouscreations.homesafe.data.InMemoryFitnessDao
 import com.meticulouscreations.homesafe.fitness.FitnessTestData.NOW
+import com.meticulouscreations.homesafe.fitness.data.FitnessPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.data.FitnessRepositoryImpl
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
@@ -48,10 +49,11 @@ class FitnessHeartViewModelTest {
     @AfterTest fun tearDown() = Dispatchers.resetMain()
 
     private class Harness(supported: Boolean = true) {
-        val repository = FitnessRepositoryImpl(InMemoryFitnessDao())
+        private val dao = InMemoryFitnessDao()
+        val repository = FitnessRepositoryImpl(dao)
         val monitor = FakeHeartRateMonitor(supported)
         val clock = MutableClock(NOW)
-        val vm = FitnessViewModel(repository, monitor, clock)
+        val vm = FitnessViewModel(repository, monitor, clock, FitnessPreferencesRepositoryImpl(dao))
 
         /** The time of the last reading, moved on by each one. */
         var at = NOW * 1000
@@ -489,6 +491,46 @@ class FitnessHeartViewModelTest {
         assertEquals(id, last.workout.id)
         assertEquals(150, last.summary.averageBpm)
         assertNull(h.heart.summary)
+    }
+
+    @Test
+    fun aFinishedWorkoutsHeartIsKeptByItsIdForLookingBackOnIt() = runHeartTest { h ->
+        val id = working(h)
+        h.vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        repeat(6) {
+            h.read(150)
+            runCurrent()
+        }
+        h.vm.finishWorkout()
+        runCurrent()
+        assertEquals(setOf(id), h.heart.summaries.keys)
+        assertEquals(150, h.heart.summaries[id]?.averageBpm)
+    }
+
+    @Test
+    fun cancellingAWorkoutThrowsItsHeartAwayWithIt() = runHeartTest { h ->
+        val id = working(h)
+        h.vm.logSet(benchId, 135.0, 8)
+        runCurrent()
+        // Long enough that some of it has already been written down.
+        repeat(40) {
+            h.read(150)
+            runCurrent()
+        }
+        assertNotNull(h.repository.heartSummaries.first()[id])
+
+        h.vm.cancelWorkout()
+        runCurrent()
+        // A reading still on its way must not bring the workout's heart back.
+        h.read(150)
+        runCurrent()
+
+        assertNull(h.vm.uiState.value.workout)
+        assertEquals(emptyMap(), h.repository.heartSummaries.first())
+        assertEquals(emptyMap(), h.heart.summaries)
+        assertNull(h.heart.summary)
+        assertNull(h.heart.last)
     }
 
     @Test

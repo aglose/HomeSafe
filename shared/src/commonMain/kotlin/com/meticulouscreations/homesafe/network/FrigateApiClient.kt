@@ -37,6 +37,8 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.http.renderCookieHeader
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
@@ -294,6 +296,11 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
         }
         response.requireSuccess(Res.string.error_load_events)
         response.body<List<FrigateEvent>>()
+    }.onFailure {
+        // A read cut short because its caller was cancelled (the feed was left mid-walk, its
+        // window moved) has no result to hand back: as a failure the poll would report a server
+        // that couldn't be reached and carry on acting on it.
+        currentCoroutineContext().ensureActive()
     }
 
     /** What the server is doing right now — version, uptime, load, disk, detector and per-camera pipeline stats. */

@@ -366,6 +366,16 @@ internal fun LastHeartCard(last: WorkoutHeart, state: FitnessUiState, modifier: 
             color = colors.textMuted,
         )
         Spacer(Modifier.height(12.dp))
+        HeartSummaryBody(summary)
+    }
+}
+
+/** What a workout's heart added up to: its average and peak, how long the sensor was reporting, and the time in each zone as bars. */
+@Composable
+internal fun HeartSummaryBody(summary: HeartSummary, modifier: Modifier = Modifier) {
+    val colors = FitnessTheme.colors
+    val type = FitnessTheme.type
+    Column(modifier) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Stat(summary.averageBpm?.toString() ?: stringResource(Res.string.fitness_heart_no_reading), stringResource(Res.string.fitness_heart_last_average), Modifier.weight(1f))
             Stat(summary.peakBpm.toString(), stringResource(Res.string.fitness_heart_last_peak), Modifier.weight(1f))

@@ -24,3 +24,6 @@ actual fun createFitnessDao(context: PlatformContext): FitnessDao =
 
 actual fun createFinanceSavedDao(context: PlatformContext): FinanceSavedDao =
     InMemoryFinanceSavedDao()
+
+actual fun createAtlasDao(context: PlatformContext): AtlasDao =
+    InMemoryAtlasDao()

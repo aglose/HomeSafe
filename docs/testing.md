@@ -110,6 +110,30 @@ On CI, `scripts/run-instrumented-tests.sh` runs them with a time limit. If they'
 script dumps every thread of the app and test processes and the journey watchdog's output from logcat. Either way it
 prints the last tests the runner started, so a hang shows up in the job log.
 
+The same script looks after the emulator, which says it has booted long before it is quiet. Before Gradle starts it
+waits, up to two minutes (about 25 seconds in practice), for the broadcast queue to drain and the launcher to be in
+front and readable. While the tests run it checks every few seconds for a system "isn't responding" or "keeps stopping"
+dialog and closes it, since one of those keeps window focus and fails every end-to-end test after it. A dialog about the
+app itself is left alone: that one should fail the tests. Both leave a line in the job log when they had something to do.
+
+The Activity `runComposeUiTest` hosts every UI test and journey in is declared in
+`shared/src/androidDeviceTest/AndroidManifest.xml` with the same `configChanges` as `MainActivity`, so a change to the
+window or the keyboard lays the content out again rather than recreating the Activity. A recreation throws the test's content away ("No compose hierarchies found"), and the
+emulator makes one happen by itself: a second or two after the test APK is installed the system reloads its keyboard
+layouts, and the keyboard configuration changes under whichever test is running, which is the first of the run.
+
+## When CI goes red on main
+
+A commit on `main` passed `ci-green` on its pull request, so a red run there is usually the runner and not the code, and
+it means nothing was published. [`.github/workflows/ci-retry.yml`](../.github/workflows/ci-retry.yml) reruns the failed
+jobs of such a run once, if its commit is still the newest on `main`. A second failure stays red. Pull request runs are
+never rerun for you. The first attempt's logs stay on the run (the attempt menu at the top of its page), so a flake that
+was rerun can still be read and fixed.
+
+The iOS job runs on the Mac, and its disk is shared with everything else done there. The job checks the free space
+first: under 15 GB it clears the runner's Xcode derived data and simulator caches, and under 8 GB it stops with an error
+that says the disk is full, which is what `ld: write() failed, errno=28` from a link step meant.
+
 ## Android CLI journeys
 
 `androidApp/src/journeysTest/*.journey.xml` are journeys in the format documented for

@@ -5268,5 +5268,601 @@ class DeviceOwnerTest(_ScratchDb):
         self.assertEqual([], relay.budget_recipients(time.time()))
 
 
+def _iso(epoch, offset_minutes=0):
+    """An export's timestamp: the wall clock [offset_minutes] ahead of UTC, with that offset written out."""
+    from datetime import datetime, timedelta, timezone
+
+    return datetime.fromtimestamp(epoch, timezone(timedelta(minutes=offset_minutes))).isoformat(timespec="milliseconds")
+
+
+# Made-up places: nobody's home is at 40, -89.
+HOME, WORK, CAFE = (40.0, -89.0), (40.05, -89.02), (40.01, -89.005)
+DAY1 = 1_700_006_400  # 2023-11-15 00:00 UTC
+CST = -360
+
+
+def android_visit(start, end, at, place, kind="UNKNOWN", level=0, offset=CST):
+    return {
+        "startTime": _iso(start, offset), "endTime": _iso(end, offset), "startTimeTimezoneUtcOffsetMinutes": offset,
+        "visit": {"hierarchyLevel": level, "probability": 0.8, "topCandidate": {
+            "placeId": place, "semanticType": kind, "probability": 0.7, "placeLocation": {"latLng": f"{at[0]}°, {at[1]}°"}}},
+    }
+
+
+def android_activity(start, end, a, b, kind="IN_PASSENGER_VEHICLE", metres=6000.0, offset=CST):
+    return {
+        "startTime": _iso(start, offset), "endTime": _iso(end, offset),
+        "activity": {"start": {"latLng": f"{a[0]}°, {a[1]}°"}, "end": {"latLng": f"{b[0]}°, {b[1]}°"}, "distanceMeters": metres, "topCandidate": {"type": kind, "probability": 0.9}},
+    }
+
+
+def android_path(start, points, offset=CST):
+    return {
+        "startTime": _iso(start, offset), "endTime": _iso(start + 7200, offset),
+        "timelinePath": [{"point": f"{lat}°, {lon}°", "time": _iso(start + seconds, offset)} for seconds, lat, lon in points],
+    }
+
+
+def android_export(day=DAY1, cafe="ChIJcafe"):
+    """One made-up day: home, a drive to work with its path, work, a walk to a café, the café."""
+    t = day + 6 * 3600
+    return {
+        "semanticSegments": [
+            android_visit(t, t + 3600, HOME, "ChIJhome", "INFERRED_HOME"),
+            android_activity(t + 3600, t + 5400, HOME, WORK),
+            android_path(t + 3600, [(0, *HOME), (600, 40.02, -89.01), (600, 40.02, -89.01), (1800, *WORK)]),
+            android_visit(t + 5400, t + 30000, WORK, "ChIJwork", "WORK"),
+            android_visit(t + 6000, t + 7000, WORK, "ChIJdesk", "UNKNOWN", level=1),
+            android_activity(t + 30000, t + 30600, WORK, CAFE, "WALKING", 0),
+            android_visit(t + 30600, t + 33000, CAFE, cafe),
+        ],
+        "rawSignals": [{"position": {"LatLng": "40.0°, -89.0°", "accuracyMeters": 13, "timestamp": _iso(t)}}],
+        "userLocationProfile": {"frequentPlaces": [{"placeId": "ChIJhome", "placeLocation": "40.0°, -89.0°", "label": "HOME"}]},
+    }
+
+
+class _Text:
+    """A file that hands its text over a few characters at a time, so every value straddles a read."""
+
+    def __init__(self, text, size):
+        self.text, self.size, self.at = text, size, 0
+
+    def read(self, _=None):
+        piece = self.text[self.at:self.at + self.size]
+        self.at += self.size
+        return piece
+
+
+class TimelineReading(unittest.TestCase):
+    def test_a_document_is_read_a_piece_at_a_time_whatever_the_read_size(self):
+        document = {"a": [{"x": 1.25}, {"y": "]}\"", "z": [1, 2]}], "n": 1234567, "t": "text", "o": {"k": [1]}, "b": [], "c": [true := True, None, 12]}
+        del true
+        want = [("a", {"x": 1.25}), ("a", {"y": "]}\"", "z": [1, 2]}), ("n", 1234567), ("t", "text"), ("o", {"k": [1]}), ("c", True), ("c", None), ("c", 12)]
+        for size in (1, 2, 3, 7, 64, 1 << 20):
+            self.assertEqual(want, list(relay.json_items(_Text(json.dumps(document), size))), size)
+            self.assertEqual(want, list(relay.json_items(_Text(json.dumps(document, indent=2), size))), size)
+
+    def test_a_bare_array_and_an_empty_file(self):
+        self.assertEqual([(None, {"a": 1}), (None, 2)], list(relay.json_items(_Text('[{"a": 1}, 2]', 3))))
+        self.assertEqual([], list(relay.json_items(_Text("", 3))))
+        self.assertEqual([], list(relay.json_items(_Text("{}", 3))))
+
+    def test_a_file_cut_short_raises_rather_than_passing_for_whole(self):
+        with self.assertRaises(ValueError):
+            list(relay.json_items(_Text('{"a": [{"x": 1}, {"y": ', 4)))
+
+    def test_the_polyline_is_googles(self):
+        # Google's own worked example.
+        self.assertEqual("_p~iF~ps|U_ulLnnqC_mqNvxq`@", relay.polyline([(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]))
+        self.assertEqual("", relay.polyline([]))
+        self.assertEqual("?_@}@~@", relay.polyline_numbers([0, 16, 47, 15]))
+
+    def test_a_point_however_it_was_written(self):
+        self.assertEqual((41.88, -87.63), relay.timeline_point("41.88°, -87.63°"))
+        self.assertEqual((41.88, -87.63), relay.timeline_point("geo:41.88,-87.63"))
+        self.assertEqual((41.88, -87.63), relay.timeline_point({"latLng": "41.88°, -87.63°"}))
+        self.assertEqual((41.88, -87.63), relay.timeline_point({"latitudeE7": 418800000, "longitudeE7": -876300000}))
+        self.assertEqual((41.88, -87.63), relay.timeline_point({"latE7": 418800000, "lngE7": -876300000}))
+        for nowhere in (None, "", "somewhere", "0°, 0°", "91°, 10°", {"latitudeE7": None, "longitudeE7": None}, {}, 12):
+            self.assertIsNone(relay.timeline_point(nowhere), nowhere)
+
+    def test_a_time_keeps_the_offset_the_export_wrote(self):
+        self.assertEqual((DAY1, -360), relay.timeline_time("2023-11-14T18:00:00.000-06:00"))
+        self.assertEqual((DAY1, 0), relay.timeline_time("2023-11-15T00:00:00.000+00:00", relay.ZoneInfo("America/Chicago")))
+
+    def test_a_time_with_no_offset_takes_the_households(self):
+        chicago = relay.ZoneInfo("America/Chicago")
+        self.assertEqual((DAY1, -360), relay.timeline_time("2023-11-15T00:00:00Z", chicago))
+        self.assertEqual((DAY1, -360), relay.timeline_time(str(DAY1 * 1000), chicago))
+        self.assertEqual((DAY1, 0), relay.timeline_time("2023-11-15T00:00:00Z"))
+        # Summer: the same zone, an hour nearer UTC.
+        self.assertEqual(-300, relay.timeline_time("2023-07-01T12:00:00Z", chicago)[1])
+        self.assertIsNone(relay.timeline_time("yesterday"))
+        self.assertIsNone(relay.timeline_time(None))
+
+    def test_modes_and_kinds_across_the_exports(self):
+        for written, mode in (("IN_PASSENGER_VEHICLE", "drive"), ("in passenger vehicle", "drive"), ("WALKING", "walk"), ("walking", "walk"),
+                              ("IN_TRAIN", "train"), ("FLYING", "fly"), ("CYCLING", "cycle"), ("IN_BUS", "bus"), ("UNKNOWN_ACTIVITY_TYPE", "other"), (None, "other")):
+            self.assertEqual(mode, relay.timeline_mode(written), written)
+        for written, kind in (("HOME", "home"), ("INFERRED_HOME", "home"), ("TYPE_WORK", "work"), ("Inferred_Work", "work"), ("UNKNOWN", "other"), ("SEARCHED_ADDRESS", "other"), (None, "other")):
+            self.assertEqual(kind, relay.timeline_kind(written), written)
+
+
+class _TimelineDb(_ScratchDb):
+    NAMES = _ScratchDb.NAMES + ("TIMELINE_DB", "TIMELINE_PLACES_KEY", "TIMELINE_PLACES_MONTHLY", "TIMELINE_DRIVE_FOLDER", "TIMELINE_USERS", "timeline_place_lookup", "timeline_google", "frigate_profile")
+
+    def setUp(self):
+        super().setUp()
+        relay.TIMELINE_DB = os.path.join(self._dir.name, "timeline.db")
+        self.conn = relay.timeline_db()
+
+    def tearDown(self):
+        self.conn.close()
+        super().tearDown()
+
+    def write(self, name, document):
+        path = os.path.join(self._dir.name, name)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(document, f)
+        return path
+
+    def read(self, document, zone=None):
+        stage = relay.TimelineStage(self.conn, zone)
+        relay.timeline_read(_Text(json.dumps(document), 97), stage)
+        return relay.timeline_ingest(self.conn, stage, now=1000.0)
+
+    def rows(self, sql):
+        return self.conn.execute(sql).fetchall()
+
+
+class TimelineExports(_TimelineDb):
+    def test_the_phones_export_becomes_visits_moves_and_a_path(self):
+        summary = self.read(android_export())
+        t = DAY1 + 6 * 3600
+        self.assertEqual({"visits": 3, "moves": 2, "paths": 1, "points": 3, "days": 1, "years_changed": [2023]}, summary)
+        self.assertEqual(
+            [(t, t + 3600, -360, 40.0, -89.0, "ChIJhome", "home"), (t + 5400, t + 30000, -360, 40.05, -89.02, "ChIJwork", "work"), (t + 30600, t + 33000, -360, 40.01, -89.005, "ChIJcafe", "other")],
+            self.rows("SELECT started, ended, utc_offset, lat, lon, place, kind FROM visits ORDER BY started"),
+        )
+        drive, walk = self.rows("SELECT mode, metres FROM moves ORDER BY started")
+        self.assertEqual(("drive", 6000.0), drive)
+        # A move the export gave no distance for is as the crow flies.
+        self.assertEqual("walk", walk[0])
+        self.assertAlmostEqual(relay.haversine_metres(WORK, CAFE), walk[1], delta=0.1)
+        (started, points, times, n), = self.rows("SELECT started, points, times, n FROM paths")
+        self.assertEqual((t + 3600, 3), (started, n))
+        self.assertEqual(relay.polyline([HOME, (40.02, -89.01), WORK]), points)
+        self.assertEqual(relay.polyline_numbers([0, 600, 1800]), times)
+
+    def test_the_clock_on_the_wall_is_the_offset_field_not_the_one_the_time_is_written_in(self):
+        # Lived on Eastern time, exported from a phone now on Pacific: every time is written at
+        # -07:00, and the field says where the clock was.
+        t = DAY1 + 6 * 3600
+        eastern, pacific = -240, -420
+        visit = android_visit(t, t + 3600, HOME, "ChIJhome", "HOME", offset=pacific)
+        visit["startTimeTimezoneUtcOffsetMinutes"] = visit["endTimeTimezoneUtcOffsetMinutes"] = eastern
+        drive = android_activity(t + 3600, t + 5400, HOME, WORK, offset=pacific)
+        drive["startTimeTimezoneUtcOffsetMinutes"] = eastern
+        self.read({"semanticSegments": [visit, drive, android_path(t + 3600, [(0, *HOME), (1800, *WORK)], offset=pacific)]})
+        self.assertEqual([(t, eastern)], self.rows("SELECT started, utc_offset FROM visits"))
+        self.assertEqual([(t + 3600, eastern)], self.rows("SELECT started, utc_offset FROM moves"))
+        # A stretch of path says nothing of its own: it takes the journey's it lies beside.
+        self.assertEqual([(t + 3600, eastern)], self.rows("SELECT started, utc_offset FROM paths"))
+
+    def test_the_iphones_export_is_a_bare_array_of_the_same(self):
+        t = DAY1 + 6 * 3600
+        export = [
+            {"startTime": _iso(t, CST), "endTime": _iso(t + 3600, CST), "visit": {"hierarchyLevel": "0", "probability": "0.8", "topCandidate": {
+                "placeID": "ChIJhome", "semanticType": "Home", "probability": "0.9", "placeLocation": "geo:40.000000,-89.000000"}}},
+            {"startTime": _iso(t + 3600, CST), "endTime": _iso(t + 5400, CST), "activity": {
+                "start": "geo:40.0,-89.0", "end": "geo:40.05,-89.02", "distanceMeters": "6000.5", "topCandidate": {"type": "in passenger vehicle", "probability": "0.9"}}},
+            {"startTime": _iso(t + 3600, CST), "endTime": _iso(t + 5400, CST), "timelinePath": [
+                {"point": "geo:40.0,-89.0", "durationMinutesOffsetFromStartTime": "0"}, {"point": "geo:40.05,-89.02", "durationMinutesOffsetFromStartTime": "30"}]},
+        ]
+        self.read(export)
+        self.assertEqual([(t, "ChIJhome", "home", 0.9)], self.rows("SELECT started, place, kind, p FROM visits"))
+        self.assertEqual([("drive", 6000.5)], self.rows("SELECT mode, metres FROM moves"))
+        self.assertEqual([(t + 3600, t + 5400, 2)], self.rows("SELECT started, ended, n FROM paths"))
+
+    def test_takeouts_monthly_file_brings_its_own_names(self):
+        t = DAY1 + 12 * 3600
+        export = {"timelineObjects": [
+            {"placeVisit": {"location": {"latitudeE7": 400000000, "longitudeE7": -890000000, "placeId": "ChIJhome", "name": "The Old Mill", "address": "1 Mill Lane\nSpringfield", "semanticType": "TYPE_HOME"},
+                            "duration": {"startTimestamp": _iso(t).replace("+00:00", "Z"), "endTimestamp": _iso(t + 3600).replace("+00:00", "Z")}, "placeConfidence": "HIGH_CONFIDENCE"}},
+            {"activitySegment": {"startLocation": {"latitudeE7": 400000000, "longitudeE7": -890000000}, "endLocation": {"latitudeE7": 400500000, "longitudeE7": -890200000},
+                                 "duration": {"startTimestampMs": str((t + 3600) * 1000), "endTimestampMs": str((t + 5400) * 1000)}, "distance": 6100, "activityType": "IN_BUS",
+                                 "waypointPath": {"waypoints": [{"latE7": 400200000, "lngE7": -890100000}]}}},
+        ]}
+        self.read(export, relay.ZoneInfo("America/Chicago"))
+        self.assertEqual([(t, -360, "home", 0.9)], self.rows("SELECT started, utc_offset, kind, p FROM visits"))
+        self.assertEqual([("bus", 6100.0)], self.rows("SELECT mode, metres FROM moves"))
+        # No times on the waypoints: the one between the ends lands halfway.
+        (points, times), = self.rows("SELECT points, times FROM paths")
+        self.assertEqual(relay.polyline([HOME, (40.02, -89.01), WORK]), points)
+        self.assertEqual(relay.polyline_numbers([0, 900, 1800]), times)
+        # A name to go by, and still to be asked of Google for its town and state.
+        self.assertEqual([("The Old Mill", "1 Mill Lane, Springfield", None, "home")], self.rows("SELECT name, address, asked, kind FROM places"))
+
+    def test_raw_fixes_are_cut_into_stays_and_the_trips_between(self):
+        t = DAY1
+
+        def fix(seconds, at, accuracy=10):
+            return {"latitudeE7": round(at[0] * 1e7), "longitudeE7": round(at[1] * 1e7), "accuracy": accuracy, "timestamp": _iso(t + seconds).replace("+00:00", "Z")}
+
+        fixes = [fix(i * 120, HOME) for i in range(10)]                                       # 18 minutes at home
+        fixes += [fix(1200 + i * 60, (40.0 + 0.005 * (i + 1), -89.0 - 0.002 * (i + 1))) for i in range(9)]  # on the way
+        fixes += [fix(1800 + i * 120, WORK) for i in range(10)]                                # 18 minutes at work
+        fixes.insert(3, fix(300, (48.0, 2.0), accuracy=5000))                                 # a wild fix, not believed
+        self.read({"locations": fixes})
+        visits = self.rows("SELECT started, ended, lat, lon, place FROM visits ORDER BY started")
+        self.assertEqual([(t, t + 1080, 40.0, -89.0, None), (t + 1800, t + 2880, 40.05, -89.02, None)], visits)
+        (started, ended, mode, metres), = self.rows("SELECT started, ended, mode, metres FROM moves")
+        self.assertEqual((t + 1080, t + 1800, "other"), (started, ended, mode))
+        self.assertGreater(metres, 5000)
+        self.assertEqual([(11,)], self.rows("SELECT n FROM paths"))
+
+    def test_a_takeout_zip_is_read_whole_and_what_isnt_timeline_adds_nothing(self):
+        import zipfile
+
+        path = os.path.join(self._dir.name, "takeout.zip")
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Takeout/Timeline/Timeline.json", json.dumps(android_export()))
+            archive.writestr("Takeout/Timeline/Settings.json", json.dumps({"createdTime": "2014", "devices": [{"tag": 1}]}))
+            archive.writestr("Takeout/Timeline/Timeline Edits.json", json.dumps({"timelineEdits": [{"deviceId": "1"}]}))
+            archive.writestr("Takeout/archive_browser.html", "<html>")
+        summary = relay.timeline_import(path)
+        self.assertEqual((3, 2, 1), (summary["visits"], summary["moves"], summary["paths"]))
+        self.assertEqual("takeout.zip", relay.timeline_meta(self.conn, "file")["name"])
+
+    def _fixes(self):
+        def fix(seconds, at):
+            return {"latitudeE7": round(at[0] * 1e7), "longitudeE7": round(at[1] * 1e7), "accuracy": 10, "timestamp": _iso(DAY1 + seconds).replace("+00:00", "Z")}
+
+        return {"locations": [fix(i * 120, HOME) for i in range(10)] + [fix(1800 + i * 120, WORK) for i in range(10)]}
+
+    def test_a_takeout_zip_with_the_days_twice_over_counts_them_once(self):
+        import zipfile
+
+        # The same day as Google's own visits and trips, and again as the raw fixes they were made from.
+        path = os.path.join(self._dir.name, "takeout.zip")
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Takeout/Location History/Records.json", json.dumps(self._fixes()))
+            archive.writestr("Takeout/Location History/Semantic Location History/2023/2023_NOVEMBER.json", json.dumps(android_export()))
+        summary = relay.timeline_import(path)
+        self.assertEqual((3, 2, 1), (summary["visits"], summary["moves"], summary["paths"]))
+        self.assertEqual(0, self.rows("SELECT COUNT(*) FROM visits WHERE place IS NULL")[0][0])
+
+    def test_a_takeout_zip_of_raw_fixes_alone_is_cut_into_stays(self):
+        import zipfile
+
+        path = os.path.join(self._dir.name, "takeout.zip")
+        with zipfile.ZipFile(path, "w") as archive:
+            archive.writestr("Takeout/Location History/Records.json", json.dumps(self._fixes()))
+            archive.writestr("Takeout/Location History/Settings.json", json.dumps({"createdTime": "2014"}))
+        summary = relay.timeline_import(path)
+        self.assertEqual((2, 1), (summary["visits"], summary["moves"]))
+
+
+class TimelineHistory(_TimelineDb):
+    def test_a_newer_export_rewrites_the_days_it_mentions_and_leaves_the_rest(self):
+        self.read(android_export(DAY1))
+        self.read(android_export(DAY1 + 86400))
+        self.assertEqual(6, self.rows("SELECT COUNT(*) FROM visits")[0][0])
+        # The first day again, the café corrected in Maps to the bakery next door; the second day isn't in this file.
+        summary = self.read(android_export(DAY1, cafe="ChIJbakery"))
+        self.assertEqual(1, summary["days"])
+        self.assertEqual(6, self.rows("SELECT COUNT(*) FROM visits")[0][0])
+        self.assertEqual(4, self.rows("SELECT COUNT(*) FROM moves")[0][0])
+        self.assertEqual(2, self.rows("SELECT COUNT(*) FROM paths")[0][0])
+        self.assertEqual(["ChIJbakery", "ChIJcafe", "ChIJhome", "ChIJwork"], [r[0] for r in self.rows("SELECT place FROM places ORDER BY place")])
+
+    def test_a_place_no_visit_goes_to_any_more_is_forgotten(self):
+        self.read(android_export(DAY1))
+        self.read(android_export(DAY1, cafe="ChIJbakery"))
+        self.assertEqual(["ChIJbakery", "ChIJhome", "ChIJwork"], [r[0] for r in self.rows("SELECT place FROM places ORDER BY place")])
+
+    def test_an_export_cut_short_changes_nothing(self):
+        self.read(android_export(DAY1))
+        stage = relay.TimelineStage(self.conn)
+        with self.assertRaises(ValueError):
+            relay.timeline_read(_Text(json.dumps(android_export(DAY1, cafe="ChIJbakery"))[:-40], 97), stage)
+        self.assertEqual([("ChIJcafe",)], self.rows("SELECT place FROM visits WHERE kind = 'other'"))
+
+    def test_home_is_what_the_exports_profile_says(self):
+        export = android_export()
+        export["semanticSegments"][0]["visit"]["topCandidate"]["semanticType"] = "UNKNOWN"
+        self.read(export)
+        self.assertEqual([("home",)], self.rows("SELECT kind FROM places WHERE place = 'ChIJhome'"))
+
+    def test_a_year_is_columns_with_places_by_index(self):
+        self.read(android_export())
+        body = relay.timeline_year_body(self.conn, 2023)
+        self.assertEqual(["ChIJcafe", "ChIJhome", "ChIJwork"], body["places"])
+        self.assertEqual([1, 2, 0], body["visits"]["place"])
+        self.assertEqual(["home", "work", "other"], body["visits"]["kind"])
+        self.assertEqual(["drive", "walk"], body["moves"]["mode"])
+        self.assertEqual([3], body["paths"]["count"])
+        self.assertEqual({"started": [], "ended": [], "offset": [], "lat": [], "lon": [], "place": [], "kind": [], "p": []}, relay.timeline_year_body(self.conn, 2022)["visits"])
+
+    def test_a_years_etag_moves_only_when_the_year_does(self):
+        self.read(android_export(DAY1))
+        before = dict(self.rows("SELECT year, etag FROM years"))
+        other_year = DAY1 + 60 * 86400
+        self.assertEqual([2024], self.read(android_export(other_year))["years_changed"])
+        self.assertEqual(before[2023], dict(self.rows("SELECT year, etag FROM years"))[2023])
+        self.assertEqual([2023], self.read(android_export(DAY1, cafe="ChIJbakery"))["years_changed"])
+        self.assertNotEqual(before[2023], dict(self.rows("SELECT year, etag FROM years"))[2023])
+
+    def test_the_manifest_lists_the_years_and_the_span(self):
+        relay.timeline_import(self.write("Timeline.json", android_export()))
+        manifest = relay.timeline_manifest(self.conn, now=5000.0)
+        (year,) = manifest["years"]
+        self.assertEqual((2023, 3, 2, 3), (year["year"], year["visits"], year["moves"], year["points"]))
+        self.assertGreater(year["bytes"], 0)
+        self.assertEqual((DAY1 + 6 * 3600, DAY1 + 6 * 3600 + 33000), (manifest["first"], manifest["last"]))
+        self.assertEqual({"version": 1, "total": 3, "named": 0, "gone": 0}, manifest["places"])
+        self.assertEqual(("Timeline.json", 3), (manifest["file"]["name"], manifest["file"]["visits"]))
+        self.assertFalse(manifest["drive"]["configured"])
+        self.assertFalse(manifest["naming"]["configured"])
+
+
+class _Asker:
+    def __init__(self, cookie="frigate_token=abc", accept=None):
+        self.headers = {"cookie": cookie}
+        if accept:
+            self.headers["accept-encoding"] = accept
+
+
+class TimelineRoutes(_TimelineDb):
+    def setUp(self):
+        super().setUp()
+        self.profile = {"username": "alex", "role": "admin"}
+        relay.frigate_profile = lambda request: self.profile
+        relay.TIMELINE_USERS = set()
+        self.response = types.SimpleNamespace(headers={})
+        relay.timeline_import(self.write("Timeline.json", android_export()))
+
+    def test_a_year_comes_gzipped_to_a_caller_that_reads_gzip(self):
+        import gzip
+
+        plain = relay.get_timeline_year(2023, _Asker())
+        packed = relay.get_timeline_year(2023, _Asker(accept="gzip, deflate"))
+        self.assertEqual(json.loads(plain.body), json.loads(gzip.decompress(packed.body)))
+        self.assertEqual(relay.timeline_year_body(self.conn, 2023), json.loads(plain.body))
+        with self.assertRaises(relay.HTTPException) as missing:
+            relay.get_timeline_year(1999, _Asker())
+        self.assertEqual(404, missing.exception.status_code)
+
+    def test_the_manifest_says_who_asked(self):
+        self.assertEqual("alex", relay.get_timeline(_Asker(), self.response)["user"])
+        self.assertEqual("alex", relay.post_timeline_sync(_Asker(), self.response)["user"])
+
+    def test_the_manifest_and_places_are_not_to_be_cached(self):
+        self.assertEqual(1, len(relay.get_timeline(_Asker(), self.response)["years"]))
+        self.assertEqual("private, no-store", self.response.headers["Cache-Control"])
+        places = relay.get_timeline_places(_Asker(), self.response)
+        self.assertEqual(1, places["version"])
+        self.assertEqual({"id": "ChIJhome", "lat": 40.0, "lon": -89.0, "kind": "home", "name": None, "address": None, "type": None, "city": None, "region": None, "country": None}, places["places"][1])
+
+    def test_only_an_admin_reads_it_until_users_are_listed_and_then_only_they_do(self):
+        self.profile = {"username": "sam", "role": "viewer"}
+        for call in (lambda: relay.get_timeline(_Asker(), self.response), lambda: relay.get_timeline_year(2023, _Asker()),
+                     lambda: relay.get_timeline_places(_Asker(), self.response), lambda: relay.post_timeline_sync(_Asker(), self.response)):
+            with self.assertRaises(relay.HTTPException) as refused:
+                call()
+            self.assertEqual(403, refused.exception.status_code)
+        relay.TIMELINE_USERS = {"sam"}
+        self.assertEqual(1, len(relay.get_timeline(_Asker(), self.response)["years"]))
+        self.profile = {"username": "alex", "role": "admin"}
+        with self.assertRaises(relay.HTTPException):
+            relay.get_timeline(_Asker(), self.response)
+
+    def test_nobody_signed_in_is_refused(self):
+        self.profile = None
+        with self.assertRaises(relay.HTTPException) as refused:
+            relay.get_timeline(_Asker(), self.response)
+        self.assertEqual(401, refused.exception.status_code)
+
+
+class TimelineNames(_TimelineDb):
+    def setUp(self):
+        super().setUp()
+        relay.TIMELINE_PLACES_KEY = "key"
+        relay.TIMELINE_PLACES_MONTHLY = 4000
+        self.asked = []
+        self.answers = {}
+        relay.timeline_place_lookup = self.lookup
+        self.read(android_export())
+
+    def lookup(self, place):
+        self.asked.append(place)
+        return self.answers.get(place, (200, {
+            "displayName": {"text": place[4:].title()}, "shortFormattedAddress": "1 Main St", "primaryType": "cafe", "types": ["cafe", "food"],
+            "addressComponents": [
+                {"longText": "1", "shortText": "1", "types": ["street_number"]},
+                {"longText": "Springfield", "shortText": "Springfield", "types": ["locality", "political"]},
+                {"longText": "Illinois", "shortText": "IL", "types": ["administrative_area_level_1", "political"]},
+                {"longText": "United States", "shortText": "US", "types": ["country", "political"]},
+            ],
+        }))
+
+    def names(self):
+        return {row[0]: row[1:] for row in self.rows("SELECT place, name, address, type, status FROM places")}
+
+    def test_places_are_named_most_time_spent_first(self):
+        self.assertEqual(3, relay.timeline_name_places(now=DAY1, pause=0))
+        self.assertEqual(["ChIJwork", "ChIJhome", "ChIJcafe"], self.asked)
+        self.assertEqual(("Cafe", "1 Main St", "cafe", "ok"), self.names()["ChIJcafe"])
+        self.assertEqual([("Springfield", "IL", "US")], self.rows("SELECT city, region, country FROM places WHERE place = 'ChIJcafe'"))
+
+    def test_a_place_with_no_town_goes_by_the_next_thing_down(self):
+        self.assertEqual(("Hackney", None, "GB"), relay.place_locality([
+            {"longText": "Hackney", "shortText": "Hackney", "types": ["postal_town"]}, {"longText": "United Kingdom", "shortText": "GB", "types": ["country", "political"]}]))
+        self.assertEqual((None, None, None), relay.place_locality(None))
+
+    def test_a_name_the_export_gave_outlives_a_retired_id(self):
+        self.conn.execute("UPDATE places SET name = 'The Old Mill' WHERE place = 'ChIJwork'")
+        self.conn.commit()
+        self.answers["ChIJwork"] = (404, {})
+        relay.timeline_name_places(now=DAY1, pause=0)
+        self.assertEqual(("The Old Mill", "gone"), (self.names()["ChIJwork"][0], self.names()["ChIJwork"][3]))
+        self.assertEqual(2, relay.timeline_meta(self.conn, "places_version"))
+
+    def test_a_place_is_asked_once(self):
+        relay.timeline_name_places(now=DAY1, pause=0)
+        self.assertEqual(0, relay.timeline_name_places(now=DAY1 + 3600, pause=0))
+        self.assertEqual(3, len(self.asked))
+
+    def test_a_place_google_has_retired_is_marked_gone_and_not_asked_again(self):
+        self.answers["ChIJwork"] = (404, {"error": {"message": "Place ID is no longer valid"}})
+        self.assertEqual(2, relay.timeline_name_places(now=DAY1, pause=0))
+        self.assertEqual((None, None, None, "gone"), self.names()["ChIJwork"])
+        relay.timeline_name_places(now=DAY1 + 3600, pause=0)
+        self.assertEqual(3, len(self.asked))
+        self.assertEqual(1, relay.timeline_manifest(self.conn, now=DAY1)["places"]["gone"])
+
+    def test_the_months_allowance_is_never_passed_and_comes_back_next_month(self):
+        relay.TIMELINE_PLACES_MONTHLY = 2
+        self.assertEqual(2, relay.timeline_name_places(now=DAY1, pause=0))
+        self.assertEqual(0, relay.timeline_name_places(now=DAY1 + 86400, pause=0))
+        self.assertEqual(2, relay.timeline_manifest(self.conn, now=DAY1)["naming"]["asked_this_month"])
+        self.assertEqual(1, relay.timeline_name_places(now=DAY1 + 40 * 86400, pause=0))
+        self.assertEqual(3, len(self.asked))
+
+    def test_a_refusal_stops_the_run_and_is_said(self):
+        self.answers["ChIJwork"] = (403, {"error": {"message": "Places API (New) has not been used in project 1 before or it is disabled."}})
+        self.assertEqual(0, relay.timeline_name_places(now=DAY1, pause=0))
+        self.assertEqual(["ChIJwork"], self.asked)
+        naming = relay.timeline_manifest(self.conn, now=DAY1)["naming"]
+        self.assertEqual("api_disabled", naming["error"])
+        self.assertIn("disabled", naming["message"])
+        # Still unasked, so it is tried again once the key works.
+        del self.answers["ChIJwork"]
+        self.assertEqual(3, relay.timeline_name_places(now=DAY1 + 3600, pause=0))
+        self.assertIsNone(relay.timeline_manifest(self.conn, now=DAY1)["naming"]["error"])
+
+    def test_no_key_asks_nothing(self):
+        relay.TIMELINE_PLACES_KEY = ""
+        self.assertEqual(0, relay.timeline_name_places(now=DAY1, pause=0))
+        self.assertEqual([], self.asked)
+
+
+class _DriveAnswer(_GoogleResponse):
+    def __init__(self, status, body, content=b""):
+        super().__init__(status, body)
+        self.content = content
+
+    def iter_content(self, size):
+        for at in range(0, len(self.content), size):
+            yield self.content[at:at + size]
+
+
+class _FakeDrive:
+    """Stands in for the Drive session: the folder's listing, the folder itself, and a file's bytes."""
+
+    def __init__(self, files, content=b"", folder=200, listing=200):
+        self.files, self.content, self.folder, self.listing, self.downloads = files, content, folder, listing, 0
+
+    def get(self, url, params=None, stream=False, timeout=None):
+        if (params or {}).get("alt") == "media":
+            self.downloads += 1
+            return _DriveAnswer(200, {}, self.content)
+        if url == relay.DRIVE_API:
+            return _DriveAnswer(self.listing, {"files": self.files} if self.listing == 200 else {"error": {"message": "Google Drive API has not been used in project 1 before or it is disabled.", "errors": [{"reason": "accessNotConfigured"}]}})
+        return _DriveAnswer(self.folder, {"id": "folder"} if self.folder == 200 else {"error": {"message": "File not found: folder."}})
+
+
+class TimelinePull(_TimelineDb):
+    FILE = {"id": "f1", "name": "Timeline.json", "size": "1234", "md5Checksum": "abc", "modifiedTime": "2026-10-01T10:00:00.000Z"}
+
+    def setUp(self):
+        super().setUp()
+        relay.TIMELINE_DRIVE_FOLDER = "folder"
+        relay._timeline_google["account"] = "relay@example.iam.gserviceaccount.com"
+        self.drive = _FakeDrive([{"id": "n1", "name": "notes.txt"}, self.FILE], json.dumps(android_export()).encode())
+        relay.timeline_google = lambda: self.drive
+
+    def status(self):
+        return relay.timeline_manifest(self.conn, now=5000.0)["drive"]
+
+    def test_the_newest_export_is_read_once(self):
+        summary = relay.timeline_pull(now=4000.0)
+        self.assertEqual(3, summary["visits"])
+        self.assertEqual(3, self.rows("SELECT COUNT(*) FROM visits")[0][0])
+        self.assertIsNone(relay.timeline_pull(now=4100.0))
+        self.assertEqual(1, self.drive.downloads)
+        self.assertEqual((4100.0, None), (self.status()["checked_at"], self.status()["error"]))
+        self.assertFalse(os.path.exists(os.path.join(self._dir.name, "timeline-incoming")))
+        self.assertEqual("2026-10-01T10:00:00.000Z", relay.timeline_manifest(self.conn)["file"]["modified"])
+
+    def test_a_changed_file_is_read_again(self):
+        relay.timeline_pull(now=4000.0)
+        self.drive.files = [{**self.FILE, "md5Checksum": "def", "modifiedTime": "2026-10-08T10:00:00.000Z"}]
+        self.assertIsNotNone(relay.timeline_pull(now=4100.0))
+        self.assertEqual(2, self.drive.downloads)
+
+    def test_a_file_still_being_sent_is_not_read_until_it_has_arrived(self):
+        # Drive lists the file as soon as the phone starts sending it, with nothing in it yet.
+        self.drive.files = [{**self.FILE, "size": "0", "md5Checksum": "empty"}]
+        self.assertIsNone(relay.timeline_pull(now=4000.0))
+        self.assertEqual((0, "empty"), (self.drive.downloads, self.status()["error"]))
+        self.drive.files = [self.FILE]
+        self.assertEqual(3, relay.timeline_pull(now=4100.0)["visits"])
+
+    def test_the_same_export_can_be_read_again_when_asked(self):
+        relay.timeline_pull(now=4000.0)
+        self.assertIsNone(relay.timeline_pull(now=4100.0))
+        again = relay.timeline_pull(now=4200.0, again=True)
+        self.assertEqual((3, 2), (again["visits"], self.drive.downloads))
+        self.assertEqual(3, self.rows("SELECT COUNT(*) FROM visits")[0][0])
+
+    def test_an_empty_folder_says_so(self):
+        self.drive.files = [{"id": "n1", "name": "notes.txt"}]
+        self.assertIsNone(relay.timeline_pull(now=4000.0))
+        self.assertEqual("empty", self.status()["error"])
+
+    def test_a_folder_the_key_cant_see_is_not_shared(self):
+        self.drive.files, self.drive.folder = [], 404
+        relay.timeline_pull(now=4000.0)
+        status = self.status()
+        self.assertEqual("not_shared", status["error"])
+        self.assertEqual("relay@example.iam.gserviceaccount.com", status["service_account"])
+
+    def test_the_drive_api_switched_off_says_so(self):
+        self.drive.listing = 403
+        relay.timeline_pull(now=4000.0)
+        self.assertEqual("api_disabled", self.status()["error"])
+
+    def test_a_file_that_wont_read_is_reported_and_tried_again(self):
+        self.drive.content = b'{"semanticSegments": [{"startTime": '
+        self.assertIsNone(relay.timeline_pull(now=4000.0))
+        self.assertEqual("failed", self.status()["error"])
+        self.drive.content = json.dumps(android_export()).encode()
+        self.assertIsNotNone(relay.timeline_pull(now=4100.0))
+        self.assertIsNone(self.status()["error"])
+
+    def test_no_folder_set_does_nothing(self):
+        relay.TIMELINE_DRIVE_FOLDER = ""
+        self.assertIsNone(relay.timeline_pull(now=4000.0))
+        self.assertEqual(0, self.drive.downloads)
+
+    def test_a_check_is_the_pull_and_the_naming_by_one_caller_at_a_time(self):
+        relay.TIMELINE_PLACES_KEY = "key"
+        asked = []
+        relay.timeline_place_lookup = lambda place: asked.append(place) or (200, {"displayName": {"text": "Somewhere"}})
+        # Someone else's check is under way: this one does nothing at all, the naming included.
+        self.assertTrue(relay._timeline_check_lock.acquire(blocking=False))
+        try:
+            self.assertIsNone(relay.timeline_check())
+            self.assertTrue(relay.timeline_manifest(self.conn)["syncing"])
+        finally:
+            relay._timeline_check_lock.release()
+        self.assertEqual(([], 0), (asked, self.drive.downloads))
+        done = relay.timeline_check()
+        self.assertEqual((3, 3), (done["read"]["visits"], done["named"]))
+        self.assertEqual(3, len(asked))
+        self.assertFalse(relay.timeline_manifest(self.conn)["syncing"])
+
+
 if __name__ == "__main__":
     unittest.main()

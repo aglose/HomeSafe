@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -84,8 +85,10 @@ import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.FitnessViewModel
 import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RecordFlash
+import com.meticulouscreations.homesafe.fitness.WorkoutSession
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.HeartProfile
 import com.meticulouscreations.homesafe.fitness.domain.HeartSensor
 import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
@@ -104,6 +107,7 @@ import homesafe.shared.generated.resources.common_back
 import homesafe.shared.generated.resources.fitness_close
 import homesafe.shared.generated.resources.fitness_copy_share_title
 import homesafe.shared.generated.resources.fitness_heart_title
+import homesafe.shared.generated.resources.fitness_tab_history
 import homesafe.shared.generated.resources.fitness_tab_lifts
 import homesafe.shared.generated.resources.fitness_tab_progress
 import homesafe.shared.generated.resources.fitness_tab_today
@@ -112,16 +116,18 @@ import homesafe.shared.generated.resources.fitness_title_edit
 import homesafe.shared.generated.resources.fitness_title_exercise
 import homesafe.shared.generated.resources.fitness_title_import
 import homesafe.shared.generated.resources.fitness_title_import_copy
+import homesafe.shared.generated.resources.fitness_title_session
 import homesafe.shared.generated.resources.fitness_workout_title
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
-/** The fitness app's three tabs, in nav order. */
+/** The fitness app's four tabs, in nav order. */
 enum class FitnessTab(val label: StringResource, val icon: ImageVector) {
     TODAY(Res.string.fitness_tab_today, Icons.Filled.Bolt),
     LIFTS(Res.string.fitness_tab_lifts, Icons.Filled.FitnessCenter),
+    HISTORY(Res.string.fitness_tab_history, Icons.Filled.CalendarMonth),
     PROGRESS(Res.string.fitness_tab_progress, Icons.Filled.Insights),
 }
 
@@ -139,6 +145,9 @@ internal sealed interface FitnessPage {
 
     /** The heart rate: its sensor and its zones. */
     data object Heart : FitnessPage
+
+    /** A session from the history, looked back on: a workout, or with no [workoutId] the sets logged outside one on [epochDay]. */
+    data class Session(val workoutId: Long?, val epochDay: Long) : FitnessPage
 }
 
 /** Everything the fitness screens can ask for, as one thing to hand down: the view model's side of the app. */
@@ -147,6 +156,10 @@ internal class FitnessActions(
     val onClose: () -> Unit = {},
     val onStartWorkout: (WorkoutFocus) -> Unit = {},
     val onFinishWorkout: () -> Unit = {},
+    /** Throws the workout in progress away, with the sets logged in it. */
+    val onCancelWorkout: () -> Unit = {},
+    /** Takes a session out of the history for good. */
+    val onDeleteSession: (WorkoutSession) -> Unit = {},
     val onLogSet: (String, Double, Int) -> Unit = { _, _, _ -> },
     val onDeleteSet: (Long) -> Unit = {},
     val onSkipRest: () -> Unit = {},
@@ -167,6 +180,7 @@ internal class FitnessActions(
     val onStopHeartSearch: () -> Unit = {},
     val onSaveHeartProfile: (HeartProfile) -> Unit = {},
     val onDismissZoneNotice: () -> Unit = {},
+    val onFigureStyle: (FigureStyle) -> Unit = {},
     /** Sends a copy of the whole log out through the platform's share sheet; null where there is none to send it through. */
     val onSendCopy: (() -> Unit)? = null,
 )
@@ -175,9 +189,10 @@ internal class FitnessActions(
  * The fitness app: an app of its own inside PercySafe, opened from the drawer, as Finance and
  * Weather are. A training log built round the way its owner already trains: one peak set per
  * exercise, beaten week on week. Today picks the workout, a workout lists its exercises with
- * what to aim for and logs sets in a tap or two, Lifts keeps every exercise's ladder, and
- * Progress shows the phase, bodyweight and the week's work on the body. Back pops a page, then
- * leaves the app ([onClose]).
+ * what to aim for and logs sets in a tap or two, Lifts keeps every exercise's ladder, History
+ * is the months gone by as a calendar with each workout and what it came to, and Progress shows
+ * the phase, bodyweight and the week's work on the body. Back pops a page, then leaves the app
+ * ([onClose]).
  */
 @Composable
 fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boolean = true) {
@@ -194,6 +209,8 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onClose = { close() },
             onStartWorkout = viewModel::startWorkout,
             onFinishWorkout = viewModel::finishWorkout,
+            onCancelWorkout = viewModel::cancelWorkout,
+            onDeleteSession = viewModel::deleteSession,
             onLogSet = viewModel::logSet,
             onDeleteSet = viewModel::deleteSet,
             onSkipRest = viewModel::skipRest,
@@ -214,6 +231,7 @@ fun FitnessApp(onClose: () -> Unit, modifier: Modifier = Modifier, active: Boole
             onStopHeartSearch = viewModel::stopHeartSearch,
             onSaveHeartProfile = viewModel::saveHeartProfile,
             onDismissZoneNotice = viewModel::dismissZoneNotice,
+            onFigureStyle = viewModel::setFigureStyle,
             onSendCopy = share?.let { send -> { scope.launch { viewModel.sendLogCopy { text -> send(text, shareTitle) } } } },
         )
     }
@@ -269,6 +287,7 @@ internal fun FitnessAppContent(
         val heatOf = when {
             page == FitnessPage.Workout && workout != null -> palette.focus(workout.workout.focus)
             page is FitnessPage.Lift -> state.board(page.exerciseId)?.let { palette.focus(focusOf(it.exercise.bodyPart)) } ?: palette.phase(state.phase.kind)
+            page is FitnessPage.Session -> state.session(page.workoutId, page.epochDay)?.focus?.let { palette.focus(it) } ?: palette.phase(state.phase.kind)
             else -> palette.phase(state.phase.kind)
         }
 
@@ -325,6 +344,13 @@ internal fun FitnessAppContent(
                         onSendCopy = actions.onSendCopy,
                     )
 
+                    FitnessTab.HISTORY -> HistoryScreen(
+                        state = state,
+                        padding = tabPadding,
+                        // The one in progress is carried on with; any other is looked back on.
+                        onOpenSession = { session -> pages += if (session.inProgress) FitnessPage.Workout else FitnessPage.Session(session.workout?.id, session.epochDay) },
+                    )
+
                     FitnessTab.PROGRESS -> ProgressScreen(
                         state,
                         tabPadding,
@@ -344,6 +370,10 @@ internal fun FitnessAppContent(
                             onEditExercise = { pages += FitnessPage.Edit(it) },
                             onFinish = {
                                 actions.onFinishWorkout()
+                                pages.remove(FitnessPage.Workout)
+                            },
+                            onCancel = {
+                                actions.onCancelWorkout()
                                 pages.remove(FitnessPage.Workout)
                             },
                             // Coming back mid-rest, the exercise being rested from is the one to carry on with.
@@ -387,6 +417,26 @@ internal fun FitnessAppContent(
 
                     FitnessPage.Heart -> HeartScreen(heart, pagePadding, actions)
 
+                    is FitnessPage.Session -> {
+                        val session = state.session(shown.workoutId, shown.epochDay)
+                        if (session != null) {
+                            SessionScreen(
+                                session = session,
+                                state = state,
+                                padding = pagePadding,
+                                onOpenExercise = { pages += FitnessPage.Lift(it) },
+                                onDelete = {
+                                    actions.onDeleteSession(session)
+                                    pages.remove(shown)
+                                },
+                                heart = session.workout?.let { heart.summaries[it.id] },
+                            )
+                        } else {
+                            // Just deleted: the page under this one shows through.
+                            Box(Modifier.fillMaxSize())
+                        }
+                    }
+
                     FitnessPage.Import -> ImportScreen(
                         import = state.import,
                         padding = pagePadding,
@@ -409,6 +459,7 @@ internal fun FitnessAppContent(
                     is FitnessPage.Edit -> stringResource(Res.string.fitness_title_edit)
                     FitnessPage.Import -> stringResource(if (state.import.logCopy != null) Res.string.fitness_title_import_copy else Res.string.fitness_title_import)
                     FitnessPage.Heart -> stringResource(Res.string.fitness_heart_title)
+                    is FitnessPage.Session -> stringResource(Res.string.fitness_title_session)
                 },
                 paged = page != null,
                 onBack = ::pop,
@@ -471,29 +522,31 @@ private fun FitnessNav(selected: FitnessTab, onSelect: (FitnessTab) -> Unit) {
         Modifier
             .navigationBarsPadding()
             .padding(bottom = 16.dp)
-            .widthIn(max = 380.dp)
-            .fillMaxWidth(0.86f)
+            .widthIn(max = 420.dp)
+            .fillMaxWidth(0.92f)
             .clip(CircleShape)
             .background(colors.surfaceRaised.copy(alpha = 0.96f))
             .border(1.dp, colors.hairline, CircleShape)
             .padding(6.dp),
-        horizontalArrangement = Arrangement.SpaceAround,
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         FitnessTab.entries.forEach { tab ->
             val isSelected = tab == selected
             Column(
+                // Each a quarter of the pill, so four words fit on a narrow phone and none is cramped by a longer neighbour.
                 Modifier
+                    .weight(1f)
                     .clip(CircleShape)
                     .background(if (isSelected) colors.ember.copy(alpha = 0.22f) else Color.Transparent)
                     .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab) { onSelect(tab) }
                     .semantics { this.selected = isSelected }
                     .testTag("fitness_tab_${tab.name.lowercase()}")
-                    .padding(horizontal = 20.dp, vertical = 7.dp),
+                    .padding(horizontal = 4.dp, vertical = 7.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Icon(tab.icon, contentDescription = null, tint = if (isSelected) colors.amber else colors.textFaint, modifier = Modifier.size(22.dp))
-                Text(stringResource(tab.label), style = FitnessTheme.type.micro, color = if (isSelected) colors.text else colors.textFaint, maxLines = 1)
+                Text(stringResource(tab.label), style = FitnessTheme.type.micro, color = if (isSelected) colors.text else colors.textFaint, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.filled.WbSunny
@@ -86,7 +87,13 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.atlas.AtlasUiState
+import com.meticulouscreations.homesafe.atlas.domain.CivilDate
+import com.meticulouscreations.homesafe.atlas.ui.AtlasBackdrop
+import com.meticulouscreations.homesafe.atlas.ui.AtlasFormat
+import com.meticulouscreations.homesafe.atlas.ui.AtlasPalette
+import com.meticulouscreations.homesafe.atlas.ui.distanceText
+import com.meticulouscreations.homesafe.atlas.ui.monthText
 import com.meticulouscreations.homesafe.finance.FinanceUiState
 import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
@@ -106,6 +113,13 @@ import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
 import com.meticulouscreations.homesafe.weather.ui.sky.SkyScene
 import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.atlas_drawer_detail
+import homesafe.shared.generated.resources.atlas_drawer_empty
+import homesafe.shared.generated.resources.atlas_drawer_locked
+import homesafe.shared.generated.resources.atlas_drawer_open
+import homesafe.shared.generated.resources.atlas_drawer_places
+import homesafe.shared.generated.resources.atlas_drawer_subtitle
+import homesafe.shared.generated.resources.atlas_drawer_title
 import homesafe.shared.generated.resources.fitness_drawer_empty
 import homesafe.shared.generated.resources.fitness_drawer_open
 import homesafe.shared.generated.resources.fitness_drawer_subtitle
@@ -235,14 +249,16 @@ private const val APP_BACK_PEEK = 0.35f
 /**
  * The app drawer the top bar's menu button opens: the camera app's own tabs, and below them the
  * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside,
- * Fitness, whose card says which workout is up next, and Finance, whose card carries a live
- * S&P 500 line — so the drawer is worth a glance on its own.
+ * Atlas, whose card says how far its owner's history reaches, Fitness, whose card says which
+ * workout is up next, and Finance, whose card carries a live S&P 500 line — so the drawer is
+ * worth a glance on its own.
  * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it. A swipe
  * the other way across the shell draws it out too ([pull]), under the finger as it goes.
  *
  * The sign-in screen opens it too, before there are any cameras to go to: there
  * [showHomeSecurity] is false and it lists the apps alone. [financeLocked] says the Finance card
- * opens on its lock (no server to ask who this is), so the card shows no figure of the household's.
+ * opens on its lock (no server to ask who this is), so the card shows no figure of the household's;
+ * [atlasLocked] says the same of the atlas, whose card then says nothing of where anyone has been.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -252,14 +268,17 @@ internal fun ShellDrawer(
     finance: FinanceUiState,
     weather: WeatherUiState,
     fitness: FitnessUiState,
+    atlas: AtlasUiState,
     pull: DrawerPull,
     onSelectTab: (TopLevelRoute) -> Unit,
     onOpenFinance: (Offset) -> Unit,
     onOpenWeather: (Offset) -> Unit,
     onOpenFitness: (Offset) -> Unit,
+    onOpenAtlas: (Offset) -> Unit,
     onClose: () -> Unit,
     showHomeSecurity: Boolean = true,
     financeLocked: Boolean = false,
+    atlasLocked: Boolean = false,
 ) {
     val reveal = remember { Animatable(if (open) 1f else 0f) }
     val pulling = pull.active
@@ -340,6 +359,8 @@ internal fun ShellDrawer(
                 }
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
                 WeatherDrawerCard(weather, animated = open || pulling, onOpen = onOpenWeather)
+                Spacer(Modifier.height(12.dp))
+                AtlasDrawerCard(atlas, atlasLocked, animated = open || pulling, onOpen = onOpenAtlas)
                 Spacer(Modifier.height(12.dp))
                 FitnessDrawerCard(fitness, animated = open || pulling, onOpen = onOpenFitness)
                 Spacer(Modifier.height(12.dp))
@@ -581,7 +602,70 @@ private fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen
 }
 
 /**
- * An app opened from the drawer ([content]: finance, weather, fitness), over the whole shell, opening as
+ * The atlas app's door: contour lines drifting while the drawer is open, with how many places its
+ * owner's history takes in and how far it runs. While the app is [locked] it says only that, and
+ * with no history yet, how to get one.
+ */
+@Composable
+private fun AtlasDrawerCard(atlas: AtlasUiState, locked: Boolean, animated: Boolean, onOpen: (Offset) -> Unit) {
+    var center by remember { mutableStateOf(Offset.Zero) }
+    val shape = RoundedCornerShape(22.dp)
+    val palette = remember { AtlasPalette() }
+    val secondary = Color(0xD1FFFFFF)
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .onGloballyPositioned { center = it.boundsInRoot().center }
+            .clip(shape)
+            .border(1.dp, Color(0x33FFFFFF), shape)
+            .clickable(onClickLabel = stringResource(Res.string.atlas_drawer_open)) { onOpen(center) }
+            .testTag("drawer_atlas"),
+    ) {
+        // Small enough to draw live, and stopped when the drawer is shut.
+        AtlasBackdrop(palette.trail, palette.air, Modifier.matchParentSize(), seed = 0.55f, energy = 0.8f, running = animated)
+        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x8C000000)))))
+        Column(Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.Public, contentDescription = null, tint = Color(0xFFB85C00), modifier = Modifier.size(22.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(Res.string.atlas_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(stringResource(Res.string.atlas_drawer_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = secondary)
+                }
+                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
+            }
+            Spacer(Modifier.height(14.dp))
+            val history = atlas.history
+            when {
+                locked -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("drawer_atlas_locked")) {
+                    Icon(Icons.Filled.Lock, contentDescription = null, tint = secondary, modifier = Modifier.size(14.dp))
+                    Text(stringResource(Res.string.atlas_drawer_locked), style = MaterialTheme.typography.labelMedium, color = secondary)
+                }
+
+                // Not read yet, or not yet known to be this sign-in's: nothing of it is said.
+                !atlas.loaded -> Unit
+
+                history.isEmpty -> Text(stringResource(Res.string.atlas_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
+
+                else -> {
+                    val places = history.places.size
+                    Text(pluralStringResource(Res.plurals.atlas_drawer_places, places, AtlasFormat.grouped(places.toLong())), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                    Text(
+                        stringResource(Res.string.atlas_drawer_detail, distanceText(atlas.analysis.records.groundMeters), monthText(CivilDate.of(history.firstDay).monthIndex)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = secondary,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * An app opened from the drawer ([content]: finance, weather, fitness, the atlas), over the whole shell, opening as
  * a circle that grows from [origin] (the drawer card that was tapped) to cover the screen, and
  * draining back toward the menu button when it closes. [onCovering] reports when it fully covers
  * the screen, so the shell can stop drawing — and stop streaming — the cameras underneath.

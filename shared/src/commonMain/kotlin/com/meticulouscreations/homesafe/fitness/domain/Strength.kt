@@ -42,6 +42,17 @@ object Strength {
 
     fun score(exercise: Exercise, set: LoggedSet, bodyweight: Double? = null): Double = e1rm(load(exercise, set, bodyweight), set.reps)
 
+    /**
+     * The pounds [set] moved, every rep of it: what a session's volume is added up from. A pair of
+     * dumbbells counts both hands. Null where the exercise isn't counted in pounds at all (a
+     * machine's pin number), which no sum can take in.
+     */
+    fun poundsMoved(exercise: Exercise, set: LoggedSet, bodyweight: Double? = null): Double? = when (exercise.loadKind) {
+        LoadKind.LEVEL -> null
+        LoadKind.PER_HAND -> set.weight * 2 * set.reps
+        else -> load(exercise, set, bodyweight) * set.reps
+    }
+
     /** The best of [sets] by [score]; the later one when two tie, since that is the one to beat. */
     fun best(exercise: Exercise, sets: List<LoggedSet>, bodyweight: Double? = null): LoggedSet? =
         sets.filter { it.reps > 0 }.maxWithOrNull(compareBy<LoggedSet>({ score(exercise, it, bodyweight) }, { it.epochSeconds }, { it.id }))

@@ -240,6 +240,53 @@ class FitnessRepositoryImplTest {
         assertNull(saved.single().workoutId)
     }
 
+    @Test
+    fun deletingAWorkoutTakesItsSetsAndItsHeartAndLeavesEverythingElse() = runTest {
+        val gone = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        repository.addSets(listOf(draft(epochSeconds = 110, workoutId = gone.id), draft(epochSeconds = 120, workoutId = gone.id)))
+        repository.saveHeartSummary(gone.id, heart)
+        repository.finishWorkout(gone.id, 500)
+        val kept = repository.startWorkout(WorkoutFocus.LEGS, 1_000)
+        repository.addSets(listOf(draft(epochSeconds = 1_010, workoutId = kept.id), draft(epochSeconds = 1_020)))
+        repository.saveHeartSummary(kept.id, heart)
+
+        repository.deleteWorkout(gone.id)
+
+        assertEquals(listOf(kept.id), repository.workouts.first().map { it.id })
+        assertEquals(listOf(kept.id, null), repository.sets.first().map { it.workoutId })
+        assertEquals(mapOf(kept.id to heart), repository.heartSummaries.first())
+    }
+
+    @Test
+    fun deletingTheWorkoutInProgressLeavesNoneOpenSoAnotherCanStart() = runTest {
+        val cancelled = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        repository.addSets(listOf(draft(epochSeconds = 110, workoutId = cancelled.id)))
+
+        repository.deleteWorkout(cancelled.id)
+        val next = repository.startWorkout(WorkoutFocus.BACK, 200)
+
+        assertEquals(listOf(Workout(next.id, WorkoutFocus.BACK, 200)), repository.workouts.first())
+        assertEquals(emptyList(), repository.sets.first())
+    }
+
+    @Test
+    fun deletingAWorkoutThatIsNotThereChangesNothing() = runTest {
+        val workout = repository.startWorkout(WorkoutFocus.CHEST, 100)
+        repository.addSets(listOf(draft(workoutId = workout.id)))
+        repository.deleteWorkout(77)
+        assertEquals(listOf(workout.id), repository.workouts.first().map { it.id })
+        assertEquals(1, repository.sets.first().size)
+    }
+
+    @Test
+    fun deletingSetsByTheirIdsRemovesOnlyThose() = runTest {
+        val added = repository.addSets(listOf(draft(1_000), draft(2_000), draft(3_000)))
+        repository.deleteSets(listOf(added[0].id, added[2].id))
+        assertEquals(listOf(added[1]), repository.sets.first())
+        repository.deleteSets(emptyList())
+        assertEquals(listOf(added[1]), repository.sets.first())
+    }
+
     // ---- Imports ------------------------------------------------------------------------------
 
     @Test

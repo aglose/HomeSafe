@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.fitness
 
+import com.meticulouscreations.homesafe.fitness.ui.movement.MOVEMENT_SHADERS
 import com.meticulouscreations.homesafe.fitness.ui.shader.FITNESS_SHADERS
 import org.jetbrains.skia.RuntimeEffect
 import kotlin.test.Test
@@ -15,7 +16,8 @@ class FitnessShadersCompileTest {
 
     @Test
     fun everyShaderCompiles() {
-        for ((name, source) in FITNESS_SHADERS) {
+        // The figures' shaders too: a rendered figure whose shader fails falls back to paler blending without a word.
+        for ((name, source) in FITNESS_SHADERS + MOVEMENT_SHADERS) {
             try {
                 RuntimeEffect.makeForShader(source)
             } catch (e: Throwable) {
