@@ -23,9 +23,10 @@ data class StepsBoard(val days: List<DaySteps>, val average: Long? = null) {
 }
 
 /**
- * A night's sleep, filed under the local day it ended on ([epochDay]), with the offset from UTC
- * it ended in so its times read as they did that morning. [asleepSeconds] leaves out the time
- * awake in bed. The three depths are 0 when the tracker kept no stages.
+ * A night's sleep, filed under the local day it ended on ([epochDay]), with the offsets from UTC
+ * it ended in ([utcOffsetSeconds]) and began in ([startUtcOffsetSeconds]), so each of its times
+ * reads as the clock by the bed did: they differ across a change of the clocks. [asleepSeconds]
+ * leaves out the time awake in bed. The three depths are 0 when the tracker kept no stages.
  */
 @Immutable
 data class SleepNight(
@@ -38,6 +39,7 @@ data class SleepNight(
     val lightSeconds: Long = 0,
     val deepSeconds: Long = 0,
     val remSeconds: Long = 0,
+    val startUtcOffsetSeconds: Int = utcOffsetSeconds,
 ) {
     /** The tracker said how deep the sleep was, not only that it was sleep. */
     val staged: Boolean get() = lightSeconds + deepSeconds + remSeconds > 0
@@ -50,18 +52,19 @@ object SleepNights {
 
     /**
      * One night for each local day a sleep ended on, oldest first: the longest sleep that ended
-     * that day, so a nap in the afternoon doesn't stand for the night before it. [offsetAt] is
-     * the offset from UTC at a moment.
+     * that day, so a nap in the afternoon doesn't stand for the night before it. A sleep is read
+     * in the offsets it was recorded in; [offsetAt] is the offset from UTC at a moment where
+     * this is being read, for a tracker that kept none.
      */
     fun of(sessions: List<SleepSession>, offsetAt: (Long) -> Int): List<SleepNight> =
         sessions.filter { it.endEpochSeconds > it.startEpochSeconds }
-            .map { night(it, offsetAt(it.endEpochSeconds)) }
+            .map { night(it, it.endUtcOffsetSeconds ?: offsetAt(it.endEpochSeconds), it.startUtcOffsetSeconds ?: offsetAt(it.startEpochSeconds)) }
             .filter { it.asleepSeconds >= LEAST_NIGHT_SECONDS }
             .groupBy { it.epochDay }
             .map { (_, sameDay) -> sameDay.maxBy { it.asleepSeconds } }
             .sortedBy { it.epochDay }
 
-    private fun night(session: SleepSession, offset: Int): SleepNight {
+    private fun night(session: SleepSession, offset: Int, startOffset: Int): SleepNight {
         // A stage is counted only for the part of it inside the sleep it belongs to.
         fun spent(kind: SleepStageKind): Long = session.stages.filter { it.kind == kind }.sumOf {
             (minOf(it.endEpochSeconds, session.endEpochSeconds) - maxOf(it.startEpochSeconds, session.startEpochSeconds)).coerceAtLeast(0)
@@ -82,6 +85,7 @@ object SleepNights {
             lightSeconds = light,
             deepSeconds = deep,
             remSeconds = rem,
+            startUtcOffsetSeconds = startOffset,
         )
     }
 }

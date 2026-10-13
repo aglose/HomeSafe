@@ -95,6 +95,27 @@ class BodyTest {
     }
 
     @Test
+    fun aNightKeepsTheOffsetsItWasRecordedIn() {
+        // Recorded where it was two hours east going to bed and one hour east on waking (the clocks went back in the night),
+        // and read somewhere five hours west.
+        val session = SleepSession(at(today - 1, 21), at(today, 5), startUtcOffsetSeconds = 2 * HOUR.toInt(), endUtcOffsetSeconds = HOUR.toInt())
+        val night = SleepNights.of(listOf(session)) { -5 * HOUR.toInt() }.single()
+        // Six in the morning there, on the day it was there.
+        assertEquals(today, night.epochDay)
+        assertEquals(HOUR.toInt(), night.utcOffsetSeconds)
+        assertEquals(2 * HOUR.toInt(), night.startUtcOffsetSeconds)
+    }
+
+    @Test
+    fun withNoOffsetKeptEachEndIsReadByTheClockWhereItIsRead() {
+        // The offset here changes at midnight UTC: one hour east before it, none after.
+        val session = SleepSession(at(today - 1, 22), at(today, 6))
+        val night = SleepNights.of(listOf(session)) { if (it < at(today, 0)) HOUR.toInt() else 0 }.single()
+        assertEquals(HOUR.toInt(), night.startUtcOffsetSeconds)
+        assertEquals(0, night.utcOffsetSeconds)
+    }
+
+    @Test
     fun nightsComeOldestFirst() {
         val nights = SleepNights.of(listOf(plainNight(today, 7.0), plainNight(today - 2, 6.0), plainNight(today - 1, 8.0)), utc)
         assertEquals(listOf(today - 2, today - 1, today), nights.map { it.epochDay })

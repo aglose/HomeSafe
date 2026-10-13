@@ -162,10 +162,31 @@ class FitnessHealthUiTest {
     }
 
     @Test
-    fun whatIsNotSharedSaysSoOnItsTile() = runComposeUiTest(testTimeout = 5.minutes) {
+    fun whatIsNotSharedSaysSoOnItsTileAndCanBeAddedInTheStore() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
         val health = HealthFixtures.connected().let { it.copy(granted = it.granted - HealthKind.SLEEP, body = it.body.copy(sleep = null)) }
-        show(health)
+        show(health, calls)
         onNodeWithTag("fitness_body_sleep").assert(hasContentDescription("Not shared"))
+        // Android's sheet doesn't come up a second time for the one kind left out: the store's own page is the way.
+        tap("fitness_body_manage")
+        assertEquals(1, calls.manages)
+    }
+
+    @Test
+    fun withOnlyStepsSharedThereIsStillAWayToShareTheRest() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        val health = HealthFixtures.connected().let { it.copy(granted = setOf(HealthKind.STEPS), body = it.body.copy(sleep = null, readiness = null, readinessShared = false)) }
+        show(health, calls)
+        // No exercise, so no door to the runs and none of its buttons.
+        assertNotShown("fitness_runs_door")
+        tap("fitness_body_manage")
+        assertEquals(1, calls.manages)
+    }
+
+    @Test
+    fun withEverythingSharedTheCardAsksForNothingMore() = runComposeUiTest(testTimeout = 5.minutes) {
+        show(HealthFixtures.connected())
+        assertNotShown("fitness_body_manage")
     }
 
     @Test

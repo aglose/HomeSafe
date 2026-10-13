@@ -239,6 +239,20 @@ object Runs {
         return HeartSummary(below, zones.toList(), weighted, peak).takeIf { !it.isEmpty }
     }
 
+    /**
+     * [heart] (in order) as the stretches the band was really reading through: a gap longer than
+     * [HEART_GAP_SECONDS] ends one and begins the next, so that a chart doesn't draw a line
+     * across time nobody measured.
+     */
+    fun heartStretches(heart: List<HealthSample>): List<List<HealthSample>> {
+        val stretches = ArrayList<MutableList<HealthSample>>()
+        heart.forEach { reading ->
+            val last = stretches.lastOrNull()?.last()
+            if (last == null || reading.epochSeconds - last.epochSeconds > HEART_GAP_SECONDS) stretches += mutableListOf(reading) else stretches.last() += reading
+        }
+        return stretches
+    }
+
     /** What opening [run] shows, from its [track] and the zones in force ([bounds], null when none are set). */
     fun detail(run: Run, track: RunTrack, bounds: ZoneBounds?): RunDetail = RunDetail(
         runId = run.id,

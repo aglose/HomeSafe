@@ -142,14 +142,47 @@ class HealthViewModelTest {
     }
 
     @Test
-    fun whenAskingComesToNothingItSaysSo() = runHealthTest { h ->
+    fun oneRefusalIsAnAnswerAndNotTheEndOfAsking() = runHealthTest { h ->
+        h.source.grantsWhenAsked = emptySet()
+        open(h)
+        h.vm.connect()
+        runCurrent()
+        assertEquals(1, h.source.asked)
+        assertEquals(HealthAccess.OFF, h.state.access)
+        // The sheet came up and was turned down. It will come up again.
+        assertFalse(h.state.refused)
+    }
+
+    @Test
+    fun whenAskingHasComeToNothingTwiceItPointsAtTheStoresOwnPage() = runHealthTest { h ->
         // After two refusals Android no longer shows the sheet, and the request just comes back.
         h.source.grantsWhenAsked = null
         open(h)
         h.vm.connect()
         runCurrent()
+        h.vm.connect()
+        runCurrent()
+        assertEquals(2, h.source.asked)
         assertEquals(HealthAccess.OFF, h.state.access)
         assertTrue(h.state.refused)
+        // Allowed over there after all: there is nothing left to point at.
+        h.source.allowed = setOf(HealthKind.STEPS)
+        h.clock.seconds += 120
+        open(h)
+        assertFalse(h.state.refused)
+    }
+
+    @Test
+    fun aRefusalThenAnAllowingStartsTheCountAgain() = runHealthTest { h ->
+        h.source.grantsWhenAsked = emptySet()
+        open(h)
+        h.vm.connect()
+        runCurrent()
+        h.source.grantsWhenAsked = setOf(HealthKind.STEPS)
+        h.vm.connect()
+        runCurrent()
+        assertEquals(HealthAccess.ON, h.state.access)
+        assertFalse(h.state.refused)
     }
 
     @Test
@@ -252,6 +285,39 @@ class HealthViewModelTest {
     }
 
     @Test
+    fun whatIsNoLongerSharedGoesEvenWhenAnotherReadFails() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        assertNotNull(h.state.body.sleep)
+        assertNotNull(h.state.body.readiness)
+        // Sleep and the heart's readings are switched off in the store, and the steps can't be reached.
+        h.source.allowed = everything - setOf(HealthKind.SLEEP, HealthKind.HEART_RATE_VARIABILITY, HealthKind.RESTING_HEART_RATE)
+        h.source.failing = setOf(HealthKind.STEPS)
+        h.clock.seconds += 120
+        open(h)
+        assertTrue(h.state.failed)
+        // What couldn't be read is as it was; what was taken away is gone.
+        assertEquals(4_200L, h.state.body.steps?.today)
+        assertNull(h.state.body.sleep)
+        assertNull(h.state.body.readiness)
+        assertFalse(h.state.body.readinessShared)
+        assertTrue(h.state.partlyShared)
+    }
+
+    @Test
+    fun runsThatCannotBeReadStayAsTheyWere() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        h.source.failing = setOf(HealthKind.EXERCISE)
+        h.clock.seconds += 120
+        open(h)
+        assertTrue(h.state.failed)
+        assertEquals(listOf("r1"), h.state.runs.runs.map { it.id })
+    }
+
+    @Test
     fun aFirstReadThatPartlyFailsShowsWhatItCould() = runHealthTest { h ->
         fill(h.source)
         h.source.allowed = everything
@@ -300,6 +366,47 @@ class HealthViewModelTest {
         h.repository.saveHeartProfile(HeartProfile(maxBpm = 160))
         runCurrent()
         assertEquals(listOf(0L, 0L, 0L, 0L, 1_800_000L), h.state.detail?.summary?.zoneMillis)
+    }
+
+    @Test
+    fun anOpenRunLosesWhatStopsBeingShared() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        h.source.routes = mapOf("r1" to listOf(RoutePoint(45.0, -93.0), RoutePoint(45.01, -93.01)))
+        open(h)
+        h.vm.openRun("r1")
+        runCurrent()
+        h.vm.askForRoute()
+        runCurrent()
+        assertEquals(180, h.state.detail?.heart?.size)
+        // The heart rate is switched off in the store while the run is open.
+        h.source.allowed = everything - HealthKind.HEART_RATE
+        h.clock.seconds += 120
+        open(h)
+        val detail = assertNotNull(h.state.detail)
+        assertEquals(emptyList(), detail.heart)
+        // The distance is still shared, so the miles are still there, and so is the route that was handed over.
+        assertEquals(3, detail.splits.size)
+        assertEquals(2, detail.route.size)
+        assertEquals(2, h.source.reads.count { it == "track r1" })
+        // And switched back on, it is read again.
+        h.source.allowed = everything
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(180, h.state.detail?.heart?.size)
+    }
+
+    @Test
+    fun withTheSamePermissionsAnOpenRunIsNotReadAgain() = runHealthTest { h ->
+        fill(h.source)
+        h.source.allowed = everything
+        open(h)
+        h.vm.openRun("r1")
+        runCurrent()
+        h.clock.seconds += 120
+        open(h)
+        assertEquals(1, h.source.reads.count { it == "track r1" })
+        assertNotNull(h.state.detail)
     }
 
     @Test

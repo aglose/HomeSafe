@@ -15,8 +15,8 @@
     <string name="fitness_body_connect_button">Connect Health Connect</string>
     <string name="fitness_body_missing_body">Steps, sleep and runs from your band come through Health Connect, which this phone doesn't have yet.</string>
     <string name="fitness_body_missing_button">Get Health Connect</string>
-    <!-- Android stops showing its permission sheet after two refusals -->
-    <string name="fitness_body_refused">Android didn't ask this time. Allow PercySafe in Health Connect itself.</string>
+    <!-- Shown once asking has come to nothing twice: Android shows its permission sheet for a refusal and for one more, and then not at all -->
+    <string name="fitness_body_refused">Android stops asking after two refusals. Allow PercySafe in Health Connect itself.</string>
     <string name="fitness_body_manage_button">Open Health Connect</string>
     <string name="fitness_body_reading">Reading Health Connect…</string>
     <string name="fitness_body_failed">Couldn't reach Health Connect just now. This is from the last time it could.</string>

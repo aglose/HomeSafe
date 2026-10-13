@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.fitness.domain.BodyBoards
 import com.meticulouscreations.homesafe.fitness.domain.FitnessRepository
 import com.meticulouscreations.homesafe.fitness.domain.HealthAvailability
 import com.meticulouscreations.homesafe.fitness.domain.HealthKind
+import com.meticulouscreations.homesafe.fitness.domain.HealthSample
 import com.meticulouscreations.homesafe.fitness.domain.HealthSource
 import com.meticulouscreations.homesafe.fitness.domain.HeartZones
 import com.meticulouscreations.homesafe.fitness.domain.ReadinessScore
@@ -17,6 +18,7 @@ import com.meticulouscreations.homesafe.fitness.domain.RunTrack
 import com.meticulouscreations.homesafe.fitness.domain.Runs
 import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
+import com.meticulouscreations.homesafe.fitness.domain.SleepSession
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
 import com.meticulouscreations.homesafe.ui.localUtcOffsetSeconds
 import dev.zacsweers.metro.AppScope
@@ -66,7 +68,7 @@ data class HealthUiState(
     val runs: RunsBoard = RunsBoard(),
     /** The run that is open, once its track has been read. */
     val detail: RunDetail? = null,
-    /** The user was asked and nothing came of it: Android stops showing its sheet after two refusals, and only the store's own page can allow the app then. */
+    /** The user has been asked twice and nothing came of it: Android stops showing its sheet after two refusals, and only the store's own page can allow the app then. */
     val refused: Boolean = false,
     /** The last read couldn't reach the store; what is shown is from before. */
     val failed: Boolean = false,
@@ -78,6 +80,9 @@ data class HealthUiState(
 
     /** Something Today's body card would show can be read. */
     val bodyShared: Boolean get() = access == HealthAccess.ON && BODY_KINDS.any { it in granted }
+
+    /** Some of what the app reads is shared and some isn't: only the store's own page can add the rest. */
+    val partlyShared: Boolean get() = access == HealthAccess.ON && !granted.containsAll(HealthKind.entries)
 
     companion object {
         val BODY_KINDS = setOf(HealthKind.STEPS, HealthKind.SLEEP, HealthKind.RESTING_HEART_RATE, HealthKind.HEART_RATE_VARIABILITY)
@@ -112,8 +117,14 @@ class HealthViewModel(
     private var records: Map<String, RunRecord> = emptyMap()
     private var bounds: ZoneBounds? = null
 
+    /** What the store last gave, kind by kind, to fall back on when it can't be reached. */
+    private var held = Readings()
+
+    /** How many times running the user has been asked and nothing more was allowed. */
+    private var fruitless = 0
+
     /** The open run's track as it was read, kept so the zones can be drawn again when their numbers change. */
-    private var openTrack: Pair<String, RunTrack>? = null
+    private var openTrack: OpenTrack? = null
 
     /** The fitness app came on screen, or left it. */
     fun setActive(active: Boolean) {
@@ -138,7 +149,10 @@ class HealthViewModel(
         viewModelScope.launch {
             val before = _uiState.value.granted
             val after = attempt { source.request() } ?: before
-            _uiState.update { it.copy(refused = after.isEmpty() || (after == before && !after.containsAll(HealthKind.entries))) }
+            // One refusal is an answer, and the sheet will come up again. Whether it came up at all can't be
+            // asked of Android, so it is the second time nothing comes of asking that the other way in is shown.
+            fruitless = if (after.size > before.size) 0 else fruitless + 1
+            _uiState.update { it.copy(refused = fruitless >= REFUSALS_BEFORE_SILENCE) }
             // A read already on its way began before the answer: it is let finish, and then it is read afresh.
             reading?.join()
             refresh(force = true)
@@ -157,11 +171,14 @@ class HealthViewModel(
         val record = records[id] ?: return
         val run = _uiState.value.runs.run(id) ?: return
         opening?.cancel()
+        val granted = _uiState.value.granted
+        // The run that was open is no longer the one to keep up to date.
+        openTrack = null
         _uiState.update { it.copy(detail = null) }
         opening = viewModelScope.launch {
             // A run whose track can't be read still opens, on its totals alone.
             val track = attempt { source.track(record) } ?: RunTrack()
-            openTrack = id to track
+            openTrack = OpenTrack(id, track, granted)
             _uiState.update { it.copy(detail = Runs.detail(run, track, bounds)) }
         }
     }
@@ -174,19 +191,43 @@ class HealthViewModel(
 
     /** Asks the user for the open run's route, for a store that hands each one over only when asked. */
     fun askForRoute() {
-        val (id, track) = openTrack ?: return
+        val id = openTrack?.id ?: return
         viewModelScope.launch {
             val route = attempt { source.requestRoute(id) }.orEmpty()
-            if (route.isEmpty() || openTrack?.first != id) return@launch
-            openTrack = id to track.copy(route = route)
+            // As it stands now: the track may have been read again while the sheet was up.
+            val open = openTrack?.takeIf { it.id == id } ?: return@launch
+            if (route.isEmpty()) return@launch
+            openTrack = open.copy(track = open.track.copy(route = route))
             redrawDetail()
         }
     }
 
     private fun redrawDetail() {
-        val (id, track) = openTrack ?: return
-        val run = _uiState.value.runs.run(id) ?: return
-        _uiState.update { state -> if (state.detail?.runId == id) state.copy(detail = Runs.detail(run, track, bounds)) else state }
+        val open = openTrack ?: return
+        val run = _uiState.value.runs.run(open.id) ?: return
+        _uiState.update { state -> if (state.detail?.runId == open.id) state.copy(detail = Runs.detail(run, open.track, bounds)) else state }
+    }
+
+    /**
+     * The open run's track was read under other permissions than are in force now. What is no
+     * longer shared goes from the page at once, and the track is read again under what is.
+     */
+    private fun rereadOpenTrack(open: OpenTrack, granted: Set<HealthKind>) {
+        val kept = open.track.copy(
+            heart = if (HealthKind.HEART_RATE in granted) open.track.heart else emptyList(),
+            distance = if (HealthKind.DISTANCE in granted) open.track.distance else emptyList(),
+        )
+        openTrack = OpenTrack(open.id, kept, granted)
+        redrawDetail()
+        val record = records[open.id] ?: return
+        opening?.cancel()
+        opening = viewModelScope.launch {
+            val track = attempt { source.track(record) } ?: return@launch
+            val still = openTrack?.takeIf { it.id == open.id } ?: return@launch
+            // A route the user handed over when asked isn't in what the store gives unasked.
+            openTrack = still.copy(track = track.copy(route = track.route.ifEmpty { still.track.route }))
+            redrawDetail()
+        }
     }
 
     private fun refresh(force: Boolean = false) {
@@ -199,6 +240,8 @@ class HealthViewModel(
             val access = accessOf(availability, granted)
             if (access != HealthAccess.ON) {
                 records = emptyMap()
+                held = Readings()
+                openTrack = null
                 _uiState.update { HealthUiState(access = access, refused = it.refused && access == HealthAccess.OFF) }
                 return@launch
             }
@@ -206,24 +249,31 @@ class HealthViewModel(
             val today = (at + offsetAt(at)).floorDiv(SECONDS_PER_DAY)
             var failed = false
 
-            suspend fun <T> read(kind: HealthKind, block: suspend () -> T): T? {
+            // A kind that isn't shared any more is gone at once, whatever else happens. One that is shared and
+            // couldn't be read just now keeps what it last gave, and the screen says it may be behind.
+            suspend fun <T> read(kind: HealthKind, last: T?, block: suspend () -> T): T? {
                 if (kind !in granted) return null
-                return attempt(block).also { if (it == null) failed = true }
+                return attempt(block) ?: last.also { failed = true }
             }
 
             val bodyFrom = at - BODY_DAYS * SECONDS_PER_DAY
-            val steps = read(HealthKind.STEPS) { source.stepsByDay(today - BodyBoards.STEP_DAYS + 1, today) }
-            val sleep = read(HealthKind.SLEEP) { source.sleep(bodyFrom, at) }
-            val resting = read(HealthKind.RESTING_HEART_RATE) { source.restingHeartRates(bodyFrom, at) }
-            val variability = read(HealthKind.HEART_RATE_VARIABILITY) { source.heartRateVariability(bodyFrom, at) }
-            val runs = read(HealthKind.EXERCISE) { source.runs(at - RUN_DAYS * SECONDS_PER_DAY, at) }
+            val was = held
+            val now = Readings(
+                steps = read(HealthKind.STEPS, was.steps) { source.stepsByDay(today - BodyBoards.STEP_DAYS + 1, today) },
+                sleep = read(HealthKind.SLEEP, was.sleep) { source.sleep(bodyFrom, at) },
+                resting = read(HealthKind.RESTING_HEART_RATE, was.resting) { source.restingHeartRates(bodyFrom, at) },
+                variability = read(HealthKind.HEART_RATE_VARIABILITY, was.variability) { source.heartRateVariability(bodyFrom, at) },
+                runs = read(HealthKind.EXERCISE, was.runs) { source.runs(at - RUN_DAYS * SECONDS_PER_DAY, at) },
+            )
+            held = now
             lastReadAt = at
-            val was = _uiState.value
-            if (failed && was.loaded) {
-                // Something couldn't be read: what was on screen stays, and says it may be behind.
-                _uiState.update { it.copy(access = access, granted = granted, failed = true) }
-                return@launch
-            }
+            // Something is shared, so asking has not come to nothing.
+            fruitless = 0
+            val steps = now.steps
+            val sleep = now.sleep
+            val resting = now.resting
+            val variability = now.variability
+            val runs = now.runs
             records = runs.orEmpty().associateBy { it.id }
             _uiState.update { state ->
                 state.copy(
@@ -238,9 +288,16 @@ class HealthViewModel(
                     failed = failed,
                 )
             }
-            // The open run may have been deleted in the store since.
-            val open = openTrack?.first ?: _uiState.value.detail?.runId
-            if (open != null && records[open] == null) closeRun() else redrawDetail()
+            val open = openTrack
+            val openId = open?.id ?: _uiState.value.detail?.runId
+            when {
+                // The open run may have been deleted in the store since.
+                openId != null && records[openId] == null -> closeRun()
+
+                open != null && open.granted != granted -> rereadOpenTrack(open, granted)
+
+                else -> redrawDetail()
+            }
         }
     }
 
@@ -259,6 +316,9 @@ class HealthViewModel(
         /** How long what was read stands before the app coming back on screen reads it again. */
         const val FRESH_SECONDS = 60L
 
+        /** Android shows its permission sheet for a refusal and for one more, and after that not at all. */
+        const val REFUSALS_BEFORE_SILENCE = 2
+
         /** How far back sleep and the heart's readings are read: the baseline readiness is held against, and a night or two to spare. */
         const val BODY_DAYS = ReadinessScore.BASELINE_DAYS + 2L
 
@@ -273,3 +333,15 @@ class HealthViewModel(
         }
     }
 }
+
+/** What the store last gave of each kind; null for one that isn't shared, or hasn't been read yet. */
+private data class Readings(
+    val steps: Map<Long, Long>? = null,
+    val sleep: List<SleepSession>? = null,
+    val resting: List<HealthSample>? = null,
+    val variability: List<HealthSample>? = null,
+    val runs: List<RunRecord>? = null,
+)
+
+/** The open run's track, and what was shared when it was read: read under other permissions, it is read again. */
+private data class OpenTrack(val id: String, val track: RunTrack, val granted: Set<HealthKind>)

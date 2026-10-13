@@ -156,6 +156,11 @@ internal fun BodyCard(health: HealthUiState, onConnect: () -> Unit, onManage: ()
                     Spacer(Modifier.height(10.dp))
                     Text(stringResource(Res.string.fitness_body_failed), style = type.label, color = colors.textFaint, modifier = Modifier.testTag("fitness_body_failed"))
                 }
+                // Android's sheet is only for the first asking: a kind left out then can only be added over there.
+                if (health.partlyShared) {
+                    Spacer(Modifier.height(12.dp))
+                    ManageButton(onManage)
+                }
             }
         }
     }
@@ -346,7 +351,7 @@ private fun SleepTile(sleep: SleepBoard?, modifier: Modifier = Modifier) {
             Text(
                 stringResource(
                     Res.string.fitness_body_sleep_span,
-                    FitnessFormat.timeOfDay(night.startEpochSeconds, night.utcOffsetSeconds).resolve(),
+                    FitnessFormat.timeOfDay(night.startEpochSeconds, night.startUtcOffsetSeconds).resolve(),
                     FitnessFormat.timeOfDay(night.endEpochSeconds, night.utcOffsetSeconds).resolve(),
                 ),
                 style = type.label,

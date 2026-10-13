@@ -70,7 +70,10 @@ internal class FakeHealthSource(var available: HealthAvailability = HealthAvaila
     override suspend fun runs(fromEpochSeconds: Long, toEpochSeconds: Long) =
         read("runs", HealthKind.EXERCISE, runRecords.filter { it.startEpochSeconds in fromEpochSeconds..toEpochSeconds })
 
-    override suspend fun track(run: RunRecord): RunTrack = read("track ${run.id}", HealthKind.EXERCISE, tracks[run.id] ?: RunTrack())
+    /** As the real store does: the heart rate and the distance of a track only where each is allowed. */
+    override suspend fun track(run: RunRecord): RunTrack = read("track ${run.id}", HealthKind.EXERCISE, tracks[run.id] ?: RunTrack()).let {
+        it.copy(heart = if (HealthKind.HEART_RATE in allowed) it.heart else emptyList(), distance = if (HealthKind.DISTANCE in allowed) it.distance else emptyList())
+    }
 
     override suspend fun requestRoute(runId: String): List<RoutePoint> {
         reads += "route $runId"

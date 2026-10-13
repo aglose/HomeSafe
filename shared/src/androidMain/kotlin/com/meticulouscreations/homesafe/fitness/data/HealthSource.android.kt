@@ -10,6 +10,7 @@ import androidx.fragment.app.FragmentActivity
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.contracts.ExerciseRouteRequestContract
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.DistanceRecord
@@ -76,9 +77,10 @@ private val PERMISSIONS: Map<HealthKind, String> = mapOf(
  * that is switched on under Google Health's Connections), and this reads it back out: nothing is
  * written, and nothing read leaves the phone.
  *
- * Totals come from Health Connect's own aggregation, which counts a step once when both the
- * phone and the band saw it. A run's heart rate and distance are read as records, and there the
- * two would be counted twice, so those are read from the app that recorded the run.
+ * A day's steps come from Health Connect's own aggregation over every app, which counts a step
+ * once when both the phone and the band saw it. A run is read from the app that recorded it,
+ * its totals and its track alike, so that another tracker worn at the same time isn't added in
+ * or averaged with it; what that app recorded none of is taken from whoever did.
  *
  * Without the history permission Health Connect only hands over the thirty days before the app
  * was first allowed in, and whatever has been recorded since. It is asked for with the rest where
@@ -111,7 +113,12 @@ private class HealthConnectSource(private val context: Context, activity: Fragme
 
     override fun availability(): HealthAvailability = when (HealthConnectClient.getSdkStatus(context, PROVIDER)) {
         HealthConnectClient.SDK_AVAILABLE -> HealthAvailability.AVAILABLE
-        else -> HealthAvailability.MISSING
+
+        // There to be had: not installed yet, or too old.
+        HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> HealthAvailability.MISSING
+
+        // Not for this device at all (a profile it isn't offered in, say): there is nothing to send anyone off to get.
+        else -> HealthAvailability.UNSUPPORTED
     }
 
     /** Asked for afresh until there is one: Health Connect may be installed while the app is open. */
@@ -191,6 +198,8 @@ private class HealthConnectSource(private val context: Context, activity: Fragme
                 session.startTime.epochSecond,
                 session.endTime.epochSecond,
                 session.stages.map { SleepStage(it.startTime.epochSecond, it.endTime.epochSecond, stageKind(it.stage)) },
+                startUtcOffsetSeconds = session.startZoneOffset?.totalSeconds,
+                endUtcOffsetSeconds = session.endZoneOffset?.totalSeconds,
             )
         }
 
@@ -217,8 +226,7 @@ private class HealthConnectSource(private val context: Context, activity: Fragme
 
     private suspend fun totalled(session: ExerciseSessionRecord, allowed: Set<HealthKind>): RunRecord {
         // Asking for a total of a kind that isn't allowed fails the whole request, so only what is allowed is asked for.
-        val metrics = buildSet {
-            add(ExerciseSessionRecord.EXERCISE_DURATION_TOTAL)
+        val measures: Set<AggregateMetric<*>> = buildSet {
             if (HealthKind.DISTANCE in allowed) add(DistanceRecord.DISTANCE_TOTAL)
             if (HealthKind.CALORIES in allowed) add(TotalCaloriesBurnedRecord.ENERGY_TOTAL)
             if (HealthKind.STEPS in allowed) add(StepsRecord.COUNT_TOTAL)
@@ -228,20 +236,26 @@ private class HealthConnectSource(private val context: Context, activity: Fragme
                 add(HeartRateRecord.BPM_MAX)
             }
         }
-        val sum = connected().aggregate(AggregateRequest(metrics, TimeRangeFilter.between(session.startTime, session.endTime)))
+        val window = TimeRangeFilter.between(session.startTime, session.endTime)
+        val own = connected().aggregate(AggregateRequest(measures + ExerciseSessionRecord.EXERCISE_DURATION_TOTAL, window, setOf(session.metadata.dataOrigin)))
+        // A run logged in one app and measured by another: what its own app has none of comes from whoever has.
+        val missing = measures.filterTo(HashSet()) { it !in own }
+        val others = if (missing.isEmpty()) null else connected().aggregate(AggregateRequest(missing, window))
+
+        fun <T : Any> sum(metric: AggregateMetric<T>): T? = own[metric] ?: others?.get(metric)
         return RunRecord(
             id = session.metadata.id,
             startEpochSeconds = session.startTime.epochSecond,
             endEpochSeconds = session.endTime.epochSecond,
             utcOffsetSeconds = session.startZoneOffset?.totalSeconds,
             treadmill = session.exerciseType == ExerciseSessionRecord.EXERCISE_TYPE_RUNNING_TREADMILL,
-            meters = sum[DistanceRecord.DISTANCE_TOTAL]?.inMeters,
-            activeSeconds = sum[ExerciseSessionRecord.EXERCISE_DURATION_TOTAL]?.seconds,
-            calories = sum[TotalCaloriesBurnedRecord.ENERGY_TOTAL]?.inKilocalories,
-            averageBpm = sum[HeartRateRecord.BPM_AVG]?.toInt(),
-            peakBpm = sum[HeartRateRecord.BPM_MAX]?.toInt(),
-            steps = sum[StepsRecord.COUNT_TOTAL],
-            climbMeters = sum[ElevationGainedRecord.ELEVATION_GAINED_TOTAL]?.inMeters,
+            meters = sum(DistanceRecord.DISTANCE_TOTAL)?.inMeters,
+            activeSeconds = own[ExerciseSessionRecord.EXERCISE_DURATION_TOTAL]?.seconds,
+            calories = sum(TotalCaloriesBurnedRecord.ENERGY_TOTAL)?.inKilocalories,
+            averageBpm = sum(HeartRateRecord.BPM_AVG)?.toInt(),
+            peakBpm = sum(HeartRateRecord.BPM_MAX)?.toInt(),
+            steps = sum(StepsRecord.COUNT_TOTAL),
+            climbMeters = sum(ElevationGainedRecord.ELEVATION_GAINED_TOTAL)?.inMeters,
             route = when (session.exerciseRouteResult) {
                 is ExerciseRouteResult.Data -> RouteAccess.READABLE
                 is ExerciseRouteResult.ConsentRequired -> RouteAccess.ASK

@@ -257,6 +257,20 @@ class RunsTest {
     }
 
     @Test
+    fun aLongGapBetweenReadingsBreaksTheLine() {
+        val heart = listOf(
+            HealthSample(start, 100.0),
+            HealthSample(start + 60, 120.0),
+            // Exactly as long as a reading stands for: still the same stretch.
+            HealthSample(start + 60 + Runs.HEART_GAP_SECONDS, 130.0),
+            // A second longer than that: the band was away.
+            HealthSample(start + 61 + 2 * Runs.HEART_GAP_SECONDS, 150.0),
+        )
+        assertEquals(listOf(listOf(100.0, 120.0, 130.0), listOf(150.0)), Runs.heartStretches(heart).map { stretch -> stretch.map { it.value } })
+        assertEquals(emptyList(), Runs.heartStretches(emptyList()))
+    }
+
+    @Test
     fun openingARunPutsItsTrackTogether() {
         val run = run(seconds = 1_200, miles = 2.0)
         val track = RunTrack(

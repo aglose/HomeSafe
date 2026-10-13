@@ -36,9 +36,19 @@ enum class SleepStageKind { AWAKE, ASLEEP, LIGHT, DEEP, REM }
 @Immutable
 data class SleepStage(val startEpochSeconds: Long, val endEpochSeconds: Long, val kind: SleepStageKind)
 
-/** A sleep as the tracker recorded it, with its [stages] when it kept any. */
+/**
+ * A sleep as the tracker recorded it, with its [stages] when it kept any, and the offsets from
+ * UTC it began and ended in when it kept those: a night away from home, or across a change of
+ * the clocks, has its own.
+ */
 @Immutable
-data class SleepSession(val startEpochSeconds: Long, val endEpochSeconds: Long, val stages: List<SleepStage> = emptyList())
+data class SleepSession(
+    val startEpochSeconds: Long,
+    val endEpochSeconds: Long,
+    val stages: List<SleepStage> = emptyList(),
+    val startUtcOffsetSeconds: Int? = null,
+    val endUtcOffsetSeconds: Int? = null,
+)
 
 /** A point on a run's route. */
 @Immutable

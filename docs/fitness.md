@@ -246,9 +246,14 @@ asked again each time the fitness app comes on screen, at most once a minute.
    puts up its sheet here, at the tap, with each kind of record to allow or refuse by itself:
    steps, sleep, heart rate, resting heart rate, heart rate variability, exercise, distance,
    calories and elevation, and (where the phone offers it) history older than thirty days.
-3. After two refusals Android stops showing the sheet. The card says so and offers **Open Health
-   Connect**, which is the app's page in Health Connect's own settings; the same button is at the
-   foot of the runs page for changing what is shared later.
+3. After two refusals Android stops showing the sheet. Once asking has come to nothing twice the
+   card says so and offers **Open Health Connect**, which is the app's page in Health Connect's
+   own settings. The same button is on the card whenever some kinds are shared and others
+   aren't (the sheet is only for the first asking), and at the foot of the runs page.
+
+A kind switched off in Health Connect is gone from the screens the next time it is read, an open
+run's heart rate included. A kind that is still shared but couldn't be read just then keeps what
+it last showed, and the card says it may be behind.
 
 On Android 13 Health Connect is an app from the Play Store, and the card offers to get it; from
 14 it is part of the system. The page Health Connect links to for "why does this app want my
@@ -281,7 +286,9 @@ Health Connect.
   reading after six in the evening belongs to the night ahead. Before the band has synced in the
   morning the card says **Waiting for last night**, and shows no number sooner than a stale one.
 - A night is the longest sleep that ended on that day, so an afternoon nap doesn't stand for the
-  night before it; a sleep of under an hour is nobody's night.
+  night before it; a sleep of under an hour is nobody's night. Its day and its two times are
+  read in the offsets from UTC the tracker recorded it in, so a night away from home, or across
+  a change of the clocks, reads as the clock by the bed did.
 
 It is a guide. Nothing in the [progression rules](#what-to-aim-for) reads it.
 
@@ -325,7 +332,10 @@ this week's miles and the last run in a line on the door, and behind it:
     than that, where a mile began would be a guess.
 
 Miles, and feet for a climb, as the weights are pounds. Pace is moving time over distance: what
-the run was paused for is left out when the tracker says.
+the run was paused for is left out when the tracker says. A run's totals and its track are both
+read from the app that recorded it, so a second tracker worn on the same run isn't added in;
+what that app recorded none of is taken from whichever did. The heart-rate line breaks where the
+band lost the wrist for more than five minutes.
 
 ### What it can't do
 

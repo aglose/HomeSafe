@@ -59,6 +59,7 @@ import com.meticulouscreations.homesafe.fitness.domain.Run
 import com.meticulouscreations.homesafe.fitness.domain.RunDetail
 import com.meticulouscreations.homesafe.fitness.domain.RunTime
 import com.meticulouscreations.homesafe.fitness.domain.RunWeek
+import com.meticulouscreations.homesafe.fitness.domain.Runs
 import com.meticulouscreations.homesafe.fitness.domain.RunsBoard
 import com.meticulouscreations.homesafe.fitness.domain.SECONDS_PER_DAY
 import com.meticulouscreations.homesafe.fitness.domain.ZoneBounds
@@ -498,21 +499,26 @@ private const val CHART_POINTS = 160
 
 /**
  * The heart rate through a run as a line, on bands of the zones' colours when zones are set, so
- * that where the line sits says how hard that stretch was. The lowest and highest readings are
- * written at its side.
+ * that where the line sits says how hard that stretch was. The line breaks where the band lost
+ * the wrist for longer than a reading stands for: nothing is drawn across time nobody measured.
+ * The lowest and highest readings are written at its side.
  */
 @Composable
 private fun HeartChart(detail: RunDetail, startEpochSeconds: Long, endEpochSeconds: Long, bounds: ZoneBounds?, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
     val heart = detail.heart
-    // Readings a second apart for an hour are thousands of points: each stretch of the run is drawn at its average.
-    val points = remember(heart, startEpochSeconds, endEpochSeconds) {
+    // Readings a second apart for an hour are thousands of points: each sliver of the run is drawn at its average,
+    // within the stretch of readings it belongs to.
+    val lines = remember(heart, startEpochSeconds, endEpochSeconds) {
         val span = (endEpochSeconds - startEpochSeconds).coerceAtLeast(1).toDouble()
-        heart.groupBy { (((it.epochSeconds - startEpochSeconds) / span) * CHART_POINTS).toInt().coerceIn(0, CHART_POINTS - 1) }
-            .map { (bucket, readings) -> Offset((bucket + 0.5f) / CHART_POINTS, readings.map { it.value }.average().toFloat()) }
-            .sortedBy { it.x }
+        Runs.heartStretches(heart).map { stretch ->
+            stretch.groupBy { (((it.epochSeconds - startEpochSeconds) / span) * CHART_POINTS).toInt().coerceIn(0, CHART_POINTS - 1) }
+                .map { (bucket, readings) -> Offset((bucket + 0.5f) / CHART_POINTS, readings.map { it.value }.average().toFloat()) }
+                .sortedBy { it.x }
+        }
     }
+    val points = lines.flatten()
     if (points.size < 2) return
     val low = points.minOf { it.y }
     val high = points.maxOf { it.y }
@@ -533,12 +539,16 @@ private fun HeartChart(detail: RunDetail, startEpochSeconds: Long, endEpochSecon
                     if (bottom > top) drawRect(zoneColors[zone.ordinal].copy(alpha = 0.14f), Offset(0f, top), Size(size.width, bottom - top))
                 }
             }
-            val line = Path()
-            points.forEachIndexed { index, point ->
-                val x = point.x * size.width
-                if (index == 0) line.moveTo(x, y(point.y)) else line.lineTo(x, y(point.y))
+            lines.forEach { stretch ->
+                // A reading with none near it either side is still a reading: a dot.
+                if (stretch.size == 1) drawCircle(colors.text, 1.5.dp.toPx(), Offset(stretch[0].x * size.width, y(stretch[0].y)))
+                val line = Path()
+                stretch.forEachIndexed { index, point ->
+                    val x = point.x * size.width
+                    if (index == 0) line.moveTo(x, y(point.y)) else line.lineTo(x, y(point.y))
+                }
+                drawPath(line, colors.text, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
             }
-            drawPath(line, colors.text, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
         }
         Text(high.roundToInt().toString(), style = type.micro, color = colors.textMuted, modifier = Modifier.align(Alignment.TopStart).padding(4.dp))
         Text(low.roundToInt().toString(), style = type.micro, color = colors.textMuted, modifier = Modifier.align(Alignment.BottomStart).padding(4.dp))
