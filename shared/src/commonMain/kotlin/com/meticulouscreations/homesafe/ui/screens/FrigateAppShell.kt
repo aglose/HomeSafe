@@ -527,14 +527,14 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
  * tab has its own, and only the visible one may run it.
  *
  * None of them needs the camera server (weather and the markets are public, fitness is all on
- * the device, and each, the atlas among them, opens on what the device kept), so the sign-in screen draws this too, with
- * a [ShellNavigation] of its own and [signedIn] false: the drawer then lists the apps alone, there
- * being no cameras to go to yet. That is how they are reached while Tailscale or the server isn't.
+ * the device, and each, the atlas among them, opens on what the device kept), so the sign-in screen
+ * draws this too, with a [ShellNavigation] of its own. That is how they are reached while
+ * Tailscale or the server isn't.
  */
 // Overlays, not a laid-out element: each piece fills its parent's layer itself.
 @Suppress("ktlint:compose:modifier-missing-check")
 @Composable
-internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boolean = true) {
+internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
     val finance: FinanceViewModel = metroViewModel()
     val financeState by finance.uiState.collectAsStateWithLifecycle()
     val financeLock: FinanceLockViewModel = metroViewModel()
@@ -574,22 +574,16 @@ internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boole
     if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
     ShellDrawer(
         open = nav.drawerOpen,
-        selectedTab = tab,
         finance = financeState,
         weather = weatherState,
         fitness = fitnessState,
         atlas = atlasState,
         pull = nav.drawerPull,
-        onSelectTab = { route ->
-            nav.drawerOpen = false
-            nav.selectTab(route)
-        },
         onOpenFinance = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) },
         onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
         onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
         onOpenAtlas = { origin -> nav.openApp(InnerApp.ATLAS, origin, tab) },
         onClose = { nav.drawerOpen = false },
-        showHomeSecurity = signedIn,
         financeLocked = financeLockState.locked,
         // The same lock: where someone has been is kept shut exactly when their money is.
         atlasLocked = financeLockState.locked,
