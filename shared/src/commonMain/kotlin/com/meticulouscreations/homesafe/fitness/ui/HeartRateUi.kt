@@ -81,6 +81,7 @@ import homesafe.shared.generated.resources.fitness_heart_notice_down
 import homesafe.shared.generated.resources.fitness_heart_notice_resting
 import homesafe.shared.generated.resources.fitness_heart_notice_up
 import homesafe.shared.generated.resources.fitness_heart_open
+import homesafe.shared.generated.resources.fitness_heart_pill_bpm
 import homesafe.shared.generated.resources.fitness_heart_recovery
 import homesafe.shared.generated.resources.fitness_heart_recovery_described
 import homesafe.shared.generated.resources.fitness_heart_recovery_level
@@ -97,6 +98,7 @@ import homesafe.shared.generated.resources.fitness_heart_status_searching
 import homesafe.shared.generated.resources.fitness_heart_status_unsupported
 import homesafe.shared.generated.resources.fitness_heart_status_waiting
 import homesafe.shared.generated.resources.fitness_heart_time_described
+import homesafe.shared.generated.resources.fitness_heart_title
 import homesafe.shared.generated.resources.fitness_heart_zone_below
 import homesafe.shared.generated.resources.fitness_heart_zone_label
 import homesafe.shared.generated.resources.fitness_heart_zone_line
@@ -184,6 +186,42 @@ internal fun HeartPanel(heart: HeartUiState, onOpen: () -> Unit, onDismissNotice
             Spacer(Modifier.height(10.dp))
             ZoneStrip(zone.takeIf { bpm != null }, heart.summary)
         }
+    }
+}
+
+/**
+ * The way to the heart-rate page from the front page, a pill beside the phase's: the beats a
+ * minute while a sensor is reading (in the zone's colour once there are zones), and otherwise
+ * just "Heart rate". [heart] is read here, so only the pill redraws as the beats change.
+ */
+@Composable
+internal fun HeartPill(heart: () -> HeartUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val colors = FitnessTheme.colors
+    val now = heart()
+    val bpm = now.bpm
+    val tint = when {
+        bpm == null -> colors.textMuted
+        now.bounds != null -> colors.zone(now.zone)
+        else -> colors.text
+    }
+    Row(
+        modifier
+            .clip(CircleShape)
+            .background(tint.copy(alpha = 0.12f))
+            .border(1.dp, tint.copy(alpha = 0.4f), CircleShape)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_heart_open), onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 7.dp)
+            .testTag("fitness_heart_pill"),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Favorite, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (bpm != null) stringResource(Res.string.fitness_heart_pill_bpm, bpm) else stringResource(Res.string.fitness_heart_title),
+            style = FitnessTheme.type.label,
+            color = colors.text,
+            maxLines = 1,
+        )
     }
 }
 
