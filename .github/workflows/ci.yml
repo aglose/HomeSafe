@@ -474,8 +474,11 @@ jobs:
             exit 1
           fi
 
+      # Each module links its own iOS test binary, in the Gradle daemon's own heap. On the Mac's
+      # twelve cores they all linked at once and ran a 4 GB heap out of memory, so at most two
+      # link at a time, in a heap of 6 GB (the Mac has 24).
       - name: iOS simulator unit tests
-        run: ./gradlew iosSimulatorArm64Test --continue --stacktrace
+        run: ./gradlew iosSimulatorArm64Test --continue --stacktrace --max-workers=2 "-Dorg.gradle.jvmargs=-Xmx6144M -Dfile.encoding=UTF-8"
 
       - name: Build iOS app
         run: |

@@ -5582,7 +5582,7 @@ class TimelineHistory(_TimelineDb):
         self.assertEqual(["home", "work", "other"], body["visits"]["kind"])
         self.assertEqual(["drive", "walk"], body["moves"]["mode"])
         self.assertEqual([3], body["paths"]["count"])
-        self.assertEqual({"started": [], "ended": [], "offset": [], "lat": [], "lon": [], "place": [], "kind": [], "p": []}, relay.timeline_year_body(self.conn, 2022)["visits"])
+        self.assertEqual({"started": [], "ended": [], "offset": [], "lat": [], "lon": [], "place": [], "kind": [], "p": [], "was": [], "why": []}, relay.timeline_year_body(self.conn, 2022)["visits"])
 
     def test_a_years_etag_moves_only_when_the_year_does(self):
         self.read(android_export(DAY1))
@@ -5745,6 +5745,338 @@ class TimelineNames(_TimelineDb):
         relay.TIMELINE_PLACES_KEY = ""
         self.assertEqual(0, relay.timeline_name_places(now=DAY1, pause=0))
         self.assertEqual([], self.asked)
+
+
+def _local(year, month, day, hour=0.0):
+    """Epoch seconds of a time on the wall clock in Central Standard Time; an hour past 24 is the next day."""
+    import calendar
+
+    return calendar.timegm((year, month, day, 0, 0, 0)) + int(hour * 3600) - CST * 60
+
+
+def _off(at, north=0.0, east=0.0):
+    """A spot [north] and [east] metres from [at]."""
+    import math
+
+    return (round(at[0] + north / 111_195, 6), round(at[1] + east / (111_195 * math.cos(math.radians(at[0]))), 6))
+
+
+def _stay(start, end, at, place, p=0.9):
+    segment = android_visit(start, end, at, place)
+    segment["visit"]["topCandidate"]["probability"] = p
+    return segment
+
+
+def _life(year, month, days, home=HOME, place="ChIJhome", skip=(), rest=()):
+    """For each of [days]: the night at home from 22:00 (not the [skip] ones), then the next day at work from 09:00 to 17:00 (not after the [rest] ones)."""
+    out = []
+    for day in days:
+        if day not in skip:
+            out.append(_stay(_local(year, month, day, 22), _local(year, month, day, 31), home, place))
+        if day not in rest:
+            out.append(_stay(_local(year, month, day, 33), _local(year, month, day, 41), WORK, "ChIJwork"))
+    return out
+
+
+class TimelineRefining(_TimelineDb):
+    def refine(self, segments, types=None):
+        self.read({"semanticSegments": segments})
+        for place, kind_of in (types or {}).items():
+            self.conn.execute("UPDATE places SET type=? WHERE place=?", (kind_of, place))
+        self.conn.commit()
+        summary = relay.timeline_refine(self.conn, now=2000.0)
+        relay.timeline_rebuild_years(self.conn)
+        return summary
+
+    def stay_at(self, when):
+        """The refined visit that covers [when]: (place, was, why), or None."""
+        found = self.rows(f"SELECT place, was, why FROM refined_visits WHERE started <= {when} AND ended > {when}")
+        return found[0] if found else None
+
+    def test_what_the_export_said_is_kept_and_the_app_is_given_the_refined_copy(self):
+        flat, cafe = (40.1, -89.1), _off((40.1, -89.1), east=30)
+        self.refine(_life(2024, 1, range(2, 20), flat, "ChIJflat") + [_stay(_local(2024, 1, 20, 22), _local(2024, 1, 20, 31), cafe, "ChIJbeans")],
+                    {"ChIJflat": "premise", "ChIJbeans": "coffee_shop"})
+        self.assertEqual([("ChIJbeans",)], self.rows(f"SELECT place FROM visits WHERE started = {_local(2024, 1, 20, 22)}"))
+        body = relay.timeline_year_body(self.conn, 2024)
+        moved = body["visits"]["started"].index(_local(2024, 1, 20, 22))
+        self.assertEqual("ChIJflat", body["places"][body["visits"]["place"][moved]])
+        self.assertEqual("ChIJbeans", body["places"][body["visits"]["was"][moved]])
+        self.assertEqual("night", body["visits"]["why"][moved])
+        self.assertEqual({-1}, {was for i, was in enumerate(body["visits"]["was"]) if i != moved})
+
+    def test_nobody_sleeps_at_the_coffee_shop_under_the_flat(self):
+        flat, cafe = (40.1, -89.1), _off((40.1, -89.1), east=30)
+        summary = self.refine(
+            _life(2024, 1, range(2, 20), flat, "ChIJflat")
+            + [_stay(_local(2024, 1, 20, 22), _local(2024, 1, 20, 31), cafe, "ChIJbeans"), _stay(_local(2024, 1, 22, 10), _local(2024, 1, 22, 11), cafe, "ChIJbeans")],
+            {"ChIJflat": "premise", "ChIJbeans": "coffee_shop"},
+        )
+        self.assertEqual(("ChIJflat", "ChIJbeans", "night"), self.stay_at(_local(2024, 1, 21, 3)))
+        # A coffee in the morning is a coffee.
+        self.assertEqual(("ChIJbeans", None, None), self.stay_at(_local(2024, 1, 22, 10.5)))
+        self.assertEqual(1, summary["moved"]["night"])
+
+    def test_a_night_at_a_shop_with_nowhere_slept_nearby_stays_put(self):
+        self.refine(_life(2024, 1, range(2, 20)) + [_stay(_local(2024, 1, 20, 22), _local(2024, 1, 20, 31), (40.2, -89.3), "ChIJmall")], {"ChIJmall": "shopping_mall"})
+        self.assertEqual(("ChIJmall", None, None), self.stay_at(_local(2024, 1, 21, 3)))
+
+    def test_one_building_under_two_ids_is_one_place_and_the_house_down_the_street_is_not(self):
+        unit, building, neighbour = (40.1, -89.1), _off((40.1, -89.1), north=10), _off((40.1, -89.1), east=40)
+        segments = _life(2024, 1, range(2, 16), unit, "ChIJunit") + _life(2024, 1, range(16, 19), building, "ChIJbuilding") + _life(2024, 1, [19], neighbour, "ChIJneighbour")
+        self.refine(segments, {"ChIJunit": "subpremise", "ChIJbuilding": "premise", "ChIJneighbour": "premise"})
+        self.assertEqual(("ChIJunit", "ChIJbuilding", "building"), self.stay_at(_local(2024, 1, 17, 3)))
+        self.assertEqual(("ChIJneighbour", None, None), self.stay_at(_local(2024, 1, 20, 3)))
+
+    def test_a_visit_google_was_unsure_of_goes_where_the_time_usually_went(self):
+        corner = _off(HOME, north=60)
+        lunch = (_local(2024, 1, 21, 12), _local(2024, 1, 21, 14))
+        self.refine(_life(2024, 1, range(2, 20)) + [_stay(*lunch, corner, "ChIJcorner", p=0.3)], {"ChIJcorner": "restaurant"})
+        self.assertEqual(("ChIJhome", "ChIJcorner", "unsure"), self.stay_at(lunch[0] + 60))
+        # The same lunch, Google sure of it: a lunch at the corner.
+        self.conn.execute("UPDATE visits SET p = 0.9 WHERE place = 'ChIJcorner'")
+        relay.timeline_refine(self.conn)
+        self.assertEqual(("ChIJcorner", None, None), self.stay_at(lunch[0] + 60))
+
+    def test_a_thin_records_nights_go_to_the_home_of_the_months_beside_it(self):
+        old, hotel, friend = _off(HOME, north=1200), _off(HOME, east=1000), _off(HOME, north=-1000)
+        december = [_stay(_local(2023, 12, d, 22), _local(2023, 12, d, 31), old, "ChIJold", p=0.4) for d in (5, 12, 19)]
+        december += [
+            _stay(_local(2023, 12, 13, 12), _local(2023, 12, 13, 13), old, "ChIJold", p=0.4),
+            _stay(_local(2023, 12, 20, 22), _local(2023, 12, 20, 31), hotel, "ChIJhotel"),
+            _stay(_local(2023, 12, 21, 22), _local(2023, 12, 21, 31), friend, "ChIJfriend"),
+        ]
+        friend_nights = (10, 17, 24)
+        well = _life(2024, 1, range(1, 32), skip=friend_nights) + _life(2024, 2, range(1, 29))
+        well += [_stay(_local(2024, 1, d, 22), _local(2024, 1, d, 31), friend, "ChIJfriend") for d in friend_nights]
+        summary = self.refine(december + well, {"ChIJold": "subpremise", "ChIJhotel": "hotel", "ChIJfriend": "premise", "ChIJhome": "premise"})
+        for d in (5, 12, 19):
+            self.assertEqual(("ChIJhome", "ChIJold", "thin"), self.stay_at(_local(2023, 12, d + 1, 3)), d)
+        # Where the nights went, the days went too: the place was a bad fix of home.
+        self.assertEqual(("ChIJhome", "ChIJold", "thin"), self.stay_at(_local(2023, 12, 13, 12.5)))
+        self.assertEqual(("ChIJhotel", None, None), self.stay_at(_local(2023, 12, 21, 3)))
+        # Somewhere nights are spent in a good record too is somewhere real.
+        self.assertEqual(("ChIJfriend", None, None), self.stay_at(_local(2023, 12, 22, 3)))
+        self.assertEqual(4, summary["moved"]["thin"])
+        # A good record is left as it was.
+        self.assertEqual(("ChIJfriend", None, None), self.stay_at(_local(2024, 1, 11, 3)))
+
+    def test_a_night_nothing_was_recorded_in_between_an_evening_and_a_morning_near_home_was_at_home(self):
+        bar, cafe = _off(HOME, north=1000), _off(HOME, east=500)
+        evening, morning = _local(2024, 1, 15, 23.5), _local(2024, 1, 16, 8.5)
+        segments = _life(2024, 1, range(1, 32), skip=(15,)) + [
+            _stay(_local(2024, 1, 15, 20), evening, bar, "ChIJbar"), _stay(morning, _local(2024, 1, 16, 8.9), cafe, "ChIJcafe"),
+        ]
+        summary = self.refine(segments)
+        self.assertEqual(1, summary["inferred"])
+        (began, ended, place, was), = self.rows("SELECT started, ended, place, was FROM refined_visits WHERE why = 'inferred'")
+        self.assertEqual(("ChIJhome", None), (place, was))
+        # Home once a kilometre's walk from the bar is done, until half a kilometre's to the café.
+        self.assertAlmostEqual(evening + 250, began, delta=2)
+        self.assertAlmostEqual(morning - 125, ended, delta=2)
+
+    def test_a_morning_far_from_home_says_the_night_was_somewhere_else(self):
+        segments = _life(2024, 1, range(1, 32), skip=(15,)) + [
+            _stay(_local(2024, 1, 15, 20), _local(2024, 1, 15, 23.5), _off(HOME, north=1000), "ChIJbar"),
+            _stay(_local(2024, 1, 16, 8.5), _local(2024, 1, 16, 9), _off(HOME, north=50_000), "ChIJdiner"),
+        ]
+        self.assertEqual(0, self.refine(segments)["inferred"])
+
+    def test_a_gap_at_home_is_time_at_home_and_a_gap_at_work_is_not(self):
+        segments = _life(2024, 1, range(1, 32), rest=(20, 26, 27)) + [
+            # A Sunday at home with a gap in the record each side of the late morning: one stay, all weekend.
+            _stay(_local(2024, 1, 21, 10), _local(2024, 1, 21, 12), HOME, "ChIJhome"),
+            # An afternoon at work in two pieces, three hours apart, and two half an hour apart.
+            _stay(_local(2024, 1, 27, 9), _local(2024, 1, 27, 12), WORK, "ChIJwork"), _stay(_local(2024, 1, 27, 15), _local(2024, 1, 27, 17), WORK, "ChIJwork"),
+            _stay(_local(2024, 1, 28, 9), _local(2024, 1, 28, 12), WORK, "ChIJwork"), _stay(_local(2024, 1, 28, 12.5), _local(2024, 1, 28, 17), WORK, "ChIJwork"),
+        ]
+        self.refine(segments)
+        self.assertEqual([(_local(2024, 1, 20, 22), _local(2024, 1, 22, 7))], self.rows(f"SELECT started, ended FROM refined_visits WHERE started = {_local(2024, 1, 20, 22)}"))
+        self.assertEqual(2, self.rows(f"SELECT COUNT(*) FROM refined_visits WHERE place = 'ChIJwork' AND started >= {_local(2024, 1, 27, 9)} AND ended <= {_local(2024, 1, 27, 17)}")[0][0])
+        self.assertEqual(1, self.rows(f"SELECT COUNT(*) FROM refined_visits WHERE place = 'ChIJwork' AND started >= {_local(2024, 1, 28, 9)} AND ended <= {_local(2024, 1, 28, 17)}")[0][0])
+
+    def test_a_walk_round_the_block_between_two_stays_at_home_keeps_them_two(self):
+        t = _local(2024, 1, 21, 10)
+        loop = [(0, *HOME), (600, *_off(HOME, north=800)), (1200, *_off(HOME, east=800)), (1800, *HOME)]
+        segments = _life(2024, 1, range(1, 32), rest=(20,)) + [_stay(t + 1800, t + 7200, HOME, "ChIJhome"), android_path(_local(2024, 1, 21, 7), [(s + 3 * 3600, a, b) for s, a, b in loop])]
+        self.refine(segments)
+        self.assertEqual(2, self.rows(f"SELECT COUNT(*) FROM refined_visits WHERE place = 'ChIJhome' AND started >= {_local(2024, 1, 20, 22)} AND started < {_local(2024, 1, 21, 23)}")[0][0])
+
+    def test_a_point_during_a_stay_is_at_the_place_and_a_spike_is_dropped(self):
+        leave = _local(2024, 1, 11, 7)
+        # The phone on the nightstand wanders, then the drive to work, one fix of which is miles off.
+        night = [(-7200, *_off(HOME, north=220)), (-3600, *_off(HOME, east=-180)), (-1800, *_off(HOME, north=90))]
+        drive = [(300, *_off(HOME, north=900)), (600, *_off(HOME, north=1800)), (630, *_off(HOME, north=1800, east=9000)), (660, *_off(HOME, north=2700)), (7200 - 5400, *WORK)]
+        summary = self.refine(_life(2024, 1, range(1, 32)) + [android_path(leave - 7200, [(s + 7200, a, b) for s, a, b in night + drive])])
+        (points, times), = self.rows("SELECT points, times FROM refined_paths")
+        want = [HOME, HOME, _off(HOME, north=900), _off(HOME, north=1800), _off(HOME, north=2700), WORK]
+        self.assertEqual([(round(a, 5), round(b, 5)) for a, b in want], relay.unpolyline(points))
+        self.assertEqual([0, 5400, 7500, 7800, 7860, 9000], relay.unpolyline_numbers(times))
+        self.assertEqual((3, 1), (summary["points_settled"], summary["points_dropped"]))
+
+    def trip(self, day, spots, minutes=1.0, hour=10):
+        """A drive on a day of January 2024 through [spots], [minutes] apart, as the phone's path."""
+        start = _local(2024, 1, day, hour)
+        return android_path(start, [(round(i * minutes * 60), *spot) for i, spot in enumerate(spots)])
+
+    def path_points(self, day, hour=10):
+        start = _local(2024, 1, day, hour)
+        return [relay.unpolyline(points) for (points,) in self.rows(f"SELECT points FROM refined_paths WHERE started >= {start - 3600} AND started < {start + 3 * 3600}")][0]
+
+    def test_a_street_driven_many_times_is_drawn_down_its_middle(self):
+        road = [_off((40.3, -89.3), east=500 * j) for j in range(9)]
+        # Six drives along one street, each fix a street's width off to one side or the other.
+        trips = [self.trip(day, [_off(spot, north=15 if (j + day) % 2 else -15) for j, spot in enumerate(road)]) for day in range(1, 7)]
+        summary = self.refine(trips)
+        for lat, _ in self.path_points(1)[1:-1]:
+            self.assertLess(abs(lat - road[0][0]) * 111_195, 6)
+        self.assertGreater(summary["points_snapped"], 30)
+
+    def test_a_fix_out_and_straight_back_where_nobody_has_been_goes_whatever_its_speed(self):
+        road = [_off((40.5, -89.5), east=500 * j) for j in range(6)]
+        off_road = _off(road[2], north=700)
+        self.refine([self.trip(20, road[:3] + [off_road, _off(road[2], east=100)] + road[3:], minutes=2)])
+        self.assertNotIn((round(off_road[0], 5), round(off_road[1], 5)), self.path_points(20))
+
+    def test_the_same_turn_where_other_trips_have_been_is_kept(self):
+        road = [_off((40.5, -89.5), east=500 * j) for j in range(6)]
+        off_road = _off(road[2], north=700)
+        across = [self.trip(day, [_off(off_road, north=-1000 + 500 * j) for j in range(5)]) for day in (21, 22, 23)]
+        self.refine([self.trip(20, road[:3] + [off_road, _off(road[2], east=100)] + road[3:], minutes=2)] + across)
+        self.assertTrue(any(relay._metres(*point, *off_road) < 30 for point in self.path_points(20)))
+
+    def test_a_fix_that_jumps_away_while_arriving_home_goes(self):
+        arrive = _local(2024, 1, 20, 18)
+        jump = _off(HOME, north=-800)
+        # Others have driven past where the fix jumped to, so only the arriving says it is wrong.
+        across = [self.trip(day, [_off(jump, east=-1000 + 500 * j) for j in range(5)]) for day in (21, 22, 23)]
+        drive = [(-1200, *_off(HOME, east=-3000)), (-900, *_off(HOME, east=-1500)), (-600, *_off(HOME, east=-120)), (-300, *jump), (-120, *_off(HOME, east=-60))]
+        self.refine([_stay(arrive, arrive + 5 * 3600, HOME, "ChIJhome"), android_path(arrive - 1200, [(s + 1200, a, b) for s, a, b in drive])] + across)
+        self.assertFalse(any(relay._metres(*point, *jump) < 30 for point in self.path_points(20, hour=17)))
+
+    def test_a_straight_line_between_two_far_fixes_follows_the_road_earlier_trips_took(self):
+        corner = _off((40.3, -89.3), east=2000)
+        road = [_off((40.3, -89.3), east=500 * j) for j in range(5)] + [_off(corner, north=500 * j) for j in range(1, 5)]
+        summary = self.refine([self.trip(day, road) for day in (1, 2, 3)] + [self.trip(10, [road[0], road[-1]], minutes=8)])
+        later = self.path_points(10)
+        self.assertTrue(any(relay._metres(*point, *corner) < 30 for point in later), later)
+        self.assertEqual(9, len(later))
+        self.assertEqual(7, summary["points_filled"])
+
+    def test_a_stay_across_the_turn_of_a_month_is_a_home_to_both(self):
+        b, c = HOME, _off(HOME, east=5000)
+        stays = [relay._Stay(_local(2024, 1, 31, 22), _local(2024, 2, 20, 7), CST, *b, "ChIJb", "other", 0.9),
+                 relay._Stay(_local(2024, 2, 22, 22), _local(2024, 2, 23, 7), CST, *c, "ChIJc", "other", 0.9)]
+        homes = relay._NightHomes(stays)
+        self.assertEqual("ChIJb", homes.homes[2024 * 12 + 1])
+        self.assertNotIn(2024 * 12 + 1, homes.thin)
+
+    def test_an_inferred_night_is_not_joined_into_the_evening_at_home_before_it(self):
+        segments = _life(2024, 1, range(1, 32), skip=(15,)) + [
+            _stay(_local(2024, 1, 15, 18), _local(2024, 1, 15, 22), HOME, "ChIJhome"),
+            _stay(_local(2024, 1, 16, 8.5), _local(2024, 1, 16, 8.9), _off(HOME, east=500), "ChIJcafe"),
+        ]
+        self.refine(segments)
+        self.assertEqual([(_local(2024, 1, 15, 22), "inferred")], self.rows("SELECT started, why FROM refined_visits WHERE why = 'inferred'"))
+        self.assertEqual(("ChIJhome", None, None), self.stay_at(_local(2024, 1, 15, 20)))
+
+    def test_a_first_ever_stop_out_and_back_keeps_the_fix_at_the_stop(self):
+        road = [_off((40.5, -89.5), east=500 * j) for j in range(3)]
+        shop = _off(road[2], north=700)
+        # A three-minute stop whose one fix is when it began, too near its edges to be settled there.
+        stop = _local(2024, 1, 20, 10) + 6 * 60
+        self.refine([_stay(stop, stop + 180, shop, "ChIJshop"), self.trip(20, road + [shop, _off(road[2], east=100)], minutes=2)])
+        self.assertTrue(any(relay._metres(*point, *shop) < 30 for point in self.path_points(20)))
+
+    def test_a_flights_fixes_are_left_as_they_are(self):
+        up = _local(2024, 1, 20, 10)
+        gate, turn = (40.5, -89.5), _off((40.5, -89.5), north=50_000)
+        self.refine([android_activity(up, up + 3 * 3600, gate, (41.5, -88.0), "FLYING", 200_000),
+                     android_path(up, [(0, *gate), (60, *turn), (120, *_off(gate, east=500)), (3600, 41.0, -88.7)])])
+        self.assertTrue(any(relay._metres(*point, *turn) < 30 for point in self.path_points(20)))
+
+    def test_a_move_leaves_from_where_its_stay_was_moved_to(self):
+        old = _off(HOME, north=1200)
+        december = [_stay(_local(2023, 12, d, 22), _local(2023, 12, d, 31), old, "ChIJold", p=0.4) for d in (5, 12, 19)]
+        leave = _local(2023, 12, 6, 7)
+        december.append(android_activity(leave, leave + 1800, old, WORK))
+        self.refine(december + _life(2024, 1, range(1, 32)) + _life(2024, 2, range(1, 29)), {"ChIJold": "subpremise", "ChIJhome": "premise"})
+        self.assertEqual([HOME], [(lat, lon) for lat, lon in self.rows(f"SELECT lat, lon FROM refined_moves WHERE started = {leave}")])
+
+    def test_a_relay_stopped_before_the_years_were_written_writes_them_when_it_starts(self):
+        self.read(android_export())
+        self.conn.execute("DELETE FROM years")
+        self.conn.commit()
+        rebuild = relay.timeline_rebuild_years
+
+        def stopped(conn):
+            raise RuntimeError("stopped")
+
+        relay.timeline_rebuild_years = stopped
+        try:
+            with self.assertRaises(RuntimeError):
+                relay.timeline_publish(self.conn)
+        finally:
+            relay.timeline_rebuild_years = rebuild
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, relay.timeline_meta(self.conn, "refined")["version"])
+        relay.timeline_refresh()
+        self.assertEqual([(2023,)], self.rows("SELECT year FROM years"))
+        self.assertFalse(relay.timeline_meta(self.conn, "refining"))
+
+    def test_a_history_of_paths_alone_is_refined_again_too(self):
+        self.read({"semanticSegments": [android_path(DAY1, [(0, *HOME), (600, *WORK)])]})
+        relay.timeline_meta_set(self.conn, "refined", {"version": relay.TIMELINE_REFINE_VERSION - 1})
+        relay.timeline_refresh()
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, relay.timeline_meta(self.conn, "refined")["version"])
+
+    def test_a_path_wholly_inside_a_stay_is_dropped(self):
+        jitter = [(0, *_off(HOME, north=120)), (900, *_off(HOME, east=150)), (1800, *_off(HOME, north=-60))]
+        summary = self.refine(_life(2024, 1, range(1, 32)) + [android_path(_local(2024, 1, 11, 1), jitter)])
+        self.assertEqual((0, 1), (self.rows("SELECT COUNT(*) FROM refined_paths")[0][0], summary["paths_dropped"]))
+
+    def test_a_move_starts_where_the_stay_before_it_was(self):
+        leave = _local(2024, 1, 11, 7)
+        self.refine(_life(2024, 1, range(1, 32)) + [android_activity(leave + 60, leave + 7200, _off(HOME, north=100), _off(WORK, east=200))])
+        self.assertEqual([(*HOME, *WORK)], self.rows(f"SELECT lat, lon, to_lat, to_lon FROM refined_moves WHERE started = {leave + 60}"))
+
+    def test_refining_starts_from_what_the_exports_said_every_time(self):
+        flat, cafe = (40.1, -89.1), _off((40.1, -89.1), east=30)
+        self.refine(_life(2024, 1, range(2, 20), flat, "ChIJflat") + [_stay(_local(2024, 1, 20, 22), _local(2024, 1, 20, 31), cafe, "ChIJbeans")],
+                    {"ChIJflat": "premise", "ChIJbeans": "coffee_shop"})
+        first = self.rows("SELECT * FROM refined_visits ORDER BY started")
+        relay.timeline_refine(self.conn)
+        self.assertEqual(first, self.rows("SELECT * FROM refined_visits ORDER BY started"))
+        # A later export, of other days: the coffee-shop night is still worked out from what Google said of it.
+        self.read({"semanticSegments": _life(2024, 2, range(1, 10), flat, "ChIJflat")})
+        self.assertEqual(("ChIJflat", "ChIJbeans", "night"), self.stay_at(_local(2024, 1, 21, 3)))
+        self.assertEqual(1000.0, relay.timeline_meta(self.conn, "refined")["at"])
+
+    def test_a_new_way_of_refining_is_applied_once_when_the_relay_starts(self):
+        self.read(android_export())
+        relay.timeline_meta_set(self.conn, "refined", {"version": relay.TIMELINE_REFINE_VERSION - 1})
+        relay.timeline_refresh()
+        done = relay.timeline_meta(self.conn, "refined")
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, done["version"])
+        relay.timeline_refresh()
+        self.assertEqual(done["at"], relay.timeline_meta(self.conn, "refined")["at"])
+
+    def test_the_manifest_says_what_refining_changed(self):
+        relay.timeline_import(self.write("Timeline.json", android_export()))
+        refined = relay.timeline_manifest(self.conn, now=5000.0)["refined"]
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, refined["version"])
+        self.assertEqual({"building": 0, "night": 0, "unsure": 0, "thin": 0}, refined["moved"])
+
+    def test_the_polyline_undone(self):
+        points = [(38.5, -120.2), (40.7, -120.95), (43.252, -126.453)]
+        self.assertEqual(points, relay.unpolyline(relay.polyline(points)))
+        self.assertEqual([0, 16, 47, 15], relay.unpolyline_numbers(relay.polyline_numbers([0, 16, 47, 15])))
+
+    def test_the_deep_of_the_night_on_the_wall_clock(self):
+        self.assertEqual(3 * 3600, relay.night_seconds(_local(2024, 1, 1, 22), _local(2024, 1, 1, 31), CST))
+        self.assertEqual(3600, relay.night_seconds(_local(2024, 1, 1, 22), _local(2024, 1, 1, 27), CST))
+        self.assertEqual(0, relay.night_seconds(_local(2024, 1, 1, 9), _local(2024, 1, 1, 17), CST))
+        # Three nights' worth over two days and a bit.
+        self.assertEqual(3 * 3 * 3600, relay.night_seconds(_local(2024, 1, 1, 0), _local(2024, 1, 3, 12), CST))
 
 
 class _DriveAnswer(_GoogleResponse):

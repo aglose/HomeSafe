@@ -74,6 +74,74 @@ is the "Pro" price, free up to a monthly allowance; the relay stops at `TIMELINE
 again. A stay Google matched to no place at all goes by the town of the nearest place that has
 one ("Near Fairview").
 
+### Refining what Google wrote
+
+The export is Google's reading of radio fixes, one stay at a time. With the whole history in view,
+some of it is plainly wrong: nights "at" the coffee shop under a flat, one building under two
+ids, a year of nights scattered a kilometre round the flat the record later settles on (the early
+years, when a phone asleep fixed itself by cell tower), points that wander off while the phone sat
+on a table. So the relay keeps what the exports said as it was and works out a corrected copy beside
+it (`refined_visits`, `refined_moves`, `refined_paths` in `timeline.db`), and that copy is what the
+app is given. It is worked out again from the start, over the whole history, after every import
+and every round of place names, with whatever more the history knows by then: a new export can
+correct a year it never touched. A decade takes a few seconds.
+
+Each step is a reason a person could check (`relay/relay.py`, "timeline: refining", has the
+numbers). "The months around" a stay are half a year either side; "a night" is a stay through two
+of the hours between 02:00 and 05:00 on the wall clock.
+
+1. **One building, two ids.** Google names the flat one night and the building the next, or the
+   house next door in a terrace. A stay at a residential place goes to whichever residential place
+   within 25 m the months around spent most time at.
+2. **Nobody sleeps at the coffee shop.** A night at a place of a kind nobody sleeps at (Google's
+   type for it, once named) goes to the place within 150 m where the months around spent their
+   nights.
+3. **Unsure visits go where the time went.** A visit Google gave under even odds goes to a place
+   within 120 m that the months around spent five times as long at, nights against nights.
+4. **A thin record's nights go home.** A month with a night on record for fewer than half its days
+   is a phone fixing itself coarsely, and its nights land on whatever is near. Such a night within
+   1.5 km of the home of the nearest well-recorded months goes there, unless it landed at a hotel or
+   at somewhere nights were spent in well-recorded months too (a friend's, a partner's). A place
+   seen only in thin months whose nights went home was that home, days too.
+5. **An unrecorded night near home was at home.** When nothing was recorded through a night, and
+   the evening's last stay, the morning's first and anything between were within 3 km of the home
+   of the time, a stay at home is put in, marked *inferred*.
+6. **One stay, not several.** Two stays at one place with nothing between them straying more than
+   150 m are one, and the jitter Google took for moves goes: within the hour anywhere, and up to two
+   days at home in a well-recorded month. A gap at home is time at home; a gap at work isn't, and a
+   gap in a thin record says nothing. A stay refining moved or put in is joined only to one moved
+   for the same reason, so what the app is told of each stay stays true.
+7. **Paths are smoothed by everywhere else the history has been.**
+   - A point during a stay is put at the place (within 2 km of it). A path wholly inside a stay
+     goes with it.
+   - A point a path goes out to and straight back from is a bad fix and goes: faster than
+     40 m/s anywhere; at any speed where fewer than two other trips have been within 60 m of it;
+     and at any speed in the quarter-hour of arriving somewhere or leaving, when the path either
+     side of it is at the place (the phone going indoors and out). A turn at a place visited is
+     a visit, and stays.
+   - A point within 40 m of where three or more other trips went the same way moves to the middle
+     of them, twice over: one trip's fix wanders a street's width either side, and the middle of
+     many is the street.
+   - Two fixes 400 m or more apart are a straight line across whatever was between. When an
+     earlier trip went from near the one to near the other the same way in about the same time,
+     its points between are put in, so the line follows the road it took.
+
+   Flights are left alone. The export writes a path's times only to the minute, so every speed
+   allows each leg the minute it may have taken.
+8. **A move starts where the stay before it was** and ends where the next one is, wherever
+   refining has since put that stay.
+
+A year's visits say which place Google had given one refining moved (`was`) and why (`why`:
+`building`, `night`, `unsure`, `thin`, or `inferred` for a stay Google never wrote). The manifest's
+`refined` says how many of each, and how many points were settled. A change to how refining works
+bumps `TIMELINE_REFINE_VERSION`, and the relay refines again when it starts (as it also does when
+it was stopped after refining and before the years were written: `refined` is marked last);
+`docker exec homesafe-relay python relay.py timeline-refine` does it by hand.
+
+Refining only ever moves a stay to somewhere the history itself vouches for. What it can't do is
+know a place the record never saw: a flat no night was ever recorded at stays unknown. Telling the
+app a place is wrong is still to come (below).
+
 ### Who may see it
 
 It is one person's whereabouts, so it is narrower than a Frigate sign-in: a Frigate **admin**, or,
