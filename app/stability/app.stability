@@ -21,11 +21,10 @@ internal fun com.meticulouscreations.homesafe.AppChrome(appGraph: com.meticulous
     - content: STABLE (composable function type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, signedIn: kotlin.Boolean): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - nav: STABLE (marked @Stable or @Immutable)
     - tab: UNSTABLE (cross-module type without @Stable/@Immutable)
-    - signedIn: STABLE (primitive type)
 

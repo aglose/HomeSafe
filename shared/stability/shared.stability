@@ -849,16 +849,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.DrawerLabel(text: kotlin
     - text: STABLE (String is immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DrawerRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - icon: STABLE (marked @Stable or @Immutable)
-    - label: STABLE (String is immutable)
-    - selected: STABLE (primitive type)
-    - onClick: STABLE (function type)
-
-@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneOptions(tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -1929,16 +1919,13 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title
     - enabled: STABLE (primitive type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, showHomeSecurity: kotlin.Boolean, apps: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onClose: kotlin.Function0<kotlin.Unit>, apps: @[Composable] androidx.compose.runtime.internal.ComposableFunction1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - open: STABLE (primitive type)
-    - selectedTab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - pull: STABLE (marked @Stable or @Immutable)
-    - onSelectTab: STABLE (function type)
     - onClose: STABLE (function type)
-    - showHomeSecurity: STABLE (primitive type)
     - apps: STABLE (composable function type)
 
 @Composable
