@@ -137,4 +137,4 @@ Under **Limits and cards → Alerts** are three switches, all off to begin with:
   `BudgetSettingsScreen` (`finance/`), with `BudgetPace` for the projection and `BudgetNarrator`
   for the sentence. The tank and the meters are the shaders `BUDGET_TANK_SHADER` and
   `BUDGET_HEAT_METER_SHADER` in `FinanceShaders.kt`. Previews in `BudgetPreviews.kt`
-  (`./gradlew :shared:renderPreviews -Ppreview=Budget`).
+  (`scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md)).

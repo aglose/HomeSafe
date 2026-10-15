@@ -22,15 +22,9 @@ kotlin {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-        }
-    }
+    // The iOS framework is :app's, which builds on this module and the features.
+    iosArm64()
+    iosSimulatorArm64()
 
     android {
         namespace = "com.meticulouscreations.homesafe.shared"
@@ -69,8 +63,8 @@ kotlin {
             implementation(libs.navigationevent.compose)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
-            // `api`, not `implementation`: AppGraph extends MetroX's ViewModelGraph, and the app
-            // modules hold an AppGraph, so they must be able to see that supertype.
+            // `api`, not `implementation`: AppGraph (in :app) extends MetroX's ViewModelGraph, and
+            // the feature modules' view models are contributed to it.
             api(libs.metrox.viewmodel.compose)
             implementation(libs.navigation3.ui)
             implementation(libs.room.runtime)
@@ -116,19 +110,14 @@ kotlin {
         }
 
         // Compose UI tests cannot live in commonTest: commonTest feeds androidHostTest, and
-        // runComposeUiTest needs a real Android instrumentation host, so those tests fail there
-        // with a NullPointerException. src/uiTest/kotlin is compiled into the targets that can
-        // host them instead: the iOS simulator, and a real Android runtime (androidDeviceTest is
-        // in the "test" source set tree, see withDeviceTestBuilder, so it already inherits
-        // commonTest's dependencies including compose ui-test). Shared by srcDir rather than a
-        // dependsOn edge, because adding one by hand switches off KGP's default hierarchy and
-        // iosMain stops seeing its actuals.
+        // runComposeUiTest needs a real Android instrumentation host. src/uiTest/kotlin is compiled
+        // into the targets that can host them: the iOS simulator and a real Android runtime
+        // (androidDeviceTest is in the "test" source set tree, see withDeviceTestBuilder, so it
+        // already inherits commonTest's dependencies including compose ui-test). The ones that
+        // need a feature module or the whole app are in :app's uiTest. Shared by srcDir rather
+        // than a dependsOn edge, because adding one by hand switches off KGP's default hierarchy.
         getByName("iosSimulatorArm64Test").kotlin.srcDir("src/uiTest/kotlin")
         getByName("androidDeviceTest").kotlin.srcDir("src/uiTest/kotlin")
-
-        // Whole-app journeys: App() on a real AppGraph, signed in over HTTP to the fake Frigate in
-        // :fake-frigate (a JVM server, hence Android only, no iOS).
-        getByName("androidDeviceTest").kotlin.srcDir("src/integrationTest/kotlin")
 
         // The Room schemas the migration tests rebuild old databases from, packed into the test APK
         // as Java resources (androidDeviceTest's data/ExportedSchemas.kt reads them).
@@ -139,8 +128,7 @@ kotlin {
             // Without it runComposeUiTest has no activity to host the composition and dies at
             // launch rather than at compile time.
             implementation(libs.compose.uiTestManifest)
-            implementation(project(":fake-frigate"))
-            // InstrumentationRegistry, for the context the journeys build the app graph with.
+            // InstrumentationRegistry, for the context the device tests build with.
             implementation(libs.androidx.testExt.junit)
         }
 
@@ -199,6 +187,12 @@ dependencies {
     // missing Modifier parameters, effects capturing lambda parameters, state autoboxing.
     // Worth more here than a general-purpose static analyser, since most of this module is UI.
     ktlintRuleset(libs.composeRules.ktlint)
+}
+
+// The app's strings and pictures stay here, and the feature modules use them through this
+// module's Res, so it has to be public. (One Res keeps one place to translate.)
+compose.resources {
+    publicResClass = true
 }
 
 room3 {

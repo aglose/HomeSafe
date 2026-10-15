@@ -46,7 +46,7 @@ private val PredictiveBackEasing = CubicBezierEasing(0.1f, 0.1f, 0f, 1f)
  * desktop) all feed, so whichever surface registered last and is enabled is the one Back reaches.
  */
 @Stable
-internal class PredictiveBack(
+class PredictiveBack(
     internal val events: NavigationEventState<NavigationEventInfo.None>,
     private val scope: CoroutineScope,
 ) {
@@ -105,7 +105,7 @@ internal class PredictiveBack(
  * Where nothing dispatches back (a preview, a headless test) it registers nothing.
  */
 @Composable
-internal fun rememberPredictiveBack(enabled: Boolean = true, onBack: (releasedAt: Float) -> Unit): PredictiveBack {
+fun rememberPredictiveBack(enabled: Boolean = true, onBack: (releasedAt: Float) -> Unit): PredictiveBack {
     val events = rememberNavigationEventState(currentInfo = NavigationEventInfo.None)
     val scope = rememberCoroutineScope()
     val back = remember(events, scope) { PredictiveBack(events, scope) }
@@ -132,7 +132,7 @@ internal fun rememberPredictiveBack(enabled: Boolean = true, onBack: (releasedAt
  * [previous] is null when this stack has nothing to go back to (Back is someone else's then).
  */
 @Composable
-internal fun <S : Any> rememberPredictiveBackTransition(target: S, previous: S?, back: PredictiveBack, label: String): Transition<S> {
+fun <S : Any> rememberPredictiveBackTransition(target: S, previous: S?, back: PredictiveBack, label: String): Transition<S> {
     val seekable = remember { SeekableTransitionState(target) }
     val transition = rememberTransition(seekable, label)
     val cancellations = back.cancellations

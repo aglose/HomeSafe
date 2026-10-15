@@ -225,7 +225,7 @@ the sign-in screen, which opens the same drawer (see "Before sign-in" in the REA
 - While the finance app covers the screen, the shell stops composing the tabs underneath, so the
   camera streams stop. Their saveable state comes back when Finance closes.
 - Previews of every tab, from made-up fixtures (`FinancePreviews.kt`), render with
-  `./gradlew :shared:renderPreviews -Ppreview=Finance`.
+  `scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md).
 
 The web build can't reach Yahoo or FRED (no CORS headers), so its finance tabs show their error
 states. Nothing in the app is investment advice. The thresholds are rules of thumb taken from past

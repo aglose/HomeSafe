@@ -75,7 +75,7 @@ internal val NAV_RAIL_CLEARANCE = NAV_RAIL_MARGIN + NAV_RAIL_WIDTH
  * inset, which on iOS already includes the bar (it is part of the hosting view's safe area),
  * instead of reserving room for the Compose one.
  */
-internal val LocalNativeTabBar = staticCompositionLocalOf { false }
+val LocalNativeTabBar = staticCompositionLocalOf { false }
 
 /**
  * Whether the shell's nav is a rail down the start edge rather than a pill along the bottom:

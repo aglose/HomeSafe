@@ -118,7 +118,7 @@ internal val SplashPop: ContentTransform = ContentTransform(
  * The sign-in screen already shows the shell's chrome (see ShellSkeleton), so this dissolve
  * only ever changes the content inside it.
  */
-internal val RootCrossfade: ContentTransform = ContentTransform(
+val RootCrossfade: ContentTransform = ContentTransform(
     targetContentEnter = fadeIn(tween(NAV_TRANSITION_MS, easing = LinearEasing)),
     initialContentExit = fadeOut(tween(NAV_TRANSITION_MS, easing = LinearEasing), targetAlpha = 1f),
 )

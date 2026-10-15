@@ -134,7 +134,7 @@ holds them as paths on a 24-unit grid; Android's status-bar drawables are writte
 it too, so the small icon and the large one are plainly the same thing. `WeatherNoticeLook` gives
 each kind its colours. The card is painted by `WeatherNoticePainter`, in shared code and with no
 composition (the check runs in a background job with no screen): Android takes the bitmap,
-iOS a PNG of it. `:shared:renderPreviews -Ppreview=WeatherNoticePreviews` draws every icon, every
+iOS a PNG of it. `scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md) draws every icon, every
 tile and a card of each sort.
 
 Which picture a government warning wears is read from its VTEC phenomenon where it has one (`TO`

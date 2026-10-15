@@ -27,16 +27,12 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import com.meticulouscreations.homesafe.atlas.AtlasUiState
-import com.meticulouscreations.homesafe.finance.FinanceUiState
-import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.ShellDrawer
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
-import com.meticulouscreations.homesafe.weather.WeatherUiState
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -64,16 +60,8 @@ class ShellDrawerPullUiTest {
                         ShellDrawer(
                             open = nav.drawerOpen,
                             selectedTab = nav.selectedTab,
-                            finance = FinanceUiState(),
-                            weather = WeatherUiState(),
-                            fitness = FitnessUiState(),
-                            atlas = AtlasUiState(),
                             pull = nav.drawerPull,
                             onSelectTab = {},
-                            onOpenFinance = {},
-                            onOpenWeather = {},
-                            onOpenFitness = {},
-                            onOpenAtlas = {},
                             onClose = { nav.drawerOpen = false },
                         )
                     },

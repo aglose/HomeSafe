@@ -38,7 +38,7 @@ internal fun tailnetVerdict(ipv4Addresses: List<String>): Boolean? {
 }
 
 /** Whether [url] is reached through Tailscale: its host is a tailnet address or a MagicDNS name. */
-internal fun isTailnetUrl(url: String): Boolean {
+fun isTailnetUrl(url: String): Boolean {
     val host = runCatching { Url(url).host }.getOrNull()?.lowercase() ?: return false
     return isTailnetIpv4(host) || host.endsWith(".ts.net")
 }
@@ -48,4 +48,4 @@ internal fun isTailnetUrl(url: String): Boolean {
  * name that wouldn't resolve. Those are what "nothing answered" means. Anything else came from a
  * server that did answer (a refusal, a body that wouldn't parse) and has to keep its own words.
  */
-internal fun Throwable.isTransportFailure(): Boolean = this is IOException
+fun Throwable.isTransportFailure(): Boolean = this is IOException

@@ -32,7 +32,7 @@ if (project.file("google-services.json").exists()) {
     )
 }
 dependencies {
-    implementation(project(":shared"))
+    implementation(project(":app"))
 
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.fragment)
@@ -301,8 +301,8 @@ composeCompiler {
 
 // One emulator can't run two instrumented suites at once: their Activities cover each other,
 // and a test waiting for its own to resume or draw waits for good. With the configuration cache
-// Gradle runs tasks of different projects in parallel, so order the E2E suite after the shared
-// module's device tests whenever both are asked for.
+// Gradle runs tasks of different projects in parallel, so order the E2E suite after the modules'
+// device tests (the last of which is :app's) whenever both are asked for.
 tasks.matching { it.name == "connectedDebugAndroidTest" }.configureEach {
-    mustRunAfter(":shared:connectedAndroidDeviceTest")
+    mustRunAfter(":app:connectedAndroidDeviceTest")
 }

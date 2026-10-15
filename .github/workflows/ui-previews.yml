@@ -10,9 +10,9 @@ name: UI previews
 #   goes into its description, between <!-- ui-previews:start/end --> markers, kept current on
 #   every push. The "App version" workflow's line at the top of the description isn't touched.
 #
-# Two renderers (scripts/render-ui-previews.sh): Compose Preview Screenshot Testing draws
-# :androidApp's @PreviewTest functions through Layoutlib, exactly as Android does, and
-# :shared:renderPreviews draws every @Preview in :shared on the JVM. See docs/ui-previews.md.
+# One renderer (scripts/render-ui-previews.sh): Compose Preview Screenshot Testing draws
+# :androidApp's @PreviewTest functions through Layoutlib, exactly as Android does. (The JVM one,
+# :shared:renderPreviews, went with the JVM target.) See docs/ui-previews.md.
 #
 # Not part of ci-green: a picture of a change is for reviewers to look at, not something to
 # gate on. Nothing is compared against committed reference images, so nothing here can go red
@@ -62,10 +62,6 @@ jobs:
         with:
           cache-read-only: true
 
-      # The JVM renderer draws through skiko, which links libGL and fontconfig.
-      - name: Install skiko native dependencies
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
-
       - name: Find the pull request and the merge base
         run: |
           pr=${{ github.event.pull_request.number || '' }}
@@ -92,15 +88,10 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "Branch $BRANCH, pull request ${pr:-none}, merge base with $base_ref: $base"
 
-      # The branch also runs the JVM journeys for their screenshots (gallery only; see the script),
-      # in two JVMs side by side (-PjvmTestForks, shared/build.gradle.kts): one after another they
-      # were most of this step.
       - name: Draw the branch
         id: head
         continue-on-error: true
-        env:
-          UI_PREVIEWS_JOURNEYS: 1
-        run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace -PjvmTestForks=2
+        run: scripts/render-ui-previews.sh "$RUNNER_TEMP/previews/head" --stacktrace
 
       # The merge base's pictures are the same on every push until the base itself moves, so a
       # later push to this branch takes them from the first one's cache. What draws them is the
@@ -185,7 +176,6 @@ jobs:
           path: |
             ${{ runner.temp }}/gallery/**
             androidApp/build/reports/tests/*ScreenshotTest*/**
-            shared/build/reports/tests/renderPreviews/**
           retention-days: 7
 
       - name: Fail if the branch's previews couldn't all be drawn

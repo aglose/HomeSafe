@@ -1,6 +1,6 @@
 ---
 name: ui-previews
-description: See what a Compose UI change actually looks like. Use when changing or reviewing any composable in HomeSafe (shared/src/commonMain/.../ui), when asked for screenshots of a screen, or when a pull request touches UI. Renders @Preview functions to PNGs (JVM or Layoutlib), captures integration-journey screens, or fetches the images CI drew when this machine can't build.
+description: See what a Compose UI change actually looks like. Use when changing or reviewing any composable in HomeSafe (shared/src/commonMain/.../ui, features/*/src/commonMain/.../ui), when asked for screenshots of a screen, or when a pull request touches UI. Renders @Preview functions to PNGs through Layoutlib, or fetches the images CI drew when this machine can't build.
 ---
 
 # Looking at UI changes
@@ -10,7 +10,8 @@ with what was asked for. The full reference is `docs/ui-previews.md`.
 
 ## 1. Make sure there's a preview of the state you changed
 
-Previews live in `shared/src/commonMain`, next to the composable (see `ui/screens/HomePreviews.kt`). They're
+Previews live next to the composable, in `shared/src/commonMain` or a feature module's
+(`features/<name>/src/commonMain`; see `ui/screens/HomePreviews.kt`). They're
 no-argument `@Preview` composables that draw the stateless composable from fixtures.
 
 - Screens get `@Preview(name = "...", widthDp = 412, heightDp = 915)`.
@@ -22,18 +23,17 @@ no-argument `@Preview` composables that draw the stateless composable from fixtu
 
 ## 2. Render and look
 
-First check whether Gradle works here:
+The app is Android and iOS only, so previews are drawn by Layoutlib (Compose Preview Screenshot Testing),
+as Android draws them. Only previews with a `@PreviewTest` wrapper in `:androidApp`'s screenshot suite are drawn
+(see step 1).
 
 ```bash
-./gradlew :shared:renderPreviews -Ppreview=<part of the preview id> --console=plain
+scripts/render-ui-previews.sh build/ui-previews/local
 ```
 
-- **It works.** It prints `shared/build/previews/<id>.png` for each preview it drew. Read the images, fix, re-run.
-  A preview that throws fails the task with its stack trace.
-- **Android-exact renders:** run `scripts/render-ui-previews.sh build/ui-previews/local` (needs the Android
-  SDK). Then read `build/ui-previews/local/android/*.png`.
-- **Whole-app flows:** run `./gradlew :shared:jvmTest -PjourneyScreens --tests '*<Name>JourneyTest*'`. Then read
-  `shared/build/journey-screens/<journey>/NN-*.png`, one image per tap, plus `end` or `failed`.
+- **It works** (needs the Android SDK). Read `build/ui-previews/local/android/*.png`, fix, re-run.
+- **Whole-app flows** have no screenshots any more (they came from the JVM journeys); the journeys run on CI's
+  emulator, and a failing one prints the screen's semantics tree.
 - **It can't resolve plugins** (for example a sandbox that blocks `dl.google.com`): commit, push the branch, then
   run the fetch script below. The **UI previews** workflow draws everything on CI.
 

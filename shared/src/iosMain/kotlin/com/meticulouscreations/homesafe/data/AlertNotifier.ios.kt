@@ -63,7 +63,7 @@ private const val THREAD_SUMMARY = "summary"
  * the tap that launches the app before `didFinishLaunching` returns, so this is installed from
  * `startIosApp` at launch, not when the notifier is first used.
  */
-internal object IosNotificationTaps {
+object IosNotificationTaps {
     // A class held here rather than this object being the delegate: Kotlin/Native can't generate
     // code for an `object` that subclasses NSObject. The reference also keeps it alive — the
     // center's `delegate` is weak.
@@ -198,7 +198,7 @@ private class IosAlertNotifier : AlertNotifier {
 
 /** Writes [bytes] to [path]. Plain POSIX file I/O rather than NSData, for the same reason as the clip downloader. */
 @OptIn(ExperimentalForeignApi::class)
-internal fun writeFile(path: String, bytes: ByteArray): Boolean {
+fun writeFile(path: String, bytes: ByteArray): Boolean {
     val file = fopen(path, "wb") ?: return false
     try {
         bytes.usePinned { pinned ->

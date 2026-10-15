@@ -14,7 +14,8 @@ not done.
 
 ### Where strings go
 
-- **Shared code (`shared/`)**: Compose Multiplatform resources in
+- **Shared code (`shared/`, and the feature modules under `features/` and `:app`, which use
+  `:shared`'s resources)**: Compose Multiplatform resources in
   `shared/src/commonMain/composeResources/values/`. `strings.xml` holds the app-wide words
   (`common_cancel`, `common_retry`, …); each area has its own file beside it
   (`strings_moments.xml`, `strings_settings.xml`, `strings_finance_explainers.xml`, …). Every

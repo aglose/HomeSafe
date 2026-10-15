@@ -220,7 +220,7 @@ private fun StatsLine(row: StreamStatsRow) {
     }
 }
 
-internal const val STREAM_STATS_TEST_TAG = "stream-stats"
+const val STREAM_STATS_TEST_TAG = "stream-stats"
 
 private val STATS_PANEL_MAX_WIDTH = 288.dp
 private val STATS_LABEL_WIDTH = 88.dp
