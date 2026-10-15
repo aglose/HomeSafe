@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The integration journeys sign the real app graph in to a fake Frigate served over plain HTTP
+     on localhost from inside this test APK (see src/integrationTest). :shared's device tests have
+     the same manifest for their UI tests; keep the two together. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application android:usesCleartextTraffic="true">
+        <!-- The Activity runComposeUiTest puts every UI test and journey in (ui-test-manifest
+             declares it; this adds to that). It stands in for MainActivity, so it takes the
+             window's changes the way MainActivity does (androidApp's manifest): Compose lays
+             itself out again and the Activity is not recreated. Without this a recreation throws
+             the test's content away, and that is how the first journey of a run failed with "No
+             compose hierarchies found": the test APK's own install makes the system reload its
+             keyboard layouts a second or two later, the emulator's keyboard configuration
+             changes, and the Activity of whichever test is running then is recreated. -->
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|navigation|uiMode" />
+    </application>
+
+</manifest>
