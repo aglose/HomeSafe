@@ -32,13 +32,10 @@ from urllib.parse import quote
 
 SETS = [
     ("android", "Android", "Layoutlib, through Compose Preview Screenshot Testing (`:androidApp`'s `@PreviewTest`s)"),
-    ("desktop", "Desktop", "the JVM, through `:shared:renderPreviews` (every `@Preview` in `:shared`)"),
 ]
-# Gallery only: not compared with the merge base and not in the pull request. The journeys run the
-# real app over real HTTP, so a frame can differ from run to run with timing alone.
-EXTRA_SETS = [
-    ("journeys", "Journeys", "the JVM integration journeys with `-PjourneyScreens`: the whole app after each tap"),
-]
+# Gallery only: not compared with the merge base and not in the pull request. (The JVM journeys'
+# screenshots were the one such set; they went with the JVM target.)
+EXTRA_SETS = []
 START = "<!-- ui-previews:start -->"
 END = "<!-- ui-previews:end -->"
 MAX_ROWS = 30

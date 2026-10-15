@@ -31,8 +31,7 @@ So, in this order:
 2. Otherwise find which update broke the build, and hold it back: put its version line back to
    exactly what main has (the `-` line for it in `changes.diff`). Dependencies that have to move
    together go back together: everything sharing one `version.ref` already does, and so must
-   `javacpp` with `ffmpeg`, and anything whose release notes say it needs the version you are
-   holding back. Hold back as little as you can. Leave every other update in.
+   anything whose release notes say it needs the version you are holding back. Hold back as little as you can. Leave every other update in.
 3. If the pull request updates a single dependency and so there is nothing to hold back, you may
    instead fix the code so it builds against the new version. That stops it from merging by
    itself, which is right: someone will review your change. Keep it to what the upgrade needs.

@@ -260,4 +260,4 @@ sheet's history table is still filled in by hand.
   (the vest a line means). Tests: `StockPlanTest`.
 - App: `BankSyncRelayApi` → `BankSyncRepository` → `BankSyncViewModel` → `BankSyncScreen`
   (`finance/`), with previews in `BankSyncPreviews.kt`
-  (`./gradlew :shared:renderPreviews -Ppreview=BankSync`).
+  (`scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md)).

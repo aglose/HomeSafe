@@ -1,6 +1,5 @@
 import com.skydoves.compose.stability.gradle.StabilityCheckTask
 import com.skydoves.compose.stability.gradle.StabilityDumpTask
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -18,73 +17,14 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
-/**
- * Which JavaCPP native bundles the JVM target links against. FFmpeg's natives are ~20 MB per
- * platform, so a normal build and every `:shared:jvmTest` run take only this host's — the
- * distributable is the only thing that needs the rest, and it passes them explicitly:
- *
- *     ./gradlew :desktopApp:packageDistributionForCurrentOS \
- *         -PjavacppPlatforms=macosx-arm64,macosx-x86_64,windows-x86_64,linux-x86_64
- */
-val javacppNativePlatforms: List<String> =
-    providers.gradleProperty("javacppPlatforms").orNull
-        ?.split(",")
-        ?.map(String::trim)
-        ?.filter(String::isNotEmpty)
-        ?: listOf(hostJavacppPlatform())
-
-/**
- * A catalog entry as "group:name:version" — the string notation, which is the only form of
- * these source-set dependency methods that takes a classifier or a configuration block.
- */
-fun coordinatesOf(library: Provider<MinimalExternalModuleDependency>): String {
-    val dependency = library.get()
-    return "${dependency.module.group}:${dependency.module.name}:${dependency.versionConstraint.requiredVersion}"
-}
-
-/** The same module as [library], but the classifier artifact carrying [platform]'s native library. */
-fun nativesFor(library: Provider<MinimalExternalModuleDependency>, platform: String): String =
-    "${coordinatesOf(library)}:$platform"
-
-fun hostJavacppPlatform(): String {
-    val os = System.getProperty("os.name").lowercase()
-    val arch = when (val raw = System.getProperty("os.arch").lowercase()) {
-        "aarch64", "arm64" -> "arm64"
-        "x86_64", "amd64" -> "x86_64"
-        else -> raw
-    }
-    return when {
-        os.startsWith("mac") || os.startsWith("darwin") -> "macosx-$arch"
-        os.startsWith("win") -> "windows-$arch"
-        else -> "linux-$arch"
-    }
-}
-
 kotlin {
     compilerOptions {
         freeCompilerArgs.add("-Xexpect-actual-classes")
     }
 
-    listOf(
-        iosArm64(),
-        iosSimulatorArm64(),
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "Shared"
-            isStatic = true
-        }
-    }
-
-    jvm()
-
-    js {
-        browser()
-    }
-
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        browser()
-    }
+    // The iOS framework is :app's, which builds on this module and the features.
+    iosArm64()
+    iosSimulatorArm64()
 
     android {
         namespace = "com.meticulouscreations.homesafe.shared"
@@ -123,8 +63,8 @@ kotlin {
             implementation(libs.navigationevent.compose)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
-            // `api`, not `implementation`: AppGraph extends MetroX's ViewModelGraph, and the app
-            // modules hold an AppGraph, so they must be able to see that supertype.
+            // `api`, not `implementation`: AppGraph (in :app) extends MetroX's ViewModelGraph, and
+            // the feature modules' view models are contributed to it.
             api(libs.metrox.viewmodel.compose)
             implementation(libs.navigation3.ui)
             implementation(libs.room.runtime)
@@ -162,129 +102,41 @@ kotlin {
             // Steps, sleep and runs from the band, by way of Google Health (HealthSource.android.kt).
             implementation(libs.androidx.health.connect)
         }
-        jvmMain.dependencies {
-            implementation(libs.sqlite.bundled)
-            implementation(libs.ktor.client.cio)
-            // Dispatchers.Swing: the desktop player reports decoded frames onto the same event
-            // dispatch thread composition runs on, rather than trusting whatever Main resolves to.
-            implementation(libs.kotlinx.coroutinesSwing)
-            // Desktop video (CameraStreamPlayer.jvm.kt). JavaCV is used purely for its
-            // FFmpegFrameGrabber, so its other bindings (OpenCV, OpenBLAS, Tesseract and the
-            // rest, several hundred MB of natives) are cut off at the source and JavaCPP and the
-            // FFmpeg presets are declared here instead.
-            implementation(coordinatesOf(libs.javacv)) { isTransitive = false }
-            implementation(libs.javacpp)
-            implementation(libs.ffmpeg)
-            javacppNativePlatforms.forEach { platform ->
-                implementation(nativesFor(libs.javacpp, platform))
-                implementation(nativesFor(libs.ffmpeg, platform))
-            }
-        }
-        // Code that draws with Skia directly (the timeline's liquid-glass lens) is shared by every
-        // target but Android, which has AGSL instead. The default hierarchy has no source set for
-        // exactly those, and adding one with dependsOn switches it off (see below), so the one
-        // directory is compiled into each of them instead.
-        listOf("jvmMain", "iosArm64Main", "iosSimulatorArm64Main", "jsMain", "wasmJsMain").forEach { name ->
+        // Code that draws with Skia directly (the timeline's liquid-glass lens) is iOS's, since
+        // Android has AGSL instead. It is compiled into each iOS target rather than into iosMain,
+        // whose metadata compilation doesn't see the Skia API.
+        listOf("iosArm64Main", "iosSimulatorArm64Main").forEach { name ->
             getByName(name).kotlin.srcDir("src/skiaMain/kotlin")
         }
 
         // Compose UI tests cannot live in commonTest: commonTest feeds androidHostTest, and
-        // runComposeUiTest needs a real Android instrumentation host, so those tests fail there
-        // with a NullPointerException. src/uiTest/kotlin is compiled into the targets that can
-        // render headlessly instead — JVM (skiko) and the iOS simulator. Shared by srcDir rather
-        // than a dependsOn edge, because adding one by hand switches off KGP's default hierarchy
-        // and iosMain stops seeing its actuals.
-        jvmTest.get().kotlin.srcDir("src/uiTest/kotlin")
+        // runComposeUiTest needs a real Android instrumentation host. src/uiTest/kotlin is compiled
+        // into the targets that can host them: the iOS simulator and a real Android runtime
+        // (androidDeviceTest is in the "test" source set tree, see withDeviceTestBuilder, so it
+        // already inherits commonTest's dependencies including compose ui-test). The ones that
+        // need a feature module or the whole app are in :app's uiTest. Shared by srcDir rather
+        // than a dependsOn edge, because adding one by hand switches off KGP's default hierarchy.
         getByName("iosSimulatorArm64Test").kotlin.srcDir("src/uiTest/kotlin")
-        // ...and on a real Android runtime, where runComposeUiTest has the instrumentation it
-        // needs. androidDeviceTest is in the "test" source set tree (see withDeviceTestBuilder
-        // below), so it already inherits commonTest's dependencies including compose ui-test.
         getByName("androidDeviceTest").kotlin.srcDir("src/uiTest/kotlin")
 
-        // Whole-app journeys: App() on a real AppGraph, signed in over HTTP to the fake Frigate in
-        // :fake-frigate (a JVM server, hence JVM and Android only — no iOS). Each target supplies
-        // its own testPlatformContext() from src/jvmTest and src/androidDeviceTest.
-        jvmTest.get().kotlin.srcDir("src/integrationTest/kotlin")
-        getByName("androidDeviceTest").kotlin.srcDir("src/integrationTest/kotlin")
+        // The Room schemas the migration tests rebuild old databases from, packed into the test APK
+        // as Java resources (androidDeviceTest's data/ExportedSchemas.kt reads them).
+        getByName("androidDeviceTest").resources.srcDir("schemas")
 
         getByName("androidDeviceTest").dependencies {
             // Merges an androidx.activity.ComponentActivity entry into the test APK's manifest.
             // Without it runComposeUiTest has no activity to host the composition and dies at
             // launch rather than at compile time.
             implementation(libs.compose.uiTestManifest)
-            implementation(project(":fake-frigate"))
-            // InstrumentationRegistry, for the context the journeys build the app graph with.
+            // InstrumentationRegistry, for the context the device tests build with.
             implementation(libs.androidx.testExt.junit)
         }
 
-        jvmTest.dependencies {
-            // ui-test-desktop declares the skiko API but not its host-specific native runtime,
-            // so Compose UI tests fail with skiko's LibraryLoadException without this. Resolved
-            // per host, which is what CI (linux-x64) and this Mac (macos-arm64) each need.
-            implementation(compose.desktop.currentOs)
-            implementation(project(":fake-frigate"))
-            // RenderPreviews (the renderPreviews task below) finds the @Preview functions with it.
-            implementation(libs.classgraph)
-        }
         iosMain.dependencies {
             implementation(libs.sqlite.bundled)
             implementation(libs.ktor.client.darwin)
         }
-        jsMain.dependencies {
-            implementation(libs.wrappers.browser)
-            implementation(libs.ktor.client.js)
-        }
-        wasmJsMain.dependencies {
-            implementation(libs.ktor.client.js)
-        }
     }
-}
-
-// Compose UI tests rasterise through skiko, whose runtime jar links AWT. CI runners have no
-// display, so make the intent explicit rather than depending on the default.
-tasks.named<Test>("jvmTest") {
-    systemProperty("java.awt.headless", "true")
-    // The integration journeys run the real desktop data layer; keep its database out of ~/.homesafe
-    // (see AppDatabase.jvm.kt) and start each run from an empty one.
-    val dataDir = layout.buildDirectory.dir("tmp/jvmTest/homesafe-data")
-    systemProperty("homesafe.dataDir", dataDir.get().asFile.absolutePath)
-    doFirst { dataDir.get().asFile.deleteRecursively() }
-    // -PjvmTestForks=2: the test classes are dealt out to that many JVMs running side by side.
-    // The suite is one long queue otherwise (the journeys and the shader-heavy UI tests are most
-    // of it), and CI's runners have four cores; the unit-test job passes 2. Each JVM keeps its own
-    // database under dataDir (testPlatformContext() in src/jvmTest). One is the default: nothing
-    // changes for a local run, where the memory for a second JVM may not be there.
-    maxParallelForks = providers.gradleProperty("jvmTestForks").orNull?.toInt() ?: 1
-    // -PjourneyScreens: every integration journey saves what is on screen after each tap, at its
-    // end and when it fails, to build/journey-screens/<journey>/ (see docs/ui-previews.md).
-    if (providers.gradleProperty("journeyScreens").isPresent) {
-        val screensDir = layout.buildDirectory.dir("journey-screens")
-        systemProperty("homesafe.journeyScreens", screensDir.get().asFile.absolutePath)
-        doFirst { screensDir.get().asFile.deleteRecursively() }
-    }
-}
-
-// `./gradlew :shared:renderPreviews` draws every @Preview in this module to build/previews/<id>.png,
-// on the desktop runtime: seconds, no emulator, no Android SDK work. `-Ppreview=Home` draws only
-// the previews whose id contains "Home". It is jvmTest's RenderPreviews, which does nothing unless
-// this task hands it an output directory. See docs/ui-previews.md.
-val jvmTestTask = tasks.named<Test>("jvmTest")
-tasks.register<Test>("renderPreviews") {
-    group = "verification"
-    description = "Renders every @Preview in :shared to build/previews/*.png on the JVM (see docs/ui-previews.md)."
-    testClassesDirs = jvmTestTask.get().testClassesDirs
-    classpath = jvmTestTask.get().classpath
-    useJUnit()
-    filter.includeTestsMatching("com.meticulouscreations.homesafe.previews.RenderPreviews")
-    val previewsDir = layout.buildDirectory.dir("previews")
-    systemProperty("java.awt.headless", "true")
-    systemProperty("homesafe.previews.out", previewsDir.get().asFile.absolutePath)
-    providers.gradleProperty("preview").orNull?.let { systemProperty("homesafe.previews.filter", it) }
-    outputs.dir(previewsDir)
-    // Always draw: the point is to look at what the code does now, and it takes seconds.
-    outputs.upToDateWhen { false }
-    // The list of what was drawn, and where, is the useful part of the output.
-    testLogging.showStandardStreams = true
 }
 
 // A CI run's console is often the only evidence of why a test failed (and the integration
@@ -314,8 +166,7 @@ ktlint {
 // The plugin hands each of its tasks a source set's directories, and with them the tasks that
 // write the generated ones under build/: KSP for Room, the Compose resource accessors. KSP for a
 // test source set needs the main one compiled, so checking the style compiled every target
-// (Android, JVM, both iOS, JS, Wasm) for files the filter above then throws away: nine minutes on
-// CI for under a minute of linting. Give the tasks only the hand-written directories instead,
+// for files the filter above then throws away: minutes on CI for under a minute of linting. Give the tasks only the hand-written directories instead,
 // which no task has to produce. Inside sourceSets.all so it runs after the plugin's own callback
 // has registered the tasks, whenever the source set turns up.
 kotlin.sourceSets.all {
@@ -338,6 +189,12 @@ dependencies {
     ktlintRuleset(libs.composeRules.ktlint)
 }
 
+// The app's strings and pictures stay here, and the feature modules use them through this
+// module's Res, so it has to be public. (One Res keeps one place to translate.)
+compose.resources {
+    publicResClass = true
+}
+
 room3 {
     schemaDirectory("$projectDir/schemas")
 }
@@ -358,11 +215,10 @@ composeStabilityAnalyzer {
 // The analyzer's dump and check tasks read one report: the first stability-info.json they find
 // under build/stability, which is the Android compilation's. That is the variant that ships, so
 // it is the one the baseline is taken from. The plugin doesn't know that. It makes both tasks
-// depend on every Kotlin compilation in the module (JVM, JS, Wasm, both iOS targets, and each
-// one's KSP run), whose reports are never read, and not on the Android one, whose task name it
-// doesn't recognise in this KMP + AGP 9 layout. Six compilations of this module at once is also
-// more than the Kotlin daemon's heap holds comfortably. So the tasks are handed the one file
-// they read, built by the task that writes it, and nothing else.
+// depend on every Kotlin compilation in the module (both iOS targets, and each one's KSP run),
+// whose reports are never read, and not on the Android one, whose task name it doesn't
+// recognise in this KMP + AGP 9 layout. So the tasks are handed the one file they read, built
+// by the task that writes it, and nothing else.
 // In afterEvaluate because that is where the plugin adds its dependencies: anything set before
 // then is added to, not replaced.
 val androidStabilityInfo = files(layout.buildDirectory.file("stability/compileAndroidMain/stability-info.json")) {
@@ -396,11 +252,8 @@ dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
 
     add("kspAndroid", libs.room.compiler)
-    add("kspJvm", libs.room.compiler)
     add("kspIosArm64", libs.room.compiler)
     add("kspIosSimulatorArm64", libs.room.compiler)
-    add("kspJs", libs.room.compiler)
-    add("kspWasmJs", libs.room.compiler)
 }
 
 // Lint's model and analysis tasks for the Android host-test source set read KSP's generated

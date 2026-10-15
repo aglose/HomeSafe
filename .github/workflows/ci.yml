@@ -4,9 +4,9 @@ name: CI
 # (the `gradle` matrix below), the emulator and iOS jobs run beside them, and ci-green fans
 # everything back into the one required status check.
 #
-# Nothing here builds the production web bundle. Running webpack + terser over the
-# Compose-for-JS output took ~18 of the old ~25 minutes and nothing consumed the result;
-# the web targets are linked instead, which still catches a missing actual or dependency.
+# The app is Android and iOS: :shared (the core), the feature modules under features/ and :app
+# (the composition root). Task names without a project path (`testAndroidHostTest`,
+# `stabilityCheck`, `ktlintCheck`, `iosSimulatorArm64Test`) run in every module that has them.
 
 # workflow_dispatch is how the "Dependency updates" workflow starts a run: on a Dependabot branch
 # after it has pushed a commit there, and on main after it has merged one. Both of those are done
@@ -39,41 +39,42 @@ jobs:
       matrix:
         include:
           - name: Unit tests
-            # --continue: still run the Android host tests when the JVM ones fail, so one
-            # run reports everything that is broken. :shared:jvmTest includes the Compose UI
-            # tests (src/uiTest) and the whole-app integration journeys (src/integrationTest)
-            # on the desktop runtime; :fake-frigate:test checks the fake server those journeys
-            # sign in to, so a broken fake fails on its own rather than as fifty journeys.
-            # -PjvmTestForks=2: jvmTest's classes run in two JVMs side by side (shared/build.gradle.kts);
-            # run one after another they were eleven of this job's sixteen minutes.
-            tasks: :fake-frigate:test :shared:jvmTest :shared:testAndroidHostTest --continue -PjvmTestForks=2
+            # Every module's commonTest, on the Android host. --continue: one module's failures
+            # don't stop the others', so one run reports everything that is broken.
+            # :fake-frigate:test checks the fake server the journeys sign in to, so a broken fake
+            # fails on its own rather than as fifty journeys on the emulator.
+            # The Compose UI tests and the journeys run on the emulator (android-ui) and the iOS
+            # simulator (ios), the two runtimes that can host them.
+            tasks: :fake-frigate:test testAndroidHostTest --continue
             artifact: unit-test-reports
             reports: |
               shared/build/reports/tests/**
               shared/build/test-results/**
+              features/*/build/reports/tests/**
+              features/*/build/test-results/**
+              app/build/reports/tests/**
+              app/build/test-results/**
               fake-frigate/build/reports/tests/**
           - name: Android build, lint and stability gate
-            # All three share :shared:compileAndroidMain, so they belong on one runner.
-            tasks: :androidApp:assembleDebug :androidApp:lintDebug :shared:stabilityCheck
+            # All three share every module's Android compilation, so they belong on one runner.
+            # Each module with composables has its own stability baseline (<module>/stability).
+            tasks: :androidApp:assembleDebug :androidApp:lintDebug stabilityCheck
             artifact: android-reports
             reports: |
               androidApp/build/reports/**
               shared/build/reports/**
+              features/*/build/reports/**
+              app/build/reports/**
           - name: Kotlin style
             # ktlint + compose-rules. Needs no compilation (its tasks are handed only the
             # hand-written sources; see shared/build.gradle.kts), so it is the cheapest leg here
-            # and the one that fails fastest on a PR that skipped `./gradlew :shared:ktlintFormat`.
-            tasks: :shared:ktlintCheck
+            # and the one that fails fastest on a PR that skipped `./gradlew ktlintFormat`.
+            tasks: ktlintCheck
             artifact: ktlint-reports
-            reports: shared/build/reports/ktlint/**
-          - name: Desktop and web
-            # Links the JS and Wasm executables without bundling them; see the note at the top.
-            # The two links run at once in one Kotlin daemon, and each holds the whole program:
-            # at gradle.properties' 4 GB that daemon ends up at its limit, and on a runner it has
-            # been seen to stop making headway there, collecting garbage until the job's time ran
-            # out. So this leg alone gives it 6 GB, on its own command line: gradle.properties is
-            # also what a laptop and the iOS runner build with, and they have no such link to do.
-            tasks: :desktopApp:build :webApp:compileDevelopmentExecutableKotlinJs :webApp:compileDevelopmentExecutableKotlinWasmJs -Pkotlin.daemon.jvmargs=-Xmx6144M
+            reports: |
+              shared/build/reports/ktlint/**
+              features/*/build/reports/ktlint/**
+              app/build/reports/ktlint/**
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6
@@ -101,10 +102,6 @@ jobs:
             echo "GOOGLE_SERVICES_JSON secret not set; building without Firebase."
           fi
 
-      # The Compose UI tests in jvmTest rasterise through skiko, which links libGL and fontconfig.
-      - name: Install skiko native dependencies
-        if: contains(matrix.tasks, 'jvmTest')
-        run: sudo apt-get update && sudo apt-get install -y libgl1 libfontconfig1
 
       - name: ./gradlew ${{ matrix.tasks }}
         run: ./gradlew ${{ matrix.tasks }} --stacktrace
@@ -138,8 +135,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     # Two emulators, because one ran the suites for twelve minutes after five of setup. The
-    # whole-app journeys (src/integrationTest) are three quarters of :shared's time on a device,
-    # so they get one to themselves; everything else in :shared and the end-to-end tests share
+    # whole-app journeys (:app's src/integrationTest) are most of the time on a device, so they
+    # get one to themselves; every module's other device tests and the end-to-end tests share
     # the other. The split is by test package, so a new test lands on a side without being
     # listed anywhere: in the journeys' package on the first, anywhere else on the second.
     strategy:
@@ -147,10 +144,12 @@ jobs:
       matrix:
         include:
           - name: journeys
-            tasks: :shared:connectedAndroidDeviceTest
+            tasks: :app:connectedAndroidDeviceTest
             filter: package
           - name: everything else
-            tasks: :shared:connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest
+            # Every module's device tests (connectedAndroidDeviceTest without a project path runs
+            # in each), one module after another (see the mustRunAfter in each build script).
+            tasks: connectedAndroidDeviceTest :androidApp:connectedDebugAndroidTest
             filter: notPackage
     env:
       API_LEVEL: 34
@@ -197,9 +196,9 @@ jobs:
           script: echo "Generated AVD snapshot for caching."
 
       # Two suites, over the two emulators of the matrix above:
-      # - :shared:connectedAndroidDeviceTest — the whole commonTest suite on-device, plus
-      #   src/uiTest (Compose UI tests, also run on the iOS simulator and the JVM) and
-      #   src/integrationTest (whole-app journeys against the fake Frigate, also run on the JVM).
+      # - connectedAndroidDeviceTest — each module's commonTest suite on-device, plus src/uiTest
+      #   (Compose UI tests, also run on the iOS simulator) and :app's src/integrationTest
+      #   (whole-app journeys against the fake Frigate).
       # - :androidApp:connectedDebugAndroidTest — end-to-end tests on the real MainActivity
       #   (intents, system back, relaunch), one orchestrated instrumentation per test.
       # The package filter is AndroidJUnitRunner's own argument; AGP passes it to every connected
@@ -221,7 +220,7 @@ jobs:
       # Connected test tasks print only a count; put each failure (message and stack) in the log.
       - name: Print instrumented test failures
         if: failure()
-        run: python3 scripts/print-test-failures.py shared/build/outputs/androidTest-results androidApp/build/outputs/androidTest-results
+        run: python3 scripts/print-test-failures.py shared/build/outputs/androidTest-results features/*/build/outputs/androidTest-results app/build/outputs/androidTest-results androidApp/build/outputs/androidTest-results
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -230,6 +229,10 @@ jobs:
           path: |
             shared/build/reports/**
             shared/build/outputs/androidTest-results/**
+            features/*/build/reports/**
+            features/*/build/outputs/androidTest-results/**
+            app/build/reports/**
+            app/build/outputs/androidTest-results/**
             androidApp/build/reports/**
             androidApp/build/outputs/androidTest-results/**
           retention-days: 7
@@ -472,7 +475,7 @@ jobs:
           fi
 
       - name: iOS simulator unit tests
-        run: ./gradlew :shared:iosSimulatorArm64Test --stacktrace
+        run: ./gradlew iosSimulatorArm64Test --continue --stacktrace
 
       - name: Build iOS app
         run: |

@@ -15,6 +15,7 @@
          PredictiveBack.kt draw as the finger moves. Without it those versions get a plain Back
          press at the end of the swipe and nothing to see during it. -->
     <application
+        android:name=".HomeSafeApplication"
         android:allowBackup="true"
         android:enableOnBackInvokedCallback="true"
         android:icon="@mipmap/ic_launcher"

@@ -628,4 +628,4 @@ private val ZONE_PALETTE = listOf(
 private fun zoneColor(index: Int): Color = ZONE_PALETTE[index.mod(ZONE_PALETTE.size)]
 
 /** The editor's drawing surface over the camera frame, for tests to place corners on. */
-internal const val DETECTION_ZONES_CANVAS_TEST_TAG = "detection_zones_canvas"
+const val DETECTION_ZONES_CANVAS_TEST_TAG = "detection_zones_canvas"

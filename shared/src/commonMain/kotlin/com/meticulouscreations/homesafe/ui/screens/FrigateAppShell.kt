@@ -62,6 +62,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -74,25 +75,14 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.compose.currentStateAsState
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
-import com.meticulouscreations.homesafe.atlas.AtlasViewModel
-import com.meticulouscreations.homesafe.atlas.ui.AtlasApp
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
-import com.meticulouscreations.homesafe.finance.FinanceLockViewModel
-import com.meticulouscreations.homesafe.finance.FinanceViewModel
-import com.meticulouscreations.homesafe.finance.ui.FinanceApp
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
-import com.meticulouscreations.homesafe.fitness.FitnessViewModel
-import com.meticulouscreations.homesafe.fitness.HealthViewModel
-import com.meticulouscreations.homesafe.fitness.ui.FitnessApp
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
@@ -107,8 +97,6 @@ import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
-import com.meticulouscreations.homesafe.weather.WeatherViewModel
-import com.meticulouscreations.homesafe.weather.ui.WeatherApp
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.shell_app_title
@@ -136,10 +124,10 @@ import org.jetbrains.compose.resources.stringResource
  * about a tab switch Compose asked for; the Compose-drawn nav needs nothing more than the state.
  */
 /** The apps that live inside PercySafe beside the cameras, each opened from the drawer over the whole shell. */
-internal enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS }
+enum class InnerApp { FINANCE, WEATHER, FITNESS, ATLAS }
 
 @Stable
-internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
+class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
     val topLevel = TopLevelBackStack<TopLevelRoute>(TopLevelRoute.Home)
 
     // The Home tab's nested back stack lives here, not in HomeTabNav, so the shell can tell when
@@ -409,6 +397,8 @@ internal class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Uni
 }
 
 /** The main app shell: a persistent header, tab content driven by Navigation 3, and a floating bottom nav. */
+// Public for another module to place; it fills whatever it is given, so it takes no Modifier.
+@Suppress("ktlint:compose:modifier-missing-check")
 @Composable
 fun FrigateAppShell() {
     val viewModel: AppShellViewModel = metroViewModel()
@@ -467,7 +457,7 @@ fun FrigateAppShell() {
  * Liquid Glass `TabView` hosts one of these per tab (see `IosShell.kt`).
  */
 @Composable
-internal fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
+fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
     val viewModel: AppShellViewModel = metroViewModel()
     // Per tab, like the scaffold it lifts into: only Home ever opens it, and its layer covers
     // this tab's Compose view (the native bar beneath is the platform's to draw).
@@ -518,99 +508,7 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 @Composable
 private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
     CardZoomOverlay(nav, cardZoom)
-    ShellApps(nav, tab)
-}
-
-/**
- * The drawer, and the app opened from it (finance, weather or fitness) over everything else.
- * Their state is only fetched while this composition is on screen — under the iOS 26 host each
- * tab has its own, and only the visible one may run it.
- *
- * None of them needs the camera server (weather and the markets are public, fitness is all on
- * the device, and each, the atlas among them, opens on what the device kept), so the sign-in screen
- * draws this too, with a [ShellNavigation] of its own. That is how they are reached while
- * Tailscale or the server isn't.
- */
-// Overlays, not a laid-out element: each piece fills its parent's layer itself.
-@Suppress("ktlint:compose:modifier-missing-check")
-@Composable
-internal fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
-    val finance: FinanceViewModel = metroViewModel()
-    val financeState by finance.uiState.collectAsStateWithLifecycle()
-    val financeLock: FinanceLockViewModel = metroViewModel()
-    val financeLockState by financeLock.uiState.collectAsStateWithLifecycle()
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val visible = lifecycle.isAtLeast(Lifecycle.State.STARTED)
-    val financeUp = nav.isOpen(InnerApp.FINANCE)
-    // The cards fetch as a swipe starts to draw the drawer out, not only once it is out.
-    val drawerShowing = nav.drawerShowing
-    LaunchedEffect(visible, drawerShowing, financeUp) {
-        finance.setActive(visible && (drawerShowing || financeUp), full = financeUp)
-    }
-    val weather: WeatherViewModel = metroViewModel()
-    val weatherState by weather.uiState.collectAsStateWithLifecycle()
-    val weatherUp = nav.isOpen(InnerApp.WEATHER)
-    LaunchedEffect(visible, drawerShowing, weatherUp) {
-        weather.setActive(visible && (drawerShowing || weatherUp), full = weatherUp)
-    }
-    val fitness: FitnessViewModel = metroViewModel()
-    val fitnessState by fitness.uiState.collectAsStateWithLifecycle()
-    val fitnessUp = nav.isOpen(InnerApp.FITNESS)
-    LaunchedEffect(visible, drawerShowing, fitnessUp) {
-        fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
-    }
-    // The health store is read only for the fitness app itself: the drawer's card shows none of it.
-    val health: HealthViewModel = metroViewModel()
-    LaunchedEffect(visible, fitnessUp) {
-        health.setActive(visible && fitnessUp)
-    }
-    val atlas: AtlasViewModel = metroViewModel()
-    val atlasState by atlas.uiState.collectAsStateWithLifecycle()
-    val atlasUp = nav.isOpen(InnerApp.ATLAS)
-    LaunchedEffect(visible, drawerShowing, atlasUp) {
-        atlas.setActive(visible && (drawerShowing || atlasUp), full = atlasUp)
-    }
-    // Only the tab in front listens, so that under the iOS 26 host one composition takes a share, not three.
-    if (nav.selectedTab == tab) LaunchedEffect(nav, fitness) { nav.openFitnessFromShares(fitness::setImportText) }
-    ShellDrawer(
-        open = nav.drawerOpen,
-        finance = financeState,
-        weather = weatherState,
-        fitness = fitnessState,
-        atlas = atlasState,
-        pull = nav.drawerPull,
-        onOpenFinance = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) },
-        onOpenWeather = { origin -> nav.openApp(InnerApp.WEATHER, origin, tab) },
-        onOpenFitness = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) },
-        onOpenAtlas = { origin -> nav.openApp(InnerApp.ATLAS, origin, tab) },
-        onClose = { nav.drawerOpen = false },
-        financeLocked = financeLockState.locked,
-        // The same lock: where someone has been is kept shut exactly when their money is.
-        atlasLocked = financeLockState.locked,
-    )
-    if (nav.appHost == tab) {
-        InnerAppOverlay(
-            open = nav.appOpen,
-            origin = nav.appOrigin,
-            onCovering = { nav.appCovering = it },
-            onClose = nav::closeApp,
-        ) {
-            when (nav.app) {
-                InnerApp.FINANCE -> FinanceApp(
-                    onClose = nav::closeApp,
-                    active = nav.appOpen,
-                    requestedTab = nav.financeTab,
-                    onShowRequestedTab = nav::onFinanceTabShown,
-                )
-
-                InnerApp.WEATHER -> WeatherApp(onClose = nav::closeApp, active = nav.appOpen, link = nav.weatherLink, onShowLink = nav::onWeatherLinkShown)
-
-                InnerApp.FITNESS -> FitnessApp(onClose = nav::closeApp, active = nav.appOpen)
-
-                InnerApp.ATLAS -> AtlasApp(onClose = nav::closeApp, active = nav.appOpen)
-            }
-        }
-    }
+    LocalShellApps.current(nav, tab)
 }
 
 /** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
@@ -1112,4 +1010,12 @@ fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_" + when (route
     TopLevelRoute.Home -> "home"
     TopLevelRoute.Moments -> "moments"
     TopLevelRoute.Settings -> "settings"
+}
+
+/**
+ * The drawer and the apps it opens ([ShellApps] in :app, the one module that sees every feature).
+ * The shell and the sign-in screen draw it through this; App() provides it.
+ */
+val LocalShellApps = staticCompositionLocalOf<@Composable (nav: ShellNavigation, tab: TopLevelRoute) -> Unit> {
+    { _, _ -> }
 }

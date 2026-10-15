@@ -554,7 +554,7 @@ A movement of its own is four things, and the tests name whichever is still miss
   rest timer, the record flash and the import draft. The heart rate is a second state beside
   the first (`heart`), since it alone changes every second.
 - `fitness/ui`: the screens. `FitnessAppContent` is the whole app from one state, for previews
-  (`./gradlew :shared:renderPreviews -Ppreview=Fitness`) and UI tests. `BodyUi.kt` is Today's
+  (`scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md)) and UI tests. `BodyUi.kt` is Today's
   body card, `RunsUi.kt` the runs; `HealthFixtures` is a made-up health store to draw them from.
 - `fitness/ui/movement`: the figures. `ExerciseFigure` is the one the screens use, a
   `MovementKind` drawn in a `FigureStyle` as a badge or large; behind it, the rendered frames

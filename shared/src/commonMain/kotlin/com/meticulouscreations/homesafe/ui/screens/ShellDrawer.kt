@@ -16,15 +16,11 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.horizontalDrag
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -33,18 +29,9 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ShowChart
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.FitnessCenter
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Public
-import androidx.compose.material.icons.filled.WbSunny
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,20 +45,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.pointer.util.addPointerInputChange
-import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -81,63 +65,13 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
-import com.meticulouscreations.homesafe.atlas.AtlasUiState
-import com.meticulouscreations.homesafe.atlas.domain.CivilDate
-import com.meticulouscreations.homesafe.atlas.ui.AtlasBackdrop
-import com.meticulouscreations.homesafe.atlas.ui.AtlasFormat
-import com.meticulouscreations.homesafe.atlas.ui.AtlasPalette
-import com.meticulouscreations.homesafe.atlas.ui.distanceText
-import com.meticulouscreations.homesafe.atlas.ui.monthText
-import com.meticulouscreations.homesafe.finance.FinanceUiState
-import com.meticulouscreations.homesafe.finance.domain.MarketCatalog
-import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
-import com.meticulouscreations.homesafe.finance.ui.FinancePalette
-import com.meticulouscreations.homesafe.finance.ui.components.Sparkline
-import com.meticulouscreations.homesafe.fitness.FitnessUiState
-import com.meticulouscreations.homesafe.fitness.ui.FitnessPalette
-import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
-import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.rememberPredictiveBack
-import com.meticulouscreations.homesafe.weather.WeatherUiState
-import com.meticulouscreations.homesafe.weather.domain.WeatherFormat
-import com.meticulouscreations.homesafe.weather.domain.WeatherKind
-import com.meticulouscreations.homesafe.weather.domain.WeatherStory
-import com.meticulouscreations.homesafe.weather.ui.sky.SkyFreeze
-import com.meticulouscreations.homesafe.weather.ui.sky.SkyScene
-import com.meticulouscreations.homesafe.weather.ui.sky.WeatherSky
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.atlas_drawer_detail
-import homesafe.shared.generated.resources.atlas_drawer_empty
-import homesafe.shared.generated.resources.atlas_drawer_locked
-import homesafe.shared.generated.resources.atlas_drawer_open
-import homesafe.shared.generated.resources.atlas_drawer_places
-import homesafe.shared.generated.resources.atlas_drawer_subtitle
-import homesafe.shared.generated.resources.atlas_drawer_title
-import homesafe.shared.generated.resources.fitness_drawer_empty
-import homesafe.shared.generated.resources.fitness_drawer_open
-import homesafe.shared.generated.resources.fitness_drawer_subtitle
-import homesafe.shared.generated.resources.fitness_drawer_title
-import homesafe.shared.generated.resources.fitness_drawer_week
-import homesafe.shared.generated.resources.fitness_today_headline_due
-import homesafe.shared.generated.resources.fitness_today_headline_working
-import homesafe.shared.generated.resources.fitness_today_resume_detail
 import homesafe.shared.generated.resources.shell_app_title
-import homesafe.shared.generated.resources.shell_drawer_change_today
 import homesafe.shared.generated.resources.shell_drawer_close
-import homesafe.shared.generated.resources.shell_drawer_finance
-import homesafe.shared.generated.resources.shell_drawer_finance_locked
-import homesafe.shared.generated.resources.shell_drawer_finance_subtitle
 import homesafe.shared.generated.resources.shell_drawer_market_disclaimer
-import homesafe.shared.generated.resources.shell_drawer_net_worth
-import homesafe.shared.generated.resources.shell_drawer_open_finance
 import homesafe.shared.generated.resources.shell_drawer_section_apps
 import homesafe.shared.generated.resources.shell_menu
-import homesafe.shared.generated.resources.weather_drawer_empty
-import homesafe.shared.generated.resources.weather_drawer_open
-import homesafe.shared.generated.resources.weather_drawer_subtitle
-import homesafe.shared.generated.resources.weather_drawer_title
-import homesafe.shared.generated.resources.weather_place_current
-import org.jetbrains.compose.resources.pluralStringResource
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
 
@@ -160,7 +94,7 @@ private const val DRAWER_FLING_VELOCITY = 1200f
  * its width or on a flick toward it, shut again otherwise.
  */
 @Stable
-internal class DrawerPull(private val onOpen: () -> Unit) {
+class DrawerPull(private val onOpen: () -> Unit) {
     /** True from the moment a swipe starts to show the drawer until the finger lets go of it. */
     var active by mutableStateOf(false)
         private set
@@ -246,26 +180,18 @@ private const val APP_BACK_PEEK = 0.35f
  * the other way across the shell draws it out too ([pull]), under the finger as it goes.
  *
  * The camera app's own tabs are not here: the bottom bar already has them. The sign-in screen
- * opens the drawer too, before there are any cameras to go to. [financeLocked] says the Finance card
- * opens on its lock (no server to ask who this is), so the card shows no figure of the household's;
- * [atlasLocked] says the same of the atlas, whose card then says nothing of where anyone has been.
+ * opens the drawer too, before there are any cameras to go to. The apps' cards are [apps]'s to
+ * draw (ShellApps in :app, which alone sees every feature), told whether to animate.
  */
+// Public for another module to place; it fills whatever it is given, so it takes no Modifier.
+@Suppress("ktlint:compose:modifier-missing-check")
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-internal fun ShellDrawer(
+fun ShellDrawer(
     open: Boolean,
-    finance: FinanceUiState,
-    weather: WeatherUiState,
-    fitness: FitnessUiState,
-    atlas: AtlasUiState,
     pull: DrawerPull,
-    onOpenFinance: (Offset) -> Unit,
-    onOpenWeather: (Offset) -> Unit,
-    onOpenFitness: (Offset) -> Unit,
-    onOpenAtlas: (Offset) -> Unit,
     onClose: () -> Unit,
-    financeLocked: Boolean = false,
-    atlasLocked: Boolean = false,
+    apps: @Composable (animated: Boolean) -> Unit = {},
 ) {
     val reveal = remember { Animatable(if (open) 1f else 0f) }
     val pulling = pull.active
@@ -338,13 +264,7 @@ internal fun ShellDrawer(
                     modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
                 )
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
-                WeatherDrawerCard(weather, animated = open || pulling, onOpen = onOpenWeather)
-                Spacer(Modifier.height(12.dp))
-                AtlasDrawerCard(atlas, atlasLocked, animated = open || pulling, onOpen = onOpenAtlas)
-                Spacer(Modifier.height(12.dp))
-                FitnessDrawerCard(fitness, animated = open || pulling, onOpen = onOpenFitness)
-                Spacer(Modifier.height(12.dp))
-                FinanceDrawerCard(finance, financeLocked, onOpenFinance)
+                apps(open || pulling)
             }
             Text(
                 stringResource(Res.string.shell_drawer_market_disclaimer),
@@ -367,265 +287,6 @@ private fun DrawerLabel(text: String) {
 }
 
 /**
- * The Finance app's door: its name, today's S&P 500 with its sparkline, and net worth once the
- * sheet is in. While the app is [locked] the net worth gives way to a line saying so: the index is
- * anyone's to see, the household's money isn't.
- */
-@Composable
-private fun FinanceDrawerCard(finance: FinanceUiState, locked: Boolean, onOpen: (Offset) -> Unit) {
-    val palette = remember { FinancePalette() }
-    var center by remember { mutableStateOf(Offset.Zero) }
-    val sp = finance.quotes[MarketCatalog.SP500.symbol]
-    val dir = palette.direction(sp?.change ?: 0.0)
-    val shape = RoundedCornerShape(22.dp)
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { center = it.boundsInRoot().center }
-            .clip(shape)
-            .background(Brush.linearGradient(listOf(Color(0xFF07140A), Color(0xFF000000))))
-            .border(1.dp, Brush.linearGradient(listOf(palette.gain.copy(alpha = 0.7f), palette.accent.copy(alpha = 0.2f))), shape)
-            .clickable(onClickLabel = stringResource(Res.string.shell_drawer_open_finance)) { onOpen(center) }
-            .testTag("drawer_finance")
-            .padding(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(36.dp).clip(CircleShape).background(palette.gain), contentAlignment = Alignment.Center) {
-                Icon(Icons.AutoMirrored.Filled.ShowChart, contentDescription = null, tint = Color.Black, modifier = Modifier.size(22.dp))
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(Res.string.shell_drawer_finance), style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text(stringResource(Res.string.shell_drawer_finance_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
-            }
-            Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = palette.textSecondary)
-        }
-        Spacer(Modifier.height(14.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f)) {
-                Text(MarketCatalog.SP500.shortName.resolve(), style = MaterialTheme.typography.labelSmall, color = palette.textSecondary)
-                Text(sp?.let { FinanceFormat.grouped(it.price) } ?: "—", style = MaterialTheme.typography.titleMedium, color = Color.White)
-                Text(sp?.let { stringResource(Res.string.shell_drawer_change_today, FinanceFormat.signedPercent(it.changePercent)) } ?: " ", style = MaterialTheme.typography.labelSmall, color = dir)
-            }
-            if (sp != null && sp.intraday.size > 1) {
-                Sparkline(sp.intraday, dir, Modifier.width(96.dp).height(40.dp), baseline = sp.previousClose)
-            }
-        }
-        if (locked) {
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("drawer_finance_locked")) {
-                Icon(Icons.Filled.Lock, contentDescription = null, tint = palette.textSecondary, modifier = Modifier.size(14.dp))
-                Text(stringResource(Res.string.shell_drawer_finance_locked), style = MaterialTheme.typography.labelMedium, color = palette.textSecondary)
-            }
-        } else {
-            finance.finance?.netWorth?.let { nw ->
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(Res.string.shell_drawer_net_worth, FinanceFormat.compactMoney(nw)), style = MaterialTheme.typography.labelMedium, color = palette.accent)
-            }
-        }
-    }
-}
-
-/**
- * The weather app's door: the sky over the place it's showing, moving while the drawer is open,
- * with the temperature, what it's doing there, and the day's one sentence written on it.
- */
-@Composable
-private fun WeatherDrawerCard(weather: WeatherUiState, animated: Boolean, onOpen: (Offset) -> Unit) {
-    var center by remember { mutableStateOf(Offset.Zero) }
-    val shape = RoundedCornerShape(22.dp)
-    val entry = weather.selected
-    val report = entry?.report
-    val scene = remember(entry?.place, report?.current, weather.nowEpochSeconds / 300) {
-        val latitude = entry?.place?.latitude ?: 40.0
-        val longitude = entry?.place?.longitude ?: -100.0
-        report?.let { SkyScene.of(it.current, latitude, longitude, weather.nowEpochSeconds) }
-            ?: SkyScene.of(WeatherKind.MOSTLY_CLEAR, null, 8.0, 270, null, latitude, longitude, weather.nowEpochSeconds)
-    }
-    val secondary = Color(0xD1FFFFFF)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { center = it.boundsInRoot().center }
-            .clip(shape)
-            .border(1.dp, Color(0x33FFFFFF), shape)
-            .clickable(onClickLabel = stringResource(Res.string.weather_drawer_open)) { onOpen(center) }
-            .testTag("drawer_weather"),
-    ) {
-        // Small enough to draw live: the drawer's one moving thing, and stopped when it's shut.
-        WeatherSky(scene, Modifier.matchParentSize(), glass = false, running = animated, freeze = if (weather.preferences.stillSky) SkyFreeze() else null)
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x80000000)))))
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.WbSunny, contentDescription = null, tint = Color(0xFF1F6BD6), modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.weather_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
-                    Text(
-                        entry?.place?.name?.ifBlank { stringResource(Res.string.weather_place_current) } ?: stringResource(Res.string.weather_drawer_subtitle),
-                        maxLines = 1,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = secondary,
-                    )
-                }
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
-            }
-            Spacer(Modifier.height(14.dp))
-            if (report != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(WeatherFormat.degrees(report.current.temperatureC, weather.units), style = MaterialTheme.typography.headlineMedium, color = Color.White)
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(report.current.kind.label(report.current.isDay)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
-                        Text(
-                            remember(report, weather.units, weather.nowEpochSeconds) { WeatherStory.headline(report, weather.units, weather.nowEpochSeconds) }.resolve(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = secondary,
-                            maxLines = 2,
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    entry?.error?.resolve() ?: stringResource(Res.string.weather_drawer_empty),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = secondary,
-                )
-            }
-        }
-    }
-}
-
-/**
- * The fitness app's door: muscle fibre in the colours of the workout that is up next (or the one
- * in progress), moving while the drawer is open, with which day that is and how the week has gone.
- */
-@Composable
-private fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen: (Offset) -> Unit) {
-    var center by remember { mutableStateOf(Offset.Zero) }
-    val shape = RoundedCornerShape(22.dp)
-    val palette = remember { FitnessPalette() }
-    val workout = fitness.workout
-    val due = fitness.days.firstOrNull { it.due }
-    val tints = (workout?.workout?.focus ?: due?.focus)?.let(palette::focus) ?: palette.phase(fitness.phase.kind)
-    val secondary = Color(0xD1FFFFFF)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { center = it.boundsInRoot().center }
-            .clip(shape)
-            .border(1.dp, Color(0x33FFFFFF), shape)
-            .clickable(onClickLabel = stringResource(Res.string.fitness_drawer_open)) { onOpen(center) }
-            .testTag("drawer_fitness"),
-    ) {
-        // Small enough to draw live, and stopped when the drawer is shut.
-        FiberField(tints.first, tints.second, seed = 0.4f, Modifier.matchParentSize(), energy = if (workout != null) 1f else 0.4f, running = animated)
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x4D000000), Color(0x99000000)))))
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.FitnessCenter, contentDescription = null, tint = Color(0xFFD9441A), modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.fitness_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
-                    Text(stringResource(Res.string.fitness_drawer_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = secondary)
-                }
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
-            }
-            Spacer(Modifier.height(14.dp))
-            when {
-                workout != null -> {
-                    Text(
-                        stringResource(Res.string.fitness_today_headline_working, stringResource(workout.workout.focus.label)),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                    )
-                    Text(pluralStringResource(Res.plurals.fitness_today_resume_detail, workout.setCount, workout.setCount), style = MaterialTheme.typography.labelSmall, color = secondary)
-                }
-
-                due != null -> {
-                    Text(stringResource(Res.string.fitness_today_headline_due, stringResource(due.focus.label)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
-                    Text(
-                        pluralStringResource(Res.plurals.fitness_drawer_week, fitness.week.sessions, fitness.week.sessions),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = secondary,
-                        maxLines = 1,
-                    )
-                }
-
-                else -> Text(stringResource(Res.string.fitness_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
-            }
-        }
-    }
-}
-
-/**
- * The atlas app's door: contour lines drifting while the drawer is open, with how many places its
- * owner's history takes in and how far it runs. While the app is [locked] it says only that, and
- * with no history yet, how to get one.
- */
-@Composable
-private fun AtlasDrawerCard(atlas: AtlasUiState, locked: Boolean, animated: Boolean, onOpen: (Offset) -> Unit) {
-    var center by remember { mutableStateOf(Offset.Zero) }
-    val shape = RoundedCornerShape(22.dp)
-    val palette = remember { AtlasPalette() }
-    val secondary = Color(0xD1FFFFFF)
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .onGloballyPositioned { center = it.boundsInRoot().center }
-            .clip(shape)
-            .border(1.dp, Color(0x33FFFFFF), shape)
-            .clickable(onClickLabel = stringResource(Res.string.atlas_drawer_open)) { onOpen(center) }
-            .testTag("drawer_atlas"),
-    ) {
-        // Small enough to draw live, and stopped when the drawer is shut.
-        AtlasBackdrop(palette.trail, palette.air, Modifier.matchParentSize(), seed = 0.55f, energy = 0.8f, running = animated)
-        Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x33000000), Color(0x8C000000)))))
-        Column(Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(36.dp).clip(CircleShape).background(Color.White), contentAlignment = Alignment.Center) {
-                    Icon(Icons.Filled.Public, contentDescription = null, tint = Color(0xFFB85C00), modifier = Modifier.size(22.dp))
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(Res.string.atlas_drawer_title), style = MaterialTheme.typography.titleMedium, color = Color.White)
-                    Text(stringResource(Res.string.atlas_drawer_subtitle), maxLines = 1, style = MaterialTheme.typography.labelSmall, color = secondary)
-                }
-                Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
-            }
-            Spacer(Modifier.height(14.dp))
-            val history = atlas.history
-            when {
-                locked -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.testTag("drawer_atlas_locked")) {
-                    Icon(Icons.Filled.Lock, contentDescription = null, tint = secondary, modifier = Modifier.size(14.dp))
-                    Text(stringResource(Res.string.atlas_drawer_locked), style = MaterialTheme.typography.labelMedium, color = secondary)
-                }
-
-                // Not read yet, or not yet known to be this sign-in's: nothing of it is said.
-                !atlas.loaded -> Unit
-
-                history.isEmpty -> Text(stringResource(Res.string.atlas_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
-
-                else -> {
-                    val places = history.places.size
-                    Text(pluralStringResource(Res.plurals.atlas_drawer_places, places, AtlasFormat.grouped(places.toLong())), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
-                    Text(
-                        stringResource(Res.string.atlas_drawer_detail, distanceText(atlas.analysis.records.groundMeters), monthText(CivilDate.of(history.firstDay).monthIndex)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = secondary,
-                        maxLines = 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
  * An app opened from the drawer ([content]: finance, weather, fitness, the atlas), over the whole shell, opening as
  * a circle that grows from [origin] (the drawer card that was tapped) to cover the screen, and
  * draining back toward the menu button when it closes. [onCovering] reports when it fully covers
@@ -637,7 +298,7 @@ private fun AtlasDrawerCard(atlas: AtlasUiState, locked: Boolean, animated: Bool
  * while it has somewhere to go back to.
  */
 @Composable
-internal fun InnerAppOverlay(
+fun InnerAppOverlay(
     open: Boolean,
     origin: Offset,
     onCovering: (Boolean) -> Unit,

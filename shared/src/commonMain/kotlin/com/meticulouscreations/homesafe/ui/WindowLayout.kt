@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
  * A local because the window's shape is ambient in exactly the way [LocalWindowInfo] is: every
  * screen that asks reads the same answer, and nothing in the app itself ever provides this.
  */
-internal val LocalCompactLandscape = compositionLocalOf<Boolean?> { null }
+val LocalCompactLandscape = compositionLocalOf<Boolean?> { null }
 
 /** Material's "compact" window height: shorter than this, stacked chrome leaves no room for content. */
 private val COMPACT_HEIGHT = 480.dp
@@ -44,7 +44,7 @@ private val SIDE_BY_SIDE_WIDTH = 600.dp
  */
 @Composable
 @ReadOnlyComposable
-internal fun isCompactLandscape(): Boolean {
+fun isCompactLandscape(): Boolean {
     LocalCompactLandscape.current?.let { return it }
     val size = LocalWindowInfo.current.containerSize
     if (size.width <= size.height) return false
