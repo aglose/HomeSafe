@@ -61,7 +61,12 @@ class ShellDrawerPullUiTest {
                             open = nav.drawerOpen,
                             pull = nav.drawerPull,
                             onClose = { nav.drawerOpen = false },
-                        )
+                        ) {
+                            // Stand-ins for the apps' cards, which live in the feature modules, tagged
+                            // as the real ones are: the drawer's edge is read off one, and swiped on the other.
+                            Box(Modifier.fillMaxWidth().height(160.dp).testTag("drawer_weather"))
+                            Box(Modifier.fillMaxWidth().height(120.dp).testTag("drawer_finance"))
+                        }
                     },
                     showBottomNav = nav.showsBottomNav(nav.selectedTab),
                     contentObscured = nav.drawerOpen || nav.appOpen,
