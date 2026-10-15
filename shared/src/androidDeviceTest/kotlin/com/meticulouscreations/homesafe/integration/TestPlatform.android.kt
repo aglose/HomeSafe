@@ -14,9 +14,8 @@ internal fun testPlatformContext(): PlatformContext =
     PlatformContext(InstrumentationRegistry.getInstrumentation().targetContext)
 
 /**
- * Journey screenshots are a JVM feature (`-PjourneyScreens`, see docs/ui-previews.md): there the
- * files land straight in the build directory. On a device they would need pulling off it, and
- * the same journeys already run on the JVM, so here a snapshot is a no-op.
+ * Where a journey would save what is on screen. On a device the files would need pulling off it,
+ * so a snapshot is a no-op; a failing journey still prints the screen's semantics tree.
  */
 @OptIn(ExperimentalTestApi::class)
 @Suppress("UNUSED_PARAMETER")

@@ -306,9 +306,8 @@ internal class AppJourney(
     }
 
     /**
-     * Saves what is on screen as `<journey>/<nn>-<step>.png`, when the run asked for journey
-     * screenshots (`-PjourneyScreens` on the JVM; see docs/ui-previews.md) and does nothing
-     * otherwise. Every tap takes one (the robots' presses through a click action too), and so do
+     * Saves what is on screen as `<journey>/<nn>-<step>.png` where the platform can (the device
+     * runs can't yet, see saveJourneyScreen) and does nothing otherwise. Every tap takes one (the robots' presses through a click action too), and so do
      * the end of a journey and a failure, so a run leaves a flipbook of the journey an agent or a
      * reviewer can page through. Best effort: a capture that fails never fails the journey.
      */
