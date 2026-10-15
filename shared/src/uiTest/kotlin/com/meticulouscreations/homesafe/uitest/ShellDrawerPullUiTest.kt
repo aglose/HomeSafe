@@ -63,13 +63,11 @@ class ShellDrawerPullUiTest {
                     overlay = {
                         ShellDrawer(
                             open = nav.drawerOpen,
-                            selectedTab = nav.selectedTab,
                             finance = FinanceUiState(),
                             weather = WeatherUiState(),
                             fitness = FitnessUiState(),
                             atlas = AtlasUiState(),
                             pull = nav.drawerPull,
-                            onSelectTab = {},
                             onOpenFinance = {},
                             onOpenWeather = {},
                             onOpenFitness = {},
@@ -280,7 +278,7 @@ class ShellDrawerPullUiTest {
         onNodeWithTag("content").performTouchInput { swipeRight(startX = width * 0.3f, endX = width * 0.9f) }
         runOnIdle { assertTrue(nav.drawerOpen) }
 
-        onNodeWithText("Cameras").performTouchInput { swipeLeft() }
+        onNodeWithTag("drawer_weather").performTouchInput { swipeLeft() }
 
         runOnIdle { assertFalse(nav.drawerOpen) }
         onNodeWithTag("shell_drawer").assertDoesNotExist()

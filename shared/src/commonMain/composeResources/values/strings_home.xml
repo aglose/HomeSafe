@@ -196,11 +196,8 @@
     <string name="shell_app_version">Version %1$s</string>
     <!-- Accessibility action on the scrim behind the drawer. -->
     <string name="shell_drawer_close">Close menu</string>
-    <!-- Drawer section headings (shown in capitals). -->
-    <string name="shell_drawer_section_home_security">Home security</string>
+    <!-- Drawer section heading (shown in capitals). -->
     <string name="shell_drawer_section_apps">Apps</string>
-    <!-- The drawer's entry for the Home tab, which is the camera list. -->
-    <string name="shell_drawer_cameras">Cameras</string>
     <string name="shell_drawer_finance">Finance</string>
     <string name="shell_drawer_finance_subtitle">Markets &amp; your money</string>
     <!-- Accessibility action on the Finance card. -->

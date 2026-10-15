@@ -4384,16 +4384,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.DrawerLabel(text: kotlin
     - text: STABLE (String is immutable)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.DrawerRow(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, selected: kotlin.Boolean, onClick: kotlin.Function0<kotlin.Unit>): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - icon: STABLE (marked @Stable or @Immutable)
-    - label: STABLE (String is immutable)
-    - selected: STABLE (primitive type)
-    - onClick: STABLE (function type)
-
-@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.EconomyToneOptions(tone: com.meticulouscreations.homesafe.finance.domain.EconomyTone, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -5482,33 +5472,29 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsToggleRow(title
     - enabled: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, signedIn: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellApps(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, tab: com.meticulouscreations.homesafe.navigation.TopLevelRoute): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - nav: STABLE (marked @Stable or @Immutable)
     - tab: UNKNOWN (interface or non-final class; concrete implementation unknown)
-    - signedIn: STABLE (primitive type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, selectedTab: com.meticulouscreations.homesafe.navigation.TopLevelRoute, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, atlas: com.meticulouscreations.homesafe.atlas.AtlasUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onSelectTab: kotlin.Function1<com.meticulouscreations.homesafe.navigation.TopLevelRoute, kotlin.Unit>, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenAtlas: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, showHomeSecurity: kotlin.Boolean, financeLocked: kotlin.Boolean, atlasLocked: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.ShellDrawer(open: kotlin.Boolean, finance: com.meticulouscreations.homesafe.finance.FinanceUiState, weather: com.meticulouscreations.homesafe.weather.WeatherUiState, fitness: com.meticulouscreations.homesafe.fitness.FitnessUiState, atlas: com.meticulouscreations.homesafe.atlas.AtlasUiState, pull: com.meticulouscreations.homesafe.ui.screens.DrawerPull, onOpenFinance: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenWeather: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenFitness: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onOpenAtlas: kotlin.Function1<androidx.compose.ui.geometry.Offset, kotlin.Unit>, onClose: kotlin.Function0<kotlin.Unit>, financeLocked: kotlin.Boolean, atlasLocked: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - open: STABLE (primitive type)
-    - selectedTab: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - finance: STABLE (marked @Stable or @Immutable)
     - weather: STABLE (marked @Stable or @Immutable)
     - fitness: STABLE (marked @Stable or @Immutable)
     - atlas: STABLE (marked @Stable or @Immutable)
     - pull: STABLE (marked @Stable or @Immutable)
-    - onSelectTab: STABLE (function type)
     - onOpenFinance: STABLE (function type)
     - onOpenWeather: STABLE (function type)
     - onOpenFitness: STABLE (function type)
     - onOpenAtlas: STABLE (function type)
     - onClose: STABLE (function type)
-    - showHomeSecurity: STABLE (primitive type)
     - financeLocked: STABLE (primitive type)
     - atlasLocked: STABLE (primitive type)
 
