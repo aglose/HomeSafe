@@ -8734,8 +8734,7 @@ def timeline_ingest(conn: sqlite3.Connection, stage: TimelineStage, now: float |
             # A name to go by until Google is asked: the lookup still happens, for the town and state.
             conn.execute("UPDATE places SET name=?, address=? WHERE place=? AND name IS NULL", (name, address, place))
     # The whole history refined again: a new export can say something about years it never touched.
-    timeline_refine(conn, now)
-    changed = timeline_rebuild_years(conn)
+    _, changed = timeline_publish(conn, now)
     timeline_meta_set(conn, "places_version", int(timeline_meta(conn, "places_version") or 0) + 1)
     return {**stage.counts, "days": day_count, "years_changed": changed}
 
@@ -8911,6 +8910,18 @@ def _metres(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * 6_371_000 * math.asin(math.sqrt(min(1.0, h)))
 
 
+def nights_by_month(started: int, ended: int, offset: int) -> Counter:
+    """`night_seconds`, shared out among the months on the wall clock that the nights fell in."""
+    local, end = started + offset * 60, ended + offset * 60
+    out, day = Counter(), local - local % 86400
+    while day < end:
+        seconds = max(0, min(end, day + NIGHT_HOURS[1] * 3600) - max(local, day + NIGHT_HOURS[0] * 3600))
+        if seconds:
+            out[_local_month(day, 0)] += seconds
+        day += 86400
+    return out
+
+
 def night_seconds(started: int, ended: int, offset: int) -> int:
     """How much of a stay fell between NIGHT_HOURS on the wall clock [offset] minutes ahead of UTC."""
     local, end = started + offset * 60, ended + offset * 60
@@ -8929,10 +8940,12 @@ def _sleepable(kind_of: str | None) -> bool:
 class _Stay:
     """A visit as refining works on it: [google] is the place the export gave, [place] where refining has it."""
 
-    __slots__ = ("started", "ended", "offset", "lat", "lon", "place", "kind", "p", "google", "why", "night")
+    __slots__ = ("started", "ended", "offset", "lat", "lon", "place", "kind", "p", "google", "why", "night", "seen")
 
     def __init__(self, started: int, ended: int, offset: int, lat: float, lon: float, place: str | None, kind: str, p: float):
         self.started, self.ended, self.offset, self.lat, self.lon = started, ended, offset, lat, lon
+        # Where the export put it, which is where the moves either side of it start and end.
+        self.seen = (lat, lon)
         self.place, self.kind, self.p, self.google, self.why = place, kind, p or 0.0, place, None
         self.night = night_seconds(started, ended, offset)
 
@@ -9096,10 +9109,13 @@ class _NightHomes:
         for stay in stays:
             shift = stay.offset * 60 - 12_600
             covered.update(range(-((stay.started + shift) // -86400), (stay.ended + shift - 1) // 86400 + 1))
+            # A stay across the turn of a month is a home to both.
             if stay.night and stay.place:
-                nights.setdefault(_local_month(stay.started, stay.offset), Counter())[stay.place] += stay.night
+                for month, seconds in nights_by_month(stay.started, stay.ended, stay.offset).items():
+                    nights.setdefault(month, Counter())[stay.place] += seconds
         on_record = Counter(_local_month(day * 86400, 0) for day in covered)
-        first, last = _local_month(stays[0].started, stays[0].offset), _local_month(stays[-1].started, stays[-1].offset)
+        first = _local_month(stays[0].started, stays[0].offset)
+        last = max(_local_month(stay.ended - 1, stay.offset) for stay in stays)
         self.thin = {month for month in range(first, last + 1) if on_record[month] < THIN_NIGHTS * calendar.monthrange(month // 12, month % 12 + 1)[1]}
         self.homes: dict[int, str] = {}
         for month, spent in nights.items():
@@ -9192,8 +9208,11 @@ def _refine_join(stays: list[_Stay], moves: list[list], points: list[tuple[int, 
     for stay in stays:
         last = out[-1] if out else None
         gap = stay.started - last.ended if last else 0
+        # A stay refining moved or put in is joined only to one moved from the same place for the same
+        # reason: what the app is told of a joined stay is one `was` and one `why`.
         if (
             last is None or stay.place is None or stay.place != last.place or gap > JOIN_SECONDS
+            or (stay.why, stay.google if stay.why else None) != (last.why, last.google if last.why else None)
             or (gap > SHORT_GAP_SECONDS and (_local_month(last.ended, last.offset) in thin or not support.is_home(stay.place, last.ended + gap // 2)))
         ):
             out.append(stay)
@@ -9302,21 +9321,24 @@ class _Corridors:
         return len({entry[0] for entry in self.near(lat, lon, metres, other_than)})
 
 
-def _drop_lone_turns(paths: list[list[list]], corridors: _Corridors, stays: list[_Stay], tally: Counter) -> None:
+def _drop_lone_turns(paths: list[list[list]], corridors: _Corridors, stays: list[_Stay], skip: Callable[[int], bool], tally: Counter) -> None:
     """
     A point a path goes out to and straight back from is a bad fix whatever its speed, where no
     other trip has been near it, or in the minutes of arriving somewhere or leaving it, when the
-    path either side of it is at the place (the phone going indoors and out, between fixes).
+    path either side of it is at the place (the phone going indoors and out, between fixes). A
+    point at a place stayed at, around then, is that stay, and is never one.
     """
     starts = [stay.started for stay in stays]
 
-    def jumps_off_a_stay(a: list, b: list, c: list) -> bool:
+    def around(b: list) -> list[_Stay]:
         i = bisect.bisect_right(starts, b[0])
-        around = stays[max(0, i - 2):i + 2]
-        # A point at a place stayed at, the one being left or the next, is that stay.
-        if any(_metres(b[1], b[2], stay.lat, stay.lon) <= STAY_METRES for stay in around):
-            return False
-        for stay in around:
+        return [stay for stay in stays[max(0, i - 2):i + 2] if stay.started - ARRIVING_SECONDS <= b[0] <= stay.ended + ARRIVING_SECONDS]
+
+    def at_a_stay(b: list) -> bool:
+        return any(_metres(b[1], b[2], stay.lat, stay.lon) <= STAY_METRES for stay in around(b))
+
+    def jumps_off_a_stay(a: list, b: list, c: list) -> bool:
+        for stay in around(b):
             if min(abs(b[0] - stay.started), abs(b[0] - stay.ended)) <= ARRIVING_SECONDS and _metres(b[1], b[2], stay.lat, stay.lon) > STAY_METRES and (
                 min(_metres(a[1], a[2], stay.lat, stay.lon), _metres(c[1], c[2], stay.lat, stay.lon)) <= STAY_METRES
             ):
@@ -9324,13 +9346,13 @@ def _drop_lone_turns(paths: list[list[list]], corridors: _Corridors, stays: list
         return False
 
     for pid, path in enumerate(paths):
-        if len(path) < 3:
+        if len(path) < 3 or skip(pid):
             continue
         kept = [path[0]]
         for i in range(1, len(path) - 1):
             a, b, c = kept[-1], path[i], path[i + 1]
             out, back, across = _metres(a[1], a[2], b[1], b[2]), _metres(b[1], b[2], c[1], c[2]), _metres(a[1], a[2], c[1], c[2])
-            if not b[3] and out + back - across > TURN_METRES and out + back > 2.5 * across and (
+            if not b[3] and out + back - across > TURN_METRES and out + back > 2.5 * across and not at_a_stay(b) and (
                 jumps_off_a_stay(a, b, c) or corridors.trips(b[1], b[2], TURN_TRIP_METRES, pid) < TURN_TRIPS
             ):
                 tally["points_dropped"] += 1
@@ -9465,9 +9487,25 @@ def _borrowed_way(paths: list[list[list]], corridors: _Corridors, pid: int, a: l
 
 
 def _refine_paths(tracks: list[tuple[int, list[tuple[int, float, float]]]], stays: list[_Stay], moves: list[list], tally: Counter) -> list[tuple]:
+    # A flight's few fixes are a line between airports, drawn as an arc by the app: nothing to
+    # learn roads from, nothing to straighten, and a turn in the air is a turn.
+    flights = sorted((move[0], move[1]) for move in moves if move[3] == "fly")
+    flight_starts = [flight[0] for flight in flights]
+
+    def in_the_air(points: list) -> bool:
+        if not points:
+            return True
+        i = bisect.bisect_right(flight_starts, points[-1][0]) - 1
+        return i >= 0 and flights[i][1] >= points[0][0]
+
+    airborne = {pid for pid, (_, points) in enumerate(tracks) if in_the_air(points)}
+
+    def flying(pid: int) -> bool:
+        return pid in airborne
+
     starts = [stay.started for stay in stays]
     paths: list[list[list]] = []
-    for offset, points in tracks:
+    for pid, (offset, points) in enumerate(tracks):
         settled = []
         for t, lat, lon in points:
             i = bisect.bisect_right(starts, t) - 1
@@ -9480,21 +9518,10 @@ def _refine_paths(tracks: list[tuple[int, list[tuple[int, float, float]]]], stay
                         tally["points_settled"] += 1
                     lat, lon, at_stay = stay.lat, stay.lon, True
             settled.append([t, lat, lon, at_stay])
-        clean = _despike(settled)
+        clean = settled if flying(pid) else _despike(settled)
         tally["points_dropped"] += len(settled) - len(clean)
         paths.append(clean)
-    # A flight's few fixes are a line between airports, drawn as an arc by the app: nothing to learn roads from or to straighten.
-    flights = sorted((move[0], move[1]) for move in moves if move[3] == "fly")
-    flight_starts = [flight[0] for flight in flights]
-
-    def flying(pid: int) -> bool:
-        path = paths[pid]
-        if not path:
-            return True
-        i = bisect.bisect_right(flight_starts, path[-1][0]) - 1
-        return i >= 0 and flights[i][1] >= path[0][0]
-
-    _drop_lone_turns(paths, _Corridors(paths, flying), stays, tally)
+    _drop_lone_turns(paths, _Corridors(paths, flying), stays, flying, tally)
     for _ in range(SNAP_ROUNDS):
         _snap_to_corridors(paths, flying, tally)
     _fill_from_earlier_trips(paths, flying, tally)
@@ -9522,8 +9549,12 @@ def _refine_moves(moves: list[list], stays: list[_Stay], tally: Counter) -> None
     end_times = [end for end, _ in ends]
 
     def snap(move: list, at: int, lat_i: int, candidates: list[_Stay]) -> None:
+        # The stay a move leaves or reaches is known by where the export had it: refining may have
+        # moved it a kilometre since, and the move goes with it.
         best = min(candidates, key=lambda stay: abs((stay.ended if lat_i == 4 else stay.started) - at), default=None)
-        if best is not None and 1 < _metres(move[lat_i], move[lat_i + 1], best.lat, best.lon) <= MOVE_SNAP_METRES:
+        if best is not None and _metres(move[lat_i], move[lat_i + 1], best.lat, best.lon) > 1 and (
+            min(_metres(move[lat_i], move[lat_i + 1], *best.seen), _metres(move[lat_i], move[lat_i + 1], best.lat, best.lon)) <= MOVE_SNAP_METRES
+        ):
             move[lat_i], move[lat_i + 1] = best.lat, best.lon
             tally["move_ends"] += 1
 
@@ -9580,18 +9611,36 @@ def timeline_refine(conn: sqlite3.Connection, now: float | None = None) -> dict[
             "moved": {why: tally[why] for why in ("building", "night", "unsure", "thin")}, "inferred": tally["inferred"],
             **{key: tally[key] for key in ("joined", "moves_dropped", "move_ends", "points_settled", "points_dropped", "points_snapped", "points_filled", "paths_dropped")},
         }
-        timeline_meta_set(conn, "refined", summary)
         return summary
 
 
+def timeline_publish(conn: sqlite3.Connection, now: float | None = None) -> tuple[dict[str, Any], list[int]]:
+    """
+    Refines the history and writes the years the app fetches from it; what refining changed, and
+    which years did. `refined` is written only once the years are, and `refining` says one is
+    under way, so a relay stopped between the two is put right when it starts again
+    (`timeline_refresh`) rather than serving the years as they were.
+    """
+    timeline_meta_set(conn, "refining", True)
+    summary = timeline_refine(conn, now)
+    changed = timeline_rebuild_years(conn)
+    timeline_meta_set(conn, "refined", summary)
+    timeline_meta_set(conn, "refining", False)
+    return summary, changed
+
+
 def timeline_refresh() -> None:
-    """Refines the history again if the relay now refines it differently from when it last did (a newer TIMELINE_REFINE_VERSION)."""
+    """
+    Refines the history again if the relay now refines it differently from when it last did (a
+    newer TIMELINE_REFINE_VERSION), or stopped before the years from the last refining were written.
+    """
     conn = timeline_db()
     try:
         done = timeline_meta(conn, "refined") or {}
-        if done.get("version") != TIMELINE_REFINE_VERSION and conn.execute("SELECT 1 FROM visits LIMIT 1").fetchone():
-            summary = timeline_refine(conn)
-            log.info("timeline: refined again (version %s): %s, years changed %s", TIMELINE_REFINE_VERSION, summary, timeline_rebuild_years(conn))
+        stale = done.get("version") != TIMELINE_REFINE_VERSION or timeline_meta(conn, "refining")
+        if stale and any(conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() for table in TIMELINE_TABLES):
+            summary, changed = timeline_publish(conn)
+            log.info("timeline: refined again (version %s): %s, years changed %s", TIMELINE_REFINE_VERSION, summary, changed)
     finally:
         conn.close()
 
@@ -9793,8 +9842,7 @@ def timeline_name_places(now: float | None = None, limit: int = TIMELINE_PLACES_
         if named:
             timeline_meta_set(conn, "places_version", int(timeline_meta(conn, "places_version") or 0) + 1)
             # What a place is (a flat, a coffee shop) is some of what refining goes on.
-            timeline_refine(conn, now)
-            timeline_rebuild_years(conn)
+            timeline_publish(conn, now)
         if error:
             log.warning("timeline: place names unavailable: %s", error["message"])
         return named
@@ -9967,8 +10015,8 @@ if __name__ == "__main__":
     if command == "timeline-refine":
         # The history refined again from what the exports said, now.
         conn = timeline_db()
-        summary = timeline_refine(conn)
-        print(json.dumps({**summary, "years_changed": timeline_rebuild_years(conn)}, indent=2))
+        summary, changed = timeline_publish(conn)
+        print(json.dumps({**summary, "years_changed": changed}, indent=2))
         conn.close()
         sys.exit(0)
     if command == "timeline-reread":

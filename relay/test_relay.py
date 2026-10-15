@@ -5963,6 +5963,72 @@ class TimelineRefining(_TimelineDb):
         self.assertEqual(9, len(later))
         self.assertEqual(7, summary["points_filled"])
 
+    def test_a_stay_across_the_turn_of_a_month_is_a_home_to_both(self):
+        b, c = HOME, _off(HOME, east=5000)
+        stays = [relay._Stay(_local(2024, 1, 31, 22), _local(2024, 2, 20, 7), CST, *b, "ChIJb", "other", 0.9),
+                 relay._Stay(_local(2024, 2, 22, 22), _local(2024, 2, 23, 7), CST, *c, "ChIJc", "other", 0.9)]
+        homes = relay._NightHomes(stays)
+        self.assertEqual("ChIJb", homes.homes[2024 * 12 + 1])
+        self.assertNotIn(2024 * 12 + 1, homes.thin)
+
+    def test_an_inferred_night_is_not_joined_into_the_evening_at_home_before_it(self):
+        segments = _life(2024, 1, range(1, 32), skip=(15,)) + [
+            _stay(_local(2024, 1, 15, 18), _local(2024, 1, 15, 22), HOME, "ChIJhome"),
+            _stay(_local(2024, 1, 16, 8.5), _local(2024, 1, 16, 8.9), _off(HOME, east=500), "ChIJcafe"),
+        ]
+        self.refine(segments)
+        self.assertEqual([(_local(2024, 1, 15, 22), "inferred")], self.rows("SELECT started, why FROM refined_visits WHERE why = 'inferred'"))
+        self.assertEqual(("ChIJhome", None, None), self.stay_at(_local(2024, 1, 15, 20)))
+
+    def test_a_first_ever_stop_out_and_back_keeps_the_fix_at_the_stop(self):
+        road = [_off((40.5, -89.5), east=500 * j) for j in range(3)]
+        shop = _off(road[2], north=700)
+        # A three-minute stop whose one fix is when it began, too near its edges to be settled there.
+        stop = _local(2024, 1, 20, 10) + 6 * 60
+        self.refine([_stay(stop, stop + 180, shop, "ChIJshop"), self.trip(20, road + [shop, _off(road[2], east=100)], minutes=2)])
+        self.assertTrue(any(relay._metres(*point, *shop) < 30 for point in self.path_points(20)))
+
+    def test_a_flights_fixes_are_left_as_they_are(self):
+        up = _local(2024, 1, 20, 10)
+        gate, turn = (40.5, -89.5), _off((40.5, -89.5), north=50_000)
+        self.refine([android_activity(up, up + 3 * 3600, gate, (41.5, -88.0), "FLYING", 200_000),
+                     android_path(up, [(0, *gate), (60, *turn), (120, *_off(gate, east=500)), (3600, 41.0, -88.7)])])
+        self.assertTrue(any(relay._metres(*point, *turn) < 30 for point in self.path_points(20)))
+
+    def test_a_move_leaves_from_where_its_stay_was_moved_to(self):
+        old = _off(HOME, north=1200)
+        december = [_stay(_local(2023, 12, d, 22), _local(2023, 12, d, 31), old, "ChIJold", p=0.4) for d in (5, 12, 19)]
+        leave = _local(2023, 12, 6, 7)
+        december.append(android_activity(leave, leave + 1800, old, WORK))
+        self.refine(december + _life(2024, 1, range(1, 32)) + _life(2024, 2, range(1, 29)), {"ChIJold": "subpremise", "ChIJhome": "premise"})
+        self.assertEqual([HOME], [(lat, lon) for lat, lon in self.rows(f"SELECT lat, lon FROM refined_moves WHERE started = {leave}")])
+
+    def test_a_relay_stopped_before_the_years_were_written_writes_them_when_it_starts(self):
+        self.read(android_export())
+        self.conn.execute("DELETE FROM years")
+        self.conn.commit()
+        rebuild = relay.timeline_rebuild_years
+
+        def stopped(conn):
+            raise RuntimeError("stopped")
+
+        relay.timeline_rebuild_years = stopped
+        try:
+            with self.assertRaises(RuntimeError):
+                relay.timeline_publish(self.conn)
+        finally:
+            relay.timeline_rebuild_years = rebuild
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, relay.timeline_meta(self.conn, "refined")["version"])
+        relay.timeline_refresh()
+        self.assertEqual([(2023,)], self.rows("SELECT year FROM years"))
+        self.assertFalse(relay.timeline_meta(self.conn, "refining"))
+
+    def test_a_history_of_paths_alone_is_refined_again_too(self):
+        self.read({"semanticSegments": [android_path(DAY1, [(0, *HOME), (600, *WORK)])]})
+        relay.timeline_meta_set(self.conn, "refined", {"version": relay.TIMELINE_REFINE_VERSION - 1})
+        relay.timeline_refresh()
+        self.assertEqual(relay.TIMELINE_REFINE_VERSION, relay.timeline_meta(self.conn, "refined")["version"])
+
     def test_a_path_wholly_inside_a_stay_is_dropped(self):
         jitter = [(0, *_off(HOME, north=120)), (900, *_off(HOME, east=150)), (1800, *_off(HOME, north=-60))]
         summary = self.refine(_life(2024, 1, range(1, 32)) + [android_path(_local(2024, 1, 11, 1), jitter)])

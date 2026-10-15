@@ -109,7 +109,8 @@ of the hours between 02:00 and 05:00 on the wall clock.
 6. **One stay, not several.** Two stays at one place with nothing between them straying more than
    150 m are one, and the jitter Google took for moves goes: within the hour anywhere, and up to two
    days at home in a well-recorded month. A gap at home is time at home; a gap at work isn't, and a
-   gap in a thin record says nothing.
+   gap in a thin record says nothing. A stay refining moved or put in is joined only to one moved
+   for the same reason, so what the app is told of each stay stays true.
 7. **Paths are smoothed by everywhere else the history has been.**
    - A point during a stay is put at the place (within 2 km of it). A path wholly inside a stay
      goes with it.
@@ -127,12 +128,14 @@ of the hours between 02:00 and 05:00 on the wall clock.
 
    Flights are left alone. The export writes a path's times only to the minute, so every speed
    allows each leg the minute it may have taken.
-8. **A move starts where the stay before it was** and ends where the next one is.
+8. **A move starts where the stay before it was** and ends where the next one is, wherever
+   refining has since put that stay.
 
 A year's visits say which place Google had given one refining moved (`was`) and why (`why`:
 `building`, `night`, `unsure`, `thin`, or `inferred` for a stay Google never wrote). The manifest's
 `refined` says how many of each, and how many points were settled. A change to how refining works
-bumps `TIMELINE_REFINE_VERSION`, and the relay refines again when it starts;
+bumps `TIMELINE_REFINE_VERSION`, and the relay refines again when it starts (as it also does when
+it was stopped after refining and before the years were written: `refined` is marked last);
 `docker exec homesafe-relay python relay.py timeline-refine` does it by hand.
 
 Refining only ever moves a stay to somewhere the history itself vouches for. What it can't do is
