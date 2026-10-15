@@ -136,4 +136,4 @@ internal fun AppChrome(appGraph: AppGraph, content: @Composable () -> Unit) {
 }
 
 /** The drawer and its apps, for the shell in :shared to draw (see LocalShellApps). One instance, so the local never changes. */
-private val shellApps: @Composable (ShellNavigation, TopLevelRoute, Boolean) -> Unit = { nav, tab, signedIn -> ShellApps(nav, tab, signedIn) }
+private val shellApps: @Composable (ShellNavigation, TopLevelRoute) -> Unit = { nav, tab -> ShellApps(nav, tab) }

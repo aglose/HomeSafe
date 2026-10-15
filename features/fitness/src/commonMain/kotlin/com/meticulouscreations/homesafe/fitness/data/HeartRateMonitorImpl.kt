@@ -22,7 +22,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.produceIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -139,14 +138,38 @@ class HeartRateMonitorImpl(
      * Scans until [sensor] is heard. By its address at once; and, since a wearable may change
      * the address it advertises from, by its name alone once the address has gone unheard for
      * [ADDRESS_GRACE_MILLIS]. (Two bands of one name in the room can't be told apart that way:
-     * forgetting the sensor and choosing it again settles it.)
+     * forgetting the sensor and choosing it again settles it.) One of the same name heard before
+     * then is held on to and taken when the time is up, heard again or not: a band the phone is
+     * already linked to doesn't advertise, and is offered only the once.
      */
-    private suspend fun find(sensor: HeartSensor): HeartSensor {
+    private suspend fun find(sensor: HeartSensor): HeartSensor = coroutineScope {
         val since = now()
-        return link.scan().first { sighting ->
-            sighting.sensor.address == sensor.address ||
-                (sensor.name.isNotEmpty() && sighting.sensor.name == sensor.name && now() - since >= ADDRESS_GRACE_MILLIS)
-        }.sensor.let { if (it.name.isEmpty()) it.copy(name = sensor.name) else it }
+        val sightings = link.scan().produceIn(this)
+        var found: HeartSensor? = null
+        try {
+            while (true) {
+                val held = found
+                val next = if (held == null) {
+                    sightings.receiveCatching()
+                } else {
+                    // The time left to hear the address itself; when it runs out, the one of the same name it is.
+                    withTimeoutOrNull(ADDRESS_GRACE_MILLIS - (now() - since)) { sightings.receiveCatching() } ?: break
+                }
+                // The scan ended: what was held is still worth trying, and otherwise the attempt has failed.
+                val seen = next.getOrNull()?.sensor ?: if (held != null) break else throw next.exceptionOrNull() ?: NoSuchElementException("Scan ended")
+                if (seen.address == sensor.address) {
+                    found = seen
+                    break
+                }
+                if (sensor.name.isNotEmpty() && seen.name == sensor.name) {
+                    found = seen
+                    if (now() - since >= ADDRESS_GRACE_MILLIS) break
+                }
+            }
+        } finally {
+            sightings.cancel()
+        }
+        checkNotNull(found).let { if (it.name.isEmpty()) it.copy(name = sensor.name) else it }
     }
 
     /** One link to [sensor], from connecting until it drops or goes quiet, and how far it got. */

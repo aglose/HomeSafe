@@ -366,6 +366,35 @@ class HeartRateMonitorImplTest {
         assertEquals(moved, assertIs<HeartSensorState.Connected>(h.state).sensor)
     }
 
+    // A band already linked to the phone doesn't advertise: the radio offers it once, at its own address, and never again.
+    @Test
+    fun aNamesakeHeardOnlyOnceEarlyIsTakenWhenTheOldAddressHasGoneUnheard() = runMonitorTest { h ->
+        val moved = TEST_BAND.copy(address = "AA:BB:CC:00:00:99")
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        h.link.advertise(moved)
+        runCurrent()
+        assertEquals(HeartSensorState.Scanning(TEST_BAND), h.state)
+
+        advanceTimeBy(HeartRateMonitorImpl.ADDRESS_GRACE_MILLIS)
+        runCurrent()
+        assertEquals(HeartSensorState.Connecting(moved), h.state)
+        assertEquals(listOf(moved.address), h.link.connections)
+    }
+
+    @Test
+    fun theOldAddressHeardWithinTheGraceStillWinsOverANamesakeHeldOnTo() = runMonitorTest { h ->
+        h.monitor.follow(TEST_BAND)
+        runCurrent()
+        h.link.advertise(TEST_BAND.copy(address = "AA:BB:CC:00:00:99"))
+        runCurrent()
+        advanceTimeBy(HeartRateMonitorImpl.ADDRESS_GRACE_MILLIS / 2)
+        h.link.advertise(TEST_BAND)
+        runCurrent()
+        assertEquals(HeartSensorState.Connecting(TEST_BAND), h.state)
+        assertEquals(listOf(TEST_BAND.address), h.link.connections)
+    }
+
     @Test
     fun aSensorWithNoNameIsOnlyEverFoundByItsAddress() = runMonitorTest { h ->
         val nameless = HeartSensor("AA:BB:CC:00:00:03", "")

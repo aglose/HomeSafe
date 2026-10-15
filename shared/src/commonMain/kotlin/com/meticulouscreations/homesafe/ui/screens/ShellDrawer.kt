@@ -62,7 +62,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -71,10 +70,8 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.paneTitle
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -86,7 +83,6 @@ import homesafe.shared.generated.resources.shell_drawer_cameras
 import homesafe.shared.generated.resources.shell_drawer_close
 import homesafe.shared.generated.resources.shell_drawer_market_disclaimer
 import homesafe.shared.generated.resources.shell_drawer_section_apps
-import homesafe.shared.generated.resources.shell_drawer_section_home_security
 import homesafe.shared.generated.resources.shell_menu
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.hypot
@@ -188,17 +184,16 @@ internal fun Modifier.drawerPull(pull: DrawerPull?): Modifier = if (pull == null
 private const val APP_BACK_PEEK = 0.35f
 
 /**
- * The app drawer the top bar's menu button opens: the camera app's own tabs, and below them the
- * apps that live inside PercySafe — Weather, whose card is a window onto the sky outside,
- * Atlas, whose card says how far its owner's history reaches, Fitness, whose card says which
- * workout is up next, and Finance, whose card carries a live S&P 500 line — so the drawer is
- * worth a glance on its own.
+ * The app drawer the top bar's menu button opens: the apps that live inside PercySafe — Weather,
+ * whose card is a window onto the sky outside, Atlas, whose card says how far its owner's history
+ * reaches, Fitness, whose card says which workout is up next, and Finance, whose card carries a
+ * live S&P 500 line — so the drawer is worth a glance on its own.
  * Slides in over a scrim; a tap on the scrim, Back, or a swipe to the left closes it. A swipe
  * the other way across the shell draws it out too ([pull]), under the finger as it goes.
  *
- * The sign-in screen opens it too, before there are any cameras to go to: there
- * [showHomeSecurity] is false and it lists the apps alone. The apps' cards are [apps]'s to draw
- * (ShellApps in :app, which alone sees every feature), told whether to animate.
+ * The camera app's own tabs are not here: the bottom bar already has them. The sign-in screen
+ * opens the drawer too, before there are any cameras to go to. The apps' cards are [apps]'s to
+ * draw (ShellApps in :app, which alone sees every feature), told whether to animate.
  */
 // Public for another module to place; it fills whatever it is given, so it takes no Modifier.
 @Suppress("ktlint:compose:modifier-missing-check")
@@ -206,11 +201,8 @@ private const val APP_BACK_PEEK = 0.35f
 @Composable
 fun ShellDrawer(
     open: Boolean,
-    selectedTab: TopLevelRoute,
     pull: DrawerPull,
-    onSelectTab: (TopLevelRoute) -> Unit,
     onClose: () -> Unit,
-    showHomeSecurity: Boolean = true,
     apps: @Composable (animated: Boolean) -> Unit = {},
 ) {
     val reveal = remember { Animatable(if (open) 1f else 0f) }
@@ -283,13 +275,6 @@ fun ShellDrawer(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 8.dp, top = 12.dp, bottom = 24.dp),
                 )
-                if (showHomeSecurity) {
-                    DrawerLabel(stringResource(Res.string.shell_drawer_section_home_security))
-                    DrawerRow(Icons.Filled.Home, stringResource(Res.string.shell_drawer_cameras), selectedTab == TopLevelRoute.Home) { onSelectTab(TopLevelRoute.Home) }
-                    DrawerRow(Icons.Filled.VideoLibrary, stringResource(TopLevelRoute.Moments.label), selectedTab == TopLevelRoute.Moments) { onSelectTab(TopLevelRoute.Moments) }
-                    DrawerRow(Icons.Filled.Settings, stringResource(TopLevelRoute.Settings.label), selectedTab == TopLevelRoute.Settings) { onSelectTab(TopLevelRoute.Settings) }
-                    Spacer(Modifier.height(24.dp))
-                }
                 DrawerLabel(stringResource(Res.string.shell_drawer_section_apps))
                 apps(open || pulling)
             }
@@ -311,25 +296,6 @@ private fun DrawerLabel(text: String) {
         color = MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(start = 12.dp, bottom = 8.dp),
     )
-}
-
-@Composable
-private fun DrawerRow(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    val tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(CircleShape)
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
-            .clickable(role = Role.Tab, onClick = onClick)
-            .semantics { this.selected = selected }
-            .padding(horizontal = 16.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(22.dp))
-        Spacer(Modifier.width(14.dp))
-        Text(label, style = MaterialTheme.typography.titleMedium, color = if (selected) tint else MaterialTheme.colorScheme.onSurface)
-    }
 }
 
 /**

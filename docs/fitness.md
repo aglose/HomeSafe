@@ -167,8 +167,9 @@ is shown.
 
 1. In the Google Health app, open the band's **Connections** and set **Share heart rate** to
    **Always visible**. With sharing off the band doesn't advertise at all and can't be found.
-2. In PercySafe: start a workout and tap the heart button beside the counts (or **Progress →
-   Heart rate and zones**), then **Find my sensor**. Android asks for the *Nearby devices*
+2. In PercySafe: tap **Heart rate** at the top of the fitness app's Today page, beside the
+   phase (or the heart button beside the counts on a workout, or **Progress → Heart rate and
+   zones**), then **Find my sensor**. Android asks for the *Nearby devices*
    permission here, at the tap, and not before. Pick the band from the list; it is remembered.
    The first time, Google Health may put up its own request to approve the sharing, and Android
    may ask to pair: say yes to both.
@@ -177,7 +178,16 @@ is shown.
 From then on the band is found by itself whenever the fitness app is on screen. It is looked for
 by the address it was chosen at, and after six seconds of not hearing that, by its name: a
 wearable may change the address it advertises from. Two bands of one name in the same room can't
-be told apart that way; **Forget this sensor** and choosing again settles it.
+be told apart that way; **Forget this sensor** and choosing again settles it. While it is
+reading, the pill on the Today page shows the beats a minute, in the zone's colour.
+
+The band keeps a link to the phone for Google Health, and while that link is up it often stops
+advertising, even with sharing on, so a scan alone can sit on *Looking* for good. Each look
+therefore also asks every device the phone is already linked to whether it offers the Heart Rate
+Service, and connects over that same link when one does. (Other linked devices, a car's phone
+key for one, are asked too: a lookup of services the phone already has on file, nothing more.)
+`adb logcat -s HomeSafeHeartRate` says which way the band was found: *Heard a heart-rate sensor*
+from a scan, *Already linked to a heart-rate sensor* from a link.
 
 ### Zones
 

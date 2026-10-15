@@ -508,7 +508,7 @@ private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: Camer
 @Composable
 private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, tab: TopLevelRoute) {
     CardZoomOverlay(nav, cardZoom)
-    LocalShellApps.current(nav, tab, true)
+    LocalShellApps.current(nav, tab)
 }
 
 /** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
@@ -1016,6 +1016,6 @@ fun bottomNavTestTag(route: TopLevelRoute): String = "bottom_nav_" + when (route
  * The drawer and the apps it opens ([ShellApps] in :app, the one module that sees every feature).
  * The shell and the sign-in screen draw it through this; App() provides it.
  */
-val LocalShellApps = staticCompositionLocalOf<@Composable (nav: ShellNavigation, tab: TopLevelRoute, signedIn: Boolean) -> Unit> {
-    { _, _, _ -> }
+val LocalShellApps = staticCompositionLocalOf<@Composable (nav: ShellNavigation, tab: TopLevelRoute) -> Unit> {
+    { _, _ -> }
 }

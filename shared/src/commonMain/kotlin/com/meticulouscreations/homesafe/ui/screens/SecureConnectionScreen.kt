@@ -455,7 +455,7 @@ fun SecureConnectionScreen(
         // Over the form and the skeleton alike, and clear of a cutout at the window's sides as the
         // shell's own overlays are.
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
-            LocalShellApps.current(apps, TopLevelRoute.Home, false)
+            LocalShellApps.current(apps, TopLevelRoute.Home)
         }
     }
 }

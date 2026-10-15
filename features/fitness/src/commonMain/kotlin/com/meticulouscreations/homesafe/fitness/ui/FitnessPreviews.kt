@@ -399,6 +399,13 @@ private fun FitnessTodayHeartPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), heart = FitnessFixtures.heartAtRest()) }
 }
 
+// The band linked and reading: the pill beside the phase's carries the beats in the zone's colour.
+@Preview(widthDp = 412, heightDp = 915)
+@Composable
+private fun FitnessTodayHeartLivePreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(), FitnessActions(), heart = FitnessFixtures.heart(bpm = 128)) }
+}
+
 @Preview(widthDp = 412, heightDp = 915)
 @Composable
 private fun FitnessRecordPreview() {
