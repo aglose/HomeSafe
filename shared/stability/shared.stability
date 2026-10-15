@@ -2675,6 +2675,15 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.HeartPanel(heart: com.m
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.HeartPill(heart: kotlin.Function0<com.meticulouscreations.homesafe.fitness.HeartUiState>, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - heart: STABLE (function type)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.HeartScreen(heart: com.meticulouscreations.homesafe.fitness.HeartUiState, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -3165,7 +3174,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.StrengthChart(board: com
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.TodayScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onStart: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, kotlin.Unit>, onResume: kotlin.Function0<kotlin.Unit>, onOpenImport: kotlin.Function0<kotlin.Unit>, onOpenLifts: kotlin.Function0<kotlin.Unit>, onOpenProgress: kotlin.Function0<kotlin.Unit>, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean, lastHeart: com.meticulouscreations.homesafe.fitness.WorkoutHeart?, health: com.meticulouscreations.homesafe.fitness.HealthUiState, onConnectHealth: kotlin.Function0<kotlin.Unit>, onManageHealth: kotlin.Function0<kotlin.Unit>, onOpenRuns: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.TodayScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, padding: androidx.compose.foundation.layout.PaddingValues, onStart: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, kotlin.Unit>, onResume: kotlin.Function0<kotlin.Unit>, onOpenImport: kotlin.Function0<kotlin.Unit>, onOpenLifts: kotlin.Function0<kotlin.Unit>, onOpenProgress: kotlin.Function0<kotlin.Unit>, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, animated: kotlin.Boolean, lastHeart: com.meticulouscreations.homesafe.fitness.WorkoutHeart?, health: com.meticulouscreations.homesafe.fitness.HealthUiState, onConnectHealth: kotlin.Function0<kotlin.Unit>, onManageHealth: kotlin.Function0<kotlin.Unit>, onOpenRuns: kotlin.Function0<kotlin.Unit>, heart: kotlin.Function0<com.meticulouscreations.homesafe.fitness.HeartUiState>?, onOpenHeart: kotlin.Function0<kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -3184,6 +3193,8 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.TodayScreen(state: com.
     - onConnectHealth: STABLE (function type)
     - onManageHealth: STABLE (function type)
     - onOpenRuns: STABLE (function type)
+    - heart: STABLE (function type)
+    - onOpenHeart: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.VolumeRow(volume: com.meticulouscreations.homesafe.fitness.domain.MuscleVolume): kotlin.Unit

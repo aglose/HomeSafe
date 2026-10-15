@@ -284,6 +284,8 @@ internal fun FitnessAppContent(
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     val pages = remember { mutableStateListOf<FitnessPage>().apply { initialPage?.let(::add) } }
     val haptics = LocalHapticFeedback.current
+    // Read through this where the page around it shouldn't redraw every time the heart beats.
+    val latestHeart = rememberUpdatedState(heart)
 
     fun pop() {
         if (pages.isNotEmpty()) pages.removeAt(pages.lastIndex) else actions.onClose()
@@ -365,6 +367,8 @@ internal fun FitnessAppContent(
                         onConnectHealth = actions.onConnectHealth,
                         onManageHealth = actions.onManageHealth,
                         onOpenRuns = { pages += FitnessPage.Runs },
+                        heart = if (heart.supported) ({ latestHeart.value }) else null,
+                        onOpenHeart = { pages += FitnessPage.Heart },
                     )
 
                     FitnessTab.LIFTS -> LiftsScreen(

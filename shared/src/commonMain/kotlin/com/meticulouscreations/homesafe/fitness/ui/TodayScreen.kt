@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.DayCard
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.fitness.HealthUiState
+import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.PhaseStatus
 import com.meticulouscreations.homesafe.fitness.RecordEvent
 import com.meticulouscreations.homesafe.fitness.WorkoutHeart
@@ -113,6 +114,9 @@ internal fun TodayScreen(
     onConnectHealth: () -> Unit = {},
     onManageHealth: () -> Unit = {},
     onOpenRuns: () -> Unit = {},
+    /** The live heart rate, for the pill that leads to its page; null where there is no sensor to be had. */
+    heart: (() -> HeartUiState)? = null,
+    onOpenHeart: () -> Unit = {},
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -122,7 +126,10 @@ internal fun TodayScreen(
         modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(padding).padding(horizontal = FitnessGutter).testTag("fitness_today"),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        PhasePill(state.phase, onOpenProgress)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PhasePill(state.phase, onOpenProgress)
+            if (heart != null) HeartPill(heart, onOpenHeart)
+        }
         Column {
             Text(
                 when {

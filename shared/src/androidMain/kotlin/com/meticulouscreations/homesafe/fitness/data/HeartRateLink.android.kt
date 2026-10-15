@@ -31,7 +31,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
 
 private const val TAG = "HomeSafeHeartRate"
@@ -44,6 +46,12 @@ private val HEART_RATE_MEASUREMENT = assigned("2a37")
 
 /** The descriptor on a characteristic that turns its notifications on. */
 private val CLIENT_CONFIGURATION = assigned("2902")
+
+/** How long a device the phone is already linked to gets to say whether it offers the Heart Rate Service. */
+private const val PROBE_MILLIS = 5_000L
+
+/** What a linked sensor counts as when it won't say how loud it is: it is linked, so it is near. */
+private const val LINKED_RSSI = -50
 
 private val PERMISSIONS = arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
 
@@ -74,6 +82,11 @@ private fun dropped(reason: String): LinkDropped {
  * Every call that needs them is made only after the monitor has checked [hasPermission]; a
  * permission pulled in system settings between the check and the call arrives as a
  * [SecurityException], which ends the flow like any other failure.
+ *
+ * A band that keeps a link to the phone for its own app (a Fitbit, held by Google Health) stops
+ * advertising while that link is up, so no scan hears it. The scan therefore also asks every
+ * device the phone is already linked to whether it offers the Heart Rate Service, and the
+ * connection rides that same link.
  *
  * What the radio does is logged under `HomeSafeHeartRate`, without addresses.
  */
@@ -149,10 +162,70 @@ private class AndroidHeartRateLink(private val context: Context, activity: Fragm
                 Log.w(TAG, "Scan not allowed", e)
                 close(e)
             }
+            launch {
+                for (device in linkedDevices()) probe(device)?.let { trySend(it) }
+            }
         }
         awaitClose {
             // Throws if Bluetooth was switched off meanwhile, or the permission taken away; the scan is gone either way.
             runCatching { scanner?.stopScan(callback) }
+        }
+    }
+
+    /** The LE devices the phone has a link up to right now, whichever app holds it. */
+    private fun linkedDevices(): List<BluetoothDevice> = try {
+        manager?.getConnectedDevices(BluetoothProfile.GATT).orEmpty()
+    } catch (e: SecurityException) {
+        Log.w(TAG, "Linked devices not allowed", e)
+        emptyList()
+    }
+
+    /**
+     * Whether [device], already linked to the phone, offers the Heart Rate Service, and how loud
+     * it is; null when it doesn't or won't say within [PROBE_MILLIS]. It goes over the link that
+     * is already up: a service lookup (cached for a bonded device) and a signal reading, then
+     * this app's half of the link is let go and the other app's stays.
+     */
+    private suspend fun probe(device: BluetoothDevice): SensorSighting? {
+        val name = runCatching { device.name }.getOrNull().orEmpty()
+        val answer = CompletableDeferred<SensorSighting?>()
+        val callback = object : BluetoothGattCallback() {
+            override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
+                when {
+                    status != BluetoothGatt.GATT_SUCCESS || newState == BluetoothProfile.STATE_DISCONNECTED -> answer.complete(null)
+                    newState == BluetoothProfile.STATE_CONNECTED -> if (!gatt.discoverServices()) answer.complete(null)
+                }
+            }
+
+            override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
+                if (status != BluetoothGatt.GATT_SUCCESS || gatt.getService(HEART_RATE_SERVICE) == null) {
+                    Log.i(TAG, "Linked to ${name.ifEmpty { "(no name)" }}, which offers no Heart Rate Service (status $status, ${gatt.services.size} services)")
+                    answer.complete(null)
+                } else if (!gatt.readRemoteRssi()) {
+                    answer.complete(SensorSighting(HeartSensor(device.address, name), LINKED_RSSI))
+                }
+            }
+
+            override fun onReadRemoteRssi(gatt: BluetoothGatt, rssi: Int, status: Int) {
+                answer.complete(SensorSighting(HeartSensor(device.address, name), if (status == BluetoothGatt.GATT_SUCCESS) rssi else LINKED_RSSI))
+            }
+        }
+        var gatt: BluetoothGatt? = null
+        return try {
+            @Suppress("DEPRECATION")
+            gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+            if (gatt == null) return null
+            withTimeoutOrNull(PROBE_MILLIS) { answer.await() }?.also {
+                Log.i(TAG, "Already linked to a heart-rate sensor: ${name.ifEmpty { "(no name)" }} at ${it.rssi} dBm")
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Asking a linked device not allowed", e)
+            null
+        } finally {
+            runCatching {
+                gatt?.disconnect()
+                gatt?.close()
+            }
         }
     }
 
