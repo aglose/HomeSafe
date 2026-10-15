@@ -1,0 +1,25 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [],
+    "removed": [],
+    "unchanged": [
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/feature-modules",
+    "head": "074e2ed720d2f07b45ae44f58edd61a3b47fde61",
+    "base": "6cea452a88219acb8b00fada6720949ebfb47146",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/38694461107",
+    "failed": false
+  }
+}
