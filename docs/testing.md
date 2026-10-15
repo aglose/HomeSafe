@@ -6,15 +6,14 @@ actions, with `testTag` only where text or content descriptions can't pick a nod
 
 | Layer | Where | What it drives | Runs on |
 |---|---|---|---|
-| Unit | `shared/src/commonTest` | View models, repositories, parsers, pure UI logic | JVM, Android host, iOS simulator, emulator |
-| Screen UI | `shared/src/uiTest` | One stateless composable from fixtures (`HomeFeed`, `MomentsFeed`, `AlertsSection`, …) | JVM (skiko), iOS simulator, emulator |
-| Integration journeys | `shared/src/integrationTest` | The whole app — `App()` on a real `AppGraph` — signed in over HTTP to a fake Frigate | JVM, emulator |
+| Unit | each module's `src/commonTest` (`shared`, `features/*`) | View models, repositories, parsers, pure UI logic | Android host, iOS simulator, emulator |
+| Screen UI | `shared/src/uiTest`; `app/src/uiTest` for the drawer's apps | One stateless composable from fixtures (`HomeFeed`, `MomentsFeed`, `AlertsSection`, …) | iOS simulator, emulator |
+| Integration journeys | `app/src/integrationTest` | The whole app — `App()` on a real `AppGraph` — signed in over HTTP to a fake Frigate | Emulator |
 | End to end | `androidApp/src/androidTest` | The installed app's real `MainActivity`: intents, system back, relaunch | Emulator |
 | Android CLI journeys | `androidApp/src/journeysTest` | Natural-language journeys an agent runs on a device through the Android CLI | Emulator (opt-in) |
 
 Alongside these, previews and screenshots show what a change looks like rather than asserting on it:
-`:shared:renderPreviews`, the Layoutlib screenshot tests in `:androidApp`, journey screenshots
-(`-PjourneyScreens`), and the before/after gallery in each pull request. See [ui-previews.md](ui-previews.md).
+the Layoutlib screenshot tests in `:androidApp` and the before/after gallery in each pull request. See [ui-previews.md](ui-previews.md).
 
 ## The fake Frigate (`:fake-frigate`)
 
@@ -76,23 +75,19 @@ fun turningDetectionOffIsSavedOnTheServer() = runAppJourney {
   test does the same with `CompositionLocalProvider(LocalCompactLandscape provides true)`. A real device rotating
   under the real Activity — which must not recreate it — is `AppE2eTest`'s.
 
-On the JVM, the journeys keep the desktop app's database in `shared/build/tmp/jvmTest/homesafe-data`, not
-`~/.homesafe`. The directory is set with the `homesafe.dataDir` system property, and each test process takes a
-`worker-N` directory of its own under it (`testPlatformContext()` in `src/jvmTest`): `-PjvmTestForks=2` deals the test
-classes out to two JVMs running side by side, which is how CI's unit-test job runs them. A test that builds an app
-graph must get its `PlatformContext` from `testPlatformContext()`, or two processes share one database.
+Fakes that the tests of more than one module use (a fake web, a fake server connection, a clock moved by
+hand) live in `:testing`, which only `commonTest` source sets depend on.
 
 ## Running the suites
 
 | Suite | Command |
 |---|---|
 | Fake Frigate's own tests | `./gradlew :fake-frigate:test` |
-| Unit, screen UI and integration journeys on the JVM | `./gradlew :shared:jvmTest` |
-| Only the integration journeys | `./gradlew :shared:jvmTest --tests 'com.meticulouscreations.homesafe.integration.*'` |
-| Android host unit tests | `./gradlew :shared:testAndroidHostTest` |
-| Everything in `shared` on a device (unit, screen UI, integration) | `./gradlew :shared:connectedAndroidDeviceTest` |
+| Unit tests, every module, on the Android host | `./gradlew testAndroidHostTest` |
+| Every module on a device (unit, screen UI, integration) | `./gradlew connectedAndroidDeviceTest` |
+| Only the integration journeys, on a device | `./gradlew :app:connectedAndroidDeviceTest -Pandroid.testInstrumentationRunnerArguments.package=com.meticulouscreations.homesafe.integration` |
 | End-to-end on the real `MainActivity` | `./gradlew :androidApp:connectedDebugAndroidTest` |
-| iOS simulator (unit and screen UI) | `./gradlew :shared:iosSimulatorArm64Test` |
+| iOS simulator (unit and screen UI), every module | `./gradlew iosSimulatorArm64Test` |
 | Android CLI journeys | `scripts/run-android-cli-journeys.sh` (see below) |
 
 The end-to-end tests use the AndroidX Test Orchestrator with `clearPackageData`. Each test gets its own

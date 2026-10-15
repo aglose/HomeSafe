@@ -7,6 +7,8 @@
 <resources>
     <string name="fitness_heart_title">Heart rate</string>
     <string name="fitness_heart_open">Heart rate and zones</string>
+    <!-- The pill on the fitness front page while a sensor is reading: the beats a minute. -->
+    <string name="fitness_heart_pill_bpm">%1$d bpm</string>
 
     <!-- The five zones, easiest first -->
     <string name="fitness_heart_zone_1">Very light</string>

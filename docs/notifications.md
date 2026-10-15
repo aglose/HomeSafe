@@ -107,10 +107,10 @@ are written from it, and `NotificationGlyphsTest` fails when one has drifted. To
 one, edit the glyph and run:
 
 ```sh
-UPDATE_NOTIFICATION_ICONS=1 ./gradlew :shared:jvmTest --tests '*NotificationGlyphsTest*' --rerun
+UPDATE_NOTIFICATION_ICONS=1 ./gradlew :shared:testAndroidHostTest --tests '*NotificationGlyphsTest*' --rerun
 ```
 
-`:shared:renderPreviews -Ppreview=NotificationGlyphs` draws the whole set, large and at status-bar size.
+`scripts/render-ui-previews.sh` (Layoutlib; see docs/ui-previews.md) draws the whole set, large and at status-bar size.
 
 On iOS (local notifications only, until APNs lands) there is no icon to choose, but each camera's
 alerts stack in a thread of their own, someone seen while everyone is away is time-sensitive, and

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The integration journeys sign the real app graph in to a fake Frigate served over plain HTTP
-     on localhost from inside this test APK (see src/integrationTest). -->
+<!-- The UI tests here, and :app's integration journeys (which have a copy of this manifest), run in
+     runComposeUiTest's Activity; the journeys also sign in to a fake Frigate over plain HTTP on
+     localhost, hence the cleartext. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET" />

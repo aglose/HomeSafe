@@ -27,16 +27,12 @@ import androidx.compose.ui.test.swipeRight
 import androidx.compose.ui.test.swipeUp
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.unit.dp
-import com.meticulouscreations.homesafe.atlas.AtlasUiState
-import com.meticulouscreations.homesafe.finance.FinanceUiState
-import com.meticulouscreations.homesafe.fitness.FitnessUiState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.ShellDrawer
 import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.bottomNavTestTag
-import com.meticulouscreations.homesafe.weather.WeatherUiState
 import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -63,19 +59,14 @@ class ShellDrawerPullUiTest {
                     overlay = {
                         ShellDrawer(
                             open = nav.drawerOpen,
-                            selectedTab = nav.selectedTab,
-                            finance = FinanceUiState(),
-                            weather = WeatherUiState(),
-                            fitness = FitnessUiState(),
-                            atlas = AtlasUiState(),
                             pull = nav.drawerPull,
-                            onSelectTab = {},
-                            onOpenFinance = {},
-                            onOpenWeather = {},
-                            onOpenFitness = {},
-                            onOpenAtlas = {},
                             onClose = { nav.drawerOpen = false },
-                        )
+                        ) {
+                            // Stand-ins for the apps' cards, which live in the feature modules, tagged
+                            // as the real ones are: the drawer's edge is read off one, and swiped on the other.
+                            Box(Modifier.fillMaxWidth().height(160.dp).testTag("drawer_weather"))
+                            Box(Modifier.fillMaxWidth().height(120.dp).testTag("drawer_finance"))
+                        }
                     },
                     showBottomNav = nav.showsBottomNav(nav.selectedTab),
                     contentObscured = nav.drawerOpen || nav.appOpen,
@@ -280,7 +271,7 @@ class ShellDrawerPullUiTest {
         onNodeWithTag("content").performTouchInput { swipeRight(startX = width * 0.3f, endX = width * 0.9f) }
         runOnIdle { assertTrue(nav.drawerOpen) }
 
-        onNodeWithText("Cameras").performTouchInput { swipeLeft() }
+        onNodeWithTag("drawer_weather").performTouchInput { swipeLeft() }
 
         runOnIdle { assertFalse(nav.drawerOpen) }
         onNodeWithTag("shell_drawer").assertDoesNotExist()

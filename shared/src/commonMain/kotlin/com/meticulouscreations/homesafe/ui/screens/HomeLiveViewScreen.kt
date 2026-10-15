@@ -780,7 +780,7 @@ private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 const val HOME_FEED_TEST_TAG = "home_feed"
 
 /** The summary at the top of the home feed, for tests to tap. */
-internal const val HOME_STATUS_TEST_TAG = "home_status"
+const val HOME_STATUS_TEST_TAG = "home_status"
 
 /** The "In view now" caption, which opens the car-tagging screen. */
 internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"
