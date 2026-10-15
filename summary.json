@@ -1,0 +1,25 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [],
+    "removed": [],
+    "unchanged": [
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/atlas-gps-smoothing-029f02",
+    "head": "ea4699e9c9080aefbf58666340d37092659f0067",
+    "base": "810937d3623684a0a127762e4b1abaa3ebf363f5",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/38776033569",
+    "failed": false
+  }
+}
