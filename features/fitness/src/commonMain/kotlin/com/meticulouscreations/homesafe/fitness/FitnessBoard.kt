@@ -1,10 +1,12 @@
 package com.meticulouscreations.homesafe.fitness
 
 import androidx.compose.runtime.Immutable
+import com.meticulouscreations.homesafe.fitness.domain.BodyPart
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyweightTrend
 import com.meticulouscreations.homesafe.fitness.domain.Exercise
 import com.meticulouscreations.homesafe.fitness.domain.LoggedSet
+import com.meticulouscreations.homesafe.fitness.domain.Muscle
 import com.meticulouscreations.homesafe.fitness.domain.MuscleVolume
 import com.meticulouscreations.homesafe.fitness.domain.Pace
 import com.meticulouscreations.homesafe.fitness.domain.PaceVerdict
@@ -63,8 +65,13 @@ data class DayCard(
 @Immutable
 data class WorkoutEntry(val exerciseId: String, val sets: List<LoggedSet>, val records: Map<Long, Record> = emptyMap())
 
+/**
+ * The workout that is open, and today's sets in it. [regulars] are the exercises off its own
+ * shelves that tend to go along with it, best first ([FitnessBoardBuilder.regulars]): a tap away
+ * from being added to it.
+ */
 @Immutable
-data class ActiveWorkout(val workout: Workout, val entries: List<WorkoutEntry> = emptyList()) {
+data class ActiveWorkout(val workout: Workout, val entries: List<WorkoutEntry> = emptyList(), val regulars: List<String> = emptyList()) {
     val setCount: Int get() = entries.sumOf { it.sets.size }
     val recordCount: Int get() = entries.sumOf { it.records.size }
 
@@ -160,6 +167,10 @@ object FitnessBoardBuilder {
     const val STALE_WORKOUT_SECONDS = Workout.STALE_AFTER_SECONDS
     private const val RECENT_RECORD_DAYS = 30L
     private const val WEEK_SECONDS = 7 * SECONDS_PER_DAY
+    private const val MAX_REGULARS = 8
+
+    /** What is trained on any day, whatever the day is for: the core and the calves. */
+    private val ANYTIME_MUSCLES = setOf(Muscle.ABS, Muscle.CALVES)
 
     /**
      * [utcOffsetSeconds] is the offset now, which is what "today" and the last few weeks are read
@@ -229,7 +240,7 @@ object FitnessBoardBuilder {
             val entries = mine.groupBy { it.exerciseId }.map { (id, sets) ->
                 WorkoutEntry(id, sets, sets.mapNotNull { set -> recordById[set.id]?.let { set.id to it } }.toMap())
             }
-            ActiveWorkout(session, entries)
+            ActiveWorkout(session, entries, regulars(log, boards, session.focus))
         }
 
         val weekStart = nowEpochSeconds - WEEK_SECONDS
@@ -335,6 +346,46 @@ object FitnessBoardBuilder {
                 lifts = workoutOrder(mine).take(3),
             )
         }
+    }
+
+    /**
+     * The exercises off a [focus] workout's own shelves that go along with it, best first, as
+     * ids: those done in the most workouts of this kind, then those done in the most workouts
+     * of other kinds whose shelves they aren't on (core and calves, done whatever the day), then
+     * by [workoutOrder]. Core and calf work is there from the first, before there is a workout
+     * to learn from; anything else has to have gone along with a workout once.
+     */
+    fun regulars(log: FitnessLog, boards: List<ExerciseBoard>, focus: WorkoutFocus): List<String> {
+        val focusOf = log.workouts.associate { it.id to it.focus }
+        // Each exercise, and the kinds of workout it was done in, once per workout.
+        val doneIn = log.sets.filter { it.reps > 0 }
+            .mapNotNull { set -> focusOf[set.workoutId]?.let { Triple(set.exerciseId, set.workoutId, it) } }
+            .distinct()
+            .groupBy({ it.first }, { it.third })
+        fun anytime(board: ExerciseBoard) = board.exercise.bodyPart == BodyPart.CORE || board.exercise.primary in ANYTIME_MUSCLES
+        val ranked = boards.filter { it.exercise.bodyPart !in focus.parts }.mapNotNull { board ->
+            val kinds = doneIn[board.exercise.id].orEmpty()
+            val withThis = kinds.count { it == focus }
+            val elsewhere = kinds.count { it != focus && board.exercise.bodyPart !in it.parts }
+            if (withThis == 0 && elsewhere == 0 && !anytime(board)) null else Triple(board, withThis, elsewhere)
+        }
+        val order = workoutOrder(ranked.map { it.first }).withIndex().associate { (index, board) -> board.exercise.id to index }
+        return ranked.sortedWith(
+            compareByDescending<Triple<ExerciseBoard, Int, Int>> { it.second }
+                .thenByDescending { it.third }
+                .thenBy { order.getValue(it.first.exercise.id) },
+        ).take(MAX_REGULARS).map { it.first.exercise.id }
+    }
+
+    /**
+     * The exercises among [boards] whose names hold every word of [query], in any order and any
+     * case: those whose names begin with what was typed first, then as [workoutOrder] has them.
+     */
+    fun find(boards: List<ExerciseBoard>, query: String): List<ExerciseBoard> {
+        val words = query.lowercase().split(' ').filter { it.isNotBlank() }
+        if (words.isEmpty()) return emptyList()
+        val found = boards.filter { board -> board.exercise.name.lowercase().let { name -> words.all { it in name } } }
+        return workoutOrder(found).sortedByDescending { it.exercise.name.lowercase().startsWith(words.first()) }
     }
 
     /**

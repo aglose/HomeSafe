@@ -520,6 +520,16 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.ProgressScreen(state: c
     - onOpenHeart: STABLE (function type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.PullChip(name: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - name: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+    - tint: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.PulsingHeart(bpm: kotlin.Int?, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -845,6 +855,21 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WeekCard(board: com.meti
   restartable: true
   params:
     - board: STABLE (marked @Stable or @Immutable)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutAddCard(focus: com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus, regulars: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, boards: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.ExerciseBoard>, listed: kotlin.collections.Set<kotlin.String>, parts: kotlin.collections.List<com.meticulouscreations.homesafe.fitness.domain.BodyPart>, onPull: kotlin.Function1<kotlin.String, kotlin.Unit>, onCreate: kotlin.Function2<kotlin.String, com.meticulouscreations.homesafe.fitness.domain.BodyPart, kotlin.Unit>, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - focus: STABLE (class with no mutable properties)
+    - regulars: RUNTIME (requires runtime check)
+    - boards: RUNTIME (requires runtime check)
+    - listed: RUNTIME (requires runtime check)
+    - parts: RUNTIME (requires runtime check)
+    - onPull: STABLE (function type)
+    - onCreate: STABLE (function type)
+    - tint: STABLE (marked @Stable or @Immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

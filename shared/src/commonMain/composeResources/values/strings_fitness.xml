@@ -112,6 +112,12 @@
     <string name="fitness_workout_add">New exercise</string>
     <string name="fitness_workout_add_hint">Name it: Seated cable row</string>
     <string name="fitness_workout_add_confirm">Add</string>
+    <string name="fitness_workout_regulars">Often added on %1$s day</string>
+    <string name="fitness_workout_pull">Add %1$s to this workout</string>
+    <string name="fitness_workout_find">Add exercise</string>
+    <string name="fitness_workout_find_hint">Find one, or name a new one</string>
+    <string name="fitness_workout_find_none">Nothing called that yet</string>
+    <string name="fitness_workout_create">Create “%1$s”</string>
 
     <!-- The rest timer -->
     <string name="fitness_rest_label">Rest</string>

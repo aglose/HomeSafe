@@ -25,7 +25,7 @@ data class Classification(
 object ExerciseClassifier {
     fun classify(name: String, section: BodyPart? = null): Classification {
         val n = " " + name.lowercase().replace('-', ' ') + " "
-        val part = section ?: bodyPart(n)
+        val part = section ?: shelf(n) ?: BodyPart.CORE
         val equipment = equipment(n)
         val (primary, secondary) = muscles(n, part)
         val isolation = secondary.isEmpty() || primary == Muscle.BICEPS || primary == Muscle.FOREARMS
@@ -55,14 +55,18 @@ object ExerciseClassifier {
         return Classification(part, equipment, loadKind, primary, secondary, band, increment, rest)
     }
 
+    /** The shelf [name] says it belongs on, or null when it says nothing about one. */
+    fun shelfFor(name: String): BodyPart? = shelf(" " + name.lowercase().replace('-', ' ') + " ")
+
     private fun String.has(vararg words: String) = words.any { contains(it) }
 
     /**
      * The shelf a name belongs on when no heading said. The order settles the overlaps: a leg
      * curl is not a curl, a rear delt row is not a row. Short words are matched whole (the
-     * leading space): "chin" is in every "machine", "lat" in "flat", "row" in "narrow".
+     * leading space): "chin" is in every "machine", "lat" in "flat", "row" in "narrow". Null
+     * when nothing in the name says ([classify] then puts it on the core shelf).
      */
-    private fun bodyPart(n: String): BodyPart = when {
+    private fun shelf(n: String): BodyPart? = when {
         n.has(" ab ", " abs ", "crunch", "plank", "hip flexion") -> BodyPart.CORE
 
         n.has(" leg ", " legs ", "squat", "calf", "hamstring", " quad", "glute", "abductor", "adductor", "lunge", " hip ", "deadlift") -> BodyPart.LEGS
@@ -80,7 +84,7 @@ object ExerciseClassifier {
         // Said of a press with nothing else to go on, it is a chest press.
         n.has("incline", "decline") -> BodyPart.CHEST
 
-        else -> BodyPart.CORE
+        else -> null
     }
 
     private fun equipment(n: String): Equipment = when {

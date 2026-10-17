@@ -148,12 +148,17 @@ Hammer curls
 
     val log: FitnessLog by lazy { build(working = false) }
     private val workingLog: FitnessLog by lazy { build(working = true) }
+    private val backDayLog: FitnessLog by lazy { build(working = true, focus = WorkoutFocus.BACK) }
 
     val empty = FitnessUiState(loaded = true, nowEpochSeconds = NOW)
 
-    /** The app as it stands on an ordinary evening; with [working], twenty-five minutes into a legs day. */
-    fun state(working: Boolean = false, resting: Boolean = working, flash: Boolean = false): FitnessUiState {
-        val source = if (working) workingLog else log
+    /** The app as it stands on an ordinary evening; with [working], twenty-five minutes into a legs day ([backDay]: a back day). */
+    fun state(working: Boolean = false, resting: Boolean = working, flash: Boolean = false, backDay: Boolean = false): FitnessUiState {
+        val source = when {
+            working && backDay -> backDayLog
+            working -> workingLog
+            else -> log
+        }
         val boards = FitnessBoardBuilder.build(source, NOW, 0)
         val hack = source.exercises.first { it.name == "Hack squat" }
         return FitnessUiState(
@@ -250,7 +255,7 @@ Hammer curls
     /** A search that has turned up the band and a stranger's strap. */
     fun heartSearching(): HeartUiState = heartUnset(HeartSensorState.Searching(listOf(SensorSighting(band, -52), SensorSighting(strap, -84))))
 
-    private fun build(working: Boolean): FitnessLog {
+    private fun build(working: Boolean, focus: WorkoutFocus = WorkoutFocus.LEGS): FitnessLog {
         val plan = NotesImport.plan(NotesParser.parse(NOTES), emptyList(), emptyList(), NOW)
         val exercises = plan.exercises.map { it.exercise }
         val sets = ArrayList<LoggedSet>()
@@ -283,7 +288,12 @@ Hammer curls
                 }
             }
         }
-        if (working) {
+        if (working && focus == WorkoutFocus.BACK) {
+            val session = Workout(++workoutId, focus, NOW - 25 * 60, null)
+            workouts += session
+            sets += LoggedSet(++id, idOf("Lat pulldown (strict)"), 200.0, 11, NOW - 20 * 60, workoutId = session.id)
+            sets += LoggedSet(++id, idOf("High row"), 180.0, 10, NOW - 12 * 60, workoutId = session.id)
+        } else if (working) {
             val session = Workout(++workoutId, WorkoutFocus.LEGS, NOW - 25 * 60, null)
             workouts += session
             sets += LoggedSet(++id, idOf("Leg extension"), 200.0, 11, NOW - 20 * 60, workoutId = session.id)
@@ -330,6 +340,13 @@ private fun FitnessTodayWorkingPreview() {
 @Composable
 private fun FitnessWorkoutPreview() {
     FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true), FitnessActions(), initialPage = FitnessPage.Workout) }
+}
+
+// A back day, with what goes along with it from off its shelf (the calves, the curls) a tap away at the foot.
+@Preview(widthDp = 412, heightDp = 1500)
+@Composable
+private fun FitnessWorkoutBackDayPreview() {
+    FrigateTheme { FitnessAppContent(FitnessFixtures.state(working = true, resting = false, backDay = true), FitnessActions(), initialPage = FitnessPage.Workout) }
 }
 
 // The figure that performs each exercise, each of the three ways it can be drawn: a still on every row, and on the open
