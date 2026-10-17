@@ -1,0 +1,27 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [],
+    "removed": [],
+    "unchanged": [
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeedIndoor_Home, indoor cameras_ee22acaf_0.png",
+      "HomeFeedWithIndoor_Home, with indoor cameras_bd705e5d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "atlas-year-multiselect",
+    "head": "5b3938d1ebfb37f25ebe06282177240b2065b353",
+    "base": "849b07bd3e5b5682d562a3a070401b8ce027028a",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/39058201640",
+    "failed": false
+  }
+}
