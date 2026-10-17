@@ -243,6 +243,22 @@ class AtlasAnalysisTest {
     }
 
     @Test
+    fun yearsPickedTogetherOrApartCoverTheirOwnPlaces() {
+        val all = YearsCovered.of(history, analysis.years.mapTo(HashSet()) { it.year })
+        assertEquals(history.places.keys, all.placeKeys)
+        assertEquals(3, all.regions)
+        // 2025 alone: the desert and not the lake, though both are after 2023.
+        val desertYear = YearsCovered.of(history, setOf(2025))
+        assertTrue(AtlasFixtures.lake.key !in desertYear.placeKeys)
+        assertEquals(2, desertYear.regions)
+        // The first and last years together, skipping the lake's.
+        val apart = YearsCovered.of(history, setOf(2023, 2025))
+        assertTrue(desertYear.placeKeys.all { it in apart.placeKeys })
+        assertTrue(AtlasFixtures.lake.key !in apart.placeKeys)
+        assertEquals(0, YearsCovered.of(history, setOf(2019)).placeKeys.size)
+    }
+
+    @Test
     fun theRecords() {
         val records = analysis.records
         assertEquals("ChIJcanyon", records.farthestPlace?.key)
@@ -367,9 +383,9 @@ class AtlasDensityTest {
     fun squaresSayWhichYearsTheyWereCrossedIn() {
         val fine = density.levels.last()
         assertEquals(1, density.yearBit(2023))
-        assertEquals(0b111, density.yearsThrough(2025))
-        assertEquals(0b1, density.yearsThrough(2023))
-        assertEquals(0, density.yearsThrough(2022))
+        assertEquals(0b111, density.yearsIn(listOf(2023, 2024, 2025)))
+        assertEquals(0b101, density.yearsIn(setOf(2025, 2023)))
+        assertEquals(0, density.yearsIn(emptyList()))
         // The lake was 2024 only; the first house's street 2023 and the start of 2024.
         assertTrue(fine.years.any { it == density.yearBit(2024) })
         assertTrue(fine.years.any { it == 0b111 })
