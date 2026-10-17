@@ -21,13 +21,26 @@ import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 /*
  * The bar under a camera's player, under a stand-in for the video, in the two states that look
  * most different: at the live edge with sound on, and watching a recording on the silent SD stream.
+ * The second preview is a small phone with the text enlarged, where the status no longer fits
+ * beside the buttons and takes a row of its own.
  */
 
 @Preview(name = "Camera player bar", widthDp = PREVIEW_WIDTH_DP)
 @Composable
 fun CameraPlayerBarPreview() {
+    PlayerBarSamples(widthDp = PREVIEW_WIDTH_DP)
+}
+
+@Preview(name = "Camera player bar, small phone, large text", widthDp = NARROW_PREVIEW_WIDTH_DP, fontScale = LARGE_FONT_SCALE)
+@Composable
+fun CameraPlayerBarNarrowPreview() {
+    PlayerBarSamples(widthDp = NARROW_PREVIEW_WIDTH_DP)
+}
+
+@Composable
+private fun PlayerBarSamples(widthDp: Int) {
     FrigateTheme {
-        Column(modifier = Modifier.width(PREVIEW_WIDTH_DP.dp).background(MaterialTheme.colorScheme.background), verticalArrangement = Arrangement.spacedBy(24.dp)) {
+        Column(modifier = Modifier.width(widthDp.dp).background(MaterialTheme.colorScheme.background), verticalArrangement = Arrangement.spacedBy(24.dp)) {
             PlayerBarSample(isLive = true, quality = StreamQuality.HIGH, isMuted = false, hasAudio = true)
             PlayerBarSample(isLive = false, quality = StreamQuality.LOW, isMuted = true, hasAudio = false)
         }
@@ -56,6 +69,8 @@ private fun PlayerBarSample(isLive: Boolean, quality: StreamQuality, isMuted: Bo
 }
 
 private const val PREVIEW_WIDTH_DP = 360
+private const val NARROW_PREVIEW_WIDTH_DP = 320
+private const val LARGE_FONT_SCALE = 1.5f
 
 /** 8:44 PM UTC on a day in October 2026, sample data for the readout. */
 private const val SAMPLE_NOW = 1_792_269_840.0

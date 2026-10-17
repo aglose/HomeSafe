@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -36,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
@@ -45,6 +48,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
@@ -121,7 +125,12 @@ internal fun QuickActionsRow(
  * own short name in a badge, a choice that opens a menu saying what each option does; the speaker
  * is a toggle, its icon struck through when muted and tinted in the accent when on, so the accent
  * only ever means "on"; and the scissors are a plain action.
+ *
+ * The buttons keep their 48dp whatever the width. When [leading] doesn't fit beside them (a narrow
+ * phone, enlarged text) it takes a row of its own above them rather than being cut short, and
+ * within that row the pill and the time wrap onto separate lines if they must ([PlayerBarLayout]).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CameraQuickActions(
     displayName: String,
@@ -136,20 +145,21 @@ internal fun CameraQuickActions(
     modifier: Modifier = Modifier,
     leading: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(
+    PlayerBarLayout(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = PLAYER_BAR_HEIGHT)
             .background(MaterialTheme.colorScheme.surfaceContainerLowest)
             .padding(start = 16.dp, end = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
+        leading = {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                content = leading,
+            )
+        },
     ) {
-        Row(
-            modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            content = leading,
-        )
         // Quality: a picker rather than a cycle, so the options explain themselves before one is
         // chosen. Only the full stream carries audio, so SD also dims the speaker (through the
         // player's own audio-availability report).
@@ -205,6 +215,45 @@ internal fun CameraQuickActions(
             modifier = Modifier.onGloballyPositioned { clipOrigin.coordinates = it },
         ) {
             Icon(imageVector = Icons.Filled.ContentCut, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/**
+ * [leading] at the start and [buttons] at the end of one row, both centred on it, while they fit
+ * side by side; otherwise [leading] on a row of its own, as wide as the bar, with the buttons on
+ * the row under it, still at the end. Which it is comes from [leading]'s one-line width, so the
+ * status is never squeezed narrower than it reads.
+ */
+@Composable
+private fun PlayerBarLayout(leading: @Composable () -> Unit, modifier: Modifier = Modifier, buttons: @Composable RowScope.() -> Unit) {
+    Layout(
+        contents = listOf(leading, { Row(verticalAlignment = Alignment.CenterVertically, content = buttons) }),
+        modifier = modifier,
+    ) { (leadingMeasurables, buttonMeasurables), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val buttonRow = buttonMeasurables.single().measure(loose)
+        val leadingMeasurable = leadingMeasurables.single()
+        val gap = PLAYER_BAR_GAP.roundToPx()
+        val beside = (constraints.maxWidth - buttonRow.width - gap).coerceAtLeast(0)
+        val fitsBeside = leadingMeasurable.maxIntrinsicWidth(Constraints.Infinity) <= beside
+        if (fitsBeside) {
+            val status = leadingMeasurable.measure(loose.copy(maxWidth = beside))
+            val height = maxOf(constraints.minHeight, status.height, buttonRow.height)
+            layout(constraints.maxWidth, height) {
+                status.placeRelative(0, (height - status.height) / 2)
+                buttonRow.placeRelative(constraints.maxWidth - buttonRow.width, (height - buttonRow.height) / 2)
+            }
+        } else {
+            // A row of its own, kept as far from the bar's end as its start is (the bar's end padding is less, for the buttons' sake).
+            val inset = PLAYER_BAR_STACKED_INSET.roundToPx()
+            val top = PLAYER_BAR_STACKED_TOP.roundToPx()
+            val status = leadingMeasurable.measure(loose.copy(maxWidth = (constraints.maxWidth - inset).coerceAtLeast(0)))
+            val height = maxOf(constraints.minHeight, top + status.height + buttonRow.height)
+            layout(constraints.maxWidth, height) {
+                status.placeRelative(0, top)
+                buttonRow.placeRelative(constraints.maxWidth - buttonRow.width, height - buttonRow.height)
+            }
         }
     }
 }
@@ -325,3 +374,10 @@ private const val UNAVAILABLE_ALPHA = 0.38f
 /** The bar's height: a 48dp button with a little air above and below. */
 private val PLAYER_BAR_HEIGHT = 52.dp
 private val PLAYER_BAR_BUTTON_SIZE = 48.dp
+
+/** The least room between the status and the buttons when they share the row. */
+private val PLAYER_BAR_GAP = 8.dp
+
+/** Stacked, how much the status row stops short of the bar's end, and how far it sits below the top. */
+private val PLAYER_BAR_STACKED_INSET = 12.dp
+private val PLAYER_BAR_STACKED_TOP = 10.dp

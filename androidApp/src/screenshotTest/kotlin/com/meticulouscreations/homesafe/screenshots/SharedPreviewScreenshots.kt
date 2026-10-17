@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.screenshots
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
+import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarNarrowPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
@@ -58,3 +59,8 @@ fun StatusBadges() = StatusBadgePreview()
 @Preview(name = "Camera player bar", widthDp = 360)
 @Composable
 fun CameraPlayerBar() = CameraPlayerBarPreview()
+
+@PreviewTest
+@Preview(name = "Camera player bar, small phone, large text", widthDp = 320, fontScale = 1.5f)
+@Composable
+fun CameraPlayerBarNarrow() = CameraPlayerBarNarrowPreview()
