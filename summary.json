@@ -1,0 +1,28 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [
+      "CameraPlayerBarNarrow_Camera player bar, small phone, large text_c3dce0ec_0.png",
+      "CameraPlayerBar_Camera player bar_f0910627_0.png"
+    ],
+    "removed": [],
+    "unchanged": [
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/video-details-button-redesign-7361e4",
+    "head": "73bc4920eeb11ba6c96fa8fd76953fd26ec58da3",
+    "base": "9d87959645f118ef541d34cfae08249c0debfb9f",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/39054467750",
+    "failed": false
+  }
+}
