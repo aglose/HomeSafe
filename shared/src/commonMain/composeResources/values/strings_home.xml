@@ -58,7 +58,7 @@
     <string name="home_badge_connecting">Connecting</string>
     <string name="home_badge_live">Live</string>
 
-    <!-- A camera's own screen: the quick actions under the player. -->
+    <!-- A camera's own screen: the bar under the player (quality, sound, clip). -->
     <!-- Short names for the stream qualities, as a video player's menu would show them. -->
     <string name="camera_quality_auto">Auto</string>
     <string name="camera_quality_high">HD</string>
@@ -71,16 +71,12 @@
     <string name="camera_quality_button_description">Video quality: %1$s</string>
     <!-- Accessibility description of the tick beside the quality in force. -->
     <string name="camera_quality_selected">Selected</string>
-    <!-- The speaker button's caption. -->
-    <string name="camera_sound_muted">Muted</string>
-    <string name="camera_sound_on">Sound on</string>
+    <!-- Accessibility descriptions of the speaker button. -->
     <string name="camera_sound_turn_on">Turn sound on</string>
     <string name="camera_sound_turn_off">Turn sound off</string>
-    <!-- The scissors button's caption: cut a clip of the video. -->
-    <string name="camera_action_clip">Clip</string>
-    <!-- %1$s is the camera's name. -->
+    <!-- Accessibility description of the scissors button, which cuts a clip of the video; %1$s is the camera's name. -->
     <string name="camera_action_clip_description">Clip a video from %1$s</string>
-    <!-- One-line feedback under the quick actions after a tap. -->
+    <!-- One-line feedback under the player's bar after a tap. -->
     <string name="camera_hint_single_quality">This camera has a single stream quality</string>
     <string name="camera_hint_sound_on_no_audio">Sound on, but this stream has no audio</string>
     <string name="camera_hint_sound_on">Sound on</string>

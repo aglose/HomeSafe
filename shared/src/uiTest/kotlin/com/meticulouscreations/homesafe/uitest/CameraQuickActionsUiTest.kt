@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.uitest
 
+import androidx.compose.material3.Text
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertIsDisplayed
@@ -16,15 +17,16 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * The round buttons under the camera screen's player. The captions' wording is pinned by
- * CameraQuickActionsLabelTest; this checks they are actually on screen next to the buttons, and
- * that the quality button opens a picker that explains its options rather than silently cycling.
+ * The bar under the camera screen's player. The badge's wording is pinned by
+ * CameraQuickActionsLabelTest; this checks each button says its state to a screen reader, that
+ * whatever the caller puts at its start is shown, and that the quality button opens a picker that
+ * explains its options rather than silently cycling.
  */
 @OptIn(ExperimentalTestApi::class)
 class CameraQuickActionsUiTest {
 
     @Test
-    fun eachButtonIsCaptionedWithItsState() = runComposeUiTest {
+    fun eachButtonSaysItsState() = runComposeUiTest {
         setContent {
             FrigatePreview {
                 CameraQuickActions(
@@ -37,14 +39,16 @@ class CameraQuickActionsUiTest {
                     onQualityUnavailable = {},
                     onToggleSound = {},
                     onClip = {},
-                )
+                ) {
+                    Text("LIVE")
+                }
             }
         }
 
-        onNodeWithText("Auto").assertIsDisplayed()
-        onNodeWithText("Muted").assertIsDisplayed()
-        onNodeWithText("Clip").assertIsDisplayed()
-        onNodeWithContentDescription("Clip a video from Front Yard", useUnmergedTree = true).assertIsDisplayed()
+        onNodeWithText("LIVE").assertIsDisplayed()
+        onNodeWithContentDescription(QUALITY_AUTO).assertIsDisplayed()
+        onNodeWithContentDescription("Turn sound on").assertIsDisplayed()
+        onNodeWithContentDescription("Clip a video from Front Yard").assertIsDisplayed()
     }
 
     @Test
@@ -66,9 +70,9 @@ class CameraQuickActionsUiTest {
             }
         }
 
-        onNodeWithText("Clip").performClick()
+        onNodeWithContentDescription("Clip a video from Front Yard").performClick()
 
-        // The splash lands on the button: right of centre (the third slot), inside the window.
+        // The splash lands on the button: right of centre (the bar's last button), inside the window.
         val landed = assertNotNull(origin)
         assertTrue(landed.x in 0.5f..1f, "the clip button is the right-hand slot, got $landed")
         assertTrue(landed.y in 0f..1f, "the origin is a fraction of the window, got $landed")
@@ -93,7 +97,7 @@ class CameraQuickActionsUiTest {
             }
         }
 
-        onNodeWithText("Auto").performClick()
+        onNodeWithContentDescription(QUALITY_AUTO).performClick()
         onNodeWithText("Lighter on data, no sound").assertIsDisplayed()
         onNodeWithText("SD").performClick()
 
@@ -119,9 +123,13 @@ class CameraQuickActionsUiTest {
             }
         }
 
-        onNodeWithText("Auto").performClick()
+        onNodeWithContentDescription(QUALITY_AUTO).performClick()
 
         assertTrue(explained)
         onNodeWithText("Video quality").assertDoesNotExist()
+    }
+
+    private companion object {
+        const val QUALITY_AUTO = "Video quality: Auto"
     }
 }
