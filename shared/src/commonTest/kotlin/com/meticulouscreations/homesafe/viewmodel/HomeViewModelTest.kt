@@ -1,5 +1,7 @@
 package com.meticulouscreations.homesafe.viewmodel
 
+import com.meticulouscreations.homesafe.data.InMemorySettingsDao
+import com.meticulouscreations.homesafe.data.PlaybackPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
@@ -9,10 +11,12 @@ import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.MomentsPaging
+import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -28,6 +32,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
@@ -187,6 +192,7 @@ class HomeViewModelTest {
         inView: List<StationaryObject> = emptyList(),
     ) {
         val cameraRepo = FakeCameras(cameras)
+        val playbackPreferences = PlaybackPreferencesRepositoryImpl(InMemorySettingsDao())
         val indoorRepo = FakeNestCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
         val connection = FakeConnection(serverUrl)
@@ -195,6 +201,7 @@ class HomeViewModelTest {
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeNestCamerasUseCase = ObserveNestCamerasUseCase(indoorRepo),
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(connection),
+            observePlaybackPreferencesUseCase = ObservePlaybackPreferencesUseCase(playbackPreferences),
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
             getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
             getCameraSnapshotUrlUseCase = GetCameraSnapshotUrlUseCase(FakeMediaUrls),
@@ -302,6 +309,21 @@ class HomeViewModelTest {
         assertNull(outdoor[1].posterUrl, "a Nest camera has no Frigate snapshot, wherever it is")
         assertEquals("http://frigate.test:8971/live/outdoor_doorbell", outdoor[1].streamUrl)
         assertEquals(listOf("kitchen"), indoorTiles(h.viewModel)?.map { it.camera.name })
+    }
+
+    @Test
+    fun nestCardsShowTheWholePictureUntilToldToFillAndFrigatesStretch() = runTest {
+        val h = Harness(
+            cameras = listOf(Camera(name = "front_door", enabled = true)),
+            indoorCameras = listOf(nest("outdoor_doorbell", CameraPlacement.Outdoor), nest("kitchen")),
+        )
+        assertEquals(listOf(null, VideoFit.Fit), tiles(h.viewModel).map { it.videoFit }, "Frigate's cameras keep stretching to their card")
+        assertEquals(listOf(VideoFit.Fit), indoorTiles(h.viewModel)?.map { it.videoFit })
+
+        h.playbackPreferences.updatePlaybackPreferences(PlaybackPreferences(nestFit = VideoFit.Fill))
+        advanceUntilIdle()
+        assertEquals(listOf(null, VideoFit.Fill), h.viewModel.cameras.value?.map { it.videoFit })
+        assertEquals(listOf(VideoFit.Fill), h.viewModel.indoorCameras.value?.map { it.videoFit })
     }
 
     @Test

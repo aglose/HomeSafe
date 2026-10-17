@@ -16,7 +16,7 @@
         <error line="156" column="5" source="compose:parameter-naming" />
         <error line="157" column="5" source="compose:parameter-naming" />
         <error line="159" column="5" source="compose:parameter-naming" />
-        <error line="191" column="5" source="compose:parameter-naming" />
+        <error line="192" column="5" source="compose:parameter-naming" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/components/PulsingDot.kt">
         <error line="62" column="36" source="compose:mutable-state-autoboxing" />
@@ -48,7 +48,7 @@
         <error line="413" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/HomeLiveViewScreen.kt">
-        <error line="132" column="5" source="compose:modifier-missing-check" />
+        <error line="133" column="5" source="compose:modifier-missing-check" />
     </file>
     <file name="src/commonMain/kotlin/com/meticulouscreations/homesafe/ui/screens/SecureConnectionScreen.kt">
         <error line="142" column="5" source="compose:modifier-missing-check" />

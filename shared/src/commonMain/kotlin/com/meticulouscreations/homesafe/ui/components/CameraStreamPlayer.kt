@@ -180,6 +180,7 @@ internal fun OnReconnectRequest(requests: Int, reconnect: () -> Unit) {
  * Plays a camera's live stream without sound, reporting only how far it has got — see
  * [LiveStreamStatus]. [webRtcSignalingUrl], when given, lets platforms with a WebRTC engine
  * join over that instead of [streamUrl]'s HLS; the grid's silent cards are the caller.
+ * [onStreamStats] measures the stream while it is non-null (see [ShapedVideo], which wants its size).
  */
 @Composable
 fun CameraStreamPlayer(
@@ -190,6 +191,7 @@ fun CameraStreamPlayer(
     playerKey: String? = null,
     onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
     reconnectRequests: Int = 0,
+    onStreamStats: ((stats: LiveStreamStats?) -> Unit)? = null,
 ) {
     val request = remember(streamUrl, posterUrl, webRtcSignalingUrl) {
         val webRtc = webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
@@ -200,6 +202,7 @@ fun CameraStreamPlayer(
         modifier = modifier,
         playerKey = playerKey,
         onStreamStatusChanged = onStreamStatusChanged,
+        onStreamStats = onStreamStats,
         reconnectRequests = reconnectRequests,
     )
 }

@@ -308,7 +308,9 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         var loadedToMs = Long.MIN_VALUE
         val bytes = RateMeter()
         val clock = TimeSource.Monotonic.markNow()
-        var reportedAtMs = Long.MIN_VALUE
+        // One interval back, so the first pass reports. (Long.MIN_VALUE overflowed `now - reportedAtMs`
+        // to a negative number, and nothing was ever reported.)
+        var reportedAtMs = -LIVE_STATS_INTERVAL_MS
         while (true) {
             val now = clock.elapsedNow().inWholeMilliseconds
             val live = source is VideoSource.Live

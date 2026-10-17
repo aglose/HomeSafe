@@ -73,7 +73,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 24,
+    version = 25,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -130,6 +130,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 23 -> 24: what the drawer's Finance card shows (FinancePreferencesEntity.drawerItems),
         // defaulting to the S&P 500 and net worth it always showed.
         AutoMigration(from = 23, to = 24),
+        // 24 -> 25: how the Nest cameras' pictures sit in their boxes
+        // (PlaybackPreferencesEntity.nestFit, default "Fit").
+        AutoMigration(from = 24, to = 25),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

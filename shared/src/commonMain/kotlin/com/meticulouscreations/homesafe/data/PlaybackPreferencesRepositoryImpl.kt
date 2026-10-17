@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.PlaybackPreferences
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.repository.PlaybackPreferencesRepository
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -24,11 +25,14 @@ class PlaybackPreferencesRepositoryImpl(private val settingsDao: SettingsDao) : 
                     // A quality this build doesn't know (a downgrade after a newer one added one) falls back to Auto rather than crashing.
                     quality = StreamQuality.entries.firstOrNull { it.name == entity.quality } ?: PlaybackPreferences.DEFAULT.quality,
                     soundOn = entity.soundOn,
+                    nestFit = VideoFit.entries.firstOrNull { it.name == entity.nestFit } ?: PlaybackPreferences.DEFAULT.nestFit,
                 )
             }
         }
 
     override suspend fun updatePlaybackPreferences(preferences: PlaybackPreferences) {
-        settingsDao.upsertPlaybackPreferences(PlaybackPreferencesEntity(quality = preferences.quality.name, soundOn = preferences.soundOn))
+        settingsDao.upsertPlaybackPreferences(
+            PlaybackPreferencesEntity(quality = preferences.quality.name, soundOn = preferences.soundOn, nestFit = preferences.nestFit.name),
+        )
     }
 }

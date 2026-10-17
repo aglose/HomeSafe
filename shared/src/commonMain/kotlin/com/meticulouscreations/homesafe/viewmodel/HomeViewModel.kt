@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -17,6 +18,7 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
@@ -30,12 +32,15 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -58,6 +63,8 @@ data class CameraTile(
     val posterUrl: String?,
     /** Where the card's player can negotiate WebRTC for the same stream; null wherever [streamUrl] is. */
     val webRtcSignalingUrl: String? = null,
+    /** How the video sits in the card when it isn't 16:9 (see `ShapedVideo`): null stretches it, as every Frigate camera does. */
+    val videoFit: VideoFit? = null,
 )
 
 /**
@@ -79,6 +86,7 @@ class HomeViewModel(
     observeCamerasUseCase: ObserveCamerasUseCase,
     observeNestCamerasUseCase: ObserveNestCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
+    observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
@@ -185,6 +193,9 @@ class HomeViewModel(
         viewModelScope.launch { setAwayUseCase(false) }
     }
 
+    /** How the Nest cameras' pictures sit in their cards: the saved choice, whole until it is read. */
+    private val nestFit: Flow<VideoFit> = observePlaybackPreferencesUseCase().map { it.nestFit }.onStart { emit(VideoFit.Fit) }.distinctUntilChanged()
+
     /**
      * The Nest cameras, null until the server has said which there are (see
      * [ObserveNestCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
@@ -210,8 +221,9 @@ class HomeViewModel(
         observeCamerasUseCase(),
         nestCameras,
         observeCurrentServerUrlUseCase(),
-    ) { frigate, nest, serverUrl ->
-        (frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }).map { camera -> tile(camera, serverUrl) }
+        nestFit,
+    ) { frigate, nest, serverUrl, fit ->
+        (frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }).map { camera -> tile(camera, serverUrl, fit) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
@@ -231,12 +243,14 @@ class HomeViewModel(
     val indoorCameras: StateFlow<List<CameraTile>?> = combine(
         nestCameras,
         observeCurrentServerUrlUseCase(),
-    ) { nest, serverUrl ->
-        nest?.filter { it.placement == CameraPlacement.Indoor }?.map { camera -> tile(camera, serverUrl) }
+        nestFit,
+    ) { nest, serverUrl, fit ->
+        nest?.filter { it.placement == CameraPlacement.Indoor }?.map { camera -> tile(camera, serverUrl, fit) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private fun tile(camera: Camera, serverUrl: String?): CameraTile {
-        if (serverUrl == null || !camera.enabled) return CameraTile(camera, streamUrl = null, posterUrl = null)
+    private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit): CameraTile {
+        val videoFit = nestFit.takeIf { camera.source == CameraSource.Nest }
+        if (serverUrl == null || !camera.enabled) return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit)
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
         // reserved for the single-camera detail view.
         return CameraTile(
@@ -245,6 +259,7 @@ class HomeViewModel(
             posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
                 .takeIf { camera.source == CameraSource.Frigate },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
+            videoFit = videoFit,
         )
     }
 
