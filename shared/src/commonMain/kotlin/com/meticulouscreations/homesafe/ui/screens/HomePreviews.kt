@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
@@ -55,6 +56,14 @@ fun HomeFeedWithIndoorPreview() {
 @Composable
 fun HomeFeedIndoorPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, inView = previewInView, placement = CameraPlacement.Indoor)
+}
+
+/** Arrange mode on the indoor cameras: each card with its turn and tilt controls, the nursery's picture set crooked. */
+@Preview(name = "Home, arranging", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun HomeFeedArrangingPreview() {
+    val tiles = previewIndoorTiles.map { if (it.camera.name == "nursery") it.copy(orientation = CameraOrientation(quarterTurns = 1, tiltDegrees = -8f)) else it }
+    HomeFeedPreviewContent(everyoneAway = false, cameras = tiles, inView = emptyList(), placement = CameraPlacement.Indoor, arranging = true)
 }
 
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
@@ -115,6 +124,7 @@ private fun HomeFeedPreviewContent(
     refreshing: Boolean = false,
     connectionProblem: ConnectionProblem? = null,
     placement: CameraPlacement? = null,
+    arranging: Boolean = false,
 ) {
     FrigatePreview {
         SharedTransitionPreview {
@@ -130,12 +140,15 @@ private fun HomeFeedPreviewContent(
                 connectionProblem = connectionProblem,
                 onOpenTailscale = {},
                 placement = placement,
+                arranging = arranging,
+                onArrangeToggle = {},
             ) { tile ->
                 CameraCard(
                     tile = tile,
                     sharedTransitionScope = this@SharedTransitionPreview,
                     zoomState = zoomState,
                     onClick = {},
+                    arranging = arranging,
                 )
             }
         }

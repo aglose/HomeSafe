@@ -23,6 +23,8 @@ kotlinx-coroutines = "1.11.0"
 # whole Compose in with it, over the version pinned above (.github/dependabot.yml leaves it alone).
 material3 = "1.12.0-alpha03"
 material-icons-extended = "1.7.3"
+# Drag to reorder in lazy lists and grids (Calvin Liang), for the Home page's Arrange mode.
+reorderable = "3.1.0"
 metro = "1.4.5"
 navigation3 = "1.1.2"
 # Back as a gesture to animate with (NavigationBackHandler); the same dispatcher Navigation 3 feeds.
@@ -74,6 +76,7 @@ androidx-fragment = { module = "androidx.fragment:fragment-ktx", version.ref = "
 compose-uiTooling = { module = "org.jetbrains.compose.ui:ui-tooling", version.ref = "composeMultiplatform" }
 navigationevent-compose = { module = "org.jetbrains.androidx.navigationevent:navigationevent-compose", version.ref = "navigationevent" }
 compose-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "material-icons-extended" }
+reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
 androidx-lifecycle-viewmodelCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "androidx-lifecycle" }
 androidx-lifecycle-runtimeCompose = { module = "org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose", version.ref = "androidx-lifecycle" }

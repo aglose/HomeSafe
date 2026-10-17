@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
 import androidx.compose.animation.EnterExitState
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,7 +73,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -102,7 +107,12 @@ import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_move_earlier
+import homesafe.shared.generated.resources.camera_move_later
 import homesafe.shared.generated.resources.common_dot_separator
+import homesafe.shared.generated.resources.home_arrange
+import homesafe.shared.generated.resources.home_arrange_done
+import homesafe.shared.generated.resources.home_arrange_hint
 import homesafe.shared.generated.resources.home_away_back
 import homesafe.shared.generated.resources.home_away_banner
 import homesafe.shared.generated.resources.home_badge_connecting
@@ -120,6 +130,8 @@ import homesafe.shared.generated.resources.home_in_view_title
 import homesafe.shared.generated.resources.home_no_cameras
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyGridState
 
 /**
  * The "Home" tab's content: the cars parked in view and the cameras reported by the connected
@@ -141,6 +153,7 @@ fun HomeTabContent(
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
     val indoorCameras by viewModel.indoorCameras.collectAsStateWithLifecycle()
     val placement by viewModel.placement.collectAsStateWithLifecycle()
+    val arranging by viewModel.arranging.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
     val inView by viewModel.inView.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
@@ -153,11 +166,17 @@ fun HomeTabContent(
     ReportFullyDrawnWhen { cameras != null }
 
     val hasIndoor = !indoorCameras.isNullOrEmpty()
+    val shownPlacement = if (hasIndoor && placement == CameraPlacement.Indoor) CameraPlacement.Indoor else CameraPlacement.Outdoor
+    val shown = if (shownPlacement == CameraPlacement.Indoor) indoorCameras else cameras
     HomeFeed(
         everyoneAway = everyoneAway,
-        cameras = if (hasIndoor && placement == CameraPlacement.Indoor) indoorCameras else cameras,
+        cameras = shown,
         placement = placement.takeIf { hasIndoor },
         onPlacementChange = viewModel::showPlacement,
+        arranging = arranging,
+        onArrangeToggle = if (arranging) viewModel::finishArranging else viewModel::startArranging,
+        onMoveCamera = { from, to -> viewModel.moveCamera(shownPlacement, from, to) },
+        onDrop = { viewModel.saveOrder(shownPlacement) },
         onAwayBack = viewModel::markBack,
         inView = inView,
         // A parked car's card opens the camera watching it — where its own card would have gone.
@@ -173,13 +192,26 @@ fun HomeTabContent(
         onConnectionRetry = connectionNotice::retry,
         onOpenTailscale = if (connectionNotice.canOpenTailscale) connectionNotice::openTailscale else null,
     ) { tile ->
+        val name = tile.camera.name
+        // The cameras either side, for a screen reader's "move earlier / later" (it can't drag).
+        val names = shown.orEmpty().map { it.camera.name }
+        val index = names.indexOf(name)
+        val move = { neighbour: String ->
+            viewModel.moveCamera(shownPlacement, name, neighbour)
+            viewModel.saveOrder(shownPlacement)
+        }
         CameraCard(
             tile = tile,
             sharedTransitionScope = sharedTransitionScope,
             zoomState = zoomState,
             onClick = { onCameraClick(tile) },
-            modifier = Modifier.animateItem(),
             reconnectRequests = reconnectRequests,
+            arranging = arranging,
+            onTurn = { clockwise -> viewModel.turnCamera(name, clockwise) },
+            onTilt = { degrees -> viewModel.tiltCamera(name, degrees) },
+            onTiltRelease = { viewModel.saveTilt(name) },
+            onMoveEarlier = names.getOrNull(index - 1)?.let { earlier -> { move(earlier) } },
+            onMoveLater = names.getOrNull(index + 1)?.let { later -> { move(later) } },
         )
     }
 }
@@ -235,6 +267,10 @@ internal fun HomeFeed(
     onOpenTailscale: (() -> Unit)? = null,
     placement: CameraPlacement? = null,
     onPlacementChange: (CameraPlacement) -> Unit = {},
+    arranging: Boolean = false,
+    onArrangeToggle: (() -> Unit)? = null,
+    onMoveCamera: (from: String, to: String) -> Unit = { _, _ -> },
+    onDrop: () -> Unit = {},
     cameraCard: @Composable LazyGridItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -243,6 +279,12 @@ internal fun HomeFeed(
     val compactLandscape = isCompactLandscape()
     val columns = remember(compactLandscape) { CameraGridCells(twoAbreastWhenTheyFit = compactLandscape) }
     LaunchedEffect(gridState, scrollToTopRequests) { scrollToTopRequests.collect { gridState.animateScrollToItem(0) } }
+    // Only the camera cards are ReorderableItems, so only they are ever handed over here.
+    val reorderState = rememberReorderableLazyGridState(gridState) { from, to ->
+        val fromName = from.key as? String
+        val toName = to.key as? String
+        if (fromName != null && toName != null) onMoveCamera(fromName, toName)
+    }
 
     PullToRefreshUnderTopBar(refreshing = refreshing, onRefresh = onRefresh) {
         LazyVerticalGrid(
@@ -275,12 +317,15 @@ internal fun HomeFeed(
                 }
             }
 
-            if (placement != null) {
-                item(key = "placement-switch", span = { GridItemSpan(maxLineSpan) }) {
-                    CameraPlacementSwitch(
-                        selected = placement,
-                        onSelect = onPlacementChange,
-                        modifier = Modifier.animateItem().wrapContentWidth(Alignment.Start),
+            val canArrange = onArrangeToggle != null && !cameras.isNullOrEmpty()
+            if (placement != null || canArrange) {
+                item(key = "camera-header", span = { GridItemSpan(maxLineSpan) }) {
+                    CamerasHeader(
+                        placement = placement,
+                        onPlacementChange = onPlacementChange,
+                        arranging = arranging,
+                        onArrangeToggle = onArrangeToggle.takeIf { canArrange },
+                        modifier = Modifier.animateItem(),
                     )
                 }
             }
@@ -303,8 +348,49 @@ internal fun HomeFeed(
                     )
                 }
             } else {
-                items(loadedCameras, key = { it.camera.name }) { tile -> cameraCard(tile) }
+                items(loadedCameras, key = { it.camera.name }) { tile ->
+                    val itemScope = this
+                    // Always a ReorderableItem, draggable only in Arrange mode, so entering it never
+                    // recomposes the card into a different structure (and its player stays bound).
+                    ReorderableItem(reorderState, key = tile.camera.name, enabled = arranging) {
+                        Box(modifier = Modifier.longPressDraggableHandle(enabled = arranging, onDragStopped = onDrop)) {
+                            itemScope.cameraCard(tile)
+                        }
+                    }
+                }
             }
+        }
+    }
+}
+
+/**
+ * What heads the cameras: the Outdoor | Indoor switch when there is anything indoors, and the way
+ * into and out of Arrange mode, with a line saying how it works while it is on.
+ */
+@Composable
+private fun CamerasHeader(
+    placement: CameraPlacement?,
+    onPlacementChange: (CameraPlacement) -> Unit,
+    arranging: Boolean,
+    onArrangeToggle: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (placement != null) CameraPlacementSwitch(selected = placement, onSelect = onPlacementChange)
+            Spacer(modifier = Modifier.weight(1f))
+            if (onArrangeToggle != null) {
+                TextButton(onClick = onArrangeToggle, modifier = Modifier.testTag(HOME_ARRANGE_BUTTON_TEST_TAG)) {
+                    Text(stringResource(if (arranging) Res.string.home_arrange_done else Res.string.home_arrange))
+                }
+            }
+        }
+        AnimatedVisibility(visible = arranging) {
+            Text(
+                text = stringResource(Res.string.home_arrange_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -454,6 +540,12 @@ internal fun CameraCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     reconnectRequests: Int = 0,
+    arranging: Boolean = false,
+    onTurn: (clockwise: Boolean) -> Unit = {},
+    onTilt: (degrees: Float) -> Unit = {},
+    onTiltRelease: () -> Unit = {},
+    onMoveEarlier: (() -> Unit)? = null,
+    onMoveLater: (() -> Unit)? = null,
 ) {
     val camera = tile.camera
     val extraColors = LocalFrigateExtraColors.current
@@ -503,7 +595,10 @@ internal fun CameraCard(
                 ),
             )
             .onGloballyPositioned { coordinates.value = it }
+            .then(if (arranging) Modifier.arrangeActions(onMoveEarlier, onMoveLater) else Modifier)
             .combinedClickable(
+                // In Arrange mode a hold is the drag (see HomeFeed), and a tap goes nowhere.
+                enabled = !arranging,
                 interactionSource = interactionSource,
                 indication = LocalIndication.current,
                 onLongClick = {
@@ -514,7 +609,7 @@ internal fun CameraCard(
                 onClick = onClick,
             )
             .quickLookHeldDrag(zoomState, camera.name)
-            .pinchGestures(pinchListener),
+            .then(if (arranging) Modifier else Modifier.pinchGestures(pinchListener)),
     ) {
         // Only the video is the shared element. The card's chrome — border, title, status
         // badge — stays behind on the list while the video lifts out to the detail screen and
@@ -547,7 +642,8 @@ internal fun CameraCard(
                 // player (already decoding) when the card is tapped, and this card gets it back
                 // — still warm — on the way out. The quick-look layer borrows it the same way,
                 // and while it has it this card draws nothing (see CameraCardZoomState).
-                ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                val turnDegrees = tile.orientation.degrees
+                ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         streamUrl = streamUrl,
                         modifier = videoModifier,
@@ -557,6 +653,7 @@ internal fun CameraCard(
                         onStreamStatusChanged = { streamStatus = it },
                         reconnectRequests = reconnectRequests,
                         onStreamStats = onStreamStats,
+                        turnDegrees = turnDegrees,
                     )
                 }
             }
@@ -586,6 +683,32 @@ internal fun CameraCard(
                 pillColor = extraColors.glassFill,
             )
         }
+
+        if (arranging) {
+            CameraArrangeControls(
+                orientation = tile.orientation,
+                onTurn = onTurn,
+                onTilt = onTilt,
+                onTiltRelease = onTiltRelease,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
+
+/**
+ * Arrange mode's moves for a screen reader, which can't hold and drag: one place earlier or later
+ * in the list, from the card's actions menu. Either is left out at the end it would run off.
+ */
+@Composable
+private fun Modifier.arrangeActions(onMoveEarlier: (() -> Unit)?, onMoveLater: (() -> Unit)?): Modifier {
+    val earlier = stringResource(Res.string.camera_move_earlier)
+    val later = stringResource(Res.string.camera_move_later)
+    return semantics {
+        customActions = listOfNotNull(
+            onMoveEarlier?.let { move -> CustomAccessibilityAction(earlier) { move().let { true } } },
+            onMoveLater?.let { move -> CustomAccessibilityAction(later) { move().let { true } } },
+        )
     }
 }
 
@@ -679,6 +802,9 @@ private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 
 /** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
 const val HOME_FEED_TEST_TAG = "home_feed"
+
+/** The Home page's Arrange / Done button, above the cameras. */
+const val HOME_ARRANGE_BUTTON_TEST_TAG = "home_arrange_button"
 
 /** The "In view now" caption, which opens the car-tagging screen. */
 internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"

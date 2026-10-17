@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
+import com.meticulouscreations.homesafe.domain.repository.NestCameraRepository
 import com.meticulouscreations.homesafe.network.swapUrlScheme
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.LivePrefetch
@@ -37,6 +38,13 @@ import kotlinx.coroutines.launch
  * For a returning user the expectation can arrive while the biometric prompt is still up — see
  * `ConnectionRepositoryImpl.anticipateSavedLogin`.
  *
+ * The Nest cameras kept from last time ([CameraListDao]) are started too, indoor and outdoor, so
+ * switching to Indoor finds their video already joining: a Nest stream is the slow one to start
+ * (go2rtc has to ask Google, and Google has to wake the camera: 1 to 11 s measured). The same
+ * moment, the server is asked again which Nest cameras it has ([NestCameraRepository.refresh]),
+ * so a camera added since last time is there too. Starting them wakes each camera through Google
+ * on every launch (most Nest cameras light up while watched), which is the trade asked for.
+ *
  * The sources must match what the Home grid builds (see `HomeViewModel.tile` — grid stream,
  * silent WebRTC) or the cards would start their own. A wrong guess costs little: the card's
  * source replaces the prefetched one, and the prefetched peer's picture stays up until the new
@@ -47,6 +55,8 @@ import kotlinx.coroutines.launch
 class LiveStreamPrefetcher(
     private val connectionRepository: ConnectionRepository,
     private val cameraDao: CameraDao,
+    private val cameraListDao: CameraListDao,
+    private val nestCameras: NestCameraRepository,
     private val mediaUrls: MediaUrlRepository,
     private val players: LivePlayerPrefetch,
     private val appScope: CoroutineScope,
@@ -61,6 +71,7 @@ class LiveStreamPrefetcher(
             var started = false
             connectionRepository.expectedConnection.collectLatest { expected ->
                 if (expected != null) {
+                    launch { nestCameras.refresh(expected) }
                     started = prefetch(expected) || started
                 } else if (started) {
                     started = false
@@ -73,23 +84,27 @@ class LiveStreamPrefetcher(
 
     private suspend fun prepareOffers() {
         val record = connectionRepository.mostRecentConnection.first() ?: return
-        val count = cachedCameras(record.serverUrl).count { it.enabled }.coerceAtMost(MAX_PREFETCHED)
-        if (count > 0) players.prepare(count)
+        val frigate = cachedCameras(record.serverUrl).count { it.enabled }.coerceAtMost(MAX_PREFETCHED)
+        val nest = cameraListDao.observeNestCameras(record.serverUrl).first().size.coerceAtMost(MAX_NEST_PREFETCHED)
+        if (frigate + nest > 0) players.prepare(frigate + nest)
     }
 
     /** Returns whether anything was started. */
     private suspend fun prefetch(expected: ActiveConnection): Boolean {
         val activeUrl = expected.activeUrl
-        val streams = cachedCameras(expected.serverUrl)
+        fun live(playerKey: String, streamName: String): LivePrefetch {
+            val webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(activeUrl, streamName), audio = false)
+            return LivePrefetch(playerKey = playerKey, source = VideoSource.Live(mediaUrls.liveStreamUrl(activeUrl, streamName), webRtc = webRtc))
+        }
+        val frigate = cachedCameras(expected.serverUrl)
             .filter { it.enabled }
             .take(MAX_PREFETCHED)
-            .map { camera ->
-                val webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(activeUrl, camera.gridStreamName), audio = false)
-                LivePrefetch(
-                    playerKey = camera.name,
-                    source = VideoSource.Live(mediaUrls.liveStreamUrl(activeUrl, camera.gridStreamName), webRtc = webRtc),
-                )
-            }
+            .map { camera -> live(camera.name, camera.gridStreamName) }
+        // A Nest camera's card plays its stream under the stream's own name (see NestCameraRepositoryImpl).
+        val nest = cameraListDao.observeNestCameras(expected.serverUrl).first()
+            .take(MAX_NEST_PREFETCHED)
+            .map { camera -> live(camera.name, camera.name) }
+        val streams = frigate + nest
         if (streams.isEmpty()) return false
         LiveStartupMilestones.mark("live.prefetch")
         players.prefetch(streams)
@@ -110,5 +125,8 @@ class LiveStreamPrefetcher(
     private companion object {
         /** About a phone screen of Home cards; a card further down the list may never be scrolled to. */
         const val MAX_PREFETCHED = 4
+
+        /** The Nest cameras started at launch, on top of those: enough for the Indoor list's first screen and the doorbell. */
+        const val MAX_NEST_PREFETCHED = 4
     }
 }

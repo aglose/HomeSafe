@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -97,6 +98,7 @@ actual fun CameraStreamPlayer(
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
     onStreamStats: ((stats: LiveStreamStats?) -> Unit)?,
     reconnectRequests: Int,
+    turnDegrees: Float,
 ) {
     val context = LocalContext.current
     val holder = remember(playerKey) { HolderLease(context, playerKey) }.holder
@@ -152,28 +154,33 @@ actual fun CameraStreamPlayer(
     var bridgeFrame by remember(holder) { mutableStateOf(initialBridge) }
     val currentPlayWhenReady by rememberUpdatedState(request.playWhenReady)
 
-    Box(modifier = modifier) {
-        AndroidView(
-            modifier = Modifier.fillMaxSize(),
-            factory = { textureView },
-        )
-        if (renderer != null) {
+    // Turned as one (see Modifier.turned): both surfaces are TextureViews, which turn with the
+    // Compose layer around them, and the bridge and poster above them turn the same way. The same
+    // structure whether turned or not, so turning a camera never re-attaches its views.
+    Box(modifier = modifier.clipToBounds()) {
+        Box(modifier = Modifier.fillMaxSize().turned(turnDegrees)) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
-                factory = { renderer },
+                factory = { textureView },
             )
-        }
-        val bridge = bridgeFrame
-        val posterUrl = source.posterUrl
-        if (bridge != null) {
-            Image(
-                bitmap = bridge,
-                contentDescription = null,
-                contentScale = ContentScale.FillBounds,
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else if (posterVisible && posterUrl != null) {
-            VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
+            if (renderer != null) {
+                AndroidView(
+                    modifier = Modifier.fillMaxSize(),
+                    factory = { renderer },
+                )
+            }
+            val bridge = bridgeFrame
+            val posterUrl = source.posterUrl
+            if (bridge != null) {
+                Image(
+                    bitmap = bridge,
+                    contentDescription = null,
+                    contentScale = ContentScale.FillBounds,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (posterVisible && posterUrl != null) {
+                VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
+            }
         }
     }
 

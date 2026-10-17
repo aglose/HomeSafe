@@ -48,24 +48,29 @@ class NestCameraRepositoryImplTest {
         override fun onAppVisibilityChanged(visible: Boolean) = Unit
     }
 
-    private fun repository(connection: FakeConnection, status: HttpStatusCode = HttpStatusCode.OK, requests: MutableList<String> = mutableListOf()) =
-        NestCameraRepositoryImpl(
-            FrigateApiClient(
-                HttpClient(
-                    MockEngine { request ->
-                        requests += request.url.toString()
-                        respond(nestStreams, status, headersOf(HttpHeaders.ContentType, "application/json"))
-                    },
-                ),
+    private fun repository(
+        connection: FakeConnection,
+        status: HttpStatusCode = HttpStatusCode.OK,
+        requests: MutableList<String> = mutableListOf(),
+        dao: CameraListDao = InMemoryCameraListDao(),
+    ) = NestCameraRepositoryImpl(
+        FrigateApiClient(
+            HttpClient(
+                MockEngine { request ->
+                    requests += request.url.toString()
+                    respond(nestStreams, status, headersOf(HttpHeaders.ContentType, "application/json"))
+                },
             ),
-            connection,
-        )
+        ),
+        connection,
+        dao,
+    )
 
     private val onTheLan = ActiveConnection(serverUrl = "https://box.tailnet.ts.net:8971", localUrl = "https://192.168.1.10:8971", route = ConnectionRoute.LOCAL_NETWORK)
 
     @Test
     fun nestStreamsAreIndoorsUnlessNamedOutdoor() = runTest {
-        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl)).observeNestCameras().first().orEmpty()
+        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl)).observeNestCameras().first { !it.isNullOrEmpty() }.orEmpty()
         assertEquals(
             listOf("living_room" to CameraPlacement.Indoor, "outdoor_doorbell" to CameraPlacement.Outdoor),
             cameras.map { it.name to it.placement },
@@ -74,19 +79,38 @@ class NestCameraRepositoryImplTest {
     }
 
     @Test
+    fun theCamerasKeptFromLastTimeComeFirstWithoutWaitingForTheServer() = runTest {
+        val dao = InMemoryCameraListDao()
+        dao.insertNestCameras(listOf(NestCameraEntity(onTheLan.serverUrl, "kitchen")))
+        // The server doesn't answer at all: what was kept is there regardless.
+        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl), status = HttpStatusCode.BadGateway, dao = dao)
+            .observeNestCameras().first()
+        assertEquals(listOf("kitchen"), cameras?.map { it.name })
+    }
+
+    @Test
+    fun anAnswerReplacesWhatWasKept() = runTest {
+        val dao = InMemoryCameraListDao()
+        dao.insertNestCameras(listOf(NestCameraEntity(onTheLan.serverUrl, "kitchen")))
+        repository(FakeConnection(onTheLan, onTheLan.activeUrl), dao = dao).refresh(onTheLan)
+        assertEquals(listOf("living_room", "outdoor_doorbell"), dao.observeNestCameras(onTheLan.serverUrl).first().map { it.name }.sorted())
+    }
+
+    @Test
+    fun aFailedAnswerKeepsTheList() = runTest {
+        val dao = InMemoryCameraListDao()
+        dao.insertNestCameras(listOf(NestCameraEntity(onTheLan.serverUrl, "kitchen")))
+        repository(FakeConnection(onTheLan, onTheLan.activeUrl), status = HttpStatusCode.BadGateway, dao = dao).refresh(onTheLan)
+        assertEquals(listOf("kitchen"), dao.observeNestCameras(onTheLan.serverUrl).first().map { it.name })
+    }
+
+    @Test
     fun theServerIsAskedOverTheConnectionsOwnRoute() = runTest {
         // currentServerUrl still names the route just left; the connection itself is on the LAN.
         val requests = mutableListOf<String>()
         val repo = repository(FakeConnection(onTheLan, current = "https://box.tailnet.ts.net:8971"), requests = requests)
-        repo.observeNestCameras().first()
         repo.refresh()
-        assertEquals(listOf("http://192.168.1.10:1984/api/streams", "http://192.168.1.10:1984/api/streams"), requests)
-    }
-
-    @Test
-    fun aFailedFirstAnswerIsAnEmptyListNotAnEndlessWait() = runTest {
-        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl), status = HttpStatusCode.BadGateway).observeNestCameras().first()
-        assertEquals(emptyList(), cameras)
+        assertEquals(listOf("http://192.168.1.10:1984/api/streams"), requests)
     }
 
     @Test

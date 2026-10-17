@@ -1,8 +1,6 @@
 package com.meticulouscreations.homesafe.ui.components
 
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Alignment
@@ -27,39 +25,54 @@ import kotlin.math.roundToInt
  * frame's size: [player] is handed a callback for them while the shape of [streamUrl] is still
  * unknown, and null once it is known, which stops the measuring. Until then the video stretches.
  * Shapes are remembered for the process ([MeasuredVideoShapes]), so the card, its quick look and
- * the camera's page all agree, and only the first of them ever waits.
+ * the camera's page all agree, and only the first of them ever waits. A null [streamUrl] measures
+ * nothing: a picture that is only ever stretched (and maybe turned) needs no shape.
+ *
+ * [turnDegrees] is the turn the player draws the picture at (pass the same to it). A quarter turn
+ * stands the picture on its side, so its box takes the inverse shape: a 16:9 camera turned
+ * upright fits its card as 9:16, with bars, even a Frigate one (see [pictureBox]).
  */
 @Composable
 fun ShapedVideo(
-    streamUrl: String,
+    streamUrl: String?,
     fit: VideoFit?,
     modifier: Modifier = Modifier,
+    turnDegrees: Float = 0f,
     player: @Composable (modifier: Modifier, onStreamStats: ((LiveStreamStats?) -> Unit)?) -> Unit,
 ) {
-    val aspect = MeasuredVideoShapes[streamUrl]
-    val measure: ((LiveStreamStats?) -> Unit)? = if (fit != null && aspect == null) {
+    val aspect = streamUrl?.let { MeasuredVideoShapes[it] }
+    val measure: ((LiveStreamStats?) -> Unit)? = if (fit != null && streamUrl != null && aspect == null) {
         { stats -> MeasuredVideoShapes.record(streamUrl, stats?.width, stats?.height) }
     } else {
         null
     }
+    val onItsSide = isOnItsSide(turnDegrees)
     Box(modifier = modifier.clipToBounds(), contentAlignment = Alignment.Center) {
-        val shaped = when {
-            fit == null || aspect == null -> Modifier.fillMaxSize()
-            fit == VideoFit.Fit -> Modifier.aspectRatio(aspect)
-            else -> Modifier.coverAtAspect(aspect)
-        }
-        player(shaped, measure)
+        player(Modifier.pictureBox(aspect.takeIf { fit != null }, fit, onItsSide), measure)
     }
 }
 
-/** The video's size where it covers this box at [aspect], centred, overflowing on one axis; the parent clips the overflow. */
-private fun Modifier.coverAtAspect(aspect: Float): Modifier = layout { measurable, constraints ->
+/**
+ * The box the picture is shown in, centred in this one. [aspect] is the picture's own shape
+ * (null: the shape of this box, which is what a stretched picture is taken to be); stood
+ * [onItsSide] by a quarter turn, it shows at the inverse shape. Whole ([VideoFit.Fit]) it fits
+ * inside with bars, filling ([VideoFit.Fill]) it covers this box and is cropped. A null [fit] is
+ * the stretch: this whole box, unless the picture is on its side, when it fits like [VideoFit.Fit],
+ * as a 16:9 camera turned upright can't fill a 16:9 card without being squashed.
+ */
+private fun Modifier.pictureBox(aspect: Float?, fit: VideoFit?, onItsSide: Boolean): Modifier = layout { measurable, constraints ->
     val boxWidth = constraints.maxWidth
     val boxHeight = constraints.maxHeight
-    val (width, height) = if (boxWidth.toFloat() / boxHeight > aspect) {
-        boxWidth to (boxWidth / aspect).roundToInt()
-    } else {
-        (boxHeight * aspect).roundToInt() to boxHeight
+    val picture = aspect ?: (boxWidth.toFloat() / boxHeight)
+    val shown = if (onItsSide) 1f / picture else picture
+    val wider = boxWidth.toFloat() / boxHeight > shown
+    val (width, height) = when {
+        fit == null && !onItsSide -> boxWidth to boxHeight
+
+        // Whole: limited by the box's tighter side. Filling: by its looser one, spilling over the other.
+        (fit == VideoFit.Fill) == wider -> boxWidth to (boxWidth / shown).roundToInt()
+
+        else -> (boxHeight * shown).roundToInt() to boxHeight
     }
     val placeable = measurable.measure(Constraints.fixed(width, height))
     layout(boxWidth, boxHeight) { placeable.place((boxWidth - width) / 2, (boxHeight - height) / 2) }

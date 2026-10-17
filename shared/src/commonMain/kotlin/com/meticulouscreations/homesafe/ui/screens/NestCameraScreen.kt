@@ -33,7 +33,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +52,11 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
+import com.meticulouscreations.homesafe.ui.components.isOnItsSide
+import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
+import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
+import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
+import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.NestCameraViewModel
@@ -66,12 +74,14 @@ import kotlin.math.abs
 /**
  * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
  * someone watches, with no Frigate camera behind them, so there is no timeline, no recordings and
- * nothing detected: the page is the video, a way back, and the speaker.
+ * nothing detected: the page is the video, a way back, and the speaker. The video zooms like a
+ * Frigate camera's: pinch, double tap, or hold, and drag to look around once zoomed in. The
+ * speaker is the same saved choice as theirs, so a camera opens with sound when it was left on.
  *
  * [warmStreamUrl] / [warmWebRtcSignalingUrl] are what the tapped card was playing. The screen
  * binds the same pooled player (keyed by [streamName], as the card is) and carries on with that
- * silent stream, over the current route from then on; only the first tap on the speaker moves it
- * to the one with sound, which go2rtc serves from the same connection to Google.
+ * silent stream, over the current route from then on; the speaker being on (saved, or turned on
+ * here) moves it to the one with sound, which go2rtc serves from the same connection to Google.
  *
  * Turned on its side the video takes the whole window, with the way back and the speaker over it.
  *
@@ -94,9 +104,10 @@ fun NestCameraScreen(
     val viewModel: NestCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
     val fit by viewModel.fit.collectAsStateWithLifecycle()
-    // Once sound has been asked for, the stream with it stays: muting again is the player's job,
-    // not another reconnect.
-    var wantsSound by rememberSaveable(streamName) { mutableStateOf(false) }
+    // The stream with sound once the speaker is on, saved from last time or turned on here. Once
+    // it is, it stays: muting again is the player's job, not another reconnect.
+    var wantedSound by rememberSaveable(streamName) { mutableStateOf(false) }
+    val wantsSound = wantedSound || soundOn
     val liveSource by remember(streamName, wantsSound) { viewModel.liveSource(streamName, withSound = wantsSound) }
         .collectAsStateWithLifecycle(null)
     var status by remember(streamName) { mutableStateOf(LiveStreamStatus.Connecting) }
@@ -107,11 +118,18 @@ fun NestCameraScreen(
     }
     val source = liveSource ?: warmSource.takeIf { !wantsSound }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
-    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }
+    val turnDegrees by remember(streamName) { viewModel.turnDegrees(streamName) }.collectAsStateWithLifecycle(0f)
+    // The picture's shape as it is shown: stood on its side by a quarter turn, its inverse.
+    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if (isOnItsSide(turnDegrees)) 1f / it else it }
     val toggleSound = {
-        wantsSound = true
+        wantedSound = true
         viewModel.toggleSound()
     }
+    // Pinch, double tap or hold to zoom in on the picture, as on a Frigate camera's page.
+    val zoom = rememberPinchZoomState()
+    val haptic = LocalHapticFeedback.current
+    val onTap = remember { {} }
+    val onHoldZoom = remember(haptic) { { haptic.performHapticFeedback(HapticFeedbackType.LongPress) } }
 
     val fullScreen = isCompactLandscape()
     // Only a picture that isn't its box's shape has anything to fit or fill. Upright the box is
@@ -136,16 +154,24 @@ fun NestCameraScreen(
                         hiddenRadius = CAMERA_CARD_CORNER_RADIUS,
                     ),
                 )
-            }.background(Color.Black),
+            }.background(Color.Black)
+                .clipToBounds()
+                .pinchZoomGestures(zoom),
         ) {
             if (request != null) {
-                ShapedVideo(streamUrl = request.source.url, fit = fit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                ShapedVideo(
+                    streamUrl = request.source.url,
+                    fit = fit,
+                    modifier = Modifier.fillMaxSize().pinchZoomContent(zoom),
+                    turnDegrees = turnDegrees,
+                ) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,
                         modifier = videoModifier,
                         playerKey = streamName,
                         onStreamStatusChanged = { status = it },
                         onStreamStats = onStreamStats,
+                        turnDegrees = turnDegrees,
                     )
                 }
             } else {
@@ -156,6 +182,8 @@ fun NestCameraScreen(
                     modifier = Modifier.align(Alignment.Center).size(56.dp),
                 )
             }
+            // Over the picture and under the badge: a double tap or a hold zooms in where it lands.
+            if (request != null) Box(modifier = Modifier.fillMaxSize().zoomTapGestures(zoom, onTap = onTap, onHoldZoom = onHoldZoom))
             Box(modifier = Modifier.align(Alignment.TopEnd).padding(16.dp)) {
                 StatusBadge(enabled = true, status = status, textColor = extraColors.textPrimary, pillColor = extraColors.glassFill)
             }

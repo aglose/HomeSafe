@@ -4,6 +4,8 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraLayout
+import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
@@ -14,6 +16,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
@@ -24,7 +27,9 @@ import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveCameraOrderUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraOrientationUseCase
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
@@ -40,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -65,7 +71,27 @@ data class CameraTile(
     val webRtcSignalingUrl: String? = null,
     /** How the video sits in the card when it isn't 16:9 (see `ShapedVideo`): null stretches it, as every Frigate camera does. */
     val videoFit: VideoFit? = null,
+    /** Which way up to draw the picture: upright for a camera mounted level. */
+    val orientation: CameraOrientation = CameraOrientation.UPRIGHT,
 )
+
+/** Whether these camera names, in this order, are the positions [layouts] has saved for them. */
+private fun List<String>.isSavedIn(layouts: Map<String, CameraLayout>): Boolean =
+    withIndex().all { (position, name) -> layouts[name]?.position == position }
+
+/**
+ * [cameras] (one list's) in the order the Home page shows them: Arrange mode's [draft] while one
+ * is under way, otherwise each camera's saved position, and those never arranged after the rest,
+ * as they came.
+ */
+internal fun arrangedCameras(cameras: List<Camera>, layouts: Map<String, CameraLayout>, draft: List<String>?): List<Camera> {
+    val rank: (Camera) -> Int? = if (draft != null) {
+        { camera -> draft.indexOf(camera.name).takeIf { it >= 0 } }
+    } else {
+        { camera -> layouts[camera.name]?.position }
+    }
+    return cameras.sortedWith(compareBy(nullsLast()) { camera: Camera -> rank(camera) })
+}
 
 /**
  * One parked vehicle on the "In view now" strip: what it is, how its card reads, and the crop of
@@ -98,6 +124,9 @@ class HomeViewModel(
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val refreshStationaryObjectsUseCase: RefreshStationaryObjectsUseCase,
     private val refreshNestCamerasUseCase: RefreshNestCamerasUseCase,
+    observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
+    private val saveCameraOrderUseCase: SaveCameraOrderUseCase,
+    private val setCameraOrientationUseCase: SetCameraOrientationUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -193,6 +222,33 @@ class HomeViewModel(
         viewModelScope.launch { setAwayUseCase(false) }
     }
 
+    /** Arrange mode's moves not yet saved, by list: the order being dragged into. */
+    private val orderDrafts = MutableStateFlow<Map<CameraPlacement, List<String>>>(emptyMap())
+
+    /** Turns and tilts under way and not yet saved, by camera, so the slider moves the picture under the finger. */
+    private val orientationDrafts = MutableStateFlow<Map<String, CameraOrientation>>(emptyMap())
+
+    /**
+     * The saved layouts as they are read back. A draft (above) is dropped only once these show it
+     * saved, never merely when its write returns: the write landing and the read coming back are
+     * not the same moment, and dropping it in between would flick the card or picture back to how
+     * it was. A draft that has moved on since (a newer drag or tilt) is kept.
+     */
+    private val savedLayouts: StateFlow<Map<String, CameraLayout>> = observeCameraLayoutsUseCase()
+        .onEach { layouts ->
+            orderDrafts.update { drafts -> drafts.filterValues { order -> !order.isSavedIn(layouts) } }
+            orientationDrafts.update { drafts -> drafts.filter { (name, orientation) -> layouts[name]?.orientation != orientation } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** The saved layouts with Arrange mode's unsaved changes over them. Opens empty rather than holding the cameras back. */
+    private val arrangement: StateFlow<Arrangement> = combine(
+        savedLayouts,
+        orderDrafts,
+        orientationDrafts,
+        ::Arrangement,
+    ).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), Arrangement(emptyMap(), emptyMap(), emptyMap()))
+
     /** How the Nest cameras' pictures sit in their cards: the saved choice, whole until it is read. */
     private val nestFit: Flow<VideoFit> = observePlaybackPreferencesUseCase().map { it.nestFit }.onStart { emit(VideoFit.Fit) }.distinctUntilChanged()
 
@@ -222,8 +278,10 @@ class HomeViewModel(
         nestCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
-    ) { frigate, nest, serverUrl, fit ->
-        (frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }).map { camera -> tile(camera, serverUrl, fit) }
+        arrangement,
+    ) { frigate, nest, serverUrl, fit, arrangement ->
+        val outdoor = frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }
+        arrangement.arranged(outdoor, CameraPlacement.Outdoor).map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
@@ -244,13 +302,88 @@ class HomeViewModel(
         nestCameras,
         observeCurrentServerUrlUseCase(),
         nestFit,
-    ) { nest, serverUrl, fit ->
-        nest?.filter { it.placement == CameraPlacement.Indoor }?.map { camera -> tile(camera, serverUrl, fit) }
+        arrangement,
+    ) { nest, serverUrl, fit, arrangement ->
+        nest?.filter { it.placement == CameraPlacement.Indoor }
+            ?.let { arrangement.arranged(it, CameraPlacement.Indoor) }
+            ?.map { camera -> tile(camera, serverUrl, fit, arrangement) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit): CameraTile {
+    private val _arranging = MutableStateFlow(false)
+
+    /**
+     * Arrange mode: the cards can be dragged into a new order and turned the right way up. Saved
+     * as it goes (each drop, each turn, each tilt let go), so leaving it any way loses nothing.
+     */
+    val arranging: StateFlow<Boolean> = _arranging.asStateFlow()
+
+    fun startArranging() {
+        _arranging.value = true
+    }
+
+    fun finishArranging() {
+        _arranging.value = false
+        orderDrafts.value.keys.forEach(::saveOrder)
+    }
+
+    /** Arrange mode's drag: [from] takes [to]'s place in [placement]'s list, the cards between shifting up or down one. */
+    fun moveCamera(placement: CameraPlacement, from: String, to: String) {
+        val current = orderDrafts.value[placement] ?: shownNames(placement) ?: return
+        val fromIndex = current.indexOf(from)
+        val toIndex = current.indexOf(to)
+        if (fromIndex < 0 || toIndex < 0 || fromIndex == toIndex) return
+        val moved = current.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        orderDrafts.update { it + (placement to moved) }
+    }
+
+    /** A drag let go: [placement]'s list is saved in the order it now has. */
+    fun saveOrder(placement: CameraPlacement) {
+        val order = orderDrafts.value[placement] ?: return
+        // The draft stays until the saved order is read back (see savedLayouts).
+        viewModelScope.launch { saveCameraOrderUseCase(order) }
+    }
+
+    /** A quarter turn of [cameraName]'s picture, saved at once. */
+    fun turnCamera(cameraName: String, clockwise: Boolean) {
+        saveOrientation(cameraName, arrangement.value.orientation(cameraName).turned(clockwise))
+    }
+
+    /** The tilt slider moving: shown at once, saved when it is let go ([saveTilt]). */
+    fun tiltCamera(cameraName: String, degrees: Float) {
+        orientationDrafts.update { it + (cameraName to arrangement.value.orientation(cameraName).tilted(degrees)) }
+    }
+
+    fun saveTilt(cameraName: String) {
+        orientationDrafts.value[cameraName]?.let { saveOrientation(cameraName, it) }
+    }
+
+    private fun saveOrientation(cameraName: String, orientation: CameraOrientation) {
+        orientationDrafts.update { it + (cameraName to orientation) }
+        // The draft stays until the saved turn is read back (see savedLayouts).
+        viewModelScope.launch { setCameraOrientationUseCase(cameraName, orientation) }
+    }
+
+    private fun shownNames(placement: CameraPlacement): List<String>? =
+        (if (placement == CameraPlacement.Indoor) indoorCameras.value else cameras.value)?.map { it.camera.name }
+
+    /** The saved layouts, and Arrange mode's changes not saved yet over them. */
+    private data class Arrangement(
+        val layouts: Map<String, CameraLayout>,
+        val orders: Map<CameraPlacement, List<String>>,
+        val orientations: Map<String, CameraOrientation>,
+    ) {
+        fun arranged(cameras: List<Camera>, placement: CameraPlacement): List<Camera> = arrangedCameras(cameras, layouts, orders[placement])
+
+        fun orientation(cameraName: String): CameraOrientation =
+            orientations[cameraName] ?: layouts[cameraName]?.orientation ?: CameraOrientation.UPRIGHT
+    }
+
+    private fun tile(camera: Camera, serverUrl: String?, nestFit: VideoFit, arrangement: Arrangement): CameraTile {
         val videoFit = nestFit.takeIf { camera.source == CameraSource.Nest }
-        if (serverUrl == null || !camera.enabled) return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit)
+        val orientation = arrangement.orientation(camera.name)
+        if (serverUrl == null || !camera.enabled) {
+            return CameraTile(camera, streamUrl = null, posterUrl = null, videoFit = videoFit, orientation = orientation)
+        }
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
         // reserved for the single-camera detail view.
         return CameraTile(
@@ -260,6 +393,7 @@ class HomeViewModel(
                 .takeIf { camera.source == CameraSource.Frigate },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
             videoFit = videoFit,
+            orientation = orientation,
         )
     }
 

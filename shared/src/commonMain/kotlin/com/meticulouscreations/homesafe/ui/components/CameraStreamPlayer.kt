@@ -145,6 +145,9 @@ expect val liveAudioCodecs: List<String>
  *   reconnect now, rather than when its own back-off says — the Home page's pull to refresh. Only
  *   a change after this call site first composed counts; whether the player acts on it is
  *   [LivePlaybackPolicy.shouldReconnect]'s call, so a camera that is live is left alone.
+ * @param turnDegrees which way up to draw the picture: turned this far clockwise about the box's
+ *   centre and enlarged to cover it ([turnedPictureSize]), poster included. For a camera mounted
+ *   on its side or crooked; 0 (the default) draws it as it comes.
  */
 @Composable
 expect fun CameraStreamPlayer(
@@ -159,6 +162,7 @@ expect fun CameraStreamPlayer(
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit = {},
     onStreamStats: ((stats: LiveStreamStats?) -> Unit)? = null,
     reconnectRequests: Int = 0,
+    turnDegrees: Float = 0f,
 )
 
 /**
@@ -192,6 +196,7 @@ fun CameraStreamPlayer(
     onStreamStatusChanged: (status: LiveStreamStatus) -> Unit = {},
     reconnectRequests: Int = 0,
     onStreamStats: ((stats: LiveStreamStats?) -> Unit)? = null,
+    turnDegrees: Float = 0f,
 ) {
     val request = remember(streamUrl, posterUrl, webRtcSignalingUrl) {
         val webRtc = webRtcSignalingUrl?.let { WebRtcEndpoint(it, audio = false) }
@@ -204,6 +209,7 @@ fun CameraStreamPlayer(
         onStreamStatusChanged = onStreamStatusChanged,
         onStreamStats = onStreamStats,
         reconnectRequests = reconnectRequests,
+        turnDegrees = turnDegrees,
     )
 }
 

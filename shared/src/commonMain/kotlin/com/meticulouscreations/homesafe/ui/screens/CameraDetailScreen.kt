@@ -104,11 +104,13 @@ import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.PulsingDot
 import com.meticulouscreations.homesafe.ui.components.RecordingTimeline
+import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.TapEdge
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
+import com.meticulouscreations.homesafe.ui.components.turned
 import com.meticulouscreations.homesafe.ui.components.zoomTapGestures
 import com.meticulouscreations.homesafe.ui.fitVideo
 import com.meticulouscreations.homesafe.ui.formatClockTime
@@ -496,6 +498,7 @@ private fun PlayerSurface(
     val viewModel = cameraDetailViewModel(cameraName)
     val playback by viewModel.playback.collectAsStateWithLifecycle()
     val statsShown by viewModel.statsShown.collectAsStateWithLifecycle()
+    val turnDegrees by viewModel.turnDegrees.collectAsStateWithLifecycle()
     val request = playback.playerRequest
     val zoom = rememberPinchZoomState()
     val haptic = LocalHapticFeedback.current
@@ -619,21 +622,26 @@ private fun PlayerSurface(
                 }
                 val shownRequest = request ?: warmRequest
                 if (shownRequest != null) {
-                    // Same playerKey as the grid card: this binds to the player the card was already
-                    // running, so live video is on screen before the shared-element transition ends.
-                    CameraStreamPlayer(
-                        request = shownRequest,
-                        modifier = Modifier.fillMaxSize(),
-                        playerKey = playerKey,
-                        onPositionChanged = viewModel::onPlayerPositionChanged,
-                        onBufferingChanged = viewModel::onBufferingChanged,
-                        onStreamStatusChanged = viewModel::onStreamStatusChanged,
-                        onPlaybackEnded = viewModel::onPlaybackEnded,
-                        onPlaybackError = viewModel::onPlaybackError,
-                        onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
-                        // The player measures the stream only while the panel is up to show it.
-                        onStreamStats = if (statsShown) viewModel::onStreamStats else null,
-                    )
+                    // Turned the way the camera was set in Arrange mode; on its side, it fits the
+                    // 16:9 box at the inverse shape (see ShapedVideo), recordings as well as live.
+                    ShapedVideo(streamUrl = null, fit = null, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { pictureModifier, _ ->
+                        // Same playerKey as the grid card: this binds to the player the card was already
+                        // running, so live video is on screen before the shared-element transition ends.
+                        CameraStreamPlayer(
+                            request = shownRequest,
+                            modifier = pictureModifier,
+                            playerKey = playerKey,
+                            onPositionChanged = viewModel::onPlayerPositionChanged,
+                            onBufferingChanged = viewModel::onBufferingChanged,
+                            onStreamStatusChanged = viewModel::onStreamStatusChanged,
+                            onPlaybackEnded = viewModel::onPlaybackEnded,
+                            onPlaybackError = viewModel::onPlaybackError,
+                            onAudioAvailabilityChanged = viewModel::onAudioAvailabilityChanged,
+                            // The player measures the stream only while the panel is up to show it.
+                            onStreamStats = if (statsShown) viewModel::onStreamStats else null,
+                            turnDegrees = turnDegrees,
+                        )
+                    }
                 } else {
                     Icon(
                         imageVector = Icons.Filled.VideocamOff,
@@ -648,7 +656,11 @@ private fun PlayerSurface(
                 // pre-seek frame lingering while the new position buffers.
                 val previewEpoch = playback.scrubEpochSeconds ?: playback.seekPreviewEpochSeconds
                 if (previewEpoch != null) {
-                    SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize())
+                    ShapedVideo(streamUrl = null, fit = null, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { pictureModifier, _ ->
+                        Box(modifier = pictureModifier.clipToBounds()) {
+                            SeekPreview(epochSeconds = previewEpoch, snapshotUrlFor = viewModel::recordingSnapshotUrl, modifier = Modifier.fillMaxSize().turned(turnDegrees))
+                        }
+                    }
                 }
             }
 

@@ -20,6 +20,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingHistoryUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetRecordingStreamUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
@@ -229,6 +230,7 @@ class CameraDetailViewModel(
     private val getCameraSnapshotUrlUseCase: GetCameraSnapshotUrlUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     private val getRecordingSnapshotUrlUseCase: GetRecordingSnapshotUrlUseCase,
+    observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -344,6 +346,11 @@ class CameraDetailViewModel(
 
     /** Whether the "stats for nerds" panel is up. For this visit to the camera only: it is a look under the bonnet, not a setting. */
     val statsShown: StateFlow<Boolean> = _statsShown.asStateFlow()
+
+    /** Which way up the picture is shown, in degrees clockwise: as the camera was turned in the Home page's Arrange mode. */
+    val turnDegrees: StateFlow<Float> = observeCameraLayoutsUseCase()
+        .map { it[cameraName]?.orientation?.degrees ?: 0f }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0f)
 
     private val _streamStats = MutableStateFlow<LiveStreamStats?>(null)
 

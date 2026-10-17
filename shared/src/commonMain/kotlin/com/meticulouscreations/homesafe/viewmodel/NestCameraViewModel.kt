@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
@@ -16,14 +17,11 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -40,7 +38,11 @@ class NestCameraViewModel(
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
     private val updatePlaybackPreferencesUseCase: UpdatePlaybackPreferencesUseCase,
+    private val observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
 ) : ViewModel() {
+
+    /** Which way up [streamName]'s picture is shown, in degrees clockwise: as turned in the Home page's Arrange mode. */
+    fun turnDegrees(streamName: String): Flow<Float> = observeCameraLayoutsUseCase().map { it[streamName]?.orientation?.degrees ?: 0f }
 
     /** How the Nest cameras' pictures sit in their boxes: saved for every Nest camera, cards included. */
     val fit: StateFlow<VideoFit> = observePlaybackPreferencesUseCase()
@@ -55,12 +57,22 @@ class NestCameraViewModel(
         }
     }
 
-    private val _soundOn = MutableStateFlow(false)
+    /**
+     * The speaker: the same saved choice as a Frigate camera's page, so sound stays on (or off)
+     * from one camera to the next and from one visit to the next. Off until it has been turned on
+     * once: a room that starts talking unasked is a jump scare.
+     */
+    val soundOn: StateFlow<Boolean> = observePlaybackPreferencesUseCase()
+        .map { it.soundOn }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Off on the way in, like every camera: a room that starts talking unasked is a jump scare. */
-    val soundOn: StateFlow<Boolean> = _soundOn.asStateFlow()
-
-    fun toggleSound() = _soundOn.update { !it }
+    /** Flips the speaker and saves it, keeping the other saved choices as they are. */
+    fun toggleSound() {
+        viewModelScope.launch {
+            val stored = observePlaybackPreferencesUseCase().first()
+            updatePlaybackPreferencesUseCase(stored.copy(soundOn = !stored.soundOn))
+        }
+    }
 
     /**
      * [streamName] over whichever route is in use, following it when it changes; null while
