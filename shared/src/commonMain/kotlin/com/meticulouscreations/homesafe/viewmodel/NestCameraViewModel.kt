@@ -17,14 +17,11 @@ import dev.zacsweers.metro.ContributesIntoMap
 import dev.zacsweers.metro.Inject
 import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -60,12 +57,22 @@ class NestCameraViewModel(
         }
     }
 
-    private val _soundOn = MutableStateFlow(false)
+    /**
+     * The speaker: the same saved choice as a Frigate camera's page, so sound stays on (or off)
+     * from one camera to the next and from one visit to the next. Off until it has been turned on
+     * once: a room that starts talking unasked is a jump scare.
+     */
+    val soundOn: StateFlow<Boolean> = observePlaybackPreferencesUseCase()
+        .map { it.soundOn }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    /** Off on the way in, like every camera: a room that starts talking unasked is a jump scare. */
-    val soundOn: StateFlow<Boolean> = _soundOn.asStateFlow()
-
-    fun toggleSound() = _soundOn.update { !it }
+    /** Flips the speaker and saves it, keeping the other saved choices as they are. */
+    fun toggleSound() {
+        viewModelScope.launch {
+            val stored = observePlaybackPreferencesUseCase().first()
+            updatePlaybackPreferencesUseCase(stored.copy(soundOn = !stored.soundOn))
+        }
+    }
 
     /**
      * [streamName] over whichever route is in use, following it when it changes; null while
