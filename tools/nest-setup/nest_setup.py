@@ -23,6 +23,8 @@ import getpass
 import json
 import os
 import re
+import ssl
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -43,6 +45,26 @@ ENV_KEYS = {
 }
 
 
+def tls_context():
+    """Python's own trust store, or on macOS the system's when Python has none.
+
+    The python.org installers for macOS ship without CA certificates until their "Install
+    Certificates" step has been run, and every HTTPS call fails with CERTIFICATE_VERIFY_FAILED.
+    The system's root certificates are there regardless, so take them from the keychain.
+    """
+    context = ssl.create_default_context()
+    if sys.platform == "darwin" and context.cert_store_stats()["x509_ca"] == 0:
+        roots = subprocess.run(
+            ["/usr/bin/security", "find-certificate", "-a", "-p", "/System/Library/Keychains/SystemRootCertificates.keychain"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        context.load_verify_locations(cadata=roots)
+    return context
+
+
+TLS = tls_context()
+
+
 def post_form(url, fields):
     data = urllib.parse.urlencode(fields).encode()
     return request_json(urllib.request.Request(url, data=data, method="POST"))
@@ -50,7 +72,7 @@ def post_form(url, fields):
 
 def request_json(req):
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
+        with urllib.request.urlopen(req, timeout=30, context=TLS) as response:
             return json.load(response)
     except urllib.error.HTTPError as error:
         body = error.read().decode(errors="replace")
@@ -80,7 +102,8 @@ def sign_in(project_id, client_id, client_secret):
     print(f"   {url}\n")
     print("2. Allow access to the cameras (tick each one), then Google's own sign-in.")
     print("3. You end up on google.com. Copy the whole address from the address bar.\n")
-    pasted = ask("Paste the google.com address (or just the code): ", secret=True)
+    # Shown as it is pasted: the code works once, for minutes, and only with the client secret.
+    pasted = ask("Paste the google.com address (or just the code): ")
     query = urllib.parse.parse_qs(urllib.parse.urlparse(pasted).query)
     code = query.get("code", [pasted])[0]
     tokens = post_form(TOKEN_URL, {
@@ -129,8 +152,13 @@ def list_cameras(project_id, token):
 
 
 def stream_name(camera, taken):
-    """A go2rtc stream name from the camera's own name or its room: HomeSafe shows "living_room" as "Living Room"."""
+    """A go2rtc stream name from the camera's own name or its room: HomeSafe shows "living_room" as "Living Room".
+
+    A doorbell's starts with "outdoor_", which puts it in HomeSafe's Outdoor list (and isn't shown).
+    """
     base = re.sub(r"[^a-z0-9]+", "_", (camera["name"] or camera["room"] or "nest_camera").lower()).strip("_") or "nest_camera"
+    if camera["type"] == "Doorbell":
+        base = "outdoor_" + base
     name, n = base, 2
     while name in taken:
         name, n = f"{base}_{n}", n + 1
@@ -189,8 +217,9 @@ def main():
     source = "nest:?client_id={FRIGATE_NEST_CLIENT_ID}&client_secret={FRIGATE_NEST_CLIENT_SECRET}" \
              "&refresh_token={FRIGATE_NEST_REFRESH_TOKEN}&project_id={FRIGATE_NEST_PROJECT_ID}"
     taken = set()
-    print("\nAdd these under go2rtc: streams: in Frigate's config.yml (rename any stream you like;")
-    print("HomeSafe shows the name with the underscores as spaces):\n")
+    print("\nAdd these under go2rtc: streams: in Frigate's config.yml. Rename any stream you like:")
+    print("HomeSafe shows the name with the underscores as spaces, and lists a stream whose name")
+    print("starts with outdoor_ under Outdoor (without the prefix), every other one under Indoor.\n")
     for camera in cameras:
         what = " · ".join(p for p in (camera["name"], camera["room"], camera["type"], "/".join(camera["protocols"])) if p)
         print(f"    # {what}")

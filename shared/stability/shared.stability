@@ -1215,18 +1215,6 @@ private fun com.meticulouscreations.homesafe.ui.screens.InViewNowSection(items: 
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.screens.IndoorCameraScreen(streamName: kotlin.String, warmStreamUrl: kotlin.String?, warmWebRtcSignalingUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - streamName: STABLE (String is immutable)
-    - warmStreamUrl: STABLE (class with no mutable properties)
-    - warmWebRtcSignalingUrl: STABLE (class with no mutable properties)
-    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
-    - onBack: STABLE (function type)
-    - modifier: STABLE (marked @Stable or @Immutable)
-
-@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.InfoRow(label: kotlin.String, value: kotlin.String, note: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
@@ -1458,6 +1446,18 @@ private fun com.meticulouscreations.homesafe.ui.screens.NavRail(selected: com.me
   params:
     - selected: UNKNOWN (interface or non-final class; concrete implementation unknown)
     - onSelect: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.screens.NestCameraScreen(streamName: kotlin.String, warmStreamUrl: kotlin.String?, warmWebRtcSignalingUrl: kotlin.String?, sharedTransitionScope: androidx.compose.animation.SharedTransitionScope, onBack: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - streamName: STABLE (String is immutable)
+    - warmStreamUrl: STABLE (class with no mutable properties)
+    - warmWebRtcSignalingUrl: STABLE (class with no mutable properties)
+    - sharedTransitionScope: STABLE (marked @Stable or @Immutable)
+    - onBack: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable

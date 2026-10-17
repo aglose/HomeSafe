@@ -12,6 +12,12 @@ class CameraDisplayNameTest {
     }
 
     @Test
+    fun anOutdoorNestStreamIsNamedWithoutItsPrefix() {
+        assertEquals("Doorbell", cameraDisplayName("outdoor_doorbell"))
+        assertEquals("Front Door Doorbell", cameraDisplayName("outdoor_front_door_doorbell"))
+    }
+
+    @Test
     fun lookupIgnoresCase() {
         assertEquals("Front Door", cameraDisplayName("Amcrest_1"))
     }

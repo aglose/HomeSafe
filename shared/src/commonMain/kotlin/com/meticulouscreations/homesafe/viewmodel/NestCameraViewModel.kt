@@ -19,14 +19,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 
 /**
- * An indoor (Nest) camera's live view. There is nothing to load: the card already had the video
+ * A Google Nest camera's live view. There is nothing to load: the card already had the video
  * playing, and the screen carries on with that. All this adds is sound, which the card's
  * stream doesn't ask go2rtc for.
  */
 @Inject
 @ViewModelKey
 @ContributesIntoMap(AppScope::class)
-class IndoorCameraViewModel(
+class NestCameraViewModel(
     private val observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,

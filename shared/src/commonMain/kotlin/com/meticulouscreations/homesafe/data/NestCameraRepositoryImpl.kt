@@ -3,8 +3,10 @@ package com.meticulouscreations.homesafe.data
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CameraSource
+import com.meticulouscreations.homesafe.domain.model.OUTDOOR_STREAM_PREFIX
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.IndoorCameraRepository
+import com.meticulouscreations.homesafe.domain.repository.NestCameraRepository
 import com.meticulouscreations.homesafe.network.FrigateApiClient
 import dev.zacsweers.metro.AppScope
 import dev.zacsweers.metro.ContributesBinding
@@ -22,10 +24,11 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 
 /**
- * The indoor cameras, found in the server's go2rtc: every stream there with a `nest:` source is
- * one (see `nestStreamNames`). Nothing is stored on the device. The list is short, the server is
- * asked the first time it is wanted and on every pull to refresh, and until it answers the Home
- * page is showing the outdoor cameras anyway.
+ * The Nest cameras, found in the server's go2rtc: every stream there with a `nest:` source is
+ * one (see `nestStreamNames`), indoors unless its name starts with [OUTDOOR_STREAM_PREFIX].
+ * Nothing is stored on the device. The list is short, the server is asked the first time it is
+ * wanted and on every pull to refresh, and until it answers the Home page shows the Frigate
+ * cameras on their own.
  *
  * Kept by the server's identity ([com.meticulouscreations.homesafe.domain.model.ActiveConnection.serverUrl]),
  * like the Frigate camera cache, so a local ↔ Tailscale route switch doesn't empty the list; it
@@ -34,16 +37,16 @@ import kotlinx.coroutines.flow.update
 @Inject
 @SingleIn(AppScope::class)
 @ContributesBinding(AppScope::class)
-class NestCameraRepository(
+class NestCameraRepositoryImpl(
     private val apiClient: FrigateApiClient,
     private val connectionRepository: ConnectionRepository,
-) : IndoorCameraRepository {
+) : NestCameraRepository {
 
-    /** Server identity -> its indoor cameras, as last answered. Absent until the first answer. */
+    /** Server identity -> its Nest cameras, as last answered. Absent until the first answer. */
     private val known = MutableStateFlow<Map<String, List<Camera>>>(emptyMap())
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    override fun observeIndoorCameras(): Flow<List<Camera>?> =
+    override fun observeNestCameras(): Flow<List<Camera>?> =
         connectionRepository.activeConnection
             .map { it?.serverUrl }
             .distinctUntilChanged()
@@ -75,7 +78,7 @@ class NestCameraRepository(
     private suspend fun fetch(connection: ActiveConnection) {
         val identity = connection.serverUrl
         apiClient.getNestStreamNames(connection.activeUrl)
-            .onSuccess { names -> known.update { it + (identity to names.map(::indoorCamera)) } }
+            .onSuccess { names -> known.update { it + (identity to names.map(::nestCamera)) } }
             // A first answer that failed is still an answer: the page stops waiting for it.
             .onFailure { error ->
                 if (error is CancellationException) throw error
@@ -83,5 +86,10 @@ class NestCameraRepository(
             }
     }
 
-    private fun indoorCamera(streamName: String) = Camera(name = streamName, enabled = true, placement = CameraPlacement.Indoor)
+    private fun nestCamera(streamName: String) = Camera(
+        name = streamName,
+        enabled = true,
+        placement = if (streamName.startsWith(OUTDOOR_STREAM_PREFIX)) CameraPlacement.Outdoor else CameraPlacement.Indoor,
+        source = CameraSource.Nest,
+    )
 }

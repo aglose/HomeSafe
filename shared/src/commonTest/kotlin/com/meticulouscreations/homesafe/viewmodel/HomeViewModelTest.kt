@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.viewmodel
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
@@ -15,9 +16,9 @@ import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
-import com.meticulouscreations.homesafe.domain.repository.IndoorCameraRepository
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
 import com.meticulouscreations.homesafe.domain.repository.MomentsRepository
+import com.meticulouscreations.homesafe.domain.repository.NestCameraRepository
 import com.meticulouscreations.homesafe.domain.repository.PresenceRepository
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -26,11 +27,11 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveIndoorCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
-import com.meticulouscreations.homesafe.domain.usecase.RefreshIndoorCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import com.meticulouscreations.homesafe.text.UiText
@@ -88,10 +89,10 @@ class HomeViewModelTest {
         override fun observeCameras(): Flow<List<Camera>> = flow
     }
 
-    private class FakeIndoorCameras(cameras: List<Camera>?) : IndoorCameraRepository {
+    private class FakeNestCameras(cameras: List<Camera>?) : NestCameraRepository {
         val flow = MutableStateFlow(cameras)
         var refreshes = 0
-        override fun observeIndoorCameras(): Flow<List<Camera>?> = flow
+        override fun observeNestCameras(): Flow<List<Camera>?> = flow
         override suspend fun refresh() {
             refreshes++
         }
@@ -186,13 +187,13 @@ class HomeViewModelTest {
         inView: List<StationaryObject> = emptyList(),
     ) {
         val cameraRepo = FakeCameras(cameras)
-        val indoorRepo = FakeIndoorCameras(indoorCameras)
+        val indoorRepo = FakeNestCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
         val connection = FakeConnection(serverUrl)
         val moments = FakeMoments(inView)
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
-            observeIndoorCamerasUseCase = ObserveIndoorCamerasUseCase(indoorRepo),
+            observeNestCamerasUseCase = ObserveNestCamerasUseCase(indoorRepo),
             observeCurrentServerUrlUseCase = ObserveCurrentServerUrlUseCase(connection),
             getLiveStreamUrlUseCase = GetLiveStreamUrlUseCase(FakeMediaUrls),
             getLiveWebRtcSignalingUrlUseCase = GetLiveWebRtcSignalingUrlUseCase(FakeMediaUrls),
@@ -204,7 +205,7 @@ class HomeViewModelTest {
             reconnectToServerUseCase = ReconnectToServerUseCase(connection),
             refreshHouseholdPresenceUseCase = RefreshHouseholdPresenceUseCase(presenceRepo),
             refreshStationaryObjectsUseCase = RefreshStationaryObjectsUseCase(moments),
-            refreshIndoorCamerasUseCase = RefreshIndoorCamerasUseCase(indoorRepo),
+            refreshNestCamerasUseCase = RefreshNestCamerasUseCase(indoorRepo),
             clock = object : Clock {
                 // 18:00 UTC, a couple of hours after [tesla] arrived and the same day wherever the
                 // test runs, so the card's arrival never reads "yesterday".
@@ -220,6 +221,9 @@ class HomeViewModelTest {
      */
     private fun TestScope.activate(flow: StateFlow<*>) {
         backgroundScope.launch { flow.collect {} }
+        // advanceUntilIdle() treats background work as idle, so a collector launched after the
+        // first one would otherwise never start.
+        runCurrent()
     }
 
     private fun TestScope.tiles(viewModel: HomeViewModel): List<CameraTile> {
@@ -248,7 +252,8 @@ class HomeViewModelTest {
         return viewModel.indoorCameras.value
     }
 
-    private fun nest(name: String) = Camera(name = name, enabled = true, placement = CameraPlacement.Indoor)
+    private fun nest(name: String, placement: CameraPlacement = CameraPlacement.Indoor) =
+        Camera(name = name, enabled = true, placement = placement, source = CameraSource.Nest)
 
     @Test
     fun thePageOpensOnTheOutdoorCameras() = runTest {
@@ -283,6 +288,26 @@ class HomeViewModelTest {
             indoorCameras = listOf(nest("porch_nest"), nest("nursery")),
         )
         assertEquals(listOf("nursery"), indoorTiles(h.viewModel)?.map { it.camera.name })
+    }
+
+    @Test
+    fun anOutdoorNestCameraJoinsTheFrigateOnesWithoutAPoster() = runTest {
+        val h = Harness(
+            cameras = listOf(Camera(name = "front_door", enabled = true)),
+            indoorCameras = listOf(nest("outdoor_doorbell", CameraPlacement.Outdoor), nest("kitchen")),
+        )
+        val outdoor = tiles(h.viewModel)
+        assertEquals(listOf("front_door", "outdoor_doorbell"), outdoor.map { it.camera.name }, "Frigate's first, then the Nest camera outside")
+        assertEquals("http://frigate.test:8971/snapshot/front_door?h=480", outdoor[0].posterUrl)
+        assertNull(outdoor[1].posterUrl, "a Nest camera has no Frigate snapshot, wherever it is")
+        assertEquals("http://frigate.test:8971/live/outdoor_doorbell", outdoor[1].streamUrl)
+        assertEquals(listOf("kitchen"), indoorTiles(h.viewModel)?.map { it.camera.name })
+    }
+
+    @Test
+    fun theOutdoorListDoesNotWaitForTheNestCameras() = runTest {
+        val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), indoorCameras = null)
+        assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name })
     }
 
     @Test

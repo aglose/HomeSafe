@@ -1,9 +1,10 @@
-# Nest cameras (Indoor)
+# Nest cameras
 
-The Home page opens on the outdoor cameras, Frigate's. When the server also has Google Nest
-cameras, an **Outdoor | Indoor** switch heads the camera list, and Indoor shows the Nest cameras
-as live cards. Tapping one opens a live-only page with sound. There is no timeline or recordings,
-and no detections: the Nest cameras are not Frigate cameras.
+The Home page opens on the outdoor cameras. When the server also has indoor Google Nest
+cameras, an **Outdoor | Indoor** switch heads the camera list, and Indoor shows them as live
+cards. A Nest camera outside (a doorbell) sits in the Outdoor list after Frigate's cameras.
+Tapping a Nest camera opens a live-only page with sound. There is no timeline or recordings, and
+no detections: the Nest cameras are not Frigate cameras.
 
 ## How it works
 
@@ -11,15 +12,19 @@ and no detections: the Nest cameras are not Frigate cameras.
   Management (SDM) API with a `nest:` stream source. It dials Google only while someone is
   watching, the same way the Google Home app does, and keeps the SDM session alive while they do.
 - The app reads go2rtc's `GET :1984/api/streams` and treats **every stream with a `nest:` source
-  as an indoor camera**, unless a Frigate camera already plays that stream. No app setting is
-  needed: add the stream on the server, pull to refresh on Home, and the switch appears.
-- The stream name is the camera's name in the app: `living_room` shows as "Living Room".
-- The cards and the indoor page play the stream with go2rtc's WebRTC, falling back to HLS, exactly
-  like the outdoor cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`). Indoor cards have no
+  as a Nest camera** (`CameraSource.Nest`), unless a Frigate camera already plays that stream.
+  No app setting is needed: add the stream on the server, pull to refresh on Home, and it appears.
+- **Where it goes is in the stream's name**: a name starting with `outdoor_` puts the camera in
+  the Outdoor list; every other Nest camera is Indoor. The setup script names doorbells that way.
+- The stream name is the camera's name in the app, less any `outdoor_`: `living_room` shows as
+  "Living Room", `outdoor_doorbell` as "Doorbell".
+- The cards and the live page play the stream with go2rtc's WebRTC, falling back to HLS, exactly
+  like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`). Nest cards have no
   poster: Frigate has no snapshot of them, and a go2rtc still would dial Google just for a poster.
 
-Code: `NestCameraRepository` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
-`HomeViewModel.indoorCameras` / `placement`, `CameraPlacementSwitch`, `IndoorCameraScreen`.
+Code: `NestCameraRepositoryImpl` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
+`OUTDOOR_STREAM_PREFIX`, `HomeViewModel.cameras` / `indoorCameras` / `placement`,
+`CameraPlacementSwitch`, `NestCameraScreen`.
 
 ## One-time setup
 

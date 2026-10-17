@@ -80,7 +80,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.scene.Scene
 import androidx.navigation3.ui.NavDisplay
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
-import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
@@ -240,7 +240,7 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
      * away and stops keeping the content clear of the cutout at the window's sides.
      */
     fun showsFullScreenVideo(tab: TopLevelRoute): Boolean =
-        compactLandscape && tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CameraDetailRoute || it is IndoorCameraRoute }
+        compactLandscape && tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CameraDetailRoute || it is NestCameraRoute }
 
     private val reselected = MutableSharedFlow<TopLevelRoute>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 
@@ -797,19 +797,19 @@ private data class CameraDetailRoute(
 )
 
 /**
- * An indoor (Nest) camera's live-only page, for [streamName], its go2rtc stream. The warm URLs
+ * A Nest camera's live-only page, for [streamName], its go2rtc stream. The warm URLs
  * are what its card was playing, as for [CameraDetailRoute].
  */
-private data class IndoorCameraRoute(
+private data class NestCameraRoute(
     val streamName: String,
     val warmStreamUrl: String?,
     val warmWebRtcSignalingUrl: String?,
 )
 
-/** Where a camera card (or its quick look) opens: an outdoor camera's own page, or an indoor one's live view. */
-private fun cameraRoute(tile: CameraTile): Any = when (tile.camera.placement) {
-    CameraPlacement.Outdoor -> CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl)
-    CameraPlacement.Indoor -> IndoorCameraRoute(tile.camera.name, tile.streamUrl, tile.webRtcSignalingUrl)
+/** Where a camera card (or its quick look) opens: a Frigate camera's own page, or a Nest camera's live view. */
+private fun cameraRoute(tile: CameraTile): Any = when (tile.camera.source) {
+    CameraSource.Frigate -> CameraDetailRoute(tile.camera.name, tile.streamUrl, tile.posterUrl)
+    CameraSource.Nest -> NestCameraRoute(tile.camera.name, tile.streamUrl, tile.webRtcSignalingUrl)
 }
 
 private data class DetectionZonesRoute(val cameraName: String)
@@ -861,12 +861,12 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         scrollToTopRequests = scrollToTop,
                     )
                 }
-                entry<IndoorCameraRoute>(
+                entry<NestCameraRoute>(
                     metadata = NavDisplay.transitionSpec { SharedElementPush } +
                         NavDisplay.popTransitionSpec { SharedElementPop } +
                         NavDisplay.predictivePopTransitionSpec { SharedElementPop },
                 ) { route ->
-                    IndoorCameraScreen(
+                    NestCameraScreen(
                         streamName = route.streamName,
                         warmStreamUrl = route.warmStreamUrl,
                         warmWebRtcSignalingUrl = route.warmWebRtcSignalingUrl,

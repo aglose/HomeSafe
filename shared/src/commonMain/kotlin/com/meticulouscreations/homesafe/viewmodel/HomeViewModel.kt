@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.present
@@ -15,11 +16,11 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveIndoorCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
-import com.meticulouscreations.homesafe.domain.usecase.RefreshIndoorCamerasUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import dev.zacsweers.metro.AppScope
@@ -47,7 +48,7 @@ import kotlin.time.ExperimentalTime
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
  * disconnected or while the camera is disabled on the server — the card shows a placeholder then.
- * An indoor camera never has a [posterUrl]: there is no Frigate snapshot of it, and a still from
+ * A Nest camera never has a [posterUrl]: there is no Frigate snapshot of it, and a still from
  * go2rtc would mean dialling the camera through Google just for a poster.
  */
 @Immutable
@@ -76,7 +77,7 @@ data class InViewItem(
 @ContributesIntoMap(AppScope::class)
 class HomeViewModel(
     observeCamerasUseCase: ObserveCamerasUseCase,
-    observeIndoorCamerasUseCase: ObserveIndoorCamerasUseCase,
+    observeNestCamerasUseCase: ObserveNestCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
@@ -88,7 +89,7 @@ class HomeViewModel(
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val refreshStationaryObjectsUseCase: RefreshStationaryObjectsUseCase,
-    private val refreshIndoorCamerasUseCase: RefreshIndoorCamerasUseCase,
+    private val refreshNestCamerasUseCase: RefreshNestCamerasUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -162,7 +163,7 @@ class HomeViewModel(
             reconnectToServerUseCase()
             coroutineScope {
                 launch { refreshHouseholdPresenceUseCase() }
-                launch { refreshIndoorCamerasUseCase() }
+                launch { refreshNestCamerasUseCase() }
                 refreshStationaryObjectsUseCase()
             }
         }
@@ -185,22 +186,38 @@ class HomeViewModel(
     }
 
     /**
-     * Null until the first read of the local camera cache lands (a few milliseconds), so the
-     * screen can tell "not loaded yet" from "this server has no cameras" and never flashes the
-     * empty-state message on the way in. URLs are built here, not in the card, so a LAN/Tailscale
-     * route flip re-points every player at once.
+     * The Nest cameras, null until the server has said which there are (see
+     * [ObserveNestCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
+     * camera, and is left out here. Shared, so the two lists built from it ask the server once.
+     */
+    private val nestCameras: StateFlow<List<Camera>?> = combine(
+        observeNestCamerasUseCase(),
+        observeCamerasUseCase(),
+    ) { nest, frigate ->
+        val frigateStreams = frigate.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
+        nest?.filterNot { it.name in frigateStreams }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    /**
+     * The outdoor cameras: Frigate's, then any Nest camera outside (a doorbell). Null until the
+     * first read of the local camera cache lands (a few milliseconds), so the screen can tell
+     * "not loaded yet" from "this server has no cameras" and never flashes the empty-state
+     * message on the way in. It doesn't wait for the Nest cameras: they join when the server
+     * answers. URLs are built here, not in the card, so a LAN/Tailscale route flip re-points
+     * every player at once.
      */
     val cameras: StateFlow<List<CameraTile>?> = combine(
         observeCamerasUseCase(),
+        nestCameras,
         observeCurrentServerUrlUseCase(),
-    ) { cameras, serverUrl ->
-        cameras.map { camera -> tile(camera, serverUrl) }
+    ) { frigate, nest, serverUrl ->
+        (frigate + nest.orEmpty().filter { it.placement == CameraPlacement.Outdoor }).map { camera -> tile(camera, serverUrl) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
 
     /**
-     * Which cameras the page is showing: the outdoor ones (Frigate's) until the viewer switches.
+     * Which cameras the page is showing: the outdoor ones until the viewer switches.
      * Kept here rather than in the screen so it lasts while the page is away (a camera opened
      * from it, another tab) but not past the app's process: every launch opens outdoors.
      */
@@ -210,18 +227,12 @@ class HomeViewModel(
         _placement.value = placement
     }
 
-    /**
-     * The indoor cameras' cards, null until the server has said which there are (see
-     * [ObserveIndoorCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
-     * camera, and stays with the outdoor ones.
-     */
+    /** The indoor (Nest) cameras' cards, null until the server has said which there are. */
     val indoorCameras: StateFlow<List<CameraTile>?> = combine(
-        observeIndoorCamerasUseCase(),
-        observeCamerasUseCase(),
+        nestCameras,
         observeCurrentServerUrlUseCase(),
-    ) { indoor, frigate, serverUrl ->
-        val frigateStreams = frigate.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
-        indoor?.filterNot { it.name in frigateStreams }?.map { camera -> tile(camera, serverUrl) }
+    ) { nest, serverUrl ->
+        nest?.filter { it.placement == CameraPlacement.Indoor }?.map { camera -> tile(camera, serverUrl) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     private fun tile(camera: Camera, serverUrl: String?): CameraTile {
@@ -232,7 +243,7 @@ class HomeViewModel(
             camera = camera,
             streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
             posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
-                .takeIf { camera.placement == CameraPlacement.Outdoor },
+                .takeIf { camera.source == CameraSource.Frigate },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
         )
     }
