@@ -1,0 +1,35 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [
+      "FitnessDoorOutlines_Fitness, door outlines_74500008_0.png"
+    ],
+    "removed": [],
+    "unchanged": [
+      "AppIcons_App icons_391916d7_0.png",
+      "CameraPlayerBarNarrow_Camera player bar, small phone, large text_c3dce0ec_0.png",
+      "CameraPlayerBar_Camera player bar_f0910627_0.png",
+      "DrawerFinanceCards_Drawer, Finance_b391e117_0.png",
+      "DrawerFitnessCards_Drawer, Fitness_415887fb_0.png",
+      "FinanceDrawerOptions_Settings, Finance in the menu_288ac83b_0.png",
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeedIndoor_Home, indoor cameras_ee22acaf_0.png",
+      "HomeFeedWithIndoor_Home, with indoor cameras_bd705e5d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/fitness-body-part-outlines-86ac22",
+    "head": "2114b760c31f746d8c7f0a10a4f58b15836789af",
+    "base": "0f6abc8edab3f057475d7c1f4b6a0afb645e2017",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/39072387015",
+    "failed": false
+  }
+}
