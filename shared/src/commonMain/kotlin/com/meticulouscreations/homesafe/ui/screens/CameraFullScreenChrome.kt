@@ -70,8 +70,8 @@ import org.jetbrains.compose.resources.stringResource
  * What a camera's video wears while it has the whole window (the phone on its side; see
  * [CameraDetailScreen]): everything the page offered, laid over the picture instead of under it.
  * Along the top, on a wash dark enough to read over a bright sky: the way back, the camera's
- * name, the LIVE pill, and the page's three quick actions (quality, sound, clip) as plain round
- * buttons. In the middle, play and pause. Along the bottom, the timeline with its span chips and
+ * name, the LIVE pill, and the three buttons from the bar under the page's player (quality, sound,
+ * clip) as plain round buttons. In the middle, play and pause. Along the bottom, the timeline with its span chips and
  * the "behind live" readout. All of it fades in and out together; the caller decides when.
  *
  * Each row steps in from the cutout and the system bars by itself, since the video beneath runs
@@ -142,7 +142,7 @@ internal fun FullScreenPlayerChrome(
                 }
             }
 
-            // The page's quick actions, without their captions: the icon and its tint say the
+            // The buttons from the bar under the page's player: the icon and its tint say the
             // state, and a tap that changes something says what in the hint under this row.
             var qualityMenuOpen by remember { mutableStateOf(false) }
             Box {

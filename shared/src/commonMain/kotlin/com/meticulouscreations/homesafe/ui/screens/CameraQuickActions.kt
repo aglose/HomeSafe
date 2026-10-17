@@ -4,18 +4,18 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.indication
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -23,13 +23,11 @@ import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCut
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,21 +38,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.findRootCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.meticulouscreations.homesafe.domain.model.StreamQuality
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.camera_action_clip
 import homesafe.shared.generated.resources.camera_action_clip_description
 import homesafe.shared.generated.resources.camera_hint_single_quality
 import homesafe.shared.generated.resources.camera_hint_sound_off
@@ -69,22 +68,20 @@ import homesafe.shared.generated.resources.camera_quality_low
 import homesafe.shared.generated.resources.camera_quality_low_description
 import homesafe.shared.generated.resources.camera_quality_menu_title
 import homesafe.shared.generated.resources.camera_quality_selected
-import homesafe.shared.generated.resources.camera_sound_muted
-import homesafe.shared.generated.resources.camera_sound_on
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * Quality, speaker and clip under the player. The speaker takes the prominent centre slot
- * (none of the cameras have a microphone, so there is no two-way talk button). Quality and
+ * The bar along the bottom of the player: the LIVE pill and how far behind live the picture is on
+ * its left, quality, speaker and clip on its right. It sits under the video, never over it, in the
+ * player's own backdrop colour, so it reads as part of the player and leaves the whole picture
+ * clear. None of the cameras have a microphone, so there is no two-way talk button. Quality and
  * sound are saved preferences shared by every camera. Collects `playback` itself so the position
- * polls that update it while a recording plays recompose only this row.
+ * polls that update it while a recording plays recompose only this bar.
  *
- * Alerts used to have the third slot; they are edited place by place on the Settings tab, and
- * cutting a clip of what's on screen is the thing people reach for here.
- *
+ * @param cameraAvailable whether there is a live stream to offer; without one there is no LIVE pill.
  * @param hasQualityChoice whether this camera has a second, lighter stream to switch to; without
  *   one the quality button still shows the saved choice but explains itself when tapped.
  * @param onClip opens the clip editor; given where the button sits, as a fraction of the window,
@@ -93,6 +90,7 @@ import org.jetbrains.compose.resources.stringResource
 @Composable
 internal fun QuickActionsRow(
     cameraName: String,
+    cameraAvailable: Boolean,
     hasQualityChoice: Boolean,
     showHint: (StringResource) -> Unit,
     onClip: (originFraction: Offset) -> Unit,
@@ -114,19 +112,25 @@ internal fun QuickActionsRow(
         },
         onClip = onClip,
         modifier = modifier,
-    )
+    ) {
+        if (cameraAvailable) LivePill(isLive = playback.isLive, onClick = viewModel::goLive)
+        val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
+        if (playhead != null) BehindLiveReadout(playheadEpochSeconds = playhead, cameraName = cameraName, onVideo = false)
+    }
 }
 
 /**
- * The row itself, stateless: three round buttons, each captioned with the state it is in, so the
- * row reads at a glance without long-pressing anything. The speaker is a toggle — filled in the
- * accent when on, a quiet outline with a struck-through icon when off; the quality button, a
- * choice rather than a toggle, opens a menu that says what each option does; and the scissors
- * are an action, keeping the accent tint without the fill.
+ * The bar itself, stateless: [leading] (the LIVE pill and the time) at the start, then three icon
+ * buttons. Each says the state it is in without a caption: the quality button is the quality's
+ * own short name in a badge, a choice that opens a menu saying what each option does; the speaker
+ * is a toggle, its icon struck through when muted and tinted in the accent when on, so the accent
+ * only ever means "on"; and the scissors are a plain action.
  *
- * The circles straddle the player's bottom edge (the row is pulled up over it) while the
- * captions fall below the video, clear of the "behind live" readout in the player's corner.
+ * The buttons keep their 48dp whatever the width. When [leading] doesn't fit beside them (a narrow
+ * phone, enlarged text) it takes a row of its own above them rather than being cut short, and
+ * within that row the pill and the time wrap onto separate lines if they must ([PlayerBarLayout]).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun CameraQuickActions(
     displayName: String,
@@ -139,14 +143,22 @@ internal fun CameraQuickActions(
     onToggleSound: () -> Unit,
     onClip: (originFraction: Offset) -> Unit,
     modifier: Modifier = Modifier,
+    leading: @Composable RowScope.() -> Unit = {},
 ) {
-    Row(
+    PlayerBarLayout(
         modifier = modifier
             .fillMaxWidth()
-            .offset(y = -QUICK_ACTION_OVERLAP)
-            .padding(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-        verticalAlignment = Alignment.Top,
+            .heightIn(min = PLAYER_BAR_HEIGHT)
+            .background(MaterialTheme.colorScheme.surfaceContainerLowest)
+            .padding(start = 16.dp, end = 4.dp),
+        leading = {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+                itemVerticalAlignment = Alignment.CenterVertically,
+                content = leading,
+            )
+        },
     ) {
         // Quality: a picker rather than a cycle, so the options explain themselves before one is
         // chosen. Only the full stream carries audio, so SD also dims the speaker (through the
@@ -154,13 +166,22 @@ internal fun CameraQuickActions(
         var qualityMenuOpen by remember { mutableStateOf(false) }
         Box {
             val qualityName = stringResource(qualityLabel(quality))
-            QuickActionButton(
-                icon = Icons.Filled.Tune,
-                label = qualityName,
+            PlayerBarButton(
                 contentDescription = stringResource(Res.string.camera_quality_button_description, qualityName),
                 available = hasQualityChoice,
                 onClick = { if (hasQualityChoice) qualityMenuOpen = true else onQualityUnavailable() },
-            )
+            ) {
+                Text(
+                    text = qualityName,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    modifier = Modifier
+                        .border(1.5.dp, MaterialTheme.colorScheme.onSurface, RoundedCornerShape(5.dp))
+                        .padding(horizontal = 5.dp, vertical = 1.dp),
+                )
+            }
             QualityMenu(
                 expanded = qualityMenuOpen,
                 selected = quality,
@@ -174,26 +195,66 @@ internal fun CameraQuickActions(
         // Speaker: the saved sound preference. It flips even while what's playing is silent
         // (go2rtc's sub-streams and Frigate's recordings are video-only), so the choice is
         // ready when audio arrives; the dimming says the stream has nothing to play right now.
-        QuickActionButton(
-            icon = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
-            label = stringResource(soundLabel(isMuted)),
+        PlayerBarButton(
             contentDescription = stringResource(if (isMuted) Res.string.camera_sound_turn_on else Res.string.camera_sound_turn_off),
-            active = !isMuted,
             available = hasAudio,
-            size = PRIMARY_QUICK_ACTION_SIZE,
-            iconSize = PRIMARY_QUICK_ACTION_ICON_SIZE,
             onClick = onToggleSound,
-        )
-        // Scissors: cut a clip from what's playing (or just behind live). The circle remembers
+        ) {
+            Icon(
+                imageVector = if (isMuted) Icons.AutoMirrored.Filled.VolumeOff else Icons.AutoMirrored.Filled.VolumeUp,
+                contentDescription = null,
+                tint = if (isMuted) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+            )
+        }
+        // Scissors: cut a clip from what's playing (or just behind live). The button remembers
         // where it is so the editor's splash can land exactly under the finger.
         val clipOrigin = remember { OriginProbe() }
-        QuickActionButton(
-            icon = Icons.Filled.ContentCut,
-            label = stringResource(CLIP_LABEL),
+        PlayerBarButton(
             contentDescription = stringResource(Res.string.camera_action_clip_description, displayName),
             onClick = { onClip(clipOrigin.fraction()) },
-            onCirclePosition = { clipOrigin.coordinates = it },
-        )
+            modifier = Modifier.onGloballyPositioned { clipOrigin.coordinates = it },
+        ) {
+            Icon(imageVector = Icons.Filled.ContentCut, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        }
+    }
+}
+
+/**
+ * [leading] at the start and [buttons] at the end of one row, both centred on it, while they fit
+ * side by side; otherwise [leading] on a row of its own, as wide as the bar, with the buttons on
+ * the row under it, still at the end. Which it is comes from [leading]'s one-line width, so the
+ * status is never squeezed narrower than it reads.
+ */
+@Composable
+private fun PlayerBarLayout(leading: @Composable () -> Unit, modifier: Modifier = Modifier, buttons: @Composable RowScope.() -> Unit) {
+    Layout(
+        contents = listOf(leading, { Row(verticalAlignment = Alignment.CenterVertically, content = buttons) }),
+        modifier = modifier,
+    ) { (leadingMeasurables, buttonMeasurables), constraints ->
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val buttonRow = buttonMeasurables.single().measure(loose)
+        val leadingMeasurable = leadingMeasurables.single()
+        val gap = PLAYER_BAR_GAP.roundToPx()
+        val beside = (constraints.maxWidth - buttonRow.width - gap).coerceAtLeast(0)
+        val fitsBeside = leadingMeasurable.maxIntrinsicWidth(Constraints.Infinity) <= beside
+        if (fitsBeside) {
+            val status = leadingMeasurable.measure(loose.copy(maxWidth = beside))
+            val height = maxOf(constraints.minHeight, status.height, buttonRow.height)
+            layout(constraints.maxWidth, height) {
+                status.placeRelative(0, (height - status.height) / 2)
+                buttonRow.placeRelative(constraints.maxWidth - buttonRow.width, (height - buttonRow.height) / 2)
+            }
+        } else {
+            // A row of its own, kept as far from the bar's end as its start is (the bar's end padding is less, for the buttons' sake).
+            val inset = PLAYER_BAR_STACKED_INSET.roundToPx()
+            val top = PLAYER_BAR_STACKED_TOP.roundToPx()
+            val status = leadingMeasurable.measure(loose.copy(maxWidth = (constraints.maxWidth - inset).coerceAtLeast(0)))
+            val height = maxOf(constraints.minHeight, top + status.height + buttonRow.height)
+            layout(constraints.maxWidth, height) {
+                status.placeRelative(0, top)
+                buttonRow.placeRelative(constraints.maxWidth - buttonRow.width, height - buttonRow.height)
+            }
+        }
     }
 }
 
@@ -250,80 +311,33 @@ internal fun QualityMenu(expanded: Boolean, selected: StreamQuality, onSelect: (
 }
 
 /**
- * A round action under the player, captioned with [label]. [active] fills it in the accent (a
- * toggle that's on) and null means it isn't a toggle at all, so it keeps the accent tint without
- * the fill; a toggle that's off goes quiet, so the accent only ever means "on". [available] false
- * dims it but keeps it tappable, so the tap can say why it did nothing.
- *
- * The caption is part of the button — one tap target, read out together with the icon's
- * description — and every button sits in the same fixed-width slot, so a caption changing
- * length ("Muted" to "Sound on") never nudges its neighbours.
- *
- * [onCirclePosition] reports where the circle itself is (not the whole slot): the button a finger sees.
+ * One of the bar's buttons: a full 48dp to tap, round ripple, [content] drawn in the middle and
+ * read out as [contentDescription]. [available] false dims it but keeps it tappable, so the tap
+ * can say why it did nothing.
  */
 @Composable
-private fun QuickActionButton(
-    icon: ImageVector,
-    label: String,
+private fun PlayerBarButton(
     contentDescription: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    active: Boolean? = null,
     available: Boolean = true,
-    size: Dp = QUICK_ACTION_SIZE,
-    iconSize: Dp = QUICK_ACTION_ICON_SIZE,
-    onCirclePosition: ((LayoutCoordinates) -> Unit)? = null,
+    content: @Composable () -> Unit,
 ) {
-    val on = active == true
-    val background = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface.copy(alpha = 0.8f)
-    val tint = when (active) {
-        true -> MaterialTheme.colorScheme.onPrimaryContainer
-        false -> MaterialTheme.colorScheme.onSurfaceVariant
-        null -> MaterialTheme.colorScheme.primary
-    }
-    // The press ripples on the circle, though the whole slot (caption included) takes the tap.
-    val interactionSource = remember { MutableInteractionSource() }
-    Column(
+    Box(
         modifier = modifier
-            .width(QUICK_ACTION_SLOT_WIDTH)
+            .sizeIn(minWidth = PLAYER_BAR_BUTTON_SIZE, minHeight = PLAYER_BAR_BUTTON_SIZE)
+            .clip(CircleShape)
             .alpha(if (available) 1f else UNAVAILABLE_ALPHA)
-            .clickable(interactionSource = interactionSource, indication = null, role = Role.Button, onClick = onClick),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics(mergeDescendants = true) { this.contentDescription = contentDescription }
+            .padding(horizontal = 8.dp),
+        contentAlignment = Alignment.Center,
     ) {
-        // Every circle is centred in a box as tall as the largest one, so the three line up
-        // through their middles and the captions share a baseline.
-        Box(modifier = Modifier.size(PRIMARY_QUICK_ACTION_SIZE), contentAlignment = Alignment.Center) {
-            Box(
-                modifier = Modifier
-                    .then(if (onCirclePosition != null) Modifier.onGloballyPositioned(onCirclePosition) else Modifier)
-                    .size(size)
-                    .clip(CircleShape)
-                    .background(background, CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = if (on) 0f else 0.2f), CircleShape)
-                    .indication(interactionSource, ripple()),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = icon,
-                    contentDescription = contentDescription,
-                    tint = tint,
-                    modifier = Modifier.size(iconSize),
-                )
-            }
-        }
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (on) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Box(modifier = Modifier.clearAndSetSemantics {}) { content() }
     }
 }
 
-/** The quality button's caption: the short name a video menu would use for each stream. */
+/** The quality button's badge: the short name a video menu would use for each stream. */
 internal fun qualityLabel(quality: StreamQuality): StringResource = when (quality) {
     StreamQuality.AUTO -> Res.string.camera_quality_auto
     StreamQuality.HIGH -> Res.string.camera_quality_high
@@ -337,15 +351,9 @@ internal fun qualityDescription(quality: StreamQuality): StringResource = when (
     StreamQuality.LOW -> Res.string.camera_quality_low_description
 }
 
-/** The speaker's caption. The saved preference, not whether the current stream has audio — the dimming says that. */
-internal fun soundLabel(isMuted: Boolean): StringResource = if (isMuted) Res.string.camera_sound_muted else Res.string.camera_sound_on
-
-/** The scissors' caption. An action, not a state, so it never changes. */
-internal val CLIP_LABEL: StringResource = Res.string.camera_action_clip
-
 /**
- * Where a quick action's circle sits, captured on placement and read on tap: the centre of the
- * circle as a fraction of the window, (0.5, 0.5) until it has been placed. A plain holder, not
+ * Where a quick action's button sits, captured on placement and read on tap: the centre of the
+ * button as a fraction of the window, (0.5, 0.5) until it has been placed. A plain holder, not
  * state — nothing redraws when it moves; only the next tap reads it.
  */
 internal class OriginProbe {
@@ -360,13 +368,16 @@ internal class OriginProbe {
     }
 }
 
-/** How far the row is pulled up over the player, so the circles straddle its bottom edge. */
-private val QUICK_ACTION_OVERLAP = 32.dp
-
 /** Material's disabled-content alpha, for a control that's present but can't act yet. */
 private const val UNAVAILABLE_ALPHA = 0.38f
-private val QUICK_ACTION_SIZE = 64.dp
-private val QUICK_ACTION_ICON_SIZE = 24.dp
-private val PRIMARY_QUICK_ACTION_SIZE = 80.dp
-private val PRIMARY_QUICK_ACTION_ICON_SIZE = 32.dp
-private val QUICK_ACTION_SLOT_WIDTH = 80.dp
+
+/** The bar's height: a 48dp button with a little air above and below. */
+private val PLAYER_BAR_HEIGHT = 52.dp
+private val PLAYER_BAR_BUTTON_SIZE = 48.dp
+
+/** The least room between the status and the buttons when they share the row. */
+private val PLAYER_BAR_GAP = 8.dp
+
+/** Stacked, how much the status row stops short of the bar's end, and how far it sits below the top. */
+private val PLAYER_BAR_STACKED_INSET = 12.dp
+private val PLAYER_BAR_STACKED_TOP = 10.dp
