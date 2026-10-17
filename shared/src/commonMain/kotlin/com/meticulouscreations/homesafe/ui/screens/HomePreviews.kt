@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.labelName
@@ -50,6 +51,20 @@ import kotlinx.datetime.TimeZone
 @Composable
 fun HomeFeedPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView)
+}
+
+/** A server with Nest cameras too: the switch heads the cameras, on the outdoor ones as the page opens. */
+@Preview(name = "Home, with indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun HomeFeedWithIndoorPreview() {
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView, placement = CameraPlacement.Outdoor)
+}
+
+/** Switched to the indoor (Nest) cameras. */
+@Preview(name = "Home, indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun HomeFeedIndoorPreview() {
+    HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, inView = previewInView, placement = CameraPlacement.Indoor)
 }
 
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
@@ -109,6 +124,7 @@ private fun HomeFeedPreviewContent(
     inView: List<InViewItem>,
     refreshing: Boolean = false,
     connectionProblem: ConnectionProblem? = null,
+    placement: CameraPlacement? = null,
 ) {
     FrigatePreview {
         SharedTransitionPreview {
@@ -125,6 +141,7 @@ private fun HomeFeedPreviewContent(
                 onRefresh = if (refreshing) ({}) else null,
                 connectionProblem = connectionProblem,
                 onOpenTailscale = {},
+                placement = placement,
             ) { tile ->
                 CameraCard(
                     tile = tile,
@@ -154,6 +171,10 @@ private const val PHONE_HEIGHT_DP = 915
 
 private val previewTiles = listOf("front_door", "hikvision_2", "driveway").map { name ->
     CameraTile(camera = Camera(name = name, enabled = name != "driveway"), streamUrl = null, posterUrl = null)
+}
+
+private val previewIndoorTiles = listOf("living_room", "nursery").map { name ->
+    CameraTile(camera = Camera(name = name, enabled = true, placement = CameraPlacement.Indoor), streamUrl = null, posterUrl = null)
 }
 
 /** The day [previewInView]'s car arrived, so its card reads "since 3:33 PM" (in UTC) rather than naming the date. */

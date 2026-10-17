@@ -9,6 +9,7 @@ import homesafe.shared.generated.resources.error_camera_not_on_server
 import homesafe.shared.generated.resources.error_load_camera_config
 import homesafe.shared.generated.resources.error_load_cameras
 import homesafe.shared.generated.resources.error_load_events
+import homesafe.shared.generated.resources.error_load_indoor_cameras
 import homesafe.shared.generated.resources.error_load_preview
 import homesafe.shared.generated.resources.error_load_profile
 import homesafe.shared.generated.resources.error_load_recordings
@@ -30,6 +31,7 @@ import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.put
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.Url
@@ -130,6 +132,17 @@ class FrigateApiClient @Inject constructor(private val httpClient: HttpClient, p
         response.body<FrigateConfigResponse>()
             .cameras
             .map { (name, config) -> toFrigateCamera(name, config) }
+    }
+
+    /**
+     * The go2rtc stream names of the Google Nest cameras on [serverUrl]'s go2rtc — see
+     * [nestStreamNames]. Read as text and decoded here rather than by content negotiation, so the
+     * answer is understood whatever content type go2rtc labels it with.
+     */
+    suspend fun getNestStreamNames(serverUrl: String): Result<List<String>> = runCatching {
+        val response = cookielessClient.get(frigateGo2rtcStreamsUrl(serverUrl))
+        response.requireSuccess(Res.string.error_load_indoor_cameras)
+        nestStreamNames(parseGo2rtcStreams(response.bodyAsText()))
     }
 
     /**

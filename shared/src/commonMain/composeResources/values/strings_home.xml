@@ -42,6 +42,9 @@
     <string name="home_in_view_check">Check and tag the cars in view</string>
 
     <string name="home_no_cameras">No cameras found on this server.</string>
+    <!-- The Home page's switch between the Frigate cameras outside and the Nest cameras inside. -->
+    <string name="home_placement_outdoor">Outdoor</string>
+    <string name="home_placement_indoor">Indoor</string>
     <string name="home_away_banner">Away mode · nobody home · alerts escalated</string>
     <string name="home_away_back">I'm back</string>
     <!-- The notice at the top of Home while the app is signed in but can't reach the server. -->
@@ -76,6 +79,8 @@
     <string name="camera_sound_on">Sound on</string>
     <string name="camera_sound_turn_on">Turn sound on</string>
     <string name="camera_sound_turn_off">Turn sound off</string>
+    <!-- Under an indoor (Google Nest) camera's video: why its page has no timeline or recent activity. -->
+    <string name="camera_indoor_live_only">Live only. Indoor cameras stream from Google Nest while you watch, and HomeSafe doesn't record them.</string>
     <!-- The scissors button's caption: cut a clip of the video. -->
     <string name="camera_action_clip">Clip</string>
     <!-- %1$s is the camera's name. -->
