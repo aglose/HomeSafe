@@ -45,3 +45,6 @@ androidApp/release/
 # must come from one machine (CI) to be comparable, and the "UI previews" workflow renders them
 # fresh for every pull request instead (see docs/ui-previews.md).
 androidApp/src/screenshotTest*/reference/
+
+# Google Nest credentials written by tools/nest-setup/nest_setup.py (see docs/nest-cameras.md).
+nest-secrets.env

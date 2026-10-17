@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridItemScope
@@ -92,6 +93,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
 import coil3.compose.AsyncImage
+import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.ApertureRefreshBox
@@ -136,7 +138,9 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The "Home" tab's content: a summary of what is going on and the cameras reported by the
- * connected Frigate server. [zoomState] is the quick-look layer a pinched or long-pressed card
+ * connected Frigate server — or, once switched over, the indoor (Nest) cameras. The outdoor ones
+ * come first; the switch between them is there only when the server has indoor cameras at all.
+ * [zoomState] is the quick-look layer a pinched or long-pressed card
  * lifts its video into; the shell draws it, over everything (see [CameraCardZoomOverlay]).
  * [onOpenMoments] is where a tap on the summary goes: the feed it summarises.
  */
@@ -152,6 +156,8 @@ fun HomeTabContent(
 ) {
     val viewModel: HomeViewModel = metroViewModel()
     val cameras by viewModel.cameras.collectAsStateWithLifecycle()
+    val indoorCameras by viewModel.indoorCameras.collectAsStateWithLifecycle()
+    val placement by viewModel.placement.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
     val inView by viewModel.inView.collectAsStateWithLifecycle()
     val status by viewModel.status.collectAsStateWithLifecycle()
@@ -164,9 +170,12 @@ fun HomeTabContent(
     // Time-to-fully-drawn: the home screen counts as drawn once the camera cache has answered.
     ReportFullyDrawnWhen { cameras != null }
 
+    val hasIndoor = !indoorCameras.isNullOrEmpty()
     HomeFeed(
         everyoneAway = everyoneAway,
-        cameras = cameras,
+        cameras = if (hasIndoor && placement == CameraPlacement.Indoor) indoorCameras else cameras,
+        placement = placement.takeIf { hasIndoor },
+        onPlacementChange = viewModel::showPlacement,
         onAwayBack = viewModel::markBack,
         statusHeadline = status.headline?.resolve(),
         statusDetails = status.details?.resolve(),
@@ -218,6 +227,9 @@ fun HomeTabContent(
  * strip's whole height. A strip that is already there when the page is composed — back from a
  * camera, say — is simply there.
  *
+ * With a [placement], the [CameraPlacementSwitch] heads the cameras, and [cameras] are the ones
+ * of that placement; null leaves it out (a server with no indoor cameras, and the skeleton).
+ *
  * Pulling the list down from the top refreshes the page — [onRefresh], with the band open while
  * [refreshing] (see [ApertureRefreshBox]); the band opens below the shell's floating top bar,
  * which the list scrolls under. Null leaves the list unpullable: the sign-in screen's skeleton.
@@ -252,6 +264,8 @@ internal fun HomeFeed(
     connectionRetrying: Boolean = false,
     onConnectionRetry: () -> Unit = {},
     onOpenTailscale: (() -> Unit)? = null,
+    placement: CameraPlacement? = null,
+    onPlacementChange: (CameraPlacement) -> Unit = {},
     cameraCard: @Composable LazyGridItemScope.(CameraTile) -> Unit,
 ) {
     // The skeleton's frame clock runs only while there is a skeleton to drive.
@@ -293,6 +307,16 @@ internal fun HomeFeed(
                 Column {
                     HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick, onRefresh = onRefresh)
                     InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
+                }
+            }
+
+            if (placement != null) {
+                item(key = "placement-switch", span = { GridItemSpan(maxLineSpan) }) {
+                    CameraPlacementSwitch(
+                        selected = placement,
+                        onSelect = onPlacementChange,
+                        modifier = Modifier.animateItem().wrapContentWidth(Alignment.Start),
+                    )
                 }
             }
 

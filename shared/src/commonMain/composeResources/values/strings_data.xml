@@ -10,6 +10,7 @@
     <string name="error_login_failed">Login failed: %1$s</string>
     <string name="error_sign_in_failed">Login failed</string>
     <string name="error_load_cameras">Couldn't load cameras: %1$s</string>
+    <string name="error_load_indoor_cameras">Couldn't load the indoor cameras: %1$s</string>
     <string name="error_load_camera_config">Couldn't load camera config: %1$s</string>
     <string name="error_camera_not_on_server">Camera %1$s isn't on this server</string>
     <string name="error_save_failed">Couldn't save: %1$s</string>
