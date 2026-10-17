@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Camera layouts in [CameraListDao], kept by the server's identity
@@ -28,6 +30,12 @@ class CameraLayoutRepositoryImpl(
     private val dao: CameraListDao,
     private val connectionRepository: ConnectionRepository,
 ) : CameraLayoutRepository {
+
+    /**
+     * Held across each read-modify-write: a drop and a turn saved at the same moment would
+     * otherwise both read the same row, and whichever wrote last would undo the other.
+     */
+    private val writing = Mutex()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     override fun observeLayouts(): Flow<Map<String, CameraLayout>> =
@@ -44,8 +52,8 @@ class CameraLayoutRepositoryImpl(
                 }
             }
 
-    override suspend fun saveOrder(cameraNames: List<String>) {
-        val identity = connectionRepository.activeConnection.value?.serverUrl ?: return
+    override suspend fun saveOrder(cameraNames: List<String>) = writing.withLock {
+        val identity = connectionRepository.activeConnection.value?.serverUrl ?: return@withLock
         val current = dao.observeLayouts(identity).first().associateBy { it.name }
         dao.upsertLayouts(
             cameraNames.mapIndexed { position, name ->
@@ -54,8 +62,8 @@ class CameraLayoutRepositoryImpl(
         )
     }
 
-    override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) {
-        val identity = connectionRepository.activeConnection.value?.serverUrl ?: return
+    override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) = writing.withLock {
+        val identity = connectionRepository.activeConnection.value?.serverUrl ?: return@withLock
         val current = dao.observeLayouts(identity).first().firstOrNull { it.name == cameraName }
         val row = (current ?: CameraLayoutEntity(serverUrl = identity, name = cameraName))
             .copy(quarterTurns = orientation.quarterTurns, tiltDegrees = orientation.tiltDegrees)

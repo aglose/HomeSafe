@@ -9,10 +9,15 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_generic
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -52,6 +57,30 @@ class CameraLayoutRepositoryImplTest {
             ),
             repository.observeLayouts().first(),
         )
+    }
+
+    /**
+     * Reads that take a moment to come back, as a database's do: the rows as they were when asked
+     * for, handed over a little later. Two saves begun together both read before either writes.
+     */
+    private class SlowReadDao(private val inner: CameraListDao = InMemoryCameraListDao()) : CameraListDao by inner {
+        override fun observeLayouts(serverUrl: String): Flow<List<CameraLayoutEntity>> = flow {
+            val asked = inner.observeLayouts(serverUrl).first()
+            delay(10)
+            emit(asked)
+            emitAll(inner.observeLayouts(serverUrl))
+        }
+    }
+
+    @Test
+    fun aDropAndATurnSavedTogetherBothLand() = runTest {
+        val dao = SlowReadDao()
+        val repository = CameraLayoutRepositoryImpl(dao, FakeConnection(server))
+        coroutineScope {
+            launch { repository.saveOrder(listOf("kitchen", "kids_room")) }
+            launch { repository.setOrientation("kids_room", CameraOrientation(quarterTurns = 1)) }
+        }
+        assertEquals(CameraLayout(position = 1, orientation = CameraOrientation(quarterTurns = 1)), repository.observeLayouts().first()["kids_room"])
     }
 
     @Test

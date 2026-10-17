@@ -47,7 +47,11 @@ class NestCameraRepositoryImpl(
     private val dao: CameraListDao,
 ) : NestCameraRepository {
 
-    /** The servers asked this session: the record is a head start, not a substitute for asking. */
+    /**
+     * The servers that have answered this session: the record is a head start, not a substitute
+     * for asking. Only an answer counts, so a request cancelled (Home left before it came back) or
+     * failed is made again the next time the list is wanted.
+     */
     private val askedThisSession = MutableStateFlow<Set<String>>(emptySet())
 
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -85,11 +89,11 @@ class NestCameraRepositoryImpl(
      */
     override suspend fun refresh(connection: ActiveConnection) {
         val identity = connection.serverUrl
-        askedThisSession.update { it + identity }
         apiClient.getNestStreamNames(connection.activeUrl)
             .onSuccess { names ->
                 dao.insertNestCameras(names.map { NestCameraEntity(serverUrl = identity, name = it) })
                 dao.deleteOtherNestCameras(identity, names)
+                askedThisSession.update { it + identity }
             }
             .onFailure { error -> if (error is CancellationException) throw error }
     }

@@ -52,6 +52,7 @@ import com.meticulouscreations.homesafe.ui.components.PlayerRequest
 import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
+import com.meticulouscreations.homesafe.ui.components.isOnItsSide
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
 import com.meticulouscreations.homesafe.ui.components.pinchZoomGestures
 import com.meticulouscreations.homesafe.ui.components.rememberPinchZoomState
@@ -69,7 +70,6 @@ import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
@@ -120,7 +120,7 @@ fun NestCameraScreen(
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
     val turnDegrees by remember(streamName) { viewModel.turnDegrees(streamName) }.collectAsStateWithLifecycle(0f)
     // The picture's shape as it is shown: stood on its side by a quarter turn, its inverse.
-    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if ((turnDegrees / 90f).roundToInt() % 2 != 0) 1f / it else it }
+    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if (isOnItsSide(turnDegrees)) 1f / it else it }
     val toggleSound = {
         wantedSound = true
         viewModel.toggleSound()

@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -73,6 +74,10 @@ data class CameraTile(
     /** Which way up to draw the picture: upright for a camera mounted level. */
     val orientation: CameraOrientation = CameraOrientation.UPRIGHT,
 )
+
+/** Whether these camera names, in this order, are the positions [layouts] has saved for them. */
+private fun List<String>.isSavedIn(layouts: Map<String, CameraLayout>): Boolean =
+    withIndex().all { (position, name) -> layouts[name]?.position == position }
 
 /**
  * [cameras] (one list's) in the order the Home page shows them: Arrange mode's [draft] while one
@@ -223,9 +228,22 @@ class HomeViewModel(
     /** Turns and tilts under way and not yet saved, by camera, so the slider moves the picture under the finger. */
     private val orientationDrafts = MutableStateFlow<Map<String, CameraOrientation>>(emptyMap())
 
+    /**
+     * The saved layouts as they are read back. A draft (above) is dropped only once these show it
+     * saved, never merely when its write returns: the write landing and the read coming back are
+     * not the same moment, and dropping it in between would flick the card or picture back to how
+     * it was. A draft that has moved on since (a newer drag or tilt) is kept.
+     */
+    private val savedLayouts: StateFlow<Map<String, CameraLayout>> = observeCameraLayoutsUseCase()
+        .onEach { layouts ->
+            orderDrafts.update { drafts -> drafts.filterValues { order -> !order.isSavedIn(layouts) } }
+            orientationDrafts.update { drafts -> drafts.filter { (name, orientation) -> layouts[name]?.orientation != orientation } }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
     /** The saved layouts with Arrange mode's unsaved changes over them. Opens empty rather than holding the cameras back. */
     private val arrangement: StateFlow<Arrangement> = combine(
-        observeCameraLayoutsUseCase(),
+        savedLayouts,
         orderDrafts,
         orientationDrafts,
         ::Arrangement,
@@ -321,11 +339,8 @@ class HomeViewModel(
     /** A drag let go: [placement]'s list is saved in the order it now has. */
     fun saveOrder(placement: CameraPlacement) {
         val order = orderDrafts.value[placement] ?: return
-        viewModelScope.launch {
-            saveCameraOrderUseCase(order)
-            // Only now: dropping the draft before the saved order is read back would flick the card home and back.
-            orderDrafts.update { drafts -> if (drafts[placement] == order) drafts - placement else drafts }
-        }
+        // The draft stays until the saved order is read back (see savedLayouts).
+        viewModelScope.launch { saveCameraOrderUseCase(order) }
     }
 
     /** A quarter turn of [cameraName]'s picture, saved at once. */
@@ -344,10 +359,8 @@ class HomeViewModel(
 
     private fun saveOrientation(cameraName: String, orientation: CameraOrientation) {
         orientationDrafts.update { it + (cameraName to orientation) }
-        viewModelScope.launch {
-            setCameraOrientationUseCase(cameraName, orientation)
-            orientationDrafts.update { drafts -> if (drafts[cameraName] == orientation) drafts - cameraName else drafts }
-        }
+        // The draft stays until the saved turn is read back (see savedLayouts).
+        viewModelScope.launch { setCameraOrientationUseCase(cameraName, orientation) }
     }
 
     private fun shownNames(placement: CameraPlacement): List<String>? =

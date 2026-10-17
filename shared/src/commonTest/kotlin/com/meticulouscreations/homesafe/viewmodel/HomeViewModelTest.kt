@@ -6,6 +6,7 @@ import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.PlaybackPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
@@ -22,6 +23,7 @@ import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
+import com.meticulouscreations.homesafe.domain.repository.CameraLayoutRepository
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
 import com.meticulouscreations.homesafe.domain.repository.MediaUrlRepository
@@ -199,11 +201,12 @@ class HomeViewModelTest {
         serverUrl: String? = "http://frigate.test:8971",
         everyoneAway: Boolean = false,
         inView: List<StationaryObject> = emptyList(),
+        layoutRepository: CameraLayoutRepository? = null,
     ) {
         val cameraRepo = FakeCameras(cameras)
         val playbackPreferences = PlaybackPreferencesRepositoryImpl(InMemorySettingsDao())
         val connection = FakeConnection(serverUrl)
-        val layouts = CameraLayoutRepositoryImpl(InMemoryCameraListDao(), connection)
+        val layouts = layoutRepository ?: CameraLayoutRepositoryImpl(InMemoryCameraListDao(), connection)
         val indoorRepo = FakeNestCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
         val moments = FakeMoments(inView)
@@ -343,6 +346,59 @@ class HomeViewModelTest {
     fun theOutdoorListDoesNotWaitForTheNestCameras() = runTest {
         val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), indoorCameras = null)
         assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name })
+    }
+
+    /**
+     * Saves land at once, but are read back only when [deliver] says: the gap between a write
+     * returning and the observation that carries it, which on a device is a database hop.
+     */
+    private class SlowLayouts : CameraLayoutRepository {
+        private val saved = mutableMapOf<String, CameraLayout>()
+        private val observed = MutableStateFlow<Map<String, CameraLayout>>(emptyMap())
+        override fun observeLayouts(): Flow<Map<String, CameraLayout>> = observed
+        override suspend fun saveOrder(cameraNames: List<String>) {
+            cameraNames.forEachIndexed { position, name -> saved[name] = (saved[name] ?: CameraLayout()).copy(position = position) }
+        }
+        override suspend fun setOrientation(cameraName: String, orientation: CameraOrientation) {
+            saved[cameraName] = (saved[cameraName] ?: CameraLayout()).copy(orientation = orientation)
+        }
+        fun deliver() {
+            observed.value = saved.toMap()
+        }
+    }
+
+    @Test
+    fun aDroppedCardStaysPutWhileItsSaveIsReadBack() = runTest {
+        val slow = SlowLayouts()
+        val h = Harness(cameras = three, layoutRepository = slow)
+        tiles(h.viewModel)
+        h.viewModel.startArranging()
+
+        h.viewModel.moveCamera(CameraPlacement.Outdoor, from = "driveway", to = "front_door")
+        h.viewModel.saveOrder(CameraPlacement.Outdoor)
+        advanceUntilIdle()
+        assertEquals(listOf("driveway", "front_door", "backyard"), h.viewModel.cameras.value?.map { it.camera.name }, "saved but not yet read back: no jump home")
+
+        slow.deliver()
+        advanceUntilIdle()
+        assertEquals(listOf("driveway", "front_door", "backyard"), h.viewModel.cameras.value?.map { it.camera.name })
+    }
+
+    @Test
+    fun aSecondTurnStartsFromTheFirstEvenBeforeItIsReadBack() = runTest {
+        val slow = SlowLayouts()
+        val h = Harness(cameras = three, layoutRepository = slow)
+        tiles(h.viewModel)
+
+        h.viewModel.turnCamera("backyard", clockwise = true)
+        advanceUntilIdle()
+        h.viewModel.turnCamera("backyard", clockwise = true)
+        advanceUntilIdle()
+        assertEquals(CameraOrientation(quarterTurns = 2), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation)
+
+        slow.deliver()
+        advanceUntilIdle()
+        assertEquals(CameraOrientation(quarterTurns = 2), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation, "and stays turned once read back")
     }
 
     private val three = listOf("front_door", "backyard", "driveway").map { Camera(name = it, enabled = true) }

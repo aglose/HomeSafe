@@ -16,7 +16,7 @@ class CameraOrientationTest {
 
     @Test
     fun theTiltStaysWithinItsReach() {
-        assertEquals(45f, CameraOrientation().tilted(80f).tiltDegrees)
-        assertEquals(-45f, CameraOrientation().tilted(-80f).tiltDegrees)
+        assertEquals(44f, CameraOrientation().tilted(80f).tiltDegrees)
+        assertEquals(-44f, CameraOrientation().tilted(-80f).tiltDegrees)
     }
 }

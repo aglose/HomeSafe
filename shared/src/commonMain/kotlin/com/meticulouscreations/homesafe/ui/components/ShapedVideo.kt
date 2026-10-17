@@ -46,7 +46,7 @@ fun ShapedVideo(
     } else {
         null
     }
-    val onItsSide = (turnDegrees / 90f).roundToInt() % 2 != 0
+    val onItsSide = isOnItsSide(turnDegrees)
     Box(modifier = modifier.clipToBounds(), contentAlignment = Alignment.Center) {
         player(Modifier.pictureBox(aspect.takeIf { fit != null }, fit, onItsSide), measure)
     }
