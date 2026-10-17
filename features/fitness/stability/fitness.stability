@@ -135,6 +135,18 @@ private fun com.meticulouscreations.homesafe.fitness.ui.DayDoor(day: com.meticul
     - small: STABLE (primitive type)
 
 @Composable
+private fun com.meticulouscreations.homesafe.fitness.ui.Door(name: kotlin.String, tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, outline: com.meticulouscreations.homesafe.fitness.ui.BodyOutline, height: androidx.compose.ui.unit.Dp, small: kotlin.Boolean, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - name: STABLE (String is immutable)
+    - tints: STABLE (known stable type)
+    - outline: STABLE (class with no mutable properties)
+    - height: STABLE (marked @Stable or @Immutable)
+    - small: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.DoorCard(tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, seed: kotlin.Float, energy: kotlin.Float, animated: kotlin.Boolean, height: androidx.compose.ui.unit.Dp, onClickLabel: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, outline: com.meticulouscreations.homesafe.fitness.ui.BodyOutline?, outlineEnd: androidx.compose.ui.unit.Dp, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.RowScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
