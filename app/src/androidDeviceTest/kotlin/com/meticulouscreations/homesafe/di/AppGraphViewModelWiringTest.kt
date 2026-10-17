@@ -18,11 +18,11 @@ import com.meticulouscreations.homesafe.viewmodel.ConnectionNoticeViewModel
 import com.meticulouscreations.homesafe.viewmodel.DetectionZonesViewModel
 import com.meticulouscreations.homesafe.viewmodel.FaceLibraryViewModel
 import com.meticulouscreations.homesafe.viewmodel.HomeViewModel
-import com.meticulouscreations.homesafe.viewmodel.IndoorCameraViewModel
 import com.meticulouscreations.homesafe.viewmodel.LandedPersonViewModel
 import com.meticulouscreations.homesafe.viewmodel.LiveLabelingViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentCarTagViewModel
 import com.meticulouscreations.homesafe.viewmodel.MomentsViewModel
+import com.meticulouscreations.homesafe.viewmodel.NestCameraViewModel
 import com.meticulouscreations.homesafe.viewmodel.SecureConnectionViewModel
 import com.meticulouscreations.homesafe.viewmodel.ServerUptimeViewModel
 import com.meticulouscreations.homesafe.viewmodel.SettingsViewModel
@@ -45,7 +45,7 @@ class AppGraphViewModelWiringTest {
         assertEquals(
             setOf(
                 HomeViewModel::class,
-                IndoorCameraViewModel::class,
+                NestCameraViewModel::class,
                 AtlasViewModel::class,
                 MomentsViewModel::class,
                 SettingsViewModel::class,

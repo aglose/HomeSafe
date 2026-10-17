@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
+import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
@@ -24,10 +25,11 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.fail
 
-class NestCameraRepositoryTest {
+class NestCameraRepositoryImplTest {
 
     private val nestStreams = """{
       "living_room":{"producers":[{"url":"nest:?client_id=id&client_secret=s&refresh_token=t&project_id=p&device_id=d1"}]},
+      "outdoor_doorbell":{"producers":[{"url":"nest:?client_id=id&client_secret=s&refresh_token=t&project_id=p&device_id=d2"}]},
       "front_door":{"producers":[{"url":"rtsp://cam/1"}]}
     }"""
 
@@ -47,7 +49,7 @@ class NestCameraRepositoryTest {
     }
 
     private fun repository(connection: FakeConnection, status: HttpStatusCode = HttpStatusCode.OK, requests: MutableList<String> = mutableListOf()) =
-        NestCameraRepository(
+        NestCameraRepositoryImpl(
             FrigateApiClient(
                 HttpClient(
                     MockEngine { request ->
@@ -62,10 +64,13 @@ class NestCameraRepositoryTest {
     private val onTheLan = ActiveConnection(serverUrl = "https://box.tailnet.ts.net:8971", localUrl = "https://192.168.1.10:8971", route = ConnectionRoute.LOCAL_NETWORK)
 
     @Test
-    fun nestStreamsBecomeIndoorCameras() = runTest {
-        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl)).observeIndoorCameras().first()
-        assertEquals(listOf("living_room"), cameras?.map { it.name })
-        assertEquals(CameraPlacement.Indoor, cameras?.single()?.placement)
+    fun nestStreamsAreIndoorsUnlessNamedOutdoor() = runTest {
+        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl)).observeNestCameras().first().orEmpty()
+        assertEquals(
+            listOf("living_room" to CameraPlacement.Indoor, "outdoor_doorbell" to CameraPlacement.Outdoor),
+            cameras.map { it.name to it.placement },
+        )
+        assertEquals(setOf(CameraSource.Nest), cameras.map { it.source }.toSet())
     }
 
     @Test
@@ -73,19 +78,19 @@ class NestCameraRepositoryTest {
         // currentServerUrl still names the route just left; the connection itself is on the LAN.
         val requests = mutableListOf<String>()
         val repo = repository(FakeConnection(onTheLan, current = "https://box.tailnet.ts.net:8971"), requests = requests)
-        repo.observeIndoorCameras().first()
+        repo.observeNestCameras().first()
         repo.refresh()
         assertEquals(listOf("http://192.168.1.10:1984/api/streams", "http://192.168.1.10:1984/api/streams"), requests)
     }
 
     @Test
     fun aFailedFirstAnswerIsAnEmptyListNotAnEndlessWait() = runTest {
-        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl), status = HttpStatusCode.BadGateway).observeIndoorCameras().first()
+        val cameras = repository(FakeConnection(onTheLan, onTheLan.activeUrl), status = HttpStatusCode.BadGateway).observeNestCameras().first()
         assertEquals(emptyList(), cameras)
     }
 
     @Test
     fun signedOutThereAreNone() = runTest {
-        assertEquals(emptyList(), repository(FakeConnection(null, null)).observeIndoorCameras().first())
+        assertEquals(emptyList(), repository(FakeConnection(null, null)).observeNestCameras().first())
     }
 }

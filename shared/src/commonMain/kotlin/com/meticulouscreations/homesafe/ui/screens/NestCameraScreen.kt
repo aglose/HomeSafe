@@ -46,17 +46,17 @@ import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
 import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
-import com.meticulouscreations.homesafe.viewmodel.IndoorCameraViewModel
+import com.meticulouscreations.homesafe.viewmodel.NestCameraViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.camera_indoor_live_only
+import homesafe.shared.generated.resources.camera_nest_live_only
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * An indoor (Nest) camera, live. These cameras are go2rtc streams pulled from Google while
+ * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
  * someone watches, with no Frigate camera behind them, so there is no timeline, no recordings and
  * nothing detected: the page is the video, a way back, and the speaker.
  *
@@ -69,7 +69,7 @@ import org.jetbrains.compose.resources.stringResource
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-fun IndoorCameraScreen(
+fun NestCameraScreen(
     streamName: String,
     warmStreamUrl: String?,
     warmWebRtcSignalingUrl: String?,
@@ -77,7 +77,7 @@ fun IndoorCameraScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val viewModel: IndoorCameraViewModel = metroViewModel()
+    val viewModel: NestCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
     // Once sound has been asked for, the stream with it stays: muting again is the player's job,
     // not another reconnect.
@@ -176,7 +176,7 @@ fun IndoorCameraScreen(
         }
         video(Modifier.fillMaxWidth().aspectRatio(VIDEO_ASPECT))
         Text(
-            text = stringResource(Res.string.camera_indoor_live_only),
+            text = stringResource(Res.string.camera_nest_live_only),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = contentGutter(), vertical = 16.dp),

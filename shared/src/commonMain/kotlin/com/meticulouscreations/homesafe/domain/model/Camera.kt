@@ -1,6 +1,6 @@
 package com.meticulouscreations.homesafe.domain.model
 
-/** A camera on the connected Frigate server, or a Nest camera its go2rtc relays (see [placement]). */
+/** A camera on the connected Frigate server, or a Google Nest camera its go2rtc relays (see [source]). */
 data class Camera(
     val name: String,
     val enabled: Boolean,
@@ -9,15 +9,18 @@ data class Camera(
     /** The (possibly lower-quality) stream name to use for the multi-camera grid. */
     val gridStreamName: String = name,
     val placement: CameraPlacement = CameraPlacement.Outdoor,
+    val source: CameraSource = CameraSource.Frigate,
 ) {
     /** What the UI calls this camera — see [cameraDisplayName]. */
     val displayName: String get() = cameraDisplayName(name)
 }
 
-/**
- * Which side of the walls a camera watches, and with it what the app can do with it. The
- * Frigate cameras are outdoors and have everything: recordings, detections, the timeline. The
- * indoor ones are Google Nest cameras that go2rtc pulls from Google only while someone is
- * watching, so they are live video and nothing else.
- */
+/** Which side of the walls a camera watches: which list it is in on the Home page. */
 enum class CameraPlacement { Outdoor, Indoor }
+
+/**
+ * Where a camera's video comes from, and with it what the app can do with it. Frigate's cameras
+ * have everything: recordings, detections, the timeline. A Nest camera is a go2rtc stream pulled
+ * from Google only while someone is watching, so it is live video and nothing else.
+ */
+enum class CameraSource { Frigate, Nest }
