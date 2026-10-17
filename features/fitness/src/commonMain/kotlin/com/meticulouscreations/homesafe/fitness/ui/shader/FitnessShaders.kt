@@ -106,11 +106,19 @@ half4 main(float2 fragCoord) {
 }
 """
 
+/** How many marks [FIBER_SHADER] keeps of where fingers are and have lately been. */
+internal const val FIBER_TOUCHES = 8
+
 /**
  * Muscle, close up: a card's worth of fibres running slantwise, each strand its own brightness,
  * with a wave of contraction travelling down them. Opaque (it is a card's whole background).
  * [seed] makes each card's weave its own; [energy] 0–1 quickens and brightens the wave, for the
  * card that is up next or under a finger.
+ *
+ * The fibres move like something liquid under a finger. Each of [touches] is a mark (see
+ * `FiberTouches`): where a finger is it swirls the strands round it and swells them like a drop
+ * of water would, settling once it lifts, and where one landed a ring runs out, [splash] as
+ * strong. Empty marks are made at a time below zero and do nothing.
  */
 internal const val FIBER_SHADER = """
 uniform float2 size;
@@ -119,9 +127,31 @@ uniform float3 tint;
 uniform float3 tint2;
 uniform float seed;
 uniform float energy;
+uniform float4 touches[$FIBER_TOUCHES];
+uniform float splash[$FIBER_TOUCHES];
 $NOISE
 half4 main(float2 fragCoord) {
-    float2 uv = fragCoord / size;
+    float scale = max(size.y, 1.0);
+    float2 at = fragCoord;
+    float stir = 0.0;
+    for (int i = 0; i < $FIBER_TOUCHES; i++) {
+        float4 m = touches[i];
+        float age = time - m.z;
+        float alive = (m.z >= 0.0 && age >= 0.0) ? 1.0 : 0.0;
+        float held = m.w < 0.0 ? 1.0 : exp(-max(time - m.w, 0.0) * 2.2);
+        float2 d = (at - m.xy) / scale;
+        float r = length(d);
+        float well = exp(-r * r * 9.0) * held * smoothstep(0.0, 0.25, age) * alive;
+        float turn = well * 1.6;
+        d = float2(d.x * cos(turn) - d.y * sin(turn), d.x * sin(turn) + d.y * cos(turn)) * (1.0 - well * 0.3);
+        float front = age * 0.85;
+        float ring = exp(-(r - front) * (r - front) * 90.0) * exp(-age * 1.4) * splash[i] * alive;
+        float wave = sin((r - front) * 42.0) * ring;
+        d += d / max(r, 0.0001) * wave * 0.05;
+        at = m.xy + d * scale;
+        stir += well * 0.6 + ring * (0.35 + 0.65 * max(wave, 0.0));
+    }
+    float2 uv = at / size;
     float aspect = size.x / max(size.y, 1.0);
     float2 p = float2(uv.x * aspect, uv.y);
     float ang = 0.42 + seed * 0.5;
@@ -135,10 +165,12 @@ half4 main(float2 fragCoord) {
     float wave = 0.5 + 0.5 * sin(rp.x * 5.0 - time * (0.9 + 1.6 * energy) + strand * 0.55 + bend * 4.0);
     wave = wave * wave;
     float lum = line * (0.22 + 0.78 * weight) * (0.30 + 0.70 * wave) * (0.75 + 0.45 * energy);
-    float light = 1.0 - smoothstep(0.0, 1.25, length(uv - float2(0.92, 0.05)));
+    lum *= 1.0 + stir * 0.9;
+    float light = 1.0 - smoothstep(0.0, 1.25, length(fragCoord / size - float2(0.92, 0.05)));
     float3 base = mix(tint2 * 0.22, tint2 * 0.60, light);
     float3 col = base + mix(tint2, tint, wave) * lum * (0.45 + 0.75 * light);
     col += float3(1.0, 0.95, 0.85) * line * wave * wave * weight * 0.10 * (0.5 + energy);
+    col += mix(tint, float3(1.0), 0.35) * stir * 0.22;
     return half4(half3(clamp(col, 0.0, 1.0)), 1.0);
 }
 """

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.RuntimeShader
 import android.graphics.Shader
+import androidx.compose.ui.geometry.Offset
 import com.meticulouscreations.homesafe.fitness.ui.movement.FIBRE_SHADER
 import com.meticulouscreations.homesafe.fitness.ui.movement.HEAT_SHADER
 import com.meticulouscreations.homesafe.fitness.ui.movement.MARBLE_BONES
@@ -40,6 +41,9 @@ class FitnessShadersTest {
         shader.setFloatUniform("tint2", 0.7f, 0.07f, 0.23f)
         shader.setFloatUniform("seed", 0.3f)
         shader.setFloatUniform("energy", 1f)
+        val touches = FiberTouches().apply { down(1L, Offset(300f, 200f)) }
+        shader.setFloatUniform("touches", touches.marks)
+        shader.setFloatUniform("splash", touches.splash)
     }
 
     @Test

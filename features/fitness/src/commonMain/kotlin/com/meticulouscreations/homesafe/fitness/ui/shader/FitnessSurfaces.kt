@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -24,7 +25,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalInspectionMode
+import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.ui.LocalFitnessShaders
 import kotlin.math.min
 
@@ -97,23 +103,37 @@ internal fun ForgeBackground(tint: Color, tint2: Color, modifier: Modifier = Mod
 
 /**
  * A card's background of muscle fibres ([FIBER_SHADER]) in the workout's two colours. [seed]
- * 0–1 gives each card its own weave, [energy] 0–1 quickens the wave running down them. Where no
- * shader compiles, a slanted gradient of the same colours.
+ * 0–1 gives each card its own weave, [energy] 0–1 quickens the wave running down them. Given
+ * [touches] (and the card given [fiberTouches] with the same), the fibres swirl round a finger
+ * and ripple out from where it lands. Where no shader compiles, a slanted gradient of the same
+ * colours with a glow under the finger.
  */
 @Composable
-internal fun FiberField(tint: Color, tint2: Color, seed: Float, modifier: Modifier = Modifier, energy: Float = 0f, running: Boolean = true) {
+internal fun FiberField(
+    tint: Color,
+    tint2: Color,
+    seed: Float,
+    modifier: Modifier = Modifier,
+    energy: Float = 0f,
+    running: Boolean = true,
+    touches: FiberTouches? = null,
+) {
     val shader = rememberShader(FIBER_SHADER)
     val animatedEnergy by animateFloatAsState(energy.coerceIn(0f, 1f), tween(500), label = "fiberEnergy")
     val time = rememberFitnessClock(running)
     Box(
         modifier.drawBehind {
+            val now = time.floatValue
+            touches?.now = now
             if (shader != null) {
                 shader.setUniform("size", size.width, size.height)
-                shader.setUniform("time", time.floatValue)
+                shader.setUniform("time", now)
                 shader.setUniform("tint", tint)
                 shader.setUniform("tint2", tint2)
                 shader.setUniform("seed", seed)
                 shader.setUniform("energy", animatedEnergy)
+                shader.setUniform("touches", touches?.marks ?: NO_MARKS)
+                shader.setUniform("splash", touches?.splash ?: NO_SPLASH)
                 drawRect(shader.brush())
             } else {
                 drawRect(
@@ -123,9 +143,93 @@ internal fun FiberField(tint: Color, tint2: Color, seed: Float, modifier: Modifi
                         end = Offset(size.width, 0f),
                     ),
                 )
+                touches?.forEachHeld { at -> drawCircle(Brush.radialGradient(listOf(tint.copy(alpha = 0.45f), Color.Transparent), at, size.height * 0.4f), size.height * 0.4f, at) }
             }
         },
     )
+}
+
+private val NO_MARKS = FloatArray(FIBER_TOUCHES * 4) { if (it % 4 >= 2) -1f else 0f }
+private val NO_SPLASH = FloatArray(FIBER_TOUCHES)
+
+/**
+ * Where fingers are on a [FiberField] and where they have lately been, for its shader to stir
+ * the fibres round: [FIBER_TOUCHES] marks, the oldest given up for a new one. A finger makes a
+ * mark where it lands and, as it travels, another every so often while the last settles, so a
+ * drag leaves a wake behind it. Times are the field's own clock, which it keeps [now] up to.
+ */
+@Stable
+internal class FiberTouches {
+    /** `float4 touches[]`: x and y in pixels, when made (-1 for none), when its finger lifted (-1 while it's down). */
+    val marks = NO_MARKS.copyOf()
+
+    /** `float splash[]`: how strong a ring each mark sends out. */
+    val splash = FloatArray(FIBER_TOUCHES)
+
+    /** The field's clock as it was last drawn. */
+    var now = 0f
+
+    private var next = 0
+    private val fingers = HashMap<Long, Int>()
+
+    fun down(pointer: Long, at: Offset) {
+        up(pointer)
+        fingers[pointer] = mark(at, splash = 1f)
+    }
+
+    /** A finger [step] pixels or more from where it last left a mark leaves another. */
+    fun move(pointer: Long, at: Offset, step: Float) {
+        val slot = fingers[pointer]
+        if (slot != null) {
+            val dx = at.x - marks[slot * 4]
+            val dy = at.y - marks[slot * 4 + 1]
+            if (dx * dx + dy * dy < step * step) return
+            marks[slot * 4 + 3] = now
+        }
+        fingers[pointer] = mark(at, splash = 0.35f)
+    }
+
+    fun up(pointer: Long) {
+        fingers.remove(pointer)?.let { marks[it * 4 + 3] = now }
+    }
+
+    /** Each place a finger is down now. */
+    fun forEachHeld(action: (Offset) -> Unit) {
+        fingers.values.forEach { action(Offset(marks[it * 4], marks[it * 4 + 1])) }
+    }
+
+    private fun mark(at: Offset, splash: Float): Int {
+        val slot = next
+        next = (next + 1) % FIBER_TOUCHES
+        // A finger that held the mark given up keeps going from its next move.
+        fingers.values.remove(slot)
+        marks[slot * 4] = at.x
+        marks[slot * 4 + 1] = at.y
+        marks[slot * 4 + 2] = now
+        marks[slot * 4 + 3] = -1f
+        this.splash[slot] = splash
+        return slot
+    }
+}
+
+/**
+ * Tells [touches] where fingers go down, travel and lift on this, only watching: taps, presses
+ * and scrolls go on to whatever else handles them.
+ */
+internal fun Modifier.fiberTouches(touches: FiberTouches): Modifier = pointerInput(touches) {
+    val step = 16.dp.toPx()
+    awaitPointerEventScope {
+        while (true) {
+            awaitPointerEvent(PointerEventPass.Initial).changes.forEach { change ->
+                val pointer = change.id.value
+                when {
+                    change.changedToDownIgnoreConsumed() -> touches.down(pointer, change.position)
+                    change.changedToUpIgnoreConsumed() -> touches.up(pointer)
+                    change.pressed -> touches.move(pointer, change.position, step)
+                }
+            }
+        }
+    }
 }
 
 /**

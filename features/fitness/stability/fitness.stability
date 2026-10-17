@@ -36,6 +36,15 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.BodyCard(health: com.me
     - animated: STABLE (primitive type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.fitness.ui.BodyOutlineDrawing(outline: com.meticulouscreations.homesafe.fitness.ui.BodyOutline, modifier: androidx.compose.ui.Modifier, alpha: kotlin.Float): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - outline: STABLE (class with no mutable properties)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - alpha: STABLE (primitive type)
+
+@Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.BodyweightCard(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, onLog: kotlin.Function1<kotlin.Double, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
@@ -126,7 +135,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.DayDoor(day: com.meticul
     - small: STABLE (primitive type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.fitness.ui.DoorCard(tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, seed: kotlin.Float, energy: kotlin.Float, animated: kotlin.Boolean, height: androidx.compose.ui.unit.Dp, onClickLabel: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.RowScope, kotlin.Unit>): kotlin.Unit
+private fun com.meticulouscreations.homesafe.fitness.ui.DoorCard(tints: kotlin.Pair<androidx.compose.ui.graphics.Color, androidx.compose.ui.graphics.Color>, seed: kotlin.Float, energy: kotlin.Float, animated: kotlin.Boolean, height: androidx.compose.ui.unit.Dp, onClickLabel: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, outline: com.meticulouscreations.homesafe.fitness.ui.BodyOutline?, outlineEnd: androidx.compose.ui.unit.Dp, content: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.RowScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -138,6 +147,8 @@ private fun com.meticulouscreations.homesafe.fitness.ui.DoorCard(tints: kotlin.P
     - onClickLabel: STABLE (String is immutable)
     - onClick: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - outline: STABLE (class with no mutable properties)
+    - outlineEnd: STABLE (marked @Stable or @Immutable)
     - content: STABLE (composable function type)
 
 @Composable
@@ -1114,7 +1125,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.sessionTints(session: co
     - session: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.shader.FiberField(tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, seed: kotlin.Float, modifier: androidx.compose.ui.Modifier, energy: kotlin.Float, running: kotlin.Boolean): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.shader.FiberField(tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, seed: kotlin.Float, modifier: androidx.compose.ui.Modifier, energy: kotlin.Float, running: kotlin.Boolean, touches: com.meticulouscreations.homesafe.fitness.ui.shader.FiberTouches?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1124,6 +1135,7 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.shader.FiberField(tint:
     - modifier: STABLE (marked @Stable or @Immutable)
     - energy: STABLE (primitive type)
     - running: STABLE (primitive type)
+    - touches: STABLE (marked @Stable or @Immutable)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.fitness.ui.shader.ForgeBackground(tint: androidx.compose.ui.graphics.Color, tint2: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier, heat: kotlin.Float, intensity: kotlin.Float, running: kotlin.Boolean): kotlin.Unit

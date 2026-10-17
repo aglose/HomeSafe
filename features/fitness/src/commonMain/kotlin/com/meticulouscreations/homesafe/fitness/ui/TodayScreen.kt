@@ -57,6 +57,8 @@ import com.meticulouscreations.homesafe.fitness.domain.PhaseKind
 import com.meticulouscreations.homesafe.fitness.domain.RecordScope
 import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
+import com.meticulouscreations.homesafe.fitness.ui.shader.FiberTouches
+import com.meticulouscreations.homesafe.fitness.ui.shader.fiberTouches
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.fitness_phase_day
@@ -179,7 +181,7 @@ internal fun TodayScreen(
 
         if (workout != null) {
             val tints = colors.focus(workout.workout.focus)
-            DoorCard(tints, seed = 0.9f, energy = 1f, animated = animated, height = 132.dp, onClickLabel = stringResource(Res.string.fitness_today_resume), onClick = onResume, modifier = Modifier.testTag("fitness_today_resume")) {
+            DoorCard(tints, seed = 0.9f, energy = 1f, animated = animated, height = 132.dp, onClickLabel = stringResource(Res.string.fitness_today_resume), onClick = onResume, modifier = Modifier.testTag("fitness_today_resume"), outline = BodyOutline.of(workout.workout.focus), outlineEnd = 82.dp) {
                 Column(Modifier.weight(1f)) {
                     Text(stringResource(Res.string.fitness_today_resume), style = type.title, color = Color.White)
                     Text(pluralStringResource(Res.plurals.fitness_today_resume_detail, workout.setCount, workout.setCount), style = type.body, color = Color(0xDDFFFFFF))
@@ -270,6 +272,8 @@ private fun DayDoor(day: DayCard, state: FitnessUiState, seed: Float, animated: 
         onClickLabel = stringResource(Res.string.fitness_today_start_focus, name),
         onClick = { onStart(day.focus) },
         modifier = modifier.testTag("fitness_day_${day.focus.name.lowercase()}"),
+        outline = BodyOutline.of(day.focus),
+        outlineEnd = if (small) 10.dp else 50.dp,
     ) {
         Column(Modifier.weight(1f)) {
             if (day.due) {
@@ -315,6 +319,7 @@ private fun RunsDoor(health: HealthUiState, animated: Boolean, onOpen: () -> Uni
         onClickLabel = stringResource(Res.string.fitness_run_open),
         onClick = onOpen,
         modifier = modifier.testTag("fitness_runs_door"),
+        outline = BodyOutline.RUNS,
     ) {
         Column(Modifier.weight(1f)) {
             Text(stringResource(Res.string.fitness_run_title), style = type.hero, color = Color.White, maxLines = 1)
@@ -325,7 +330,10 @@ private fun RunsDoor(health: HealthUiState, animated: Boolean, onOpen: () -> Uni
     }
 }
 
-/** A card whose background is muscle fibre in [tints], quickening under a finger. */
+/**
+ * A card whose background is muscle fibre in [tints], quickening under a finger and stirred by
+ * it like water, with the [outline] of the body part it is for drawn in white on the right.
+ */
 @Composable
 private fun DoorCard(
     tints: Pair<Color, Color>,
@@ -336,21 +344,29 @@ private fun DoorCard(
     onClickLabel: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    outline: BodyOutline? = null,
+    /** Room kept clear on the right for what the content puts there (the chevron), so the outline sits beside it. */
+    outlineEnd: Dp = 50.dp,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val touches = remember { FiberTouches() }
     Box(
         modifier
             .fillMaxWidth()
             .height(height)
             .clip(FitnessCardShape)
             .border(1.dp, Color(0x33FFFFFF), FitnessCardShape)
+            .fiberTouches(touches)
             .clickable(interaction, indication = null, role = Role.Button, onClickLabel = onClickLabel, onClick = onClick),
     ) {
-        FiberField(tints.first, tints.second, seed, Modifier.matchParentSize(), energy = if (pressed) 1f else energy, running = animated)
+        FiberField(tints.first, tints.second, seed, Modifier.matchParentSize(), energy = if (pressed) 1f else energy, running = animated, touches = touches)
         // Shade under the words, so white reads on the brightest strand.
         Box(Modifier.matchParentSize().background(Brush.horizontalGradient(listOf(Color(0x99000000), Color(0x33000000), Color.Transparent))))
+        if (outline != null) {
+            BodyOutlineDrawing(outline, Modifier.align(Alignment.CenterEnd).padding(end = outlineEnd).size(minOf(height - 20.dp, 120.dp)))
+        }
         Row(Modifier.matchParentSize().padding(horizontal = 18.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically, content = content)
     }
 }
