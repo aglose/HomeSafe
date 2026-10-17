@@ -19,6 +19,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
@@ -53,6 +54,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -70,6 +72,7 @@ import com.meticulouscreations.homesafe.domain.model.formatRetentionDays
 import com.meticulouscreations.homesafe.domain.model.formatUptime
 import com.meticulouscreations.homesafe.domain.platform.LocationAccess
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.resolve
@@ -83,6 +86,7 @@ import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.common_cancel
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.finance_drawer_settings_title
 import homesafe.shared.generated.resources.fitness_figure_settings_title
 import homesafe.shared.generated.resources.presence_allow_location
 import homesafe.shared.generated.resources.presence_allow_location_always
@@ -234,6 +238,7 @@ fun SettingsTabContent(
         onMotion = viewModel::setCameraMotion,
         onDismissCameraError = viewModel::dismissCameraError,
         onTone = viewModel::setEconomyTone,
+        onFinanceDrawerItems = viewModel::setFinanceDrawerItems,
         onFigureStyle = viewModel::setFigureStyle,
         onAppIcon = viewModel::setAppIcon,
         modifier = Modifier
@@ -247,13 +252,13 @@ fun SettingsTabContent(
 }
 
 /** The rows of the main Settings page that open out in place rather than onto a page of their own. */
-internal enum class SettingsFold { CAMERAS, ECONOMY, FIGURES, APP_ICON }
+internal enum class SettingsFold { CAMERAS, ECONOMY, FINANCE_DRAWER, FIGURES, APP_ICON }
 
 /**
  * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: this device's alerts
  * and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
- * detection switches, how Finance talks about the economy, how Fitness draws its exercises and
- * the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
+ * detection switches, how Finance talks about the economy, what its card in the drawer shows, how
+ * Fitness draws its exercises and the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
  * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
  *
  * One fold is open at a time, so the page never grows back into the long list it replaced;
@@ -271,6 +276,7 @@ internal fun SettingsHome(
     onMotion: (String, Boolean) -> Unit,
     onDismissCameraError: () -> Unit,
     onTone: (EconomyTone) -> Unit,
+    onFinanceDrawerItems: (List<FinanceDrawerItem>) -> Unit,
     onFigureStyle: (FigureStyle) -> Unit,
     onAppIcon: (AppIcon) -> Unit,
     modifier: Modifier = Modifier,
@@ -318,6 +324,17 @@ internal fun SettingsHome(
                 onToggle = { openFold = SettingsFold.ECONOMY.takeIf { it != openFold } },
             ) {
                 EconomyToneOptions(tone = state.economyTone, onTone = onTone)
+            }
+            SettingsRowDivider()
+            SettingsExpandableRow(
+                icon = Icons.AutoMirrored.Filled.ShowChart,
+                title = stringResource(Res.string.finance_drawer_settings_title),
+                summary = financeDrawerSummary(state.financeDrawerItems),
+                expanded = openFold == SettingsFold.FINANCE_DRAWER,
+                onToggle = { openFold = SettingsFold.FINANCE_DRAWER.takeIf { it != openFold } },
+                modifier = Modifier.testTag("settings_finance_drawer"),
+            ) {
+                FinanceDrawerOptions(items = state.financeDrawerItems, onItems = onFinanceDrawerItems)
             }
             SettingsRowDivider()
             SettingsExpandableRow(

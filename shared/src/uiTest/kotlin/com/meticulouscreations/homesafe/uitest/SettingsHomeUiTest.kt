@@ -10,11 +10,14 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
@@ -31,6 +34,7 @@ import com.meticulouscreations.homesafe.domain.model.ServerOverview
 import com.meticulouscreations.homesafe.domain.model.StorageUsage
 import com.meticulouscreations.homesafe.domain.platform.NotificationPermission
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.screens.SettingsFold
@@ -100,6 +104,7 @@ class SettingsHomeUiTest {
         onOpen: (String) -> Unit = {},
         onDetection: (String, Boolean) -> Unit = { _, _ -> },
         onTone: (EconomyTone) -> Unit = {},
+        onFinanceDrawerItems: (List<FinanceDrawerItem>) -> Unit = {},
         onFigureStyle: (FigureStyle) -> Unit = {},
         onAppIcon: (AppIcon) -> Unit = {},
         block: ComposeUiTest.() -> Unit,
@@ -118,6 +123,7 @@ class SettingsHomeUiTest {
                     onMotion = { _, _ -> },
                     onDismissCameraError = {},
                     onTone = onTone,
+                    onFinanceDrawerItems = onFinanceDrawerItems,
                     onFigureStyle = onFigureStyle,
                     onAppIcon = onAppIcon,
                     modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -217,6 +223,35 @@ class SettingsHomeUiTest {
             mainClock.advanceTimeBy(SETTLE_MS)
 
             assertEquals(listOf(EconomyTone.STRAIGHT), asked)
+        }
+    }
+
+    @Test
+    fun theFinanceDrawerRowNamesWhatTheCardShowsAndItsFoldTicksOnMore() {
+        val asked = mutableListOf<List<FinanceDrawerItem>>()
+        runHome(state = loaded.copy(financeDrawerItems = FinanceDrawerItem.DEFAULT), initialFold = SettingsFold.FINANCE_DRAWER, onFinanceDrawerItems = { asked += it }) {
+            onNode(hasText("Finance in the menu") and hasText("S&P 500, Net worth")).assertExists()
+
+            scrollIntoView(onNodeWithTag("settings_finance_drawer_dow")).performClick()
+            mainClock.advanceTimeBy(SETTLE_MS)
+
+            // In the card's order, markets first, wherever in the list the tap was.
+            assertEquals(listOf(listOf(FinanceDrawerItem.SP500, FinanceDrawerItem.DOW, FinanceDrawerItem.NET_WORTH)), asked)
+        }
+    }
+
+    @Test
+    fun withFourOnTheCardTheRestWaitUntilOneComesOff() {
+        val four = listOf(FinanceDrawerItem.SP500, FinanceDrawerItem.DOW, FinanceDrawerItem.NET_WORTH, FinanceDrawerItem.CASH)
+        val asked = mutableListOf<List<FinanceDrawerItem>>()
+        runHome(state = loaded.copy(financeDrawerItems = four), initialFold = SettingsFold.FINANCE_DRAWER, onFinanceDrawerItems = { asked += it }) {
+            scrollIntoView(onNodeWithTag("settings_finance_drawer_gold")).assertIsNotEnabled()
+            onNodeWithText("That's four. Take one off to add another.").assertExists()
+
+            scrollIntoView(onNodeWithTag("settings_finance_drawer_cash")).assertIsEnabled().performClick()
+            mainClock.advanceTimeBy(SETTLE_MS)
+
+            assertEquals(listOf(four - FinanceDrawerItem.CASH), asked)
         }
     }
 

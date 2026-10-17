@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.finance.data.FinanceTipLedger
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
 import com.meticulouscreations.homesafe.finance.domain.FinanceAccess
+import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Holdings
@@ -91,6 +92,8 @@ data class FinanceUiState(
     val search: SymbolSearch = SymbolSearch(),
     /** How the Economy and Risk tabs talk about the readings; chosen in Settings or on the Economy tab. */
     val tone: EconomyTone = EconomyTone.DEFAULT,
+    /** What the drawer's card shows, chosen in Settings. */
+    val drawerItems: List<FinanceDrawerItem> = FinanceDrawerItem.DEFAULT,
 ) {
     /** The tickers the budget sheet names. */
     val sheetSymbols: List<String> get() = finance?.watchlist.orEmpty()
@@ -172,6 +175,7 @@ class FinanceViewModel(
         // A preference on the device, not something polled: followed for as long as the app lives,
         // so a change made in Settings is in place when Finance next opens.
         viewModelScope.launch { preferences.observeEconomyTone().collect { tone -> _uiState.update { it.copy(tone = tone) } } }
+        viewModelScope.launch { preferences.observeDrawerItems().collect { items -> _uiState.update { it.copy(drawerItems = items) } } }
     }
 
     fun setTone(tone: EconomyTone) {

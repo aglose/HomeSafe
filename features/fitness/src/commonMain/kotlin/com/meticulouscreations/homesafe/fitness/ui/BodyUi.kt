@@ -174,7 +174,7 @@ internal fun ManageButton(onManage: () -> Unit, modifier: Modifier = Modifier) {
 
 /** The colours a level of readiness is drawn in: green to push, amber for an ordinary day, ember to hold back. */
 @Composable
-private fun levelTints(level: ReadinessLevel): Pair<Color, Color> {
+internal fun levelTints(level: ReadinessLevel): Pair<Color, Color> {
     val colors = FitnessTheme.colors
     return when (level) {
         ReadinessLevel.HIGH -> colors.good to Color(0xFF0E8F7A)
@@ -183,7 +183,7 @@ private fun levelTints(level: ReadinessLevel): Pair<Color, Color> {
     }
 }
 
-private fun levelName(level: ReadinessLevel): StringResource = when (level) {
+internal fun levelName(level: ReadinessLevel): StringResource = when (level) {
     ReadinessLevel.HIGH -> Res.string.fitness_body_readiness_high
     ReadinessLevel.MODERATE -> Res.string.fitness_body_readiness_moderate
     ReadinessLevel.LOW -> Res.string.fitness_body_readiness_low

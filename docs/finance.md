@@ -4,6 +4,11 @@ PercySafe has a second app inside it: **Finance**, opened from the drawer behind
 menu button. It puts the household's own money next to how the country's economy is doing, in
 Robinhood's dark look: true black, one green for up and one orange-red for down.
 
+The drawer's Finance card shows the S&P 500 and net worth until **Settings → Finance in the menu**
+says otherwise: up to four of the Markets tab's indices and macro markets (each with today's price,
+change and sparkline) and the household's net worth, total assets, investments, cash and debt
+excluding the mortgage. The choice is kept on the device (`FinancePreferencesEntity.drawerItems`).
+
 | Tab | What it shows | Where the data comes from |
 |---|---|---|
 | **Wallet** | Total assets over time, net worth, the sheet's own charts, accounts by owner, allocation, monthly cash flow, debts, home equity, a mortgage planner, RSU/ESPP vesting, income and taxes by year, the last house sale, and the sheet's watchlist with live prices | The household budget sheet (Google Sheets), through the relay. Quotes from Yahoo Finance |
@@ -187,8 +192,8 @@ the sign-in screen, which opens the same drawer (see "Before sign-in" in the REA
   has the connection look again (`ConnectionRepository.checkServer`), and if the server is gone
   the lock is on before the kept copy is reached for. From then on it is asked every 15 seconds
   until it answers, and no request is sent to it meanwhile. While it is locked the repositories refuse the kept figures and the view
-  model drops the sheet, so the drawer's card shows the S&P 500 and "Locked while offline" rather
-  than a net worth. A device with no fingerprint or face enrolled (and the desktop and web builds)
+  model drops the sheet, so the drawer's card shows its markets and "Locked while offline" rather
+  than the household's figures. A device with no fingerprint or face enrolled (and the desktop and web builds)
   can't unlock: there Finance waits for the server.
 - **Whose it is.** The kept sheet, budget and banks belong to the server they came from (its
   Tailscale address). A session on any other server is shown none of them, and the first answer

@@ -6,6 +6,9 @@ import com.android.tools.screenshot.PreviewTest
 import com.meticulouscreations.homesafe.ui.screens.AppIconOptionsPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarNarrowPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
+import com.meticulouscreations.homesafe.ui.screens.DrawerFinanceCardsPreview
+import com.meticulouscreations.homesafe.ui.screens.DrawerFitnessCardsPreview
+import com.meticulouscreations.homesafe.ui.screens.FinanceDrawerOptionsPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedIndoorPreview
@@ -82,3 +85,18 @@ fun CameraPlayerBarNarrow() = CameraPlayerBarNarrowPreview()
 @Preview(name = "App icons")
 @Composable
 fun AppIcons() = AppIconOptionsPreview()
+
+@PreviewTest
+@Preview(name = "Drawer, Fitness")
+@Composable
+fun DrawerFitnessCards() = DrawerFitnessCardsPreview()
+
+@PreviewTest
+@Preview(name = "Drawer, Finance")
+@Composable
+fun DrawerFinanceCards() = DrawerFinanceCardsPreview()
+
+@PreviewTest
+@Preview(name = "Settings, Finance in the menu")
+@Composable
+fun FinanceDrawerOptions() = FinanceDrawerOptionsPreview()

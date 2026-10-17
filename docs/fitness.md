@@ -546,7 +546,8 @@ A movement of its own is four things, and the tests name whichever is still miss
   hands records over (`createHealthSource`; Android reads Health Connect, the others are stubs).
   What they mean is common code: `Body.kt` (`SleepNights`, `ReadinessScore`, `BodyBoards`) and
   `Runs.kt` (a run's pace, the weeks, splits, the heart in zones). `HealthViewModel` sits beside
-  `FitnessViewModel`, scoped to the activity, and reads when the fitness app comes on screen.
+  `FitnessViewModel`, scoped to the activity, and reads when the fitness app or the drawer comes on
+  screen: the drawer's card shows today's readiness beside the workout that is up next.
 - `fitness/FitnessBoard.kt`: `FitnessBoardBuilder` works every screen's state out of the whole
   log in one pass, the history's sessions included. The log is a few thousand rows at most, so it is simply rebuilt when it changes.
 - `fitness/FitnessViewModel.kt`: scoped to the activity and shared with the drawer's card. It
