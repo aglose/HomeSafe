@@ -28,6 +28,14 @@ fun frigateLiveStreamUrl(serverUrl: String, cameraName: String, audioCodecs: Lis
 fun frigateWebRtcSignalingUrl(serverUrl: String, cameraName: String): String =
     "http://${go2rtcHost(serverUrl)}:1984/api/webrtc?src=$cameraName"
 
+/**
+ * go2rtc's list of every stream it knows, configured or added at runtime, with each one's
+ * sources ("producers"). Same port and trust model as [frigateLiveStreamUrl]. This is how the
+ * app finds the Nest cameras: they are go2rtc streams with a `nest:` source and no Frigate
+ * camera behind them (see [nestStreamNames]).
+ */
+fun frigateGo2rtcStreamsUrl(serverUrl: String): String = "http://${go2rtcHost(serverUrl)}:1984/api/streams"
+
 /** go2rtc shares Frigate's host; only the port differs. */
 private fun go2rtcHost(serverUrl: String): String = serverUrl.substringAfter("://").substringBefore(":").substringBefore("/")
 

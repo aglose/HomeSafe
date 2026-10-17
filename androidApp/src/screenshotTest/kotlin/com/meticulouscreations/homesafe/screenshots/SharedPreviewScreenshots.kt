@@ -5,8 +5,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedEmptyPreview
+import com.meticulouscreations.homesafe.ui.screens.HomeFeedIndoorPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedLoadingPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedPreview
+import com.meticulouscreations.homesafe.ui.screens.HomeFeedWithIndoorPreview
 import com.meticulouscreations.homesafe.ui.screens.StatusBadgePreview
 
 /*
@@ -32,6 +34,16 @@ private const val PHONE_HEIGHT_DP = 915
 @Preview(name = "Home", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeed() = HomeFeedPreview()
+
+@PreviewTest
+@Preview(name = "Home, with indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun HomeFeedWithIndoor() = HomeFeedWithIndoorPreview()
+
+@PreviewTest
+@Preview(name = "Home, indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
+@Composable
+fun HomeFeedIndoor() = HomeFeedIndoorPreview()
 
 @PreviewTest
 @Preview(name = "Home, loading", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
