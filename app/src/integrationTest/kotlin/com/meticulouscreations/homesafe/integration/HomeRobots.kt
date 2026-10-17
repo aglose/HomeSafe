@@ -17,11 +17,10 @@ import androidx.compose.ui.test.performTextReplacement
 import androidx.compose.ui.test.performTouchInput
 import com.meticulouscreations.homesafe.ui.screens.DETECTION_ZONES_CANVAS_TEST_TAG
 import com.meticulouscreations.homesafe.ui.screens.HOME_FEED_TEST_TAG
-import com.meticulouscreations.homesafe.ui.screens.HOME_STATUS_TEST_TAG
 import kotlin.time.Duration.Companion.milliseconds
 
 /**
- * The Home tab's camera list: the summary at the top, the "In view now" strip, and a card per
+ * The Home tab's camera list: the "In view now" strip at the top and a card per
  * camera. The list is lazy and a card is most of a screen tall, so a card further down isn't in
  * the tree at all until the list is scrolled to it — see [scrollToCamera].
  */
@@ -63,22 +62,6 @@ internal class HomeRobot(private val journey: AppJourney) {
         journey.tap(card(displayName), "the $displayName card")
         CameraRobot(journey).awaitOpen(displayName)
     }
-
-    /** Waits for the summary's text — its headline or its details line — to include [text]. */
-    fun awaitSummary(text: String, substring: Boolean = false) {
-        journey.awaitNode(hasTestTag(HOME_STATUS_TEST_TAG) and hasText(text, substring = substring), "the summary saying \"$text\"")
-    }
-
-    /**
-     * Waits for the summary to have stopped saying [text]. A line that changes cross-fades, so
-     * what it said before is still in the summary for the length of the fade after the new wording
-     * has turned up: [awaitSummary] returning is not the old wording being gone.
-     */
-    fun awaitSummaryWithout(text: String, substring: Boolean = false) {
-        journey.awaitGone(hasTestTag(HOME_STATUS_TEST_TAG) and hasText(text, substring = substring), "the summary saying \"$text\"")
-    }
-
-    fun tapSummary() = journey.tap(hasTestTag(HOME_STATUS_TEST_TAG), "the summary")
 
     private fun card(displayName: String): SemanticsMatcher = hasText(displayName) and hasClickAction()
 

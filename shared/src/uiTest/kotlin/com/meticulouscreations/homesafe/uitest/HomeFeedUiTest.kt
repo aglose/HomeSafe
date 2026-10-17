@@ -4,9 +4,7 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
-import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -342,30 +340,6 @@ class HomeFeedUiTest {
     }
 
     @Test
-    fun theSummarySaysWhatIsGoingOnAndOpensTheMoments() = runComposeUiTest {
-        var opened = 0
-        mainClock.autoAdvance = false
-        setContent {
-            FrigatePreview {
-                HomeFeed(
-                    everyoneAway = false,
-                    cameras = listOf(tile("front_door")),
-                    onAwayBack = {},
-                    statusHeadline = "Person at Backyard",
-                    statusDetails = "3 min ago · 1 camera on · Everyone home",
-                    onStatusClick = { opened++ },
-                ) { }
-            }
-        }
-
-        onNodeWithText("Person at Backyard").assertIsDisplayed()
-        onNodeWithText("3 min ago · 1 camera on · Everyone home").assertIsDisplayed()
-        onNodeWithText("Person at Backyard").performClick()
-
-        assertEquals(1, opened, "the summary is the way into the feed it summarises")
-    }
-
-    @Test
     fun imBackReportsTheTapOnce() = runComposeUiTest {
         var backTaps = 0
         mainClock.autoAdvance = false
@@ -402,31 +376,6 @@ class HomeFeedUiTest {
 
         onNodeWithTag("feed").performTouchInput { swipeDown(startY = top + 10f, endY = bottom, durationMillis = 400) }
         mainClock.advanceTimeBy(1_000)
-
-        assertEquals(1, refreshes)
-    }
-
-    @Test
-    fun theRefreshIsOfferedToScreenReadersOnTheSummary() = runComposeUiTest {
-        mainClock.autoAdvance = false
-        var refreshes = 0
-        setContent {
-            FrigatePreview {
-                HomeFeed(
-                    everyoneAway = false,
-                    cameras = emptyList(),
-                    onAwayBack = {},
-                    statusHeadline = "All quiet",
-                    statusDetails = "2 cameras on",
-                    onRefresh = { refreshes++ },
-                ) { }
-            }
-        }
-
-        val action = onNodeWithText("All quiet", useUnmergedTree = true).fetchSemanticsNode().let { node ->
-            generateSequence(node) { it.parent }.firstNotNullOf { n -> n.config.getOrNull(SemanticsActions.CustomActions)?.firstOrNull { it.label == "Refresh home" } }
-        }
-        action.action()
 
         assertEquals(1, refreshes)
     }

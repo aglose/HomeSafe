@@ -5,11 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
-import com.meticulouscreations.homesafe.domain.model.HomeStatus
-import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
-import com.meticulouscreations.homesafe.domain.model.homeStatus
 import com.meticulouscreations.homesafe.domain.model.present
 import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
@@ -19,7 +16,6 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveIndoorCamerasUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
@@ -33,15 +29,12 @@ import dev.zacsweers.metrox.viewmodel.ViewModelKey
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -91,7 +84,6 @@ class HomeViewModel(
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
-    observeLatestMomentUseCase: ObserveLatestMomentUseCase,
     private val setAwayUseCase: SetAwayUseCase,
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
@@ -152,7 +144,7 @@ class HomeViewModel(
      * The page's pull to refresh. Every camera without moving video is told to reconnect now
      * rather than when its back-off says ([reconnectRequests]), and everything the page reads is
      * asked for again: the route, the session and the camera list ([ReconnectToServerUseCase]),
-     * the indoor cameras, who is home, and the cars in view — whose poll also brings the summary's latest moment.
+     * the indoor cameras, who is home, and the cars in view.
      *
      * The band stays up while that runs, for at least [MIN_REFRESH_MS] (one sweep of its scan, so
      * a fast answer still reads as one) and at most [MAX_REFRESH_MS]: a server that isn't
@@ -232,38 +224,6 @@ class HomeViewModel(
         indoor?.filterNot { it.name in frigateStreams }?.map { camera -> tile(camera, serverUrl) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
-    /**
-     * The two lines at the top of the page — what last happened, how many cameras are on, who is
-     * home — see [homeStatus]. Each part is left out until what it is built from has loaded, and
-     * the whole is recomputed every [STATUS_TICK_MS] as well as on every change, so "3 min ago"
-     * keeps counting and a detection settles into "All quiet since …" on its own.
-     */
-    val status: StateFlow<HomeStatus> = combine(
-        // Null until the first answer, then a list of zero or one: "not loaded yet" and "nothing
-        // has ever happened" read differently at the top of the page.
-        observeLatestMomentUseCase().map { listOfNotNull(it) }.onStart<List<MomentEvent>?> { emit(null) },
-        cameras,
-        observeHouseholdPresenceUseCase(),
-        statusTicks(),
-    ) { latest, tiles, presence, _ ->
-        val now = clock.now()
-        homeStatus(
-            latestMoment = latest?.firstOrNull(),
-            momentsLoaded = latest != null,
-            cameras = tiles?.map { it.camera },
-            presence = presence,
-            nowEpochSeconds = now.toEpochMilliseconds() / 1000.0,
-            today = now.toLocalDateTime(TimeZone.currentSystemDefault()).date,
-        )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HomeStatus(headline = null, details = null))
-
-    private fun statusTicks(): Flow<Unit> = flow {
-        while (true) {
-            emit(Unit)
-            delay(STATUS_TICK_MS)
-        }
-    }
-
     private fun tile(camera: Camera, serverUrl: String?): CameraTile {
         if (serverUrl == null || !camera.enabled) return CameraTile(camera, streamUrl = null, posterUrl = null)
         // The grid uses the camera's (possibly lower-quality) grid stream — full quality is
@@ -280,9 +240,6 @@ class HomeViewModel(
     private companion object {
         /** Server-side downscale for grid posters: plenty for a card, ~30 KB per refresh instead of a full detect frame. */
         const val GRID_POSTER_HEIGHT = 480
-
-        /** How often the summary's relative times are recomputed: "3 min ago" never has to be more precise than this. */
-        const val STATUS_TICK_MS = 30_000L
 
         /** The shortest a pull to refresh holds the band open: one sweep of its scan, as on the Moments tab. */
         const val MIN_REFRESH_MS = 900L

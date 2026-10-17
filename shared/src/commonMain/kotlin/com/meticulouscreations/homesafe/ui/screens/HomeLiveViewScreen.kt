@@ -1,20 +1,12 @@
 package com.meticulouscreations.homesafe.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.BoundsTransform
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateDp
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -47,7 +39,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DirectionsCar
 import androidx.compose.material.icons.filled.Videocam
@@ -64,7 +55,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -81,11 +71,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.customActions
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
@@ -131,18 +117,15 @@ import homesafe.shared.generated.resources.home_connection_unreachable_title
 import homesafe.shared.generated.resources.home_in_view_check
 import homesafe.shared.generated.resources.home_in_view_title
 import homesafe.shared.generated.resources.home_no_cameras
-import homesafe.shared.generated.resources.home_status_open_moments
-import homesafe.shared.generated.resources.home_status_refresh_action
 import org.jetbrains.compose.resources.StringResource
 import org.jetbrains.compose.resources.stringResource
 
 /**
- * The "Home" tab's content: a summary of what is going on and the cameras reported by the
- * connected Frigate server — or, once switched over, the indoor (Nest) cameras. The outdoor ones
- * come first; the switch between them is there only when the server has indoor cameras at all.
- * [zoomState] is the quick-look layer a pinched or long-pressed card
- * lifts its video into; the shell draws it, over everything (see [CameraCardZoomOverlay]).
- * [onOpenMoments] is where a tap on the summary goes: the feed it summarises.
+ * The "Home" tab's content: the cars parked in view and the cameras reported by the connected
+ * Frigate server — or, once switched over, the indoor (Nest) cameras. The outdoor ones come
+ * first; the switch between them is there only when the server has indoor cameras at all.
+ * [zoomState] is the quick-look layer a pinched or long-pressed card lifts its video into; the
+ * shell draws it, over everything (see [CameraCardZoomOverlay]).
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -150,7 +133,6 @@ fun HomeTabContent(
     sharedTransitionScope: SharedTransitionScope,
     zoomState: CameraCardZoomState,
     onCameraClick: (CameraTile) -> Unit = {},
-    onOpenMoments: () -> Unit = {},
     onTagCars: (cameraName: String) -> Unit = {},
     scrollToTopRequests: ScrollToTopRequests = ScrollToTopRequests.NONE,
 ) {
@@ -160,7 +142,6 @@ fun HomeTabContent(
     val placement by viewModel.placement.collectAsStateWithLifecycle()
     val everyoneAway by viewModel.everyoneAway.collectAsStateWithLifecycle()
     val inView by viewModel.inView.collectAsStateWithLifecycle()
-    val status by viewModel.status.collectAsStateWithLifecycle()
     val refreshing by viewModel.refreshing.collectAsStateWithLifecycle()
     val reconnectRequests by viewModel.reconnectRequests.collectAsStateWithLifecycle()
     val connectionNotice: ConnectionNoticeViewModel = metroViewModel()
@@ -177,9 +158,6 @@ fun HomeTabContent(
         placement = placement.takeIf { hasIndoor },
         onPlacementChange = viewModel::showPlacement,
         onAwayBack = viewModel::markBack,
-        statusHeadline = status.headline?.resolve(),
-        statusDetails = status.details?.resolve(),
-        onStatusClick = onOpenMoments,
         inView = inView,
         // A parked car's card opens the camera watching it — where its own card would have gone.
         onInViewClick = { item -> cameras?.firstOrNull { it.camera.name == item.subject.cameraName }?.let(onCameraClick) },
@@ -206,26 +184,19 @@ fun HomeTabContent(
 }
 
 /**
- * The home page's list: the summary and one card per camera — or, while [cameras] is still null
+ * The home page's list: the cars in view and one card per camera — or, while [cameras] is still null
  * (the first cache read in flight), the loading skeleton: outlined cards where the cameras will
  * land, with a runner going round each. The sign-in screen draws this same list in its loading
  * state, so the skeleton and the real page are one layout by construction, and the real cards
  * fade in exactly onto their outlines rather than near them.
  *
- * At the top, [statusHeadline] and [statusDetails] (see [HomeStatusHeader]); either may be null
- * while it loads, and holds its place until then.
- *
- * Beneath the summary, in the same section, sits [inView] when there is anything in it: the
- * vehicles standing in view of a camera right now. It is deliberately the first thing on the
- * page — the question it answers ("is her car in the driveway?") is the one the app gets opened
- * for — and it disappears entirely when nothing is parked, rather than spending a row to say so.
- * The two read as one block, a small caption apart rather than a heading and a section gap, so
- * the cameras start as high up the screen as they can.
+ * At the top sits [inView] when there is anything in it: the vehicles standing in view of a
+ * camera right now. It is deliberately the first thing on the page — the question it answers
+ * ("is her car in the driveway?") is the one the app gets opened for — and it disappears entirely
+ * when nothing is parked, rather than spending a row to say so.
  * It usually arrives a beat after the cameras (its cache is read, and its poll runs, apart from
- * theirs), so it opens out rather than appearing: it shares the summary's list item and grows in
- * with it, and the cards below are carried down a frame at a time instead of jumping by the
- * strip's whole height. A strip that is already there when the page is composed — back from a
- * camera, say — is simply there.
+ * theirs), so it fades in and the cards below slide down to make room rather than jumping by the
+ * strip's whole height.
  *
  * With a [placement], the [CameraPlacementSwitch] heads the cameras, and [cameras] are the ones
  * of that placement; null leaves it out (a server with no indoor cameras, and the skeleton).
@@ -251,9 +222,6 @@ internal fun HomeFeed(
     cameras: List<CameraTile>?,
     onAwayBack: () -> Unit,
     modifier: Modifier = Modifier,
-    statusHeadline: String? = null,
-    statusDetails: String? = null,
-    onStatusClick: () -> Unit = {},
     inView: List<InViewItem> = emptyList(),
     onInViewClick: (InViewItem) -> Unit = {},
     onInViewCheck: () -> Unit = {},
@@ -300,13 +268,9 @@ internal fun HomeFeed(
                 item(key = "away-banner", span = { GridItemSpan(maxLineSpan) }) { AwayBanner(onBack = onAwayBack) }
             }
 
-            // One item, one section: an item of its own for the strip would still be spaced from its
-            // neighbours while empty, would pop in whole rather than open out, and would sit a whole
-            // section gap below the summary it belongs with.
-            item(key = "status", span = { GridItemSpan(maxLineSpan) }) {
-                Column {
-                    HomeStatusHeader(headline = statusHeadline, details = statusDetails, onClick = onStatusClick, onRefresh = onRefresh)
-                    InViewNowReveal(items = inView, onClick = onInViewClick, onCheck = onInViewCheck)
+            if (inView.isNotEmpty()) {
+                item(key = "in-view", span = { GridItemSpan(maxLineSpan) }) {
+                    InViewNowSection(items = inView, onClick = onInViewClick, onCheck = onInViewCheck, modifier = Modifier.animateItem())
                 }
             }
 
@@ -358,111 +322,20 @@ private fun PullToRefreshUnderTopBar(refreshing: Boolean, onRefresh: (() -> Unit
 }
 
 /**
- * What is going on, in two lines at the top of the page — "Person on the front lawn" over "3 min
- * ago · 4 cameras on · Everyone home" — and a way into the Moments feed that says it in full.
- * Stateless: the wording is [com.meticulouscreations.homesafe.domain.model.homeStatus]'s. A line
- * that hasn't loaded yet keeps its height, blank, and its text fades in when it lands, so neither
- * the page nor the cards below it move when it does.
- *
- * With [onRefresh], it also offers the page's pull to refresh as an accessibility action: a
- * screen reader only offers the actions of the node it is on, and this is the page's first.
- */
-@Composable
-internal fun HomeStatusHeader(headline: String?, details: String?, onClick: () -> Unit, modifier: Modifier = Modifier, onRefresh: (() -> Unit)? = null) {
-    val extraColors = LocalFrigateExtraColors.current
-    val refreshLabel = stringResource(Res.string.home_status_refresh_action)
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClickLabel = stringResource(Res.string.home_status_open_moments), onClick = onClick)
-            .then(
-                if (onRefresh == null) {
-                    Modifier
-                } else {
-                    Modifier.semantics {
-                        customActions = listOf(
-                            CustomAccessibilityAction(refreshLabel) {
-                                onRefresh()
-                                true
-                            },
-                        )
-                    }
-                },
-            )
-            .padding(vertical = 4.dp)
-            .testTag(HOME_STATUS_TEST_TAG),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Column(modifier = Modifier.weight(1f).animateContentSize(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Crossfade(targetState = headline.orEmpty(), label = "home-status-headline") { text ->
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = extraColors.textPrimary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-            Crossfade(targetState = details.orEmpty(), label = "home-status-details") { text ->
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        // Held in place but unseen until there is something to open: a lone chevron reads as broken.
-        Icon(
-            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.alpha(if (headline == null) 0f else 1f),
-        )
-    }
-}
-
-/**
- * [InViewNowSection], opening out beneath the summary when the first car turns up and closing up
- * when the last one leaves. It keeps the last cars it had for the length of the closing, so the
- * strip folds away with its cards on it rather than going blank first.
- */
-@Composable
-private fun InViewNowReveal(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit) {
-    var shown by remember { mutableStateOf(items) }
-    if (items.isNotEmpty()) shown = items
-    AnimatedVisibility(
-        visible = items.isNotEmpty(),
-        enter = expandVertically(tween(IN_VIEW_REVEAL_MS, easing = FastOutSlowInEasing), expandFrom = Alignment.Top) +
-            fadeIn(tween(IN_VIEW_REVEAL_MS)),
-        exit = shrinkVertically(tween(IN_VIEW_REVEAL_MS, easing = FastOutSlowInEasing), shrinkTowards = Alignment.Top) +
-            fadeOut(tween(IN_VIEW_REVEAL_MS / 2)),
-    ) {
-        // The gap to the summary, carried inside the reveal so an empty strip costs nothing. Tighter
-        // than the list's 24dp between sections: this is the summary's second half, not a section.
-        // Most of it is the caption's own 48dp touch target, which is taller than its line of text.
-        InViewNowSection(items = shown, onClick = onClick, onCheck = onCheck, modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
-/**
  * "In view now": what is standing in the yard, as a strip of cards across the top of the home
  * page. Usually one or two cars, which is why this is a plain [Row] that scrolls sideways rather
  * than a lazy one — there is never enough here for laziness to pay for itself, and a Row measures
  * its children in one pass.
  *
- * It is headed by a caption rather than a heading, being part of the summary above it; the caption
- * and its info mark are [onCheck]: the camera's frame, to see whether the strip is right and put
+ * It is headed by a small caption rather than a heading, so the cameras start as high up the
+ * screen as they can; the caption and its info mark are [onCheck]: the camera's frame, to see whether the strip is right and put
  * it right by tagging the cars actually there (see [CarTaggingScreen]).
  */
 @Composable
 private fun InViewNowSection(items: List<InViewItem>, onClick: (InViewItem) -> Unit, onCheck: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier = modifier) {
         // A 48dp target, as the IconButton it replaced was, with the caption centred in it: the
-        // space above and below the text is the gap to the summary and to the cards. heightIn, not
+        // space below the text is the gap to the cards. heightIn, not
         // minimumInteractiveComponentSize, so the button itself is 48dp tall and not just the room around it.
         Row(
             modifier = Modifier
@@ -803,14 +676,8 @@ private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 /** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
 const val HOME_FEED_TEST_TAG = "home_feed"
 
-/** The summary at the top of the home feed, for tests to tap. */
-const val HOME_STATUS_TEST_TAG = "home_status"
-
 /** The "In view now" caption, which opens the car-tagging screen. */
 internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"
-
-/** How long the in-view strip takes to open out or fold away: long enough to follow, short enough not to wait on. */
-private const val IN_VIEW_REVEAL_MS = 300
 
 /** Wide enough for "Ron and Judy's Mercedes" on one line, narrow enough that a second card shows it scrolls. */
 private val IN_VIEW_CARD_WIDTH: Dp = 232.dp

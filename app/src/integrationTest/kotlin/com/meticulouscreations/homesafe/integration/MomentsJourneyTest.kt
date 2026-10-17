@@ -1,12 +1,10 @@
 package com.meticulouscreations.homesafe.integration
 
 import androidx.compose.ui.test.hasContentDescription
-import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import com.meticulouscreations.homesafe.fakefrigate.FakeFrigateState
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.screens.HOME_FEED_TEST_TAG
-import com.meticulouscreations.homesafe.ui.screens.HOME_STATUS_TEST_TAG
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -196,19 +194,6 @@ class MomentsJourneyTest {
         moments.awaitMoment(PERSON_ON_PORCH)
         settle()
         assertFalse(exists(hasContentDescription("Play full screen")), "the inline player closed on the way out")
-    }
-
-    @Test
-    fun tappingTheHomeSummaryOpensMoments() = runAppJourney {
-        val moments = MomentsRobot(this)
-        signIn.signInAs()
-        awaitTag(HOME_FEED_TEST_TAG)
-
-        tap(hasTestTag(HOME_STATUS_TEST_TAG), "the Home summary")
-
-        shell.awaitSelected(TopLevelRoute.Moments)
-        moments.awaitFeed()
-        moments.awaitMoment(PERSON_ON_PORCH)
     }
 
     private companion object {
