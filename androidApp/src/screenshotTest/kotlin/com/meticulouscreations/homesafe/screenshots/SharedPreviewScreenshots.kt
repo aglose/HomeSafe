@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.screenshots
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
+import com.meticulouscreations.homesafe.ui.screens.AppIconOptionsPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarNarrowPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
 import com.meticulouscreations.homesafe.ui.screens.HomeFeedAwayPreview
@@ -76,3 +77,8 @@ fun CameraPlayerBar() = CameraPlayerBarPreview()
 @Preview(name = "Camera player bar, small phone, large text", widthDp = 320, fontScale = 1.5f)
 @Composable
 fun CameraPlayerBarNarrow() = CameraPlayerBarNarrowPreview()
+
+@PreviewTest
+@Preview(name = "App icons")
+@Composable
+fun AppIcons() = AppIconOptionsPreview()

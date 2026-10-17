@@ -18,6 +18,7 @@ import android.service.notification.StatusBarNotification
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
@@ -265,7 +266,7 @@ object AlertNotificationPoster {
      * an earlier one's destination.
      */
     private fun openIntent(context: Context, notification: AlertNotification): PendingIntent? {
-        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+        val launch = context.appLaunchIntent() ?: return null
         val intent = notification.target?.let { target ->
             Intent(Intent.ACTION_VIEW, target.toUri().toUri()).setComponent(launch.component)
         } ?: launch
@@ -279,7 +280,7 @@ object AlertNotificationPoster {
      */
     private fun tagCarIntent(context: Context, notification: AlertNotification): PendingIntent? {
         val target = notification.target?.takeIf { notification.offerCarTag } ?: return null
-        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+        val launch = context.appLaunchIntent() ?: return null
         val intent = Intent(Intent.ACTION_VIEW, target.copy(tagCar = true).toUri().toUri()).setComponent(launch.component)
         return PendingIntent.getActivity(context, "${notification.id}:tag-car".hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }

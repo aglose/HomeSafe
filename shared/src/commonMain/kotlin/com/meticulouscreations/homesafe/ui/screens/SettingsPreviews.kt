@@ -75,6 +75,7 @@ private val previewSettings = SettingsUiState(
     notificationsSupported = true,
     notificationPermission = NotificationPermission.GRANTED,
     classifiers = listOf(ClassifierModel(name = "known_cars", objects = listOf("car"))),
+    appIconsSupported = true,
     presence = HouseholdPresence(
         devices = listOf(
             PresenceDevice(name = "Google Pixel 10 Pro XL", platform = "android", away = false, isThisDevice = true, id = "pixel", build = "release"),
@@ -99,6 +100,7 @@ private fun SettingsHomePreviewContent(state: SettingsUiState, initialFold: Sett
             onDismissCameraError = {},
             onTone = {},
             onFigureStyle = {},
+            onAppIcon = {},
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING, vertical = 24.dp),
             initialFold = initialFold,
         )
@@ -134,6 +136,12 @@ private fun SettingsHomeEconomyPreview() {
 @Composable
 private fun SettingsHomeFiguresPreview() {
     SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.FIGURES)
+}
+
+@Preview(name = "Settings, app icon open", widthDp = 412, heightDp = 915)
+@Composable
+private fun SettingsHomeAppIconPreview() {
+    SettingsHomePreviewContent(previewSettings, initialFold = SettingsFold.APP_ICON)
 }
 
 @Preview(name = "Settings · Alerts page", widthDp = 412, heightDp = 915)

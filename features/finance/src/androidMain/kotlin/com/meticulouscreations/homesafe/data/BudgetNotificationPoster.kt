@@ -10,6 +10,7 @@ import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
+import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
 import com.meticulouscreations.homesafe.finance.ui.FinanceFormat
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
@@ -89,7 +90,7 @@ object BudgetNotificationPoster {
 
     /** What a tap opens: the app's own activity, named explicitly, with `homesafe://finance?tab=budget`, which MainActivity hands to the shell. */
     private fun openIntent(context: Context, id: String): PendingIntent? {
-        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+        val launch = context.appLaunchIntent() ?: return null
         val intent = Intent(Intent.ACTION_VIEW, FinanceDeepLink(FinanceTab.BUDGET).toUri().toUri()).setComponent(launch.component)
         return PendingIntent.getActivity(context, id.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }

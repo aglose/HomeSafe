@@ -18,6 +18,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.v2.runComposeUiTest
+import com.meticulouscreations.homesafe.appicon.AppIcon
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
@@ -100,6 +101,7 @@ class SettingsHomeUiTest {
         onDetection: (String, Boolean) -> Unit = { _, _ -> },
         onTone: (EconomyTone) -> Unit = {},
         onFigureStyle: (FigureStyle) -> Unit = {},
+        onAppIcon: (AppIcon) -> Unit = {},
         block: ComposeUiTest.() -> Unit,
     ) = runComposeUiTest {
         mainClock.autoAdvance = false
@@ -117,6 +119,7 @@ class SettingsHomeUiTest {
                     onDismissCameraError = {},
                     onTone = onTone,
                     onFigureStyle = onFigureStyle,
+                    onAppIcon = onAppIcon,
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     initialFold = initialFold,
                 )
@@ -231,6 +234,26 @@ class SettingsHomeUiTest {
 
             assertEquals(listOf(FigureStyle.FORGED), asked)
         }
+    }
+
+    @Test
+    fun theAppIconRowNamesTheIconInUseAndItsFoldPicksAnother() {
+        val asked = mutableListOf<AppIcon>()
+        val state = loaded.copy(appIconsSupported = true, appIcon = AppIcon.MIDNIGHT)
+        runHome(state = state, initialFold = SettingsFold.APP_ICON, onAppIcon = { asked += it }) {
+            onNode(hasText("App icon") and hasText("Midnight")).assertExists()
+            onNode(hasText("App icon") and hasClickAction()).assert(openedOut)
+
+            scrollIntoView(onNode(hasText("Porch light") and hasClickAction())).performClick()
+            mainClock.advanceTimeBy(SETTLE_MS)
+
+            assertEquals(listOf(AppIcon.PORCH), asked)
+        }
+    }
+
+    @Test
+    fun theAppIconRowIsLeftOutWhereTheIconCantChange() = runHome(state = loaded.copy(appIconsSupported = false)) {
+        onNodeWithText("App icon").assertDoesNotExist()
     }
 
     private companion object {
