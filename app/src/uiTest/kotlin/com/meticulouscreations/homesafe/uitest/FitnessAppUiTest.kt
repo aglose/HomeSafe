@@ -21,6 +21,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.v2.runComposeUiTest
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -263,6 +264,36 @@ class FitnessAppUiTest {
         assertNotShown("fitness_logger")
         tap("fitness_exercise_row_${FitnessFixtures.exercise("Leg curl").id}")
         assertShown("fitness_logger")
+    }
+
+    @Test
+    fun calvesAddedToABackDayAreStillThereAfterVisitingTheirOwnPage() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        val calves = FitnessFixtures.exercise("Calf machine")
+        show(FitnessFixtures.state(working = true, resting = false, backDay = true), calls, page = FitnessPage.Workout, tall = true)
+        assertNotShown("fitness_exercise_${calves.id}")
+        tap("fitness_regular_${calves.id}")
+        // Added under its own shelf, open for its first set, and no longer offered.
+        assertShown("fitness_exercise_${calves.id}")
+        assertShown("fitness_logger")
+        assertNotShown("fitness_regular_${calves.id}")
+        tap("fitness_exercise_edit_${calves.id}")
+        tap("fitness_back")
+        assertShown("fitness_exercise_${calves.id}")
+    }
+
+    @Test
+    fun anExerciseFromAnotherShelfIsFoundByNameAndAdded() = runComposeUiTest(testTimeout = 5.minutes) {
+        val calls = Calls()
+        val curl = FitnessFixtures.exercise("Leg curl")
+        show(FitnessFixtures.state(working = true, resting = false, backDay = true), calls, page = FitnessPage.Workout, tall = true)
+        tap("fitness_add_exercise")
+        onNodeWithTag("fitness_add_exercise_name").performTextInput("curl leg")
+        settle()
+        tap("fitness_add_match_${curl.id}")
+        assertShown("fitness_exercise_${curl.id}")
+        // Found, not made again.
+        assertEquals(emptyList(), calls.added)
     }
 
     @Test

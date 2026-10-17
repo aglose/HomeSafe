@@ -889,7 +889,7 @@ private fun com.meticulouscreations.homesafe.fitness.ui.WorkoutExercise(board: c
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, onCancel: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpenHeart: kotlin.Function0<kotlin.Unit>): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: com.meticulouscreations.homesafe.fitness.FitnessUiState, workout: com.meticulouscreations.homesafe.fitness.ActiveWorkout, padding: androidx.compose.foundation.layout.PaddingValues, actions: com.meticulouscreations.homesafe.fitness.ui.FitnessActions, onOpenExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onEditExercise: kotlin.Function1<kotlin.String, kotlin.Unit>, onFinish: kotlin.Function0<kotlin.Unit>, onCancel: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initiallyOpen: kotlin.String?, heart: com.meticulouscreations.homesafe.fitness.HeartUiState, onOpenHeart: kotlin.Function0<kotlin.Unit>, pulled: kotlin.collections.List<kotlin.String>, onPulledChange: kotlin.Function1<kotlin.collections.List<kotlin.String>, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -905,6 +905,8 @@ internal fun com.meticulouscreations.homesafe.fitness.ui.WorkoutScreen(state: co
     - initiallyOpen: STABLE (class with no mutable properties)
     - heart: STABLE (marked @Stable or @Immutable)
     - onOpenHeart: STABLE (function type)
+    - pulled: RUNTIME (requires runtime check)
+    - onPulledChange: STABLE (function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.fitness.ui.ZoneBadge(zone: com.meticulouscreations.homesafe.fitness.domain.HeartZone?, tint: androidx.compose.ui.graphics.Color, modifier: androidx.compose.ui.Modifier): kotlin.Unit

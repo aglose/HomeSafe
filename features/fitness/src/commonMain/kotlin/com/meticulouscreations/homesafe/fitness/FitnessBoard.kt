@@ -379,13 +379,18 @@ object FitnessBoardBuilder {
 
     /**
      * The exercises among [boards] whose names hold every word of [query], in any order and any
-     * case: those whose names begin with what was typed first, then as [workoutOrder] has them.
+     * case: the one called exactly that first (so a short list of them still has it), then those
+     * whose names begin with what was typed, then as [workoutOrder] has them.
      */
     fun find(boards: List<ExerciseBoard>, query: String): List<ExerciseBoard> {
         val words = query.lowercase().split(' ').filter { it.isNotBlank() }
         if (words.isEmpty()) return emptyList()
         val found = boards.filter { board -> board.exercise.name.lowercase().let { name -> words.all { it in name } } }
-        return workoutOrder(found).sortedByDescending { it.exercise.name.lowercase().startsWith(words.first()) }
+        val typed = query.trim()
+        return workoutOrder(found).sortedWith(
+            compareByDescending<ExerciseBoard> { it.exercise.name.equals(typed, ignoreCase = true) }
+                .thenByDescending { it.exercise.name.lowercase().startsWith(words.first()) },
+        )
     }
 
     /**

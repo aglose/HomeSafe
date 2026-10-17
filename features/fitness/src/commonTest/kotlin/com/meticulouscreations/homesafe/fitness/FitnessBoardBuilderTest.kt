@@ -461,6 +461,13 @@ class FitnessBoardBuilderTest {
         assertEquals(emptyList(), FitnessBoardBuilder.find(boards, "deadlift"))
     }
 
+    @Test
+    fun findPutsTheExerciseCalledExactlyThatFirstAheadOfOnesTrainedMoreRecently() {
+        val side = exercise(id = "core/plank-side", name = "Plank side", bodyPart = BodyPart.CORE, primary = Muscle.ABS)
+        val log = FitnessLog(exercises = listOf(plank, side), sets = listOf(logged(1, 0.0, 60, ago(1), exerciseId = side.id)))
+        assertEquals(listOf("Plank", "Plank side"), FitnessBoardBuilder.find(build(log).boards, " plank ").map { it.exercise.name })
+    }
+
     // ---- The week -----------------------------------------------------------------------------
 
     @Test

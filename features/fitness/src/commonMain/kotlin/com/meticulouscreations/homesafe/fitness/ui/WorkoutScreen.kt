@@ -162,6 +162,9 @@ internal fun WorkoutScreen(
     initiallyOpen: String? = null,
     heart: HeartUiState = HeartUiState(),
     onOpenHeart: () -> Unit = {},
+    /** Exercises added from off the picked shelves, in the order they were added; held by the caller, so they outlast this page. */
+    pulled: List<String> = emptyList(),
+    onPulledChange: (List<String>) -> Unit = {},
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -170,9 +173,6 @@ internal fun WorkoutScreen(
     var shelves by rememberSaveable(workout.workout.id) { mutableStateOf(focus.parts.map { it.name }) }
     var open by rememberSaveable(workout.workout.id) { mutableStateOf(initiallyOpen) }
     var discarding by rememberSaveable(workout.workout.id) { mutableStateOf(false) }
-
-    /** Exercises added from off the picked shelves, in the order they were added. */
-    var pulled by rememberSaveable(workout.workout.id) { mutableStateOf(emptyList<String>()) }
 
     /** One just added, to be scrolled to once it is in the list (a new exercise takes a moment to arrive). */
     var reveal by rememberSaveable(workout.workout.id) { mutableStateOf<String?>(null) }
@@ -194,7 +194,7 @@ internal fun WorkoutScreen(
     val listed = remember(sections) { sections.flatMap { (_, boards) -> boards.map { it.exercise.id } }.toSet() }
     val pull: (String) -> Unit = { id ->
         // One already in the list stays where it is, and is only opened and scrolled to.
-        if (id !in pulled && id !in listed) pulled = pulled + id
+        if (id !in pulled && id !in listed) onPulledChange(pulled + id)
         open = id
         reveal = id
     }
