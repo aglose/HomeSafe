@@ -1,0 +1,30 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedLoading_Home, loading_020683ba_0.png"
+    ],
+    "new": [],
+    "removed": [],
+    "unchanged": [
+      "AppIcons_App icons_391916d7_0.png",
+      "CameraPlayerBarNarrow_Camera player bar, small phone, large text_c3dce0ec_0.png",
+      "CameraPlayerBar_Camera player bar_f0910627_0.png",
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeedIndoor_Home, indoor cameras_ee22acaf_0.png",
+      "HomeFeedWithIndoor_Home, with indoor cameras_bd705e5d_0.png",
+      "HomeFeed_Home_02330075_0.png",
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/nest-outdoor-doorbell",
+    "head": "2e51629cad30d3ac0a468160d4cfda7d73994364",
+    "base": "8bde25633076c3334b4cbbc943419a73bc8902d5",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/39068474672",
+    "failed": false
+  }
+}
