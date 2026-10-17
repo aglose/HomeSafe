@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.HomeStatus
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
@@ -17,10 +18,12 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveIndoorCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshIndoorCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
 import dev.zacsweers.metro.AppScope
@@ -51,6 +54,8 @@ import kotlin.time.ExperimentalTime
 /**
  * A camera plus what its grid card needs to play it. [streamUrl] and [posterUrl] are null while
  * disconnected or while the camera is disabled on the server — the card shows a placeholder then.
+ * An indoor camera never has a [posterUrl]: there is no Frigate snapshot of it, and a still from
+ * go2rtc would mean dialling the camera through Google just for a poster.
  */
 @Immutable
 data class CameraTile(
@@ -78,6 +83,7 @@ data class InViewItem(
 @ContributesIntoMap(AppScope::class)
 class HomeViewModel(
     observeCamerasUseCase: ObserveCamerasUseCase,
+    observeIndoorCamerasUseCase: ObserveIndoorCamerasUseCase,
     observeCurrentServerUrlUseCase: ObserveCurrentServerUrlUseCase,
     private val getLiveStreamUrlUseCase: GetLiveStreamUrlUseCase,
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
@@ -90,6 +96,7 @@ class HomeViewModel(
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
     private val refreshHouseholdPresenceUseCase: RefreshHouseholdPresenceUseCase,
     private val refreshStationaryObjectsUseCase: RefreshStationaryObjectsUseCase,
+    private val refreshIndoorCamerasUseCase: RefreshIndoorCamerasUseCase,
     private val clock: Clock,
 ) : ViewModel() {
 
@@ -145,7 +152,7 @@ class HomeViewModel(
      * The page's pull to refresh. Every camera without moving video is told to reconnect now
      * rather than when its back-off says ([reconnectRequests]), and everything the page reads is
      * asked for again: the route, the session and the camera list ([ReconnectToServerUseCase]),
-     * who is home, and the cars in view — whose poll also brings the summary's latest moment.
+     * the indoor cameras, who is home, and the cars in view — whose poll also brings the summary's latest moment.
      *
      * The band stays up while that runs, for at least [MIN_REFRESH_MS] (one sweep of its scan, so
      * a fast answer still reads as one) and at most [MAX_REFRESH_MS]: a server that isn't
@@ -163,6 +170,7 @@ class HomeViewModel(
             reconnectToServerUseCase()
             coroutineScope {
                 launch { refreshHouseholdPresenceUseCase() }
+                launch { refreshIndoorCamerasUseCase() }
                 refreshStationaryObjectsUseCase()
             }
         }
@@ -195,6 +203,33 @@ class HomeViewModel(
         observeCurrentServerUrlUseCase(),
     ) { cameras, serverUrl ->
         cameras.map { camera -> tile(camera, serverUrl) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    private val _placement = MutableStateFlow(CameraPlacement.Outdoor)
+
+    /**
+     * Which cameras the page is showing: the outdoor ones (Frigate's) until the viewer switches.
+     * Kept here rather than in the screen so it lasts while the page is away (a camera opened
+     * from it, another tab) but not past the app's process: every launch opens outdoors.
+     */
+    val placement: StateFlow<CameraPlacement> = _placement.asStateFlow()
+
+    fun showPlacement(placement: CameraPlacement) {
+        _placement.value = placement
+    }
+
+    /**
+     * The indoor cameras' cards, null until the server has said which there are (see
+     * [ObserveIndoorCamerasUseCase]). A Nest stream that a Frigate camera already plays is that
+     * camera, and stays with the outdoor ones.
+     */
+    val indoorCameras: StateFlow<List<CameraTile>?> = combine(
+        observeIndoorCamerasUseCase(),
+        observeCamerasUseCase(),
+        observeCurrentServerUrlUseCase(),
+    ) { indoor, frigate, serverUrl ->
+        val frigateStreams = frigate.flatMapTo(HashSet()) { listOf(it.name, it.liveStreamName, it.gridStreamName) }
+        indoor?.filterNot { it.name in frigateStreams }?.map { camera -> tile(camera, serverUrl) }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
     /**
@@ -236,7 +271,8 @@ class HomeViewModel(
         return CameraTile(
             camera = camera,
             streamUrl = getLiveStreamUrlUseCase(serverUrl, camera.gridStreamName),
-            posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT),
+            posterUrl = getCameraSnapshotUrlUseCase(serverUrl, camera.name, height = GRID_POSTER_HEIGHT)
+                .takeIf { camera.placement == CameraPlacement.Outdoor },
             webRtcSignalingUrl = getLiveWebRtcSignalingUrlUseCase(serverUrl, camera.gridStreamName),
         )
     }
