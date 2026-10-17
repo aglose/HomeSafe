@@ -547,7 +547,7 @@ internal fun CameraCard(
                 // player (already decoding) when the card is tapped, and this card gets it back
                 // — still warm — on the way out. The quick-look layer borrows it the same way,
                 // and while it has it this card draws nothing (see CameraCardZoomState).
-                ShapedVideo(playerKey = camera.name, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         streamUrl = streamUrl,
                         modifier = videoModifier,

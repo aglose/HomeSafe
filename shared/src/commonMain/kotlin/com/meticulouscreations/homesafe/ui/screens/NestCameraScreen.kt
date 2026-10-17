@@ -94,9 +94,6 @@ fun NestCameraScreen(
     val viewModel: NestCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
     val fit by viewModel.fit.collectAsStateWithLifecycle()
-    val measuredAspect = MeasuredVideoShapes[streamName]
-    // Only a picture that isn't the card's shape has anything to fit or fill.
-    val fitMatters = measuredAspect != null && abs(measuredAspect - VIDEO_ASPECT) > FIT_ASPECT_TOLERANCE
     // Once sound has been asked for, the stream with it stays: muting again is the player's job,
     // not another reconnect.
     var wantsSound by rememberSaveable(streamName) { mutableStateOf(false) }
@@ -110,12 +107,17 @@ fun NestCameraScreen(
     }
     val source = liveSource ?: warmSource.takeIf { !wantsSound }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
+    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }
     val toggleSound = {
         wantsSound = true
         viewModel.toggleSound()
     }
 
     val fullScreen = isCompactLandscape()
+    // Only a picture that isn't its box's shape has anything to fit or fill. Upright the box is
+    // 16:9; full screen it is the window, which rarely is, so there the button shows once the
+    // shape is known (a saved Fill would otherwise crop a 16:9 camera with no way back).
+    val fitMatters = measuredAspect != null && (fullScreen || abs(measuredAspect - VIDEO_ASPECT) > FIT_ASPECT_TOLERANCE)
     val animatedVisibilityScope = LocalNavAnimatedContentScope.current
     if (fullScreen && animatedVisibilityScope.transition.targetState == EnterExitState.Visible) ImmersiveSystemBars()
     val extraColors = LocalFrigateExtraColors.current
@@ -137,7 +139,7 @@ fun NestCameraScreen(
             }.background(Color.Black),
         ) {
             if (request != null) {
-                ShapedVideo(playerKey = streamName, fit = fit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                ShapedVideo(streamUrl = request.source.url, fit = fit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,
                         modifier = videoModifier,

@@ -329,7 +329,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             ) {
                 val streamUrl = tile.streamUrl
                 if (streamUrl != null) {
-                    ShapedVideo(playerKey = tile.camera.name, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                    ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
                         CameraStreamPlayer(
                             streamUrl = streamUrl,
                             modifier = videoModifier,

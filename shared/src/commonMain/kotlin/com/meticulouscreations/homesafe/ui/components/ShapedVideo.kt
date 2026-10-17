@@ -24,21 +24,21 @@ import kotlin.math.roundToInt
  * over it, cropped ([VideoFit.Fill]). A null [fit] is the stretch everything else has.
  *
  * The shape comes from the player's own stream statistics, which every engine reports with the
- * frame's size: [player] is handed a callback for them while the shape for [playerKey] is still
+ * frame's size: [player] is handed a callback for them while the shape of [streamUrl] is still
  * unknown, and null once it is known, which stops the measuring. Until then the video stretches.
  * Shapes are remembered for the process ([MeasuredVideoShapes]), so the card, its quick look and
  * the camera's page all agree, and only the first of them ever waits.
  */
 @Composable
 fun ShapedVideo(
-    playerKey: String,
+    streamUrl: String,
     fit: VideoFit?,
     modifier: Modifier = Modifier,
     player: @Composable (modifier: Modifier, onStreamStats: ((LiveStreamStats?) -> Unit)?) -> Unit,
 ) {
-    val aspect = MeasuredVideoShapes[playerKey]
+    val aspect = MeasuredVideoShapes[streamUrl]
     val measure: ((LiveStreamStats?) -> Unit)? = if (fit != null && aspect == null) {
-        { stats -> MeasuredVideoShapes.record(playerKey, stats?.width, stats?.height) }
+        { stats -> MeasuredVideoShapes.record(streamUrl, stats?.width, stats?.height) }
     } else {
         null
     }
@@ -66,17 +66,23 @@ private fun Modifier.coverAtAspect(aspect: Float): Modifier = layout { measurabl
 }
 
 /**
- * The shapes (width over height) of the streams [ShapedVideo] has measured, by player key, for
- * the life of the process. Snapshot state, so everything showing a stream reshapes as soon as any
- * of them learns it.
+ * The shapes (width over height) of the streams [ShapedVideo] has measured, for the life of the
+ * process. Snapshot state, so everything showing a stream reshapes as soon as any of them learns it.
+ *
+ * Kept by the stream itself: its go2rtc address and name, the live URL up to its first `&`
+ * (`http://<host>:1984/api/stream.m3u8?src=<name>`), so asking for sound doesn't change it. A
+ * camera of the same name on another server is another stream, and a different shape; moving
+ * between the LAN and Tailscale measures again once.
  */
 object MeasuredVideoShapes {
     private val aspects = mutableStateMapOf<String, Float>()
 
-    operator fun get(playerKey: String): Float? = aspects[playerKey]
+    operator fun get(streamUrl: String): Float? = aspects[key(streamUrl)]
 
-    fun record(playerKey: String, width: Int?, height: Int?) {
+    fun record(streamUrl: String, width: Int?, height: Int?) {
         if (width == null || height == null || width <= 0 || height <= 0) return
-        aspects[playerKey] = width.toFloat() / height
+        aspects[key(streamUrl)] = width.toFloat() / height
     }
+
+    private fun key(streamUrl: String) = streamUrl.substringBefore('&')
 }
