@@ -2,6 +2,7 @@ package com.meticulouscreations.homesafe.fitness.domain
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class ExerciseClassifierTest {
 
@@ -15,6 +16,16 @@ class ExerciseClassifierTest {
         increment: Double,
         restSeconds: Int,
     ) = Classification(bodyPart, equipment, loadKind, primary, secondary, repBand, increment, restSeconds)
+
+    @Test
+    fun aNameSaysWhichShelfItIsForOrNothing() {
+        assertEquals(BodyPart.CORE, ExerciseClassifier.shelfFor("Plank"))
+        assertEquals(BodyPart.LEGS, ExerciseClassifier.shelfFor("Seated calf raise"))
+        assertEquals(BodyPart.BACK, ExerciseClassifier.shelfFor("Lat pulldown"))
+        assertNull(ExerciseClassifier.shelfFor("Farmer's walk"))
+        // Saying nothing, a name is put on the core shelf when it has to be put somewhere.
+        assertEquals(BodyPart.CORE, ExerciseClassifier.classify("Farmer's walk").bodyPart)
+    }
 
     @Test
     fun aMachineIsolationOfASmallMuscleIsWorkedLightAndLong() {

@@ -17,6 +17,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -29,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -82,13 +84,17 @@ import com.meticulouscreations.homesafe.fitness.HeartUiState
 import com.meticulouscreations.homesafe.fitness.RestTimer
 import com.meticulouscreations.homesafe.fitness.WorkoutEntry
 import com.meticulouscreations.homesafe.fitness.domain.BodyPart
+import com.meticulouscreations.homesafe.fitness.domain.Exercise
+import com.meticulouscreations.homesafe.fitness.domain.ExerciseClassifier
 import com.meticulouscreations.homesafe.fitness.domain.MovementClassifier
+import com.meticulouscreations.homesafe.fitness.domain.WorkoutFocus
 import com.meticulouscreations.homesafe.fitness.ui.movement.ExerciseFigure
 import com.meticulouscreations.homesafe.fitness.ui.movement.FigureSize
 import com.meticulouscreations.homesafe.fitness.ui.movement.NearestFigureNote
 import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import com.meticulouscreations.homesafe.text.resolve
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.common_close
 import homesafe.shared.generated.resources.fitness_exercise_edit
 import homesafe.shared.generated.resources.fitness_heart_open
 import homesafe.shared.generated.resources.fitness_rest_go
@@ -104,16 +110,22 @@ import homesafe.shared.generated.resources.fitness_workout_add_confirm
 import homesafe.shared.generated.resources.fitness_workout_add_hint
 import homesafe.shared.generated.resources.fitness_workout_cancel
 import homesafe.shared.generated.resources.fitness_workout_cancel_confirm
+import homesafe.shared.generated.resources.fitness_workout_create
 import homesafe.shared.generated.resources.fitness_workout_done
 import homesafe.shared.generated.resources.fitness_workout_elapsed
 import homesafe.shared.generated.resources.fitness_workout_empty_shelf
 import homesafe.shared.generated.resources.fitness_workout_expand
+import homesafe.shared.generated.resources.fitness_workout_find
+import homesafe.shared.generated.resources.fitness_workout_find_hint
+import homesafe.shared.generated.resources.fitness_workout_find_none
 import homesafe.shared.generated.resources.fitness_workout_finish
 import homesafe.shared.generated.resources.fitness_workout_from_notes
 import homesafe.shared.generated.resources.fitness_workout_history
 import homesafe.shared.generated.resources.fitness_workout_last
 import homesafe.shared.generated.resources.fitness_workout_new
+import homesafe.shared.generated.resources.fitness_workout_pull
 import homesafe.shared.generated.resources.fitness_workout_records
+import homesafe.shared.generated.resources.fitness_workout_regulars
 import homesafe.shared.generated.resources.fitness_workout_sets
 import homesafe.shared.generated.resources.fitness_workout_target
 import org.jetbrains.compose.resources.pluralStringResource
@@ -126,7 +138,9 @@ import kotlin.time.Clock
  * shelves with last time's peak set and what to aim for today. A tap opens an exercise into its
  * logger, in place; logging a set starts the rest clock, which rides along the top. Exercises
  * already done today rise to the head of the list, the rest follow in the order they were most
- * recently trained. With a heart-rate sensor chosen, the heart rate and its zone sit over it all
+ * recently trained. Anything off those shelves is added at the foot: the core and calf work that
+ * goes along with any day is there as chips ([ActiveWorkout.regulars]), and any other exercise is
+ * found by name ([WorkoutAddCard]). With a heart-rate sensor chosen, the heart rate and its zone sit over it all
  * ([HeartPanel]), and the rest clock shows the heart coming back down.
  *
  * At the foot it is finished, which keeps it, or cancelled, which throws it away with the sets
@@ -148,6 +162,9 @@ internal fun WorkoutScreen(
     initiallyOpen: String? = null,
     heart: HeartUiState = HeartUiState(),
     onOpenHeart: () -> Unit = {},
+    /** Exercises added from off the picked shelves, in the order they were added; held by the caller, so they outlast this page. */
+    pulled: List<String> = emptyList(),
+    onPulledChange: (List<String>) -> Unit = {},
 ) {
     val colors = FitnessTheme.colors
     val type = FitnessTheme.type
@@ -156,20 +173,52 @@ internal fun WorkoutScreen(
     var shelves by rememberSaveable(workout.workout.id) { mutableStateOf(focus.parts.map { it.name }) }
     var open by rememberSaveable(workout.workout.id) { mutableStateOf(initiallyOpen) }
     var discarding by rememberSaveable(workout.workout.id) { mutableStateOf(false) }
+
+    /** One just added, to be scrolled to once it is in the list (a new exercise takes a moment to arrive). */
+    var reveal by rememberSaveable(workout.workout.id) { mutableStateOf<String?>(null) }
     // Shelf by shelf, the workout's own first: within each, what has been done today leads (in the order it was done),
-    // then the rest as the routine has them. A shelf that isn't picked still shows anything logged from it today.
-    val sections = remember(state.boards, workout, shelves) {
+    // then what was added to it, then the rest as the routine has them. A shelf that isn't picked still shows anything
+    // logged from it today, or added.
+    val sections = remember(state.boards, workout, shelves, pulled) {
         val doneIds = workout.entries.map { it.exerciseId }
         val order = (focus.parts + focus.extras + BodyPart.entries).distinct()
         order.mapNotNull { part ->
             val (done, rest) = state.boards.filter { it.exercise.bodyPart == part }.partition { it.exercise.id in doneIds }
-            val shown = done.sortedBy { doneIds.indexOf(it.exercise.id) } + if (part.name in shelves) FitnessBoardBuilder.workoutOrder(rest) else emptyList()
+            val (added, others) = rest.partition { it.exercise.id in pulled }
+            val shown = done.sortedBy { doneIds.indexOf(it.exercise.id) } +
+                added.sortedBy { pulled.indexOf(it.exercise.id) } +
+                if (part.name in shelves) FitnessBoardBuilder.workoutOrder(others) else emptyList()
             if (shown.isEmpty()) null else part to shown
+        }
+    }
+    val listed = remember(sections) { sections.flatMap { (_, boards) -> boards.map { it.exercise.id } }.toSet() }
+    val pull: (String) -> Unit = { id ->
+        // One already in the list stays where it is, and is only opened and scrolled to.
+        if (id !in pulled && id !in listed) onPulledChange(pulled + id)
+        open = id
+        reveal = id
+    }
+    val list = rememberLazyListState()
+    LaunchedEffect(reveal, sections) {
+        val id = reveal ?: return@LaunchedEffect
+        // Counted as the list below lays them out: the header, then each shelf's heading (when there is more than one) and its exercises.
+        var index = 1
+        for ((_, boards) in sections) {
+            if (sections.size > 1) index++
+            val at = boards.indexOfFirst { it.exercise.id == id }
+            if (at >= 0) {
+                // Let go of it only once there: clearing it restarts this effect, which would stop the scroll.
+                list.animateScrollToItem(index + at)
+                reveal = null
+                return@LaunchedEffect
+            }
+            index += boards.size
         }
     }
 
     LazyColumn(
         modifier.fillMaxSize().testTag("fitness_workout"),
+        state = list,
         contentPadding = PaddingValues(start = FitnessGutter, end = FitnessGutter, top = padding.calculateTopPadding(), bottom = padding.calculateBottomPadding()),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -241,9 +290,17 @@ internal fun WorkoutScreen(
             }
         }
         item(key = "add") {
-            AddExerciseCard(
-                parts = (focus.parts + focus.extras).filter { it.name in shelves }.ifEmpty { focus.parts },
-                onAdd = actions.onAddExercise,
+            WorkoutAddCard(
+                focus = focus,
+                regulars = workout.regulars.filter { it !in listed }.mapNotNull { state.board(it) },
+                boards = state.boards,
+                listed = listed,
+                parts = ((focus.parts + focus.extras).filter { it.name in shelves } + focus.parts + BodyPart.entries).distinct(),
+                onPull = pull,
+                onCreate = { name, part ->
+                    actions.onAddExercise(name, part)
+                    pull(Exercise.idFor(part, name.trim()))
+                },
                 tint = tints.first,
             )
         }
@@ -522,7 +579,139 @@ private fun rememberRestSeconds(rest: RestTimer, fallbackNowMillis: Long): Float
     return seconds
 }
 
-/** A new exercise, added without leaving the workout: its name and which shelf it goes on. Everything else is guessed from the name. */
+/**
+ * The foot of the workout, for what is off its picked shelves. Its [regulars] sit as chips, each a
+ * tap from being added; the button under them opens a search of every exercise there is, on any
+ * shelf ([boards]; those [listed] already are only opened), where a name nothing is called yet
+ * can be made a new exercise on any of [parts], the shelf the name suggests picked to begin with.
+ * Whatever is added ([onPull], [onCreate]) joins the list open, ready for its first set.
+ */
+@Composable
+private fun WorkoutAddCard(
+    focus: WorkoutFocus,
+    regulars: List<ExerciseBoard>,
+    boards: List<ExerciseBoard>,
+    listed: Set<String>,
+    parts: List<BodyPart>,
+    onPull: (String) -> Unit,
+    onCreate: (String, BodyPart) -> Unit,
+    tint: Color,
+    modifier: Modifier = Modifier,
+) {
+    val colors = FitnessTheme.colors
+    val type = FitnessTheme.type
+    var finding by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+
+    /** The shelf picked for a new one by hand; until then, the one its name suggests. */
+    var chosen by rememberSaveable { mutableStateOf<String?>(null) }
+    val close = {
+        finding = false
+        query = ""
+        chosen = null
+    }
+    Column(modifier.fillMaxWidth()) {
+        if (regulars.isNotEmpty()) {
+            CardLabel(stringResource(Res.string.fitness_workout_regulars, stringResource(focus.label)), Modifier.padding(start = 4.dp, top = 8.dp, bottom = 10.dp))
+            FlowRow(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                regulars.forEach { board -> PullChip(board.exercise.name, { onPull(board.exercise.id) }, tint, Modifier.testTag("fitness_regular_${board.exercise.id}")) }
+            }
+        }
+        if (!finding) {
+            GhostButton(stringResource(Res.string.fitness_workout_find), { finding = true }, Modifier.fillMaxWidth().testTag("fitness_add_exercise"), icon = Icons.Filled.Add, tint = colors.textMuted)
+            return@Column
+        }
+        val name = query.trim()
+        val matches = remember(boards, query) { FitnessBoardBuilder.find(boards, query).take(MAX_MATCHES) }
+        // Something by that very name is already there, on this shelf or another: it is found, not made again.
+        val exact = remember(boards, name) { boards.firstOrNull { it.exercise.name.equals(name, ignoreCase = true) } }
+        val known = exact != null || name.isEmpty()
+        val pick = { board: ExerciseBoard ->
+            onPull(board.exercise.id)
+            close()
+        }
+        FitnessCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CardLabel(stringResource(Res.string.fitness_workout_find), Modifier.weight(1f))
+                RoundIconButton(Icons.Filled.Close, stringResource(Res.string.common_close), close, Modifier.testTag("fitness_add_exercise_close"), size = 32.dp, tint = colors.textMuted)
+            }
+            Spacer(Modifier.height(8.dp))
+            FitnessTextField(
+                query,
+                { query = it },
+                stringResource(Res.string.fitness_workout_find_hint),
+                Modifier.fillMaxWidth().testTag("fitness_add_exercise_name"),
+                onDone = { (exact ?: matches.singleOrNull())?.let(pick) },
+            )
+            matches.forEach { board ->
+                val exercise = board.exercise
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(role = Role.Button, onClickLabel = stringResource(if (exercise.id in listed) Res.string.fitness_workout_expand else Res.string.fitness_workout_pull, exercise.name)) { pick(board) }
+                        .testTag("fitness_add_match_${exercise.id}")
+                        .padding(horizontal = 4.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(exercise.name, style = type.bodyStrong, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(stringResource(exercise.bodyPart.label), style = type.label, color = colors.textFaint, maxLines = 1)
+                    }
+                    Icon(if (exercise.id in listed) Icons.Filled.Check else Icons.Filled.Add, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+                }
+            }
+            if (!known) {
+                val guess = remember(name, parts) { ExerciseClassifier.shelfFor(name)?.takeIf { it in parts } ?: parts.first() }
+                val part = parts.firstOrNull { it.name == chosen } ?: guess
+                if (matches.isEmpty()) {
+                    Text(stringResource(Res.string.fitness_workout_find_none), style = type.label, color = colors.textFaint, modifier = Modifier.padding(start = 4.dp, top = 10.dp))
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    parts.forEach { ChoiceChip(stringResource(it.label), it == part, { chosen = it.name }, Modifier.testTag("fitness_add_exercise_part_${it.name.lowercase()}"), tint = tint) }
+                }
+                Spacer(Modifier.height(12.dp))
+                ForgeButton(
+                    stringResource(Res.string.fitness_workout_create, name),
+                    {
+                        onCreate(name, part)
+                        close()
+                    },
+                    Modifier.fillMaxWidth().testTag("fitness_add_exercise_confirm"),
+                    colors = tint to tint,
+                    height = 48.dp,
+                )
+            }
+        }
+    }
+}
+
+/** An exercise a tap from being added to the workout. */
+@Composable
+private fun PullChip(name: String, onClick: () -> Unit, tint: Color, modifier: Modifier = Modifier) {
+    val colors = FitnessTheme.colors
+    Row(
+        modifier
+            .height(36.dp)
+            .clip(CircleShape)
+            .background(colors.surfaceRaised)
+            .border(1.dp, colors.hairline, CircleShape)
+            .clickable(role = Role.Button, onClickLabel = stringResource(Res.string.fitness_workout_pull, name), onClick = onClick)
+            .padding(start = 10.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(Icons.Filled.Add, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(name, style = FitnessTheme.type.label, color = colors.text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
+}
+
+/** How many of the exercises a search finds are listed: enough to pick from, few enough to leave the keyboard room. */
+private const val MAX_MATCHES = 5
+
+/** A new exercise: its name and which shelf it goes on. Everything else is guessed from the name. */
 @Composable
 internal fun AddExerciseCard(parts: List<BodyPart>, onAdd: (String, BodyPart) -> Unit, tint: Color, modifier: Modifier = Modifier) {
     val colors = FitnessTheme.colors

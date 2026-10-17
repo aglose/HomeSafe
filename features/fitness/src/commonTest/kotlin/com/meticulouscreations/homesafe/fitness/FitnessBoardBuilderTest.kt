@@ -403,6 +403,71 @@ class FitnessBoardBuilderTest {
         assertEquals(1, active.recordCount)
     }
 
+    // ---- What goes along with a workout --------------------------------------------------------
+
+    private val plank = exercise(id = "core/plank", name = "Plank", bodyPart = BodyPart.CORE, loadKind = LoadKind.BODYWEIGHT, primary = Muscle.ABS)
+    private val calves = exercise(id = "legs/calf-machine", name = "Calf machine", bodyPart = BodyPart.LEGS, primary = Muscle.CALVES)
+    private val curl = exercise(id = "biceps/curl", name = "Curl", bodyPart = BodyPart.BICEPS, primary = Muscle.BICEPS)
+
+    private fun regulars(log: FitnessLog, focus: WorkoutFocus = WorkoutFocus.BACK) =
+        FitnessBoardBuilder.regulars(log, build(log).boards, focus)
+
+    @Test
+    fun coreAndCalvesGoAlongWithAnyWorkoutBeforeThereIsAnyToLearnFrom() {
+        val log = FitnessLog(exercises = listOf(bench, squat, row, plank, calves))
+        // Not the back day's own row, and not a squat or a bench press, which nothing has put alongside a back day.
+        assertEquals(setOf(plank.id, calves.id), regulars(log).toSet())
+        // On legs day the calves are on its own shelf already.
+        assertEquals(listOf(plank.id), regulars(log, WorkoutFocus.LEGS))
+    }
+
+    @Test
+    fun whatHasBeenDoneOnThisKindOfDayLeadsThenWhatTravelsWithOtherDays() {
+        val log = FitnessLog(
+            exercises = listOf(bench, squat, row, plank, calves, curl),
+            workouts = listOf(finished(1, WorkoutFocus.BACK, 9), finished(2, WorkoutFocus.BACK, 2), finished(3, WorkoutFocus.CHEST, 5), finished(4, WorkoutFocus.LEGS, 4)),
+            sets = listOf(
+                // Curls on both back days, two sets each: counted once a workout.
+                logged(1, 30.0, 12, ago(9), exerciseId = curl.id, workoutId = 1),
+                logged(2, 30.0, 10, ago(9) + 60, exerciseId = curl.id, workoutId = 1),
+                logged(3, 30.0, 12, ago(2), exerciseId = curl.id, workoutId = 2),
+                // Calves on one back day, and on chest day.
+                logged(4, 14.0, 25, ago(2) + 600, exerciseId = calves.id, workoutId = 2),
+                logged(5, 14.0, 25, ago(5), exerciseId = calves.id, workoutId = 3),
+                // A plank on chest day and on legs day: never on a back day, but it goes along with others.
+                logged(6, 0.0, 60, ago(5) + 600, exerciseId = plank.id, workoutId = 3),
+                logged(7, 0.0, 60, ago(4), exerciseId = plank.id, workoutId = 4),
+                // A bench press once on a legs day: it has gone along with a workout, so it is offered, last.
+                logged(8, 100.0, 10, ago(4) + 600, workoutId = 4),
+                // A squat on legs day is that day's own; it went along with nothing.
+                logged(9, 200.0, 10, ago(4) + 1_200, exerciseId = squat.id, workoutId = 4),
+            ),
+        )
+        assertEquals(listOf(curl.id, calves.id, plank.id, bench.id), regulars(log))
+    }
+
+    @Test
+    fun anOpenWorkoutCarriesItsRegulars() {
+        val log = FitnessLog(exercises = listOf(row, plank), workouts = listOf(open(1, 1, WorkoutFocus.BACK)))
+        assertEquals(listOf(plank.id), assertNotNull(build(log).workout).regulars)
+    }
+
+    @Test
+    fun findMatchesEveryWordInAnyOrderThoseBeginningWithItFirst() {
+        val boards = build(FitnessLog(exercises = listOf(bench, row, calves, plank, exercise(id = "legs/seated-calf-raise", name = "Seated calf raise", bodyPart = BodyPart.LEGS)))).boards
+        assertEquals(listOf("Calf machine", "Seated calf raise"), FitnessBoardBuilder.find(boards, "calf").map { it.exercise.name })
+        assertEquals(listOf("Seated calf raise"), FitnessBoardBuilder.find(boards, " RAISE  calf").map { it.exercise.name })
+        assertEquals(emptyList(), FitnessBoardBuilder.find(boards, "  "))
+        assertEquals(emptyList(), FitnessBoardBuilder.find(boards, "deadlift"))
+    }
+
+    @Test
+    fun findPutsTheExerciseCalledExactlyThatFirstAheadOfOnesTrainedMoreRecently() {
+        val side = exercise(id = "core/plank-side", name = "Plank side", bodyPart = BodyPart.CORE, primary = Muscle.ABS)
+        val log = FitnessLog(exercises = listOf(plank, side), sets = listOf(logged(1, 0.0, 60, ago(1), exerciseId = side.id)))
+        assertEquals(listOf("Plank", "Plank side"), FitnessBoardBuilder.find(build(log).boards, " plank ").map { it.exercise.name })
+    }
+
     // ---- The week -----------------------------------------------------------------------------
 
     @Test

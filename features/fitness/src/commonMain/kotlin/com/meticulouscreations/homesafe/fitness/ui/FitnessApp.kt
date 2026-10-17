@@ -312,6 +312,9 @@ fun FitnessAppContent(
         val pagePadding = PaddingValues(top = top, bottom = nav.calculateBottomPadding() + 28.dp)
         val page = pages.lastOrNull()
         val workout = state.workout
+        // What has been added to the open workout from off its shelves, kept up here above the pages: opening one of
+        // those exercises' own pages and coming back must not lose it.
+        var pulled by rememberSaveable(workout?.workout?.id) { mutableStateOf(emptyList<String>()) }
         // The forge takes the colours of what is on screen: the workout's while one is open, the phase's otherwise.
         val heatOf = when {
             page == FitnessPage.Workout && workout != null -> palette.focus(workout.workout.focus)
@@ -416,6 +419,8 @@ fun FitnessAppContent(
                             initiallyOpen = state.rest?.exerciseId,
                             heart = heart,
                             onOpenHeart = { pages += FitnessPage.Heart },
+                            pulled = pulled,
+                            onPulledChange = { pulled = it },
                         )
                     } else {
                         // Just started and not yet read back, or just finished: the page under this one shows through.
