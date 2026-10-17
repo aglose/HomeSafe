@@ -2,9 +2,11 @@ package com.meticulouscreations.homesafe.uitest
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
@@ -179,7 +181,8 @@ class CameraQuickActionsUiTest {
             FrigatePreview {
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale)) {
-                    Box(Modifier.width(width)) {
+                    // wrapContentSize first: iOS's test root hands its content the window's width exactly, which a bare width() can't narrow.
+                    Box(Modifier.wrapContentSize(Alignment.TopStart).width(width)) {
                         CameraQuickActions(
                             displayName = "Front Yard",
                             quality = StreamQuality.AUTO,
