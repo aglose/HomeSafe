@@ -1,0 +1,27 @@
+{
+  "android": {
+    "compared": true,
+    "changed": [
+      "HomeFeedAway_Home, everyone away_4fd0592f_0.png",
+      "HomeFeedEmpty_Home, no cameras_ce219c3d_0.png",
+      "HomeFeedIndoor_Home, indoor cameras_ee22acaf_0.png",
+      "HomeFeedLoading_Home, loading_020683ba_0.png",
+      "HomeFeedWithIndoor_Home, with indoor cameras_bd705e5d_0.png",
+      "HomeFeed_Home_02330075_0.png"
+    ],
+    "new": [],
+    "removed": [],
+    "unchanged": [
+      "StatusBadges_Status badges_197bb68e_0.png"
+    ]
+  },
+  "meta": {
+    "repo": "aglose/HomeSafe",
+    "branch": "claude/remove-home-summary",
+    "head": "47bf175a6b0721954c6fe316f46d3349664e8b18",
+    "base": "849b07bd3e5b5682d562a3a070401b8ce027028a",
+    "base_ref": "main",
+    "run": "https://github.com/aglose/HomeSafe/actions/runs/39058559564",
+    "failed": false
+  }
+}
