@@ -62,8 +62,8 @@ import org.jetbrains.compose.resources.stringResource
  *
  * [warmStreamUrl] / [warmWebRtcSignalingUrl] are what the tapped card was playing. The screen
  * binds the same pooled player (keyed by [streamName], as the card is) and carries on with that
- * silent stream; only the first tap on the speaker moves it to the one with sound, which go2rtc
- * serves from the same connection to Google.
+ * silent stream, over the current route from then on; only the first tap on the speaker moves it
+ * to the one with sound, which go2rtc serves from the same connection to Google.
  *
  * Turned on its side the video takes the whole window, with the way back and the speaker over it.
  */
@@ -79,15 +79,18 @@ fun IndoorCameraScreen(
 ) {
     val viewModel: IndoorCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
-    val soundSource by remember(streamName) { viewModel.soundSource(streamName) }.collectAsStateWithLifecycle(null)
     // Once sound has been asked for, the stream with it stays: muting again is the player's job,
     // not another reconnect.
     var wantsSound by rememberSaveable(streamName) { mutableStateOf(false) }
+    val liveSource by remember(streamName, wantsSound) { viewModel.liveSource(streamName, withSound = wantsSound) }
+        .collectAsStateWithLifecycle(null)
     var status by remember(streamName) { mutableStateOf(LiveStreamStatus.Connecting) }
+    // Only for the first frames, until the route's own source arrives: that is the same stream
+    // while the route hasn't moved, and follows it (LAN to Tailscale) when it does.
     val warmSource = remember(warmStreamUrl, warmWebRtcSignalingUrl) {
         warmStreamUrl?.let { VideoSource.Live(it, webRtc = warmWebRtcSignalingUrl?.let { url -> WebRtcEndpoint(url, audio = false) }) }
     }
-    val source = soundSource.takeIf { wantsSound } ?: warmSource ?: soundSource
+    val source = liveSource ?: warmSource.takeIf { !wantsSound }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
     val toggleSound = {
         wantsSound = true

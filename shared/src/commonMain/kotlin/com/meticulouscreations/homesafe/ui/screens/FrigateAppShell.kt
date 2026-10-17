@@ -240,7 +240,7 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
      * away and stops keeping the content clear of the cutout at the window's sides.
      */
     fun showsFullScreenVideo(tab: TopLevelRoute): Boolean =
-        compactLandscape && tab == TopLevelRoute.Home && homeBackStack.lastOrNull() is CameraDetailRoute
+        compactLandscape && tab == TopLevelRoute.Home && homeBackStack.lastOrNull().let { it is CameraDetailRoute || it is IndoorCameraRoute }
 
     private val reselected = MutableSharedFlow<TopLevelRoute>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
 

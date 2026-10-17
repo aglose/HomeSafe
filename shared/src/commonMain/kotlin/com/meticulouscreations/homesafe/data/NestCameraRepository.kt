@@ -1,5 +1,6 @@
 package com.meticulouscreations.homesafe.data
 
+import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -14,8 +15,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -57,21 +56,25 @@ class NestCameraRepository(
                         .distinctUntilChanged()
                         .onStart {
                             if (identity !in known.value) {
-                                // Right after sign-in the route may still be being chosen.
-                                fetch(identity, connectionRepository.currentServerUrl.filterNotNull().first())
+                                // The connection as it is now, so the identity and the address asked are one server's.
+                                connectionRepository.activeConnection.value?.takeIf { it.serverUrl == identity }?.let { fetch(it) }
                             }
                         }
                 }
             }
 
     override suspend fun refresh() {
-        val identity = connectionRepository.activeConnection.value?.serverUrl ?: return
-        val serverUrl = connectionRepository.currentServerUrl.value ?: return
-        fetch(identity, serverUrl)
+        connectionRepository.activeConnection.value?.let { fetch(it) }
     }
 
-    private suspend fun fetch(identity: String, serverUrl: String) {
-        apiClient.getNestStreamNames(serverUrl)
+    /**
+     * Asks [connection]'s server over its active route. One [ActiveConnection] for both the cache
+     * key and the address: `currentServerUrl` follows the connection a beat behind, so reading
+     * the two apart could file one server's cameras under another, or ask a route just left.
+     */
+    private suspend fun fetch(connection: ActiveConnection) {
+        val identity = connection.serverUrl
+        apiClient.getNestStreamNames(connection.activeUrl)
             .onSuccess { names -> known.update { it + (identity to names.map(::indoorCamera)) } }
             // A first answer that failed is still an answer: the page stops waiting for it.
             .onFailure { error ->

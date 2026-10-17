@@ -40,15 +40,17 @@ class IndoorCameraViewModel(
     fun toggleSound() = _soundOn.update { !it }
 
     /**
-     * [streamName] with its audio track, over whichever route is in use; null while signed out.
-     * The same go2rtc stream as the card's, so switching to it doesn't make go2rtc dial Google again.
+     * [streamName] over whichever route is in use, following it when it changes; null while
+     * signed out. Silent, it is exactly what the card was playing (so the hand-over doesn't
+     * reconnect); [withSound] adds the audio track. Either way it is the same go2rtc stream, so
+     * switching between them doesn't make go2rtc dial Google again.
      */
-    fun soundSource(streamName: String): Flow<VideoSource.Live?> =
+    fun liveSource(streamName: String, withSound: Boolean): Flow<VideoSource.Live?> =
         observeCurrentServerUrlUseCase().map { serverUrl ->
             serverUrl?.let {
                 VideoSource.Live(
-                    url = getLiveStreamUrlUseCase(it, streamName, audioCodecs = liveAudioCodecs),
-                    webRtc = WebRtcEndpoint(getLiveWebRtcSignalingUrlUseCase(it, streamName), audio = true),
+                    url = getLiveStreamUrlUseCase(it, streamName, audioCodecs = if (withSound) liveAudioCodecs else emptyList()),
+                    webRtc = WebRtcEndpoint(getLiveWebRtcSignalingUrlUseCase(it, streamName), audio = withSound),
                 )
             }
         }

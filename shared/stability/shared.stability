@@ -1127,7 +1127,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.HomeFeed(everyoneAway: 
     - cameraCard: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, refreshing: kotlin.Boolean, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(everyoneAway: kotlin.Boolean, cameras: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.CameraTile>?, inView: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.InViewItem>, refreshing: kotlin.Boolean, connectionProblem: com.meticulouscreations.homesafe.domain.model.ConnectionProblem?, placement: com.meticulouscreations.homesafe.domain.model.CameraPlacement?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1136,6 +1136,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.HomeFeedPreviewContent(e
     - inView: RUNTIME (requires runtime check)
     - refreshing: STABLE (primitive type)
     - connectionProblem: STABLE (class with no mutable properties)
+    - placement: STABLE (class with no mutable properties)
 
 @Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.HomeStatusHeader(headline: kotlin.String?, details: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, onRefresh: kotlin.Function0<kotlin.Unit>?): kotlin.Unit

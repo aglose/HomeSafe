@@ -150,6 +150,8 @@ def read_env(path):
 
 def write_env(path, values):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    # The mode above only applies to a new file; an existing one keeps its own until told.
+    os.fchmod(fd, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write("# Google Nest (Device Access) credentials for go2rtc's nest: streams. Append to Frigate's frigate.env.\n")
         for field, key in ENV_KEYS.items():
