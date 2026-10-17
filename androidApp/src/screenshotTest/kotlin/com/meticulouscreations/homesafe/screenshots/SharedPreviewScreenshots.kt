@@ -3,6 +3,7 @@ package com.meticulouscreations.homesafe.screenshots
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.tooling.preview.Preview
 import com.android.tools.screenshot.PreviewTest
+import com.meticulouscreations.homesafe.fitness.ui.FitnessDoorOutlinesPreview
 import com.meticulouscreations.homesafe.ui.screens.AppIconOptionsPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarNarrowPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraPlayerBarPreview
@@ -90,6 +91,11 @@ fun AppIcons() = AppIconOptionsPreview()
 @Preview(name = "Drawer, Fitness")
 @Composable
 fun DrawerFitnessCards() = DrawerFitnessCardsPreview()
+
+@PreviewTest
+@Preview(name = "Fitness, door outlines")
+@Composable
+fun FitnessDoorOutlines() = FitnessDoorOutlinesPreview()
 
 @PreviewTest
 @Preview(name = "Drawer, Finance")
