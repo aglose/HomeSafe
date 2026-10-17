@@ -44,6 +44,8 @@ class PropertyPlanDropped : AutoMigrationSpec
     entities = [
         ConnectionHistoryEntity::class,
         CameraEntity::class,
+        NestCameraEntity::class,
+        CameraLayoutEntity::class,
         SettingsEntity::class,
         AlertZoneRuleEntity::class,
         PlaybackPreferencesEntity::class,
@@ -73,7 +75,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 25,
+    version = 26,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -133,12 +135,17 @@ class PropertyPlanDropped : AutoMigrationSpec
         // 24 -> 25: how the Nest cameras' pictures sit in their boxes
         // (PlaybackPreferencesEntity.nestFit, default "Fit").
         AutoMigration(from = 24, to = 25),
+        // 25 -> 26: the Home page's own camera records — the Nest cameras the server last listed
+        // ([NestCameraEntity]) and each camera's place and orientation ([CameraLayoutEntity]),
+        // both new tables. Nothing already there is touched.
+        AutoMigration(from = 25, to = 26),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun connectionHistoryDao(): ConnectionHistoryDao
     abstract fun cameraDao(): CameraDao
+    abstract fun cameraListDao(): CameraListDao
     abstract fun settingsDao(): SettingsDao
     abstract fun momentsDao(): MomentsDao
     abstract fun weatherDao(): WeatherDao
@@ -159,11 +166,12 @@ expect object AppDatabaseConstructor : RoomDatabaseConstructor<AppDatabase> {
  * `createXDao` call returns a DAO from that same instance, never opening a second connection.
  * That artifact doesn't yet publish a JS/Wasm driver, so the web target falls back to
  * non-persistent in-memory DAOs ([InMemoryConnectionHistoryDao], [InMemoryCameraDao],
- * [InMemorySettingsDao], [InMemoryMomentsDao], [InMemoryWeatherDao], [InMemoryFitnessDao],
+ * [InMemoryCameraListDao], [InMemorySettingsDao], [InMemoryMomentsDao], [InMemoryWeatherDao], [InMemoryFitnessDao],
  * [InMemoryFinanceSavedDao], [InMemoryAtlasDao]).
  */
 expect fun createConnectionHistoryDao(context: PlatformContext): ConnectionHistoryDao
 expect fun createCameraDao(context: PlatformContext): CameraDao
+expect fun createCameraListDao(context: PlatformContext): CameraListDao
 expect fun createSettingsDao(context: PlatformContext): SettingsDao
 expect fun createMomentsDao(context: PlatformContext): MomentsDao
 expect fun createWeatherDao(context: PlatformContext): WeatherDao

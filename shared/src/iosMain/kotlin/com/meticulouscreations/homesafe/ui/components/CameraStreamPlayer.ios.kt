@@ -12,12 +12,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.node.Ref
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitView
 import androidx.lifecycle.compose.LifecycleStartEffect
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.readValue
+import kotlinx.cinterop.useContents
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import platform.AVFoundation.AVLayerVideoGravityResize
@@ -33,6 +35,9 @@ import platform.AVFoundation.mediaType
 import platform.AVFoundation.seekToTime
 import platform.AVFoundation.timeControlStatus
 import platform.AVFoundation.tracks
+import platform.CoreGraphics.CGAffineTransformIdentity
+import platform.CoreGraphics.CGAffineTransformMakeRotation
+import platform.CoreGraphics.CGPointMake
 import platform.CoreGraphics.CGRectMake
 import platform.CoreMedia.CMTimeGetSeconds
 import platform.CoreMedia.CMTimeMakeWithSeconds
@@ -40,6 +45,7 @@ import platform.CoreMedia.kCMTimeZero
 import platform.QuartzCore.CATransaction
 import platform.UIKit.UIColor
 import platform.UIKit.UIView
+import kotlin.math.PI
 
 private const val POLL_INTERVAL_MS = 250L
 
@@ -87,6 +93,7 @@ actual fun CameraStreamPlayer(
     onAudioAvailabilityChanged: (hasAudio: Boolean) -> Unit,
     onStreamStats: ((stats: LiveStreamStats?) -> Unit)?,
     reconnectRequests: Int,
+    turnDegrees: Float,
 ) {
     val holder = remember(playerKey) { HolderLease(playerKey) }.holder
     val player = holder.player
@@ -235,6 +242,10 @@ actual fun CameraStreamPlayer(
         }
     }
 
+    // The picture's turn, for the host view's layout pass (see turnedPictureSize). Compose's layer
+    // transforms don't reach a UIKit view under it, so the layers are sized and rotated here,
+    // natively, and the host clips what spills over; the poster above turns in Compose.
+    val turn = remember(holder) { FloatArray(1) }
     Box(modifier = modifier) {
         UIKitView(
             factory = {
@@ -243,14 +254,34 @@ actual fun CameraStreamPlayer(
                         super.layoutSubviews()
                         CATransaction.begin()
                         CATransaction.setDisableActions(true)
-                        playerLayer.frame = bounds
-                        webRtcContainer.setFrame(bounds)
+                        bounds.useContents {
+                            val (width, height) = turnedPictureSize(size.width.toFloat(), size.height.toFloat(), turn[0])
+                            val picture = CGRectMake(0.0, 0.0, width.toDouble(), height.toDouble())
+                            val centre = CGPointMake(size.width / 2, size.height / 2)
+                            val rotation = CGAffineTransformMakeRotation(turn[0] * PI / 180)
+                            // Bounds and centre rather than frame: a frame means nothing under a rotation.
+                            playerLayer.setAffineTransform(CGAffineTransformIdentity.readValue())
+                            playerLayer.bounds = picture
+                            playerLayer.position = centre
+                            playerLayer.setAffineTransform(rotation)
+                            webRtcContainer.setTransform(CGAffineTransformIdentity.readValue())
+                            webRtcContainer.setBounds(picture)
+                            webRtcContainer.setCenter(centre)
+                            webRtcContainer.setTransform(rotation)
+                        }
                         CATransaction.commit()
                     }
                 }.apply {
                     backgroundColor = UIColor.clearColor
+                    clipsToBounds = true
                     layer.addSublayer(playerLayer)
                     addSubview(webRtcContainer)
+                }
+            },
+            update = { view ->
+                if (turn[0] != turnDegrees) {
+                    turn[0] = turnDegrees
+                    view.setNeedsLayout()
                 }
             },
             modifier = Modifier.fillMaxSize(),
@@ -261,7 +292,9 @@ actual fun CameraStreamPlayer(
 
         val posterUrl = source.posterUrl
         if (posterVisible && posterUrl != null) {
-            VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize())
+            Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
+                VideoPosterLayer(posterUrl = posterUrl, refresh = source is VideoSource.Live, modifier = Modifier.fillMaxSize().turned(turnDegrees))
+            }
         }
     }
 }

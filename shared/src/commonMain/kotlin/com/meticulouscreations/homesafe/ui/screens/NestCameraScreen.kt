@@ -62,6 +62,7 @@ import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
 import org.jetbrains.compose.resources.stringResource
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 /**
  * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
@@ -107,7 +108,9 @@ fun NestCameraScreen(
     }
     val source = liveSource ?: warmSource.takeIf { !wantsSound }
     val request = remember(source, soundOn) { source?.let { PlayerRequest(it, muted = !soundOn) } }
-    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }
+    val turnDegrees by remember(streamName) { viewModel.turnDegrees(streamName) }.collectAsStateWithLifecycle(0f)
+    // The picture's shape as it is shown: stood on its side by a quarter turn, its inverse.
+    val measuredAspect = source?.let { MeasuredVideoShapes[it.url] }?.let { if ((turnDegrees / 90f).roundToInt() % 2 != 0) 1f / it else it }
     val toggleSound = {
         wantsSound = true
         viewModel.toggleSound()
@@ -139,13 +142,14 @@ fun NestCameraScreen(
             }.background(Color.Black),
         ) {
             if (request != null) {
-                ShapedVideo(streamUrl = request.source.url, fit = fit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                ShapedVideo(streamUrl = request.source.url, fit = fit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { videoModifier, onStreamStats ->
                     CameraStreamPlayer(
                         request = request,
                         modifier = videoModifier,
                         playerKey = streamName,
                         onStreamStatusChanged = { status = it },
                         onStreamStats = onStreamStats,
+                        turnDegrees = turnDegrees,
                     )
                 }
             } else {

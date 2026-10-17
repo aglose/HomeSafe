@@ -26,6 +26,9 @@ actual fun createConnectionHistoryDao(context: PlatformContext): ConnectionHisto
 actual fun createCameraDao(context: PlatformContext): CameraDao =
     appDatabase.cameraDao()
 
+actual fun createCameraListDao(context: PlatformContext): CameraListDao =
+    appDatabase.cameraListDao()
+
 actual fun createSettingsDao(context: PlatformContext): SettingsDao =
     appDatabase.settingsDao()
 

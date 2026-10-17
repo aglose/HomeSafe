@@ -14,6 +14,17 @@
     <!-- The Home page's switch between the Frigate cameras outside and the Nest cameras inside. -->
     <string name="home_placement_outdoor">Outdoor</string>
     <string name="home_placement_indoor">Indoor</string>
+    <!-- Arrange mode: the cameras dragged into order and turned the right way up. -->
+    <string name="home_arrange">Arrange</string>
+    <string name="home_arrange_done">Done</string>
+    <string name="home_arrange_hint">Hold a camera to drag it. Turn or tilt its picture with the controls along its bottom.</string>
+    <string name="camera_move_earlier">Move earlier</string>
+    <string name="camera_move_later">Move later</string>
+    <string name="camera_turn_left">Turn left</string>
+    <string name="camera_turn_right">Turn right</string>
+    <string name="camera_tilt">Tilt</string>
+    <!-- The tilt in whole degrees, signed: "-12°", "0°", "7°". -->
+    <string name="camera_tilt_value">%1$d°</string>
     <string name="home_away_banner">Away mode · nobody home · alerts escalated</string>
     <string name="home_away_back">I'm back</string>
     <!-- The notice at the top of Home while the app is signed in but can't reach the server. -->

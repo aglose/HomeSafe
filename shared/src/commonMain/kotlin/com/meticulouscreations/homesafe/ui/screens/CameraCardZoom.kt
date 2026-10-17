@@ -329,7 +329,8 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             ) {
                 val streamUrl = tile.streamUrl
                 if (streamUrl != null) {
-                    ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                    val turnDegrees = tile.orientation.degrees
+                    ShapedVideo(streamUrl = streamUrl, fit = tile.videoFit, modifier = Modifier.fillMaxSize(), turnDegrees = turnDegrees) { videoModifier, onStreamStats ->
                         CameraStreamPlayer(
                             streamUrl = streamUrl,
                             modifier = videoModifier,
@@ -337,6 +338,7 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
                             webRtcSignalingUrl = tile.webRtcSignalingUrl,
                             playerKey = tile.camera.name,
                             onStreamStats = onStreamStats,
+                            turnDegrees = turnDegrees,
                         )
                     }
                 } else {

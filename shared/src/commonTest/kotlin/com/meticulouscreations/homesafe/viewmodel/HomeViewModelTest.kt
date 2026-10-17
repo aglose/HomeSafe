@@ -1,12 +1,16 @@
 package com.meticulouscreations.homesafe.viewmodel
 
+import com.meticulouscreations.homesafe.data.CameraLayoutRepositoryImpl
+import com.meticulouscreations.homesafe.data.InMemoryCameraListDao
 import com.meticulouscreations.homesafe.data.InMemorySettingsDao
 import com.meticulouscreations.homesafe.data.PlaybackPreferencesRepositoryImpl
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.Camera
+import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
+import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HomeLocation
 import com.meticulouscreations.homesafe.domain.model.HouseholdPresence
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
@@ -28,6 +32,7 @@ import com.meticulouscreations.homesafe.domain.usecase.GetCameraSnapshotUrlUseCa
 import com.meticulouscreations.homesafe.domain.usecase.GetEventThumbnailUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
@@ -38,7 +43,9 @@ import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SaveCameraOrderUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetAwayUseCase
+import com.meticulouscreations.homesafe.domain.usecase.SetCameraOrientationUseCase
 import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
@@ -50,6 +57,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -101,6 +109,7 @@ class HomeViewModelTest {
         override suspend fun refresh() {
             refreshes++
         }
+        override suspend fun refresh(connection: ActiveConnection) = fail("unused")
     }
 
     /** URLs are built by string shape only — the real repository's format is its own test's job. */
@@ -137,7 +146,7 @@ class HomeViewModelTest {
 
     private class FakeConnection(url: String?) : ConnectionRepository {
         override val currentServerUrl = MutableStateFlow(url)
-        override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(null)
+        override val activeConnection: StateFlow<ActiveConnection?> = MutableStateFlow(url?.let { ActiveConnection(it, localUrl = null, route = ConnectionRoute.TAILSCALE) })
         override val mostRecentConnection: Flow<ConnectionRecord?> = flowOf(null)
         override val biometricLoginAvailable = false
         override val biometricDisplayName = Res.string.biometric_name_generic
@@ -193,9 +202,10 @@ class HomeViewModelTest {
     ) {
         val cameraRepo = FakeCameras(cameras)
         val playbackPreferences = PlaybackPreferencesRepositoryImpl(InMemorySettingsDao())
+        val connection = FakeConnection(serverUrl)
+        val layouts = CameraLayoutRepositoryImpl(InMemoryCameraListDao(), connection)
         val indoorRepo = FakeNestCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
-        val connection = FakeConnection(serverUrl)
         val moments = FakeMoments(inView)
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
@@ -213,6 +223,9 @@ class HomeViewModelTest {
             refreshHouseholdPresenceUseCase = RefreshHouseholdPresenceUseCase(presenceRepo),
             refreshStationaryObjectsUseCase = RefreshStationaryObjectsUseCase(moments),
             refreshNestCamerasUseCase = RefreshNestCamerasUseCase(indoorRepo),
+            observeCameraLayoutsUseCase = ObserveCameraLayoutsUseCase(layouts),
+            saveCameraOrderUseCase = SaveCameraOrderUseCase(layouts),
+            setCameraOrientationUseCase = SetCameraOrientationUseCase(layouts),
             clock = object : Clock {
                 // 18:00 UTC, a couple of hours after [tesla] arrived and the same day wherever the
                 // test runs, so the card's arrival never reads "yesterday".
@@ -330,6 +343,50 @@ class HomeViewModelTest {
     fun theOutdoorListDoesNotWaitForTheNestCameras() = runTest {
         val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), indoorCameras = null)
         assertEquals(listOf("front_door"), tiles(h.viewModel).map { it.camera.name })
+    }
+
+    private val three = listOf("front_door", "backyard", "driveway").map { Camera(name = it, enabled = true) }
+
+    @Test
+    fun theSavedOrderArrangesTheListAndUnarrangedCamerasFollow() = runTest {
+        val h = Harness(cameras = three)
+        h.layouts.saveOrder(listOf("driveway", "front_door"))
+        assertEquals(listOf("driveway", "front_door", "backyard"), tiles(h.viewModel).map { it.camera.name })
+    }
+
+    @Test
+    fun aDragMovesTheCardAtOnceAndTheDropSavesTheOrder() = runTest {
+        val h = Harness(cameras = three)
+        tiles(h.viewModel)
+        h.viewModel.startArranging()
+
+        h.viewModel.moveCamera(CameraPlacement.Outdoor, from = "driveway", to = "front_door")
+        runCurrent()
+        assertEquals(listOf("driveway", "front_door", "backyard"), h.viewModel.cameras.value?.map { it.camera.name }, "the card moves under the finger")
+
+        h.viewModel.saveOrder(CameraPlacement.Outdoor)
+        advanceUntilIdle()
+        assertEquals(mapOf("driveway" to 0, "front_door" to 1, "backyard" to 2), h.layouts.observeLayouts().first().mapValues { it.value.position })
+        assertEquals(listOf("driveway", "front_door", "backyard"), h.viewModel.cameras.value?.map { it.camera.name }, "and stays there once read back")
+    }
+
+    @Test
+    fun aQuarterTurnIsShownAndSavedAndTheTiltIsSavedOnlyWhenLetGo() = runTest {
+        val h = Harness(cameras = three)
+        tiles(h.viewModel)
+
+        h.viewModel.turnCamera("backyard", clockwise = false)
+        advanceUntilIdle()
+        assertEquals(CameraOrientation(quarterTurns = 3), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation)
+
+        h.viewModel.tiltCamera("backyard", 12f)
+        advanceUntilIdle()
+        assertEquals(CameraOrientation(3, 12f), h.viewModel.cameras.value?.first { it.camera.name == "backyard" }?.orientation, "the picture follows the slider")
+        assertEquals(CameraOrientation(3, 0f), h.layouts.observeLayouts().first()["backyard"]?.orientation, "but nothing is saved mid-drag")
+
+        h.viewModel.saveTilt("backyard")
+        advanceUntilIdle()
+        assertEquals(CameraOrientation(3, 12f), h.layouts.observeLayouts().first()["backyard"]?.orientation)
     }
 
     @Test

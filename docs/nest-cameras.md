@@ -31,7 +31,33 @@ no detections: the Nest cameras are not Frigate cameras.
   two (shown only for a camera that isn't 16:9), and the choice is saved for every Nest camera
   (`PlaybackPreferences.nestFit`, schema 25).
 
-Code: `NestCameraRepositoryImpl` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
+- **Ready at launch**: the Nest cameras the server last listed are kept on the device
+  (`NestCameraEntity`, schema 26), so the Indoor switch and cards are there the moment Home opens.
+  As soon as the launch knows which server it is landing on, before sign-in finishes,
+  `LiveStreamPrefetcher` asks go2rtc for the list again and starts up to four Nest streams
+  alongside the outdoor ones. A prefetched player is held for 15 s, then idles out, so switching
+  to Indoor within about a minute of opening the app finds video already flowing. This wakes
+  each camera through Google on every launch, and most Nest cameras show their light while watched.
+
+## Arranging the cameras
+
+**Arrange** above the camera list (beside the Outdoor | Indoor switch) puts Home into Arrange mode:
+
+- **Order**: hold a card and drag it (the `sh.calvin.reorderable` library on the lazy grid). Each
+  list has its own order. A screen reader gets "Move earlier" and "Move later" actions on each
+  card instead. Saved on every drop, by camera name, per server (`CameraLayoutEntity.position`).
+- **Orientation**: each card shows a quarter turn either way and a fine tilt slider (±45°) along
+  its bottom, and the live picture turns as they move. Turns save at once; the tilt saves when the
+  slider is let go (`CameraLayoutEntity.quarterTurns` / `tiltDegrees`). A tilted picture is drawn
+  just large enough to cover its box (`turnedPictureSize`), so no corner shows. On its side, a
+  picture shows at the inverse shape, with bars. The turn applies wherever the camera's video
+  plays: cards, quick look, the Nest page, and a Frigate camera's page (live, recordings and the
+  scrub preview). Moments thumbnails and clips are not turned.
+- On Android the players' TextureViews turn with Compose (`Modifier.turned`). On iOS the player
+  turns its AVPlayer and WebRTC layers natively in `layoutSubviews`, from the same size, because
+  Compose can't transform a UIKit view.
+
+Code: `NestCameraRepositoryImpl` and `CameraLayoutRepositoryImpl` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
 `OUTDOOR_STREAM_PREFIX`, `HomeViewModel.cameras` / `indoorCameras` / `placement`,
 `CameraPlacementSwitch`, `NestCameraScreen`.
 

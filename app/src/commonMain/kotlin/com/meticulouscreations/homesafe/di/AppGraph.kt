@@ -7,6 +7,7 @@ import com.meticulouscreations.homesafe.appicon.createAppIconSwitcher
 import com.meticulouscreations.homesafe.data.AtlasDao
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
+import com.meticulouscreations.homesafe.data.CameraListDao
 import com.meticulouscreations.homesafe.data.ConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.DetectionAlertService
 import com.meticulouscreations.homesafe.data.DeviceRegistrar
@@ -22,6 +23,7 @@ import com.meticulouscreations.homesafe.data.createAlertNotifier
 import com.meticulouscreations.homesafe.data.createAtlasDao
 import com.meticulouscreations.homesafe.data.createBiometricCredentialStore
 import com.meticulouscreations.homesafe.data.createCameraDao
+import com.meticulouscreations.homesafe.data.createCameraListDao
 import com.meticulouscreations.homesafe.data.createClipDownloader
 import com.meticulouscreations.homesafe.data.createConnectionHistoryDao
 import com.meticulouscreations.homesafe.data.createDeviceInfo
@@ -176,6 +178,11 @@ interface AppGraph :
     @Provides
     fun provideCameraDao(platformContext: PlatformContext): CameraDao =
         createCameraDao(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideCameraListDao(platformContext: PlatformContext): CameraListDao =
+        createCameraListDao(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

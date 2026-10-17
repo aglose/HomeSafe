@@ -1,10 +1,12 @@
 package com.meticulouscreations.homesafe.data
 
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
+import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.ConnectionRecord
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
+import com.meticulouscreations.homesafe.domain.repository.NestCameraRepository
 import com.meticulouscreations.homesafe.ui.components.LivePlayerPrefetch
 import com.meticulouscreations.homesafe.ui.components.LivePrefetch
 import com.meticulouscreations.homesafe.ui.components.VideoSource
@@ -13,6 +15,7 @@ import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_generic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -59,11 +62,23 @@ class LiveStreamPrefetcherTest {
         }
     }
 
+    /** Records which servers the launch asked for their Nest cameras. */
+    private class RecordingNestCameras : NestCameraRepository {
+        val askedFor = mutableListOf<ActiveConnection>()
+        override fun observeNestCameras(): Flow<List<Camera>?> = fail("unused")
+        override suspend fun refresh() = fail("unused")
+        override suspend fun refresh(connection: ActiveConnection) {
+            askedFor += connection
+        }
+    }
+
     private inner class Harness(scope: TestScope) {
         val connection = FakeConnection()
         val cameraDao = InMemoryCameraDao()
+        val cameraListDao = InMemoryCameraListDao()
+        val nestCameras = RecordingNestCameras()
         val players = RecordingPrefetch()
-        val prefetcher = LiveStreamPrefetcher(connection, cameraDao, mediaUrls, players, scope.backgroundScope).also { it.start() }
+        val prefetcher = LiveStreamPrefetcher(connection, cameraDao, cameraListDao, nestCameras, mediaUrls, players, scope.backgroundScope).also { it.start() }
 
         suspend fun cache(server: String, vararg cameras: CameraEntity) =
             cameraDao.insertAll(cameras.map { it.copy(serverUrl = server) })
@@ -101,6 +116,28 @@ class LiveStreamPrefetcherTest {
     }
 
     @Test
+    fun startsTheNestCamerasKeptFromLastTimeAfterFrigatesAndAsksForTheListAgain() = runTest {
+        val h = Harness(this)
+        h.cache(serverUrl, camera("driveway"))
+        h.cameraListDao.insertNestCameras(listOf("living_room", "outdoor_doorbell").map { NestCameraEntity(serverUrl, it) })
+        val expected = ActiveConnection(serverUrl, localUrl, ConnectionRoute.LOCAL_NETWORK)
+
+        h.connection.expectedConnection.value = expected
+        settle()
+
+        // A Nest card plays its own stream under the stream's name, silent, as HomeViewModel.tile builds it.
+        fun nestCard(name: String) = LivePrefetch(
+            playerKey = name,
+            source = VideoSource.Live(
+                url = mediaUrls.liveStreamUrl(localUrl, name),
+                webRtc = WebRtcEndpoint(mediaUrls.liveWebRtcSignalingUrl(localUrl, name), audio = false),
+            ),
+        )
+        assertEquals(listOf(listOf(gridCard(localUrl, "driveway"), nestCard("living_room"), nestCard("outdoor_doorbell"))), h.players.prefetched)
+        assertEquals(listOf(expected), h.nestCameras.askedFor, "so a Nest camera added since last time is there too")
+    }
+
+    @Test
     fun findsCamerasFiledUnderTheOtherScheme() = runTest {
         val h = Harness(this)
         // The saved login says https; the server answered on http, and filed its cameras there.
@@ -120,7 +157,7 @@ class LiveStreamPrefetcherTest {
         cameraDao.insertAll(listOf(camera("driveway"), camera("porch"), camera("attic", enabled = false)).map { it.copy(serverUrl = serverUrl) })
         connection.mostRecentConnection.value = ConnectionRecord(serverUrl, localUrl, connectedAtEpochMillis = 0)
 
-        LiveStreamPrefetcher(connection, cameraDao, mediaUrls, players, backgroundScope).start()
+        LiveStreamPrefetcher(connection, cameraDao, InMemoryCameraListDao(), RecordingNestCameras(), mediaUrls, players, backgroundScope).start()
         settle()
 
         assertEquals(listOf(2), players.prepared)

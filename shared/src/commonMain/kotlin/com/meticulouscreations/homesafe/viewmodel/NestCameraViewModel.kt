@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveStreamUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdatePlaybackPreferencesUseCase
@@ -40,7 +41,11 @@ class NestCameraViewModel(
     private val getLiveWebRtcSignalingUrlUseCase: GetLiveWebRtcSignalingUrlUseCase,
     private val observePlaybackPreferencesUseCase: ObservePlaybackPreferencesUseCase,
     private val updatePlaybackPreferencesUseCase: UpdatePlaybackPreferencesUseCase,
+    private val observeCameraLayoutsUseCase: ObserveCameraLayoutsUseCase,
 ) : ViewModel() {
+
+    /** Which way up [streamName]'s picture is shown, in degrees clockwise: as turned in the Home page's Arrange mode. */
+    fun turnDegrees(streamName: String): Flow<Float> = observeCameraLayoutsUseCase().map { it[streamName]?.orientation?.degrees ?: 0f }
 
     /** How the Nest cameras' pictures sit in their boxes: saved for every Nest camera, cards included. */
     val fit: StateFlow<VideoFit> = observePlaybackPreferencesUseCase()
