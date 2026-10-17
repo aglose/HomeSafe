@@ -100,15 +100,6 @@ interface MomentsRepository {
     fun nameCar(eventId: String, subLabel: String)
 
     /**
-     * The newest detection the device knows of on any camera, placed the way [observeMoments]
-     * places it; null when it knows of none. Unlike the feed it ignores where the Moments tab's
-     * window was left, so the home page can say what last happened whatever the feed is narrowed
-     * to. It reads what the polls already running have fetched rather than asking the server
-     * itself, so it is as fresh as the freshest of them.
-     */
-    fun observeLatestMoment(): Flow<MomentEvent?>
-
-    /**
      * Re-reads the feed's newest page (and the zones) now, rather than at the next poll: the
      * Moments tab's pull to refresh. Returns once that answer has landed or failed; a failure is
      * reported through [observeError] like any poll's, and the feed keeps what it has.

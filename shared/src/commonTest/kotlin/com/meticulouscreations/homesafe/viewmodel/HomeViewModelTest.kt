@@ -12,7 +12,6 @@ import com.meticulouscreations.homesafe.domain.model.PresenceSource
 import com.meticulouscreations.homesafe.domain.model.RecordingStream
 import com.meticulouscreations.homesafe.domain.model.SavedCredentials
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.labelName
 import com.meticulouscreations.homesafe.domain.platform.PushTokenProvider
 import com.meticulouscreations.homesafe.domain.repository.CameraRepository
 import com.meticulouscreations.homesafe.domain.repository.ConnectionRepository
@@ -28,7 +27,6 @@ import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveIndoorCamerasUseCase
-import com.meticulouscreations.homesafe.domain.usecase.ObserveLatestMomentUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
@@ -39,11 +37,6 @@ import com.meticulouscreations.homesafe.text.UiText
 import com.meticulouscreations.homesafe.text.asUiText
 import homesafe.shared.generated.resources.Res
 import homesafe.shared.generated.resources.biometric_name_generic
-import homesafe.shared.generated.resources.common_dot_separator
-import homesafe.shared.generated.resources.home_cameras_on
-import homesafe.shared.generated.resources.home_cameras_some_on
-import homesafe.shared.generated.resources.home_status_minutes_ago
-import homesafe.shared.generated.resources.home_status_subject_at_camera
 import homesafe.shared.generated.resources.moments_in_view_since
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +44,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -165,15 +157,14 @@ class HomeViewModelTest {
         override suspend fun token(): String? = "test-token"
     }
 
-    /** Only the in-view strip and the latest moment are read here; the feed's own methods belong to its view model's test. */
-    private class FakeMoments(private val inView: List<StationaryObject>, private val latest: Flow<MomentEvent?>) : MomentsRepository {
+    /** Only the in-view strip is read here; the feed's own methods belong to its view model's test. */
+    private class FakeMoments(private val inView: List<StationaryObject>) : MomentsRepository {
         var stationaryRefreshes = 0
         override fun observeStationaryObjects(): Flow<List<StationaryObject>> = MutableStateFlow(inView)
         override fun refreshStationaryObjects() {
             stationaryRefreshes++
         }
         override fun nameCar(eventId: String, subLabel: String) = Unit
-        override fun observeLatestMoment(): Flow<MomentEvent?> = latest
         override fun observeMoments(): Flow<List<MomentEvent>> = fail("unused")
         override fun observeError(): Flow<UiText?> = fail("unused")
         override fun observePaging(): Flow<MomentsPaging> = fail("unused")
@@ -193,13 +184,12 @@ class HomeViewModelTest {
         serverUrl: String? = "http://frigate.test:8971",
         everyoneAway: Boolean = false,
         inView: List<StationaryObject> = emptyList(),
-        latestMoment: Flow<MomentEvent?> = flowOf(null),
     ) {
         val cameraRepo = FakeCameras(cameras)
         val indoorRepo = FakeIndoorCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
         val connection = FakeConnection(serverUrl)
-        val moments = FakeMoments(inView, latestMoment)
+        val moments = FakeMoments(inView)
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeIndoorCamerasUseCase = ObserveIndoorCamerasUseCase(indoorRepo),
@@ -210,7 +200,6 @@ class HomeViewModelTest {
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
             observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(moments),
-            observeLatestMomentUseCase = ObserveLatestMomentUseCase(moments),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
             reconnectToServerUseCase = ReconnectToServerUseCase(connection),
             refreshHouseholdPresenceUseCase = RefreshHouseholdPresenceUseCase(presenceRepo),
@@ -383,50 +372,6 @@ class HomeViewModelTest {
         assertNull(h.viewModel.inView.value.single().thumbnailUrl, "no server to fetch the crop from")
     }
 
-    /**
-     * `status` recomputes on a timer so "3 min ago" keeps counting, which is a delay loop that
-     * never goes idle — so these tests run what is due now rather than advancing until idle.
-     */
-    @Test
-    fun aRecentDetectionHeadsTheSummary() = runTest {
-        val h = Harness(
-            cameras = listOf(Camera(name = "front_door", enabled = true), Camera(name = "garage", enabled = false)),
-            // Three minutes before the harness clock's 18:00 UTC.
-            latestMoment = flowOf(
-                MomentEvent(
-                    id = "e1", cameraName = "hikvision_2", label = "person", subLabel = null,
-                    startEpochSeconds = 1_789_408_560.0, endEpochSeconds = 1_789_408_620.0,
-                    topScore = 0.9, hasClip = true, hasSnapshot = true,
-                ),
-            ),
-        )
-        activate(h.viewModel.status)
-        runCurrent()
-
-        assertEquals(UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard"), h.viewModel.status.value.headline)
-        assertEquals(
-            UiText.Joined(
-                listOf(UiText.plural(Res.plurals.home_status_minutes_ago, 3), UiText.plural(Res.plurals.home_cameras_some_on, 2, 1, 2)),
-                separator = UiText.of(Res.string.common_dot_separator),
-            ),
-            h.viewModel.status.value.details,
-            "3 min ago · 1 of 2 cameras on: no presence part until the relay names a phone",
-        )
-    }
-
-    @Test
-    fun theSummaryHoldsItsHeadlineUntilTheLatestMomentHasBeenRead() = runTest {
-        val h = Harness(cameras = listOf(Camera(name = "front_door", enabled = true)), latestMoment = emptyFlow())
-        activate(h.viewModel.status)
-        runCurrent()
-
-        assertNull(h.viewModel.status.value.headline, "not read yet, which is not the same as quiet")
-        assertEquals(
-            UiText.Joined(listOf(UiText.plural(Res.plurals.home_cameras_on, 1)), separator = UiText.of(Res.string.common_dot_separator)),
-            h.viewModel.status.value.details,
-        )
-    }
-
     @Test
     fun markBackClearsAwayMode() = runTest {
         val h = Harness(everyoneAway = true)
@@ -448,7 +393,7 @@ class HomeViewModelTest {
 
         assertEquals(1, h.connection.reconnects, "route, session and the camera list")
         assertEquals(1, h.presenceRepo.refreshes, "who is home")
-        assertEquals(1, h.moments.stationaryRefreshes, "the cars in view, and with them the latest moment")
+        assertEquals(1, h.moments.stationaryRefreshes, "the cars in view")
         assertEquals(1, h.viewModel.reconnectRequests.value, "and every card's player is asked to reconnect")
     }
 

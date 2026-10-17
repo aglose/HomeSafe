@@ -16,23 +16,13 @@ import com.meticulouscreations.homesafe.domain.model.Camera
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.ConnectionProblem
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
-import com.meticulouscreations.homesafe.domain.model.labelName
 import com.meticulouscreations.homesafe.domain.model.present
-import com.meticulouscreations.homesafe.text.UiText
-import com.meticulouscreations.homesafe.text.resolve
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
 import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
 import com.meticulouscreations.homesafe.ui.theme.FrigateTheme
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import com.meticulouscreations.homesafe.viewmodel.InViewItem
-import homesafe.shared.generated.resources.Res
-import homesafe.shared.generated.resources.common_dot_separator
-import homesafe.shared.generated.resources.home_cameras_on
-import homesafe.shared.generated.resources.home_presence_everyone_home
-import homesafe.shared.generated.resources.home_presence_house_empty
-import homesafe.shared.generated.resources.home_status_minutes_ago
-import homesafe.shared.generated.resources.home_status_subject_at_camera
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 
@@ -133,8 +123,6 @@ private fun HomeFeedPreviewContent(
                 everyoneAway = everyoneAway,
                 cameras = cameras,
                 onAwayBack = {},
-                statusHeadline = if (cameras == null) null else UiText.of(Res.string.home_status_subject_at_camera, labelName("person"), "Backyard").resolve(),
-                statusDetails = cameras?.let { previewStatusDetails(camerasOn = it.count { tile -> tile.camera.enabled }, everyoneAway = everyoneAway) },
                 inView = inView,
                 refreshing = refreshing,
                 // Only the refreshing preview is pullable, so the others draw exactly as their reference screenshots.
@@ -153,17 +141,6 @@ private fun HomeFeedPreviewContent(
         }
     }
 }
-
-/** The details line as [com.meticulouscreations.homesafe.domain.model.homeStatus] words it, three minutes after a detection. */
-@Composable
-private fun previewStatusDetails(camerasOn: Int, everyoneAway: Boolean): String = UiText.Joined(
-    parts = listOf(
-        UiText.plural(Res.plurals.home_status_minutes_ago, 3),
-        UiText.plural(Res.plurals.home_cameras_on, camerasOn),
-        UiText.of(if (everyoneAway) Res.string.home_presence_house_empty else Res.string.home_presence_everyone_home),
-    ),
-    separator = UiText.of(Res.string.common_dot_separator),
-).resolve()
 
 /** A Pixel-sized phone in portrait, in dp. */
 private const val PHONE_WIDTH_DP = 412

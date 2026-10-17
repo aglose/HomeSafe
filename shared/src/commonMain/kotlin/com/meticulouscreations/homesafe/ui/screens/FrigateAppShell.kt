@@ -491,7 +491,7 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
 private fun TabContent(tab: TopLevelRoute, nav: ShellNavigation, cardZoom: CameraCardZoomState) {
     val scrollToTop = remember(nav, tab) { nav.reselections(tab) }
     when (tab) {
-        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, scrollToTop, onOpenMoments = { nav.selectTab(TopLevelRoute.Moments) })
+        TopLevelRoute.Home -> HomeTabNav(nav.homeBackStack, cardZoom, scrollToTop)
 
         TopLevelRoute.Moments -> MomentsTabContent(onOpenFullScreen = nav::openDetection, scrollToTopRequests = scrollToTop)
 
@@ -839,12 +839,11 @@ private data class ClipEditorRoute(
  * which is why they are attached to the detail entry rather than to the display.
  *
  * [backStack] is owned by [ShellNavigation] (see there for why) and starts at [CameraListRoute].
- * [onOpenMoments] switches to the Moments tab, for the summary at the top of the camera list;
  * [scrollToTop] are the bottom nav's re-taps on Home while the list is up.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
-private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: ScrollToTopRequests, onOpenMoments: () -> Unit) {
+private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZoomState, scrollToTop: ScrollToTopRequests) {
     SharedTransitionLayout {
         NavDisplay(
             backStack = backStack,
@@ -858,7 +857,6 @@ private fun HomeTabNav(backStack: SnapshotStateList<Any>, cardZoom: CameraCardZo
                         sharedTransitionScope = this@SharedTransitionLayout,
                         zoomState = cardZoom,
                         onCameraClick = { tile -> backStack.add(cameraRoute(tile)) },
-                        onOpenMoments = onOpenMoments,
                         onTagCars = { cameraName -> backStack.add(CarTaggingRoute(cameraName)) },
                         scrollToTopRequests = scrollToTop,
                     )

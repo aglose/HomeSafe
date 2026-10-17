@@ -5,38 +5,7 @@
   See AGENTS.md, "Strings and localization".
 -->
 <resources>
-    <!-- The two summary lines at the top of the home page. -->
-    <string name="home_status_all_quiet">All quiet</string>
-    <!-- %1$s is a time, e.g. "6:56 PM" or "10:12 PM yesterday". -->
-    <string name="home_status_all_quiet_since">All quiet since %1$s</string>
-    <!-- %1$s is what was seen ("Person", "Sarah's Tesla"), %2$s the camera's name ("Backyard"). -->
-    <string name="home_status_subject_at_camera">%1$s at %2$s</string>
-    <!-- Leads the details line while the detection is still going on. -->
-    <string name="home_status_now">Now</string>
-    <string name="home_status_just_now">Just now</string>
-    <plurals name="home_status_minutes_ago">
-        <item quantity="one">%1$d min ago</item>
-        <item quantity="other">%1$d min ago</item>
-    </plurals>
-    <plurals name="home_cameras_on">
-        <item quantity="one">%1$d camera on</item>
-        <item quantity="other">%1$d cameras on</item>
-    </plurals>
-    <!-- %1$d cameras switched on out of %2$d (the plural follows %2$d). -->
-    <plurals name="home_cameras_some_on">
-        <item quantity="one">%1$d of %2$d camera on</item>
-        <item quantity="other">%1$d of %2$d cameras on</item>
-    </plurals>
-    <string name="home_presence_house_empty">House empty</string>
-    <string name="home_presence_you_are_away">You're away</string>
-    <string name="home_presence_everyone_home">Everyone home</string>
-    <!-- %1$d phones at home out of %2$d. -->
-    <string name="home_presence_some_home">%1$d of %2$d home</string>
-    <!-- Accessibility action on the summary: it opens the Moments feed. -->
-    <string name="home_status_refresh_action">Refresh home</string>
-    <string name="home_status_open_moments">Open moments</string>
-
-    <!-- The strip of cars parked in view, under the summary. -->
+    <!-- The strip of cars parked in view, at the top of the home page. -->
     <string name="home_in_view_title">In view now</string>
     <!-- Accessibility action on the strip's caption. -->
     <string name="home_in_view_check">Check and tag the cars in view</string>
