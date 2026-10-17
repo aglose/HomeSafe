@@ -73,7 +73,7 @@ class PropertyPlanDropped : AutoMigrationSpec
         AtlasYearEntity::class,
         AtlasStateEntity::class,
     ],
-    version = 23,
+    version = 24,
     autoMigrations = [
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = SettingsPlaceholdersDropped::class),
@@ -127,6 +127,9 @@ class PropertyPlanDropped : AutoMigrationSpec
         // moves, paths, places, and which years of it this device holds, all new tables
         // (AtlasEntities.kt). Nothing already there is touched.
         AutoMigration(from = 22, to = 23),
+        // 23 -> 24: what the drawer's Finance card shows (FinancePreferencesEntity.drawerItems),
+        // defaulting to the S&P 500 and net worth it always showed.
+        AutoMigration(from = 23, to = 24),
     ],
 )
 @ConstructedBy(AppDatabaseConstructor::class)

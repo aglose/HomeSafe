@@ -4,6 +4,7 @@ import com.meticulouscreations.homesafe.finance.data.InMemoryFinanceTipLedger
 import com.meticulouscreations.homesafe.finance.data.PersonalFinanceParser
 import com.meticulouscreations.homesafe.finance.domain.ChartRange
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.finance.domain.FinanceRepository
 import com.meticulouscreations.homesafe.finance.domain.Indicator
@@ -65,6 +66,14 @@ class FinanceViewModelTest {
 
         override suspend fun setEconomyTone(tone: EconomyTone) {
             this.tone.value = tone
+        }
+
+        val drawer = MutableStateFlow(FinanceDrawerItem.DEFAULT)
+
+        override fun observeDrawerItems(): Flow<List<FinanceDrawerItem>> = drawer
+
+        override suspend fun setDrawerItems(items: List<FinanceDrawerItem>) {
+            drawer.value = FinanceDrawerItem.normalize(items)
         }
     }
 

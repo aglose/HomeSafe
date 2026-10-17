@@ -94,9 +94,10 @@ data class HealthUiState(
  * Android, where the Google Health app puts what a Fitbit band records.
  *
  * Scoped to the activity like [FitnessViewModel], which it sits beside. Nothing is read until
- * [setActive] says the fitness app is on screen, and then again each time it comes back after
- * [FRESH_SECONDS]: the band syncs through the phone every quarter of an hour or so, and there
- * is no telling when from here. Nothing read is kept: it is the store's, and is asked for again.
+ * [setActive] says the fitness app (or the drawer, whose card shows today's readiness) is on
+ * screen, and then again each time it comes back after [FRESH_SECONDS]: the band syncs through
+ * the phone every quarter of an hour or so, and there is no telling when from here. Nothing read
+ * is kept: it is the store's, and is asked for again.
  */
 @Inject
 @ViewModelKey
@@ -126,7 +127,7 @@ class HealthViewModel(
     /** The open run's track as it was read, kept so the zones can be drawn again when their numbers change. */
     private var openTrack: OpenTrack? = null
 
-    /** The fitness app came on screen, or left it. */
+    /** The fitness app or the drawer came on screen, or both left it. */
     fun setActive(active: Boolean) {
         if (!active || !_uiState.value.supported) return
         if (following == null) {

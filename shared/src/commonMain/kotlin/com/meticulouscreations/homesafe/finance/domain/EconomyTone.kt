@@ -33,4 +33,9 @@ interface FinancePreferencesRepository {
     fun observeEconomyTone(): Flow<EconomyTone>
 
     suspend fun setEconomyTone(tone: EconomyTone)
+
+    /** What the Finance card in the drawer shows, in its order (see [FinanceDrawerItem]). */
+    fun observeDrawerItems(): Flow<List<FinanceDrawerItem>>
+
+    suspend fun setDrawerItems(items: List<FinanceDrawerItem>)
 }

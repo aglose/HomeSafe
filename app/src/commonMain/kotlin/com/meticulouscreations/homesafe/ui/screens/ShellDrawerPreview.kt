@@ -36,7 +36,7 @@ private fun ShellDrawerPreview() {
             Spacer(Modifier.height(12.dp))
             AtlasDrawerCard(AtlasUiState(), locked = false, animated = animated, onOpen = {})
             Spacer(Modifier.height(12.dp))
-            FitnessDrawerCard(FitnessUiState(), animated = animated, onOpen = {})
+            FitnessDrawerCard(FitnessUiState(), readiness = null, animated = animated, onOpen = {})
             Spacer(Modifier.height(12.dp))
             FinanceDrawerCard(FinanceUiState(), locked = false, onOpen = {})
         }

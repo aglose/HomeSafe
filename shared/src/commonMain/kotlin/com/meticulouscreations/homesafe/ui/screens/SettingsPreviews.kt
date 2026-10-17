@@ -99,6 +99,7 @@ private fun SettingsHomePreviewContent(state: SettingsUiState, initialFold: Sett
             onMotion = { _, _ -> },
             onDismissCameraError = {},
             onTone = {},
+            onFinanceDrawerItems = {},
             onFigureStyle = {},
             onAppIcon = {},
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = TAB_CONTENT_HORIZONTAL_PADDING, vertical = 24.dp),

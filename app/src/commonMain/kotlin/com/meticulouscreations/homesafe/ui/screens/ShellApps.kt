@@ -68,10 +68,11 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
     LaunchedEffect(visible, drawerShowing, fitnessUp) {
         fitness.setActive(visible && (drawerShowing || fitnessUp), full = fitnessUp)
     }
-    // The health store is read only for the fitness app itself: the drawer's card shows none of it.
+    // The health store is read for the fitness app, and for its card in the drawer, which shows today's readiness.
     val health: HealthViewModel = metroViewModel()
-    LaunchedEffect(visible, fitnessUp) {
-        health.setActive(visible && fitnessUp)
+    val healthState by health.uiState.collectAsStateWithLifecycle()
+    LaunchedEffect(visible, drawerShowing, fitnessUp) {
+        health.setActive(visible && (drawerShowing || fitnessUp))
     }
     val atlas: AtlasViewModel = metroViewModel()
     val atlasState by atlas.uiState.collectAsStateWithLifecycle()
@@ -91,7 +92,7 @@ fun ShellApps(nav: ShellNavigation, tab: TopLevelRoute) {
         // The same lock: where someone has been is kept shut exactly when their money is.
         AtlasDrawerCard(atlasState, financeLockState.locked, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.ATLAS, origin, tab) })
         Spacer(Modifier.height(12.dp))
-        FitnessDrawerCard(fitnessState, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) })
+        FitnessDrawerCard(fitnessState, healthState.body.readiness, animated = animated, onOpen = { origin -> nav.openApp(InnerApp.FITNESS, origin, tab) })
         Spacer(Modifier.height(12.dp))
         FinanceDrawerCard(financeState, financeLockState.locked, onOpen = { origin -> nav.openApp(InnerApp.FINANCE, origin, tab) })
     }

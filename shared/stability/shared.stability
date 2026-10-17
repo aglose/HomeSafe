@@ -880,6 +880,17 @@ private fun com.meticulouscreations.homesafe.ui.screens.DownloadButton(isDownloa
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.DrawerItemOption(option: com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem, on: kotlin.Boolean, enabled: kotlin.Boolean, onToggle: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - option: STABLE (class with no mutable properties)
+    - on: STABLE (primitive type)
+    - enabled: STABLE (primitive type)
+    - onToggle: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DrawerLabel(text: kotlin.String): kotlin.Unit
   skippable: true
   restartable: true
@@ -1010,6 +1021,15 @@ private fun com.meticulouscreations.homesafe.ui.screens.FilterMenuItem(label: ko
     - icon: STABLE (marked @Stable or @Immutable)
     - checked: STABLE (primitive type)
     - onClick: STABLE (function type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.FinanceDrawerOptions(items: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, onItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - items: RUNTIME (requires runtime check)
+    - onItems: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FrameEditor(frame: com.meticulouscreations.homesafe.viewmodel.CameraFrame, uiState: com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState, onTap: kotlin.Function2<kotlin.Double, kotlin.Double, kotlin.Unit>, onDraw: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.SeenBox, kotlin.Unit>): kotlin.Unit
@@ -1868,7 +1888,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsGroup(modifier:
     - content: STABLE (composable function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com.meticulouscreations.homesafe.viewmodel.SettingsUiState, onOpenAlerts: kotlin.Function0<kotlin.Unit>, onOpenAway: kotlin.Function0<kotlin.Unit>, onOpenClassifier: kotlin.Function1<kotlin.String, kotlin.Unit>, onOpenFaces: kotlin.Function0<kotlin.Unit>, onOpenServer: kotlin.Function0<kotlin.Unit>, onDetection: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onMotion: kotlin.Function2<kotlin.String, kotlin.Boolean, kotlin.Unit>, onDismissCameraError: kotlin.Function0<kotlin.Unit>, onTone: kotlin.Function1<com.meticulouscreations.homesafe.finance.domain.EconomyTone, kotlin.Unit>, onFinanceDrawerItems: kotlin.Function1<kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>, kotlin.Unit>, onFigureStyle: kotlin.Function1<com.meticulouscreations.homesafe.fitness.domain.FigureStyle, kotlin.Unit>, onAppIcon: kotlin.Function1<com.meticulouscreations.homesafe.appicon.AppIcon, kotlin.Unit>, modifier: androidx.compose.ui.Modifier, initialFold: com.meticulouscreations.homesafe.ui.screens.SettingsFold?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1882,6 +1902,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.SettingsHome(state: com
     - onMotion: STABLE (function type)
     - onDismissCameraError: STABLE (function type)
     - onTone: STABLE (function type)
+    - onFinanceDrawerItems: STABLE (function type)
     - onFigureStyle: STABLE (function type)
     - onAppIcon: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
@@ -2331,6 +2352,13 @@ internal fun com.meticulouscreations.homesafe.ui.screens.contentGutter(maxWidth:
   params:
     - maxWidth: STABLE (marked @Stable or @Immutable)
     - min: STABLE (marked @Stable or @Immutable)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.financeDrawerSummary(items: kotlin.collections.List<com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem>): kotlin.String
+  skippable: false
+  restartable: false
+  params:
+    - items: RUNTIME (requires runtime check)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.formatMillis(ms: kotlin.Double): kotlin.String

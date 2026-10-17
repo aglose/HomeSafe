@@ -34,11 +34,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.fitness.FitnessUiState
+import com.meticulouscreations.homesafe.fitness.domain.Readiness
 import com.meticulouscreations.homesafe.fitness.ui.FitnessPalette
 import com.meticulouscreations.homesafe.fitness.ui.shader.FiberField
+import com.meticulouscreations.homesafe.fitness.ui.shader.PlasmaRing
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.fitness_body_readiness
+import homesafe.shared.generated.resources.fitness_body_readiness_described
 import homesafe.shared.generated.resources.fitness_drawer_empty
 import homesafe.shared.generated.resources.fitness_drawer_open
 import homesafe.shared.generated.resources.fitness_drawer_subtitle
@@ -52,10 +58,11 @@ import org.jetbrains.compose.resources.stringResource
 
 /**
  * The fitness app's door: muscle fibre in the colours of the workout that is up next (or the one
- * in progress), moving while the drawer is open, with which day that is and how the week has gone.
+ * in progress), moving while the drawer is open, with which day that is and how the week has gone,
+ * and beside them today's [readiness] as a ring, once the health store has given one.
  */
 @Composable
-fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen: (Offset) -> Unit, modifier: Modifier = Modifier) {
+fun FitnessDrawerCard(fitness: FitnessUiState, readiness: Readiness?, animated: Boolean, onOpen: (Offset) -> Unit, modifier: Modifier = Modifier) {
     var center by remember { mutableStateOf(Offset.Zero) }
     val shape = RoundedCornerShape(22.dp)
     val palette = remember { FitnessPalette() }
@@ -88,29 +95,65 @@ fun FitnessDrawerCard(fitness: FitnessUiState, animated: Boolean, onOpen: (Offse
                 Icon(Icons.Filled.ChevronRight, contentDescription = null, tint = secondary)
             }
             Spacer(Modifier.height(14.dp))
-            when {
-                workout != null -> {
-                    Text(
-                        stringResource(Res.string.fitness_today_headline_working, stringResource(workout.workout.focus.label)),
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
-                        maxLines = 1,
-                    )
-                    Text(pluralStringResource(Res.plurals.fitness_today_resume_detail, workout.setCount, workout.setCount), style = MaterialTheme.typography.labelSmall, color = secondary)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                DrawerLines(fitness, secondary, Modifier.weight(1f))
+                if (readiness != null) {
+                    Spacer(Modifier.width(12.dp))
+                    ReadinessBadge(readiness, animated, secondary)
                 }
-
-                due != null -> {
-                    Text(stringResource(Res.string.fitness_today_headline_due, stringResource(due.focus.label)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
-                    Text(
-                        pluralStringResource(Res.plurals.fitness_drawer_week, fitness.week.sessions, fitness.week.sessions),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = secondary,
-                        maxLines = 1,
-                    )
-                }
-
-                else -> Text(stringResource(Res.string.fitness_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
             }
         }
+    }
+}
+
+/** What the day holds: the workout under way, the one that is up next with the week so far, or the invitation to start. */
+@Composable
+private fun DrawerLines(fitness: FitnessUiState, secondary: Color, modifier: Modifier = Modifier) {
+    val workout = fitness.workout
+    val due = fitness.days.firstOrNull { it.due }
+    Column(modifier) {
+        when {
+            workout != null -> {
+                Text(
+                    stringResource(Res.string.fitness_today_headline_working, stringResource(workout.workout.focus.label)),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+                Text(pluralStringResource(Res.plurals.fitness_today_resume_detail, workout.setCount, workout.setCount), style = MaterialTheme.typography.labelSmall, color = secondary)
+            }
+
+            due != null -> {
+                Text(stringResource(Res.string.fitness_today_headline_due, stringResource(due.focus.label)), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+                Text(
+                    pluralStringResource(Res.plurals.fitness_drawer_week, fitness.week.sessions, fitness.week.sessions),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = secondary,
+                    maxLines = 1,
+                )
+            }
+
+            else -> Text(stringResource(Res.string.fitness_drawer_empty), style = MaterialTheme.typography.labelMedium, color = secondary)
+        }
+    }
+}
+
+/**
+ * Today's readiness in a small ring in its level's colours, the number in it and the word under it,
+ * heard as the score and what it means. The ring's plasma moves only while the drawer is open.
+ */
+@Composable
+private fun ReadinessBadge(readiness: Readiness, animated: Boolean, secondary: Color, modifier: Modifier = Modifier) {
+    val tints = levelTints(readiness.level)
+    val described = stringResource(Res.string.fitness_body_readiness_described, readiness.score, stringResource(levelName(readiness.level)))
+    Column(
+        modifier.testTag("drawer_fitness_readiness").clearAndSetSemantics { contentDescription = described },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
+            PlasmaRing(readiness.score / 100f, tints.first, tints.second, Color(0x40FFFFFF), Modifier.matchParentSize(), thickness = 0.2f, running = animated)
+            Text(readiness.score.toString(), style = MaterialTheme.typography.titleSmall, color = Color.White, maxLines = 1)
+        }
+        Text(stringResource(Res.string.fitness_body_readiness), style = MaterialTheme.typography.labelSmall, color = secondary, maxLines = 1, modifier = Modifier.padding(top = 2.dp))
     }
 }

@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What the Finance card in the drawer can show (FinanceDrawerItem.kt), and the Settings row that
+  chooses it (FinanceDrawerOptions.kt). The markets use their names from strings_finance_data.xml.
+  See AGENTS.md, "Strings and localization".
+-->
+<resources>
+    <!-- The household's figures from the budget sheet: a Settings choice, and the card's label over the amount -->
+    <string name="finance_drawer_item_net_worth">Net worth</string>
+    <string name="finance_drawer_item_assets">Total assets</string>
+    <string name="finance_drawer_item_investments">Investments</string>
+    <string name="finance_drawer_item_cash">Cash</string>
+    <string name="finance_drawer_item_debt">Debt excl. mortgage</string>
+
+    <!-- The Settings row, the caption over its choices once it's opened out, and its two groups -->
+    <string name="finance_drawer_settings_title">Finance in the menu</string>
+    <string name="finance_drawer_settings_caption">What the Finance card in the menu shows, up to four. Your money stays hidden while Finance is locked.</string>
+    <string name="finance_drawer_settings_markets">Markets</string>
+    <string name="finance_drawer_settings_money">Your money</string>
+    <!-- The row's summary when nothing is chosen: the card shows only its name -->
+    <string name="finance_drawer_settings_none">Just the name</string>
+    <!-- Under the choices once four are picked -->
+    <string name="finance_drawer_settings_full">That's four. Take one off to add another.</string>
+</resources>

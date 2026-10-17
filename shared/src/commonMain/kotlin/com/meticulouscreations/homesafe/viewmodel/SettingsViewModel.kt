@@ -43,6 +43,7 @@ import com.meticulouscreations.homesafe.domain.usecase.SetDecidesPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.SetHomeHereUseCase
 import com.meticulouscreations.homesafe.domain.usecase.UpdateSettingsUseCase
 import com.meticulouscreations.homesafe.finance.domain.EconomyTone
+import com.meticulouscreations.homesafe.finance.domain.FinanceDrawerItem
 import com.meticulouscreations.homesafe.finance.domain.FinancePreferencesRepository
 import com.meticulouscreations.homesafe.fitness.domain.FigureStyle
 import com.meticulouscreations.homesafe.fitness.domain.FitnessPreferencesRepository
@@ -113,6 +114,8 @@ data class SettingsUiState(
     val relayPushes: Boolean = false,
     /** How the finance app's Economy and Risk tabs talk about the economy. */
     val economyTone: EconomyTone = EconomyTone.DEFAULT,
+    /** What the drawer's Finance card shows. */
+    val financeDrawerItems: List<FinanceDrawerItem> = FinanceDrawerItem.DEFAULT,
     /** How the fitness app draws the figure that performs each exercise. */
     val figureStyle: FigureStyle = FigureStyle.DEFAULT,
     /** Whether this device lets the app change its home-screen icon; the row isn't shown when not. */
@@ -244,9 +247,9 @@ class SettingsViewModel(
         locationAccess,
         relayPushes,
         // The drawer apps' own preferences, as one: there is room for five flows here.
-        combine(financePreferences.observeEconomyTone(), fitnessPreferences.observeFigureStyle(), ::Pair),
-    ) { state, presence, access, pushed, (tone, figures) ->
-        state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone, figureStyle = figures)
+        combine(financePreferences.observeEconomyTone(), financePreferences.observeDrawerItems(), fitnessPreferences.observeFigureStyle(), ::Triple),
+    ) { state, presence, access, pushed, (tone, drawer, figures) ->
+        state.copy(presence = presence, locationAccess = access, relayPushes = pushed, economyTone = tone, financeDrawerItems = drawer, figureStyle = figures)
     }
         .stateIn(
             viewModelScope,
@@ -333,6 +336,10 @@ class SettingsViewModel(
 
     fun setEconomyTone(tone: EconomyTone) {
         viewModelScope.launch { financePreferences.setEconomyTone(tone) }
+    }
+
+    fun setFinanceDrawerItems(items: List<FinanceDrawerItem>) {
+        viewModelScope.launch { financePreferences.setDrawerItems(items) }
     }
 
     fun setFigureStyle(style: FigureStyle) {
