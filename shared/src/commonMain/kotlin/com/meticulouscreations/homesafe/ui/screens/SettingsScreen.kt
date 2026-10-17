@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Videocam
@@ -55,6 +56,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.meticulouscreations.homesafe.appicon.AppIcon
 import com.meticulouscreations.homesafe.domain.model.CameraPipeline
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.HouseholdDeviceList
@@ -135,6 +137,7 @@ import homesafe.shared.generated.resources.settings_ai_license_plates
 import homesafe.shared.generated.resources.settings_ai_loading
 import homesafe.shared.generated.resources.settings_ai_semantic_search
 import homesafe.shared.generated.resources.settings_ai_title
+import homesafe.shared.generated.resources.settings_app_icon_title
 import homesafe.shared.generated.resources.settings_camera_detections_per_second
 import homesafe.shared.generated.resources.settings_camera_disabled
 import homesafe.shared.generated.resources.settings_camera_fps
@@ -232,6 +235,7 @@ fun SettingsTabContent(
         onDismissCameraError = viewModel::dismissCameraError,
         onTone = viewModel::setEconomyTone,
         onFigureStyle = viewModel::setFigureStyle,
+        onAppIcon = viewModel::setAppIcon,
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(scrollState)
@@ -243,13 +247,13 @@ fun SettingsTabContent(
 }
 
 /** The rows of the main Settings page that open out in place rather than onto a page of their own. */
-internal enum class SettingsFold { CAMERAS, ECONOMY, FIGURES }
+internal enum class SettingsFold { CAMERAS, ECONOMY, FIGURES, APP_ICON }
 
 /**
  * The Settings tab's page, from a [SettingsUiState]. Three groups of rows: this device's alerts
  * and away mode, each a page of its own; teaching the server faces and cars; then the cameras'
- * detection switches, how Finance talks about the economy and how Fitness draws its exercises — a
- * few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
+ * detection switches, how Finance talks about the economy, how Fitness draws its exercises and
+ * the app's home-screen icon — a few controls each, so they open out in place — and last the way into what the server is and is doing. Every row's second line
  * is that section in brief (see SettingsSummaries.kt), so most visits end on this page.
  *
  * One fold is open at a time, so the page never grows back into the long list it replaced;
@@ -268,6 +272,7 @@ internal fun SettingsHome(
     onDismissCameraError: () -> Unit,
     onTone: (EconomyTone) -> Unit,
     onFigureStyle: (FigureStyle) -> Unit,
+    onAppIcon: (AppIcon) -> Unit,
     modifier: Modifier = Modifier,
     initialFold: SettingsFold? = null,
 ) {
@@ -325,6 +330,18 @@ internal fun SettingsHome(
                 FigureStyleOptions(style = state.figureStyle, onStyle = onFigureStyle)
             }
             SettingsRowDivider()
+            if (state.appIconsSupported) {
+                SettingsExpandableRow(
+                    icon = Icons.Filled.Palette,
+                    title = stringResource(Res.string.settings_app_icon_title),
+                    summary = stringResource(state.appIcon.label),
+                    expanded = openFold == SettingsFold.APP_ICON,
+                    onToggle = { openFold = SettingsFold.APP_ICON.takeIf { it != openFold } },
+                ) {
+                    AppIconOptions(icon = state.appIcon, onIcon = onAppIcon)
+                }
+                SettingsRowDivider()
+            }
             ServerSummaryRow(summary = serverSummary(state.connection?.route, state.overview, state.overviewError).resolve(), onOpen = onOpenServer)
         }
     }

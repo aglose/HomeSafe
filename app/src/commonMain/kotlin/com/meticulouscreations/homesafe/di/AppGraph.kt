@@ -2,6 +2,8 @@ package com.meticulouscreations.homesafe.di
 
 import com.meticulouscreations.homesafe.Platform
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.appicon.AppIconSwitcher
+import com.meticulouscreations.homesafe.appicon.createAppIconSwitcher
 import com.meticulouscreations.homesafe.data.AtlasDao
 import com.meticulouscreations.homesafe.data.BiometricCredentialStore
 import com.meticulouscreations.homesafe.data.CameraDao
@@ -234,6 +236,10 @@ interface AppGraph :
     @SingleIn(AppScope::class)
     @Provides
     fun provideTailscaleApp(platformContext: PlatformContext): TailscaleApp = createTailscaleApp(platformContext)
+
+    @SingleIn(AppScope::class)
+    @Provides
+    fun provideAppIconSwitcher(platformContext: PlatformContext): AppIconSwitcher = createAppIconSwitcher(platformContext)
 
     @SingleIn(AppScope::class)
     @Provides

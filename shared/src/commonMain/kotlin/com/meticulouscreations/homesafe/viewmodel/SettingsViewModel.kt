@@ -3,6 +3,8 @@ package com.meticulouscreations.homesafe.viewmodel
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.meticulouscreations.homesafe.appicon.AppIcon
+import com.meticulouscreations.homesafe.appicon.AppIconSwitcher
 import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.AlertPreset
 import com.meticulouscreations.homesafe.domain.model.AlertSettings
@@ -113,6 +115,10 @@ data class SettingsUiState(
     val economyTone: EconomyTone = EconomyTone.DEFAULT,
     /** How the fitness app draws the figure that performs each exercise. */
     val figureStyle: FigureStyle = FigureStyle.DEFAULT,
+    /** Whether this device lets the app change its home-screen icon; the row isn't shown when not. */
+    val appIconsSupported: Boolean = false,
+    /** The home-screen icon in use. */
+    val appIcon: AppIcon = AppIcon.DEFAULT,
 ) {
     /**
      * Every place the alert rules cover, in the order the Settings tab lists them: each enabled
@@ -156,6 +162,7 @@ private data class LocalState(
     val homeError: UiText? = null,
     val alertVolume: AlertVolume? = null,
     val alertVolumeRequested: Boolean = false,
+    val appIcon: AppIcon = AppIcon.DEFAULT,
 )
 
 @Inject
@@ -188,6 +195,7 @@ class SettingsViewModel(
     observeRelayPushUseCase: ObserveRelayPushUseCase,
     private val financePreferences: FinancePreferencesRepository,
     private val fitnessPreferences: FitnessPreferencesRepository,
+    private val appIcons: AppIconSwitcher,
 ) : ViewModel() {
 
     private val notificationsSupported: Boolean = getNotificationPermissionUseCase.isSupported
@@ -199,7 +207,7 @@ class SettingsViewModel(
     private val settings: StateFlow<AlertSettings> =
         observeSettingsUseCase().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AlertSettings.DEFAULT)
 
-    private val local = MutableStateFlow(LocalState())
+    private val local = MutableStateFlow(LocalState(appIcon = appIcons.current()))
 
     val uiState: StateFlow<SettingsUiState> = combine(
         combine(
@@ -228,6 +236,8 @@ class SettingsViewModel(
                 homeBusy = local.homeBusy,
                 homeError = local.homeError,
                 alertVolume = local.alertVolume,
+                appIconsSupported = appIcons.supported,
+                appIcon = local.appIcon,
             )
         },
         presence,
@@ -241,7 +251,12 @@ class SettingsViewModel(
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            SettingsUiState(notificationsSupported = notificationsSupported, geofenceSupported = geofenceSupported),
+            SettingsUiState(
+                notificationsSupported = notificationsSupported,
+                geofenceSupported = geofenceSupported,
+                appIconsSupported = appIcons.supported,
+                appIcon = local.value.appIcon,
+            ),
         )
 
     init {
@@ -322,6 +337,14 @@ class SettingsViewModel(
 
     fun setFigureStyle(style: FigureStyle) {
         viewModelScope.launch { fitnessPreferences.setFigureStyle(style) }
+    }
+
+    /** Puts [icon] on the home screen; the choice shown is read back from the platform, so a refusal leaves the old one ticked. */
+    fun setAppIcon(icon: AppIcon) {
+        viewModelScope.launch {
+            appIcons.set(icon)
+            local.update { it.copy(appIcon = appIcons.current()) }
+        }
     }
 
     /** Familiar vs. stranger: skip notifications for people Frigate has put a name to. */

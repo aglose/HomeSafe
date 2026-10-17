@@ -359,4 +359,24 @@
     <string name="presence_error_relay_refused">The relay refused this session. Sign in again.</string>
     <string name="presence_error_not_connected">Not connected to a server.</string>
     <string name="presence_error_location">Couldn't get this phone's location. Is location on?</string>
+
+    <!-- The "App icon" row, which opens out into the icons the home screen can show for the app. -->
+    <string name="settings_app_icon_title">App icon</string>
+    <string name="settings_app_icon_caption">How the app looks on your home screen. Your phone may take a moment to show the change.</string>
+    <string name="settings_app_icon_classic">Classic</string>
+    <string name="settings_app_icon_terracotta">Terracotta</string>
+    <string name="settings_app_icon_midnight">Midnight</string>
+    <string name="settings_app_icon_paper">Paper</string>
+    <string name="settings_app_icon_blueprint">Blueprint</string>
+    <string name="settings_app_icon_sage">Sage</string>
+    <string name="settings_app_icon_cobalt">Cobalt</string>
+    <string name="settings_app_icon_porch">Porch light</string>
+    <string name="settings_app_icon_neon">Neon</string>
+    <string name="settings_app_icon_arcade">Arcade</string>
+    <string name="settings_app_icon_vault">Vault</string>
+    <string name="settings_app_icon_bauhaus">Bauhaus</string>
+    <string name="settings_app_icon_radar">Radar</string>
+    <string name="settings_app_icon_constellation">Constellation</string>
+    <string name="settings_app_icon_glitch">Glitch</string>
+    <string name="settings_app_icon_peephole">Peephole</string>
 </resources>

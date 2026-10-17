@@ -23,6 +23,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.meticulouscreations.homesafe.PlatformContext
+import com.meticulouscreations.homesafe.appicon.appLaunchIntent
 import com.meticulouscreations.homesafe.data.BackgroundGraph
 import com.meticulouscreations.homesafe.navigation.WeatherDeepLink
 import com.meticulouscreations.homesafe.shared.R
@@ -167,7 +168,7 @@ private fun card(context: Context, art: WeatherNoticeArt): Bitmap? {
 
 /** The app's own activity, named explicitly, with [link] as its URI: also what keeps one notification's destination from overwriting another's. */
 private fun openIntent(context: Context, link: WeatherDeepLink): PendingIntent? {
-    val launch = context.packageManager.getLaunchIntentForPackage(context.packageName) ?: return null
+    val launch = context.appLaunchIntent() ?: return null
     val uri = link.toUri()
     val intent = Intent(Intent.ACTION_VIEW, uri.toUri()).setComponent(launch.component)
     return PendingIntent.getActivity(context, uri.hashCode(), intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
