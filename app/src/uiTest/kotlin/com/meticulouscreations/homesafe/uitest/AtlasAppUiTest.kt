@@ -14,6 +14,8 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
@@ -106,11 +108,38 @@ class AtlasAppUiTest {
     @Test
     fun theYearsAlongTheMapPickHowMuchOfItShows() = runComposeUiTest {
         show(AtlasFixtures.state, Calls())
+        fun year(label: String) = onNode(hasText(label))
+        fun pick(label: String) {
+            year(label).performSemanticsAction(SemanticsActions.OnClick)
+            settle()
+        }
+        // Newest first along the bar, after All.
+        val lefts = listOf("All", "2025", "2024", "2023").map { year(it).fetchSemanticsNode().boundsInRoot.left }
+        assertEquals(lefts.sorted(), lefts)
+        year("All").assertIsOn()
+
         // 2023 alone: the first house's places, before the lake or the desert.
-        onNode(hasText("2023")).performSemanticsAction(SemanticsActions.OnClick)
-        settle()
+        pick("2023")
         onAllNodesWithText("13").assertCountEquals(0)
         onNode(hasText("1")).assertExists()
+        year("All").assertIsOff()
+
+        // 2023 and 2025 together, without the lake's year between.
+        pick("2025")
+        year("2023").assertIsOn()
+        year("2024").assertIsOff()
+        year("2025").assertIsOn()
+        // Illinois and Nevada.
+        onNode(hasText("2")).assertExists()
+
+        // The last year picked taken away is all of them again, and so is every one picked.
+        pick("2023")
+        pick("2025")
+        year("All").assertIsOn()
+        listOf("2023", "2024", "2025").forEach { pick(it) }
+        year("All").assertIsOn()
+        year("2024").assertIsOff()
+        onAllNodesWithText("13").assertCountEquals(1)
     }
 
     @Test

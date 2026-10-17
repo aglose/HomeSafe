@@ -96,11 +96,8 @@ class AtlasDensity(val levels: List<DensityLevel>, val baseYear: Int) {
     /** The bit that stands for [year] in a square's `years`. */
     fun yearBit(year: Int): Int = 1 shl (year - baseYear).coerceIn(0, 31)
 
-    /** Every year up to and including [year]. */
-    fun yearsThrough(year: Int): Int {
-        val bits = (year - baseYear + 1).coerceIn(0, 32)
-        return if (bits >= 32) -1 else (1 shl bits) - 1
-    }
+    /** The bits for any of [years], together or apart. */
+    fun yearsIn(years: Iterable<Int>): Int = years.fold(0) { bits, year -> bits or yearBit(year) }
 
     companion object {
         val Empty = AtlasDensity(emptyList(), 1970)

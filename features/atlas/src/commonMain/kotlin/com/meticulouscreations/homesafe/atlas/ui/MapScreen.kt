@@ -2,7 +2,6 @@ package com.meticulouscreations.homesafe.atlas.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,14 +41,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.selected
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.meticulouscreations.homesafe.atlas.AtlasUiState
 import com.meticulouscreations.homesafe.atlas.domain.CivilDate
 import com.meticulouscreations.homesafe.atlas.domain.PlaceKind
 import com.meticulouscreations.homesafe.atlas.domain.TravelMode
 import com.meticulouscreations.homesafe.atlas.domain.VisitRole
+import com.meticulouscreations.homesafe.atlas.domain.YearsCovered
 import com.meticulouscreations.homesafe.weather.data.MapTileSource
 import com.meticulouscreations.homesafe.weather.ui.radar.MAP_TILE_DP
 import homesafe.shared.generated.resources.Res
@@ -73,9 +73,10 @@ private const val MAP_PLACES = 60
 private const val YEAR_STEP_MS = 1100L
 
 /**
- * The atlas itself: the whole map, glowing where life has gone. The years along the foot pick how
- * much of it to show: all of it, or everything up to one year, and the play button walks through
- * them so the footprint grows year on year.
+ * The atlas itself: the whole map, glowing where life has gone. The years along the foot, newest
+ * first, pick how much of it to show: all of it, one year alone, or any few together, each tap
+ * adding a year or taking it away. The play button walks through them from the first, so the
+ * footprint grows year on year.
  */
 @Composable
 internal fun MapScreen(
@@ -93,7 +94,8 @@ internal fun MapScreen(
     val scope = rememberCoroutineScope()
     val tilePx = with(LocalDensity.current) { MAP_TILE_DP.dp.toPx() }
     val years = remember(analysis) { analysis.years.map { it.year } }
-    var year by rememberSaveable { mutableStateOf<Int?>(null) }
+    // The years picked; none is all of them.
+    var picked by rememberSaveable(stateSaver = PickedYearsSaver) { mutableStateOf(emptySet<Int>()) }
     var playing by remember { mutableStateOf(false) }
 
     val home = analysis.eras.lastOrNull()?.home
@@ -106,19 +108,20 @@ internal fun MapScreen(
     }
     LaunchedEffect(playing, years) {
         if (!playing) return@LaunchedEffect
-        years.forEach {
-            year = it
+        years.forEach { through ->
+            picked = years.filterTo(HashSet()) { it <= through }
             delay(YEAR_STEP_MS)
         }
-        year = null
+        picked = emptySet()
         playing = false
     }
 
-    val lastDayShown = year?.let { CivilDate.dayOf(it + 1, 1, 1) - 1 } ?: Int.MAX_VALUE
+    val shownYears = picked.ifEmpty { years.toSet() }
+    val covered = remember(history, picked) { picked.takeIf { it.isNotEmpty() }?.let { YearsCovered.of(history, it) } }
     val homeLabel = stringResource(Res.string.atlas_place_home)
     val workLabel = stringResource(Res.string.atlas_place_work)
-    val markers = remember(analysis, lastDayShown, homeLabel, workLabel) {
-        val shown = analysis.places.asSequence().filter { it.firstDay <= lastDayShown }.take(MAP_PLACES).toList()
+    val markers = remember(analysis, covered, homeLabel, workLabel) {
+        val shown = analysis.places.asSequence().filter { covered == null || it.place.key in covered.placeKeys }.take(MAP_PLACES).toList()
         val most = shown.firstOrNull()?.seconds?.coerceAtLeast(1) ?: 1
         shown.mapIndexed { index, stat ->
             val place = stat.place
@@ -143,9 +146,11 @@ internal fun MapScreen(
             )
         }
     }
-    val flights = remember(history, lastDayShown) { history.moves.filter { it.mode == TravelMode.FLY && it.startDay <= lastDayShown }.takeLast(400) }
+    val flights = remember(history, picked) {
+        history.moves.filter { it.mode == TravelMode.FLY && (picked.isEmpty() || CivilDate.of(it.startDay).year in picked) }.takeLast(400)
+    }
     val paths = state.paths
-    val yearBits = remember(paths, year) { year?.let { paths?.density?.yearsThrough(it) } ?: -1 }
+    val yearBits = remember(paths, picked) { if (picked.isEmpty()) -1 else paths?.density?.yearsIn(picked) ?: -1 }
 
     Box(modifier.fillMaxSize().testTag("atlas_map")) {
         AtlasMap(
@@ -160,7 +165,7 @@ internal fun MapScreen(
             onTapMarker = { onOpenPlace(it.key) },
         )
 
-        // What the map adds up to, as far as the year shown.
+        // What the map adds up to, in the years shown.
         Row(
             Modifier
                 .padding(top = padding.calculateTopPadding() + 4.dp, start = AtlasGutter, end = AtlasGutter)
@@ -170,10 +175,11 @@ internal fun MapScreen(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(22.dp),
         ) {
-            val through = analysis.years.filter { year == null || it.year <= (year ?: 0) }
-            AtlasStat(AtlasFormat.grouped(through.sumOf { it.newPlaces }.toLong()), stringResource(Res.string.atlas_map_stat_places), tint = colors.place)
-            AtlasStat(distanceText(through.sumOf { it.groundMeters }), stringResource(Res.string.atlas_map_stat_travelled), tint = colors.trail)
-            AtlasStat(analysis.regions.count { it.firstDay <= lastDayShown }.toString(), stringResource(Res.string.atlas_map_stat_regions))
+            val placeCount = covered?.placeKeys?.size ?: analysis.years.sumOf { it.newPlaces }
+            val groundMeters = analysis.years.filter { it.year in shownYears }.sumOf { it.groundMeters }
+            AtlasStat(AtlasFormat.grouped(placeCount.toLong()), stringResource(Res.string.atlas_map_stat_places), tint = colors.place)
+            AtlasStat(distanceText(groundMeters), stringResource(Res.string.atlas_map_stat_travelled), tint = colors.trail)
+            AtlasStat((covered?.regions ?: analysis.regions.size).toString(), stringResource(Res.string.atlas_map_stat_regions))
         }
 
         Column(
@@ -227,14 +233,15 @@ internal fun MapScreen(
                         Modifier.clip(CircleShape).background(colors.background.copy(alpha = 0.82f)).border(1.dp, colors.hairline, CircleShape).padding(4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        YearPill(stringResource(Res.string.atlas_map_all_years), year == null) {
+                        YearPill(stringResource(Res.string.atlas_map_all_years), picked.isEmpty()) {
                             playing = false
-                            year = null
+                            picked = emptySet()
                         }
-                        years.forEach { each ->
-                            YearPill(each.toString(), year == each) {
+                        years.asReversed().forEach { each ->
+                            YearPill(each.toString(), each in picked) {
                                 playing = false
-                                year = each
+                                // Every year picked one by one is the same as all of them.
+                                picked = (if (each in picked) picked - each else picked + each).takeIf { it.size < years.size }.orEmpty()
                             }
                         }
                     }
@@ -243,6 +250,8 @@ internal fun MapScreen(
         }
     }
 }
+
+private val PickedYearsSaver = Saver<Set<Int>, IntArray>(save = { it.toIntArray() }, restore = { it.toSet() })
 
 @Composable
 private fun YearPill(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -254,8 +263,7 @@ private fun YearPill(label: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(CircleShape)
             .background(if (selected) colors.trail else androidx.compose.ui.graphics.Color.Transparent)
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab, onClick = onClick)
-            .semantics { this.selected = selected }
+            .toggleable(selected, interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Checkbox) { onClick() }
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )
 }
