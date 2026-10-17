@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.lerp
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.PinchZoomState
+import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.detectHeldDrag
 import com.meticulouscreations.homesafe.ui.components.liveSurfaceIsExclusive
 import com.meticulouscreations.homesafe.ui.components.pinchZoomContent
@@ -328,13 +329,16 @@ internal fun CameraCardZoomOverlay(state: CameraCardZoomState, onOpenCamera: (Ca
             ) {
                 val streamUrl = tile.streamUrl
                 if (streamUrl != null) {
-                    CameraStreamPlayer(
-                        streamUrl = streamUrl,
-                        modifier = Modifier.fillMaxSize(),
-                        posterUrl = tile.posterUrl,
-                        webRtcSignalingUrl = tile.webRtcSignalingUrl,
-                        playerKey = tile.camera.name,
-                    )
+                    ShapedVideo(playerKey = tile.camera.name, fit = tile.videoFit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                        CameraStreamPlayer(
+                            streamUrl = streamUrl,
+                            modifier = videoModifier,
+                            posterUrl = tile.posterUrl,
+                            webRtcSignalingUrl = tile.webRtcSignalingUrl,
+                            playerKey = tile.camera.name,
+                            onStreamStats = onStreamStats,
+                        )
+                    }
                 } else {
                     Icon(
                         imageVector = Icons.Filled.Videocam,

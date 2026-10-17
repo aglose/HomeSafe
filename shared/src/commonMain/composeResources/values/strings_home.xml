@@ -48,6 +48,9 @@
     <string name="camera_sound_turn_off">Turn sound off</string>
     <!-- Under a Google Nest camera's video: why its page has no timeline or recent activity. -->
     <string name="camera_nest_live_only">Live only. Nest cameras stream from Google while you watch, and HomeSafe doesn't record them.</string>
+    <!-- The Nest camera page's button between showing the whole picture and filling the frame; it names what a tap does. -->
+    <string name="camera_nest_fit_fill">Fill the frame</string>
+    <string name="camera_nest_fit_whole">Show the whole picture</string>
     <!-- Accessibility description of the scissors button, which cuts a clip of the video; %1$s is the camera's name. -->
     <string name="camera_action_clip_description">Clip a video from %1$s</string>
     <!-- One-line feedback under the player's bar after a tap. -->

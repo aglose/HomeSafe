@@ -22,6 +22,15 @@ no detections: the Nest cameras are not Frigate cameras.
   like Frigate's cards (`frigateLiveStreamUrl`, `frigateWebRtcSignalingUrl`). Nest cards have no
   poster: Frigate has no snapshot of them, and a go2rtc still would dial Google just for a poster.
 
+- **Pictures come in several shapes**: on the box, the living room and kids' room cameras send
+  1920x1080 (16:9), the kitchen Hub Max 1152x864 (4:3) and the doorbell 960x1280 (portrait).
+  Every player stretches its picture to its box, which suits Frigate's cameras, so a Nest
+  camera's video is laid out at its own shape instead (`ShapedVideo`): whole with bars by
+  default, or filling the box and cropped. The shape is read from the player's stream stats the
+  first time and remembered for the session. The Nest camera page's button switches between the
+  two (shown only for a camera that isn't 16:9), and the choice is saved for every Nest camera
+  (`PlaybackPreferences.nestFit`, schema 25).
+
 Code: `NestCameraRepositoryImpl` (data), `nestStreamNames` in `network/Go2rtcStreams.kt`,
 `OUTDOOR_STREAM_PREFIX`, `HomeViewModel.cameras` / `indoorCameras` / `placement`,
 `CameraPlacementSwitch`, `NestCameraScreen`.

@@ -18,6 +18,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Crop
+import androidx.compose.material.icons.filled.FitScreen
 import androidx.compose.material.icons.filled.VideocamOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -36,12 +38,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.domain.model.cameraDisplayName
 import com.meticulouscreations.homesafe.ui.VIDEO_ASPECT
 import com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer
 import com.meticulouscreations.homesafe.ui.components.ImmersiveSystemBars
 import com.meticulouscreations.homesafe.ui.components.LiveStreamStatus
+import com.meticulouscreations.homesafe.ui.components.MeasuredVideoShapes
 import com.meticulouscreations.homesafe.ui.components.PlayerRequest
+import com.meticulouscreations.homesafe.ui.components.ShapedVideo
 import com.meticulouscreations.homesafe.ui.components.VideoSource
 import com.meticulouscreations.homesafe.ui.components.WebRtcEndpoint
 import com.meticulouscreations.homesafe.ui.isCompactLandscape
@@ -49,11 +54,14 @@ import com.meticulouscreations.homesafe.ui.theme.LocalFrigateExtraColors
 import com.meticulouscreations.homesafe.viewmodel.NestCameraViewModel
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.camera_nest_fit_fill
+import homesafe.shared.generated.resources.camera_nest_fit_whole
 import homesafe.shared.generated.resources.camera_nest_live_only
 import homesafe.shared.generated.resources.camera_sound_turn_off
 import homesafe.shared.generated.resources.camera_sound_turn_on
 import homesafe.shared.generated.resources.common_back
 import org.jetbrains.compose.resources.stringResource
+import kotlin.math.abs
 
 /**
  * A Google Nest camera, live. These cameras are go2rtc streams pulled from Google while
@@ -66,6 +74,12 @@ import org.jetbrains.compose.resources.stringResource
  * to the one with sound, which go2rtc serves from the same connection to Google.
  *
  * Turned on its side the video takes the whole window, with the way back and the speaker over it.
+ *
+ * A Nest camera's picture is whatever shape the model makes it (the doorbell's is tall). Shown
+ * whole ([VideoFit.Fit], the default), the video's box here takes the picture's own shape, as
+ * large as the page allows; filling the frame ([VideoFit.Fill]) keeps the box 16:9 and crops. The
+ * button between the two appears once the picture turns out not to be 16:9, and the choice is
+ * saved for every Nest camera, cards included (see [ShapedVideo]).
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -79,6 +93,10 @@ fun NestCameraScreen(
 ) {
     val viewModel: NestCameraViewModel = metroViewModel()
     val soundOn by viewModel.soundOn.collectAsStateWithLifecycle()
+    val fit by viewModel.fit.collectAsStateWithLifecycle()
+    val measuredAspect = MeasuredVideoShapes[streamName]
+    // Only a picture that isn't the card's shape has anything to fit or fill.
+    val fitMatters = measuredAspect != null && abs(measuredAspect - VIDEO_ASPECT) > FIT_ASPECT_TOLERANCE
     // Once sound has been asked for, the stream with it stays: muting again is the player's job,
     // not another reconnect.
     var wantsSound by rememberSaveable(streamName) { mutableStateOf(false) }
@@ -119,12 +137,15 @@ fun NestCameraScreen(
             }.background(Color.Black),
         ) {
             if (request != null) {
-                CameraStreamPlayer(
-                    request = request,
-                    modifier = Modifier.fillMaxSize(),
-                    playerKey = streamName,
-                    onStreamStatusChanged = { status = it },
-                )
+                ShapedVideo(playerKey = streamName, fit = fit, modifier = Modifier.fillMaxSize()) { videoModifier, onStreamStats ->
+                    CameraStreamPlayer(
+                        request = request,
+                        modifier = videoModifier,
+                        playerKey = streamName,
+                        onStreamStatusChanged = { status = it },
+                        onStreamStats = onStreamStats,
+                    )
+                }
             } else {
                 Icon(
                     imageVector = Icons.Filled.VideocamOff,
@@ -141,12 +162,18 @@ fun NestCameraScreen(
 
     if (fullScreen) {
         Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
-            // As large as the window allows at 16:9: the players stretch to fill, so it mustn't be the window's shape.
-            video(Modifier.align(Alignment.Center).aspectRatio(VIDEO_ASPECT, matchHeightConstraintsFirst = true))
+            // Filling, the window is the frame; whole, the picture's own shape (16:9 until it is known), as large as the window allows.
+            val box = if (fit == VideoFit.Fill) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.align(Alignment.Center).aspectRatio(measuredAspect ?: VIDEO_ASPECT, matchHeightConstraintsFirst = true)
+            }
+            video(box)
             Row(modifier = Modifier.align(Alignment.TopStart).padding(8.dp)) {
                 BackButton(onBack = onBack, tint = Color.White)
             }
-            Box(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
+            Row(modifier = Modifier.align(Alignment.BottomEnd).padding(8.dp)) {
+                if (fitMatters) FitButton(fit = fit, onToggle = viewModel::toggleFit, tint = Color.White)
                 SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = Color.White)
             }
         }
@@ -172,9 +199,14 @@ fun NestCameraScreen(
                 modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
                 textAlign = TextAlign.Center,
             )
+            if (fitMatters) FitButton(fit = fit, onToggle = viewModel::toggleFit, tint = MaterialTheme.colorScheme.primary)
             SoundButton(soundOn = soundOn, onToggle = toggleSound, tint = MaterialTheme.colorScheme.primary)
         }
-        video(Modifier.fillMaxWidth().aspectRatio(VIDEO_ASPECT))
+        // Whole, a tall picture gets a tall box, as large as the page leaves room for; filling, the 16:9 frame.
+        val boxAspect = if (fit == VideoFit.Fit) measuredAspect ?: VIDEO_ASPECT else VIDEO_ASPECT
+        Box(modifier = Modifier.weight(1f, fill = false).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+            video(Modifier.aspectRatio(boxAspect))
+        }
         Text(
             text = stringResource(Res.string.camera_nest_live_only),
             style = MaterialTheme.typography.bodyMedium,
@@ -190,6 +222,21 @@ private fun BackButton(onBack: () -> Unit, tint: Color) {
         Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(Res.string.common_back), tint = tint)
     }
 }
+
+/** Between the whole picture and filling the frame; the icon is what a tap does. */
+@Composable
+private fun FitButton(fit: VideoFit, onToggle: () -> Unit, tint: Color) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            imageVector = if (fit == VideoFit.Fit) Icons.Filled.Crop else Icons.Filled.FitScreen,
+            contentDescription = stringResource(if (fit == VideoFit.Fit) Res.string.camera_nest_fit_fill else Res.string.camera_nest_fit_whole),
+            tint = tint,
+        )
+    }
+}
+
+/** How far from 16:9 a picture's shape must be before fitting and filling look any different. */
+private const val FIT_ASPECT_TOLERANCE = 0.05f
 
 @Composable
 private fun SoundButton(soundOn: Boolean, onToggle: () -> Unit, tint: Color) {

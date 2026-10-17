@@ -81,7 +81,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(req
     - reconnectRequests: STABLE (primitive type)
 
 @Composable
-public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, webRtcSignalingUrl: kotlin.String?, playerKey: kotlin.String?, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int): kotlin.Unit
+public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(streamUrl: kotlin.String, modifier: androidx.compose.ui.Modifier, posterUrl: kotlin.String?, webRtcSignalingUrl: kotlin.String?, playerKey: kotlin.String?, onStreamStatusChanged: kotlin.Function1<@[ParameterName(name = \, reconnectRequests: kotlin.Int, onStreamStats: kotlin.Function1<@[ParameterName(name = \): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -92,6 +92,7 @@ public fun com.meticulouscreations.homesafe.ui.components.CameraStreamPlayer(str
     - playerKey: STABLE (class with no mutable properties)
     - onStreamStatusChanged: STABLE (function type)
     - reconnectRequests: STABLE (primitive type)
+    - onStreamStats: STABLE (function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.ClipTrimmer(window: com.meticulouscreations.homesafe.domain.model.ClipWindow, range: com.meticulouscreations.homesafe.domain.model.ClipRange, playheadEpochSeconds: kotlin.Double?, recorded: com.meticulouscreations.homesafe.viewmodel.RecordedSpans, activeHandle: com.meticulouscreations.homesafe.viewmodel.TrimHandle?, isScrubbing: kotlin.Boolean, thumbnailUrl: kotlin.Function1<@[ParameterName(name = \, onTrimStart: kotlin.Function1<com.meticulouscreations.homesafe.viewmodel.TrimHandle, kotlin.Unit>, onTrim: kotlin.Function2<com.meticulouscreations.homesafe.viewmodel.TrimHandle, kotlin.Double, kotlin.Boolean>, onTrimEnd: kotlin.Function0<kotlin.Unit>, onScrubStart: kotlin.Function0<kotlin.Unit>, onScrub: kotlin.Function1<kotlin.Double, kotlin.Unit>, onScrubEnd: kotlin.Function0<kotlin.Unit>, onTap: kotlin.Function1<kotlin.Double, kotlin.Boolean>, onPan: kotlin.Function1<kotlin.Double, kotlin.Unit>, onZoom: kotlin.Function2<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, moments: kotlin.collections.List<com.meticulouscreations.homesafe.viewmodel.ClipMoment>): kotlin.Unit
@@ -202,6 +203,16 @@ public fun com.meticulouscreations.homesafe.ui.components.ReportFullyDrawnWhen(p
   restartable: true
   params:
     - predicate: STABLE (function type)
+
+@Composable
+public fun com.meticulouscreations.homesafe.ui.components.ShapedVideo(playerKey: kotlin.String, fit: com.meticulouscreations.homesafe.domain.model.VideoFit?, modifier: androidx.compose.ui.Modifier, player: @[Composable] androidx.compose.runtime.internal.ComposableFunction2<@[ParameterName(name = \): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - playerKey: STABLE (String is immutable)
+    - fit: STABLE (class with no mutable properties)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - player: STABLE (composable function type)
 
 @Composable
 public fun com.meticulouscreations.homesafe.ui.components.SkeletonCameraCard(phase: kotlin.Function0<kotlin.Float>, modifier: androidx.compose.ui.Modifier, phaseOffset: kotlin.Float): kotlin.Unit
@@ -1030,6 +1041,15 @@ internal fun com.meticulouscreations.homesafe.ui.screens.FinanceDrawerOptions(it
     - items: RUNTIME (requires runtime check)
     - onItems: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.FitButton(fit: com.meticulouscreations.homesafe.domain.model.VideoFit, onToggle: kotlin.Function0<kotlin.Unit>, tint: androidx.compose.ui.graphics.Color): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - fit: STABLE (class with no mutable properties)
+    - onToggle: STABLE (function type)
+    - tint: STABLE (marked @Stable or @Immutable)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.FrameEditor(frame: com.meticulouscreations.homesafe.viewmodel.CameraFrame, uiState: com.meticulouscreations.homesafe.viewmodel.CarTaggingUiState, onTap: kotlin.Function2<kotlin.Double, kotlin.Double, kotlin.Unit>, onDraw: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.SeenBox, kotlin.Unit>): kotlin.Unit

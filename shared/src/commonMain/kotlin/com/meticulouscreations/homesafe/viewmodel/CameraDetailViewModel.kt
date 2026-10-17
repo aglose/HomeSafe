@@ -270,6 +270,10 @@ class CameraDetailViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CameraDetailUiState.Loading)
 
     private val _playback = MutableStateFlow(PlaybackUiState())
+
+    /** The saved preferences as last read, so saving this page's two doesn't reset the others (the Nest cameras' fit). */
+    private var storedPreferences = PlaybackPreferences.DEFAULT
+
     val playback: StateFlow<PlaybackUiState> = _playback.asStateFlow()
 
     /**
@@ -377,6 +381,7 @@ class CameraDetailViewModel(
         // screen changes them. A quality change while live rejoins on the newly chosen stream.
         viewModelScope.launch {
             observePlaybackPreferencesUseCase().collect { preferences ->
+                storedPreferences = preferences
                 _playback.update { current -> current.withSound(preferences.soundOn).withQuality(preferences.quality) }
             }
         }
@@ -563,7 +568,8 @@ class CameraDetailViewModel(
 
     private fun savePreferences() {
         val current = _playback.value
-        viewModelScope.launch { updatePlaybackPreferencesUseCase(PlaybackPreferences(quality = current.quality, soundOn = !current.isMuted)) }
+        val preferences = storedPreferences.copy(quality = current.quality, soundOn = !current.isMuted)
+        viewModelScope.launch { updatePlaybackPreferencesUseCase(preferences) }
     }
 
     fun onAudioAvailabilityChanged(hasAudio: Boolean) {

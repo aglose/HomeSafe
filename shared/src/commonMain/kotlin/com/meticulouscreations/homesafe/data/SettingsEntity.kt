@@ -72,6 +72,8 @@ data class PlaybackPreferencesEntity(
     /** A `StreamQuality` name. Stored as text so an unknown value degrades to the default instead of failing to read. */
     val quality: String,
     val soundOn: Boolean,
+    /** A `VideoFit` name: how the Nest cameras' pictures sit in their boxes. Added in schema 25. */
+    @ColumnInfo(defaultValue = "Fit") val nestFit: String = "Fit",
 )
 
 /**
