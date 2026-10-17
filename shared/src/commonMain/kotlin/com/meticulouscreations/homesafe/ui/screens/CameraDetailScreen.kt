@@ -67,7 +67,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -225,7 +224,7 @@ fun CameraDetailScreen(
     // 0 = the player is its 16:9 strip, 1 = it has taken over the viewport (see PlayerSurface).
     val zoomTakeover = remember { Animatable(0f) }
 
-    // One line of feedback under the quick actions — what a tap did, or why it couldn't — that
+    // One line of feedback under the player's bar — what a tap did, or why it couldn't — that
     // clears itself. The words are kept separately so the fade-out still has something to fade.
     var hint by remember { mutableStateOf<QuickActionHint?>(null) }
     var hintText by remember { mutableStateOf<StringResource?>(null) }
@@ -354,14 +353,15 @@ fun CameraDetailScreen(
             // is on the player's chrome.
             if (fullScreen) return@Column
 
+            // The player's own bar, under the picture and as wide as it: zoomed, the player
+            // pushes it down out of the viewport along with the rest of the page.
             QuickActionsRow(
-                hasQualityChoice = hasQualityChoice,
                 cameraName = cameraName,
+                cameraAvailable = cameraAvailable,
+                hasQualityChoice = hasQualityChoice,
                 showHint = showHint,
                 onClip = { origin -> onClip(viewModel.clipAnchorEpochSeconds(), origin) },
-                // The row straddles the player's bottom edge, so while the player has the
-                // viewport its tops would peek out under the nav bar: fade it with the takeover.
-                modifier = Modifier.graphicsLayer { alpha = 1f - zoomTakeover.value },
+                modifier = Modifier.padding(horizontal = playerGutter),
             )
 
             Column(
@@ -448,10 +448,11 @@ internal fun cameraDetailViewModel(cameraName: String): CameraDetailViewModel =
     }
 
 /**
- * The video, plus its overlays: the LIVE pill, play/pause, buffering, the "behind live" readout,
- * and the "stats for nerds" panel when the menu has asked for it ([PlayerStreamStats]).
+ * The video, plus its overlays: play/pause, buffering, and the "stats for nerds" panel when the
+ * menu has asked for it ([PlayerStreamStats]).
  *
- * At rest this is a 16:9 strip at the top of the scroll.
+ * At rest this is a 16:9 strip at the top of the scroll, with the player's bar ([QuickActionsRow]:
+ * the LIVE pill, the time, quality, sound, clip) under it rather than over the picture.
  * A double tap on its left or right third steps the recording [SKIP_SECONDS] back or forward, as
  * on any video player, and says so over that side ([SkipBadge]); further taps there while that is
  * up keep stepping. The middle third is the zoom's.
@@ -763,27 +764,11 @@ private fun PlayerSurface(
                 return@Box
             }
 
-            if (cameraAvailable) {
-                LivePill(
-                    isLive = playback.isLive,
-                    onClick = viewModel::goLive,
-                    modifier = Modifier.align(Alignment.TopStart).padding(16.dp),
-                )
-            }
-
-            val playhead = playback.scrubEpochSeconds ?: playback.playheadEpochSeconds
-            if (playhead != null) {
-                BehindLiveReadout(
-                    playheadEpochSeconds = playhead,
-                    cameraName = cameraName,
-                    modifier = Modifier.align(Alignment.BottomStart).padding(start = 16.dp, bottom = 40.dp),
-                )
-            }
-
-            // The corner the LIVE pill leaves free; on a narrow phone it folds its lines sooner than cover the pill.
+            // On the page the LIVE pill and the time are on the bar under the picture
+            // (QuickActionsRow), so nothing else sits over the video but this, when asked for.
             PlayerStreamStats(
                 cameraName = cameraName,
-                modifier = Modifier.align(Alignment.TopEnd).padding(start = STATS_CLEAR_OF_LIVE_PILL, top = 12.dp, end = 12.dp),
+                modifier = Modifier.align(Alignment.TopEnd).padding(start = 12.dp, top = 12.dp, end = 12.dp),
             )
         }
     }
@@ -895,9 +880,6 @@ private const val ZOOM_TAKEOVER_MS = 300
 private const val FULL_SCREEN_CHROME_MS = 4_000L
 private const val FULL_SCREEN_CHROME_FADE_MS = 180
 
-/** How much of the player's top edge the stats panel leaves to the LIVE pill beside it. */
-private val STATS_CLEAR_OF_LIVE_PILL = 104.dp
-
 /** The most of the window's height the player takes while the page is under it. */
 private const val PLAYER_MAX_HEIGHT_FRACTION = 0.6f
 
@@ -972,28 +954,54 @@ internal fun LivePill(isLive: Boolean, onClick: () -> Unit, modifier: Modifier =
     }
 }
 
+/**
+ * The time on screen and how far behind live it is. [onVideo] puts it in a line on a glass backing,
+ * to read over the picture; on the player's bar under the picture it needs no backing and stacks.
+ */
 @Composable
-internal fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, modifier: Modifier = Modifier) {
+internal fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String, modifier: Modifier = Modifier, onVideo: Boolean = true) {
     val viewModel = cameraDetailViewModel(cameraName)
     val now by viewModel.nowEpochSeconds.collectAsStateWithLifecycle()
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(8.dp))
-            .background(LocalFrigateExtraColors.current.glassFill)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    BehindLiveReadout(playheadEpochSeconds = playheadEpochSeconds, nowEpochSeconds = now, modifier = modifier, onVideo = onVideo)
+}
+
+/** The readout itself, given the time now. */
+@Composable
+internal fun BehindLiveReadout(playheadEpochSeconds: Double, nowEpochSeconds: Double, modifier: Modifier = Modifier, onVideo: Boolean = true) {
+    val clock: @Composable () -> Unit = {
         Text(
             text = formatClockTime(playheadEpochSeconds, withSeconds = true),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
         )
+    }
+    val behind: @Composable () -> Unit = {
         Text(
-            text = stringResource(Res.string.camera_behind_live, formatDuration(now - playheadEpochSeconds)),
-            style = MaterialTheme.typography.labelMedium,
+            text = stringResource(Res.string.camera_behind_live, formatDuration(nowEpochSeconds - playheadEpochSeconds)),
+            style = if (onVideo) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
         )
+    }
+    if (onVideo) {
+        Row(
+            modifier = modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(LocalFrigateExtraColors.current.glassFill)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            clock()
+            behind()
+        }
+    } else {
+        // The bar shares its width with the GO LIVE pill and three buttons: one over the other.
+        Column(modifier = modifier) {
+            clock()
+            behind()
+        }
     }
 }
 
@@ -1001,7 +1009,7 @@ internal fun BehindLiveReadout(playheadEpochSeconds: Double, cameraName: String,
  * The camera's timeline and the chips that choose how much of it to show.
  *
  * On the page it is headed "Timeline". [overVideo] is the full-screen player's: the heading gives
- * its place to the "behind live" readout (which on the page sits in the player's corner), and
+ * its place to the "behind live" readout (which on the page sits on the bar under the player), and
  * [onTouch] reports each use of it, so the chrome it is part of stays up while it is in use.
  */
 @Composable

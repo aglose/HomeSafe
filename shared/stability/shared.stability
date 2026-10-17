@@ -406,13 +406,24 @@ private fun com.meticulouscreations.homesafe.ui.screens.BannerAction(label: kotl
     - onClick: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playheadEpochSeconds: kotlin.Double, cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playheadEpochSeconds: kotlin.Double, cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier, onVideo: kotlin.Boolean): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - playheadEpochSeconds: STABLE (primitive type)
     - cameraName: STABLE (String is immutable)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - onVideo: STABLE (primitive type)
+
+@Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.BehindLiveReadout(playheadEpochSeconds: kotlin.Double, nowEpochSeconds: kotlin.Double, modifier: androidx.compose.ui.Modifier, onVideo: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - playheadEpochSeconds: STABLE (primitive type)
+    - nowEpochSeconds: STABLE (primitive type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - onVideo: STABLE (primitive type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.BiometricSaveOfferDialog(biometricDisplayName: kotlin.String, replacesSavedLogin: kotlin.Boolean, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>): kotlin.Unit
@@ -553,7 +564,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.CameraPipelineRows(camer
     - onMotion: STABLE (function type)
 
 @Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(displayName: kotlin.String, quality: com.meticulouscreations.homesafe.domain.model.StreamQuality, hasQualityChoice: kotlin.Boolean, isMuted: kotlin.Boolean, hasAudio: kotlin.Boolean, onQualitySelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.StreamQuality, kotlin.Unit>, onQualityUnavailable: kotlin.Function0<kotlin.Unit>, onToggleSound: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(displayName: kotlin.String, quality: com.meticulouscreations.homesafe.domain.model.StreamQuality, hasQualityChoice: kotlin.Boolean, isMuted: kotlin.Boolean, hasAudio: kotlin.Boolean, onQualitySelect: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.StreamQuality, kotlin.Unit>, onQualityUnavailable: kotlin.Function0<kotlin.Unit>, onToggleSound: kotlin.Function0<kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier, leading: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.RowScope, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -567,6 +578,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.CameraQuickActions(disp
     - onToggleSound: STABLE (function type)
     - onClip: STABLE (function type)
     - modifier: STABLE (marked @Stable or @Immutable)
+    - leading: STABLE (composable function type)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.CarProfileDialog(draft: com.meticulouscreations.homesafe.domain.model.CarProfile, makes: kotlin.collections.List<kotlin.String>, colours: kotlin.collections.List<kotlin.String>, saving: kotlin.Boolean, error: com.meticulouscreations.homesafe.text.UiText?, onChange: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.CarProfile, kotlin.Unit>, onSave: kotlin.Function0<kotlin.Unit>, onDismiss: kotlin.Function0<kotlin.Unit>, onForget: kotlin.Function0<kotlin.Unit>?): kotlin.Unit
@@ -1506,6 +1518,43 @@ private fun com.meticulouscreations.homesafe.ui.screens.PlayPauseButton(isPlayin
     - modifier: STABLE (marked @Stable or @Immutable)
 
 @Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PlayerBarButton(contentDescription: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, available: kotlin.Boolean, content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - contentDescription: STABLE (String is immutable)
+    - onClick: STABLE (function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - available: STABLE (primitive type)
+    - content: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PlayerBarLayout(leading: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, buttons: @[Composable] @[ExtensionFunctionType] androidx.compose.runtime.internal.ComposableFunction1<androidx.compose.foundation.layout.RowScope, kotlin.Unit>): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - leading: STABLE (composable function type)
+    - modifier: STABLE (marked @Stable or @Immutable)
+    - buttons: STABLE (composable function type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PlayerBarSample(isLive: kotlin.Boolean, quality: com.meticulouscreations.homesafe.domain.model.StreamQuality, isMuted: kotlin.Boolean, hasAudio: kotlin.Boolean): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - isLive: STABLE (primitive type)
+    - quality: STABLE (class with no mutable properties)
+    - isMuted: STABLE (primitive type)
+    - hasAudio: STABLE (primitive type)
+
+@Composable
+private fun com.meticulouscreations.homesafe.ui.screens.PlayerBarSamples(widthDp: kotlin.Int): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - widthDp: STABLE (primitive type)
+
+@Composable
 internal fun com.meticulouscreations.homesafe.ui.screens.PlayerStreamStats(cameraName: kotlin.String, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
@@ -1589,27 +1638,12 @@ internal fun com.meticulouscreations.homesafe.ui.screens.QualityMenu(expanded: k
     - onDismiss: STABLE (function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.QuickActionButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: kotlin.String, contentDescription: kotlin.String, onClick: kotlin.Function0<kotlin.Unit>, modifier: androidx.compose.ui.Modifier, active: kotlin.Boolean?, available: kotlin.Boolean, size: androidx.compose.ui.unit.Dp, iconSize: androidx.compose.ui.unit.Dp, onCirclePosition: kotlin.Function1<androidx.compose.ui.layout.LayoutCoordinates, kotlin.Unit>?): kotlin.Unit
-  skippable: true
-  restartable: true
-  params:
-    - icon: STABLE (marked @Stable or @Immutable)
-    - label: STABLE (String is immutable)
-    - contentDescription: STABLE (String is immutable)
-    - onClick: STABLE (function type)
-    - modifier: STABLE (marked @Stable or @Immutable)
-    - active: STABLE (class with no mutable properties)
-    - available: STABLE (primitive type)
-    - size: STABLE (marked @Stable or @Immutable)
-    - iconSize: STABLE (marked @Stable or @Immutable)
-    - onCirclePosition: STABLE (function type)
-
-@Composable
-internal fun com.meticulouscreations.homesafe.ui.screens.QuickActionsRow(cameraName: kotlin.String, hasQualityChoice: kotlin.Boolean, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
+internal fun com.meticulouscreations.homesafe.ui.screens.QuickActionsRow(cameraName: kotlin.String, cameraAvailable: kotlin.Boolean, hasQualityChoice: kotlin.Boolean, showHint: kotlin.Function1<org.jetbrains.compose.resources.StringResource, kotlin.Unit>, onClip: kotlin.Function1<@[ParameterName(name = \, modifier: androidx.compose.ui.Modifier): kotlin.Unit
   skippable: true
   restartable: true
   params:
     - cameraName: STABLE (String is immutable)
+    - cameraAvailable: STABLE (primitive type)
     - hasQualityChoice: STABLE (primitive type)
     - showHint: STABLE (function type)
     - onClip: STABLE (function type)
