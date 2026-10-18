@@ -1326,7 +1326,7 @@ internal fun com.meticulouscreations.homesafe.ui.screens.FullScreenPlayerChrome(
     - overflowMenu: STABLE (composable function type)
 
 @Composable
-private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin.String, detail: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClickLabel: kotlin.String, leading: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color?, faded: kotlin.Boolean): kotlin.Unit
+private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin.String, detail: kotlin.String?, onClick: kotlin.Function0<kotlin.Unit>, onClickLabel: kotlin.String, leading: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>, container: androidx.compose.ui.graphics.Color, content: androidx.compose.ui.graphics.Color, detailColor: androidx.compose.ui.graphics.Color?, faded: kotlin.Boolean, stateDescription: kotlin.String?): kotlin.Unit
   skippable: true
   restartable: true
   params:
@@ -1339,6 +1339,7 @@ private fun com.meticulouscreations.homesafe.ui.screens.GlancePill(label: kotlin
     - content: STABLE (marked @Stable or @Immutable)
     - detailColor: STABLE (marked @Stable or @Immutable)
     - faded: STABLE (primitive type)
+    - stateDescription: STABLE (class with no mutable properties)
 
 @Composable
 private fun com.meticulouscreations.homesafe.ui.screens.GlancePreviewFrame(content: @[Composable] androidx.compose.runtime.internal.ComposableFunction0<kotlin.Unit>): kotlin.Unit

@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -103,8 +105,10 @@ private fun InViewPills(inView: List<InViewItem>, onOpenInView: () -> Unit) {
                 detail = item.presentation.placeLabel,
                 onClick = onOpenInView,
                 onClickLabel = openInView,
-                // A car the cameras stopped seeing a while ago is told quieter: it may have gone.
+                // A car the cameras stopped seeing a while ago is drawn quieter, and a screen reader
+                // hears when it was last seen: it may have gone.
                 faded = item.presentation.lastSeenLabel != null,
+                stateDescription = item.presentation.lastSeenLabel?.resolve(),
                 leading = { CarThumbnail(item.thumbnailUrl) },
             )
         }
@@ -164,6 +168,7 @@ private fun GlancePill(
     content: Color = MaterialTheme.colorScheme.onSurface,
     detailColor: Color? = null,
     faded: Boolean = false,
+    stateDescription: String? = null,
 ) {
     CompositionLocalProvider(LocalContentColor provides content) {
         Row(
@@ -174,6 +179,7 @@ private fun GlancePill(
                 .clip(CircleShape)
                 .background(container)
                 .clickable(onClickLabel = onClickLabel, role = Role.Button, onClick = onClick)
+                .semantics { if (stateDescription != null) this.stateDescription = stateDescription }
                 .padding(start = 6.dp, end = 14.dp)
                 .alpha(if (faded) 0.6f else 1f),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -185,7 +191,8 @@ private fun GlancePill(
                 Text(
                     text = detail,
                     style = MaterialTheme.typography.labelMedium,
-                    color = detailColor ?: content.copy(alpha = 0.7f),
+                    // A faded pill's detail isn't dimmed a second time: both together fall below 4.5:1.
+                    color = detailColor ?: if (faded) content else content.copy(alpha = 0.7f),
                     maxLines = 1,
                 )
             }

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,7 +87,8 @@ internal fun InViewContent(items: List<InViewItem>?, onOpenCamera: (cameraName: 
                         color = MaterialTheme.colorScheme.onSurface,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(onClick = { onTagCars(cameraName) }, modifier = Modifier.testTag(IN_VIEW_CHECK_TEST_TAG)) {
+                    // 48dp tall on every platform: Material's TextButton is 40dp, and only Android pads its target.
+                    TextButton(onClick = { onTagCars(cameraName) }, modifier = Modifier.heightIn(min = 48.dp).testTag(IN_VIEW_CHECK_TEST_TAG)) {
                         Text(stringResource(Res.string.home_in_view_check))
                     }
                 }
