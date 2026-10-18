@@ -18,10 +18,10 @@ import org.jetbrains.compose.resources.StringResource
  *    `BiometricPrompt` auth completing first (`CryptoObject`), so there is no code path
  *    that reads the plaintext credentials without the OS having just verified biometrics.
  *  - **iOS**: credentials are stored in the Keychain under a `SecAccessControl` created
- *    with the `.biometryCurrentSet` flag. The Keychain item's *data* cannot be read by
+ *    with the `.userPresence` flag. The Keychain item's *data* cannot be read by
  *    `SecItemCopyMatching` without the Security framework itself driving a Face ID/Touch ID
- *    check (via `kSecUseAuthenticationContext`) — again, the OS enforces the tie between
- *    biometrics and the read, not application code.
+ *    check, with the phone's passcode as the fallback (via `kSecUseAuthenticationContext`) —
+ *    again, the OS enforces the tie between the owner check and the read, not application code.
  *
  * On platforms with no OS biometric API (JVM desktop, JS, Wasm), [isAvailable] returns
  * `false` and the other members are no-ops / failures — see the platform `actual`s of

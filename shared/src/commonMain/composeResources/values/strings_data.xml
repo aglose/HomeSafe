@@ -65,8 +65,11 @@
     <string name="biometric_name_touch_id">Touch ID</string>
     <string name="biometric_name_fingerprint">fingerprint</string>
     <string name="biometric_name_generic">biometrics</string>
-    <string name="biometric_confirm_save_reason">Confirm your fingerprint or face to save this login</string>
-    <string name="biometric_sign_in_reason">Sign in with Face ID or Touch ID</string>
+    <!-- iOS, on a phone with a passcode but no Face ID or Touch ID set up. -->
+    <string name="biometric_name_passcode">passcode</string>
+    <!-- iOS shows these two on the Face ID, Touch ID and passcode screens. -->
+    <string name="biometric_confirm_save_reason">Confirm it's you to save this login</string>
+    <string name="biometric_sign_in_reason">Sign in to your server</string>
     <string name="biometric_confirmation_cancelled">Biometric confirmation was cancelled</string>
     <string name="biometric_keychain_save_failed">Couldn't save the login to the Keychain (status %1$s)</string>
     <string name="biometric_sign_in_failed">Biometric sign-in failed or was cancelled</string>
