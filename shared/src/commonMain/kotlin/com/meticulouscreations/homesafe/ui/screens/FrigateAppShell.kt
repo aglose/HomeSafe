@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -111,6 +112,7 @@ import homesafe.shared.generated.resources.shell_show_version
 import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -543,10 +545,27 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
     LocalShellApps.current(nav, tab)
 }
 
-/** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
+/**
+ * The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own
+ * screen. It goes when Home's stack moves under it ([DismissQuickLookWhenHomeMoves]).
+ */
 @Composable
 private fun CardZoomOverlay(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    DismissQuickLookWhenHomeMoves(nav, cardZoom)
     CameraCardZoomOverlay(state = cardZoom) { tile -> nav.homeBackStack.add(cameraRoute(tile)) }
+}
+
+/**
+ * Takes the quick look away, without settling it back into its card, once something else opens
+ * a page on Home: a notification's tap on a moment or a door lands on that page, which the layer
+ * would otherwise go on covering. The layer's own tap on its camera has already let go of it by
+ * the time it opens the camera's screen, so this leaves that alone.
+ */
+@Composable
+internal fun DismissQuickLookWhenHomeMoves(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    LaunchedEffect(nav, cardZoom) {
+        snapshotFlow { nav.homeBackStack.lastOrNull() }.drop(1).collect { cardZoom.dismiss {} }
+    }
 }
 
 /**

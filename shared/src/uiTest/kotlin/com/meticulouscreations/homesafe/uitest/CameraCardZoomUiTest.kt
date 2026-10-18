@@ -21,7 +21,10 @@ import com.meticulouscreations.homesafe.ui.preview.SharedTransitionPreview
 import com.meticulouscreations.homesafe.ui.screens.CameraCard
 import com.meticulouscreations.homesafe.ui.screens.CameraCardZoomOverlay
 import com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState
+import com.meticulouscreations.homesafe.ui.screens.DismissQuickLookWhenHomeMoves
+import com.meticulouscreations.homesafe.ui.screens.DoorsHomeRoute
 import com.meticulouscreations.homesafe.ui.screens.HomeFeed
+import com.meticulouscreations.homesafe.ui.screens.ShellNavigation
 import com.meticulouscreations.homesafe.ui.screens.rememberCameraCardZoomState
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import kotlin.test.Test
@@ -45,7 +48,7 @@ class CameraCardZoomUiTest {
         posterUrl = null,
     )
 
-    private fun ComposeUiTest.setUpHome(): CameraCardZoomState {
+    private fun ComposeUiTest.setUpHome(nav: ShellNavigation? = null): CameraCardZoomState {
         lateinit var state: CameraCardZoomState
         mainClock.autoAdvance = false
         setContent {
@@ -66,6 +69,7 @@ class CameraCardZoomUiTest {
                                 modifier = Modifier.testTag("card-${tile.camera.name}"),
                             )
                         }
+                        if (nav != null) DismissQuickLookWhenHomeMoves(nav, state)
                         CameraCardZoomOverlay(state = state, onOpenCamera = {})
                     }
                 }
@@ -91,6 +95,22 @@ class CameraCardZoomUiTest {
         assertEquals("front_door", state.target?.camera?.name)
         assertTrue(state.zoom.scale > 1f, "the spread should have zoomed in, was ${state.zoom.scale}")
         onNodeWithContentDescription("Close").assertIsDisplayed()
+    }
+
+    @Test
+    fun aDoorNotificationTapTakesAnOpenLookAwaySoTheDoorsPageIsNotUnderIt() = runComposeUiTest {
+        val nav = ShellNavigation()
+        val state = setUpHome(nav)
+        onNodeWithTag("card-back_yard").performTouchInput { longClick(center) }
+        mainClock.advanceTimeBy(SETTLE_MS)
+        assertEquals("back_yard", state.target?.camera?.name)
+
+        runOnUiThread { nav.openDoors() }
+        mainClock.advanceTimeBy(SETTLE_MS)
+
+        assertEquals(DoorsHomeRoute, nav.homeBackStack.last())
+        assertNull(state.target)
+        onNodeWithContentDescription("Close").assertDoesNotExist()
     }
 
     @Test
