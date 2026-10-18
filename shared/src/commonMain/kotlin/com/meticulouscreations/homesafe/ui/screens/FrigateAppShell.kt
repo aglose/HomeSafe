@@ -39,11 +39,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Sensors
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -104,10 +107,13 @@ import com.meticulouscreations.homesafe.viewmodel.AppShellViewModel
 import com.meticulouscreations.homesafe.viewmodel.CameraTile
 import dev.zacsweers.metrox.viewmodel.metroViewModel
 import homesafe.shared.generated.resources.Res
+import homesafe.shared.generated.resources.home_arrange_menu
+import homesafe.shared.generated.resources.home_arrange_menu_done
 import homesafe.shared.generated.resources.shell_app_title
 import homesafe.shared.generated.resources.shell_app_version
 import homesafe.shared.generated.resources.shell_menu
 import homesafe.shared.generated.resources.shell_offline
+import homesafe.shared.generated.resources.shell_show_options
 import homesafe.shared.generated.resources.shell_show_version
 import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
@@ -452,7 +458,15 @@ fun FrigateAppShell() {
         showTopBar = nav.showsTopBar(nav.selectedTab),
         showBottomNav = nav.showsBottomNav(nav.selectedTab),
         immersive = nav.showsFullScreenVideo(nav.selectedTab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
+        topBar = {
+            FrigateTopBar(
+                activeConnection = activeConnection,
+                appVersion = viewModel.appVersion,
+                onMenu = { nav.drawerOpen = true },
+                offline = offline,
+                arrange = if (nav.selectedTab == TopLevelRoute.Home) homeArrangeAction() else null,
+            )
+        },
         selectedTab = nav.selectedTab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, nav.selectedTab) },
@@ -506,7 +520,15 @@ fun ShellTab(nav: ShellNavigation, tab: TopLevelRoute) {
         showTopBar = nav.showsTopBar(tab),
         showBottomNav = nav.showsBottomNav(tab),
         immersive = nav.showsFullScreenVideo(tab),
-        topBar = { FrigateTopBar(activeConnection = activeConnection, appVersion = viewModel.appVersion, onMenu = { nav.drawerOpen = true }, offline = offline) },
+        topBar = {
+            FrigateTopBar(
+                activeConnection = activeConnection,
+                appVersion = viewModel.appVersion,
+                onMenu = { nav.drawerOpen = true },
+                offline = offline,
+                arrange = if (tab == TopLevelRoute.Home) homeArrangeAction() else null,
+            )
+        },
         selectedTab = tab,
         onSelectTab = nav::selectTab,
         overlay = { ShellOverlays(nav, cardZoom, tab) },
@@ -730,9 +752,17 @@ internal fun ShellSkeleton(onMenu: () -> Unit = {}) {
  * [appVersion] is what the route badge shows when tapped; unused until there is a route to badge.
  * [onMenu] opens the drawer. With [offline] the badge says so instead of naming the route: the
  * app is on what the device kept, and "Tailscale" there would read as "connected over Tailscale".
+ * [arrange] is Home's way into Arrange mode, the first thing in the badge's menu while Home is up
+ * with cameras to arrange (the status icon opens the same menu before there is a route).
  */
 @Composable
-internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: String, onMenu: () -> Unit = {}, offline: Boolean = false) {
+internal fun FrigateTopBar(
+    activeConnection: ActiveConnection?,
+    appVersion: String,
+    onMenu: () -> Unit = {},
+    offline: Boolean = false,
+    arrange: ArrangeAction? = null,
+) {
     // A Box, not a Row: the title is centred on the screen regardless of what sits at the ends,
     // so it doesn't shift when the status icon becomes the (wider) route badge — which is also
     // the moment the sign-in skeleton's bar dissolves into the real one.
@@ -755,11 +785,16 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
         )
         val route = activeConnection?.route
         if (route == null) {
-            IconButton(onClick = {}, modifier = Modifier.size(48.dp).align(Alignment.CenterEnd)) {
-                Icon(Icons.Filled.Sensors, contentDescription = stringResource(Res.string.shell_status), tint = MaterialTheme.colorScheme.primary)
+            var showMenu by remember { mutableStateOf(false) }
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+                IconButton(onClick = { showMenu = arrange != null }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Sensors, contentDescription = stringResource(Res.string.shell_status), tint = MaterialTheme.colorScheme.primary)
+                }
+                // No version here: the sign-in skeleton's bar has none to give.
+                TopBarMenu(expanded = showMenu && arrange != null, onDismiss = { showMenu = false }, appVersion = null, arrange = arrange)
             }
         } else {
-            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion, offline) }
+            Box(modifier = Modifier.align(Alignment.CenterEnd)) { ConnectionRouteBadge(route, appVersion, offline, arrange) }
         }
     }
 }
@@ -768,10 +803,11 @@ internal fun FrigateTopBar(activeConnection: ActiveConnection?, appVersion: Stri
  * "Local" (the local network) vs "Tailscale" at a glance — the former is the fast, direct video
  * path — or "Offline" while the server can't be reached on either. The names are the routes'
  * short ones: the badge shares the bar with the centred title, and "Local network" ran into it.
- * A tap drops down the app's version, which is how to tell which release is on the phone.
+ * A tap drops down the app's version, which is how to tell which release is on the phone, under
+ * Home's Arrange while there is an [arrange].
  */
 @Composable
-private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, offline: Boolean) {
+private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, offline: Boolean, arrange: ArrangeAction?) {
     val tint = when {
         offline -> MaterialTheme.colorScheme.error
         route == ConnectionRoute.LOCAL_NETWORK -> MaterialTheme.colorScheme.secondary
@@ -787,7 +823,7 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, off
                 interactionSource = interactionSource,
                 indication = null,
                 role = Role.Button,
-                onClickLabel = stringResource(Res.string.shell_show_version),
+                onClickLabel = stringResource(if (arrange != null) Res.string.shell_show_options else Res.string.shell_show_version),
             ) { showVersion = true }
             .minimumInteractiveComponentSize(),
     ) {
@@ -810,7 +846,26 @@ private fun ConnectionRouteBadge(route: ConnectionRoute, appVersion: String, off
             }
             Text(text = stringResource(if (offline) Res.string.shell_offline else route.shortLabel), style = MaterialTheme.typography.labelSmall, color = tint)
         }
-        DropdownMenu(expanded = showVersion, onDismissRequest = { showVersion = false }) {
+        TopBarMenu(expanded = showVersion, onDismiss = { showVersion = false }, appVersion = appVersion, arrange = arrange)
+    }
+}
+
+/** What the top bar's badge drops down: Home's way into or out of Arrange mode when given one, then the app's [appVersion]. */
+@Composable
+private fun TopBarMenu(expanded: Boolean, onDismiss: () -> Unit, appVersion: String?, arrange: ArrangeAction?) {
+    DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+        if (arrange != null) {
+            DropdownMenuItem(
+                text = { Text(stringResource(if (arrange.arranging) Res.string.home_arrange_menu_done else Res.string.home_arrange_menu)) },
+                onClick = {
+                    onDismiss()
+                    arrange.onToggle()
+                },
+                leadingIcon = { Icon(if (arrange.arranging) Icons.Filled.Check else Icons.Filled.SwapVert, contentDescription = null) },
+                modifier = Modifier.testTag(HOME_ARRANGE_MENU_ITEM_TEST_TAG),
+            )
+        }
+        if (appVersion != null) {
             Text(
                 text = stringResource(Res.string.shell_app_version, appVersion),
                 style = MaterialTheme.typography.bodyMedium,
