@@ -25,6 +25,7 @@ import com.meticulouscreations.homesafe.domain.model.ActiveConnection
 import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.navigation.TopLevelRoute
 import com.meticulouscreations.homesafe.ui.preview.FrigatePreview
+import com.meticulouscreations.homesafe.ui.screens.ArrangeAction
 import com.meticulouscreations.homesafe.ui.screens.FrigateTopBar
 import com.meticulouscreations.homesafe.ui.screens.ShellScaffold
 import com.meticulouscreations.homesafe.ui.screens.ShellSkeleton
@@ -224,5 +225,31 @@ class ShellChromeUiTest {
         onNodeWithText("Tailscale").performClick()
 
         onNodeWithText("Version 1.0.62 (431)").assertIsDisplayed()
+    }
+
+    @Test
+    fun homesArrangeIsInTheBadgesMenuAndSaysDoneWhileOn() = runComposeUiTest {
+        var arranging by mutableStateOf(false)
+        setContent {
+            FrigatePreview {
+                FrigateTopBar(
+                    activeConnection = ActiveConnection(serverUrl = "http://100.64.0.1:5000", localUrl = null, route = ConnectionRoute.TAILSCALE),
+                    appVersion = "1.0.62 (431)",
+                    arrange = ArrangeAction(arranging = arranging, onToggle = { arranging = !arranging }),
+                )
+            }
+        }
+        onNodeWithText("Arrange cameras").assertDoesNotExist()
+
+        onNodeWithText("Tailscale").performClick()
+        onNodeWithText("Version 1.0.62 (431)").assertIsDisplayed()
+        onNodeWithText("Arrange cameras").performClick()
+
+        assertTrue(arranging)
+        // The menu closes on the tap; opened again, the same item is the way out.
+        onNodeWithText("Arrange cameras").assertDoesNotExist()
+        onNodeWithText("Tailscale").performClick()
+        onNodeWithText("Done arranging").performClick()
+        assertEquals(false, arranging)
     }
 }

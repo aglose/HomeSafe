@@ -12,7 +12,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,17 +48,16 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.DirectionsCar
-import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -129,7 +127,6 @@ import homesafe.shared.generated.resources.camera_frame_click_label
 import homesafe.shared.generated.resources.camera_move_earlier
 import homesafe.shared.generated.resources.camera_move_later
 import homesafe.shared.generated.resources.common_dot_separator
-import homesafe.shared.generated.resources.home_arrange
 import homesafe.shared.generated.resources.home_arrange_done
 import homesafe.shared.generated.resources.home_arrange_hint
 import homesafe.shared.generated.resources.home_away_back
@@ -186,7 +183,7 @@ fun HomeTabContent(
     ReportFullyDrawnWhen { cameras != null }
 
     val hasIndoor = !indoorCameras.isNullOrEmpty()
-    val shownPlacement = if (hasIndoor && placement == CameraPlacement.Indoor) CameraPlacement.Indoor else CameraPlacement.Outdoor
+    val shownPlacement = shownPlacement(placement, indoorCameras)
     val shown = if (shownPlacement == CameraPlacement.Indoor) indoorCameras else cameras
     HomeFeed(
         everyoneAway = everyoneAway,
@@ -194,7 +191,7 @@ fun HomeTabContent(
         placement = placement.takeIf { hasIndoor },
         onPlacementChange = viewModel::showPlacement,
         arranging = arranging,
-        onArrangeToggle = if (arranging) viewModel::finishArranging else viewModel::startArranging,
+        onFinishArranging = viewModel::finishArranging,
         onMoveCamera = { from, to -> viewModel.moveCamera(shownPlacement, from, to) },
         onDrop = { viewModel.saveOrder(shownPlacement) },
         onAwayBack = viewModel::markBack,
@@ -235,6 +232,34 @@ fun HomeTabContent(
     }
 }
 
+/** Which of its lists Home shows: the indoor cameras only when there are any and they were picked. */
+private fun shownPlacement(placement: CameraPlacement, indoorCameras: List<CameraTile>?): CameraPlacement =
+    if (!indoorCameras.isNullOrEmpty() && placement == CameraPlacement.Indoor) CameraPlacement.Indoor else CameraPlacement.Outdoor
+
+/**
+ * The way into and out of Arrange mode, for the top bar's menu: [arranging] says which way
+ * [onToggle] goes.
+ */
+@Immutable
+internal data class ArrangeAction(val arranging: Boolean, val onToggle: () -> Unit)
+
+/**
+ * Arrange mode's switch for the top bar's menu while the Home list has cameras to arrange, and
+ * null while it has none. The shell draws the bar, so it reads Home's view model here: the same
+ * instance [HomeTabContent] has, as the shell's back stacks don't scope view models per entry.
+ */
+@Composable
+internal fun homeArrangeAction(): ArrangeAction? {
+    val viewModel: HomeViewModel = metroViewModel()
+    val cameras by viewModel.cameras.collectAsStateWithLifecycle()
+    val indoorCameras by viewModel.indoorCameras.collectAsStateWithLifecycle()
+    val placement by viewModel.placement.collectAsStateWithLifecycle()
+    val arranging by viewModel.arranging.collectAsStateWithLifecycle()
+    val shown = if (shownPlacement(placement, indoorCameras) == CameraPlacement.Indoor) indoorCameras else cameras
+    if (shown.isNullOrEmpty()) return null
+    return ArrangeAction(arranging = arranging, onToggle = if (arranging) viewModel::finishArranging else viewModel::startArranging)
+}
+
 /**
  * The home page's list: the cars in view and one card per camera — or, while [cameras] is still null
  * (the first cache read in flight), the loading skeleton: outlined cards where the cameras will
@@ -250,10 +275,14 @@ fun HomeTabContent(
  * theirs), so it fades in and the cards below slide down to make room rather than jumping by the
  * strip's whole height.
  *
- * With a [placement], the [CameraPlacementSwitch] heads the cameras, and [cameras] are the ones
- * of that placement; null leaves it out (a server with no indoor cameras, and the skeleton). For
- * a phone held in one hand, the same switch also floats just above the nav (tucked away while the
- * list is scrolled down), and a swipe sideways across the list switches too ([placementSwipe]).
+ * With a [placement], the [CameraPlacementSwitch] floats just above the nav, where a thumb reaches
+ * it (tucked away while the list is scrolled down), and [cameras] are the ones of that placement;
+ * null leaves it out (a server with no indoor cameras, and the skeleton). A swipe sideways across
+ * the list switches too ([placementSwipe]).
+ *
+ * The way into Arrange mode is in the top bar's menu (see [homeArrangeAction]). While [arranging],
+ * a line heads the cameras saying how it works, with [onFinishArranging]'s Done beside it.
+ *
  * [listTestTag] goes on the scrolling list itself, where a test can scroll it.
  *
  * Pulling the list down from the top refreshes the page — [onRefresh], with the band open while
@@ -290,7 +319,7 @@ internal fun HomeFeed(
     placement: CameraPlacement? = null,
     onPlacementChange: (CameraPlacement) -> Unit = {},
     arranging: Boolean = false,
-    onArrangeToggle: (() -> Unit)? = null,
+    onFinishArranging: () -> Unit = {},
     onMoveCamera: (from: String, to: String) -> Unit = { _, _ -> },
     onDrop: () -> Unit = {},
     listTestTag: String? = null,
@@ -374,16 +403,9 @@ internal fun HomeFeed(
                     }
                 }
 
-                val canArrange = onArrangeToggle != null && !cameras.isNullOrEmpty()
-                if (placement != null || canArrange) {
-                    item(key = "camera-header", span = { GridItemSpan(maxLineSpan) }) {
-                        CamerasHeader(
-                            placement = placement,
-                            onPlacementChange = onPlacementChange,
-                            arranging = arranging,
-                            onArrangeToggle = onArrangeToggle.takeIf { canArrange },
-                            modifier = Modifier.animateItem(),
-                        )
+                if (arranging && !cameras.isNullOrEmpty()) {
+                    item(key = "arrange-header", span = { GridItemSpan(maxLineSpan) }) {
+                        ArrangeHeader(onDone = onFinishArranging, modifier = Modifier.animateItem())
                     }
                 }
 
@@ -434,9 +456,8 @@ internal fun HomeFeed(
 }
 
 /**
- * The Outdoor | Indoor switch again, floating just above the nav where a thumb reaches it: the
- * one heading the list is at the top of a tall phone. Out of the way while [shown] says so (a
- * lambda, so the scroll that decides it recomposes only this).
+ * The Outdoor | Indoor switch, floating just above the nav where a thumb reaches it. Out of the
+ * way while [shown] says so (a lambda, so the scroll that decides it recomposes only this).
  */
 @Composable
 private fun FloatingPlacementSwitch(
@@ -469,64 +490,23 @@ private val FLOATING_SWITCH_SCROLL_TRAVEL = 16.dp
 private const val FLOATING_SWITCH_MS = 200
 
 /**
- * What heads the cameras: the Outdoor | Indoor switch when there is anything indoors, and the way
- * into and out of Arrange mode, with a line saying how it works while it is on.
+ * What heads the cameras in Arrange mode: a line saying how it works, and the way out, Done,
+ * filled in the primary colour so it is the loudest thing on the page. The way in is the top
+ * bar's menu.
  */
 @Composable
-private fun CamerasHeader(
-    placement: CameraPlacement?,
-    onPlacementChange: (CameraPlacement) -> Unit,
-    arranging: Boolean,
-    onArrangeToggle: (() -> Unit)?,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (placement != null) CameraPlacementSwitch(selected = placement, onSelect = onPlacementChange)
-            Spacer(modifier = Modifier.weight(1f))
-            if (onArrangeToggle != null) {
-                ArrangeButton(arranging = arranging, onClick = onArrangeToggle)
-            }
-        }
-        AnimatedVisibility(visible = arranging) {
-            Text(
-                text = stringResource(Res.string.home_arrange_hint),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-}
-
-/**
- * The way into Arrange mode, a pill in the same surface and edge as the Outdoor | Indoor switch
- * beside it, and out of it again: Done, filled in the primary colour while the mode is on, so the
- * way out is the loudest thing on the page.
- */
-@Composable
-private fun ArrangeButton(arranging: Boolean, onClick: () -> Unit) {
-    val modifier = Modifier.testTag(HOME_ARRANGE_BUTTON_TEST_TAG)
-    val padding = ButtonDefaults.ButtonWithIconContentPadding
-    if (arranging) {
-        Button(onClick = onClick, modifier = modifier, contentPadding = padding) {
+private fun ArrangeHeader(onDone: () -> Unit, modifier: Modifier = Modifier) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(
+            text = stringResource(Res.string.home_arrange_hint),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Button(onClick = onDone, modifier = Modifier.testTag(HOME_ARRANGE_DONE_TEST_TAG), contentPadding = ButtonDefaults.ButtonWithIconContentPadding) {
             Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
             Spacer(Modifier.width(ButtonDefaults.IconSpacing))
             Text(stringResource(Res.string.home_arrange_done))
-        }
-    } else {
-        FilledTonalButton(
-            onClick = onClick,
-            modifier = modifier,
-            colors = ButtonDefaults.filledTonalButtonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)),
-            contentPadding = padding,
-        ) {
-            Icon(Icons.Filled.SwapVert, contentDescription = null, modifier = Modifier.size(ButtonDefaults.IconSize))
-            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-            Text(stringResource(Res.string.home_arrange))
         }
     }
 }
@@ -951,8 +931,11 @@ private const val CARD_PINCH_OPEN_ZOOM_THRESHOLD = 1.1f
 /** UiAutomator handle (`By.res`) for the home feed, used by the :baselineprofile journeys. */
 const val HOME_FEED_TEST_TAG = "home_feed"
 
-/** The Home page's Arrange / Done button, above the cameras. */
-const val HOME_ARRANGE_BUTTON_TEST_TAG = "home_arrange_button"
+/** Arrange mode's way in and out in the top bar's menu, on the Home page. */
+const val HOME_ARRANGE_MENU_ITEM_TEST_TAG = "home_arrange_menu_item"
+
+/** Arrange mode's Done, heading the cameras while the mode is on. */
+const val HOME_ARRANGE_DONE_TEST_TAG = "home_arrange_done"
 
 /** The "In view now" caption, which opens the car-tagging screen. */
 internal const val IN_VIEW_CHECK_TEST_TAG = "in_view_check"

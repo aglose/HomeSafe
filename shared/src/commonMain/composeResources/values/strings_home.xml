@@ -15,7 +15,8 @@
     <string name="home_placement_outdoor">Outdoor</string>
     <string name="home_placement_indoor">Indoor</string>
     <!-- Arrange mode: the cameras dragged into order and turned the right way up. -->
-    <string name="home_arrange">Arrange</string>
+    <string name="home_arrange_menu">Arrange cameras</string>
+    <string name="home_arrange_menu_done">Done arranging</string>
     <string name="home_arrange_done">Done</string>
     <string name="home_arrange_hint">Hold a camera to drag it. Tap it to straighten, zoom or crop its picture.</string>
     <string name="camera_move_earlier">Move earlier</string>
@@ -195,6 +196,7 @@
     <string name="shell_offline">Offline</string>
     <!-- Accessibility action on the connection badge. -->
     <string name="shell_show_version">Show the app version</string>
+    <string name="shell_show_options">Show options and the app version</string>
     <!-- %1$s is the app's version, e.g. "1.4.2". -->
     <string name="shell_app_version">Version %1$s</string>
     <!-- Accessibility action on the scrim behind the drawer. -->

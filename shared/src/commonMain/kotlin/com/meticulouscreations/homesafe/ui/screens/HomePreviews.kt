@@ -46,7 +46,7 @@ fun HomeFeedPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewTiles, inView = previewInView)
 }
 
-/** A server with Nest cameras too: the switch heads the cameras, on the outdoor ones as the page opens. */
+/** A server with Nest cameras too: the switch floats above the nav, on the outdoor ones as the page opens. */
 @Preview(name = "Home, with indoor cameras", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedWithIndoorPreview() {
@@ -60,7 +60,7 @@ fun HomeFeedIndoorPreview() {
     HomeFeedPreviewContent(everyoneAway = false, cameras = previewIndoorTiles, inView = previewInView, placement = CameraPlacement.Indoor)
 }
 
-/** Arrange mode on the indoor cameras: each card with its turn and tilt controls, the nursery's picture set crooked. */
+/** Arrange mode on the indoor cameras: the hint and Done heading them, each card with its turn and tilt controls, the nursery's picture set crooked. */
 @Preview(name = "Home, arranging", widthDp = PHONE_WIDTH_DP, heightDp = PHONE_HEIGHT_DP)
 @Composable
 fun HomeFeedArrangingPreview() {
@@ -143,7 +143,6 @@ private fun HomeFeedPreviewContent(
                 onOpenTailscale = {},
                 placement = placement,
                 arranging = arranging,
-                onArrangeToggle = {},
             ) { tile ->
                 CameraCard(
                     tile = tile,
