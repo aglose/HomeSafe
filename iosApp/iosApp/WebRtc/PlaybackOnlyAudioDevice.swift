@@ -1,5 +1,6 @@
 import AudioToolbox
 import AVFoundation
+import Shared
 import WebRTC
 
 /// The audio device libwebrtc plays remote audio through: a RemoteIO unit with only its output
@@ -14,14 +15,28 @@ import WebRTC
 ///
 /// Samples are 16-bit mono at 48 kHz, the shape libwebrtc's device module asks for; RemoteIO
 /// converts to whatever the route plays.
+///
+/// The audio session is active only while there is sound to play: it is activated as playout
+/// starts, and released a moment after the last stop, telling other apps (music a camera's
+/// sound paused) they may resume. The release waits for the app's AVPlayers too, which share
+/// the session (`IosAudioSessionPlayers`): deactivating stops whatever runs in it.
+///
+/// Everything but the render callback runs on the device module's thread.
 final class PlaybackOnlyAudioDevice: NSObject, RTCAudioDevice {
 
     private static let sampleRate = 48_000.0
+
+    /// How long the session outlives a stop, so moving from one camera to the next doesn't
+    /// hand the audio to another app and take it straight back.
+    private static let sessionReleaseDelay: TimeInterval = 1.5
 
     private var delegate: RTCAudioDeviceDelegate?
     private var unit: AudioUnit?
     private var context: PlayoutContext?
     private var interruptionObserver: NSObjectProtocol?
+    private var sessionActive = false
+    /// Bumped by every start and stop, so a release scheduled before either is dropped.
+    private var releaseGeneration = 0
 
     private(set) var isInitialized = false
     private(set) var isPlayoutInitialized = false
@@ -60,7 +75,6 @@ final class PlaybackOnlyAudioDevice: NSObject, RTCAudioDevice {
             // The category libwebrtc's own session was configured with before: plain playback,
             // out of the speaker, through the ringer switch, like any video player.
             try session.setCategory(.playback, mode: .moviePlayback, options: [])
-            try session.setActive(true)
         } catch {
             NSLog("HomeSafeWebRtc: audio session refused playback: \(error)")
             return false
@@ -77,6 +91,16 @@ final class PlaybackOnlyAudioDevice: NSObject, RTCAudioDevice {
     func startPlayout() -> Bool {
         guard isPlayoutInitialized, let unit else { return false }
         if isPlaying { return true }
+        releaseGeneration += 1
+        // Every start, not only the first: the session was released after the last stop, or
+        // ended by a call that came while nothing played.
+        do {
+            try AVAudioSession.sharedInstance().setActive(true)
+            sessionActive = true
+        } catch {
+            NSLog("HomeSafeWebRtc: audio session would not activate: \(error)")
+            return false
+        }
         let status = AudioOutputUnitStart(unit)
         guard status == noErr else {
             NSLog("HomeSafeWebRtc: audio unit would not start: \(status)")
@@ -87,9 +111,33 @@ final class PlaybackOnlyAudioDevice: NSObject, RTCAudioDevice {
     }
 
     func stopPlayout() -> Bool {
-        if isPlaying, let unit { AudioOutputUnitStop(unit) }
+        guard isPlaying else { return true }
+        if let unit { AudioOutputUnitStop(unit) }
         isPlaying = false
+        // The next start may render on another thread; the module's playout thread check is
+        // reset by this, as after an interruption.
+        delegate?.notifyAudioOutputInterrupted()
+        scheduleSessionRelease()
         return true
+    }
+
+    /// Releases the session once playout has stayed stopped for `sessionReleaseDelay` and no
+    /// AVPlayer in the app is playing (asked on the main thread, where the players live).
+    private func scheduleSessionRelease() {
+        releaseGeneration += 1
+        let generation = releaseGeneration
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.sessionReleaseDelay) { [weak self] in
+            guard let self, !IosAudioSessionPlayers.shared.anyPlaying else { return }
+            self.delegate?.dispatchAsync {
+                guard generation == self.releaseGeneration, !self.isPlaying, self.sessionActive else { return }
+                do {
+                    try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+                    self.sessionActive = false
+                } catch {
+                    NSLog("HomeSafeWebRtc: audio session would not deactivate: \(error)")
+                }
+            }
+        }
     }
 
     // Nothing here records: refusing is what keeps the microphone untouched.
@@ -177,13 +225,16 @@ final class PlaybackOnlyAudioDevice: NSObject, RTCAudioDevice {
                   let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                   let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
             delegate.dispatchAsync {
+                // The system ends the session for a call whether or not anything was playing.
+                if type == .began { self.sessionActive = false }
                 guard self.isPlaying, let unit = self.unit else { return }
                 switch type {
                 case .began:
                     AudioOutputUnitStop(unit)
                     delegate.notifyAudioOutputInterrupted()
                 case .ended:
-                    try? AVAudioSession.sharedInstance().setActive(true)
+                    guard (try? AVAudioSession.sharedInstance().setActive(true)) != nil else { return }
+                    self.sessionActive = true
                     AudioOutputUnitStart(unit)
                 @unknown default:
                     break

@@ -288,6 +288,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         clearObservers()
         player.pause()
         player.replaceCurrentItemWithPlayerItem(null)
+        IosAudioSessionPlayers.report(this, false)
     }
 
     /**
@@ -420,6 +421,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
             player.replaceCurrentItemWithPlayerItem(null)
             hlsUrl = null
             needsColdStart = true
+            reportSessionUse()
         }
     }
 
@@ -427,6 +429,13 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         val playing = requestedPlayWhenReady && activeBinders > 0
         if (playing) player.play() else player.pause()
         peer?.setVideoEnabled(playing)
+        reportSessionUse()
+    }
+
+    /** Tells the WebRTC audio device whether this player is running in the shared audio session (see [IosAudioSessionPlayers]). */
+    private fun reportSessionUse() {
+        val running = transport == LiveTransport.HLS && player.currentItem != null && requestedPlayWhenReady && activeBinders > 0
+        IosAudioSessionPlayers.report(this, running)
     }
 
     private fun webRtcAllowed(streamUrl: String): Boolean = IosWebRtc.peerFactory != null && LiveTransportMemory.shared.allowsWebRtc(streamUrl)
@@ -515,6 +524,7 @@ internal class LivePlayerHolder(val key: String?, private val webRtc: WebRtcConn
         player.pause()
         player.replaceCurrentItemWithPlayerItem(null)
         hlsUrl = null
+        reportSessionUse()
         watch(newPeer)
     }
 
