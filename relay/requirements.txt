@@ -5,3 +5,4 @@ requests==2.34.2
 pydantic==2.13.5
 tzdata==2026.5
 Pillow==12.3.0
+paho-mqtt==2.1.0

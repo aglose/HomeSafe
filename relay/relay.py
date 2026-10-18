@@ -364,6 +364,18 @@ def db() -> sqlite3.Connection:
     # JSON object of check -> 1/0 (a check that couldn't be made is left out), `devices` each
     # tailnet device -> 1/0 for whether Tailscale had it online.
     conn.execute("CREATE TABLE IF NOT EXISTS uptime (at INTEGER PRIMARY KEY, checks TEXT, devices TEXT)")
+    # The door sensors (see "doors"), each by its Zigbee IEEE address: its name on the pairing
+    # page, whether it's open (NULL until its first reading) and since when, what it last said of
+    # its battery and signal, whether Zigbee2MQTT has it online, when an opening of it should push
+    # (`notify`), and when one last did. A sensor taken off the network keeps its row and history
+    # with `removed` set. Then every opening and closing, kept DOOR_HISTORY_DAYS.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS doors (id TEXT PRIMARY KEY, name TEXT, model TEXT, open INTEGER, changed REAL, battery INTEGER,"
+        " battery_low INTEGER, link INTEGER, online INTEGER, last_seen REAL, notify TEXT NOT NULL DEFAULT 'away', last_push REAL,"
+        " removed INTEGER NOT NULL DEFAULT 0)"
+    )
+    conn.execute("CREATE TABLE IF NOT EXISTS door_events (id INTEGER PRIMARY KEY AUTOINCREMENT, door TEXT NOT NULL, open INTEGER NOT NULL, at REAL NOT NULL, pushed TEXT)")
+    conn.execute("CREATE INDEX IF NOT EXISTS door_events_at ON door_events (at)")
     columns = {row[1] for row in conn.execute("PRAGMA table_info(devices)")}
     if "device_id" not in columns:
         # A relay.db from before devices had an identity of their own: the token *was* the key.
@@ -4454,6 +4466,7 @@ def startup() -> None:
     threading.Thread(target=uptime_forever, name="uptime", daemon=True).start()
     threading.Thread(target=bank_forever, name="bank-sync", daemon=True).start()
     threading.Thread(target=timeline_forever, name="timeline", daemon=True).start()
+    threading.Thread(target=doors_forever, name="doors", daemon=True).start()
     if NEST_PRIMER:
         threading.Thread(target=nest_primer_forever, name="nest-primer", daemon=True).start()
     log.info("relay up: frigate=%s project=%s poll=%ss", FRIGATE, PROJECT, POLL_SECONDS)
@@ -5045,6 +5058,304 @@ def test_push(request: Request) -> dict[str, Any]:
     return {"ok": True, **result}
 
 
+# ---------------------------------------------------------------- doors
+
+# The door sensors (docs/doors.md): Zigbee contact sensors paired to the stick on this box, which
+# Zigbee2MQTT drives and publishes to the Mosquitto broker beside it. A sensor's readings arrive
+# as one JSON message on `zigbee2mqtt/<its name>` each time it says anything; `contact` is true
+# while the magnet is against it, so false is open. The retained device list
+# (`zigbee2mqtt/bridge/devices`) says which devices are contact sensors and ties each name to its
+# IEEE address, which is what a door is known by here: renaming it on the pairing page keeps its
+# history and its setting.
+#
+# Whether an opening pushes is each door's `notify`. "away", the default, pushes only while
+# everyone's away, as an away alert (the loud channel, every phone). "always" also pushes while
+# someone is home, as an ordinary push that each phone's quiet hours and "only when away" hold
+# back. "never" keeps the history and nothing else. Only openings push, and a door opened again
+# within DOOR_QUIET_SECONDS of its last push updates that notification without a sound.
+
+MQTT_HOST = os.environ.get("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+Z2M_TOPIC = os.environ.get("Z2M_TOPIC", "zigbee2mqtt").strip("/")
+DOOR_NOTIFY_MODES = ("away", "always", "never")
+DOOR_QUIET_SECONDS = 120
+DOOR_HISTORY_DAYS = 90
+# Whether the relay is connected to the broker, and whether Zigbee2MQTT says it's running, for the
+# app to tell "no sensors yet" from "can't hear them".
+DOORS_LINK = {"broker": False, "bridge": False}
+
+
+def has_contact(exposes: Any) -> bool:
+    """Whether a device's `exposes` (Zigbee2MQTT's description of what it reports, nested in `features`) includes `contact`."""
+    for expose in exposes or []:
+        if not isinstance(expose, dict):
+            continue
+        if expose.get("property") == "contact" or has_contact(expose.get("features")):
+            return True
+    return False
+
+
+def contact_sensors(devices: Any) -> dict[str, dict[str, Any]]:
+    """The contact sensors in Zigbee2MQTT's device list, by IEEE address: each one's name and model."""
+    found = {}
+    for device in devices if isinstance(devices, list) else []:
+        if not isinstance(device, dict) or device.get("type") == "Coordinator" or not device.get("ieee_address"):
+            continue
+        definition = device.get("definition") or {}
+        if has_contact(definition.get("exposes")):
+            model = " ".join(part for part in (definition.get("vendor"), definition.get("model")) if part)
+            found[device["ieee_address"]] = {"name": device.get("friendly_name") or device["ieee_address"], "model": model or None}
+    return found
+
+
+def door_message(topic: str, payload: bytes) -> tuple[str, str | None, Any] | None:
+    """
+    What one broker message is: ("devices", None, the device list), ("bridge", None, "online" or
+    "offline"), ("availability", name, "online" or "offline"), ("state", name, readings), or None
+    for anything else. Zigbee2MQTT 2 sends availability as `{"state": "online"}`, 1.x as plain text.
+    """
+    prefix = Z2M_TOPIC + "/"
+    if not topic.startswith(prefix):
+        return None
+    rest = topic[len(prefix):]
+    text = payload.decode("utf-8", "replace").strip() if isinstance(payload, (bytes, bytearray)) else str(payload)
+    try:
+        body: Any = json.loads(text) if text else None
+    except ValueError:
+        body = text
+    if rest == "bridge/devices":
+        return ("devices", None, body)
+    if rest == "bridge/state":
+        return ("bridge", None, body.get("state") if isinstance(body, dict) else body)
+    if rest.startswith("bridge/"):
+        return None
+    if rest.endswith("/availability"):
+        return ("availability", rest[: -len("/availability")], body.get("state") if isinstance(body, dict) else body)
+    if isinstance(body, dict):
+        return ("state", rest, body)
+    return None
+
+
+def door_sync(sensors: dict[str, dict[str, Any]]) -> None:
+    """Brings the doors in line with Zigbee2MQTT's device list: new sensors join, renamed ones take their new name, removed ones are hidden."""
+    def sync(c: sqlite3.Connection) -> None:
+        for door_id, sensor in sensors.items():
+            c.execute(
+                "INSERT INTO doors (id, name, model) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, model=excluded.model, removed=0",
+                (door_id, sensor["name"], sensor["model"]),
+            )
+        marks = ",".join("?" * len(sensors))
+        c.execute(f"UPDATE doors SET removed=1 WHERE id NOT IN ({marks})" if sensors else "UPDATE doors SET removed=1", tuple(sensors))
+        c.commit()
+
+    with_db(sync)
+
+
+def door_by_name(name: str) -> tuple | None:
+    return with_db(lambda c: c.execute("SELECT id, name, open, notify, last_push FROM doors WHERE name=? AND removed=0", (name,)).fetchone())
+
+
+def door_state(name: str, readings: dict[str, Any], now: float) -> dict[str, Any] | None:
+    """
+    Takes one message from a sensor: keeps its battery and signal, and when `contact` says the
+    door changed, records the change and answers it as {"id", "name", "open", "notify",
+    "last_push", "event"}. A sensor's first reading is where it starts, not a change; so is a
+    reading that only repeats the state it's in (Zigbee2MQTT resends the last one on restart).
+    """
+    row = door_by_name(name)
+    if row is None:
+        return None
+    door_id, door_name, was_open, notify, last_push = row
+    battery = readings.get("battery")
+    link = readings.get("linkquality")
+    battery_low = readings.get("battery_low")
+    with_db(lambda c: (c.execute(
+        "UPDATE doors SET battery=COALESCE(?, battery), link=COALESCE(?, link), battery_low=COALESCE(?, battery_low), last_seen=?, online=1 WHERE id=?",
+        (
+            int(battery) if isinstance(battery, (int, float)) else None,
+            int(link) if isinstance(link, (int, float)) else None,
+            int(battery_low) if isinstance(battery_low, bool) else None,
+            now,
+            door_id,
+        ),
+    ), c.commit()))
+    contact = readings.get("contact")
+    if not isinstance(contact, bool):
+        return None
+    is_open = not contact
+    if was_open is not None and bool(was_open) == is_open:
+        return None
+
+    def record(c: sqlite3.Connection) -> int | None:
+        c.execute("UPDATE doors SET open=?, changed=? WHERE id=?", (int(is_open), now, door_id))
+        event = None
+        if was_open is not None:
+            event = c.execute("INSERT INTO door_events (door, open, at) VALUES (?,?,?)", (door_id, int(is_open), now)).lastrowid
+            c.execute("DELETE FROM door_events WHERE at < ?", (now - DOOR_HISTORY_DAYS * 86400,))
+        c.commit()
+        return event
+
+    event = with_db(record)
+    if event is None:
+        return None
+    return {"id": door_id, "name": door_name, "open": is_open, "notify": notify, "last_push": last_push, "event": event}
+
+
+def door_route(notify: str, away: bool) -> str | None:
+    """How an opening goes out: "away" (loud, every phone), "home" (an ordinary push), or None for not at all."""
+    if notify == "never":
+        return None
+    if away:
+        return "away"
+    return "home" if notify == "always" else None
+
+
+def door_text(name: str, away: bool) -> tuple[str, str]:
+    """A push's title and body in English, for a phone whose app doesn't word them itself from the push's data."""
+    return (f"Away: {name} opened", "Door sensor · nobody home") if away else (f"{name} opened", "Door sensor")
+
+
+def door_announce(change: dict[str, Any], now: float, away: bool, push: Callable[..., dict[str, int]] | None = None) -> str | None:
+    """Pushes one door opening, if its door's `notify` says to now; answers the route it reached a phone by. `push` stands in for `broadcast` in tests."""
+    if not change["open"]:
+        return None
+    route = door_route(change["notify"], away)
+    if route is None:
+        return None
+    quiet = change["last_push"] is not None and now - change["last_push"] < DOOR_QUIET_SECONDS
+    title, body = door_text(change["name"], route == "away")
+    data = {"door": change["id"], "door_name": change["name"], "door_event": "opened", "at": f"{now:.0f}", "notif_id": f"door-{change['id']}"}
+    if route == "away":
+        data["away"] = "1"
+    if quiet:
+        data["silent"] = "1"
+    result = (push or broadcast)(title, body, data, away=route == "away")
+    log.info("door %s opened -> %s push%s: %s", change["name"], route, " (quiet)" if quiet else "", result)
+    # Only a push some phone got counts: one that quiet hours or "only when away" kept from every
+    # phone isn't a notification the next opening could quietly update, nor one the history shows.
+    if not result.get("sent"):
+        return None
+    with_db(lambda c: (
+        c.execute("UPDATE doors SET last_push=? WHERE id=?", (now, change["id"])),
+        c.execute("UPDATE door_events SET pushed=? WHERE id=?", (route, change["event"])),
+        c.commit(),
+    ))
+    return route
+
+
+def door_receive(topic: str, payload: bytes, now: float) -> None:
+    """One message from the broker."""
+    message = door_message(topic, payload)
+    if message is None:
+        return
+    kind, name, body = message
+    if kind == "devices":
+        sensors = contact_sensors(body)
+        door_sync(sensors)
+        log.info("doors: %d sensor(s) on the Zigbee network: %s", len(sensors), ", ".join(sorted(s["name"] for s in sensors.values())) or "none")
+    elif kind == "bridge":
+        DOORS_LINK["bridge"] = body == "online"
+    elif kind == "availability":
+        with_db(lambda c: (c.execute("UPDATE doors SET online=? WHERE name=? AND removed=0", (int(body == "online"), name)), c.commit()))
+    elif kind == "state":
+        change = door_state(name, body, now)
+        if change is not None:
+            door_announce(change, now, away_since() is not None)
+
+
+def doors_forever() -> None:
+    """Listens to Zigbee2MQTT through the broker for as long as the relay runs, reconnecting whenever it drops."""
+    try:
+        import paho.mqtt.client as mqtt
+    except ImportError:
+        log.warning("doors: paho-mqtt isn't installed, so door sensors are off")
+        return
+
+    def on_connect(client, userdata, flags, reason_code, properties):
+        if reason_code.is_failure:
+            log.warning("doors: the broker refused the connection: %s", reason_code)
+            return
+        DOORS_LINK["broker"] = True
+        client.subscribe(f"{Z2M_TOPIC}/#")
+        log.info("doors: listening to %s on %s:%s", Z2M_TOPIC, MQTT_HOST, MQTT_PORT)
+
+    def on_disconnect(client, userdata, flags, reason_code, properties):
+        DOORS_LINK["broker"] = DOORS_LINK["bridge"] = False
+
+    def on_message(client, userdata, message):
+        try:
+            door_receive(message.topic, message.payload, time.time())
+        except Exception:
+            log.exception("doors: couldn't take a message on %s", message.topic)
+
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="homesafe-relay")
+    client.on_connect, client.on_disconnect, client.on_message = on_connect, on_disconnect, on_message
+    client.reconnect_delay_set(min_delay=1, max_delay=60)
+    warned = False
+    while True:
+        try:
+            client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+            warned = False
+            client.loop_forever(retry_first_connection=True)
+        except Exception as e:
+            DOORS_LINK["broker"] = DOORS_LINK["bridge"] = False
+            # Said once, not every half minute: until the broker is set up there is none to reach.
+            if not warned:
+                log.warning("doors: no broker at %s:%s (%s); trying every 30 s", MQTT_HOST, MQTT_PORT, e)
+                warned = True
+            time.sleep(30)
+
+
+def door_json(row: tuple) -> dict[str, Any]:
+    door_id, name, model, is_open, changed, battery, battery_low, link, online, last_seen, notify = row
+    return {
+        "id": door_id, "name": name, "model": model, "open": None if is_open is None else bool(is_open), "changed": changed,
+        "battery": battery, "battery_low": None if battery_low is None else bool(battery_low), "link": link,
+        "online": None if online is None else bool(online), "last_seen": last_seen, "notify": notify,
+    }
+
+
+def doors_snapshot(now: float, days: float = 7) -> dict[str, Any]:
+    """Every door sensor on the network and how it stands, and its openings and closings over the last [days], newest first."""
+    rows = with_db(lambda c: c.execute(
+        "SELECT id, name, model, open, changed, battery, battery_low, link, online, last_seen, notify FROM doors WHERE removed=0 ORDER BY name COLLATE NOCASE"
+    ).fetchall())
+    events = with_db(lambda c: c.execute(
+        "SELECT e.door, e.open, e.at, e.pushed FROM door_events e JOIN doors d ON d.id=e.door WHERE d.removed=0 AND e.at >= ? ORDER BY e.at DESC LIMIT 500",
+        (now - max(0.0, min(days, DOOR_HISTORY_DAYS)) * 86400,),
+    ).fetchall())
+    return {
+        "doors": [door_json(row) for row in rows],
+        "events": [{"door": d, "open": bool(o), "at": at, "pushed": p} for d, o, at, p in events],
+        "broker": DOORS_LINK["broker"],
+        "bridge": DOORS_LINK["bridge"],
+        "away": away_since() is not None,
+    }
+
+
+class DoorPatch(BaseModel):
+    # When an opening pushes: "away", "always" or "never" (see "doors").
+    notify: str
+
+
+@app.get("/doors")
+def get_doors(request: Request, device: str | None = None, days: float = 7) -> dict[str, Any]:
+    """The door sensors and their recent history (see "doors"). A signed-in user or a device."""
+    authenticate(request, device)
+    return doors_snapshot(time.time(), days)
+
+
+@app.put("/doors/{door_id}")
+def set_door(door_id: str, patch: DoorPatch, request: Request) -> dict[str, Any]:
+    """Sets when one door's openings push. A signed-in user."""
+    user = require_frigate_session(request)
+    if patch.notify not in DOOR_NOTIFY_MODES:
+        raise HTTPException(status_code=400, detail=f"notify must be one of {', '.join(DOOR_NOTIFY_MODES)}")
+    changed = with_db(lambda c: (c.execute("UPDATE doors SET notify=? WHERE id=? AND removed=0", (patch.notify, door_id)).rowcount, c.commit())[0])
+    if not changed:
+        raise HTTPException(status_code=404, detail="No such door")
+    log.info("doors: %s set %s to notify %s", user, door_id, patch.notify)
+    return doors_snapshot(time.time())
 # ---------------------------------------------------------------- Nest primer
 
 # Holds every Google Nest stream in go2rtc open, and is the viewer that starts each one.

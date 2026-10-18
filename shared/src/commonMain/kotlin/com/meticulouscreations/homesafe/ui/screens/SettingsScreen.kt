@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ShowChart
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.DoorFront
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FitnessCenter
@@ -86,6 +87,8 @@ import homesafe.shared.generated.resources.alerts_title
 import homesafe.shared.generated.resources.common_cancel
 import homesafe.shared.generated.resources.common_dot_separator
 import homesafe.shared.generated.resources.common_retry
+import homesafe.shared.generated.resources.doors_settings_summary
+import homesafe.shared.generated.resources.doors_title
 import homesafe.shared.generated.resources.finance_drawer_settings_title
 import homesafe.shared.generated.resources.fitness_figure_settings_title
 import homesafe.shared.generated.resources.presence_allow_location
@@ -231,6 +234,7 @@ fun SettingsTabContent(
         state = state,
         onOpenAlerts = { onOpen(AlertsRoute) },
         onOpenAway = { onOpen(AwayRoute) },
+        onOpenDoors = { onOpen(DoorsRoute) },
         onOpenClassifier = { onOpen(ClassifierRoute(it)) },
         onOpenFaces = { onOpen(FacesRoute) },
         onOpenServer = { onOpen(ServerRoute) },
@@ -280,6 +284,7 @@ internal fun SettingsHome(
     onFigureStyle: (FigureStyle) -> Unit,
     onAppIcon: (AppIcon) -> Unit,
     modifier: Modifier = Modifier,
+    onOpenDoors: (() -> Unit)? = null,
     initialFold: SettingsFold? = null,
 ) {
     var openFold by rememberSaveable { mutableStateOf(initialFold) }
@@ -298,6 +303,15 @@ internal fun SettingsHome(
                 summary = awaySummary(state).resolve(),
                 onClick = onOpenAway,
             )
+            if (onOpenDoors != null) {
+                SettingsRowDivider()
+                SettingsNavRow(
+                    icon = Icons.Filled.DoorFront,
+                    title = stringResource(Res.string.doors_title),
+                    summary = stringResource(Res.string.doors_settings_summary),
+                    onClick = onOpenDoors,
+                )
+            }
         }
         RecognitionSection(
             models = state.classifiers,

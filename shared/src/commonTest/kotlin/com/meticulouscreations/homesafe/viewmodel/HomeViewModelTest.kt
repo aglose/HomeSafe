@@ -39,11 +39,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
@@ -213,6 +215,7 @@ class HomeViewModelTest {
         val indoorRepo = FakeNestCameras(indoorCameras)
         val presenceRepo = FakePresence(everyoneAway)
         val moments = FakeMoments(inView)
+        val doors = FakeDoorRepository()
         val viewModel = HomeViewModel(
             observeCamerasUseCase = ObserveCamerasUseCase(cameraRepo),
             observeNestCamerasUseCase = ObserveNestCamerasUseCase(indoorRepo),
@@ -224,6 +227,8 @@ class HomeViewModelTest {
             getLiveStillUrlUseCase = GetLiveStillUrlUseCase(FakeMediaUrls),
             getEventThumbnailUrlUseCase = GetEventThumbnailUrlUseCase(FakeMediaUrls),
             observeHouseholdPresenceUseCase = ObserveHouseholdPresenceUseCase(presenceRepo),
+            observeDoorsUseCase = ObserveDoorsUseCase(doors),
+            refreshDoorsUseCase = RefreshDoorsUseCase(doors),
             observeStationaryObjectsUseCase = ObserveStationaryObjectsUseCase(moments),
             setAwayUseCase = SetAwayUseCase(presenceRepo),
             reconnectToServerUseCase = ReconnectToServerUseCase(connection),

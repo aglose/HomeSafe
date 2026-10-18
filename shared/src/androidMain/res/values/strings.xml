@@ -9,7 +9,7 @@
     <string name="notif_channel_detections_name">Detections</string>
     <string name="notif_channel_detections_description">A person, vehicle, or animal seen by one of your cameras</string>
     <string name="notif_channel_away_name">Away alerts</string>
-    <string name="notif_channel_away_description">A person on any camera while nobody is home</string>
+    <string name="notif_channel_away_description">A person on any camera, or a door opening, while nobody is home</string>
     <string name="notif_channel_summaries_name">Summaries</string>
     <string name="notif_channel_summaries_description">A few times a day: what the cameras saw while someone was home</string>
     <string name="notif_channel_weather_name">Weather</string>
@@ -18,6 +18,11 @@
     <string name="notif_channel_weather_severe_description">Government warnings for where you are</string>
     <string name="notif_channel_budget_name">Budget</string>
     <string name="notif_channel_budget_description">The month\'s card spending close to a limit, over it, or into savings</string>
+    <!-- A door sensor's push (docs/doors.md); %1$s is the door's name, e.g. "Front door". -->
+    <string name="notif_door_opened_title">%1$s opened</string>
+    <string name="notif_door_opened_away_title">Away: %1$s opened</string>
+    <string name="notif_door_body">Door sensor</string>
+    <string name="notif_door_away_body">Door sensor · nobody home</string>
     <!-- The name beside the app's in the header over each kind's notifications in the shade. -->
     <string name="notif_group_cameras">Cameras</string>
     <string name="notif_group_summaries">Camera summaries</string>

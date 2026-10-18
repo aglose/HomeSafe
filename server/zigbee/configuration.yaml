@@ -1,0 +1,28 @@
+# Zigbee2MQTT's starting configuration, copied to data/configuration.yaml on the box once (see
+# docs/doors.md). Zigbee2MQTT rewrites that copy itself: GENERATE becomes the network's own key
+# and ids, and each paired device gets an entry with the name it was given on the pairing page.
+version: 4
+homeassistant:
+  enabled: false
+mqtt:
+  base_topic: zigbee2mqtt
+  server: mqtt://127.0.0.1:1883
+serial:
+  port: /dev/zigbee
+  # The Sonoff Dongle Plus MG24 (Silicon Labs EFR32MG24) runs EmberZNet.
+  adapter: ember
+frontend:
+  enabled: true
+  port: 8080
+permit_join: false
+availability:
+  enabled: true
+advanced:
+  # 25 sits above the 2.4 GHz Wi-Fi channels 1, 6 and 11 overlap.
+  channel: 25
+  network_key: GENERATE
+  pan_id: GENERATE
+  ext_pan_id: GENERATE
+  log_level: info
+  log_output:
+    - console

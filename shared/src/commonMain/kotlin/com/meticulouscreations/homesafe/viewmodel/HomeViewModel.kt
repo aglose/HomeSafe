@@ -9,6 +9,7 @@ import com.meticulouscreations.homesafe.domain.model.CameraLayout
 import com.meticulouscreations.homesafe.domain.model.CameraOrientation
 import com.meticulouscreations.homesafe.domain.model.CameraPlacement
 import com.meticulouscreations.homesafe.domain.model.CameraSource
+import com.meticulouscreations.homesafe.domain.model.Door
 import com.meticulouscreations.homesafe.domain.model.StationaryObject
 import com.meticulouscreations.homesafe.domain.model.StationaryObjectPresentation
 import com.meticulouscreations.homesafe.domain.model.VideoFit
@@ -22,11 +23,13 @@ import com.meticulouscreations.homesafe.domain.usecase.GetLiveWebRtcSignalingUrl
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCameraLayoutsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveCurrentServerUrlUseCase
+import com.meticulouscreations.homesafe.domain.usecase.ObserveDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObservePlaybackPreferencesUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ObserveStationaryObjectsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.ReconnectToServerUseCase
+import com.meticulouscreations.homesafe.domain.usecase.RefreshDoorsUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshHouseholdPresenceUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshNestCamerasUseCase
 import com.meticulouscreations.homesafe.domain.usecase.RefreshStationaryObjectsUseCase
@@ -127,6 +130,8 @@ class HomeViewModel(
     private val getLiveStillUrlUseCase: GetLiveStillUrlUseCase,
     private val getEventThumbnailUrlUseCase: GetEventThumbnailUrlUseCase,
     observeHouseholdPresenceUseCase: ObserveHouseholdPresenceUseCase,
+    observeDoorsUseCase: ObserveDoorsUseCase,
+    private val refreshDoorsUseCase: RefreshDoorsUseCase,
     observeStationaryObjectsUseCase: ObserveStationaryObjectsUseCase,
     private val setAwayUseCase: SetAwayUseCase,
     private val reconnectToServerUseCase: ReconnectToServerUseCase,
@@ -188,6 +193,15 @@ class HomeViewModel(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
     /**
+     * The door sensors, for the strip under the away banner: each door and whether it's open.
+     * Empty with no sensors (or a relay from before them), and the strip is then not drawn.
+     * Collecting it keeps the doors polled while the Home tab is up.
+     */
+    val doors: StateFlow<List<Door>> = observeDoorsUseCase()
+        .map { it.doors }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /**
      * The page's pull to refresh. Every camera without moving video is told to reconnect now
      * rather than when its back-off says ([reconnectRequests]), and everything the page reads is
      * asked for again: the route, the session and the camera list ([ReconnectToServerUseCase]),
@@ -210,6 +224,7 @@ class HomeViewModel(
             coroutineScope {
                 launch { refreshHouseholdPresenceUseCase() }
                 launch { refreshNestCamerasUseCase() }
+                launch { refreshDoorsUseCase() }
                 refreshStationaryObjectsUseCase()
             }
         }
