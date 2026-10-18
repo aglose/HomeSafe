@@ -37,6 +37,9 @@ object BudgetNotificationPoster {
     private const val CLOSE_COLOR = 0xFFE39A1E.toInt()
     private const val OVER_COLOR = 0xFFE5484D.toInt()
 
+    /** A group of their own under the wallet, so Android never bundles the month's spending in with the cameras' alerts or the weather. */
+    private val group = NotificationGroupSummary(CHANNEL_ID, CHANNEL_ID, R.string.notif_group_budget)
+
     fun ensureChannel(context: Context) {
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_ID, context.getString(R.string.notif_channel_budget_name), NotificationManager.IMPORTANCE_DEFAULT).apply {
@@ -70,12 +73,13 @@ object BudgetNotificationPoster {
     fun show(context: Context, id: String, title: String, body: String, kind: BudgetAlert.Kind? = null) {
         if (!canPost(context)) return
         ensureChannel(context)
+        val color = if (kind == null || kind == BudgetAlert.Kind.CLOSE) CLOSE_COLOR else OVER_COLOR
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(NotificationGlyph.BUDGET.drawableRes)
-            .setColor(if (kind == null || kind == BudgetAlert.Kind.CLOSE) CLOSE_COLOR else OVER_COLOR)
+            .setColor(color)
             .setTicker(title)
-            // A group of their own, so Android never bundles the month's spending in with the cameras' alerts.
-            .setGroup(CHANNEL_ID)
+            .setGroup(group.group)
+            .setDeleteIntent(group.removalIntent(context, id, NOTIFICATION_ID))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))
@@ -86,6 +90,7 @@ object BudgetNotificationPoster {
             .setContentIntent(openIntent(context, id))
             .build()
         context.getSystemService(NotificationManager::class.java).notify(id, NOTIFICATION_ID, notification)
+        group.post(context, NotificationGlyph.BUDGET, color)
     }
 
     /** What a tap opens: the app's own activity, named explicitly, with `homesafe://finance?tab=budget`, which MainActivity hands to the shell. */
