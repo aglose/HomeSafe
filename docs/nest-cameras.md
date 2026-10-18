@@ -177,7 +177,26 @@ first viewer of a stream nobody is watching still waits for Google to start the 
 `curl :1984/api/streams` lists it with an `ffmpeg:` source, so the app never takes it for a camera
 of its own. Pull to refresh on Home and the cards move to it.
 
-### 6. Frigate cameras (recommended): always ready
+### 6. The relay's Nest primer (needed for Frigate and for quick joins)
+
+go2rtc (1.9.10 in Frigate 0.17, and still in 1.9.14) binds the viewer that *starts* a Nest
+session to the first H.264 payload type in Google's answer, while Google sends on another: that
+viewer never gets a frame, and every viewer joining after it does. Measured 2026-10-17 on an idle
+`kids_room`: the first `stream.mp4` read got nothing in 15 s while the session's other receiver
+filled with video; a second read got 1.7 MB. `curl :1984/api/streams?src=<name>` shows it as two
+video receivers, one stuck at 0 bytes. So a Nest stream's first viewer is lost: the app's first
+join (its HLS shadow got the picture instead, slowly), and every `<name>_sub` transcode and
+Frigate reader, which then never start at all ("Output file does not contain any stream").
+
+The relay works around it (`nest_primer_forever` in relay.py, on unless `NEST_PRIMER=0`): it reads
+go2rtc's stream list every minute and holds one `stream.mp4` viewer on every Nest stream,
+starting each session itself so the dead binding is its own. Everyone else then joins a running
+session. It also keeps every Nest camera streaming through Google all day.
+
+Leaked `frame.jpeg` requests did this by accident before: a client that gave up waiting for a
+keyframe stays a go2rtc consumer, and held the session open (and, on a dead binding, held it dead).
+
+### 7. Frigate cameras (recommended): always ready
 
 A Nest stream exists only while someone watches it, so the first viewer after a quiet spell waits
 for Google to start the camera (1–11 s). Making each Nest camera a Frigate camera keeps its
@@ -226,7 +245,7 @@ In the app, a Frigate camera reading a Nest stream is that Nest camera (`cameras
 stays in the Indoor list (Outdoor for `outdoor_`), keeps the Nest picture's shape, opens
 Frigate's camera page, and its Nest entry is left out.
 
-### 7. Check
+### 8. Check
 
 ```bash
 curl -s http://127.0.0.1:1984/api/streams | python3 -c 'import json,sys; print([k for k,v in json.load(sys.stdin).items() if any((p.get("url") or "").startswith("nest:") for p in v.get("producers") or [])])'
