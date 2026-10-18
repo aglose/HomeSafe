@@ -1,5 +1,20 @@
 # HomeSafe — notes for coding agents
 
+## Looking at UI changes
+
+A UI change isn't done until you've looked at it. Draw the previews you touched with the preview
+server, which keeps Layoutlib loaded, and open the PNGs it prints:
+
+```bash
+scripts/preview BudgetOverview,StatusBadge   # ~1 s plus Gradle compiling what you changed
+scripts/preview --list                        # every preview
+scripts/preview --all                         # everything, once, before you finish
+```
+
+Add or adjust a `@Preview` for the state you changed; every one is drawn, nothing to register. The
+`ui-previews` skill has the rest: the fallback if the server breaks, and what to do in a sandbox
+that can't build.
+
 ## Strings and localization
 
 **No user-visible text is written as a Kotlin string literal.** Every word a person can read or
