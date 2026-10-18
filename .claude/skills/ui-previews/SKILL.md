@@ -16,22 +16,24 @@ no-argument `@Preview` composables that draw the stateless composable from fixtu
 
 - Screens get `@Preview(name = "...", widthDp = 412, heightDp = 915)`.
 - Components get no size, and are wrapped in `FrigateTheme`, not `FrigatePreview`.
-- Keep previews private, as compose-rules requires. The exception is a preview reviewers should see as
-  Android draws it: make it public in a file that suppresses `compose:preview-public-check`, like
-  `HomePreviews.kt`. Then add a one-line `@PreviewTest` wrapper to
-  `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`.
+- Keep previews private, as compose-rules requires, and top-level. There's nothing to register: every
+  `@Preview` in `:shared`, the features and `:app` is drawn. Its `@Preview` arguments must be literals or a
+  `const val` of the same file (the wrappers are generated from source).
 
 ## 2. Render and look
 
 The app is Android and iOS only, so previews are drawn by Layoutlib (Compose Preview Screenshot Testing),
-as Android draws them. Only previews with a `@PreviewTest` wrapper in `:androidApp`'s screenshot suite are drawn
-(see step 1).
+as Android draws them. While iterating, draw only the previews you're working on: `--only` takes
+comma-separated words matched against each preview's module, function and name, and `--list` prints them all.
 
 ```bash
-scripts/render-ui-previews.sh build/ui-previews/local
+scripts/render-ui-previews.sh --list
+scripts/render-ui-previews.sh build/ui-previews/local --only BudgetOverview,finance_card
 ```
 
-- **It works** (needs the Android SDK). Read `build/ui-previews/local/android/*.png`, fix, re-run.
+- **It works** (needs the Android SDK). Read `build/ui-previews/local/android/*.png`, fix, re-run. Before you
+  finish, draw everything once without `--only`, to catch a shared component you changed elsewhere.
+- **Layoutlib draws one frame.** Animations show their first frame, and nothing is clicked or scrolled.
 - **Whole-app flows** have no screenshots any more (they came from the JVM journeys); the journeys run on CI's
   emulator, and a failing one prints the screen's semantics tree.
 - **It can't resolve plugins** (for example a sandbox that blocks `dl.google.com`): commit, push the branch, then

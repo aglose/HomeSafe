@@ -7,9 +7,11 @@ screenshots went with the JVM target.
 
 | What | Command | Draws | Output |
 |---|---|---|---|
-| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTestDefaultTestSuite` | `:androidApp`'s `@PreviewTest` wrappers, as Android draws them | `androidApp/src/screenshotTestDefaultDebug/reference/**/*.png` |
+| **Screenshot tests** (Layoutlib) | `./gradlew :androidApp:updateDebugScreenshotTestDefaultTestSuite` | every `@Preview` in `:shared`, the features and `:app`, as Android draws them | `androidApp/src/screenshotTestDefaultDebug/reference/**/*.png` |
 
-`scripts/render-ui-previews.sh OUT_DIR` runs it and collects the PNGs in `OUT_DIR/android`.
+`scripts/render-ui-previews.sh OUT_DIR` runs it and collects the PNGs in `OUT_DIR/android`. Add
+`--only finance,HomeFeed` to draw only the previews whose module, function or name contains one of those words,
+which is much quicker than drawing them all. `scripts/render-ui-previews.sh --list` prints every preview.
 
 ## Previews are the catalogue
 
@@ -18,10 +20,12 @@ A preview is a no-argument `@Preview` composable in `shared/src/commonMain` or a
 fixtures, as the screen UI tests do. See `ui/screens/HomePreviews.kt`.
 
 - Android Studio draws it in the editor.
-- For Layoutlib, add a one-line `@PreviewTest` wrapper in
-  `androidApp/src/screenshotTest/.../SharedPreviewScreenshots.kt`. The wrapper is in another module, so the
-  preview must be public. compose-rules wants previews private, so put shared previews in a file that suppresses
-  `compose:preview-public-check` and says why, like `HomePreviews.kt`. Keep every other preview private.
+- Layoutlib draws it too, with nothing to register. `:androidApp:generatePreviewTests` reads every `@Preview` in
+  the `commonMain` and `androidMain` sources of `:shared`, `features/*` and `:app`, and writes a `@PreviewTest`
+  wrapper for each into `androidApp/build/generated/previewTests/`, with the preview's own `@Preview` arguments.
+  The wrapper calls the preview by reflection, so keep previews private, as compose-rules wants.
+- The generator reads source, so a preview must be a top-level function, and its `@Preview` arguments literals or
+  a `const val` of the same file. Anything else fails the build and names the file.
 
 Give screen previews a phone's size, `@Preview(widthDp = 412, heightDp = 915)`. Without a size, a preview is drawn
 as big as its content. Wrap component previews in
@@ -34,7 +38,8 @@ as big as its content. Wrap component previews in
 draws through Layoutlib, the renderer behind Android Studio's preview pane, so it's Android-exact.
 
 - It only looks at `@PreviewTest` functions in an Android module's `screenshotTest` source set. It doesn't
-  support Kotlin Multiplatform common code, hence the wrappers in `:androidApp`.
+  support Kotlin Multiplatform common code, hence the generated wrappers in `:androidApp`.
+- It draws one frame. Animations show their first frame, and nothing is clicked or scrolled.
 - It needs the Android SDK.
 - It runs as an [AGP test suite](https://developer.android.com/studio/preview/compose-screenshot-testing-with-testsuites):
   `testOptions.screenshotTests` in `androidApp/build.gradle.kts`, with engine `0.0.1-alpha16`. That needs AGP 9.5
@@ -68,8 +73,9 @@ for.
 **With a working Gradle** (your machine, or a sandbox that can reach Google Maven):
 
 1. Change the composable. Add or adjust a preview for the state you changed.
-2. Run `scripts/render-ui-previews.sh build/ui-previews/local`. The PNGs land in `build/ui-previews/local/android/`.
-3. Open the PNGs and look at them, then iterate.
+2. Run `scripts/render-ui-previews.sh build/ui-previews/local --only <words>`, naming the previews you're working
+   on (`--list` shows them all). The PNGs land in `build/ui-previews/local/android/`.
+3. Open the PNGs and look at them, then iterate. Draw everything once at the end, without `--only`.
 
 **In a sandbox that can't build** (for example a Claude Code cloud environment whose network policy blocks
 `dl.google.com`): push the branch, then run `scripts/fetch-ui-previews.sh --wait`. It waits until the workflow has
