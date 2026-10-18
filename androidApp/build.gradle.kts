@@ -390,6 +390,15 @@ abstract class GeneratePreviewTests : DefaultTask() {
         }
         // What's there to ask for with -Ppreviews, for people and agents: module, function, name.
         out.resolve("previews.txt").writeText(found.joinToString("\n", postfix = "\n") { "${it.module}\t${it.function}\t${it.name}" })
+        // The same for tools/preview-server, which draws the previews themselves rather than these
+        // wrappers: module, JVM class, function, name, and the @Preview arguments as Layoutlib's
+        // renderer takes them (key=value, plain values, separated by U+001F).
+        out.resolve("previews.tsv").writeText(
+            found.joinToString("\n", postfix = "\n") { preview ->
+                val arguments = preview.arguments.joinToString("\u001F") { (key, value) -> "$key=${plainValue(value)}" }
+                listOf(preview.module, preview.className, preview.function, preview.name, arguments).joinToString("\t")
+            }
+        )
         logger.lifecycle("generatePreviewTests: ${drawn.size} of ${found.size} previews")
     }
 
@@ -448,6 +457,14 @@ abstract class GeneratePreviewTests : DefaultTask() {
         else -> throw GradleException("${file.path}: @Preview argument '$raw' isn't a literal or a const val of the same file")
     }
 
+    /** A Kotlin literal as the renderer's preview parameters hold it: "Home" -> Home, 1.5f -> 1.5. */
+    private fun plainValue(literal: String): String = when {
+        literal.startsWith('"') -> literal.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\")
+        literal.startsWith("0x") -> literal.removeSuffix("L")
+        literal.endsWith('f') || literal.endsWith('F') || literal.endsWith('L') -> literal.dropLast(1)
+        else -> literal
+    }
+
     private fun closingParen(text: String, open: Int): Int? {
         var depth = 0
         var inString = false
@@ -502,6 +519,58 @@ val generatePreviewTests = tasks.register<GeneratePreviewTests>("generatePreview
     // configuration cache; a different -Ppreviews makes Gradle configure the build again.
     filter = providers.environmentVariable("PREVIEWS").orElse(providers.gradleProperty("previews"))
     outputDirectory = layout.buildDirectory.dir("generated/previewTests")
+}
+
+/**
+ * Writes the launch file tools/preview-server starts from: the JVM and classpath the screenshot
+ * suite runs with, and where the preview catalogue is. It only rewrites the file when that
+ * changes (a dependency did), which scripts/preview takes as the cue to restart the server.
+ */
+abstract class PreviewServerPrepare : DefaultTask() {
+    @get:Internal
+    abstract val classpath: ConfigurableFileCollection
+
+    @get:Internal
+    abstract val java: Property<String>
+
+    @get:Internal
+    abstract val catalogue: RegularFileProperty
+
+    @get:Internal
+    abstract val launchFile: RegularFileProperty
+
+    @TaskAction
+    fun write() {
+        val text = buildString {
+            appendLine("java=${java.get()}")
+            appendLine("catalogue=${catalogue.get().asFile.absolutePath}")
+            appendLine("classpath=${classpath.asPath}")
+        }
+        val file = launchFile.get().asFile
+        if (!file.exists() || file.readText() != text) {
+            file.parentFile.mkdirs()
+            file.writeText(text)
+        }
+    }
+}
+
+// scripts/preview runs this before every render: it builds what Layoutlib reads (each module's
+// classes and R classes, the resources, the preview catalogue) and nothing else.
+tasks.register<PreviewServerPrepare>("previewServerPrepare") {
+    val suite = tasks.named<Test>("updateDebugScreenshotTestDefaultTestSuite")
+    classpath.from(suite.map { it.classpath })
+    java = suite.flatMap { it.javaLauncher }.map { it.executablePath.asFile.absolutePath }
+    catalogue = generatePreviewTests.flatMap { it.outputDirectory.file("previews.tsv") }
+    launchFile = layout.buildDirectory.file("preview-server/launch.properties")
+    outputs.upToDateWhen { false }
+
+    val root = isolated.rootProject.projectDirectory
+    val modules = listOf(":shared", ":app") +
+        root.dir("features").asFile.listFiles().orEmpty().filter { it.isDirectory }.sortedBy { it.name }.map { ":${it.name}" }
+    modules.forEach { module ->
+        dependsOn("$module:bundleAndroidMainClassesToRuntimeJar", "$module:generateAndroidMainRFile")
+    }
+    dependsOn(generatePreviewTests, "compileDebugKotlin", "packageDebugForScreenshotTest")
 }
 
 // Layoutlib gives each render step 10 s (layoutlib.thread.timeout, in ms) and fails the preview
