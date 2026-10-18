@@ -61,6 +61,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
@@ -85,6 +86,7 @@ import com.meticulouscreations.homesafe.domain.model.ConnectionRoute
 import com.meticulouscreations.homesafe.domain.model.MomentEvent
 import com.meticulouscreations.homesafe.domain.model.VideoFit
 import com.meticulouscreations.homesafe.finance.ui.FinanceTab
+import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
@@ -110,6 +112,7 @@ import homesafe.shared.generated.resources.shell_show_version
 import homesafe.shared.generated.resources.shell_status
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
@@ -344,6 +347,21 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
     }
 
     /**
+     * The Doors page, on the Home tab above the camera list — where Home's doors card opens it —
+     * whatever was over the shell, as a moment's tap lands ([openDetection]). Back returns to the list.
+     */
+    fun openDoors() {
+        drawerOpen = false
+        closeApp()
+        // A second tap on a door notification, with the page already up, leaves it as it is.
+        if (homeBackStack.lastOrNull() != DoorsHomeRoute) {
+            popToRoot(TopLevelRoute.Home)
+            homeBackStack.add(DoorsHomeRoute)
+        }
+        showTab(TopLevelRoute.Home)
+    }
+
+    /**
      * Opens every moment a notification tap asks for, for as long as the caller runs. The link
      * is consumed only here, once the shell exists, which is what lets a tap that cold-starts
      * the app wait out the sign-in screen and still land on the moment.
@@ -352,6 +370,18 @@ class ShellNavigation(private val onTabSelected: (TopLevelRoute) -> Unit = {}) {
         MomentDeepLinks.pending.filterNotNull().collect { link ->
             openMoment(link)
             MomentDeepLinks.consume(link)
+        }
+    }
+
+    /**
+     * Opens the Doors page whenever a door notification's tap asks for it ([openDoors]), for as
+     * long as the caller runs. Consumed only here, once the shell exists, for the reason
+     * [openMomentsFromNotifications] does.
+     */
+    suspend fun openDoorsFromNotifications() {
+        DoorDeepLinks.pending.filterNotNull().collect { link ->
+            openDoors()
+            DoorDeepLinks.consume(link)
         }
     }
 
@@ -412,6 +442,7 @@ fun FrigateAppShell() {
     val activeConnection by viewModel.activeConnection.collectAsStateWithLifecycle()
     val offline by viewModel.offline.collectAsStateWithLifecycle()
     LaunchedEffect(nav) { nav.openMomentsFromNotifications() }
+    LaunchedEffect(nav) { nav.openDoorsFromNotifications() }
     LaunchedEffect(nav) { nav.openWeatherFromNotifications() }
     LaunchedEffect(nav) { nav.openFinanceFromNotifications() }
     val compactLandscape = isCompactLandscape()
@@ -514,10 +545,27 @@ private fun ShellOverlays(nav: ShellNavigation, cardZoom: CameraCardZoomState, t
     LocalShellApps.current(nav, tab)
 }
 
-/** The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own screen. */
+/**
+ * The layer a pinched Home camera card's video lifts into; a tap on it opens that camera's own
+ * screen. It goes when Home's stack moves under it ([DismissQuickLookWhenHomeMoves]).
+ */
 @Composable
 private fun CardZoomOverlay(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    DismissQuickLookWhenHomeMoves(nav, cardZoom)
     CameraCardZoomOverlay(state = cardZoom) { tile -> nav.homeBackStack.add(cameraRoute(tile)) }
+}
+
+/**
+ * Takes the quick look away, without settling it back into its card, once something else opens
+ * a page on Home: a notification's tap on a moment or a door lands on that page, which the layer
+ * would otherwise go on covering. The layer's own tap on its camera has already let go of it by
+ * the time it opens the camera's screen, so this leaves that alone.
+ */
+@Composable
+internal fun DismissQuickLookWhenHomeMoves(nav: ShellNavigation, cardZoom: CameraCardZoomState) {
+    LaunchedEffect(nav, cardZoom) {
+        snapshotFlow { nav.homeBackStack.lastOrNull() }.drop(1).collect { cardZoom.dismiss {} }
+    }
 }
 
 /**
@@ -832,7 +880,9 @@ private data class CameraFramingRoute(
 
 private data class DetectionZonesRoute(val cameraName: String)
 private data class CarTaggingRoute(val cameraName: String)
-private data object DoorsHomeRoute
+
+/** The Doors page on the Home tab, from Home's doors card or a door notification's tap ([ShellNavigation.openDoors]). */
+internal data object DoorsHomeRoute
 
 /**
  * The full-screen clip editor for [cameraName], around [anchorEpochSeconds] (what the camera

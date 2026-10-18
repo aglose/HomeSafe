@@ -188,7 +188,8 @@ private fun NoticeTilesPreview() {
 
 /** Every notification glyph in one colour, as the status bar shows it: large to check the drawing, small to check it still reads. */
 @OptIn(ExperimentalLayoutApi::class)
-@Preview(widthDp = 400)
+// Tall enough for every glyph: a FlowRow leaves out whatever falls below the bottom.
+@Preview(widthDp = 400, heightDp = 560)
 @Composable
 private fun NotificationGlyphsPreview() {
     FlowRow(Modifier.background(Color(0xFF12161D)).padding(12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -1,6 +1,7 @@
 package com.meticulouscreations.homesafe.domain.platform
 
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
+import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 
 /** Where the OS stands on letting this app post notifications. */
@@ -72,6 +73,12 @@ data class AlertNotification(
      * a push says so only for an unnamed car or person, or a household car coming or going.
      */
     val subject: MomentCategory = MomentCategory.ALL,
+    /**
+     * A door opened (the relay's `door=<id>` push, docs/doors.md) rather than a camera seeing
+     * something: Android wears the door in the status bar, and a tap opens the Doors page instead
+     * of a detection ([target] stays null). Null for everything from a camera.
+     */
+    val door: DoorDeepLink? = null,
 )
 
 /**

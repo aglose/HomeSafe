@@ -8,6 +8,7 @@ import com.meticulouscreations.homesafe.domain.model.DoorAlert
 import com.meticulouscreations.homesafe.domain.model.MomentCategory
 import com.meticulouscreations.homesafe.domain.platform.AlertNotification
 import com.meticulouscreations.homesafe.finance.domain.BudgetAlert
+import com.meticulouscreations.homesafe.navigation.DoorDeepLink
 import com.meticulouscreations.homesafe.navigation.MomentDeepLink
 import com.meticulouscreations.homesafe.shared.R
 import kotlinx.coroutines.runBlocking
@@ -84,7 +85,8 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
 
     /**
      * A door opened (see docs/doors.md). Worded here from the door's name; the relay's English
-     * only for an event this build doesn't know. A tap opens the app, where Home shows the doors.
+     * only for an event this build doesn't know. It wears the door in the status bar, and a tap
+     * opens the Doors page (`homesafe://doors`).
      */
     private fun showDoorAlert(message: RemoteMessage) {
         val alert = DoorAlert.from { message.data[it] }
@@ -97,6 +99,7 @@ class HomeSafeMessagingService : FirebaseMessagingService() {
             body = body,
             urgent = message.data["away"] == "1",
             silent = message.data["silent"] == "1",
+            door = DoorDeepLink(alert?.doorId ?: message.data[DoorAlert.KEY_DOOR]),
         )
         AlertNotificationPoster.ensureChannels(this)
         runBlocking { AlertNotificationPoster.show(applicationContext, notification) }

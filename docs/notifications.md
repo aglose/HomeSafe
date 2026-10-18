@@ -88,7 +88,9 @@ A door opening is pushed by the relay's "doors" section, not by this policy (see
 away alert, loud and to every phone; **always** also pushes while someone is home, as an ordinary
 alert that quiet hours and "only when everyone's away" hold back; **never** doesn't push. The push
 is `door=<id>`, `notif_id=door-<id>`, worded on the phone; a door opened again within 2 minutes
-updates its notification quietly.
+updates its notification quietly. On Android it wears the door (the shield when it went out as an
+away alert) and a tap opens the Doors page (`homesafe://doors?door=<id>`, see
+[doors.md](doors.md#what-a-push-looks-like)).
 
 ## Icons
 
@@ -100,7 +102,8 @@ On Android each notification says what it is from the status bar, before the sha
 | A car (an unnamed one, or a household car arriving or leaving) | A car | The app's orange |
 | An animal (in-app alerts) | A paw | The app's orange |
 | Anything else from a camera | The camera | The app's orange |
-| Someone seen while everyone is away | A shield | Red |
+| A door that opened | A door, swung open | The app's orange |
+| Someone seen, or a door opened, while everyone is away | A shield | Red |
 | A summary | A list | The app's orange |
 | "Marked not a person" | A tick | The app's orange |
 | A budget alert | A card | Amber close to a limit, red past one |

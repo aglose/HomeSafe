@@ -14,6 +14,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.fragment.app.FragmentActivity
 import com.meticulouscreations.homesafe.di.AppGraph
 import com.meticulouscreations.homesafe.di.createAppGraph
+import com.meticulouscreations.homesafe.navigation.DoorDeepLink
+import com.meticulouscreations.homesafe.navigation.DoorDeepLinks
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLink
 import com.meticulouscreations.homesafe.navigation.FinanceDeepLinks
 import com.meticulouscreations.homesafe.navigation.FitnessShares
@@ -87,7 +89,8 @@ class MainActivity : FragmentActivity() {
      * `homesafe://moment` URI; a push Android drew by itself (from a relay that still sends a
      * notification block) carries the relay's data as extras on the launch intent instead. A
      * weather notification carries `homesafe://weather?…`, and opens the weather app the same way,
-     * on the part of it the notification was about.
+     * on the part of it the notification was about; a door's carries `homesafe://doors`, and opens
+     * the Doors page.
      * Text shared from another app is not a notification at all, but arrives by the same door: it
      * is taken to be workout notes and handed to the fitness app's import page ([FitnessShares]).
      */
@@ -103,6 +106,8 @@ class MainActivity : FragmentActivity() {
         }
         // A weather notification's tap: the weather app, not a camera.
         WeatherDeepLink.fromUri(intent.dataString)?.let { return WeatherDeepLinks.open(it) }
+        // A door notification's tap: the Doors page (`homesafe://doors`).
+        DoorDeepLink.fromUri(intent.dataString)?.let { return DoorDeepLinks.open(it) }
         // A budget notification's tap asks for the finance app instead (`homesafe://finance`).
         intent.dataString?.let(FinanceDeepLink::fromUri)?.let { return FinanceDeepLinks.open(it) }
         val link = intent.dataString?.let(MomentDeepLink::fromUri)

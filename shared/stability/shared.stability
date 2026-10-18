@@ -966,6 +966,14 @@ public fun com.meticulouscreations.homesafe.ui.screens.DetectionZonesScreen(came
     - onBack: STABLE (function type)
 
 @Composable
+internal fun com.meticulouscreations.homesafe.ui.screens.DismissQuickLookWhenHomeMoves(nav: com.meticulouscreations.homesafe.ui.screens.ShellNavigation, cardZoom: com.meticulouscreations.homesafe.ui.screens.CameraCardZoomState): kotlin.Unit
+  skippable: true
+  restartable: true
+  params:
+    - nav: STABLE (marked @Stable or @Immutable)
+    - cardZoom: STABLE (marked @Stable or @Immutable)
+
+@Composable
 private fun com.meticulouscreations.homesafe.ui.screens.DoorCard(door: com.meticulouscreations.homesafe.domain.model.Door, nowMillis: kotlin.Long, onNotify: kotlin.Function1<com.meticulouscreations.homesafe.domain.model.DoorNotify, kotlin.Unit>): kotlin.Unit
   skippable: true
   restartable: true

@@ -34,6 +34,20 @@ Each door has its own setting, chosen in the app (`PUT /doors/{id}` with `{"noti
 - The push carries `door`, `door_name`, `door_event=opened`, `at` and `notif_id=door-<id>`, plus
   `away=1` when it went out as an away alert; the app words it from those.
 
+## What a push looks like
+
+On Android a door's notification wears a door in the status bar (`NotificationGlyph.DOOR`), in
+the app's orange; one that went out as an away alert wears the away shield in red instead, as
+every alert on the loud away channel does, and its title says which door. A tap opens the Doors
+page on Home, above the camera list (`homesafe://doors?door=<id>`, `DoorDeepLink`), whatever was
+up, and Back returns to the list. Icons and channels: [notifications.md](notifications.md#icons).
+
+On iOS the banner is the one APNs draws from the relay's `aps.alert` (its English title and body;
+an away alert is time-sensitive, and a reopening soon after collapses onto the same banner by its
+`notif_id`). FCM hands the push's data over as top-level `userInfo` keys, so the notification
+delegate (`AlertNotifier.ios.kt`) sees the relay's `door` key on a tap and opens the same Doors
+page through `DoorDeepLinks`, which the iOS 26 host (`IosShell`) drains as the Compose shell does.
+
 ## Setting up the box
 
 The stick plugged in, on its extension cable:
