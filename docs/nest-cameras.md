@@ -165,8 +165,14 @@ Each Nest camera gets a smaller stream for the cards, as the Frigate cameras hav
 streams. Under `go2rtc:` → `streams:` in Frigate's `config/config.yml`, beside each Nest stream:
 
 ```yaml
-    living_room_sub: "ffmpeg:living_room#video=h264#width=640#hardware=cuda"
+    living_room_sub: "ffmpeg:living_room#video=h264#width=640#hardware=cuda#raw=-fps_mode passthrough"
 ```
+
+`-fps_mode passthrough` matters for the Hub Max (kitchen): ffmpeg's RTSP output is constant-rate by
+default and filled its timestamp gaps with copies of frames, 85,000 in 6 s, which saturated the
+GPU's encoder and left Frigate with 0.3 fps. On the box 2026-10-17 all four `_sub` streams have it.
+A portrait doorbell needs both sides given (`#width=480#height=640`): scaled to 640 wide it would be
+853 tall, and H.264 wants even sizes.
 
 go2rtc re-encodes the camera on the GPU at 640 wide (the height follows the picture's shape), and
 the box's `go2rtc.ffmpeg.h264/cuda` template already gives it a keyframe every 25 frames. That is
@@ -269,3 +275,7 @@ browser. In the app, pull to refresh on Home: the switch appears above the camer
   AAC, so on iOS sound relies on WebRTC (see [go2rtc HLS audio](webrtc-live.md)).
 - **Token expiry**: if the cameras stop after a week, the OAuth app is still in *Testing*.
   Publish it (step 1.2), run the script again, and replace the refresh token in `frigate.env`.
+- **The doorbell (2026-10-17)**: Google answers every stream request for it with "The camera is not
+  available for streaming", even a standard offer the kitchen accepts, so it is off or offline on
+  Google's side (Google Home: camera off, a home/away schedule, video turned off). Its Frigate
+  camera block is left out of the config until it streams; the relay's primer backs off asking.
