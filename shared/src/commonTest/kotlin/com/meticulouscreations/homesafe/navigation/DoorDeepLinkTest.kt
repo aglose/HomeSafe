@@ -36,6 +36,17 @@ class DoorDeepLinkTest {
     }
 
     @Test
+    fun aPushsDataIsADoorLinkOnlyWhenItNamesADoor() {
+        // The relay's data for a door opening (`door_announce`), as iOS hands it over in `userInfo`.
+        val door = mapOf("door" to "back_door", "door_name" to "Back Door", "door_event" to "opened", "notif_id" to "door-back_door", "away" to "1")
+        assertEquals(DoorDeepLink("back_door"), DoorDeepLink.from(door::get))
+        assertNull(DoorDeepLink.from(mapOf("door" to "")::get))
+        // A detection's push names a camera, not a door.
+        assertNull(DoorDeepLink.from(MomentDeepLink("1791374400.1-abc", "front_door", 1791374400.0).toMap()::get))
+        assertNull(DoorDeepLink.from(WeatherDeepLink().toMap()::get))
+    }
+
+    @Test
     fun aTapWaitsToBeActedOnAndANewerOneReplacesIt() {
         val back = DoorDeepLink("back_door")
         val garage = DoorDeepLink("garage")

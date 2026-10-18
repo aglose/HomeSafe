@@ -26,6 +26,9 @@ data class DoorDeepLink(val doorId: String? = null) {
         /** The push's own name for the door's id (`DoorAlert.KEY_DOOR`). */
         const val KEY_DOOR = "door"
 
+        /** From a push's data or iOS `userInfo`, as string pairs; null when they aren't a door's (no `door` key). */
+        fun from(values: (String) -> String?): DoorDeepLink? = values(KEY_DOOR)?.takeIf { it.isNotBlank() }?.let(::DoorDeepLink)
+
         /** From a `homesafe://doors…` URI; null for anything else. */
         fun fromUri(uri: String?): DoorDeepLink? {
             val url = uri?.let { runCatching { Url(it) }.getOrNull() } ?: return null
